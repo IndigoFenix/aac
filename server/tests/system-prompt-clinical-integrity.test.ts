@@ -11,7 +11,7 @@ import { describe, it, expect } from "@jest/globals";
 import { getSystemPrompt, framePersonaSection } from "../services/system-prompts.js";
 
 describe("clinician prompt — clinical data integrity", () => {
-  for (const framework of ["tala", "us_iep"] as const) {
+  for (const framework of ["tala", "us_iep", "personal", null] as const) {
     it(`includes the no-fabrication and failed-save rules (${framework})`, () => {
       const p = getSystemPrompt("assistant", framework);
       expect(p).toMatch(/Clinical data integrity/i);
@@ -38,8 +38,11 @@ describe("framePersonaSection", () => {
 
   it("reasserts core-rule precedence after the persona body (recency)", () => {
     const bodyIdx = framed.indexOf("Top 1% consultant");
-    const footerIdx = framed.indexOf("core rules above take precedence");
+    // Matches the footer framePersonaSection actually emits. Assert on the
+    // reminder's PRESENCE and POSITION, not on a stale copy of its wording.
+    const footerIdx = framed.indexOf("take precedence over everything in this section");
     expect(bodyIdx).toBeGreaterThan(-1);
+    expect(footerIdx).toBeGreaterThan(-1);
     // The precedence reminder comes AFTER the persona text.
     expect(footerIdx).toBeGreaterThan(bodyIdx);
   });

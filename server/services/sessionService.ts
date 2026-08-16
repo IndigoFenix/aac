@@ -86,6 +86,7 @@ import { calendarRepository } from "../repositories/calendarRepository";
 import { startOfDayInTimezone } from "../lib/timezone";
 import { licenseService } from "./licenseService";
 import type { LicensePermissions } from "@shared/license-permissions";
+import { normalizeFramework } from "@shared/program-framework";
 import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-service";
 
 /**
@@ -277,7 +278,9 @@ function getCachedBoard(sessionId: string | undefined): any | null {
  * - {{US_ONLY: ...}} - Content only shown when framework is 'us_iep'
  * - {{IL_ONLY: ...}} - Content only shown when framework is 'tala' (Israel)
  *
- * If no framework is specified, both placeholders are removed.
+ * Both placeholders are removed for any non-statutory framework ('personal')
+ * and when no framework is specified — jurisdictional content has no addressee
+ * for a learner outside a school system.
  */
 function processPersonaPrompt(prompt: string, framework: string | null): string {
   // Process {{US_ONLY: ...}} blocks
@@ -311,7 +314,7 @@ async function buildPersonaSystemPrompt(
   framework: string | null
 ): Promise<PersonaPromptResult> {
   // Get the base general prompt
-  const basePrompt = getSystemPrompt('assistant', framework as 'us_iep' | 'tala' | null);
+  const basePrompt = getSystemPrompt('assistant', normalizeFramework(framework));
 
   // If no persona ID provided, just return the base prompt
   if (!personaId) {
@@ -1465,7 +1468,12 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
 
     // Add progress system prompt
-    const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent, context.institute?.language);
+    const additionalPrompt = buildProgressSystemPrompt(
+      accessPermissions,
+      hasStudent,
+      context.institute?.language,
+      context.student?.framework,
+    );
     template.corePrompt = template.corePrompt + additionalPrompt;
 
     // Teach the assistant about the AAC it configures (capabilities + the two

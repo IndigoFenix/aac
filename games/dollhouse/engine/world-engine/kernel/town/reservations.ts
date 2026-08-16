@@ -38,6 +38,11 @@ import {
   type PricedSourceOpts,
   type TransferSource,
 } from "./transfer.js";
+// ⚖️ F-④ (fold-round.md) — TYPE-ONLY, deliberately: `fold.ts` imports
+// `scope.ts` which imports this file's own `transfer.ts`, so a VALUE import
+// here would close a runtime cycle. The fold seat needs no values from us
+// and we need none from it.
+import type { FoldCommitment, FoldScope } from "./fold.js";
 
 // ---------------------------------------------------------------------------
 // The ledger
@@ -327,4 +332,203 @@ export function resolveMaterials(opts: {
     if (left > 0) shortfall[head] = left;
   }
   return { draws, shortfall };
+}
+
+// ---------------------------------------------------------------------------
+// ⚖️ F-④ — THE STOCK BOOK AT THE FOLD (fold-round.md stage F4)
+// ---------------------------------------------------------------------------
+//
+// *"A commitment held by or against a folding scope either rides the record
+// through (conserving, with the holder still able to consume/release it) or
+// the fold REFUSES with the blockers named."*
+//
+// The stock book is the one of the three that RIDES. Why it can, stated so it
+// can be checked rather than believed: a reservation is **pure bookkeeping
+// over an endpoint id** — this module's own header, *"reservations are
+// INTENTS, not escrow: the stack itself is untouched"*. `reserve`, `consume`
+// and `release` never read or write a stack; they only move a number between
+// "spoken for" and "not". So the same arithmetic runs verbatim over rows
+// parked in a `FoldRecord`, and nothing about the folded scope's stock has to
+// be consulted to keep a promise honest. The hands and legs books cannot say
+// that (a claimed task is a body mid-errand; a moving transfer is goods on a
+// road), which is exactly why F4 has them refuse instead.
+//
+// THE ROUND TRIP, and what "verbatim" does and does not cover: holder,
+// endpoint, glyph and qty come back exactly, so `reservedUnits` before a fold
+// equals `reservedUnits` after a full cycle (the conservation pin). The ROW ID
+// does not — `reserve` mints a fresh `res_<serial>` — because the ledger has
+// no re-post-with-id door and inventing one to preserve a string nobody keys
+// off would be a wider change than the law asks for. Row ids are already
+// session-scoped and unstable across a reload (`serial` restarts from the save
+// value, holders are the stable name), so nothing reads them.
+
+/** Every reservation row in creation order — the ledger's own audit view,
+ *  which `toJSON` already answers (copies, so a reader cannot mutate the
+ *  book by accident). Local: the gather below is the only caller. */
+function allRows(ledger: ReservationLedger): readonly ReservationRow[] {
+  return ledger.toJSON().rows;
+}
+
+/**
+ * ⚖️ F-④ GATHER — every in-flight STOCK promise held BY or AGAINST `scope`,
+ * as `FoldCommitment`s. READ-ONLY: the ledger is untouched (dropping the rows
+ * is `releaseReservationCommitments`, which the fold calls only once the
+ * record actually exists).
+ *
+ * A row matches when its ENDPOINT is one of the scope's ids (the usual case —
+ * "these three wood in that yard are spoken for") or when its HOLDER is
+ * (rarer: the stock book's holders are ROW IDS FROM THE OTHER BOOKS — `agr_7`,
+ * `need:<cid>`, `craftspot:3` — so a scope is a holder only where a scope id
+ * is spoken as one, e.g. a tool claim). `against` is the endpoint either way:
+ * that is what the promise is booked against, however it was found.
+ *
+ * There is no "in-flight" test to make: a reservation row EXISTS only while it
+ * is live (consume shrinks it, release drops it, and a fully-consumed row
+ * vanishes — this module's own lifecycle), so every row is in flight.
+ */
+export function gatherReservationCommitments(
+  ledger: ReservationLedger,
+  scope: FoldScope,
+): FoldCommitment[] {
+  const ids = new Set<string>([scope.id, ...scope.endpoints]);
+  const out: FoldCommitment[] = [];
+  for (const r of allRows(ledger)) {
+    if (!ids.has(r.endpoint) && !ids.has(r.holder)) continue;
+    out.push({
+      book: "reservation",
+      id: r.id,
+      holder: r.holder,
+      against: r.endpoint,
+      payload: { glyph: r.glyph, qty: r.qty },
+    });
+  }
+  return out;
+}
+
+/** The glyph+qty a stock commitment carries, or null for a row of another
+ *  book / a malformed payload. The spelling written by `gather` above and
+ *  read by the two functions below — one place, so the two can never drift. */
+function stockPayload(c: FoldCommitment): { glyph: string; qty: number } | null {
+  if (c.book !== "reservation") return null;
+  const glyph = c.payload?.["glyph"];
+  const qty = c.payload?.["qty"];
+  if (typeof glyph !== "string" || typeof qty !== "number" || qty <= 0) return null;
+  return { glyph, qty };
+}
+
+/**
+ * ⚖️ F-④ — THE ROWS RODE AWAY: drop exactly what a fold took, and nothing
+ * else. Returns the units that left the book.
+ *
+ * `consume`, not `release(holder)`, and the difference is load-bearing twice
+ * over. (a) SURGICAL: a holder may speak on endpoints OUTSIDE the folding
+ * scope, and `release` would drop those too — a promise silently destroyed by
+ * an unrelated fold is precisely what F-④ forbids. (b) NO WAKE: `release`
+ * bumps `releaseEpoch`, the town's "a freed claim opened units for somebody
+ * else's job" signal — and a fold frees nothing, since the units folded away
+ * with the scope. `consume` is also the honest word: the units DID leave the
+ * live stack, into the record.
+ */
+export function releaseReservationCommitments(
+  ledger: ReservationLedger,
+  commitments: readonly FoldCommitment[],
+): number {
+  let units = 0;
+  for (const c of commitments) {
+    const p = stockPayload(c);
+    if (!p) continue;
+    units += ledger.consume(c.holder, c.against, p.glyph, p.qty);
+  }
+  return units;
+}
+
+/**
+ * ⚖️ F-④ — AND BACK: re-post folded stock promises into a live ledger,
+ * verbatim (see the section header on what "verbatim" covers). Returns the
+ * units re-spoken-for. The merge is `reserve`'s own: a holder that already
+ * speaks for the same endpoint+head grows that row instead of gaining a
+ * second, exactly as it would have if the fold had never happened.
+ */
+export function repostReservationCommitments(
+  ledger: ReservationLedger,
+  commitments: readonly FoldCommitment[],
+): number {
+  let units = 0;
+  for (const c of commitments) {
+    const p = stockPayload(c);
+    if (!p) continue;
+    if (ledger.reserve(c.holder, c.against, p.glyph, p.qty)) units += p.qty;
+  }
+  return units;
+}
+
+/**
+ * ⚖️ F-④ — CONSUME AGAINST A CONDENSED SCOPE. *"…with the holder still able
+ * to consume/release it"*: while the scope is folded its rows are not in the
+ * ledger (condense released them), so the holder asks the RECORD, which is
+ * the book for as long as the fold lasts. Same signature as
+ * `ReservationLedger.consume` minus the ledger, same return (units actually
+ * released from the reservation), same clamping, and the commitment vanishes
+ * at 0 exactly as a row does.
+ *
+ * ⚖️ WHY RECORD-BACKED ARITHMETIC AND NOT A REFUSAL. `consume` never touches
+ * a stack — it only shrinks a number — so there is nothing about the folded
+ * scope's stock to consult and no fiction to invent: the operation means
+ * bit-for-bit what it means against a live ledger. Refusing it would be the
+ * strictly worse answer, because a holder that cancels while its endpoint is
+ * folded would have no way to give the units back and the reservation would
+ * ride out of the fold as a permanent lie.
+ */
+export function consumeFoldedReservation(
+  record: { commitments: FoldCommitment[] },
+  holder: string,
+  endpoint: string,
+  glyph: string,
+  qty: number,
+): number {
+  const head = stackHead(glyph);
+  const i = record.commitments.findIndex(
+    (c) =>
+      c.book === "reservation" &&
+      c.holder === holder &&
+      c.against === endpoint &&
+      c.payload?.["glyph"] === head,
+  );
+  if (i < 0) return 0;
+  const c = record.commitments[i]!;
+  const p = stockPayload(c);
+  if (!p) return 0;
+  const took = Math.min(p.qty, Math.max(0, Math.floor(qty)));
+  const left = p.qty - took;
+  if (left <= 0) record.commitments.splice(i, 1);
+  else record.commitments[i] = { ...c, payload: { ...c.payload, qty: left } };
+  return took;
+}
+
+/**
+ * ⚖️ F-④ — RELEASE AGAINST A CONDENSED SCOPE (complete / fail / cancel while
+ * folded). Drops every stock commitment this holder speaks for on the record;
+ * returns the units freed. `ReservationLedger.release`'s counterpart, and the
+ * reason `consumeFoldedReservation` above exists at all: a holder must be able
+ * to let go mid-fold, or the fold would hand back promises their owners
+ * abandoned days ago.
+ *
+ * NO EPOCH BUMP, deliberately — the ledger's `releaseEpoch` is the town's "a
+ * freed claim opened units for somebody else's job" wake, and units inside a
+ * condensed scope are not available to anybody's job until it expands.
+ */
+export function releaseFoldedReservations(
+  record: { commitments: FoldCommitment[] },
+  holder: string,
+): number {
+  let units = 0;
+  for (let i = record.commitments.length - 1; i >= 0; i--) {
+    const c = record.commitments[i]!;
+    if (c.holder !== holder) continue;
+    const p = stockPayload(c);
+    if (!p) continue;
+    units += p.qty;
+    record.commitments.splice(i, 1);
+  }
+  return units;
 }

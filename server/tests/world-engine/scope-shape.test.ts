@@ -14,6 +14,7 @@ import {
   activeBag,
   allocateHands,
   bodyCarryView,
+  carryCapacityOf,
   costTotalS,
   handsFree,
   stackRoom,
@@ -22,6 +23,7 @@ import {
   type BagRef,
   type BodyCarry,
 } from "@shared/world-engine/kernel/town/scope-shape.js";
+import { totalStackUnits } from "@shared/world-engine/kernel/town/goods-kinds.js";
 import { PORTABLE_CONTAINERS } from "@shared/world-engine/kernel/town/containers.js";
 
 const bag = (objId: string, glyph: "basket" | "satchel", stock: Record<string, number>): BagRef => ({
@@ -161,6 +163,63 @@ describe("townHandPool — the town's hands, counted off the roster's own rows",
       total: 0,
       free: 0,
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// carryCapacityOf — worklist ⑧'s behaviour-preserving unification pin. The
+// body branch must stay BIT-IDENTICAL to the pre-unification inline formula
+// (`bag ? capacity - totalStackUnits(bag.stock) : handsFree ? 1 : 0`) across
+// representative inputs; `stackRoom` must agree with a direct call for the
+// same reason — it is now nothing but that call.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("carryCapacityOf — the shared carry-capacity law (worklist ⑧)", () => {
+  /** The OLD stackRoom formula, inlined verbatim — the pre-unification
+   *  behavior this test pins `carryCapacityOf`/`stackRoom` against. */
+  const oldStackRoomFormula = (carry: BodyCarry): number => {
+    const bag = activeBag(carry);
+    if (bag) return Math.max(0, bag.capacity - totalStackUnits(bag.stock));
+    return handsFree(carry) ? 1 : 0;
+  };
+
+  const representativeCarries: Array<[string, BodyCarry]> = [
+    ["empty hands, no bag", EMPTY],
+    ["one plain object in hand, no bag", { inHand: { objId: "small:a1", glyph: "apple" }, worn: null }],
+    ["a carried empty basket", {
+      inHand: { objId: "small:b1", glyph: "basket", bag: bag("small:b1", "basket", {}) },
+      worn: null,
+    }],
+    ["a carried partly-full basket", {
+      inHand: { objId: "small:b1", glyph: "basket", bag: bag("small:b1", "basket", { apple: 3 }) },
+      worn: null,
+    }],
+    ["a carried over-full basket (never negative)", {
+      inHand: { objId: "small:b1", glyph: "basket", bag: bag("small:b1", "basket", { rock: 99 }) },
+      worn: null,
+    }],
+    ["a worn empty satchel, hands free", { inHand: null, worn: bag("small:s1", "satchel", {}) }],
+    ["a worn satchel with stock", { inHand: null, worn: bag("small:s1", "satchel", { bread: 2 }) }],
+    ["carried basket wins over worn satchel", {
+      inHand: { objId: "small:b1", glyph: "basket", bag: bag("small:b1", "basket", { apple: 1 }) },
+      worn: bag("small:s1", "satchel", {}),
+    }],
+  ];
+
+  it.each(representativeCarries)(
+    "body: %s — carryCapacityOf and stackRoom are bit-identical to the old inline formula",
+    (_label, carry) => {
+      const expected = oldStackRoomFormula(carry);
+      expect(carryCapacityOf({ kind: "body", carry })).toBe(expected);
+      expect(stackRoom(carry)).toBe(expected);
+    },
+  );
+
+  it("collective: Σ over members of a per-body default bulk allowance", () => {
+    expect(carryCapacityOf({ kind: "collective", size: 10, perMemberBulk: 20 })).toBe(200);
+    expect(carryCapacityOf({ kind: "collective", size: 0, perMemberBulk: 20 })).toBe(0);
+    // Never negative, even for a malformed negative size.
+    expect(carryCapacityOf({ kind: "collective", size: -5, perMemberBulk: 20 })).toBe(0);
   });
 });
 

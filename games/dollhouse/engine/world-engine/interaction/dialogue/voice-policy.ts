@@ -46,9 +46,30 @@ export interface VoicePolicy {
    * only decides whether the body also says that the TOGETHER part did not.
    */
   inertCompany: boolean;
+
+  /**
+   * An ATTACHED AVATAR speaking on its own initiative — the body a session in
+   * attached-avatar mode CREATES for a player (quest-host `avatarMode:
+   * "creature"`), which permanently follows that player's spark.
+   *
+   * That body is a PLAYER'S BODY, not a character. No mind is ever minted for
+   * it, so any line it produced would be the world putting words in the
+   * player's mouth. False = it never self-speaks.
+   *
+   * WHY THIS IS A POLICY SEAT AND NOT AN `if` SOMEWHERE. The avatar is also
+   * unreachable by the talk targeter (it has no `nodeByCreature` entry, so
+   * nothing can pick it as an addressee), and it would be tempting to call
+   * that "already silent" and move on. That is an ad-hoc mute wearing a hat:
+   * it holds only for as long as every speech surface happens to route
+   * through the targeter, and it fails silently — and in the wrong direction
+   * — the first time one doesn't. The gate is therefore consulted at the
+   * speech CHOKEPOINT itself, where the answer cannot depend on who asked.
+   */
+  attachedAvatarSpeaks: boolean;
 }
 
 /** The shipped policy. One place to retune when the audience shifts. */
 export const DEFAULT_VOICE_POLICY: VoicePolicy = {
   inertCompany: true,
+  attachedAvatarSpeaks: false,
 };

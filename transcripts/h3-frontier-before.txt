@@ -1,0 +1,83 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=12  locale=en  grid=8  dt=0.1000  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-14T12:40:46.343Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here east.
+  orrin (person), here east.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 60
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  orrin (person), here east.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> wait 60
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  orrin (person), here east.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=7  presses=0  screens=1  sim=128.3s
+# events: SAY 12  TICK 7  SCENE 3  BOARD 1  NOTE 1  SELF 1

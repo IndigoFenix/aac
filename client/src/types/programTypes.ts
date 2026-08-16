@@ -5,7 +5,11 @@
 // ENUMS
 // =============================================================================
 
-export type ProgramFramework = 'tala' | 'us_iep';
+// Owned by shared/program-framework.ts (which also carries the per-framework
+// capability flags). Re-exported, never re-declared — a second literal union
+// here would silently drift from the pgEnum.
+import type { ProgramFramework } from '@shared/program-framework';
+export type { ProgramFramework };
 export type ProgramStatus = 'draft' | 'active' | 'archived';
 
 export type ProfileDomainType = 

@@ -30,7 +30,7 @@ import { useContractFor } from "../../furniture-use.js";
 // same contract (the arrival SPOT, never a ring around the whole piece), so the
 // walk can never stop where the anchor can't reach.
 import { withinEngageReach } from "./furniture-anchor.js";
-import { fixtureKindForWord, fixtureWord, type FixtureKind, type ObjectSpec, type RoadPath, type WorldSpec } from "../../types.js";
+import { fixtureKindForWord, fixtureWord, type FixtureKind, type NpcSpec, type ObjectSpec, type RoadPath, type WorldSpec } from "../../types.js";
 // THE SAME QUESTION THE RENDERER ASKS. A spawner that guesses whether an
 // identity has a model can disagree with what render3d actually builds; asking
 // the model registry itself is the only way the two can't drift (phase 5:
@@ -136,6 +136,7 @@ import {
   createReservationLedger,
   freeUnits,
   freeUnitsOver,
+  gatherReservationCommitments,
   resolveMaterials,
   toolClaimed,
   TOOL_CLAIM_GLYPH,
@@ -166,6 +167,7 @@ import {
 } from "@shared/world-engine/kernel/town/zoning.js";
 import {
   createTransferLedger,
+  gatherTransferCommitments,
   goodSourceEndpointId,
   orderQuantity,
   planTransferSources,
@@ -192,20 +194,29 @@ import {
   barterLegSeconds,
   barterQuote,
   barterWillingness,
+  condenseTown,
   defaultTakeGood,
   inboundRouteHealth,
   nextBarterWillingAt,
   nextShortageBelow,
   runDueBarters,
-  stockAbstractPartner,
-  stubPartnerSignals,
+  townRecordSignals,
   type BarterLegReport,
   type BarterRefusal,
   type BarterSignals,
   type PartnerGeography,
+  type TownFoldCtx,
+  type TownRecord,
 } from "@shared/world-engine/kernel/town/barter.js";
 import { numeraireActive } from "@shared/world-engine/kernel/town/money.js";
-import { barterRefusalLine, barterTermsLine } from "@shared/world-engine/interaction/dialogue/barter-lines.js";
+import {
+  barterRefusalLine,
+  barterTermsLine,
+  // ⚖️ H2 — "they + give.not + wood": the shed's own shortfall, in the
+  // vocabulary a refusing partner already speaks. A forest that has no metal
+  // is not a different kind of no.
+  barterWontPartLine,
+} from "@shared/world-engine/interaction/dialogue/barter-lines.js";
 import type { CompiledEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
 import type { TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import { willingnessToPlace } from "@shared/world-engine/interaction/behavior/placement-will.js";
@@ -272,12 +283,31 @@ import {
 import {
   advanceWildArea,
   condenseWildArea,
+  drawWildArea,
   expandWildArea,
   wildAreaCounts,
   wildAreaPopulation,
   wildAreaStock,
+  wildShedEndpoint,
+  wildShedPartner,
   type WildAreaRecord,
+  type WildFoldCtx,
+  type WildShedPartner,
 } from "./wild-area.js";
+// ⚖️ F1 (fold-round.md) — the ONE fold's generic accounting: `foldedStock`
+// sums a registered kind's own `stockOf` over a set of folded payloads, so
+// `sessionStockAudit` below no longer hand-rolls the wild-only formula
+// itself (see the call site). ⚖️ F3 adds the DISPATCH itself to the live path:
+// a condensed partner's shelf mint is `condense` of its town (`mintCondensedShelf`).
+// ⚖️ F5 wires the BOOKS into that mint (`sessionFoldBooks`), which F4 could not:
+// the serviceability split is what makes a trading partner foldable at all.
+// ⚖️ N6c adds `withFoldConservation` — the session-handover assembly folds the
+// wild slice with the audit pinned around it (`sessionStockAudit`), so a
+// handover can never ship a payload that lost units on the way out.
+import {
+  condense, foldedStock, isFoldRefusal, withFoldConservation,
+  type FoldBooks, type FoldCommitment, type FoldRecord, type FoldRefusal,
+} from "@shared/world-engine/kernel/town/fold.js";
 import {
   refuseLedgerWarp,
   runLedgerWarp,
@@ -328,13 +358,18 @@ import {
   colorForId,
   createWorld3DView,
   defaultAvatarModelFactory,
+  standHeightAt,
   type AvatarModel,
   type AvatarModelFactory,
   type RenderHost,
   type SceneOverlay,
 } from "../../render3d.js";
-import { PathDebugOverlay3D } from "../../path-debug-3d.js";
-import { AttentionDebugOverlay3D, type AttentionDebugLink } from "../../attention-debug-3d.js";
+import { PathDebugOverlay3D, type PathDebugMark } from "../../path-debug-3d.js";
+import {
+  AttentionDebugOverlay3D,
+  type AttentionDebugLink,
+  type AttentionDebugBody,
+} from "../../attention-debug-3d.js";
 import {
   createCreatureAvatarFactory,
   getSpeciesAssets,
@@ -368,6 +403,27 @@ import { itemObjectSpec } from "@shared/world-engine/interaction/content/item-pr
 import {
   containerDefOfGlyph,
   mayDissolveToStack,
+  type ContainerRecord,
+  recordOf,
+  isContainerId,
+  registerContainer,
+  setContainerOwner,
+  setContainerStock,
+  ensureContainerStock,
+  containerEntries,
+  containerIds,
+  stockedEntries,
+  stockedIds,
+  stockedCount,
+  deleteContainerRecord,
+  isLooseProp,
+  loosePropOf,
+  setLooseProp,
+  clearLooseProp,
+  looseEntries,
+  looseIds,
+  looseCount,
+  wornBagOf,
 } from "@shared/world-engine/kernel/town/containers.js";
 // WHAT BAGS THE WORLD STARTS WITH (step ③, the seeding half). Pure data — the
 // glyph, the spot and the owner. Minting them is this host's business.
@@ -416,12 +472,28 @@ import { runWorldHost, type WideTickConfig, type WorldHost, type WorldHostNet } 
 import {
   claimMessage,
   convoMessage,
+  locMessage,
   sayMessage,
+  sparkMessage,
   type ConvoShared,
   type WorldCommand,
   type WorldNetMessage,
 } from "../../net.js";
 import { parsePlayerAction, type Gesture, type PlayerAction } from "../../player-action.js";
+import {
+  clusterMembers,
+  diffAssignments,
+  sessionThresholds,
+  type MemberLoc,
+  type SessionAssignment,
+  type SessionDecision,
+} from "./session-split.js";
+import {
+  assignControl,
+  parseSessionControl,
+  type SessionAnchor,
+  type SessionControl,
+} from "./session-control.js";
 import { resolveAddressee } from "./addressee.js";
 import type { WorldView } from "../../world-view.js";
 import type { NpcErrand, NpcErrandPoint } from "../../npc-controller.js";
@@ -442,6 +514,7 @@ import {
   type AvatarActivity,
   type AvatarActivityKind,
   type WorldState,
+  type AvatarState,
 } from "../../engine.js";
 import { idlePadOf, routeIndoorAware } from "./floor-route.js";
 // STAND-POINT PLANNING (stand-points.ts — pure, extracted so tests can pin it):
@@ -493,6 +566,7 @@ import {
   compileIntent,
   compliance,
   createTaskPool,
+  gatherTaskCommitments,
   chooseClaimant,
   VOLUNTEER_COMPLIANCE,
   goalIntentLine,
@@ -778,6 +852,15 @@ const TAP_COOLDOWN_S = 1.0;   // after a device tap-toggle, ignore re-picks this
 // TASK POOL (phase ①a §2) — untargeted orders wait here for a willing taker.
 // (TASK_FOCUS_RADIUS moved to construction-director.ts — imported above.)
 const TASK_CLAIM_INTERVAL_S = 1; // claim/expiry sweep cadence (claims are per-sweep deterministic)
+// ⚖️ H3 — THE UNWATCHED-STAND SWEEP's cadence. Both numbers are MULTIPLES of
+// readings that already exist, never fresh magic: the period is the host's own
+// deliberation window (the claim sweep) taken a few at a time, because the
+// answer changes at walking pace and nothing is gained by asking every frame;
+// and the debounce is what actually decides — one out-of-band reading is a
+// camera wobble, three in a row is a player who has left.
+const WILD_LOD_SWEEP_CLAIMS = 4;
+const WILD_LOD_SWEEP_S = TASK_CLAIM_INTERVAL_S * WILD_LOD_SWEEP_CLAIMS;
+const WILD_LOD_FOLD_SWEEPS = 3;
 // TRANSFERS (city-expansion ②) — the town builder's-yard crate id (its stack
 // map ALIASES deltas.stock, the FoundedSite-crate pattern) and the pocket
 // endpoint prefix (a creature's hands as a stock endpoint).
@@ -874,6 +957,7 @@ import {
   BFURN_EP,
   SITE_HAUL_FOCUS_R,
   BUILD_WORK_DWELL_S,
+  isDerivedStoreObject,
   type BuildContext,
 } from "./construction-director.js";
 
@@ -1043,6 +1127,16 @@ export interface Pursuit {
   tplKey?: string;
   acts?: number;
   stand?: Map<string, { x: number; y: number }>;
+  /** ⚖️ R1 MID-WALK REDIRECTION (ruling 2026-08-16) — WHO placed a
+   *  `source:"command"` pursuit (⑩ pairing law: a redirect may only steer an
+   *  order THIS author gave) and the RAW point/anchor it was last aimed at
+   *  (directCreatureTo's redirect-drift comparison — distinct from the
+   *  resolved stand-point `session.walk` actually steers to). Both undefined
+   *  for a `"need"` pursuit and for a command installed outside
+   *  `directCreatureTo` (a spoken sentence, a tribute) — those simply are not
+   *  redirect-eligible. */
+  author?: string;
+  pt?: { x: number; y: number };
 }
 
 /**
@@ -1217,10 +1311,10 @@ export interface QuestSession {
    *  stays with that body when you let go.
    *
    *  `selectedPocketGlyph` = the armed stack;
-   *  `smallProps` = world objectId → the LOOSE concrete prop on the ground
-   *  ({instance id, glyph}) — the only place a small item is a concrete instance, so it
-   *  can be carried/owned; picking it up merges it into whatever bag the body has (or
-   *  rides its hands when it has none). A fresh instance is MATERIALIZED from a glyph
+   *  a LOOSE prop is a `containerRecords` row with `mount: "loose"` — the only
+   *  place a small item is a concrete instance, so it can be carried/owned;
+   *  picking it up merges it into whatever bag the body has (or rides its
+   *  hands when it has none). A fresh instance is MATERIALIZED from a glyph
    *  only when a stack leaves storage into the world/dialogue (drop / put-visible /
    *  present). */
   /** WHOSE HANDS THE PLAYER IS USING — the claimed creature while the spark
@@ -1228,37 +1322,29 @@ export interface QuestSession {
    *  possession is the only thing that moves it. */
   handsCid: string;
   selectedPocketGlyph: string | null;
-  /** THE WORN CONTAINER per body (cid → its object id + glyph) — the satchel,
-   *  the `install` verb at body scope (§3.4: a satchel is a FIXTURE of the body
-   *  exactly as a chest is of a house). Its stock stays in `containerStock`
-   *  under that object id, so a worn bag is an ordinary container scope that
-   *  happens to hang off a creature.
+  /** ⑤ THE ONE CONTAINER STORE (`ContainerRecord`, above) — any object with
+   *  `contains` slots is an openable container; a loose prop or worn bag gets
+   *  the SAME row keyed by objId. Mutate ONLY through the accessor helpers
+   *  declared alongside `containerUnitCap` (`registerContainer`,
+   *  `registerLooseProp`, `donWornBag`/`doffWornBag`, `deleteContainerRecord`,
+   *  …) — never `.set`/`.delete` the map directly, or the wearer index below
+   *  can drift out of step with it. */
+  containerRecords: Map<string, ContainerRecord>;
+  /** THE WORN-BAG INDEX — wearer creature id → the objId of the container
+   *  they have equipped (§3.4: a satchel is a FIXTURE of the body exactly as
+   *  a chest is of a house; `install` at body scope). The inverse direction
+   *  (`record.wearer`) lives on the container's own row; `donWornBag` /
+   *  `doffWornBag` are the ONE seam that writes both directions together —
+   *  never write one without the other.
    *
    *  ⚠️ DECLARED DEBT: the world prop is REMOVED while worn — there is no
    *  on-body satchel mount yet, so the alternative would be a bag lying on the
    *  floor that the tidy chore sweeps out from under its owner. The
-   *  REGISTRATION survives (`containers`, `containerStock`, `containerOwner`),
-   *  which is what conserves the goods; `doffWornBag` re-spawns the prop under
-   *  the SAME object id so its stock is never orphaned. */
-  wornBags: Map<string, { objId: string; glyph: string }>;
-  /** `at` = townClock when the prop hit the floor — the TIDY chore only sweeps
-   *  props older than TIDY_GRACE_S (a toy mid-game isn't snatched). */
-  smallProps: Map<string, { entityId: string; glyph: string; at?: number }>;
-  /** CONTAINERS — ONE abstraction (feedback_items_stack_one_container): any object with
-   *  `contains` slots is an openable container. `containers` maps its objectId → the
-   *  placement relation ("in" = hidden inside; "on" = renders VISIBLY, e.g. a table).
-   *  `containerStock` is each container's contents as a glyph→count STACK MAP (a chest's
-   *  fixed goods, or whatever's been put in a cupboard/table); a MARKET store's stock is
-   *  computed live from the economy instead (see `marketStore`). A building's inventory
-   *  is just the AGGREGATE of its containers' stacks — no separate structure.
-   *  `containerOwner` holds each container's OWNER SCOPE (ownership.ts —
-   *  `house:<hi>` communal furniture, `creature:<cid>` a member's private box,
-   *  `town` the well; legacy vendor stores keep their vendor node id). The
-   *  walkers only LIST containers they may use; the social stop-gate refuses
-   *  takes of private property while an owner is nearby to object. */
-  containers: Map<string, "in" | "on">;
-  containerStock: Map<string, Record<string, number>>;
-  containerOwner: Map<string, string | null>;
+   *  REGISTRATION survives (the row stays in `containerRecords`, `mount`
+   *  flips to `"worn"`), which is what conserves the goods; `doffWornBag`
+   *  re-spawns the prop under the SAME object id so its stock is never
+   *  orphaned. */
+  wornBagIndex: Map<string, string>;
   /** Containers PINNED open by an explicit "open the chest" command — they stay
    *  open with nobody near (the auto-close sweep skips them), until "shut". An
    *  access-opened lid (a creature reaching in) is NOT pinned: it shuts when the
@@ -2014,6 +2100,17 @@ export interface QuestHostDeps {
      *  Absent ⇒ a follower's world-mutating acts are dropped rather than
      *  applied to a world it does not own. */
     sendCommand?: (cmd: WorldCommand) => void;
+    /** SESSION-CONTROL outbound (the reliable pipe again, beside
+     *  `sendCommand`): how the elected coordinator announces WHO IS IN WHICH
+     *  SESSION to everyone sharing this world (session-control.ts envelopes).
+     *  Only the OWNER ever sends; every member — the sender included — reacts
+     *  through `QuestHost3D.applySessionControl`.
+     *
+     *  ABSENT ⇒ THE COORDINATOR NEVER RUNS: no clustering pass, no packets, no
+     *  state. That is the single switch that keeps a single-player session and
+     *  any embedder that never wired this pipe byte-identical to the day
+     *  before this seam existed. */
+    sendControl?: (sc: SessionControl) => void;
   };
 }
 
@@ -2217,6 +2314,160 @@ interface ConvoView {
   acts: DialogueAct[];
 }
 
+/* ───────────────────────── SESSION HANDOVER (N6c) ─────────────────────────
+ *
+ * ⚖️ SPLIT ≠ CONDENSE — the law this payload is shaped by, verbatim from the
+ * round ledger (nature-hike-round.md, main's pin of 2026-08-13):
+ *
+ *   "A session SPLIT transfers LIVE ownership of a cluster — bodies mid-errand
+ *    keep simulating on whichever peer owns their cluster; the coordinator must
+ *    NEVER route a split through the fold REFUSAL path (F-④ governs condensing
+ *    to a RECORD, not transferring live ownership). In the plan's handover this
+ *    is a COMPOSITE: the wild-area SLICE is condensed (fold records — F-④ +
+ *    serviced semantics apply in full), while member avatars + their live state
+ *    are ownership TRANSFERS (never refusal-blocked)."
+ *
+ * So the payload has TWO HALVES THAT OBEY DIFFERENT LAWS, and the split between
+ * them is the whole design:
+ *
+ *   • `wild` — THE ONLY HALF THAT CONDENSES. Every wild area folds to a record
+ *     through the host's own `foldWildArea`, and the F-④ fates (ride / stay
+ *     serviced / block) are ASKED OF `kernel/town/fold.ts` and copied verbatim
+ *     — never re-derived here. A refusal does NOT block the split: it lands in
+ *     `refusals`, that area STAYS LIVE WITH THE DONOR, and every other area
+ *     still travels. Loss-tolerant v1, exactly as the plan's failure clause
+ *     already accepts for a departed authority.
+ *
+ *   • `members` — AN OWNERSHIP TRANSFER, and therefore UNREFUSABLE. The members
+ *     WALK: their avatars respawn on the new authority at the planet locs
+ *     recorded here, carrying the stacks recorded here. Nothing about a live
+ *     body may refuse a split, so nothing in this half has a refusal shape.
+ *
+ * THE CONTRACT IS THIS FILE'S. `assembleSessionHandover` returns it as
+ * `unknown` (it crosses a wire as plain JSON and comes back untrusted);
+ * `applySessionHandover` is the ONE validator, and these types are what it
+ * validates against. Everything here is plain, structured-clonable data: no
+ * Maps, no class instances, no undefined-vs-null games — an omitted optional is
+ * simply absent.
+ */
+
+/** The payload version `applySessionHandover` accepts. A peer running an older
+ *  or newer engine hands over a payload this one does not know how to read;
+ *  version-checking it is how that peer's state is DECLINED WHOLE rather than
+ *  half-applied (skew law: a foreign shape is never guessed at). */
+export const SESSION_HANDOVER_V = 1;
+
+/** One wild area, condensed. `rec` is the travelling form (the same record
+ *  `session.wildAreas` holds and `unfoldWildArea` re-lays).
+ *
+ *  `commitments` / `serviced` are the F-④ DISCLOSURE from the `condense` that
+ *  gated this fold, carried verbatim so the receiver can read what was in
+ *  flight. v1 NEVER re-posts them: the receiving session's books are its own,
+ *  and inventing rows in them is exactly the parallel rule the ledger forbids
+ *  ("N6c handover records INHERIT that semantics — never invent a parallel
+ *  rule"). Absent when empty, so a payload with nothing in flight is the
+ *  smallest possible shape. */
+export interface SessionHandoverWild {
+  key: string;
+  rec: WildAreaRecord;
+  commitments?: FoldCommitment[];
+  serviced?: FoldCommitment[];
+}
+
+/** One departing member. `loc` is PLANET-FRAME (the same `{d, e}` presence
+ *  `setPlanetLoc` feeds and the `loc` beacon carries) because that is the only
+ *  frame two sessions share — the receiver owns the mapping back onto its own
+ *  chart, exactly as it owns the mapping that produced it. `stacks` is the
+ *  `pocketSnapshot` shape: goods plus each container as one unit of its own
+ *  glyph. Both optional: a member whose presence never arrived, or who carries
+ *  nothing, is still a member. */
+export interface SessionHandoverMember {
+  id: string;
+  loc?: { d: [number, number, number]; e: number };
+  stacks?: Record<string, number>;
+}
+
+/** A named refusal in the WILD half — the split's report of what did NOT
+ *  travel, never a reason the split did not happen.
+ *
+ *  `where: "wild"` is `kernel/town/fold.ts`'s own refusal, quoted (`note`,
+ *  `blockers`, `blocked` are `FoldRefusal`'s fields under their own names).
+ *  `where: "conservation"` is the audit pin firing: the fold ran but the
+ *  session's stock moved, which is a BUG and is reported loudly rather than
+ *  shipped quietly. */
+export interface SessionHandoverRefusal {
+  where: "wild" | "conservation";
+  key: string;
+  id: string;
+  note: string;
+  blockers: string[];
+  blocked?: number;
+}
+
+/** THE ENVELOPE'S CARGO — what `assembleSessionHandover` returns and
+ *  `applySessionHandover` accepts, carried opaque by `handoverControl`'s
+ *  `payload` field (session-control.ts already passes it through untouched).
+ *
+ *  `from` is the DONATING authority's peer id and `at` its session clock at
+ *  assembly — both diagnostics, neither load-bearing: the receiver applies what
+ *  it is given and does not re-time it. */
+export interface SessionHandoverPayload {
+  v: number;
+  from: string;
+  at: number;
+  wild: SessionHandoverWild[];
+  members: SessionHandoverMember[];
+  refusals?: SessionHandoverRefusal[];
+}
+
+/**
+ * WHY A BODY IS NOT TAKING DIRECTION — the `idleForDirect` verdict, named.
+ * `null` = idle (it would accept a direct this frame). The order mirrors that
+ * predicate's own clause order, so the FIRST thing that says no is the answer.
+ */
+export type DirectBlockReason = "pursuit" | "walk" | "needStep" | "tasks" | "party";
+
+/**
+ * ONE FRAME OF THE SOFT-CONTROL LAYER, for the debug overlays and the lab's
+ * readout. Read-only and allocated per call — it is only ever asked for while
+ * path debug is on, so a fresh object per frame is the right trade against
+ * keeping a mutable snapshot alive and stale.
+ *
+ * ⚖️ ONE SOURCE OF TRUTH: the engine overlays (path-debug-3d, attention-debug-3d)
+ * are fed from THIS, never from a second walk of the same session state — so what
+ * the lab prints and what the lines draw can never disagree.
+ */
+export interface QuestDebugSnapshot {
+  /** The formless spark's ground point (attached-avatar + spirit sessions). */
+  spiritPos: { x: number; y: number } | null;
+  /** What the gaze rests on — `world.getGaze().hover`. `id` is null on ground. */
+  hover: { kind: string; id: string | null } | null;
+  /** The OPEN BOARD's pinned camera target, when a stocked board holds one.
+   *  This is the thing a stuck `faceTarget` would be staring at. */
+  conversationObj: { objId: string; x: number; y: number } | null;
+  /** The direct gesture's no-jitter floor and its scope-derived ceiling. */
+  directMinM: number;
+  directMaxM: number;
+  /** The local author's engagement row, with the hold's remaining seconds
+   *  (`sparkEngageHold − townClock`, clamped at 0). */
+  engage: { author: string; cid: string; strength: number; holdRemainS: number } | null;
+  /** The creature an oscillation gesture is counting flips against, if any. */
+  osc: { cid: string } | null;
+  /** DIRECTABLE bodies only — attached avatars, pets, and residents standing in
+   *  the world. Everything else can never take a direct, so it would be noise. */
+  creatures: Array<{
+    cid: string;
+    x: number;
+    y: number;
+    /** The live pursuit and WHERE it is steering. See `debugSnapshot` for how
+     *  the goal place is resolved to a point (walk leg, else the body itself). */
+    pursuit: { kind: string; tx: number; ty: number; source: "command" | "need"; glyph?: string } | null;
+    /** The routed walk leg's target, when one is committed. */
+    walkTarget: { tx: number; ty: number } | null;
+    blockedBy: DirectBlockReason | null;
+  }>;
+}
+
 export interface QuestHost3D {
   /** (Re)build the whole session and world for a game. `wilderness` lays the
    *  deterministic resource/creature scatter (wilderness.ts) over the ground —
@@ -2230,6 +2481,12 @@ export interface QuestHost3D {
       /** The world's cultural law (`game.culture` — nations P2): its
        *  absolutes found the session's unrepealable law ring. */
       culture?: WorldCultureSpec | null;
+      /** ATTACHED-AVATAR MODE: the species the bodies this session CREATES for
+       *  its players are built from (the spec's `avatar_species`, which the
+       *  GoalTreeGame does not carry — a boot that reads the manifest lowers it
+       *  here, exactly as it lowers `avatarKind` into `spirit`). Omitted =
+       *  resolve the settler chain (the town's own species, else "human_cute"). */
+      avatarSpecies?: string;
     },
   ): void;
   /** Rebuild the CURRENT session from scratch (deterministic). */
@@ -2338,6 +2595,13 @@ export interface QuestHost3D {
    *  flag. Off by default; costs a per-NPC capture in the host loop while on. */
   setPathDebug(on: boolean): void;
   pathDebugOn(): boolean;
+  /** DEBUG READOUT: one frame of the soft-control layer (spark, hover, the open
+   *  board's pinned camera target, engagement, and every directable body with
+   *  its pursuit / walk leg / direct-block reason). Null before a session
+   *  starts. READ-ONLY — it never advances or reaps anything, which is why it
+   *  re-derives the direct-block verdict instead of calling `idleForDirect`
+   *  (that one reaps stale pursuits as a side effect). */
+  debugSnapshot(): QuestDebugSnapshot | null;
   /** SPIRIT LADDER: the dollhouse rig pose for `frame` at azimuth `spiritAz`
    *  (WORLD coords; pose only — never writes the camera). */
   dollhousePose(
@@ -2364,6 +2628,136 @@ export interface QuestHost3D {
    *  fed each frame by a ladder boot so distance rules (leaving an empty site)
    *  see the SPIRIT, not the parked walker body. */
   setSpiritPosition(x: number, y: number): void;
+  /** MULTIPLAYER ROSTER: who is in this shared session right now (the
+   *  platform's `world_session.peers`). In ATTACHED-AVATAR mode the sim OWNER
+   *  reconciles one created body per member against this list — a new member
+   *  gets an avatar, a departed one loses it. Idempotent and order-insensitive:
+   *  the same roster twice changes nothing, and the order it arrives in cannot
+   *  matter (it is compared as a SET). A FOLLOWER records the roster and spawns
+   *  nothing — the owner hosts every body and streams them all in.
+   *
+   *  Safe (and inert) before `start`, in single-player, and in a spirit
+   *  session: the roster is recorded either way, and only creature mode ever
+   *  turns it into bodies. */
+  setPeers(peers: Array<{ id: string; name?: string }>): void;
+  /**
+   * PLANET PRESENCE: where on the planet this player is right now — a
+   * body-local UNIT direction `d` and elevation `e` in metres, in the
+   * embedder's planet frame, plus (optionally) the planet's radius in metres.
+   *
+   * THE ENGINE NEVER DERIVES THIS. Games own planet geometry — the frame, the
+   * datum, the radius, the mapping from a local chunk's sim coordinates back
+   * onto the sphere — so the presence arrives from the embedder that owns that
+   * mapping rather than being guessed at from a session's flat manifold.
+   *
+   * WHY THE RADIUS RIDES HERE (and is not a `start` opt): it is the SCALE OF
+   * THE VERY DATUM in the same call — the two are one fact, and a world that
+   * rebases or rescales its planet updates both together instead of leaving a
+   * start-time constant to go quietly stale. Latest-wins; an omitted or
+   * non-positive `radiusM` leaves the last known radius standing.
+   *
+   * Fed every frame (or as often as the embedder likes) — cheap, no allocation
+   * beyond one small record. Two consumers, both inert until fed:
+   *   • the ~1 Hz `loc` beacon on the loose mesh (multiplayer only), and
+   *   • the session coordinator below (owner only).
+   * Never fed ⇒ no beacon, no clustering, nothing. Safe before `start`, and
+   * deliberately NOT cleared by a world reboot: a split reboots worlds, and
+   * the presence book must outlive the world it described.
+   */
+  setPlanetLoc(d: [number, number, number], e: number, radiusM?: number): void;
+  /**
+   * SESSION CONTROL inbound: apply one session-control envelope from the
+   * coordinator (session-control.ts; null-tolerant — a foreign or half-read
+   * payload is dropped, never guessed at).
+   *
+   * ⚖️ THE ENGINE DOES NOT BOOT OR TEAR WORLDS. This stores the latest word on
+   * who is in which session and who hosts it; the EMBEDDER reads it back
+   * (`sessionAssignment`) and reacts — booting, tearing down or rebasing its
+   * own hosts — because world construction is the game's, not the engine's.
+   *
+   * v1 semantics, per variant:
+   *   • `assign` — replaces the stored assignment WHOLE, epoch-monotonic: an
+   *     envelope whose epoch is BELOW the stored one is a stale re-delivery
+   *     and is dropped (an equal epoch is the same roster restated, and
+   *     lands harmlessly).
+   *   • `anchor` / `handover` — STORE-ONLY: the latest of each is kept per
+   *     session id (`sessionAnchorOf` / `sessionHandoverOf`) for the embedder
+   *     to read. Nothing here rebases a camera or moves a body; the handover
+   *     PAYLOAD stays opaque (a later stage teaches it its shape).
+   */
+  applySessionControl(sc: unknown): void;
+  /** The session assignment currently in force (the latest applied `assign`),
+   *  or null before any coordinator has spoken. THE embedder's read: which
+   *  session each player belongs to, and which peer hosts it. */
+  sessionAssignment(): SessionAssignment | null;
+  /** COORDINATOR-SIDE readback (owner only; null on a follower, in
+   *  single-player, and whenever the coordinator is inert): the last
+   *  assignment this peer COMPUTED and the decisions that changing it implied
+   *  (boot / tear / authority-change / handover / anchor, from
+   *  `diffAssignments`). Read-only — a debugging and embedder-reaction
+   *  surface, never an instruction the engine acts on itself. */
+  sessionCoordination(): { assignment: SessionAssignment; decisions: SessionDecision[] } | null;
+  /** The latest `anchor` envelope's location for a session id, or null.
+   *  Store-only v1 (see `applySessionControl`). */
+  sessionAnchorOf(sessionId: string): SessionAnchor | null;
+  /** The latest `handover` envelope for a session id, or null — `payload` is
+   *  carried opaque. STORE-ONLY, and that stays true now that the payload has
+   *  a shape: `applySessionControl` files the envelope and stops there, and the
+   *  GAME decides when (and whether) to feed it to `applySessionHandover`.
+   *  The engine cannot decide it — applying is only correct on a session that
+   *  has already been rebuilt for the new assignment, and world construction is
+   *  the embedder's. */
+  sessionHandoverOf(sessionId: string): { from: string; to: string; payload: unknown } | null;
+  /**
+   * ⚖️ SPLIT ≠ CONDENSE — THE DONATING AUTHORITY'S HALF. Assemble everything
+   * this session must hand to the authority taking `memberIds` over, and
+   * condense the wild slice into it. Returns a `SessionHandoverPayload` (typed
+   * `unknown` because it crosses a wire; `applySessionHandover` is its one
+   * reader), or null before `start` — there is nothing to hand over from a
+   * session that does not exist.
+   *
+   * 🚨 THIS CONDENSES THE DONOR'S WILD SLICE IN PLACE, and it is meant to: it
+   * is the departing authority's LAST ACT before its world comes down (split:
+   * the donor sends, then tears down; merge: the dissolving authority sends,
+   * then dies). A caller that assembles and keeps simulating will find its
+   * stands folded — not lost (`unfoldWildArea` re-lays them from the record,
+   * and the audit total never moved), but nothing re-lays them by itself.
+   *
+   * REFUSALS NEVER BLOCK THE SPLIT. A wild area whose fold is refused by F-④
+   * stays live with the DONOR and is named in `payload.refusals`; the payload
+   * is still returned and the split still proceeds. That is the loss-tolerant
+   * v1 the plan already accepts, made VISIBLE instead of silent.
+   */
+  assembleSessionHandover(memberIds: string[]): unknown;
+  /**
+   * ⚖️ SPLIT ≠ CONDENSE — THE RECEIVING AUTHORITY'S HALF. Take one payload
+   * from `assembleSessionHandover` (via the envelope's `payload`), and:
+   *   • expand every handed-over wild record into this live session
+   *     (`unfoldWildArea`), REPLACING whatever this session scattered from the
+   *     seed — same trees, evolved state;
+   *   • restore the LOCAL player's carry (`restorePocket`) when the payload
+   *     names this peer;
+   *   • file every member's planet loc + stacks for the embedder to read back
+   *     (`sessionHandoverMembers`) and spawn their avatars from.
+   *
+   * Returns true when the payload was accepted and applied, false when it was
+   * declined — and a DECLINED PAYLOAD CHANGES NOTHING: null, a foreign shape,
+   * a version this engine does not know, or a malformed record anywhere in it
+   * all fail validation whole, before a single record is installed.
+   *
+   * CALL IT RIGHT AFTER `start()` on the fresh session — that is the moment the
+   * new authority exists and has not yet been played.
+   */
+  applySessionHandover(payload: unknown): boolean;
+  /** The member entries from the last ACCEPTED handover (`applySessionHandover`)
+   *  — each departing member's planet-frame loc and carried stacks.
+   *
+   *  THE ENGINE CANNOT PLACE THEM ITSELF: a planet loc is the embedder's frame
+   *  (`setPlanetLoc`'s own doc — "the engine never derives this"), so mapping
+   *  one back onto this chart, and spawning the body there, is the game's. This
+   *  is the readback that lets it. Empty until a handover is accepted; the
+   *  local player's own entry is included (its stacks were already restored). */
+  sessionHandoverMembers(): SessionHandoverMember[];
   /** MULTIPLAYER inbound (lossy mesh): a batch of raw wire payloads from
    *  peers. Validated and filtered here (unknown kinds tolerated — peers run
    *  vendored snapshots of different ages; own-identity echoes dropped), then
@@ -2424,14 +2818,24 @@ export interface QuestHost3D {
   /** The whole session's stock, summed by glyph across that tree — the
    *  conservation probe. `__questLab.stockAudit()`. */
   stockAudit(): Record<string, number>;
+  /** ⚖️ EVERY LIVE CONSTRUCTION ORDER, as rows (`/orders`) — the bill in three
+   *  columns, the hauls already promised against it, and the two fields that
+   *  decide how it behaves: WHICH BOOK it sits in and whether it was SPOKEN.
+   *  A pure read; see the implementation for why `book` is the only honest
+   *  provenance a row carries. */
+  orderBook(): unknown[];
   /**
    * ⚖️ S&D S4 — THE WILD AREA, in whichever form it is in, and the LOD
    * transition between them (`wild-area.ts`).
    *
    * Verbs: `""`/`"state"` reports the stand (loaded species/size classes, or
-   * the condensed record's counts + gradient); `"fold"` condenses it;
-   * `"load"` expands it; `"cycle"` does both and prints the session's stock
-   * audit at each step, which is the conservation evidence for the fold.
+   * the condensed record's counts + gradient + what waits on its boundary
+   * shelf); `"fold"` condenses it; `"load"` expands it; `"cycle"` does both
+   * and prints the session's stock audit at each step, which is the
+   * conservation evidence for the fold. ⚖️ F5: `"draw <good>"` orders a
+   * standing draw on the FOLDED shed — priced off its own road through
+   * `partnerLegSeconds` — and runs the sweep's draw arm once, so the record
+   * loses exactly what the shelf gains and the audit lines around it say so.
    *
    * 🚨 THE ONLY MUTATING PROBE, and it is one deliberately: the LOD driver
    * that folds a stand lives in the GL boot (`syncFloraTwins`, world-lab), so
@@ -2795,6 +3199,32 @@ function makeNaturalBodyFactory(
 }
 const idSpeciesOf = (id: string) => id.split(":")[1] ?? "";
 
+/** The creature-id prefix an ATTACHED AVATAR (a body the session creates for a
+ *  player) is filed under: cid `avatar_<peerId>`, hence body id
+ *  `npc_avatar_<peerId>` through `avatarIdOf`. ONE definition, because two
+ *  places must agree on it — the spawn that mints the id and the model factory
+ *  that has to recognise it as a PERSON rather than a puzzle-giver. */
+const ATTACHED_AVATAR_CID_PREFIX = "avatar_";
+
+/** THE BODIES A SESSION CREATES AS *PEOPLE* — attached avatars (the body a
+ *  session mints for a player) and settlers (city-founding ②'s founding cast).
+ *  Both ride the generic `npc_` body prefix, which is also the puzzle-giver's,
+ *  so both must dodge the puzzle/emoji arm and reach the creature builder.
+ *
+ *  ⚖️ ONE DEFINITION, because THREE places must agree on it now: the town model
+ *  factory's dispatch, the NO-TOWN factory's dispatch (a wilderness session has
+ *  no town factory at all, and a player's own body must still be a body there),
+ *  and the spawn that mints the id. It used to be spelled inline in exactly one
+ *  of them, which is why a no-town avatar rendered as a capsule with an emoji
+ *  sprite floated over its face.
+ *
+ *  EXPORTED so the dispatch can be pinned from outside the host: the factories
+ *  it chooses between are 3D chrome no headless harness can build, but the
+ *  CHOICE is a pure string law, and this is the whole of it. */
+export function isCreatedPersonBodyId(id: string): boolean {
+  return id.startsWith("npc_settler_") || id.startsWith(`npc_${ATTACHED_AVATAR_CID_PREFIX}`);
+}
+
 /** Puzzle characters (`npc_<nodeId>`): an animal-person CREATURE model when
  *  their emoji face maps to one, else the emoji-capsule fallback. Wild
  *  PRODUCT ANIMALS (`fauna:<species>:…` — step ④) stand their registry
@@ -2924,7 +3354,18 @@ function makeTownModelFactory(
     // creature-builder bodies, never emoji capsules. Their creature-scoped
     // cid rides the generic npc_ body prefix, so they must dodge the
     // puzzle-giver arm.
-    if (id.startsWith("npc_settler_")) return people(id, isLocal);
+    //
+    // ATTACHED AVATARS (the body a session CREATES for a player) dodge it for
+    // exactly the same reason and by exactly the same means: they are PEOPLE of
+    // the town's species, and their cid rides the same generic npc_ prefix.
+    // Without this line a player's own body fell through to `puzzle`, whose
+    // non-animal fallback is the default capsule with an emoji sprite floated
+    // over it — which is what a player actually saw standing in the world.
+    // Their species/outfit reaches `people` through the SAME `overrides` map a
+    // defined family member's does; the spawn registers the row.
+    if (isCreatedPersonBodyId(id)) {
+      return people(id, isLocal);
+    }
     if (id.startsWith("npc_")) return puzzle(id, isLocal);
     // CAPSULE TIER (Phase 3): at far district range every town BODY renders as
     // the placeholder capsule — never the local walker, never trees (landscape).
@@ -2949,6 +3390,15 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
   let world = certified.ok ? certified.world : buildLogicalWorld(game);
   let layout = certified.ok ? certified.layout : projectGameLayout(game, world);
 
+  // QUESTLESS ROOT (⭐ — solver/types.ts ReachNode.via): a `reach` root with no
+  // `via` guards nothing to prove — the old star-placeholder, never real
+  // content (the schema's own "questless" signal, universal across every
+  // goal-tree builder: creature-quests.ts/town-quests.ts's questCount: 0
+  // convention). Shape A (planning-docs/games/world-engine/
+  // quest-spine-detachment.md): questless ⇒ zero physical artifacts. A world
+  // WITH real quests keeps `via` populated, so none of this ever touches it.
+  const questlessRoot = game.root.type === "reach" && !game.root.via;
+
   // HOUSE mode (docs/SPACE_EMBEDDING.md): map the certified star world onto a
   // procedurally-generated house — the circulation becomes free pass-through
   // zones, helpers land in role rooms, the prize sits behind a locked door. The
@@ -2959,7 +3409,23 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
   if (!town && game.meta.layout === "house") {
     const seed = game.meta.seed ?? 0;
     const space = generateHouse(world.zones.length - 1, seed);
-    house = embedPuzzle(game, world, space, seed);
+    // A questless root claims no role room — exclude its zone (and marker
+    // figure) from what embedPuzzle sees, at the call site: the smaller seam
+    // vs. teaching embed.ts a new exclude param. The figure has to leave WITH
+    // the zone, not after — embedPuzzle's content pass places every figure by
+    // its zone's rect, and no room will ever claim this one, so leaving the
+    // figure behind would crash on a missing rect.
+    const questlessZoneId = questlessRoot
+      ? world.zones.find((z) => z.ownerNodeId === game.root.id)?.id
+      : undefined;
+    const houseWorld = questlessZoneId
+      ? {
+          ...world,
+          zones: world.zones.filter((z) => z.id !== questlessZoneId),
+          figures: world.figures.filter((f) => f.zoneId !== questlessZoneId),
+        }
+      : world;
+    house = embedPuzzle(game, houseWorld, space, seed);
     if (house) {
       world = house.world;
       layout = house.layout;
@@ -2967,6 +3433,39 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
   }
 
   const embedding = town ? townEmbedding(world, layout, town) : embedLayoutInWorld(layout);
+  // QUESTLESS ROOT — VILLAGE/PLAIN PATH: `embedLayoutInWorld` just above ran on
+  // the certified layout, which still carries the root's zone (projectGameLayout
+  // stays untouched — the LogicalWorld keeps the root zone as bookkeeping).
+  // Strip that zone and its passage's door from the EMBEDDING (not the
+  // LogicalWorld) before `planVillageBuildings` reads `embedding.layout.zones`
+  // below — houseZones then comes out empty and it returns null naturally, no
+  // village.ts change needed. Town already builds its own zone list from cast
+  // anchors (the root owns none) and the house path excluded the zone at the
+  // embedPuzzle call site above, so this only ever fires for the village/plain
+  // path. This is the rebase-jump class quest-spine-detachment.md traces: a
+  // fixed-position "star house" that the wilderness's chunk-rebase never
+  // re-streams (WorldHost.rebase skips structures/buildings by contract).
+  if (questlessRoot && !town && !house) {
+    const questlessZoneId = world.zones.find((z) => z.ownerNodeId === game.root.id)?.id;
+    const questlessPassageId = questlessZoneId
+      ? world.passages.find((p) => p.to === questlessZoneId)?.id
+      : undefined;
+    if (questlessZoneId) {
+      embedding.layout.zones = embedding.layout.zones.filter((z) => z.zoneId !== questlessZoneId);
+    }
+    if (questlessPassageId) {
+      embedding.layout.doors = embedding.layout.doors.filter((d) => d.passageId !== questlessPassageId);
+    }
+  }
+  // QUESTLESS ROOT MARKER (⭐) — every path: strip the placeholder star figure
+  // (town already drops it via townEmbedding; the house path already dropped
+  // it at the embedPuzzle call site — a no-op here for both). Kills the
+  // accidental-win bug by construction: with no figure in the embedding,
+  // detectSpace3D's proximity scan never emits touch-figure for the root, so
+  // it can never fire runtime.ts's complete() → "game-won".
+  if (questlessRoot) {
+    embedding.layout.figures = embedding.layout.figures.filter((f) => f.nodeId !== game.root.id);
+  }
   // Materialize any transport puzzles' carry object + container as real world
   // objects in the embedded spec, so the engine moves/renders them.
   const transport = buildTransportObjects(game, world, embedding.layout);
@@ -3046,12 +3545,9 @@ export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = nul
     // through `bodyCarryOf`. There is no map here to shadow it with.
     handsCid: LOCAL_PLAYER_CID,
     selectedPocketGlyph: null,
-    wornBags: new Map(),
-    smallProps: new Map(),
-    containers: new Map(),
-    containerStock: new Map(),
+    containerRecords: new Map(),
+    wornBagIndex: new Map(),
     containerPinned: new Set(),
-    containerOwner: new Map(),
     marketStore: new Map(),
     marketConsumed: new Map(),
     matSerial: 0,
@@ -3428,6 +3924,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Claim-rebroadcast clock: claims are rare one-shots and late joiners miss
    *  them, so the claim HOLDER re-announces its standing claim ~5-secondly. */
   let mpClaimT = 0;
+  /** Spark-emission clock (attached-avatar mode): this member streams WHERE ITS
+   *  PLAYER IS — its spark hover — so every peer's copy can walk that member's
+   *  avatar. ~10 Hz: fast enough that a followed body reads as chasing a live
+   *  cursor, slow enough to stay a loose mesh trickle beside `netLocalPos`. */
+  let mpSparkT = 0;
+  /** Seconds between spark packets (~10 Hz). */
+  const MP_SPARK_PERIOD = 0.1;
+  /** Planet-presence beacon clock (see the `loc` stream in
+   *  stepMultiplayerFrame): this member streams WHERE ON THE PLANET IT IS. */
+  let mpLocT = 0;
+  /** Seconds between planet-presence packets (~1 Hz). A player crossing a
+   *  wild chunk takes minutes, so session topology needs nothing faster —
+   *  and this is a beacon on a loose mesh, not a control channel. */
+  const MP_LOC_PERIOD = 1;
+  /** Session-coordinator clock (owner only) — the topology is recomputed at
+   *  the same ~1 Hz its inputs arrive at; a faster pass would only re-derive
+   *  the same answer from the same beacons. */
+  let mpCoordT = 0;
+  /** Seconds between coordinator passes (~1 Hz). */
+  const MP_COORD_PERIOD = 1;
   /** WIRE-IDENTITY translation, outbound: the session's internal avatar id
    *  stays PLAYER_ID everywhere (18k lines agree on it), and ONLY the wire
    *  swaps it for this peer's personId — the least invasive correct seam.
@@ -3440,6 +3956,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       case "say":
       case "leave":
       case "claim":
+      // A SPARK packet is this peer's own hover (net.ts `sparkMessage`), so it
+      // carries the same avatar identity as the rest and translates with them.
+      case "spark":
+      // …and so does a LOC beacon (net.ts `locMessage`): it says where THIS
+      // PLAYER is on the planet, so it must file itself under this peer's
+      // network id — the id the coordinator then clusters and names in an
+      // assignment. Untranslated, every peer would report as PLAYER_ID and
+      // the whole roster would collapse into one member.
+      case "loc":
         return m.id === PLAYER_ID ? { ...m, id: mp.localId } : m;
       case "grab":
       case "release":
@@ -3467,6 +3992,81 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const isRemotePeerId = (id: string): boolean =>
     !!mp && id !== PLAYER_ID && id !== mp.localId && !WORLD_BODY_ID_RE.test(id);
 
+  // ── SESSION SPLIT (UNIVERSAL — any shared world with multiple players) ────
+  //
+  // WHAT THIS SEAM IS. When several players share ONE world and wander apart,
+  // simulating all of them in a single host stops making sense: nobody can see
+  // anybody, and one machine carries everyone's country. So the players are
+  // CLUSTERED by proximity into sessions, each session gets an authority (the
+  // peer that hosts it), and the elected coordinator announces that roster to
+  // everyone. Nothing here knows or cares what the world is — hikers on a
+  // planet, a party crossing a continent, any shared world at all. The rules
+  // live in session-split.ts (pure), the wire in session-control.ts (pure);
+  // this is the seam that runs them from a live host.
+  //
+  // ⚖️ A SPLIT TRANSFERS LIVE OWNERSHIP — IT IS NOT A CONDENSE. When a cluster
+  // moves to a new authority, the members and their bodies keep SIMULATING on
+  // whichever peer owns them: a body mid-errand stays mid-errand. That is
+  // categorically different from condensing a slice of world down to a RECORD,
+  // which is where the fold machinery and its refusal rules govern — and a
+  // session split must never be routed through that refusal path. Condensing
+  // (and the composite handover payload that carries it) belongs to the later
+  // handover stage; this seam only decides and announces WHO OWNS WHAT.
+  //
+  // WHAT v1 DOES NOT DO. It does not boot, tear down or rebase any world — the
+  // embedder owns world construction and reacts to what it reads here. It does
+  // not transfer any state (no handover payloads are built or consumed here).
+  // And it never coordinates a world with no wilderness params, because the
+  // split/merge thresholds are derived from the wild chunk's side length: a
+  // town-only world simply never coordinates in v1. That is a v1 BOUNDARY, not
+  // a law — the day a second honest scale source exists, it plugs in here.
+  //
+  /** THIS PLAYER'S PLANET-FRAME PRESENCE, exactly as the embedder fed it
+   *  (`setPlanetLoc`) — the engine never derives it. Null = never fed, which
+   *  is every solo run and every embedder that has not wired planet presence:
+   *  no beacon leaves, and the coordinator has no own-location to cluster. */
+  let planetLoc: { d: [number, number, number]; e: number } | null = null;
+  /** The planet's radius in metres, from the same call — the scale that turns
+   *  two unit directions into a distance. Null = unknown ⇒ coordinator inert
+   *  (there is no honest default radius for someone else's planet). */
+  let planetRadiusM: number | null = null;
+  /** COORDINATOR MEMORY: the last assignment THIS peer computed. It is the
+   *  `prev` every clustering pass is judged against — the hysteresis band and
+   *  the session-id continuity both read it — so it is deliberately separate
+   *  from the assignment that is in force below (which may have arrived from
+   *  someone else's coordinator, or not yet at all). */
+  let coordPrev: SessionAssignment | null = null;
+  /** The decisions that came with the last CHANGED pass (`diffAssignments`),
+   *  kept readable for the embedder and for debugging. A pass that changed
+   *  nothing leaves the last interesting set standing rather than erasing it. */
+  let coordDecisions: SessionDecision[] = [];
+  /** THE ASSIGNMENT IN FORCE: the latest applied `assign` envelope, whoever
+   *  authored it (the coordinator self-applies its own). Epoch-monotonic —
+   *  see `applySessionAssignment`. */
+  let sessionAssign: SessionAssignment | null = null;
+  /** Latest `anchor` per session id (store-only v1), with the epoch it came
+   *  with so a stale re-delivery cannot un-move an anchor. */
+  const sessionAnchors = new Map<string, { epoch: number; loc: SessionAnchor }>();
+  /** Latest `handover` per session id (store-only v1) — `payload` opaque. */
+  const sessionHandovers = new Map<string, { from: string; to: string; payload: unknown }>();
+  /** The member entries from the last ACCEPTED handover — where each departing
+   *  member was, in the PLANET frame, and what it was carrying. Read back by
+   *  the embedder (`sessionHandoverMembers`), which owns the mapping from a
+   *  planet loc onto its own chart and therefore owns the respawn. Empty until
+   *  `applySessionHandover` accepts something, and deliberately NOT cleared by
+   *  a world reboot — like the presence book, it must outlive the world it
+   *  describes (the reboot is what it is FOR). */
+  let handoverMembers: SessionHandoverMember[] = [];
+
+  /** Adopt an assignment as the one in force, unless it is STALE. Epochs only
+   *  ever climb (session-split.ts holds the number still while the topology is
+   *  unchanged), so a lower epoch is a late or replayed packet and is dropped;
+   *  an equal epoch is the same roster restated and lands harmlessly. */
+  function applySessionAssignment(next: SessionAssignment): void {
+    if (sessionAssign && next.epoch < sessionAssign.epoch) return;
+    sessionAssign = next;
+  }
+
   let sess: QuestSession | null = null;
   let world: WorldHost | null = null;
   /** Retained for host-embed control (camera handoff + hiding the local walker
@@ -3486,6 +4086,73 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** What the SPIRIT camera frames: the dollhouse's house rect (world coords),
    *  or null = the renderer's own default (building bounds / manifold). */
   let spiritFrame: { x: number; y: number; w: number; h: number } | null = null;
+  /**
+   * ATTACHED-AVATAR MODE (nature-hike Phase 1; USER RULING 2026-08-13).
+   *
+   * "spark"    — the session as it always was: a SPIRIT spec plays formless,
+   *              a WALKER spec plays as a pointer-steered body.
+   * "creature" — the player is the formless spark exactly as a spirit is, and
+   *              the body it plays through is an ORDINARY CREATURE the session
+   *              CREATES beside it, which permanently follows that spark. The
+   *              user's framing: "functionally identical to starting as a
+   *              spirit, except that it creates an avatar instead of selecting
+   *              one" — possession selects an existing body, this mints one.
+   *
+   * THE SWITCH IS THE GAME SPEC, NEVER A CALLER'S CHOICE. `avatarKind(game)`
+   * (kernel/manifest.ts) is already resolved by every boot and reaches this
+   * host as `start({ spirit })` — and the lab's one route table sends avatar
+   * kind "none" down the SPIRIT route too (dispatch.ts: a town with no avatar
+   * is refused outright), so at this seam `!opts.spirit` is exactly the kind
+   * "walker". A walker spec therefore runs attached-avatar mode automatically;
+   * no `avatars:` opt exists to disagree with the spec.
+   *
+   * The pointer-steered walker path this supersedes is a deliberate,
+   * user-ordered behavior change for walker specs. SPIRIT specs are untouched,
+   * byte for byte.
+   */
+  let avatarMode: "spark" | "creature" = "spark";
+  /**
+   * The LOCAL presence is a FORMLESS SPARK — no pointer-steered body, a
+   * bodiless model, and the spark's hover is what the mesh broadcasts.
+   *
+   * True for a spirit session AND for attached-avatar mode, because the two
+   * share the whole local-presence half; they part company only at REACH,
+   * which is `spiritNow()`'s business and stays spirit-only (an attached
+   * avatar is a real body across a real distance, so its gates must bind).
+   */
+  const sparkLocal = () => spirit || avatarMode === "creature";
+  /**
+   * ATTACHED AVATARS by the peer they belong to (`multiplayer.localId`, or
+   * LOCAL_AVATAR_PEER on a session with no net) → the creature id of the body
+   * created for that peer. v1 holds exactly one entry, the local player's; the
+   * map is the shape because per-peer spawning is the next stage and the
+   * spawn/despawn helpers already take a peer id.
+   */
+  const attachedAvatars = new Map<string, string>();
+  /** The peer key the LOCAL player's attached avatar is filed under when there
+   *  is no net to give this device a network id. */
+  const LOCAL_AVATAR_PEER = "local";
+  /** THE ROSTER of the shared session (`setPeers`), newest wins. Empty until a
+   *  platform hands one in, which is every single-player run — so nothing here
+   *  can move a solo session. */
+  let mpPeers: Array<{ id: string; name?: string }> = [];
+  /** The species created avatars are built from when the boot names one
+   *  (`start({ avatarSpecies })`); null = resolve the settler chain. */
+  let avatarSpeciesOpt: string | null = null;
+  /**
+   * AVATAR-MODEL OVERRIDES (species/outfit), the map `makeTownModelFactory`
+   * reads at EVERY model build. Seeded from the world document
+   * (`familyOverrides`) when the view is built, and written LIVE afterwards.
+   *
+   * It has to be live and it has to be THIS instance: a created avatar spawns
+   * dead-last in `start()` — after the view, and therefore after the factory
+   * closed over its overrides — and a peer's avatar spawns later still, when
+   * the roster arrives. A snapshot taken at factory-construction time could
+   * never contain either. Because the factory calls `.get(id)` per build, a row
+   * registered BEFORE `addNpc` is in place by the time the renderer first
+   * dresses the body.
+   */
+  const modelOverrides = new Map<string, { species?: string; outfit?: number }>();
   /** Dollhouse diagnostic heartbeat accumulator (5s household state log). */
   let dollLogT = 0;
   /** AMBIENT CROWD BUDGET (view-distance-lod-tiers.md Phase 2): the max street
@@ -3545,7 +4212,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  of sitting/sleeping on them. Off the dollhouse the walker IS the focus. */
   const cameraFocus = (): { x: number; y: number } | null => {
     if (spiritFrame) return { x: spiritFrame.x + spiritFrame.w / 2, y: spiritFrame.y + spiritFrame.h / 2 };
-    return world?.state.avatars[PLAYER_ID] ?? null;
+    return playerBody() ?? null;
   };
   /** The tier a body BUILDS at — read by the model factory per id. A first
    *  query seeds from live distance (no hysteresis) so a far spawn builds
@@ -3576,12 +4243,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   //    talk/containers, distance-free carry, the formless local model) read
   //    spiritNow() so they all flip together.
   const possession: Possession = createPossession({
-    isSpirit: () => spirit && sess?.dollhouse === null,
+    // ATTACHED-AVATAR: a created avatar does not cost the player the ability to
+    // ride an existing creature — possession keeps its spirit-mode semantics
+    // (USER RULING 2026-08-13), so the eligibility test is the formless-local
+    // one, not the spirit-spec one.
+    isSpirit: () => sparkLocal() && sess?.dollhouse === null,
     creatureExists: (cid) =>
       !!sess?.creatures?.world.creatures[cid] && !isPlayerCid(cid),
     apply: (cid, prev) => applyPossession(cid, prev),
   });
-  /** Spirit-mode affordances apply NOW (spirit session and nobody possessed). */
+  /** Spirit-mode affordances apply NOW (spirit session and nobody possessed).
+   *
+   *  DELIBERATELY NOT `sparkLocal()`: this predicate is the REACH LIFT (talk at
+   *  any distance, distance-free carry, gaze-as-reach), and an attached avatar
+   *  is a real body standing a real distance away. Creature mode must read as
+   *  NOT-spirit here or every range gate in the session would silently open. */
   const spiritNow = () => spirit && possession.creatureId === null;
 
   /** Execute a possession swap (state already transitioned — see possession.ts):
@@ -3615,6 +4291,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       clearNeedStep(s, cid);
       s.party.delete(cid);
       world.setNpcErrand(body, null);
+      // This bypasses leaveParty (possession has its own suppression/errand
+      // clearing above), so it must also undo joinParty's run-speed override
+      // itself — a possessed body is steered directly by the player's own
+      // gaze/aim (drivenConfig in world-host.ts), and a leftover 2x-speed
+      // override would silently double the player's own walk pace.
+      world.setNpcMaxSpeed(body, null);
       // Drive the creature's OWN body. No teleport: the spark goes to the body,
       // not the body to the spark.
       if (!world.claimBody(body)) return;
@@ -3636,7 +4318,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         p.vx = 0;
         p.vy = 0;
       }
-      world.setStationary(spirit);
+      world.setStationary(sparkLocal());
       // Resume the creature's need loop from now (it was suspended, not lost).
       clearNeedStep(s, prev);
     }
@@ -3644,8 +4326,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // now rides (or that it let go) so peers park our light beside it. Sent on
     // claim AND release; the ~5 s rebroadcast (stepMultiplayerFrame) covers
     // late joiners. The wire mapper swaps PLAYER_ID for our personId.
+    //
+    // ATTACHED-AVATAR: letting go of a creature is NOT letting go of a body —
+    // the spark falls back to riding its OWN created avatar, so the release
+    // announces that instead of `null` and our light never floats free. The
+    // resolution is `localClaimBody`'s, one definition for all three senders
+    // (here, the heartbeat, and the avatar's own spawn). Possession outranks
+    // the avatar inside it, so claiming another creature still works on top.
+    //
+    // CAMERA GLUE (QH-FIX, owed by the render3d camera fix): only needed in
+    // attached-avatar mode, and only HERE. render3d's grounded rig already
+    // follows `followBodyId ?? state.drivenId ?? localId` — outside this mode
+    // `followBodyId` is never set, so a plain possession claim/release rides
+    // `state.drivenId` (which `world.claimBody` above already moves) and the
+    // camera follows for free, exactly as the render3d fix's landing note
+    // says. But an attached avatar PINS `followBodyId` to the avatar's own
+    // body the moment it spawns (see `followCamera` at spawn), and that
+    // override outranks `drivenId` — so without this line, possessing another
+    // creature would move `drivenId` while the rig stayed locked on the
+    // avatar. Re-pointing `followBodyId` at `localClaimBody()` — the SAME
+    // resolution the claim message above already sends — fixes the claim
+    // direction (it resolves to the newly possessed body, since
+    // `possession.creatureId` is set before `apply` runs) and the release
+    // direction in the same line (it resolves back to the avatar's own body,
+    // since `possession.creatureId` is already cleared) — no separate
+    // release-path code needed.
+    if (avatarMode === "creature") followCamera(localClaimBody());
     if (mpNet) {
-      mpNet.send([claimMessage(PLAYER_ID, cid ? avatarIdOf(cid) : null)]);
+      mpNet.send([claimMessage(PLAYER_ID, localClaimBody())]);
       mpClaimT = 0;
     }
     deps.onPossession?.(cid);
@@ -3894,8 +4602,111 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  /**
+   * THE SESSION COORDINATOR, one pass (~1 Hz, OWNER ROLE ONLY).
+   *
+   * Clusters every member whose planet presence is known — this peer's own
+   * (`setPlanetLoc`) plus each peer's latest `loc` beacon (`state.peerLocs`,
+   * written by the net layer) — into sessions, and announces the roster when
+   * it CHANGES. The rules are session-split.ts's entirely; this function is
+   * plumbing: gather locations, pick the scale, call, announce.
+   *
+   * FIVE GATES, EVERY ONE OF WHICH MAKES IT INERT (this is how solo and every
+   * un-wired embedder stay byte-identical):
+   *   1. no `deps.multiplayer`      — single-player; the caller already returned.
+   *   2. role !== "owner"           — a follower coordinates nothing.
+   *   3. no `multiplayer.sendControl` — nobody wired the announcement pipe, so
+   *      there is nothing to announce into and the pass never runs at all.
+   *   4. no planet presence / radius — the embedder never fed one; the engine
+   *      refuses to invent planet geometry it does not own.
+   *   5. no wilderness side         — no honest split/merge scale for this
+   *      world (the v1 boundary noted in the block comment above).
+   * …and finally, fewer than two located members is not a topology worth
+   * computing: one player is not a session split.
+   *
+   * WHY THE OWNER IS THE `platformOwner`: the elected coordinator is the peer
+   * the platform already made host, and it should keep hosting the cluster it
+   * stands in (session-split.ts's election prefers it wherever it is a
+   * member). Clusters it is NOT in fall through to the smallest-id rule, so a
+   * distant party elects its own authority rather than being hosted from
+   * across the world.
+   *
+   * ⚖️ ANNOUNCEMENT IS EPOCH-GATED, NOT DIFF-GATED. `clusterMembers` holds the
+   * epoch still while the topology is unchanged and bumps it when it is not,
+   * so "the epoch moved" IS "the assignment changed" — and anchors, which
+   * drift continuously as members walk, cannot by themselves flood the
+   * reliable pipe with rosters nobody needs. Announcing anchor drift is the
+   * per-session authority's business (`anchorControl`), not the coordinator's.
+   */
+  function stepSessionCoordinator(state: WorldState, dt: number) {
+    const send = mp?.sendControl;
+    if (!mp || mp.role !== "owner" || !send) return;
+    mpCoordT += dt;
+    if (mpCoordT < MP_COORD_PERIOD) return;
+    // Reset, never subtract: a hitch must cost a skipped pass, not a burst of
+    // catch-up passes over a topology that only moved once (same law as the
+    // spark stream; the claim heartbeat's keep-alive cadence is the exception).
+    mpCoordT = 0;
+    // 🔶 N6b-g's ENGINE FINDING, fixed here — A REBOOTED COORDINATOR MUST NOT
+    // RESTART ITS EPOCHS AT 0. `coordPrev` is this peer's own memory and dies
+    // with the host; a split REBUILDS the host (the game replays the roster
+    // into the fresh one), so a platform owner that reboots would otherwise
+    // begin counting from epoch 0 again — and every peer's
+    // `applySessionAssignment` would drop its announcements as stale until it
+    // had climbed all the way back, leaving the coordinator UNHEARD for as many
+    // passes as it had ever made.
+    //
+    // So the coordinator ADOPTS THE ASSIGNMENT IN FORCE as its memory whenever
+    // it has none or is behind it. That re-seeds two things at once, which is
+    // the point: the epoch FLOOR (`clusterMembers` counts up from `prev`), and
+    // the hysteresis/session-id memory itself — which is right, because the
+    // assignment in force IS the topology this coordinator is continuing.
+    //
+    // Here rather than in `applySessionAssignment` deliberately: `coordPrev` is
+    // the COORDINATOR's book, and a follower must keep answering null from
+    // `sessionCoordination()` exactly as its doc promises. This point is past
+    // the owner + `sendControl` guard, so only a live coordinator ever adopts.
+    if (sessionAssign && (!coordPrev || coordPrev.epoch < sessionAssign.epoch)) coordPrev = sessionAssign;
+    const own = planetLoc;
+    const radiusM = planetRadiusM;
+    if (!own || radiusM === null || !(radiusM > 0)) return;
+    // THE SCALE OF A SESSION is the wild chunk's side — resolved off the live
+    // session (`buildWilderness` has already applied its own default), so the
+    // thresholds agree with the ground the players are actually walking on.
+    const side = sess?.wilderness?.side;
+    if (side === undefined || !(side > 0)) return;
+    // Our own presence goes in under our NETWORK id, because that is the id
+    // peers' beacons arrive under and the id an assignment must name.
+    const locs: MemberLoc[] = [{ id: mp.localId, d: own.d, e: own.e }];
+    const peers = state.peerLocs;
+    if (peers) {
+      for (const id of Object.keys(peers)) {
+        if (id === mp.localId) continue; // our own beacon, echoed back
+        const at = peers[id];
+        if (at) locs.push({ id, d: [at.d[0], at.d[1], at.d[2]], e: at.e });
+      }
+    }
+    if (locs.length < 2) return;
+    const { splitM, mergeM } = sessionThresholds(side);
+    const next = clusterMembers(locs, coordPrev, { radiusM, splitM, mergeM, platformOwner: mp.localId });
+    const decisions = diffAssignments(coordPrev, next);
+    const changed = coordPrev === null || next.epoch !== coordPrev.epoch;
+    coordPrev = next; // the hysteresis memory advances every pass, announced or not
+    if (!changed) return;
+    coordDecisions = decisions;
+    send(assignControl(next.epoch, next.sessions));
+    // AND WE OBEY OUR OWN ROSTER, without waiting for a loopback: every member
+    // applies the assignment, the coordinator included.
+    applySessionAssignment(next);
+  }
+
   /** MULTIPLAYER per-frame housekeeping, both roles — runs in onFrame (after
    *  the engine tick + remote smoothing, before render/send):
+   *    • this member streams its SPARK ~10-secondly-times (attached-avatar
+   *      mode only — it is what walks this player's body on every copy),
+   *    • it beacons its PLANET PRESENCE ~1-secondly (every mode — where a
+   *      player IS does not depend on what body they play through) and, as
+   *      OWNER, runs the session coordinator over everyone's,
    *    • the claim holder re-announces its standing claim ~5-secondly, and
    *    • every remote spark with a recorded claim (state.peerClaims, written
    *      by the net layer) is PARKED beside the body it rides — a small fixed
@@ -3905,6 +4716,37 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stepMultiplayerFrame(state: WorldState, dt: number) {
     if (!mp || !mpNet) return;
     stepFollowerConvoSync(state);
+    // ── SPARK STREAM (attached-avatar mode): WHERE THIS PLAYER IS. Every
+    // member emits, both roles — a follower's spark is the only thing that can
+    // tell the owner where to walk that follower's body. `mpWireOut` swaps
+    // PLAYER_ID for this peer's network id on the way out, so each peer's
+    // packets file themselves under their own id in `state.peerSparks`.
+    if (avatarMode === "creature") {
+      mpSparkT += dt;
+      if (mpSparkT >= MP_SPARK_PERIOD) {
+        // LATEST WINS, NEVER QUEUE: reset rather than subtract the period. A
+        // hitch must cost dropped packets, not a burst of stale positions —
+        // the only interesting spark is the one where the player IS now (the
+        // claim heartbeat below subtracts instead, because THAT one is a
+        // keep-alive whose cadence is the point).
+        mpSparkT = 0;
+        const at = sess?.spiritPos;
+        if (at) mpNet.send([sparkMessage(PLAYER_ID, at.x, at.y)]);
+      }
+    }
+    // ── PLANET-PRESENCE BEACON: WHERE ON THE PLANET THIS PLAYER IS. Sent by
+    // every member in every mode — presence is not a property of the body you
+    // play through — and consumed by whichever peer is coordinating sessions.
+    // Latest-wins on the same reset-not-subtract law as the spark above: the
+    // only interesting beacon is the one where the player IS now. Nothing to
+    // beacon until the embedder feeds a presence (`setPlanetLoc`), so a world
+    // that never does is silent here.
+    mpLocT += dt;
+    if (mpLocT >= MP_LOC_PERIOD) {
+      mpLocT = 0;
+      if (planetLoc) mpNet.send([locMessage(PLAYER_ID, planetLoc.d, planetLoc.e)]);
+    }
+    stepSessionCoordinator(state, dt);
     mpClaimT += dt;
     if (mpClaimT >= 5) {
       // subtract the period rather than resetting to 0 — carries overshoot so
@@ -3912,9 +4754,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // period, so a leftover still ≥ the period (a huge dt) is clamped down.
       mpClaimT -= 5;
       if (mpClaimT >= 5) mpClaimT %= 5;
-      if (possession.creatureId) {
-        mpNet.send([claimMessage(PLAYER_ID, avatarIdOf(possession.creatureId))]);
-      }
+      // The body our light rides: the possessed creature, else (creature mode)
+      // our own created avatar — ONE resolution, shared with the possession
+      // announcement. Nothing to re-announce when we ride nothing.
+      const ride = localClaimBody();
+      if (ride) mpNet.send([claimMessage(PLAYER_ID, ride)]);
     }
     const claims = state.peerClaims;
     if (!claims) return;
@@ -4035,7 +4879,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // the glyph stacks on show, contents first, the thing itself last. A press takes one;
   // walking/looking away closes it, like a convo. Furniture with NO stock (a chair, an
   // empty chest) still opens one: the board names what the player is looking at.
-  let container: { objId: string; items: string[] } | null = null;
+  let container: {
+    objId: string;
+    items: string[];
+    /** THE BODY WHOSE REACH OPENED THIS BOARD — the avatar id of the embodied
+     *  player at the moment of the open, or ABSENT when the SPIRIT opened it.
+     *
+     *  This is the whole of the walk-away release (`stepContainerBoardReach`).
+     *  A spirit reaches by looking, from any distance, so "the taker left" is
+     *  not a fact that exists for it and the field stays undefined — which is
+     *  what keeps every dollhouse pin byte-identical. An embodied open had to
+     *  pass a REACH test (the `menu` arm's `hypot(meAv, target) <= CONVO_RADIUS`),
+     *  so for that one the same test run backwards is exactly "has it left?". */
+    accessBodyId?: string;
+  } | null = null;
   /** Is the open board a STOCKED one? Only then is it MODAL — holding the camera,
    *  walking an embodied body over, and pausing the attention spark, because the
    *  player is reaching into it. A bare NAMING board just labels what the gaze rests
@@ -4462,7 +5319,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  (§8 D2 rung 2 — the check rung 1's container answer must also pass.) */
   function stackHoldsTarget(session: QuestSession, objId: string, target: NeedTarget): boolean {
     if (!target.kind) return true;
-    const stock = session.containerStock.get(objId);
+    const stock = session.containerRecords.get(objId)?.stock;
     if (!stock) return false;
     return Object.entries(stock).some(([g, n]) => n > 0 && matchesNeedItem(g, target));
   }
@@ -4533,7 +5390,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const box = householdBoxIds(session, state, houseIndex).find((id) =>
       target.kind
         ? stackHoldsTarget(session, id, target)
-        : Object.entries(session.containerStock.get(id) ?? {}).some(
+        : Object.entries(session.containerRecords.get(id)?.stock ?? {}).some(
             ([g, n]) => n > 0 && matchesNeedItem(g, target),
           ),
     );
@@ -4543,10 +5400,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // Two passes over the same sorted census, because a thing in somebody's
     // hands is known more directly than a thing lying about: "the dog has it"
     // beats pointing at where it last lay.
-    const props = [...session.smallProps.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const props = [...looseIds(session)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     for (const objId of props) {
-      const rec = session.smallProps.get(objId)!;
-      if (!matchesNeedItem(rec.glyph, target)) continue;
+      const rec = loosePropOf(session, objId)!;
+      if (!matchesNeedItem(rec.glyph!, target)) continue;
       const holder = state.objects[objId]?.carriedBy;
       // A HOUSEHOLD body only (pets included, the answerer itself included) —
       // a passing stranger's hands are not this body's ken.
@@ -4555,8 +5412,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const rect = houseRectOf(session, houseIndex);
     if (rect) {
       for (const objId of props) {
-        const rec = session.smallProps.get(objId)!;
-        if (!matchesNeedItem(rec.glyph, target)) continue;
+        const rec = loosePropOf(session, objId)!;
+        if (!matchesNeedItem(rec.glyph!, target)) continue;
         const o = state.objects[objId];
         if (!o || o.carriedBy || o.containedIn) continue;
         if (o.x < rect.x || o.x > rect.x + rect.w || o.y < rect.y || o.y > rect.y + rect.h) continue;
@@ -5689,7 +6546,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // modifier word ("wear + shirt + red"), already in the lexicon.
       addRaw("clothing", "clothing");
       for (const k of CLOTHING_HEADS) addRaw(k, k);
-      for (const [, rec] of session.smallProps) addRaw(drawnGlyph(rec.glyph), spokenWord(rec.glyph));
+      for (const [, rec] of looseEntries(session)) addRaw(drawnGlyph(rec.glyph!), spokenWord(rec.glyph!));
     }
     // BUILDABLE STRUCTURES (①b): at a town / founded site, the catalog's
     // nouns are speakable — the sentence builder can compose "build house"
@@ -5785,7 +6642,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const answerer = answererId ?? convo.nodeId;
     const fact = placeFactOf(session, subjectId);
     const node = session.creatures?.nodeByCreature.get(answerer);
-    const player = world.state.avatars[PLAYER_ID];
+    const player = playerBody();
     if (!fact || !session.town || !player || !node) {
       presentCreatureTurn(undefined, {}, memberCid); // subject vanished — fall back to a normal refresh
       return;
@@ -6694,6 +7551,89 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return out.size ? out : undefined;
   }
 
+  /** (Re)seed the LIVE overrides map for a freshly built view and hand the
+   *  factory that one instance. The document's rows are the seed; any attached
+   *  avatar already standing re-registers its own (a view rebuilt mid-session
+   *  must not undress the player's body).
+   *
+   *  Handing over an EMPTY map where the old code passed `undefined` reads
+   *  identically at both consumers — `overrides?.get(id)?.species ?? species`
+   *  and `overrides?.get(id)?.outfit` — so a session with no authored family is
+   *  unchanged. */
+  function modelOverridesFor(session: QuestSession): Map<string, { species?: string; outfit?: number }> {
+    modelOverrides.clear();
+    const authored = familyOverrides(session);
+    if (authored) for (const [id, row] of authored) modelOverrides.set(id, row);
+    for (const cid of attachedAvatars.values()) {
+      modelOverrides.set(avatarIdOf(cid), { species: attachedAvatarSpecies(session) });
+    }
+    return modelOverrides;
+  }
+
+  /**
+   * THE SESSION'S ONE MODEL FACTORY — and, above whatever it delegates to, the
+   * arm that dresses the bodies the SESSION ITSELF created (`isCreatedPersonBodyId`
+   * — attached avatars and settlers) from the LIVE overrides map.
+   *
+   * ⚖️ WHY IT EXISTS (2026-08-16). The dispatch used to live only inside
+   * `makeTownModelFactory`, and the site below chose that factory only when a
+   * town existed. So a wilderness/nature-hike session — `host.start(game, null,
+   * …)` — took `makePuzzleCharacterFactory`, which keys purely off `npcIcons`,
+   * and the player's own body fell to the emoji arm: a capsule with a smiley
+   * sprite floated over its face. `modelOverridesFor(session)` was not even
+   * CALLED off a town, so the live overrides map (which is where a spawn
+   * registers its avatar's species) was never seeded for those sessions either.
+   *
+   * A body a session minted for a player is a PERSON in every scope; that it
+   * happens to stand in open country rather than in a town changes what it
+   * WEARS, not what it IS. So the prefix arm and the overrides consultation are
+   * lifted here, above the town/puzzle choice, and each underlying factory is
+   * delegated to UNCHANGED:
+   *   • TOWN — handed straight back, byte for byte (the identical call this
+   *     replaced). Its own arm still catches the created bodies first and
+   *     dresses them in the town's species/palette/tier, which is strictly
+   *     better than the bare fallback below, so the wrapper stands aside.
+   *   • NO TOWN — the puzzle/emoji cast is untouched (its `npcIcons` dispatch,
+   *     its fauna/flora arm, its animal-person mapping), and only the created
+   *     PEOPLE are peeled off in front of it, onto the same creature builder a
+   *     town would have used. Their species comes from the overrides row the
+   *     spawn seeded, falling back to the session's avatar species — which
+   *     itself defaults to `human_cute` when a boot passes nothing.
+   * There is no honest capsule fallback left to keep for these ids: a creature
+   * factory can always be built, so one always is.
+   */
+  function sessionModelFactory(
+    session: QuestSession,
+    tierFor: (id: string) => CreatureTier,
+  ): AvatarModelFactory {
+    // ALWAYS seeded, town or not — this is the map `spawnAttachedAvatar` writes
+    // its species row into before it calls `addNpc`.
+    const overrides = modelOverridesFor(session);
+    if (session.town) {
+      return makeTownModelFactory(
+        session.npcIcons,
+        session.town.plan.species ?? "human_cute", // the town's constructing species
+        overrides, // authored rows + the live avatar rows
+        session.dress, // the town's culture palette
+        tierFor, // Phase 3 view tier — PER BODY, read at every model build
+      );
+    }
+    const rest = makePuzzleCharacterFactory(session.npcIcons);
+    // No town ⇒ no culture palette to bound an outfit, so a created person
+    // wears only what an override row explicitly names (an authored member);
+    // otherwise the bare species body, exactly as a pet or a wild animal does.
+    const people = createCreatureAvatarFactory({
+      speciesFor: (id) => overrides.get(id)?.species ?? attachedAvatarSpecies(session),
+      heightM: 1.7,
+      outfitFor: (id) => {
+        const o = overrides.get(id)?.outfit;
+        return o !== undefined ? outfitPresetFor(o) : undefined;
+      },
+      detailFor: (id) => (tierFor(id) === "full" ? "full" : "simple"),
+    });
+    return (id, isLocal) => (isCreatedPersonBodyId(id) ? people(id, isLocal) : rest(id, isLocal));
+  }
+
   /** The town's JOB assignments (roster.ts `assignTownJobs`) — computed lazily once,
    *  from the SAME inputs the resident model uses, so both sides agree on who works
    *  where. Null off a town session. */
@@ -7263,7 +8203,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  (grasp)? A graspless body (a pet) reaches only the first two, so an opened
    *  box is what lets it help itself. */
   function containerAccessible(session: QuestSession, id: string, grasp: boolean): boolean {
-    if (session.containers.get(id) === "on") return true;
+    if (session.containerRecords.get(id)?.relation === "on") return true;
     if (world?.state.objects[id]?.heldOpen) return true;
     return grasp;
   }
@@ -7295,6 +8235,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       );
       if (!near) o.heldOpen = false; // the taker finished and left — the lid shuts
     }
+  }
+
+  /** WALK AWAY AND THE BOARD LETS GO — the lid rule's twin, one layer up.
+   *
+   *  `stepContainerLids` shuts the physical LID once the taker has left. Nothing
+   *  did the same for the BOARD that reach opened, and the board is the piece
+   *  that holds the camera: a stocked board pins `world.setConversation` at the
+   *  object (presentContainer), re-asserted every frame, and world-host turns
+   *  that into `faceTarget`, which the directed camera obeys ahead of the gaze
+   *  and never expires. The dwell table has no leave-by-looking-away, so with
+   *  no walk-away release either, hovering one rock in walker mode aimed the
+   *  camera at that rock for the rest of the session — the reported symptom.
+   *
+   *  ⚖️ THE PREDICATE IS THE OPEN GATE, RUN BACKWARDS. The `menu` arm opens on
+   *  `spiritNow() || hypot(body, target) <= CONVO_RADIUS`, so this closes on
+   *  `hypot(accessBody, box) > CONVO_RADIUS` — the same measure, the same
+   *  constant, the same floor-blindness. Deliberately NOT the lid rule's own
+   *  `spec.radius + 1.4`: that band is tighter than the open gate, so a board
+   *  legitimately opened from five metres would shut on the very next tick and
+   *  the ranged open would stop existing. Matching the gate exactly is the only
+   *  threshold that closes no later than the act that opened it could have
+   *  fired while still letting every open it permits stand.
+   *
+   *  SCOPED BY THE OPEN RECORD, not by a mode flag: no `accessBodyId` means a
+   *  spirit opened this board (dollhouse), and a spirit never leaves. */
+  function stepContainerBoardReach(state: WorldState) {
+    const bodyId = container?.accessBodyId;
+    if (!container || !bodyId) return;
+    const box = containerStandpoint(state, container.objId);
+    if (!box) return; // streamed away mid-board — the hover block's own case
+    const body = state.avatars[bodyId];
+    // A body that is GONE (an attached avatar despawned, a possession dropped)
+    // has left in the only sense that matters: nothing is standing there.
+    if (!body || Math.hypot(body.x - box.x, body.y - box.y) > CONVO_RADIUS) closeContainer();
   }
 
   /** Goals driven by the PER-TICK PURSUIT (the unified loop) rather than a baked
@@ -7760,6 +8734,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  /** Session clock at which `stepPursuit` last ran — the watchdog `idleForDirect`
+   *  reads (see the stamp inside it). ARMED at the session clock when a session
+   *  starts, so frame 1 never judges a pursuit stale before the driver has had
+   *  a turn; from then on only a clock that ran on WITHOUT the driver — the
+   *  scope where the drive loop is not reached at all — can make one stale. */
+  let pursuitDrivenAt = -Infinity;
+  /** How far the session clock may run past the driver's last pass before a
+   *  standing pursuit stops counting as work in progress. Generous next to a
+   *  frame (the driver runs every one) and short next to any errand.
+   *
+   *  ⚠️ DORMANT AS WRITTEN, AND KEPT ANYWAY. `stepPursuit` stamps
+   *  `pursuitDrivenAt` BEFORE its own early-return, and it is called
+   *  un-gated every tick — so `townClock - pursuitDrivenAt` is ~0 whenever
+   *  `idleForDirect` reads it and the reap below can never fire in the
+   *  present wiring. It is a WATCHDOG for a scope where the drive loop is
+   *  not reached at all (the failure it was written for: a latch that cannot
+   *  clear is indistinguishable from work in progress), so it stays — but do
+   *  not read a passing session as evidence that it works. */
+  const PURSUIT_STALE_S = 2;
+
   /** THE ONE PURSUIT DRIVER (concept-parser.md §10): every body in
    *  `session.pursuits` — commanded today, need-born after S2 — re-derives its
    *  next step from the LIVE world each tick (`pursue`) and drives itself: walk
@@ -7769,6 +8763,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  reason. The loop is SOURCE-BLIND — `pur.source` matters only to whoever
    *  installs and pre-empts entries, never to how one is driven. */
   function stepPursuit(session: QuestSession, state: WorldState, dt: number) {
+    // 🐕 THE DRIVER'S OWN HEARTBEAT (2026-08-16). A pursuit is a CLAIM on a body:
+    // `idleForDirect` refuses to re-aim anyone who holds one, on the promise
+    // that this loop will advance it and eventually retire it. When the loop is
+    // not reached, that promise is broken in the worst possible way — the claim
+    // stands forever and the body is frozen behind it, which is precisely how a
+    // wilderness avatar died (installed here, driven inside the town gate).
+    // Stamping the driver rather than each row costs one number and covers
+    // EVERY install site, present and future: if the clock has run on without
+    // the driver, whatever is in the registry is not work in progress, and
+    // `idleForDirect` reaps it instead of standing down to it.
+    pursuitDrivenAt = session.townClock;
     if (!world || session.pursuits.size === 0) return;
     const cmdBase = makeGoalResolver(session);
     for (const [cid, pur] of [...session.pursuits]) {
@@ -8043,7 +9048,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const x0 = rc.center.x + house.dx;
     const y0 = rc.center.y + house.dy;
     const areas: string[] = [];
-    for (const objId of session.smallProps.keys()) {
+    for (const objId of looseIds(session)) {
       const o = state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue;
       if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -8357,7 +9362,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       placeId,
       ctx: {
         bodies,
-        ready: tpl.prepare ? stackTotalOf(session.containerStock.get(placeId), tpl.prepare.category) : 0,
+        ready: tpl.prepare ? stackTotalOf(session.containerRecords.get(placeId)?.stock, tpl.prepare.category) : 0,
         capacity: ritualCapacity(session, state, tpl, placeId),
         dayF,
       },
@@ -8632,7 +9637,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             const goodKey = goodKeyOfGlyph(glyph);
             const span = naturalTripSpanS(session, houseIndex, goodKey);
             if (span === null) continue;
-            if (!session.containers.has(designatedContainerFor(session, glyph, houseIndex, cid))) continue;
+            if (!isContainerId(session, designatedContainerFor(session, glyph, houseIndex, cid))) continue;
             if (!haul || span < haul.span) haul = { goodKey, span };
           }
           if (haul && awayS > haul.span) {
@@ -9517,7 +10522,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // FRONT of the body), so bodies on opposite sides both reach it.
         // (Floor stations only — an on-fixture use takes its facing from the
         // fixture's own use contract, through the anchor.)
-        const at = objId && session.smallProps.has(objId) ? state.objects[objId] : undefined;
+        const at = objId && isLooseProp(session, objId) ? state.objects[objId] : undefined;
         if (at && step.kind === "rest") {
           const dx = at.x - av.x;
           const dy = at.y - av.y;
@@ -10027,7 +11032,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       provisionedHeads: provisionedHeads(session, houseIndex),
       ownerId: session.creatures?.world.items[glyph]?.ownerId,
       selfId: cid,
-      exists: (id) => session.containers.has(id),
+      exists: (id) => isContainerId(session, id),
     });
   }
 
@@ -10096,7 +11101,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         carry.inHand &&
         !carry.inHand.bag &&
         carry.inHand.glyph === glyph &&
-        session.containers.has(box) &&
+        isContainerId(session, box) &&
         setDownFromHands(session, avatarIdOf(cid), { kind: "container", id: box }, { objId: carry.inHand.objId })
       ) {
         left--;
@@ -10104,9 +11109,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       const took = takeUnitsFromBody(session, cid, glyph, left);
       if (took > 0) {
-        const stock = session.containerStock.get(box) ?? {};
+        const stock = ensureContainerStock(session, box);
         stock[glyph] = (stock[glyph] ?? 0) + took;
-        session.containerStock.set(box, stock);
         bumpStockEpoch(session); // ⏸️ a box gained units — wakes parked rows
         banked += took;
       }
@@ -10276,7 +11280,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const carry = bodyCarryOf(session, cid);
     const held = carry.inHand;
     if (!held) return null;
-    const rec = session.smallProps.get(held.objId);
+    const rec = loosePropOf(session, held.objId);
     if (session.townClock - (rec?.at ?? 0) < TIDY_GRACE_S) return null;
     if (wantedByLiveRow(session, cid, held.glyph, all)) return null;
     if (bankedByOwnRow(session, houseIndex, held.glyph, all)) return null;
@@ -10369,10 +11373,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       //    home role reads (`containerUnitCap`). The full box is the reported
       //    case, and it is the one that must read as "no outlet".
       const box = designatedContainerFor(session, glyph, houseIndex, cid);
-      if (!box || !session.containers.has(box)) continue;
+      if (!box || !isContainerId(session, box)) continue;
       const cap = containerUnitCap(session, box);
       if (cap === null) return true; // uncapped — there is always room
-      if (totalStackUnits(session.containerStock.get(box) ?? {}) < cap) return true;
+      if (totalStackUnits(session.containerRecords.get(box)?.stock ?? {}) < cap) return true;
     }
     return false;
   }
@@ -10442,7 +11446,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ring: boolean,
   ): { x: number; y: number } {
     const bodyR = world?.npcRadiusOf(avatarIdOf(cid));
-    return ring && session.smallProps.has(objId)
+    return ring && isLooseProp(session, objId)
       ? playRingSpot(state, raw, from, bodyR, standAvoid(cid))
       : standPointFor(state, objId, raw, from, bodyR, standAvoid(cid));
   }
@@ -10603,11 +11607,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const houseContainerIdx = new WeakMap<QuestSession, { n: number; at: number; byHouse: Map<number, string[]> }>();
   function houseContainerKeys(session: QuestSession, houseIndex: number): readonly string[] {
     const c = houseContainerIdx.get(session);
-    if (c && c.n === session.containerStock.size && session.townClock - c.at < 1) {
+    // ⚠️ STOCKED, not merely registered (`stockedIds`, not `containerIds`) —
+    // the old sweep was over `containerStock` specifically: a freshly-founded
+    // cupboard/table/bin/bowl/member-box has no stock row until the first
+    // real put, exactly as it never had a `containerStock` entry before one.
+    const n = stockedCount(session);
+    if (c && c.n === n && session.townClock - c.at < 1) {
       return c.byHouse.get(houseIndex) ?? [];
     }
     const byHouse = new Map<number, string[]>();
-    for (const id of session.containerStock.keys()) {
+    for (const id of stockedIds(session)) {
       const m = /^furn_(\d+)_/.exec(id);
       if (!m) continue;
       const hi = Number(m[1]);
@@ -10615,7 +11624,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (list) list.push(id);
       else byHouse.set(hi, [id]);
     }
-    houseContainerIdx.set(session, { n: session.containerStock.size, at: session.townClock, byHouse });
+    houseContainerIdx.set(session, { n, at: session.townClock, byHouse });
     return byHouse.get(houseIndex) ?? [];
   }
 
@@ -10649,13 +11658,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const x0 = rc.center.x + house.dx;
     const y0 = rc.center.y + house.dy;
     const out: string[] = [];
-    for (const objId of session.smallProps.keys()) {
+    for (const objId of looseIds(session)) {
       // A REGISTERED CONTAINER, whatever shape: the household's basket, a
       // satchel somebody put down, a flat-packed barrel standing in the corner
       // ("a LOOSE barrel is as much a container as a standing one" —
       // container-home.ts). Anything BOLTED DOWN has a `furn_*` id and comes
       // through the index above instead; these ids are all `small:*`.
-      if (!session.containers.has(objId)) continue;
+      if (!isContainerId(session, objId)) continue;
       const o = state.objects[objId];
       // In NOBODY's hands and not itself shelved: a basket inside a chest is
       // the chest's business, and one in a pair of hands is that body's.
@@ -10718,7 +11727,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         : [];
     for (const kind of at) if (boxId === `furn_${houseIndex}_${kind}`) return true;
     // ③ this body's own property (its box, a bag it put down).
-    return session.containerOwner.get(boxId) === creatureScope(cid);
+    return session.containerRecords.get(boxId)?.owner === creatureScope(cid);
   }
 
   // ── THE PRICE BOARD (scope-behaviors.md §3, step ④.2) ────────────────────
@@ -11175,7 +12184,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (isAddressKey(tpl.key)) return addressNeedCtx(session, cid, tpl);
     const goodKey = tpl.item.category ?? "";
     const P = (id: string) => ({ kind: "named" as const, id });
-    const rc = residentTownCtx(session, houseIndex)!; // the OWNING town's books
+    // ⚠️ THE OWNING TOWN'S BOOKS — and this `!` IS A LIVE HAZARD, not a
+    // formality. `residentTownCtx` honestly returns null off a town, and `rc`
+    // is dereferenced unconditionally below, so reaching here without one
+    // throws. Nothing does today: the only spark-side route in is
+    // `promoteChore`, whose `.some()` rejects on `t.key.startsWith(chore)`
+    // BEFORE building a ctx, and no town-free template set (pets') carries a
+    // tidy/provision/laundry/adopt row. That is one predicate away from a
+    // crash — the player-interaction steppers now run in wilderness sessions
+    // (2026-08-16), so if a town-free need-template source is ever added, make
+    // `rc` optional HERE FIRST. Flagged, deliberately not widened in that
+    // round: every `rc.` below would have to become `rc?.` and each fallback
+    // is a content decision, not a null check.
+    const rc = residentTownCtx(session, houseIndex)!;
     const grasp = canGrasp(session.creatures?.world.creatures[cid]);
     // METRES FROM THE BODY (step ④): the candidate lists were always SORTED by
     // this and then threw the number away. Keeping it is what turns "nearest
@@ -11222,7 +12243,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // (StockCandidate.free): a pantry below its buffer is short whether or
         // not a housemate has spoken for what's left in it, but the housemate
         // that spoke first is the one that gets to draw it.
-        const units = stackTotalOf(session.containerStock.get(homeId), goodKey);
+        const units = stackTotalOf(session.containerRecords.get(homeId)?.stock, goodKey);
         containers.home = {
           id: homeId,
           place: P(homeId),
@@ -11272,7 +12293,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // `mayUse` (a housemate's private bag is not the household's), FREE units
       // (claims apply), and the distance the pricing reads.
       for (const id of [...houseContainerKeys(session, houseIndex), ...floorContainers()]) {
-        const stock = session.containerStock.get(id);
+        const stock = session.containerRecords.get(id)?.stock;
         if (!stock) continue;
         // 🧺 NEVER THE ROW'S OWN LARDER. The food rows carry BOTH a `home`
         // branch and (new) a `storage` one, and the storage sweep walks the
@@ -11282,7 +12303,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // with no exit. The home branch owns that container; this arm is
         // strictly "what ELSE in the house holds some".
         if (id === homeId) continue;
-        if (!mayUse(cid, houseIndex, session.containerOwner.get(id))) continue;
+        if (!mayUse(cid, houseIndex, session.containerRecords.get(id)?.owner)) continue;
         // GRASPABILITY, for the floor arm: a lidded crate on the floor needs
         // hands to open exactly as a chest does; an open basket does not
         // (`containerAccessible` — "on", left open, or the body can open it).
@@ -11332,7 +12353,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           tpl.drive.kind === "stock" && tpl.drive.container === "ritual" && tpl.drive.of
             ? tpl.drive.of
             : goodKey;
-        const units = stackTotalOf(session.containerStock.get(live.placeId), measure);
+        const units = stackTotalOf(session.containerRecords.get(live.placeId)?.stock, measure);
         const d = distToObj(live.placeId);
         containers.ritual = {
           id: live.placeId,
@@ -11354,7 +12375,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const oid = `furn_${wanterHouse}_${kind}`;
         if (!state.objects[oid]) continue;
         const cap = kind === "bowl" ? BOWL_CAP : 99;
-        const units = stackTotalOf(session.containerStock.get(oid), goodKey);
+        const units = stackTotalOf(session.containerRecords.get(oid)?.stock, goodKey);
         const d = distToObj(oid);
         containers.recipient = {
           id: oid,
@@ -11466,8 +12487,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // hot dish on the table pulls the hungry straight to it (the
           // acquire+consume combine — the dinner scene).
           const waiting =
-            stackTotalOf(session.containerStock.get(sid), goodKey) +
-            (goodKey === "food" ? stackTotalOf(session.containerStock.get(sid), "meal") : 0);
+            stackTotalOf(session.containerRecords.get(sid)?.stock, goodKey) +
+            (goodKey === "food" ? stackTotalOf(session.containerRecords.get(sid)?.stock, "meal") : 0);
           // ⚠️ THE STAMPEDE GUARD DOES NOT APPLY TO YOUR OWN PLACE AT A RITUAL.
           // A ritual's bill is already one portion PER HEAD, so the food on the
           // table is reserved by construction and there is nothing to race for.
@@ -11521,7 +12542,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // makes everyone sleep in their own bed. When none of their own
           // stands (the fit rule went without), politeness collapses: any
           // bed in the house serves rather than dozing on the floor.
-          const own = cands.filter((sid) => mayUse(cid, houseIndex, session.containerOwner.get(sid)));
+          const own = cands.filter((sid) => mayUse(cid, houseIndex, session.containerRecords.get(sid)?.owner));
           if (own.length) cands = own;
         }
         for (const sid of cands) {
@@ -11543,8 +12564,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
         const areas: { c: StationCandidate; d: number }[] = [];
-        for (const [objId, rec] of session.smallProps) {
-          if (!matchesNeedItem(rec.glyph, tpl.item)) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (!matchesNeedItem(rec.glyph!, tpl.item)) continue;
           const o = state.objects[objId];
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -11623,8 +12644,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // and OWNED things count: you play with your own teddy.
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
-        for (const [objId, rec] of session.smallProps) {
-          if (!matchesNeedItem(rec.glyph, tpl.item)) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (!matchesNeedItem(rec.glyph!, tpl.item)) continue;
           const o = state.objects[objId];
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -11639,8 +12660,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
         const kinds = kindsOf(goodKey);
-        for (const [objId, rec] of session.smallProps) {
-          if (!kinds.includes(rec.glyph)) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (!kinds.includes(rec.glyph!)) continue;
           const o = state.objects[objId];
           if (!o || o.carriedBy || o.containedIn) continue;
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
@@ -11670,12 +12691,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           ...floorContainers(),
         ];
         for (const boxId of looseBoxes) {
-          const stock = session.containerStock.get(boxId);
+          const stock = session.containerRecords.get(boxId)?.stock;
           if (!stock) continue;
           if (!containerAccessible(session, boxId, grasp)) continue;
           // Never raid a housemate's PRIVATE box (ownership.ts) — the
           // laundry chore reaches the wardrobe, not Mara's treasures.
-          if (!mayUse(cid, houseIndex, session.containerOwner.get(boxId))) continue;
+          if (!mayUse(cid, houseIndex, session.containerRecords.get(boxId)?.owner)) continue;
           if (inPlay(boxId)) continue; // a basket somebody is playing with
           const units = stackTotalOf(stock, goodKey);
           if (units <= 0) continue;
@@ -11706,8 +12727,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const heads = provisionedHeads(session, houseIndex);
         const x0 = rc.center.x + house.dx;
         const y0 = rc.center.y + house.dy;
-        for (const [objId, rec] of session.smallProps) {
-          if (heads.has(headOf(rec.glyph))) continue;
+        for (const [objId, rec] of looseEntries(session)) {
+          if (heads.has(headOf(rec.glyph!))) continue;
           // A PORTABLE CONTAINER IS NOT CLUTTER (container-home.ts rung 0). The
           // ladder would send the household's basket to whichever member's box
           // came first, and the deposit could never even land — a bag is not a
@@ -11715,7 +12736,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // pickup itself was one-way: NOTHING on a body could see a held
           // container, so the tidier carried the family's only bag for the rest
           // of the session. It lives on the floor; leave it there.
-          if (livesOnTheFloor(rec.glyph)) continue;
+          if (livesOnTheFloor(rec.glyph!)) continue;
           // SOMEONE'S OWN thing (a gift, a keepsake — creature-world ownerId)
           // IS tidied, but never re-homed: designatedContainerFor sends it back
           // to its OWNER's box, not the tidier's. Putting your teddy away in
@@ -11770,7 +12791,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!stations.length && state.objects[live.placeId]) {
         // The place isn't in this row's own station list (a floor station for a
         // fixture-shaped satisfy). Offer it anyway — the event is there.
-        const waiting = stackTotalOf(session.containerStock.get(live.placeId), goodKey);
+        const waiting = stackTotalOf(session.containerRecords.get(live.placeId)?.stock, goodKey);
         stations = [{ id: live.placeId, place: P(live.placeId), kind: fixtureKindOf(state, live.placeId), waiting }];
       }
       sources = [];
@@ -12012,7 +13033,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // affords no play, so a step that wants what is IN it can never be
       // confused with the `relieve` row's step that wants the basket.
       const asContainerSource = (() => {
-        if (!session.containers.has(step.objId!)) return false;
+        if (!isContainerId(session, step.objId!)) return false;
         const glyph = objGlyphOf(session, step.objId!) ?? "";
         if (step.affords) return !matchesNeedItem(glyph, { affords: step.affords });
         if (step.goodKey) return !carryKindsOf(step.goodKey).includes(glyph);
@@ -12024,9 +13045,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // body has; a body with no bag simply picks the thing UP, which is the
       // single-unit trip the law makes ordinary.
       if (step.objId.startsWith("small:") && !asContainerSource) {
-        const rec = session.smallProps.get(step.objId);
-        if (!rec) return;
-        const cdef = containerDefOfGlyph(rec.glyph);
+        const rec = loosePropOf(session, step.objId);
+        if (!rec || !rec.glyph) return;
+        const glyph = rec.glyph;
+        const cdef = containerDefOfGlyph(glyph);
         if (cdef?.hold === "wear" && !carry.worn) {
           if (donWornBag(session, cid, step.objId)) {
             console.log(`[needs] ${cid} put on a ${rec.glyph}`);
@@ -12036,9 +13058,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // A LARGE thing (furniture) and any CONTAINER ride in the HANDS: a
         // scope cannot become a countable unit inside another bag, and a chair
         // was never bag-shaped either.
-        const handsOnly = isLargeGlyph(rec.glyph) || !!cdef?.hold;
+        const handsOnly = isLargeGlyph(glyph) || !!cdef?.hold;
         if (!handsOnly && activeBag(carry)) {
-          if (giveUnitsToBody(session, cid, rec.glyph, 1, reach ? { at: reach } : {}) > 0) {
+          if (giveUnitsToBody(session, cid, glyph, 1, reach ? { at: reach } : {}) > 0) {
             removeLooseProp(session, step.objId);
             console.log(`[needs] ${cid} picked up ${rec.glyph} (tidying)`);
           }
@@ -12056,7 +13078,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       // OPEN the lid to reach in — the access action for a lidded home/storage
       // box (stays open until the taker leaves; lets a graspless housemate use it).
-      if (session.containers.get(step.objId) === "in") openContainerLid(session, cid, step.objId);
+      if (session.containerRecords.get(step.objId)?.relation === "in") openContainerLid(session, cid, step.objId);
       let take = 0;
       // ⚖️ §1.2: A SOURCE ENDPOINT, of either kind. `goodSourceEndpointId` sends
       // a gate-bound household to the producer's own pile, so the shopping arm
@@ -12095,7 +13117,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // From a stored container: draw the liked kind first, then the rest.
         // An AFFORDANCE row (fun's `play`) carries no goodKey, so its order is
         // whatever the box holds that DOES the thing — take the toy out.
-        const stock = session.containerStock.get(step.objId) ?? {};
+        const stock = session.containerRecords.get(step.objId)?.stock ?? {};
         const order = step.affords
           ? Object.keys(stock).filter((g) => (stock[g] ?? 0) > 0 && matchesNeedItem(g, { affords: step.affords }))
           : kindOrder(step.goodKey);
@@ -12110,7 +13132,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             take++;
           }
         }
-        if (take > 0) session.containerStock.set(step.objId, stock);
+        if (take > 0) setContainerStock(session, step.objId, stock);
       }
       // THE CLAIM CLOSES HERE (scope-behaviors.md §2.6: "reserve at
       // resolution, consume as units actually leave, release on
@@ -12124,8 +13146,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     } else if (step.kind === "deposit" && step.objId) {
       // OPEN the lid to file it away — the access action for a lidded box (bug:
       // items were being put away THROUGH a shut lid). "on" surfaces have none.
-      if (session.containers.get(step.objId) === "in") openContainerLid(session, cid, step.objId);
-      const stock = session.containerStock.get(step.objId) ?? {};
+      if (session.containerRecords.get(step.objId)?.relation === "in") openContainerLid(session, cid, step.objId);
+      const stock = session.containerRecords.get(step.objId)?.stock ?? {};
       let put = 0;
       const onMe = carriedNow();
       // AN UNTYPED ROW deposits CLUTTER — whatever non-provisioned glyphs are
@@ -12160,7 +13182,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       if (put > 0) {
         session.needDepositFail.delete(`${cid}|${step.tplKey}`);
-        session.containerStock.set(step.objId, stock);
+        setContainerStock(session, step.objId, stock);
         bumpStockEpoch(session); // ⏸️ the pantry filled — wakes parked rows
         showWorldBubble(state, `put:${cid}`, { anchor: { kind: "avatar", id: cid }, text: "", glyph: step.goodKey, ttl: 1.5 });
         console.log(`[needs] ${cid} deposited ${put}×${step.goodKey} into ${step.objId}`);
@@ -12402,13 +13424,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         eaten = inHand[0]!;
         dropOwnedInstances(session, cid, eaten, 1);
       } else if (step.objId) {
-        const stock = session.containerStock.get(step.objId) ?? {};
+        const stock = session.containerRecords.get(step.objId)?.stock ?? {};
         const waiting = eatOrder.filter((k) => (stock[k] ?? 0) > 0);
         if (waiting.length > 0) {
           eaten = waiting[0]!;
           stock[eaten]! -= 1;
           if (stock[eaten]! <= 0) delete stock[eaten];
-          session.containerStock.set(step.objId, stock);
+          setContainerStock(session, step.objId, stock);
           removeVisibleContainedProp(session, step.objId, eaten);
         }
       }
@@ -12491,7 +13513,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const house = rc?.house;
     if (!rc || !house) return;
     for (const g of rc.goods) {
-      const units = stackTotalOf(session.containerStock.get(`furn_${houseIndex}_chest_${g.good.key}`), g.good.key);
+      const units = stackTotalOf(session.containerRecords.get(`furn_${houseIndex}_chest_${g.good.key}`)?.stock, g.good.key);
       g.reanchor(house, units, session.townClock);
     }
   }
@@ -12511,10 +13533,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (const g of town.stage.goods) {
           const objId = `furn_${house.index}_chest_${g.good.key}`;
           const level = Math.min(Math.floor(g.boxCap), Math.max(0, Math.round(g.pantry(house, session.townClock))));
-          const stock = session.containerStock.get(objId) ?? {};
+          const stock = ensureContainerStock(session, objId);
           for (const k of kindsOf(g.good.key)) delete stock[k]; // re-sync the good's own kinds only
           Object.assign(stock, dealGood(session.dress, g.good.key, level, house.index));
-          session.containerStock.set(objId, stock);
         }
         // ⏸️ THE LOAD EDGE IS A RESTOCK EVENT: the schedule's off-show drain
         // and its dawn deliveries land here all at once, so a row parked on an
@@ -12533,16 +13554,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  smallProps so the eat/take path can find and clear it; its containedIn
    *  keeps it off the tidy chore and the loose lists. */
   function addVisibleContainedProp(session: QuestSession, objId: string, glyph: string) {
-    if (session.containers.get(objId) !== "on" || !world) return;
+    if (session.containerRecords.get(objId)?.relation !== "on" || !world) return;
     const c = world.state.objects[objId];
     if (!c) return;
-    const entityId = materialize(session, glyph, representativeOwnerCid(session.containerOwner.get(objId)));
+    const entityId = materialize(session, glyph, representativeOwnerCid(session.containerRecords.get(objId)?.owner));
     const pid = `small:${entityId}`;
     // NO CARRY: a mirror prop stands for one unit of the container's stack, so
     // hands must not lift it out from under the count (`unshelveProp` is the
     // only way it becomes a real thing). Same object, one affordance different.
     world.addObject(itemObjectSpec(glyph, pid, c, { carry: false }));
-    session.smallProps.set(pid, { entityId, glyph, at: session.townClock });
+    setLooseProp(session, pid, { entityId, glyph, at: session.townClock });
     session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
     placeInContainer(world.state, pid, objId, "on");
   }
@@ -12550,12 +13571,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** A table renders its contents: remove one matching visible prop when a stack unit
    *  leaves an "on" container (shared by the player's take and a creature's eat). */
   function removeVisibleContainedProp(session: QuestSession, objId: string, glyph: string) {
-    if (session.containers.get(objId) !== "on" || !world) return;
-    for (const [pObjId, rec] of session.smallProps) {
+    if (session.containerRecords.get(objId)?.relation !== "on" || !world) return;
+    for (const [pObjId, rec] of looseEntries(session)) {
       if (rec.glyph === glyph && world.state.objects[pObjId]?.containedIn?.objectId === objId) {
         world.removeObject(pObjId);
-        session.smallProps.delete(pObjId);
-        if (session.creatures) delete session.creatures.world.items[rec.entityId];
+        if (session.creatures && rec.entityId) delete session.creatures.world.items[rec.entityId];
+        clearLooseProp(session, pObjId);
         break;
       }
     }
@@ -12572,14 +13593,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  stock and the very same object comes back as a loose prop hands can take.
    *  Same object id and entity, so a plan that already named it still holds. */
   function unshelveProp(session: QuestSession, objId: string, boxId: string): boolean {
-    const rec = session.smallProps.get(objId);
+    const rec = loosePropOf(session, objId);
     const o = world?.state.objects[objId];
-    const stock = session.containerStock.get(boxId);
-    if (!world || !rec || !o || !stock || !stackTake(stock, rec.glyph)) return false;
-    session.containerStock.set(boxId, stock);
+    const stock = session.containerRecords.get(boxId)?.stock;
+    if (!world || !rec || !o || !stock || !rec.glyph || !stackTake(stock, rec.glyph)) return false;
     world.removeObject(objId);
     world.addObject(itemObjectSpec(rec.glyph, objId, o));
-    session.smallProps.set(objId, { ...rec, at: session.townClock }); // `at` re-paces the tidy grace
+    setLooseProp(session, objId, { entityId: rec.entityId!, glyph: rec.glyph, at: session.townClock }); // `at` re-paces the tidy grace
     session.needsPropsEpoch++; // loose now — wakes dormant tidy/fun decides
     return true;
   }
@@ -13338,7 +14358,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  or a loose small prop. Null = the entity has no physical body right now. */
   function objIdOfEntity(session: QuestSession, entityId: string): string | null {
     for (const [objId, it] of session.convItems) if (it.entityId === entityId) return objId;
-    for (const [objId, rec] of session.smallProps) if (rec.entityId === entityId) return objId;
+    for (const [objId, rec] of looseEntries(session)) if (rec.entityId === entityId) return objId;
     return null;
   }
 
@@ -13362,18 +14382,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  really contained, so the placement watchers (placeDests) see it. */
   function stowCarriedIn(session: QuestSession, objId: string, containerObjId: string): boolean {
     if (!world) return false;
-    if (
-      session.marketStore.has(containerObjId) ||
-      session.produceBox.has(containerObjId) ||
-      containerObjId.startsWith("trade:")
-    ) {
+    if (isDerivedStoreObject(session, containerObjId) || containerObjId.startsWith("trade:")) {
       return false; // economy-driven stock takes no puts (same rule as putSelectedIn)
     }
-    const rel = session.containers.get(containerObjId);
+    const rel = session.containerRecords.get(containerObjId)?.relation;
     const o = world.state.objects[objId];
     if (!rel || !o) return false;
     dropObject(world.state, objId, o.x, o.y); // release the carry first
-    const small = session.smallProps.get(objId);
+    const small = loosePropOf(session, objId);
     if (!small) {
       placeInContainer(world.state, objId, containerObjId, rel);
       return true;
@@ -13386,26 +14402,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // been boxed and stood up again. (The refrigerator kept its food only
     // because nobody ever put IT in a box.) An EMPTY container still stacks —
     // a flat-packed barrel is just a barrel.
-    const ownStock = session.containerStock.get(objId);
-    if (!mayDissolveToStack(small.glyph, ownStock)) {
+    const ownStock = session.containerRecords.get(objId)?.stock;
+    if (!small.glyph || !mayDissolveToStack(small.glyph, ownStock)) {
       // No room for a whole object ⇒ refuse, rather than quietly spilling it.
       return placeInContainer(world.state, objId, containerObjId, rel);
     }
-    const stock = session.containerStock.get(containerObjId) ?? {};
+    const stock = ensureContainerStock(session, containerObjId);
     stackAdd(stock, small.glyph);
-    session.containerStock.set(containerObjId, stock);
     bumpStockEpoch(session); // ⏸️ a whole prop became stock — wakes parked rows
     if (rel === "on") {
       placeInContainer(world.state, objId, containerObjId, "on"); // visible on the table
     } else {
       world.removeObject(objId);
-      session.smallProps.delete(objId);
       // An emptied container that just became a tally leaves no registration
       // behind — a stale one is an endpoint pointing at an object that is gone.
-      session.containerStock.delete(objId);
-      session.containers.delete(objId);
-      session.containerOwner.delete(objId);
-      if (session.creatures) {
+      deleteContainerRecord(session, objId);
+      if (session.creatures && small.entityId) {
         delete session.creatures.world.items[small.entityId];
         for (const cr of Object.values(session.creatures.world.creatures)) {
           delete cr.knowledge[small.entityId];
@@ -13487,7 +14499,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let objId = planned ? objIdOfEntity(session, planned) : null;
     if (!objId || world.state.objects[objId]?.carriedBy !== showerBody) {
       objId = null;
-      for (const [id] of session.smallProps) {
+      for (const id of looseIds(session)) {
         if (world.state.objects[id]?.carriedBy === showerBody) {
           objId = id;
           break;
@@ -13504,7 +14516,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       saySystem(session, line, `💬 nothing to show`, from);
       return;
     }
-    const entityId = session.smallProps.get(objId)?.entityId ?? session.convItems.get(objId)?.entityId ?? planned;
+    const entityId = loosePropOf(session, objId)?.entityId ?? session.convItems.get(objId)?.entityId ?? planned;
     if (!entityId) return;
     const glyph = liveItemGlyph(session, entityId);
     // HELD UP: a glyph-only bubble over the shower (the symbol-first caption —
@@ -13773,7 +14785,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // moment that clock should restart: a commanded "pick up the basket" has to
     // visibly land before the put-down row (`heldIdleObject`) may undo it, and
     // a thing set down and taken up again is not stale clutter either.
-    const rec = session.smallProps.get(objId);
+    const rec = loosePropOf(session, objId);
     if (rec) rec.at = session.townClock;
     fireCarryGesture(bodyId, "pickup", reach);
     return objId;
@@ -13821,7 +14833,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const o = state.objects[objId];
     if (!o || o.carriedBy !== bodyId) return null;
     const glyph =
-      session.smallProps.get(objId)?.glyph ??
+      loosePropOf(session, objId)?.glyph ??
       state.spec.objects.find((s) => s.id === objId)?.glyph ??
       null;
     let landed = { x: o.x, y: o.y };
@@ -13837,7 +14849,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the thing up or bank it. Registered props go through removeLooseProp so
       // the creature world drops the entity with them; a display token was never
       // registered and only has to leave the scene.
-      if (session.smallProps.has(objId)) removeLooseProp(session, objId);
+      if (isLooseProp(session, objId)) removeLooseProp(session, objId);
       else world.removeObject(objId);
     }
     if (!opts?.quiet) fireCarryGesture(bodyId, "putdown", opts?.reachAt ?? landed);
@@ -13890,7 +14902,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world || !surfaceId || !objId) return false;
     // A SURFACE, not a box: only an "on" container shows what it holds, and only
     // a shown unit reads as a meal waiting in front of the diner.
-    if (session.containers.get(surfaceId) !== "on") return false;
+    if (session.containerRecords.get(surfaceId)?.relation !== "on") return false;
     const surface = world.state.objects[surfaceId];
     const bodyId = avatarIdOf(cid);
     if (!surface || world.state.objects[objId]?.carriedBy !== bodyId) return false;
@@ -13925,7 +14937,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  record is the truth for anything the game minted), else the spec's own. */
   function objGlyphOf(session: QuestSession, objId: string): string | null {
     return (
-      session.smallProps.get(objId)?.glyph ??
+      loosePropOf(session, objId)?.glyph ??
       world?.state.spec.objects.find((s) => s.id === objId)?.glyph ??
       null
     );
@@ -13933,8 +14945,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /**
    * A PORTABLE CONTAINER, as a live bag view — or null for anything that is
-   * not one. `stock` ALIASES `session.containerStock`, which is the whole
-   * point: `StockEndpoint.stack` is an alias law, and a copy here would let
+   * not one. `stock` ALIASES the container's own record (`ensureContainerStock`),
+   * which is the whole point: `StockEndpoint.stack` is an alias law, and a copy here would let
    * units land in a bag that nobody else can see. The entry is CREATED if the
    * container has never held anything, so the alias is real from the first
    * write (the same ensure trick the old pocket branch used).
@@ -13944,11 +14956,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!g) return null;
     const def = containerDefOfGlyph(g);
     if (!def?.hold) return null; // furniture is a container, but not one a body holds
-    let stock = session.containerStock.get(objId);
-    if (!stock) {
-      stock = {};
-      session.containerStock.set(objId, stock);
-    }
+    const stock = ensureContainerStock(session, objId);
     return { objId, glyph: g, stock, capacity: def.capacity };
   }
 
@@ -13972,16 +14980,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    */
   function bodyCarryOf(session: QuestSession, cid: string): BodyCarry {
     const carry: BodyCarry = { inHand: null, worn: null };
-    const wornRec = session.wornBags.get(cid);
+    const wornRec = wornBagOf(session, cid);
     if (wornRec) carry.worn = bagRefOf(session, wornRec.objId, wornRec.glyph);
     if (!world) return carry;
     const bodyId = avatarIdOf(cid);
     const objects = world.state.objects;
     let objId: string | null = null;
-    for (const [id, rec] of session.smallProps) {
+    for (const [id, rec] of looseEntries(session)) {
       if (objects[id]?.carriedBy !== bodyId) continue;
       objId ??= id;
-      if (containerDefOfGlyph(rec.glyph)?.hold) {
+      if (containerDefOfGlyph(rec.glyph!)?.hold) {
         objId = id;
         break;
       }
@@ -14117,30 +15125,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * the routing). A satchel becomes a fixture of the body, and the body's hands
    * stay free, which is the whole difference between it and a basket.
    *
-   * The prop LEAVES the world while worn (see `wornBags` — declared debt: there
-   * is no on-body mount yet, and a bag left lying on the floor would be swept
-   * up by its owner's own tidy chore). Its registration and its stock stay
-   * exactly where they were, keyed by the same object id.
+   * The prop LEAVES the world while worn (see `wornBagIndex` — declared debt:
+   * there is no on-body mount yet, and a bag left lying on the floor would be
+   * swept up by its owner's own tidy chore). Its registration and its stock
+   * stay exactly where they were, keyed by the same object id.
    */
   function donWornBag(session: QuestSession, cid: string, objId: string): boolean {
-    if (!world || session.wornBags.has(cid)) return false;
+    if (!world || session.wornBagIndex.has(cid)) return false;
     const glyph = objGlyphOf(session, objId);
     const def = glyph ? containerDefOfGlyph(glyph) : null;
     if (!glyph || def?.hold !== "wear") return false;
     const av = world.state.avatars[avatarIdOf(cid)];
-    if (!session.containerStock.has(objId)) session.containerStock.set(objId, {});
-    session.containers.set(objId, def.relation);
+    const rec = recordOf(session, objId);
+    if (!rec.stock) rec.stock = {};
+    rec.relation = def.relation;
     // A PERSONAL BAG IS NOT THE HOUSEHOLD PANTRY (ownership.ts): what is in
     // somebody's satchel is theirs, so the walkers' private-property gate keeps
     // housemates out of it exactly as it keeps them out of a member's own box.
-    session.containerOwner.set(objId, creatureScope(cid));
-    const rec = session.smallProps.get(objId);
+    rec.owner = creatureScope(cid);
+    const hadEntityId = rec.entityId;
     world.removeObject(objId);
-    session.smallProps.delete(objId);
     // The creature-world instance goes with the prop — the bag is a fixture of
     // the body now, not a loose thing anybody can be told to fetch.
-    if (rec && session.creatures) delete session.creatures.world.items[rec.entityId];
-    session.wornBags.set(cid, { objId, glyph });
+    if (hadEntityId && session.creatures) delete session.creatures.world.items[hadEntityId];
+    rec.mount = "worn";
+    rec.glyph = glyph;
+    rec.wearer = cid;
+    delete rec.entityId;
+    delete rec.at;
+    session.wornBagIndex.set(cid, objId);
     if (av) fireCarryGesture(avatarIdOf(cid), "pickup", { x: av.x, y: av.y });
     return true;
   }
@@ -14154,15 +15167,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cid: string,
     at: { x: number; y: number },
   ): string | null {
-    const rec = session.wornBags.get(cid);
-    if (!rec || !world) return null;
-    const entityId = materialize(session, rec.glyph, null);
-    world.addObject(itemObjectSpec(rec.glyph, rec.objId, at));
-    session.smallProps.set(rec.objId, { entityId, glyph: rec.glyph, at: session.townClock });
+    const objId = session.wornBagIndex.get(cid);
+    const rec = objId ? session.containerRecords.get(objId) : undefined;
+    if (!objId || !rec || !world) return null;
+    const glyph = rec.glyph ?? "";
+    const entityId = materialize(session, glyph, null);
+    world.addObject(itemObjectSpec(glyph, objId, at));
+    rec.mount = "loose";
+    rec.entityId = entityId;
+    rec.at = session.townClock;
+    delete rec.wearer;
     session.needsPropsEpoch++; // a bag on the floor wakes dormant tidy decides
-    session.wornBags.delete(cid);
+    session.wornBagIndex.delete(cid);
     fireCarryGesture(avatarIdOf(cid), "putdown", at);
-    return rec.objId;
+    return objId;
   }
 
   /** The registered TRANSFORM station whose `applies` IS `state` (fire → hot,
@@ -14226,7 +15244,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // A commanded body meets the same social stop-gate as the player's
         // own hand (ownership.ts): foreign PRIVATE property is refused
         // while an owner is nearby to object.
-        const bOwner = session.containerOwner.get(boxId);
+        const bOwner = session.containerRecords.get(boxId)?.owner;
         if (isPrivateOwner(bOwner) && !mayUse(cid, houseIndexOfCid(cid), bOwner)) {
           const objector = objectingOwner(bOwner, world.state.objects[boxId]);
           if (objector) {
@@ -14236,8 +15254,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
         // OPEN the lid to reach in — the access action (a lidded box); it stays
         // open until the taker leaves (stepContainerLids) or "shut".
-        if (session.containers.get(boxId) === "in") openContainerLid(session, cid, boxId);
-        const stock = session.containerStock.get(boxId) ?? {};
+        if (session.containerRecords.get(boxId)?.relation === "in") openContainerLid(session, cid, boxId);
+        const stock = session.containerRecords.get(boxId)?.stock ?? {};
         if ((stock[glyph] ?? 0) <= 0) return; // emptied during the walk — re-command re-resolves
         const body = world.state.avatars[npcId];
         const at = body ?? world.state.objects[boxId];
@@ -14265,7 +15283,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (got < 1) return;
         stock[glyph]! -= 1;
         if (stock[glyph]! <= 0) delete stock[glyph];
-        session.containerStock.set(boxId, stock);
+        setContainerStock(session, boxId, stock);
         removeVisibleContainedProp(session, boxId, glyph);
         fellIfConsumed(session, boxId); // an emptied kill-source is felled
         // A unit that went INTO A BAG leaves no instance behind, so the goal
@@ -14285,17 +15303,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // pursuit planned was a silent no-op and the trip achieved nothing. A
       // container and anything furniture-sized still ride the hands only: a
       // scope may never become a countable unit inside another bag.
-      const loose = o ? session.smallProps.get(o) : undefined;
-      if (o && loose && npcCarrying(npcId) && !world.state.objects[o]?.carriedBy) {
+      const loose = o ? loosePropOf(session, o) : undefined;
+      if (o && loose && loose.glyph && npcCarrying(npcId) && !world.state.objects[o]?.carriedBy) {
+        const looseGlyph = loose.glyph;
         const carry = bodyCarryOf(session, cid);
-        const cdef = containerDefOfGlyph(loose.glyph);
-        const handsOnly = isLargeGlyph(loose.glyph) || !!cdef?.hold;
+        const cdef = containerDefOfGlyph(looseGlyph);
+        const handsOnly = isLargeGlyph(looseGlyph) || !!cdef?.hold;
         const at = world.state.objects[o];
         if (!handsOnly && activeBag(carry) && at) {
           // TAKE-FIRST, REMOVE-SECOND (item conservation): the unit is on the
           // body before the prop leaves the world, and a refusal leaves it
           // lying exactly where it was.
-          if (giveUnitsToBody(session, cid, loose.glyph, 1, { at: { x: at.x, y: at.y } }) > 0) {
+          if (giveUnitsToBody(session, cid, looseGlyph, 1, { at: { x: at.x, y: at.y } }) > 0) {
             removeLooseProp(session, o);
             // Nothing is left for a `holding` precondition to see, so the
             // errand ends here rather than re-planning into the act cap.
@@ -14321,7 +15340,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // to lift it out — the access action (bug: items taken through a shut
         // lid). "on" surfaces and loose props have no lid to work.
         const boxId = at?.containedIn?.objectId;
-        if (boxId && session.containers.get(boxId) === "in") openContainerLid(session, cid, boxId);
+        if (boxId && session.containerRecords.get(boxId)?.relation === "in") openContainerLid(session, cid, boxId);
         // The mirror-prop conversion (unshelveProp), the carry and the reach all
         // live in the master now — this used to be the only one of the five
         // carry paths that did all three, which is why it was the only one that
@@ -14504,10 +15523,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // serving that renders nowhere and can never be eaten again. Same draw-
           // down the needs walker's own consume does when it eats at a station.
           const shelf = at?.containedIn?.objectId;
-          const stock = shelf ? session.containerStock.get(shelf) : undefined;
+          const stock = shelf ? session.containerRecords.get(shelf)?.stock : undefined;
           if (shelf && stock) {
-            stackTake(stock, session.smallProps.get(o)?.glyph ?? "");
-            session.containerStock.set(shelf, stock);
+            stackTake(stock, loosePropOf(session, o)?.glyph ?? "");
+            setContainerStock(session, shelf, stock);
           }
           removeLooseProp(session, o);
         }
@@ -14577,7 +15596,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!o || world.state.objects[o]?.carriedBy !== npcId) {
         // Stale/desynced id — transform the REAL prop in hand (give/place's rule).
         o = null;
-        for (const [objId] of session.smallProps) {
+        for (const objId of looseIds(session)) {
           if (world.state.objects[objId]?.carriedBy === npcId) {
             o = objId;
             break;
@@ -14588,13 +15607,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const body = world.state.avatars[npcId];
       const st = nearestStationApplying(session, step.state, body ? { x: body.x, y: body.y } : null);
       if (!st) return; // no station grants this state here — the pursuit spoke the reason
-      const entityId = session.smallProps.get(o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
+      const entityId = loosePropOf(session, o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
       const events = useStation(session.creatures.world, entityId, st.applies, st.removes, st.powerDeviceId);
       if (!events.length) return; // wrong direction / unpowered — a no-op, re-plan next tick
       const newGlyph = liveItemGlyph(session, entityId);
       const specObj = world.state.spec.objects.find((ob) => ob.id === o);
       if (specObj) specObj.glyph = newGlyph; // render3d re-rasters the icon
-      const rec = session.smallProps.get(o);
+      const rec = loosePropOf(session, o);
       if (rec) rec.glyph = newGlyph; // later lookups (eat/tidy/give) see the new type
       const stObj = world.state.objects[st.objectId];
       fireCarryGesture(npcId, "pickup", stObj ? { x: stObj.x, y: stObj.y } : undefined); // a reach at the station
@@ -14710,8 +15729,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!body) return;
       let boxId: string | undefined;
       let bestD = 2.4;
-      for (const [id, rel] of session.containers) {
-        if (rel !== "in") continue; // only lidded boxes have an open-state
+      for (const [id, rec] of containerEntries(session)) {
+        if (rec.relation !== "in") continue; // only lidded boxes have an open-state
         const o = state.objects[id];
         if (!o) continue;
         const d = Math.hypot(o.x - body.x, o.y - body.y);
@@ -14750,7 +15769,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       let o = objIdOfEntity(session, step.itemId);
       if (!o || state.objects[o]?.carriedBy !== npcId) {
         o = null;
-        for (const [objId] of session.smallProps) {
+        for (const objId of looseIds(session)) {
           if (state.objects[objId]?.carriedBy === npcId) {
             o = objId;
             break;
@@ -14758,7 +15777,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
       if (!o) return; // empty-handed — nothing to wear
-      const glyph = session.smallProps.get(o)?.glyph ?? liveItemGlyph(session, step.itemId);
+      const glyph = loosePropOf(session, o)?.glyph ?? liveItemGlyph(session, step.itemId);
       // Keep the FULL clean garment signature (head + colour, minus any state
       // facet) so the doffed unit and the visible re-dress carry the colour —
       // e.g. "wear + shirt + red" dons `shirt.color_red`, not a bare `shirt`.
@@ -14791,7 +15810,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       let o = objIdOfEntity(session, step.itemId);
       if (!o || state.objects[o]?.carriedBy !== npcId) {
         o = null;
-        for (const [objId] of session.smallProps) {
+        for (const objId of looseIds(session)) {
           if (state.objects[objId]?.carriedBy === npcId) {
             o = objId;
             break;
@@ -14799,17 +15818,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
       if (!o) return; // empty-handed — nothing to colour
-      const entityId = session.smallProps.get(o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
+      const entityId = loosePropOf(session, o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
       // Swap the colour on the CANONICAL item so every later lookup (wear, give,
       // tidy) sees the new colour; keep head + other facets + state.
       const ent = session.entities.get(entityId);
-      const cur = ent?.glyph ?? session.smallProps.get(o)?.glyph ?? liveItemGlyph(session, entityId);
+      const cur = ent?.glyph ?? loosePropOf(session, o)?.glyph ?? liveItemGlyph(session, entityId);
       const recolored = withVariation(cur, step.color);
       if (ent) ent.glyph = recolored;
       const newGlyph = ent ? liveItemGlyph(session, entityId) : recolored;
       const specObj = state.spec.objects.find((ob) => ob.id === o);
       if (specObj) specObj.glyph = newGlyph; // render3d re-rasters the icon
-      const rec = session.smallProps.get(o);
+      const rec = loosePropOf(session, o);
       if (rec) rec.glyph = newGlyph; // later lookups see the new colour
       fireCarryGesture(npcId, "pickup", { x: av.x, y: av.y }); // a reach at the tub
       showWorldBubble(state, `color:${cid}`, {
@@ -14870,7 +15889,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let o = objIdOfEntity(session, step.itemId);
     if (!o || world.state.objects[o]?.carriedBy !== npcId) {
       o = null;
-      for (const [objId] of session.smallProps) {
+      for (const objId of looseIds(session)) {
         if (world.state.objects[objId]?.carriedBy === npcId) {
           o = objId;
           break;
@@ -14880,7 +15899,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const c = o ? world.state.objects[o] : undefined;
     if (!o || !c) return; // empty-handed — nothing to give / put down
     const entityId =
-      session.smallProps.get(o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
+      loosePropOf(session, o)?.entityId ?? session.convItems.get(o)?.entityId ?? step.itemId;
     if (step.kind === "give") {
       const cworld = session.creatures?.world;
       const item = cworld?.items[entityId];
@@ -14930,10 +15949,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // place: prefer a real CONTAINER — the named one, else the nearest within
     // reach of the drop point — and fall back to setting the item down.
     const named = step.place.kind === "named" ? step.place.id : null;
-    let containerId = named && session.containers.has(named) ? named : null;
+    let containerId = named && isContainerId(session, named) ? named : null;
     if (!containerId) {
       let bestD = 2.5;
-      for (const [boxId] of session.containers) {
+      for (const boxId of containerIds(session)) {
         const box = world.state.objects[boxId];
         if (!box) continue;
         const d = Math.hypot(box.x - c.x, box.y - c.y);
@@ -14945,7 +15964,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // OPEN the lid to file it in — a lidded box takes the access action first
     // (bug: "put X away" stowed THROUGH a shut lid). "on" surfaces have none.
-    if (containerId && session.containers.get(containerId) === "in") openContainerLid(session, cid, containerId);
+    if (containerId && session.containerRecords.get(containerId)?.relation === "in") openContainerLid(session, cid, containerId);
     if (!containerId || !stowCarriedIn(session, o, containerId)) {
       dropObject(world.state, o, c.x, c.y);
       fireCarryGesture(npcId, "putdown", { x: c.x, y: c.y });
@@ -15136,7 +16155,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // resolve to whichever chest is nearest the PLAYER (a misdelivery).
           const fm = /^furn_(\d+)_/.exec(p.id);
           if (fm) return needObjectPos(session, host.state, Number(fm[1]), p.id);
-          const me = host.state.avatars[PLAYER_ID];
+          const me = playerBody();
           let best: { x: number; y: number } | null = null;
           let bestD = Infinity;
           // The WORD an object's glyph answers to, `#`-instance-stripped, null
@@ -15168,7 +16187,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
           };
           for (const objId of Object.keys(host.state.objects)) tryObj(objId, null);
-          for (const [objId, rec] of session.smallProps) tryObj(objId, objHead(rec.glyph));
+          for (const [objId, rec] of looseEntries(session)) tryObj(objId, objHead(rec.glyph!));
           for (const [objId, it] of session.convItems) {
             tryObj(objId, objHead(session.entities.get(it.entityId)?.glyph));
           }
@@ -15232,14 +16251,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (const [objId, it] of session.convItems) {
           consider(it.entityId, objId, session.entities.get(it.entityId)?.glyph ?? "");
         }
-        for (const [objId, rec] of session.smallProps) consider(rec.entityId, objId, rec.glyph);
+        for (const [objId, rec] of looseEntries(session)) consider(rec.entityId!, objId, rec.glyph!);
         // Container stocks: a matching stacked glyph resolves as a synthetic
         // `stock:<container>|<glyph>` ref; the pick step withdraws one unit
         // and materializes it into the hand. CAPABILITY-GATED like the needs
         // walker: a graspless seeker (the commanded pet) reaches only open
         // surfaces ("on" — the table, its bowl), never lidded boxes.
         const seekerGrasp = canGrasp(session.creatures?.world.creatures[seeker]);
-        for (const [boxId, stock] of fromCid !== null ? [] : session.containerStock) {
+        for (const [boxId, boxRec] of fromCid !== null ? [] : stockedEntries(session)) {
+          const stock = boxRec.stock!;
           const box = host.state.objects[boxId];
           if (!box) continue;
           if (!scopeOk(boxId, box)) continue; // a need eats from ITS OWN pantry
@@ -15248,7 +16268,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // OWNERSHIP-GATED (ownership.ts): a command never auto-resolves
           // into someone ELSE's private box — an explicit take at the box
           // itself still meets the social stop-gate (and its objection).
-          const bOwner = session.containerOwner.get(boxId);
+          const bOwner = boxRec.owner;
           if (isPrivateOwner(bOwner) && !mayUse(seeker, houseIndexOfCid(seeker), bOwner)) continue;
           for (const [glyph, n] of Object.entries(stock)) {
             if (n <= 0) continue;
@@ -15444,17 +16464,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world) return [];
     const houseIndex = houseIndexOfCid(cid);
     const out: IdleBag[] = [];
-    for (const [objId, rec] of session.smallProps) {
-      if (!livesOnTheFloor(rec.glyph)) continue;
+    for (const [objId, rec] of looseEntries(session)) {
+      if (!rec.glyph || !rec.entityId) continue;
+      const glyph = rec.glyph;
+      if (!livesOnTheFloor(glyph)) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy) continue; // somebody has it
-      if (!mayUse(cid, houseIndex, session.containerOwner.get(objId))) continue;
+      if (!mayUse(cid, houseIndex, session.containerRecords.get(objId)?.owner)) continue;
       if (toolClaimed(session.reservations, objId)) continue; // another trip's
       if (isPlayArea(session, world.state, objId)) continue;
-      const cap = containerDefOfGlyph(rec.glyph)?.capacity ?? 0;
-      const room = cap - totalStackUnits(session.containerStock.get(objId) ?? {});
+      const cap = containerDefOfGlyph(glyph)?.capacity ?? 0;
+      const room = cap - totalStackUnits(session.containerRecords.get(objId)?.stock ?? {});
       if (room <= 0) continue;
-      out.push({ objId, entityId: rec.entityId, glyph: rec.glyph, at: { x: o.x, y: o.y }, room });
+      out.push({ objId, entityId: rec.entityId, glyph, at: { x: o.x, y: o.y }, room });
     }
     return out.sort((a, b) => (a.objId < b.objId ? -1 : a.objId > b.objId ? 1 : 0));
   }
@@ -15632,7 +16654,47 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // it is the shop. Both stay speakable; the resolver finds whichever is near.
     "storeroom",
     "yard", "house", // transfer endpoints (②): the builder's yard, a house
+    // ⚖️ H1b — THE WILD IS A PLACE YOU CAN NAME. Without this row the
+    // classifier calls `forest` an unknown symbol and `defaultBinder` hands
+    // every unknown symbol to the CREATURE channel, so "get + wood + from +
+    // forest" compiled a source that was a person nobody has ever met. A place
+    // word riding the creature channel is a lexical lie; this is the word's
+    // true class (glyph-registry.ts `forest`: pos "place", categories
+    // ["where"]). ONE word, because one is what the shipped lexicon carries —
+    // a synonym would need a registry entry and this round adds none.
+    "forest",
   ]);
+
+  /** ⚖️ H1 — THE SPOKEN WORDS THAT NAME THE WILD ITSELF — the region outside
+   *  the town, as opposed to any place inside it. A fetch whose `from` is one
+   *  of these is asking THE REGION SHED for goods ("get wood from the
+   *  forest"), never a container in the house, and that is the single
+   *  distinction the draw arm turns on.
+   *
+   *  A word has to be in BOTH this set and `PLACE_NOUNS` above to arrive as a
+   *  place at all — the classifier decides the channel, this set decides the
+   *  meaning. ONE word, because one is what the shipped lexicon carries
+   *  (glyph-registry.ts `forest`, pos "place", categories ["where"]) — a
+   *  synonym would need a registry entry and this round adds none. */
+  const WILD_PLACE_WORDS = new Set(["forest"]);
+
+  /**
+   * Does this goal source name the wild?
+   *
+   * 🚨 AND IT IS READ OFF BOTH CHANNELS ON PURPOSE — a DEFENCE, kept after
+   * H1b classified `forest` properly. Any wild word that is not in
+   * `PLACE_NOUNS` (the next synonym somebody adds to the registry, a word a
+   * culture pack introduces) still reaches the binder's CREATURE channel,
+   * because `defaultBinder` hands every unknown symbol there and it arrives as
+   * `{kind:"creature", id:"<word>"}` — a person nobody has ever met. Matching
+   * the word wherever it landed means the draw arm cannot be silently unwired
+   * by a classification miss. A `point` source is never the wild: that is
+   * ground you can walk to.
+   */
+  function namesTheWild(from: PlaceRef | undefined): boolean {
+    if (from?.kind !== "named" && from?.kind !== "creature") return false;
+    return WILD_PLACE_WORDS.has(from.id.toLowerCase());
+  }
 
   /** Spoken words naming a LIDDED CONTAINER — "open/shut the X" on one works its
    *  physical LID (`setOpen`/`heldOpen`), not a creature-world device toggle.
@@ -15663,13 +16725,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // The SPOKEN word of each stack, not its storage head: a piece waiting on
     // the floor is a `furn.<kind>` stack, and the child says "workbench".
-    for (const [, rec] of session.smallProps) {
-      if (spokenWord(rec.glyph).toLowerCase() === sym) return "item";
+    for (const [, rec] of looseEntries(session)) {
+      if (spokenWord(rec.glyph!).toLowerCase() === sym) return "item";
     }
     const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
     if (Object.keys(onMe).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
-    for (const stock of session.containerStock.values()) {
-      if (Object.keys(stock).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
+    for (const [, rec] of stockedEntries(session)) {
+      if (Object.keys(rec.stock!).some((g) => spokenWord(g).toLowerCase() === sym)) return "item";
     }
     return "unknown";
   }
@@ -15678,7 +16740,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  command/rule when the player isn't in an active conversation. */
   function nearestCreature(session: QuestSession): string | null {
     if (!world || !session.creatures) return null;
-    const p = world.state.avatars[PLAYER_ID];
+    const p = playerBody();
     if (!p) return null;
     let best: string | null = null;
     let bestD = Infinity;
@@ -15718,6 +16780,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session.npcTasks.delete(body);
     clearNeedStep(session, cid);
     world?.setNpcErrand(body, null);
+    // Follow at the PLAYER's pace (2026-08-16 ruling — see AVATAR_RUN_MULT
+    // below): a party member's own species speed would otherwise leave it
+    // trailing the running player it was just told to follow.
+    if (world) world.setNpcMaxSpeed(body, world.npcMaxSpeedOf(body) * AVATAR_RUN_MULT);
   }
 
   /** Dismiss a creature from the party — it stops following and stays put; a
@@ -15726,6 +16792,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session.party.delete(cid);
     session.npcTasks.delete(avatarIdOf(cid));
     world?.setNpcErrand(avatarIdOf(cid), null);
+    world?.setNpcMaxSpeed(avatarIdOf(cid), null); // restore its own species pace
   }
 
   // ── Items as STACKS · ONE container abstraction ───────────────────────────
@@ -16514,8 +17581,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world) return [];
     const key = `h_${houseIndex}`;
     const out: Array<{ id: string; glyph: string; x: number; y: number }> = [];
-    for (const [objId, rec] of session.smallProps) {
-      if (!furnitureKindOfGlyph(rec.glyph)) continue;
+    for (const [objId, rec] of looseEntries(session)) {
+      if (!rec.glyph || !furnitureKindOfGlyph(rec.glyph)) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue;
       if (buildingAt(world.state, o.x, o.y)?.id !== key) continue;
@@ -16661,7 +17728,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const glyph = furnitureGlyph(kind);
     let sourceBox: string | null = null;
     for (const objId of houseContainerKeys(session, house.index)) {
-      const stock = session.containerStock.get(objId);
+      const stock = session.containerRecords.get(objId)?.stock;
       if (stock && (stock[glyph] ?? 0) > 0) {
         sourceBox = objId;
         break;
@@ -16800,13 +17867,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const drawStock = (): boolean => {
       if (sourceProp) {
         const o = state.objects[sourceProp];
-        return !!o && !o.carriedBy && session.smallProps.has(sourceProp);
+        return !!o && !o.carriedBy && isLooseProp(session, sourceProp);
       }
       if (took) return true;
-      const stock = session.containerStock.get(sourceBox!) ?? {};
+      const stock = session.containerRecords.get(sourceBox!)?.stock ?? {};
       if ((stock[glyph] ?? 0) <= 0) return false; // someone took it meanwhile
       stackTake(stock, glyph);
-      session.containerStock.set(sourceBox!, stock);
+      setContainerStock(session, sourceBox!, stock);
       took = true;
       return true;
     };
@@ -16884,12 +17951,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * them, so there is nothing to absorb it into and nothing to say about it.
    */
   function pocketLoose(session: QuestSession, objId: string) {
-    const rec = session.smallProps.get(objId);
-    if (!rec) return;
+    const rec = loosePropOf(session, objId);
+    if (!rec || !rec.glyph) return;
+    const glyph = rec.glyph;
     const cid = session.handsCid;
     const held = world?.state.objects[objId]?.carriedBy === avatarIdOf(cid);
     const carry = bodyCarryOf(session, cid);
-    const cdef = containerDefOfGlyph(rec.glyph);
+    const cdef = containerDefOfGlyph(glyph);
     if (cdef?.hold === "wear" && !carry.worn) {
       if (donWornBag(session, cid, objId)) pushPocket(session);
       return;
@@ -16897,7 +17965,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // A CONTAINER — or anything furniture-sized — rides the HANDS as itself: a
     // scope may never become a countable unit inside another bag (containers.ts),
     // and nobody ever pocketed a chair.
-    const handsOnly = !!cdef?.hold || isLargeGlyph(rec.glyph);
+    const handsOnly = !!cdef?.hold || isLargeGlyph(glyph);
     const bag = activeBag(carry);
     if (handsOnly || !bag) {
       if (held) return; // already in the hands — that IS where it goes
@@ -16907,7 +17975,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     // INTO THE BAG — take-first, remove-second, so the unit is never in both
     // places (and a full bag simply leaves it where it is).
-    if (giveUnitsToBody(session, cid, rec.glyph, 1) < 1) return;
+    if (giveUnitsToBody(session, cid, glyph, 1) < 1) return;
     removeLooseProp(session, objId);
     pushPocket(session);
   }
@@ -16921,14 +17989,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const entityId = materialize(session, glyph, null);
     const objId = `small:${entityId}`;
     world.addObject(itemObjectSpec(glyph, objId, { x, y }));
-    session.smallProps.set(objId, { entityId, glyph, at: session.townClock }); // `at` paces the tidy grace
+    setLooseProp(session, objId, { entityId, glyph, at: session.townClock }); // `at` paces the tidy grace
     // A CONTAINER IS A CONTAINER WHEREVER IT IS (step ②): a basket on the floor
     // and a barrel on its side are places things can go, so they register as
     // such the moment they exist. Registration is what makes the stock map
     // reachable — without it a loose container has no endpoint and cannot hold
     // anything at all.
     const cdef = containerDefOfGlyph(glyph);
-    if (cdef) session.containers.set(objId, cdef.relation);
+    // Relation only — NOT `registerContainer` (which also stamps `owner`):
+    // ownership is a separate decision a caller makes afterward (or never, for
+    // plain unowned clutter), so this leaves it untouched exactly as the old
+    // bare `containers.set` did.
+    if (cdef) recordOf(session, objId).relation = cdef.relation;
     session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
     return objId;
   }
@@ -16939,7 +18011,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  remember. Returns the prop id, or null when the world isn't up. */
   function seedContainerProp(session: QuestSession, seed: ContainerSeed): string | null {
     const objId = spawnLooseProp(session, seed.glyph, seed.at.x, seed.at.y);
-    if (objId) session.containerOwner.set(objId, seed.owner);
+    if (objId) setContainerOwner(session, objId, seed.owner);
     return objId;
   }
 
@@ -16964,7 +18036,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function seedPlayerBag(session: QuestSession) {
     if (!world) return;
     const cid = session.handsCid;
-    if (session.wornBags.has(cid)) return; // already equipped — never a second one
+    if (session.wornBagIndex.has(cid)) return; // already equipped — never a second one
     const body = world.state.avatars[avatarIdOf(cid)];
     const at = body ? { x: body.x, y: body.y } : { x: 0, y: 0 };
     // The prop exists for one instant: `donWornBag` takes it out of the world
@@ -16974,9 +18046,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (donWornBag(session, cid, objId)) return;
     // Defensive: nothing that reaches here can refuse (the glyph is a worn
     // container and the body wears none), but a half-minted bag would be a
-    // registered container nobody holds — so it goes back out whole.
+    // registered container nobody holds — so it goes back out whole (fully —
+    // not just the loose half `removeLooseProp` alone would clear).
     removeLooseProp(session, objId);
-    session.containers.delete(objId);
+    deleteContainerRecord(session, objId);
   }
 
   /**
@@ -17035,8 +18108,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (
       !glyph ||
       !world ||
-      session.marketStore.has(containerObjId) ||
-      session.produceBox.has(containerObjId) ||
+      isDerivedStoreObject(session, containerObjId) ||
       containerObjId.startsWith("trade:")
     ) {
       return; // markets, producer piles + trade crates are economy-driven (derived stock, no puts)
@@ -17050,9 +18122,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!setDownFromHands(session, avatarIdOf(cid), { kind: "container", id: containerObjId }, { objId: carry.inHand.objId })) return;
     } else {
       if (takeUnitsFromBody(session, cid, glyph, 1) < 1) return;
-      const stock = session.containerStock.get(containerObjId) ?? {};
+      const stock = ensureContainerStock(session, containerObjId);
       stackAdd(stock, glyph);
-      session.containerStock.set(containerObjId, stock);
       bumpStockEpoch(session); // ⏸️ the PLAYER filled a box — wakes parked rows
       addVisibleContainedProp(session, containerObjId, glyph);
     }
@@ -17143,9 +18214,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         iconRef: "🏗️",
         glyph: "wood",
       });
-      session.containers.set(TOWN_YARD_ID, "in");
-      session.containerStock.set(TOWN_YARD_ID, town.deltas.stock); // ALIAS — the one stack map
-      session.containerOwner.set(TOWN_YARD_ID, TOWN_SCOPE); // communal
+      registerContainer(session, TOWN_YARD_ID, "in", TOWN_SCOPE, town.deltas.stock); // stock ALIAS — the one stack map
       // …and ONE basket beside it (step ③ seeding), communal at the same tier.
       // Seeded HERE, inside the pre-houses block, for the same reason the yard
       // is: an age-0 homestead has stock and no market, and it is the
@@ -17200,9 +18269,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           contains: [{ relation: "in", capacity: STORE_DISPLAY_CAP }],
           glyph: g.good.key,
         });
-        session.containers.set(objId, "in");
+        // NO containerStock — a market shelf's stack is DERIVED (marketStore),
+        // never stored, so this stamps relation+owner only.
+        const mrec = recordOf(session, objId);
+        mrec.relation = "in";
+        mrec.owner = vendorOf(g.good.key);
         session.marketStore.set(objId, g.good.key);
-        session.containerOwner.set(objId, vendorOf(g.good.key));
       });
     });
 
@@ -17258,9 +18330,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         contains: [{ relation: "in", capacity: 99 }],
         glyph: "water",
       });
-      session.containers.set(ws.id, "in");
-      session.containerStock.set(ws.id, { water: 99 });
-      session.containerOwner.set(ws.id, TOWN_SCOPE); // communal at the TOWN tier
+      registerContainer(session, ws.id, "in", TOWN_SCOPE, { water: 99 }); // communal at the TOWN tier
     }
 
     // (THE BUILDER'S YARD — city-expansion ②, the ①b gap — registers at the
@@ -17290,9 +18360,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           contains: [{ relation: "in", capacity: STORE_DISPLAY_CAP }],
           glyph: g.good.key,
         });
-        session.containers.set(objId, "in");
+        // NO containerStock — a producer pile's stack is DERIVED too.
+        const prec = recordOf(session, objId);
+        prec.relation = "in";
+        prec.owner = null;
         session.produceBox.set(objId, { key: g.good.key, work: w });
-        session.containerOwner.set(objId, null);
       }
     });
 
@@ -17319,9 +18391,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // `at:"box"` seeds into a member's box (0's — the boxes are
             // per-member now; there is no communal one). `at:"table"` unchanged.
             const objId = it.at === "table" ? `furn_${fam.house}_table` : `furn_${fam.house}_box_0`;
-            const stock = session.containerStock.get(objId) ?? {};
+            const stock = ensureContainerStock(session, objId);
             stock[it.glyph] = (stock[it.glyph] ?? 0) + 1;
-            session.containerStock.set(objId, stock);
           }
         });
       }
@@ -17352,8 +18423,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           contains: [{ relation: "in", capacity: STORE_DISPLAY_CAP }],
           glyph,
         });
-        session.containers.set(objId, "in");
-        session.containerOwner.set(objId, null);
+        // NO containerStock — both crates are derived stocks (trade.ts).
+        const trec = recordOf(session, objId);
+        trec.relation = "in";
+        trec.owner = null;
       }
     }
 
@@ -17366,28 +18439,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // COMMUNAL furniture belongs to the HOUSEHOLD tier (ownership.ts) —
       // every member's walker may list it; outsiders' never do.
       const owner = houseScope(house.index);
-      session.containers.set(`furn_${house.index}_cupboard`, "in");
-      session.containers.set(`furn_${house.index}_table`, "on");
+      registerContainer(session, `furn_${house.index}_cupboard`, "in", owner);
+      registerContainer(session, `furn_${house.index}_table`, "on", owner);
       // (No communal toy box — each member owns one, seeded in the private
       // tier below.)
-      session.containers.set(`furn_${house.index}_barrel`, "in");
-      session.containers.set(`furn_${house.index}_bin`, "in");
-      session.containers.set(`furn_${house.index}_bowl`, "on");
-      session.containerOwner.set(`furn_${house.index}_cupboard`, owner);
-      session.containerOwner.set(`furn_${house.index}_table`, owner);
-      session.containerOwner.set(`furn_${house.index}_barrel`, owner);
-      session.containerOwner.set(`furn_${house.index}_bin`, owner);
-      session.containerOwner.set(`furn_${house.index}_bowl`, owner);
-      session.containerStock.set(`furn_${house.index}_barrel`, { water: BARREL_CAP - 2 });
+      registerContainer(session, `furn_${house.index}_barrel`, "in", owner, { water: BARREL_CAP - 2 });
+      registerContainer(session, `furn_${house.index}_bin`, "in", owner);
+      registerContainer(session, `furn_${house.index}_bowl`, "on", owner);
       for (const g of town.stage.goods) {
         const objId = `furn_${house.index}_chest_${g.good.key}`;
-        session.containers.set(objId, "in");
         // Seed the chest to the REAL pantry level (doc §13a.3) — so eating draws down a
         // truthful count, not a token 2. Clamped to the box capacity; food splits
         // into fruit KINDS (each house flavors its own pantry mix).
         const level = Math.min(g.boxCap, Math.max(1, Math.round(g.pantry(house, session.townClock))));
-        session.containerStock.set(objId, dealGood(session.dress, g.good.key, level, house.index));
-        session.containerOwner.set(objId, owner);
+        registerContainer(session, objId, "in", owner, dealGood(session.dress, g.good.key, level, house.index));
       }
       // THE HOUSEHOLD'S BASKET (step ③ seeding) — ONE, standing on the living
       // room floor where the goods chests corner, at the same once-per-session
@@ -17405,16 +18470,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const cidOf = (m: number) => creatureScope(`resident_${house.index}_${m}`);
       for (let m = 0; m < HOUSEHOLD; m++) {
         const boxId = `furn_${house.index}_box_${m}`;
-        session.containers.set(boxId, "in");
-        session.containerOwner.set(boxId, cidOf(m));
+        registerContainer(session, boxId, "in", cidOf(m));
       }
+      // A BED IS NOT A CONTAINER (it has no `contains` slots — a fixture
+      // needn't be one) but ownership.ts still needs to know whose it is, so
+      // this stamps `owner` alone — the row it lands on has no `relation`.
       const rp = houseRoomPlan(town.stage.center, house);
-      session.containerOwner.set(`furn_${house.index}_bed_0`, `${cidOf(0)}|${cidOf(1)}`);
+      setContainerOwner(session, `furn_${house.index}_bed_0`, `${cidOf(0)}|${cidOf(1)}`);
       if (rp.bedrooms.length >= 2) {
-        session.containerOwner.set(`furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}`);
-        session.containerOwner.set(`furn_${house.index}_bed_2`, cidOf(4));
+        setContainerOwner(session, `furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}`);
+        setContainerOwner(session, `furn_${house.index}_bed_2`, cidOf(4));
       } else {
-        session.containerOwner.set(`furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}|${cidOf(4)}`);
+        setContainerOwner(session, `furn_${house.index}_bed_1`, `${cidOf(2)}|${cidOf(3)}|${cidOf(4)}`);
       }
     }
   }
@@ -17656,7 +18723,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const n = produceBoxUnits(session, objId);
       return splitStock(pb.key, n, pb.work);
     }
-    return session.containerStock.get(objId) ?? {};
+    return session.containerRecords.get(objId)?.stock ?? {};
   }
 
   /** Total items in a container (openability test). */
@@ -17669,17 +18736,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  through its glyph (concept affordances + object properties); a fixture
    *  through the station kind encoded in its id. */
   function hoverObjectMotive(session: QuestSession, objId: string): AttentionMotive | null {
-    const prop = session.smallProps.get(objId);
-    if (prop) {
+    const prop = loosePropOf(session, objId);
+    if (prop && prop.glyph) {
       // `spokenWord`, not `headOf`: a piece waiting on the floor stacks as
       // `furn.<kind>`, and no concept is filed under `furn` — so a loose bed
       // afforded nothing at all until the prefix was folded away.
-      const head = spokenWord(prop.glyph);
+      const glyph = prop.glyph;
+      const head = spokenWord(glyph);
       return objectMotive({
         affords: CONCEPT_LIBRARY.get(head)?.affords ?? [],
-        properties: propertiesOf(prop.glyph),
+        properties: propertiesOf(glyph),
         stationKind: null,
-        isWater: isKindOf(prop.glyph, "water"),
+        isWater: isKindOf(glyph, "water"),
       });
     }
     if (isWellId(objId)) {
@@ -17700,8 +18768,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  the ground says "put it away" (tidy). Only reached for objects `hoverObjectMotive`
    *  didn't claim (food/toy/bed…), so a food prop is still eaten, not swept. */
   function hoverObjectChore(session: QuestSession, objId: string): "tidy" | "provision" | null {
-    if (session.containers.has(objId)) return "provision"; // a chest/cupboard → fill-check
-    if (session.smallProps.has(objId)) return "tidy"; // loose clutter → put away
+    if (isContainerId(session, objId)) return "provision"; // a chest/cupboard → fill-check
+    if (isLooseProp(session, objId)) return "tidy"; // loose clutter → put away
     return null;
   }
 
@@ -17800,17 +18868,106 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const CHORE_STRENGTH = 0.85; // a deliberate hold on the chore object
   const ENGAGE_CONVO_HOLD_S = 8; // engagement held this long after a conversation
   const ENGAGE_DIRECT_HOLD_S = 4; // …and after an oscillation / board directive
-  const DIRECT_MIN_M = 2.5; // already-there → don't re-path (no jitter)
-  const DIRECT_MAX_M = 26; // a directed move stays local
+  /** ALREADY-THERE → don't re-path (no jitter). SCOPE-INVARIANT on purpose: it
+   *  is a BODY tolerance, not a world measure — a person is ~1.7 m tall and
+   *  arrives within about a stride of the point in a house or on a hillside
+   *  alike, so nothing about the containing scope should move it. */
+  const DIRECT_MIN_M = 2.5;
+  /** A directed move STAYS LOCAL — and "local" is a fact about the scope the
+   *  body is standing in, not a constant.
+   *
+   *  ⚖️ 26 IS THE DOLLHOUSE INTERIOR'S NUMBER (ruling ② 2026-08-16: "feed it the
+   *  smallest containing object; then it can walk its way up the tree to find
+   *  the relevant context"). It was tuned where every direct anyone had ever
+   *  given was given: inside a house, across a room or two. A wilderness chunk
+   *  is 320 m on a side — `WILD_SIDE`, and `WildernessContent.side` is already
+   *  read elsewhere as "THE SCALE OF A SESSION" (the multiplayer coordinator's
+   *  own thresholds derive from it) — so this cap would have swallowed all but
+   *  the closest orders a player could give out there, which is exactly the
+   *  failure this bound exists to prevent in the other direction.
+   *
+   *  So it is read off the SUBJECT'S SCOPE and tolerates absence:
+   *   • an OPEN MANIFOLD (a wilderness chunk) gets half its side: the farthest
+   *     point on a square chunk that still reads as "over there" rather than
+   *     "somewhere else entirely", and never less than the settlement number;
+   *   • a SETTLEMENT session keeps 26 EXACTLY — this is the scope the number
+   *     was measured in, and every dollhouse pin depends on it;
+   *   • anything else (a freestanding puzzle world, which has neither) falls
+   *     back to 26 unchanged.
+   *  No mode flag was invented: both branches ask the session what it CONTAINS. */
+  const DIRECT_MAX_M = 26;
+  /**
+   * ⚠️ THE OPEN COUNTRY IS ASKED FIRST, AND THAT IS THE WHOLE FIX.
+   *
+   * This read `if (session.town || session.village) return DIRECT_MAX_M` BEFORE
+   * looking at the wilderness — and `session.village` is planned for every
+   * session that has neither a town nor a house (`planVillageBuildings`, guarded
+   * exactly by `town || house ? null : …`), which is precisely what a no-town
+   * wilderness chunk is. So the scope-derived arm was UNREACHABLE in the one
+   * session it was written for: in a 320 m chunk the cap stayed 26 and every
+   * order past it was refused in silence — "hover somewhere and the body doesn't
+   * walk there" — the exact failure the paragraph above says this bound exists
+   * to prevent in the other direction.
+   *
+   * The question it now asks is a fact about EXTENT, not a mode: DID THE
+   * WILDERNESS CONTENT DEFINE THIS SESSION'S MANIFOLD? Only `start`'s no-town
+   * branch does that — it resizes the manifold to `content.side` and spawns at
+   * that square's centre, so the chunk IS the world. A founding-age TOWN also
+   * carries wilderness, but lays its scatter OVER a manifold the stage owns and
+   * pointedly never resizes; its extent is the settlement's, so it keeps 26.
+   *
+   * Behaviour therefore moves in exactly one session shape — no town, wilderness
+   * content — and nowhere else: a town (with or without a scatter), a house, a
+   * dollhouse and a scatter-less village all return 26 as they always did.
+   */
+  function directMaxM(session: QuestSession): number {
+    const side = session.town ? 0 : (session.wilderness?.side ?? 0);
+    return side > 0 ? Math.max(DIRECT_MAX_M, side / 2) : DIRECT_MAX_M;
+  }
+  /** ⚖️ R1 MID-WALK REDIRECTION (ruling 2026-08-16, "allow redirection while
+   *  walking") — how far a NEW point/object must sit from the pursuit's last
+   *  aimed point before `directCreatureTo` re-routes a standing command. The
+   *  attached-avatar arm feeds this function the live cursor point EVERY
+   *  FRAME, so without a floor the pathfinder would be re-issued a fresh
+   *  route each tick from nothing more than cursor jitter; below this a move
+   *  reads as noise, not a change of mind, and the current leg is untouched. */
+  const REDIRECT_DRIFT_M = 2.0;
   const OSC_TRIGGER = 3; // creature↔point flips for the oscillation directive
   const OSC_GAP_S = 1.1; // the flips must come quickly, or the gesture resets
   const OSC_POINT_TOL_M = 3; // the point side must stay roughly put
 
-  /** Is `cid` a directable body that is genuinely IDLE (never interrupt a task)? */
+  /** Is `cid` a directable body that is genuinely IDLE (never interrupt a task)?
+   *
+   *  ⚖️ USER RULING 2026-08-14: AN ATTACHED AVATAR IS A DIRECTED CREATURE — the
+   *  player's own created body is directed by exactly this path ("that's how
+   *  'directing a creature' works"), so it passes the two membership clauses
+   *  that would otherwise exclude it:
+   *   • the KIND whitelist names the dollhouse cast (pets, residents); an
+   *     avatar's cid is neither, yet it is the most directable body there is;
+   *   • PARTY membership normally means "this one already follows you, don't
+   *     also aim it" — but for an avatar the party set is only the DRIVE
+   *     SUPPRESSION (`spawnAttachedAvatar`: "THE WILL is the party set"), never
+   *     a following contract, so it must not veto direction.
+   *  Every BUSY clause below still applies unchanged — that is what makes the
+   *  avatar arrive-then-reaim instead of thrashing mid-stride, and it is the
+   *  same idleness a hovered resident answers with. */
   function idleForDirect(session: QuestSession, cid: string): boolean {
     if (cid === PLAYER_ID) return false;
-    if (!isPetCid(cid) && !/^resident_\d+_\d+$/.test(cid)) return false;
-    if (session.party.has(cid) || session.pursuits.has(cid)) return false;
+    const attached = attachedAvatarPeerOf(cid) !== null;
+    if (!attached && !isPetCid(cid) && !/^resident_\d+_\d+$/.test(cid)) return false;
+    if (!attached && session.party.has(cid)) return false;
+    // A PURSUIT ONLY SPEAKS FOR A BODY WHILE SOMETHING IS DRIVING IT. Normally
+    // that is true every frame and this reads exactly as the plain
+    // `pursuits.has(cid)` it replaced. When the driver has not run inside the
+    // staleness window the claim is abandoned, not busy — drop it here rather
+    // than let it latch the body out of every gesture for the rest of the
+    // session (the frozen-avatar failure mode, made impossible in any scope).
+    if (session.pursuits.has(cid)) {
+      if (session.townClock - pursuitDrivenAt <= PURSUIT_STALE_S) return false;
+      session.pursuits.delete(cid);
+      session.walk.delete(cid);
+      console.log(`[spark] ${cid} — stale pursuit reaped (no driver for ${PURSUIT_STALE_S}s)`);
+    }
     if (session.liveNeedBodies.has(cid) || session.needStep.has(cid)) return false;
     if (session.walk.has(cid)) return false; // mid-walk (heading home / escort)
     if ((session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0) return false;
@@ -17926,17 +19083,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** Everything the attention-action table wants to know about an object. */
   function attentionTargetInfo(session: QuestSession, objId: string): AttentionTargetInfo | null {
-    const prop = session.smallProps.get(objId);
-    if (prop) {
-      const head = spokenWord(prop.glyph); // the piece, never the `furn` prefix
+    const prop = loosePropOf(session, objId);
+    if (prop && prop.glyph && prop.entityId) {
+      const glyph = prop.glyph;
+      const head = spokenWord(glyph); // the piece, never the `furn` prefix
       const it = session.creatures?.world.items[prop.entityId];
-      const f = glyphFacets(prop.glyph);
+      const f = glyphFacets(glyph);
       const o = world?.state.objects[objId];
       return {
         affords: CONCEPT_LIBRARY.get(head)?.affords ?? [],
-        properties: propertiesOf(prop.glyph),
+        properties: propertiesOf(glyph),
         stationKind: null,
-        isWater: isKindOf(prop.glyph, "water"),
+        isWater: isKindOf(glyph, "water"),
         states: it?.states ?? f.states ?? [],
         isClothing: goodKeyOfGlyph(head) === "clothing",
         unclaimed: !it?.ownerId && !it?.bound,
@@ -17957,7 +19115,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         affords: [], properties: [], stationKind: kind, isWater: false,
         states: [], isClothing: false, unclaimed: false, loose: false,
         // A container's "low" is probed for real by promoteChore's fires-check.
-        stockLow: session.containers.has(objId),
+        stockLow: isContainerId(session, objId),
       };
     }
     return null;
@@ -17967,6 +19125,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function refuseAttention(session: QuestSession, cid: string, actKind: string, latchKey: string) {
     const line = ATTENTION_REFUSAL[actKind];
     if (!line || session.sparkRefused.has(latchKey)) return;
+    // Voiceless bodies do not refuse ALOUD — and asking would mint their mind.
+    // Same read, same reason as `announceSparkIntent`; reachable as soon as a
+    // board press aims an unwilling meter act at an attached avatar.
+    if (!DEFAULT_VOICE_POLICY.attachedAvatarSpeaks && isAttachedAvatarCid(cid)) return;
     session.sparkRefused.add(latchKey);
     if (isPetCid(cid)) ensurePetCreature(session, cid);
     else ensureResidentCreature(session, cid);
@@ -18025,7 +19187,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!o || !info) return false;
     const acts = attentionActions(info);
     if (!acts.length) return false;
-    const entityId = session.smallProps.get(objId)?.entityId ?? null;
+    const entityId = loosePropOf(session, objId)?.entityId ?? null;
     const latchKey = `${cid}|${objId}`;
     let refusable: string | null = null; // the first unwilling meter act
     for (const act of acts) {
@@ -18131,7 +19293,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** DIRECT the engaged creature `cid` at a specific point/object (an oscillation
    *  or a board press): engage it fully, then — an object → its table act
    *  (performAttentionAction, exact instance); a bare point → go there.
-   *  Idle-gated (never interrupts) unless `command`. */
+   *  Idle-gated (never interrupts) unless `command` —
+   *
+   *  ⚖️ EXCEPT ONE CASE (R1, ruling 2026-08-16, "allow redirection while
+   *  walking"): a body whose ONLY reason to read busy is a `source:"command"`
+   *  pursuit this SAME author already placed is not refused, it is RETARGETED
+   *  — the new point/object replaces the old one and falls through to the
+   *  exact same engage/act/goTo code every fresh direct runs, so the distance
+   *  gate below still refuses an out-of-range retarget (current leg
+   *  continues) and a table-act refusal still speaks aloud. Every OTHER
+   *  `idleForDirect` clause (a need, a queued task, party membership, a
+   *  DIFFERENT author's order) still refuses outright — this is not a general
+   *  bypass of the idle gate. */
   function directCreatureTo(
     session: QuestSession,
     cid: string,
@@ -18140,9 +19313,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     opts: { command?: boolean; author?: string } = {},
   ) {
     if (!world) return;
-    if (!opts.command && !idleForDirect(session, cid)) return;
-    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S, opts.author ?? LOCAL_PLAYER_CID);
-    if (objId && performAttentionAction(session, cid, objId, opts)) return;
+    const authorCid = opts.author ?? LOCAL_PLAYER_CID;
+    if (!opts.command && !idleForDirect(session, cid)) {
+      const pur = session.pursuits.get(cid);
+      if (!pur || pur.source !== "command") return; // busy for some OTHER reason — refuse, as today
+      if (pur.author !== undefined && pur.author !== authorCid) return; // someone else's order
+      pur.author ??= authorCid; // first author to touch an unstamped command owns it
+      // Below the drift floor the move is noise from a per-frame cursor feed,
+      // not a change of mind — a TRUE no-op, the walk leg is never touched.
+      if (pur.pt && Math.hypot(pur.pt.x - pt.x, pur.pt.y - pt.y) < REDIRECT_DRIFT_M) return;
+      // Falls through — retargets exactly like a fresh idle direct below.
+    }
+    engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S, authorCid);
+    if (objId) {
+      // Reference-captured BEFORE the attempt: a latched refusal ("I'm not
+      // hungry") or a chore hand-off (promoteChore) also returns true from
+      // `performAttentionAction` without touching this body's command
+      // pursuit, and must NOT overwrite its redirect-drift anchor with the
+      // rejected target — the current leg (if any) keeps steering at the OLD
+      // point untouched.
+      const before = session.pursuits.get(cid);
+      if (performAttentionAction(session, cid, objId, opts)) {
+        const after = session.pursuits.get(cid);
+        if (after && after !== before && after.source === "command") {
+          after.pt = pt;
+          after.author = authorCid;
+        }
+        return;
+      }
+    }
     // A bare point (or an object asking nothing) — go there, if it's a real move.
     // ⚠️ THE BODY, NOT THE CREATURE (the same bare-cid slip `walkTo` carried):
     // an npc_-bodied cast creature has no avatar under its own id, so this read
@@ -18151,9 +19350,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // identity for the resident_/pet_ ids this used to work for.
     const body = world.state.avatars[avatarIdOf(cid)];
     const dist = body ? Math.hypot(body.x - pt.x, body.y - pt.y) : 0;
-    if (dist < DIRECT_MIN_M || dist > DIRECT_MAX_M) return;
+    if (dist < DIRECT_MIN_M || dist > directMaxM(session)) return;
     const goal: GoalSpec = { kind: "goTo", place: { kind: "point", x: pt.x, y: pt.y } };
-    session.pursuits.set(cid, { source: "command", goal, glyph: "here" });
+    session.walk.delete(cid); // cancel any leg the superseded goal owned — walkTo issues a fresh one next tick
+    session.pursuits.set(cid, { source: "command", goal, glyph: "here", author: authorCid, pt });
     announceSparkIntent(session, cid, goal);
     console.log(`[spark] direct ${cid} → goTo @${pt.x.toFixed(1)},${pt.y.toFixed(1)}`);
   }
@@ -18214,7 +19414,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return last;
     }
     const engaged = session.sparkAttention.get(authorCid);
-    if (engaged && authorEngagement(session, authorCid, engaged.cid) >= ENGAGE_MIN && idleForDirect(session, engaged.cid)) {
+    // YOUR OWN BODY IS ALWAYS ADDRESSABLE BY YOU. The idleness test is there so
+    // a soft gesture never yanks a BUSY stranger off a task — but a press is
+    // command-level (it may override an errand, which is what `command: true`
+    // means downstream), and an attached avatar engaged in this author's row is
+    // that author's own created body. Without this disjunct the press falls
+    // through to `nearestIdleGroupCreature` the whole time the avatar is
+    // walking, so "eat this" while you are on the move would feed a passing
+    // townsperson instead of you. Engagement is per-author and the direction arm
+    // only ever writes a peer's avatar into that peer's row, so this can never
+    // reach across players.
+    const ownBody = !!engaged && attachedAvatarPeerOf(engaged.cid) !== null;
+    if (
+      engaged &&
+      authorEngagement(session, authorCid, engaged.cid) >= ENGAGE_MIN &&
+      (ownBody || idleForDirect(session, engaged.cid))
+    ) {
       return engaged.cid;
     }
     return nearestIdleGroupCreature(session, world.state, pt, ATTEND_REACH_M);
@@ -18358,6 +19573,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const me = LOCAL_PLAYER_CID;
     const f = session.sparkAttention.get(me);
     if (!f || authorEngagement(session, me, f.cid) < ENGAGE_MIN) return; // no engaged creature → nobody acts
+    // ⚖️ IN AVATAR MODE THIS ARM ACTS ON THE AVATAR ONLY (2026-08-16, avatar
+    // break-away ruling). `session.sparkAttention`'s held row stays parked on
+    // a CONVERSATION PARTNER for ENGAGE_CONVO_HOLD_S past the chat's own end
+    // (`engageCreature(convo.nodeId, ...)`, re-set every frame the chat runs
+    // and never cleared on purpose — a follow-up board selection must still
+    // land on the partner). That residue used to let an unrelated point/object
+    // hover after the chat quietly hand the PARTNER a chore/motive action
+    // instead of steering the player's own body. The partner keeps its normal
+    // conversation behavior and object/board interactions (routed elsewhere);
+    // it never again picks up a bare point/object focus through this row.
+    // Inert in a house-spirit session (no attached avatar ⇒ `myAvatarCid` is
+    // undefined) and for any OTHER engaged creature the player deliberately
+    // hovers (both id spaces are checked — this map stores creature cids, a
+    // live hover reports the raw body id).
+    const myAvatarCid = attachedAvatars.get(localAvatarPeer());
+    if (myAvatarCid !== undefined && f.cid !== myAvatarCid && f.cid !== avatarIdOf(myAvatarCid)) return;
     if (!idleForDirect(session, f.cid)) return;
     const d = session.sparkDraws.get(me) ?? null;
     if (d && d.motive && d.objId) {
@@ -18449,7 +19680,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (osc.objId?.startsWith("cre:")) {
           performAttentionInteract(session, osc.cid, osc.objId.slice(4));
         } else {
-          directCreatureTo(session, osc.cid, { x: osc.x, y: osc.y }, osc.objId);
+          // ⚖️ IN AVATAR MODE THE PLAIN-POINT TRIGGER MOVES THE AVATAR ONLY
+          // (2026-08-16, avatar break-away ruling). `osc.cid` can still be
+          // anchored on a creature hovered BEFORE a conversation blocked this
+          // step (stepSparkOsc never runs while `sparkBlocked`), so without
+          // this guard a point focus meant to walk the avatar away could fire
+          // a stray walk order on the ex-partner the moment the chat ends. A
+          // point focus always steers the AVATAR in avatar mode; inert in a
+          // house-spirit session (no attached avatar ⇒ `myAvatarCid` is
+          // undefined). Both id spaces are checked — see stepSparkDirect's
+          // twin guard above.
+          const myAvatarCid = attachedAvatars.get(localAvatarPeer());
+          if (myAvatarCid === undefined || osc.cid === myAvatarCid || osc.cid === avatarIdOf(myAvatarCid)) {
+            directCreatureTo(session, osc.cid, { x: osc.x, y: osc.y }, osc.objId);
+          }
         }
         session.sparkOsc = null; // consumed
       }
@@ -18484,6 +19728,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let bestScore = Infinity;
     for (const [cid, av] of Object.entries(state.avatars)) {
       if (!idleForDirect(session, cid)) continue;
+      // ANOTHER PLAYER'S BODY IS NOT UP FOR GRABS. Attached avatars became
+      // directable above, which is right for our OWN — but a fallback that can
+      // land on a peer's body would let one player's board press walk another
+      // player's avatar. A press reaches a peer's avatar only when it NAMES it
+      // (`attendTo({ by })`, which is how a relayed instruction always arrives).
+      const owner = attachedAvatarPeerOf(cid);
+      if (owner !== null && owner !== localAvatarPeer()) continue;
       const d = Math.hypot(av.x - point.x, av.y - point.y);
       if (d > maxDist) continue;
       // Prefer in-group: an out-group body is only picked if much nearer.
@@ -18526,11 +19777,173 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return [{ from, to, engagement: engage.strength, trigger }];
   }
 
+  /** WHY `cid` WOULD REFUSE A DIRECT THIS FRAME — `idleForDirect`'s verdict,
+   *  named, and WITHOUT ITS SIDE EFFECT.
+   *
+   *  ⚠️ It deliberately re-derives rather than calling `idleForDirect`: that
+   *  predicate REAPS a stale pursuit (deletes the pursuit + walk rows and logs)
+   *  on the way to its answer, and a debug read that mutates the session is a
+   *  debug read that changes the bug it is being used to find. The clause ORDER
+   *  is copied exactly, so the two always name the same blocker.
+   *
+   *  The stale-pursuit branch mirrors the reap's CONDITION only: past the
+   *  window the real predicate drops the row and reads on, so this reads on too
+   *  (see PURSUIT_STALE_S — the branch is dormant in the present wiring). */
+  function directBlockReason(session: QuestSession, cid: string): DirectBlockReason | null {
+    const attached = attachedAvatarPeerOf(cid) !== null;
+    if (!attached && session.party.has(cid)) return "party";
+    if (session.pursuits.has(cid) && session.townClock - pursuitDrivenAt <= PURSUIT_STALE_S) return "pursuit";
+    if (session.liveNeedBodies.has(cid) || session.needStep.has(cid)) return "needStep";
+    if (session.walk.has(cid)) return "walk";
+    if ((session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0) return "tasks";
+    return null;
+  }
+
+  /** Every body a direct could land on: the attached avatars, the household
+   *  pets, and the residents actually standing in the world — exactly the
+   *  membership `idleForDirect`'s whitelist admits, so the overlay can never
+   *  ring a body the gesture would refuse to aim. Cid → its live avatar. */
+  function directableBodies(state: WorldState): Array<{ cid: string; body: AvatarState }> {
+    const out: Array<{ cid: string; body: AvatarState }> = [];
+    const seen = new Set<string>();
+    const add = (cid: string) => {
+      if (seen.has(cid)) return;
+      const body = state.avatars[avatarIdOf(cid)];
+      if (!body) return;
+      seen.add(cid);
+      out.push({ cid, body });
+    };
+    for (const cid of attachedAvatars.values()) add(cid);
+    for (const id of Object.keys(state.avatars)) {
+      if (isPetCid(id) || /^resident_\d+_\d+$/.test(id)) add(id);
+    }
+    return out;
+  }
+
+  /** ONE FRAME OF THE SOFT-CONTROL LAYER (see QuestDebugSnapshot) — the single
+   *  producer both engine overlays and the lab readout are fed from.
+   *
+   *  THE PURSUIT'S GOAL POINT is resolved the cheap, honest way: a pursuit that
+   *  is still travelling has a committed WALK LEG, and `stepPursuit` sets that
+   *  leg from the very step position it is pursuing — so the leg IS the goal
+   *  point while it exists. A pursuit with no leg has arrived and is acting at
+   *  the goal, so the body's own position is the goal point. Neither branch
+   *  runs a resolver (`makeGoalResolver` walks the world; this is called every
+   *  frame while the overlay is up). */
+  function buildDebugSnapshot(session: QuestSession): QuestDebugSnapshot {
+    const state = world?.state;
+    const gz = world?.getGaze();
+    const hov = gz?.hover ?? null;
+    const engage = session.sparkAttention.get(LOCAL_PLAYER_CID) ?? null;
+    const boardObj = container && stockedBoard() && state
+      ? containerStandpoint(state, container.objId)
+      : undefined;
+    return {
+      spiritPos: session.spiritPos ? { x: session.spiritPos.x, y: session.spiritPos.y } : null,
+      hover: hov ? { kind: hov.kind, id: hov.id ?? null } : null,
+      conversationObj:
+        boardObj && container ? { objId: container.objId, x: boardObj.x, y: boardObj.y } : null,
+      directMinM: DIRECT_MIN_M,
+      directMaxM: directMaxM(session),
+      engage: engage
+        ? {
+            author: LOCAL_PLAYER_CID,
+            cid: engage.cid,
+            strength: engage.strength,
+            holdRemainS: Math.max(
+              0,
+              (session.sparkEngageHold.get(LOCAL_PLAYER_CID) ?? 0) - session.townClock,
+            ),
+          }
+        : null,
+      osc: session.sparkOsc ? { cid: session.sparkOsc.cid } : null,
+      creatures: (state ? directableBodies(state) : []).map(({ cid, body }) => {
+        const pur = session.pursuits.get(cid) ?? null;
+        const leg = session.walk.get(cid) ?? null;
+        return {
+          cid,
+          x: body.x,
+          y: body.y,
+          pursuit: pur
+            ? {
+                kind: pur.goal.kind,
+                tx: leg ? leg.tx : body.x,
+                ty: leg ? leg.ty : body.y,
+                source: pur.source,
+                ...(pur.glyph ? { glyph: pur.glyph } : {}),
+              }
+            : null,
+          walkTarget: leg ? { tx: leg.tx, ty: leg.ty } : null,
+          blockedBy: directBlockReason(session, cid),
+        };
+      }),
+    };
+  }
+
+  /** PUSH one frame of `debugSnapshot` into both engine overlays — the path
+   *  layer's fed points (cursor / spark / pursuit goals) and the attention
+   *  layer's reach rings + engagement-hold arc. Called once per composed
+   *  overlay update while the Paths toggle is on, from the ONE snapshot, so the
+   *  two layers and the lab readout can never disagree.
+   *
+   *  FLOOR is read here rather than carried on the snapshot: the overlays need
+   *  a storey to lift their lines to, and the snapshot's agreed shape is a
+   *  2-D one. It is a direct map lookup off a cid the snapshot already names.
+   *
+   *  ⚖️ R2 GROUND ANCHORING (2026-08-16) — `floor × FLOOR_HEIGHT` is only the
+   *  BUILDING lift; on open terrain the ground itself sits elsewhere, which is
+   *  why a wilderness session drew every mark/ring/arc floating relative to
+   *  the avatar body meshes beside them (those already add `standHeightAt` —
+   *  render3d.ts). Sampled per POINT, not per body, so a goal or the cursor
+   *  far from any avatar still lands on the terrain under IT; `standHeightAt`
+   *  returns exactly 0 with no ground sampler, so a flat-town session's fed
+   *  geometry is byte-identical to before this existed. */
+  function feedDebugOverlays(session: QuestSession) {
+    const state = world?.state;
+    if (!state) return;
+    const snap = buildDebugSnapshot(session);
+    const cursor = world?.getGaze().committedWorld ?? null;
+    const floorOf = (cid: string) => state.avatars[avatarIdOf(cid)]?.floor ?? 0;
+    const groundYAt = (x: number, y: number) => standHeightAt(state, x, y);
+    const goals: PathDebugMark[] = [];
+    const bodies: AttentionDebugBody[] = [];
+    for (const c of snap.creatures) {
+      const floor = floorOf(c.cid);
+      if (c.pursuit) {
+        goals.push({
+          x: c.pursuit.tx,
+          y: c.pursuit.ty,
+          floor,
+          groundY: groundYAt(c.pursuit.tx, c.pursuit.ty),
+        });
+      }
+      bodies.push({
+        at: { x: c.x, y: c.y, floor, groundY: groundYAt(c.x, c.y) },
+        minM: snap.directMinM,
+        maxM: snap.directMaxM,
+        // The hold is only meaningful on the body the spark is actually
+        // engaging — every other ring would be a countdown to nothing.
+        hold:
+          snap.engage && snap.engage.cid === c.cid
+            ? Math.max(0, Math.min(1, snap.engage.holdRemainS / ENGAGE_DIRECT_HOLD_S))
+            : null,
+      });
+    }
+    pathDebug?.setMarks({
+      cursor: cursor ? { x: cursor.x, y: cursor.y, groundY: groundYAt(cursor.x, cursor.y) } : null,
+      spark: snap.spiritPos
+        ? { ...snap.spiritPos, groundY: groundYAt(snap.spiritPos.x, snap.spiritPos.y) }
+        : null,
+      goals,
+    });
+    attentionDebug?.setBodies(bodies);
+  }
+
   /** The word a world object is named by on the board (AAC — pressing it says
    *  it). A loose prop speaks its glyph; a fixture its station kind. */
   function objectWord(session: QuestSession, objId: string): string {
-    const prop = session.smallProps.get(objId);
-    if (prop) return drawnGlyph(prop.glyph); // an unplaced piece IS a chair, not a "furn"
+    const prop = loosePropOf(session, objId);
+    if (prop) return drawnGlyph(prop.glyph!); // an unplaced piece IS a chair, not a "furn"
     if (isWellId(objId)) return "water";
     const ws = wildSourceOf(session, objId);
     if (ws) return ws.species; // a wild source IS its species (oak, sheep)
@@ -18589,11 +20002,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): { id: string; x: number; y: number } | null {
     return resolveFurnitureAim(
       {
-        isContainer: (id) => session.containers.has(id),
+        isContainer: (id) => isContainerId(session, id),
         isFurniture: (id) => !!state.spec.objects.find((o) => o.id === id)?.fixture,
         containedIn: (id) => state.objects[id]?.containedIn?.objectId,
         standpoint: (id) => containerStandpoint(state, id),
-        ids: () => session.containers.keys(),
+        ids: () => containerIds(session),
       },
       gz,
       { want, me, spirit: spiritNow() || ignoreReach, reach: CONVO_RADIUS, fixRadius: CONVO_FIG_RADIUS },
@@ -18660,7 +20073,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       buildSpotId = null;
       session.civicSig = "";
     }
-    container = { objId: containerObjId, items: [] };
+    // WHO OPENED IT (see `container.accessBodyId`): an EMBODIED open records the
+    // body that reached, so the board can be released when that body walks off.
+    // A spirit records nothing — its reach is its gaze, and gaze has no distance.
+    const accessBodyId = spiritNow() ? undefined : playerBody()?.id;
+    container = { objId: containerObjId, items: [], ...(accessBodyId ? { accessBodyId } : {}) };
     resetDwells(); // a SWITCH from another piece must not inherit its fill
     voice?.cancel();
     presentContainer(session);
@@ -18712,7 +20129,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // "my sheep" — pressing it makes the animal the player's.
         ...(((): QuestBoardView["options"] => {
           const wa = wildAnimalOf(session, container.objId);
-          if (!wa || session.containerOwner.get(container.objId)) return [];
+          if (!wa || session.containerRecords.get(container.objId)?.owner) return [];
           const g = `${wa.species}.my`;
           return [{ id: `tame:${container.objId}`, label: labelOfGlyph(g), glyph: g, spokenText: playerStatement(g) }];
         })()),
@@ -18789,7 +20206,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function takeFromContainer(session: QuestSession, glyph: string) {
     if (!container) return;
     const objId = container.objId;
-    const cOwner = session.containerOwner.get(objId);
+    const cOwner = session.containerRecords.get(objId)?.owner;
     // Your OWN private property never objects to you (a tamed animal's owner
     // milks it freely); everyone else's still does.
     if (isPrivateOwner(cOwner) && world && !mayUse(LOCAL_PLAYER_CID, null, cOwner)) {
@@ -18836,7 +20253,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       chargeSourceTake(session, objId, 1);
     } else {
       regrowWildStock(session, objId); // matured units are takeable this frame
-      const stock = session.containerStock.get(objId) ?? {};
+      const stock = session.containerRecords.get(objId)?.stock ?? {};
       if (!stackTake(stock, glyph)) return;
       // TOOLS MULTIPLY THE TAKE (step ④, registry-declared): the right tool on
       // the body moves more units per act — axe on wood, pick on stone. Bare
@@ -18855,17 +20272,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           stackTake(stock, glyph);
         }
       }
-      session.containerStock.set(objId, stock);
+      setContainerStock(session, objId, stock);
       // A LIVE take off a standing source arms its regrow clock (no-op for
       // kill glyphs and non-wild containers).
       if (ws) armHarvestRegrow(ws, glyph, session.taskClock, FOOD_DAY_SEC);
       // A table shows its contents — remove one matching visible prop as it's taken.
-      if (session.containers.get(objId) === "on" && world) {
-        for (const [pObjId, rec] of session.smallProps) {
+      if (session.containerRecords.get(objId)?.relation === "on" && world) {
+        for (const [pObjId, rec] of looseEntries(session)) {
           if (rec.glyph === glyph && world.state.objects[pObjId]?.containedIn?.objectId === objId) {
             world.removeObject(pObjId);
-            session.smallProps.delete(pObjId);
-            if (session.creatures) delete session.creatures.world.items[rec.entityId];
+            if (session.creatures && rec.entityId) delete session.creatures.world.items[rec.entityId];
+            clearLooseProp(session, pObjId);
             break;
           }
         }
@@ -18920,8 +20337,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function tameWildAnimal(session: QuestSession, objId: string) {
     const c = wildAnimalOf(session, objId);
     if (!c || !world) return;
-    if (session.containerOwner.get(objId)) return; // already someone's
-    session.containerOwner.set(objId, `creature:${LOCAL_PLAYER_CID}`);
+    if (session.containerRecords.get(objId)?.owner) return; // already someone's
+    setContainerOwner(session, objId, `creature:${LOCAL_PLAYER_CID}`);
     // Re-tether: same body id (model cache holds), grazing close to the
     // spot of the claim.
     const av = world.state.avatars[objId];
@@ -18965,7 +20382,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!world || wildFeatureEmbodied(f)) return;
     const spec = world.state.spec.objects.find((o) => o.id === objId);
     if (!spec) return;
-    const radius = wildFeatureRadius(f.species, session.containerStock.get(objId));
+    const radius = wildFeatureRadius(f.species, session.containerRecords.get(objId)?.stock);
     if (Math.abs(spec.radius - radius) < 0.01) return; // nothing a player could see
     // A re-add mints FRESH object state, and the two things that survive a
     // resize in the player's eyes are the lid someone is holding open and
@@ -19018,7 +20435,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // depletion becomes visible everywhere at once without one new call site,
     // one new flag, or anything running per frame.
     if (fi >= 0) resizeWildFeature(session, w.features[fi]!, objId);
-    if (!sourceKillExhausted(src, session.containerStock.get(objId))) return;
+    if (!sourceKillExhausted(src, session.containerRecords.get(objId)?.stock)) return;
     // ⚖️ S&D S3 H2 — A GROWTH-BEARING FEATURE RE-SEEDS, NEVER DELETES (user
     // law, verbatim: "trees grow and larger trees will typically be cut
     // first"). The SAME feature id/position stands on as a sapling instead
@@ -19037,9 +20454,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     else world.removeNpc(objId);
     if (fi >= 0) w.features.splice(fi, 1);
     else w.creatures.splice(ci, 1);
-    session.containers.delete(objId);
-    session.containerStock.delete(objId);
-    session.containerOwner.delete(objId);
+    deleteContainerRecord(session, objId);
   }
 
   /** THE RE-SEED (S3 H2): sapling stock (kill glyphs) + a fresh growth clock,
@@ -19059,7 +20474,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const objId = wildFeatureContainerId(f);
     const alreadySapling = f.sizeClass === 0 && f.growAt !== undefined;
     const dial = session.scale.resourceCompression;
-    const stock = session.containerStock.get(objId) ?? {};
+    const stock = ensureContainerStock(session, objId);
     const src = naturalSourceOf(f.species)!;
     for (const p of src.products) {
       if (p.method === "kill") {
@@ -19069,7 +20484,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         armHarvestRegrow(f, p.glyph, session.taskClock, FOOD_DAY_SEC);
       }
     }
-    session.containerStock.set(objId, stock);
     if (!alreadySapling) {
       f.sizeClass = 0;
       f.growAt = session.taskClock + growthClassPeriodS(session.scale, growth);
@@ -19088,12 +20502,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function regrowWildStock(session: QuestSession, objId: string) {
     const s = wildSourceOf(session, objId);
     if (s) {
-      const stock = session.containerStock.get(objId) ?? {};
+      const stock = session.containerRecords.get(objId)?.stock ?? {};
       const due = dueHarvestRegrowth(s, stock, session.taskClock, FOOD_DAY_SEC);
       if (due) {
         for (const [glyph, n] of Object.entries(due.add)) stock[glyph] = (stock[glyph] ?? 0) + n;
         s.regrowAt = due.regrowAt;
-        session.containerStock.set(objId, stock);
+        setContainerStock(session, objId, stock);
       }
     }
     growWildFeature(session, objId); // S3 H2 — the size-class clock, same checkpoint
@@ -19120,8 +20534,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // MERGE, never replace: `advance.stock` names the KILL glyphs only (the
     // growth clock's whole business); any harvest glyph (fruit) already on
     // the shelf — its own regrow ledger, untouched here — must survive.
-    const stock = session.containerStock.get(objId) ?? {};
-    session.containerStock.set(objId, { ...stock, ...advance.stock });
+    const stock = session.containerRecords.get(objId)?.stock ?? {};
+    setContainerStock(session, objId, { ...stock, ...advance.stock });
     resizeWildFeature(session, f, objId); // depletion-visible (box features only)
   }
 
@@ -19213,6 +20627,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     },
   ) {
     if (!world || !line.glyph) return;
+    // ⚖️ VOICE POLICY OWNS THE MOUTH. An ATTACHED AVATAR is a player's body,
+    // not a character, and never speaks on its own initiative.
+    //
+    // This sits ABOVE the node lookup ON PURPOSE. The avatar has no dialogue
+    // node, so the `!node` line below would already swallow the call — but
+    // that is unreachability doing the work, which is an ad-hoc mute by
+    // another name: it lasts only until something solicits a line by a route
+    // that does not need a node, and it fails silently when it lapses. The
+    // policy is therefore asked FIRST, where the answer cannot depend on who
+    // asked or on what the targeter happens to know.
+    if (!DEFAULT_VOICE_POLICY.attachedAvatarSpeaks && isAttachedAvatarCid(cid)) return;
     const node = session.creatures?.nodeByCreature.get(cid);
     if (!node) return;
     const doBubble = line.bubble ?? true;
@@ -19305,7 +20730,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!world) return false;
       const body = actorCid
         ? world.state.avatars[avatarIdOf(actorCid)] ?? world.state.avatars[actorCid]
-        : world.state.avatars[PLAYER_ID];
+        : playerBody();
       if (!body) return false;
       switch (area.kind) {
         case "structure":
@@ -20636,7 +22061,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (session.chatClock < CHAT_INTERVAL) return;
     session.chatClock = 0;
 
-    const me = state.avatars[PLAYER_ID];
+    const me = playerBody();
     // Bring nearby streamed residents into the dialogue world so they're chattable —
     // the same lazy registration a first approach does, done proactively for the crowd.
     if (me) {
@@ -20751,7 +22176,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session.absorbed.add(stock.objectId);
     const npcId = `npc_${nodeId}`;
     const npc = host.state.avatars[npcId];
-    const player = host.state.avatars[PLAYER_ID];
+    const player = playerBody();
     const obj = host.state.objects[stock.objectId];
     if (!obj) return;
     const home = session.staging.get(nodeId)?.home ?? { x: obj.x, y: obj.y };
@@ -20796,7 +22221,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const npc = host.state.avatars[npcId];
     const obj = host.state.objects[held.objectId];
     if (!obj) return;
-    const player = host.state.avatars[PLAYER_ID];
+    const player = playerBody();
     // The gift leaves the player's hands immediately.
     if (obj.carriedBy === PLAYER_ID && player) {
       dropObject(host.state, held.objectId, player.x + 0.9, player.y + 0.9);
@@ -21053,11 +22478,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // DEBUG PATHS: a second overlay riding the same scene. The view takes ONE
     // overlay, so the two are composed below rather than competing for the slot.
     // `world` is captured lazily — it doesn't exist until runWorldHost, further down.
-    pathDebug = new PathDebugOverlay3D({ getPaths: () => world?.npcPaths() ?? [] });
+    pathDebug = new PathDebugOverlay3D({
+      getPaths: () => world?.npcPaths() ?? [],
+      // Route lines hug the terrain like the fed marks do — `world` is captured
+      // lazily here too, so ask it for state at draw time.
+      groundAt: (x, y) => (world?.state ? standHeightAt(world.state, x, y) : 0),
+    });
     pathDebug.setEnabled(pathDebugOn);
     // ATTENTION READOUT: rides the SAME toggle — engagement rings + dotted
     // trigger-proximity lines make the soft-control field visible (below).
-    attentionDebug = new AttentionDebugOverlay3D({ getLinks: () => attentionDebugLinks(session) });
+    attentionDebug = new AttentionDebugOverlay3D({
+      getLinks: () => attentionDebugLinks(session),
+      groundAt: (x, y) => (world?.state ? standHeightAt(world.state, x, y) : 0),
+    });
     attentionDebug.setEnabled(pathDebugOn);
     // "SHOW AREAS" (city-founding areas): the charter tint is a TOGGLEABLE
     // map-reading overlay now — never persistent world texture. Areas
@@ -21087,7 +22520,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const overlays: SceneOverlay[] = [goalTreeOverlay, pathDebug, attentionDebug, zoneOverlay];
     const composedOverlay: SceneOverlay = {
       mount: (scene) => { for (const o of overlays) o.mount(scene); },
-      update: (dt) => { for (const o of overlays) o.update(dt); },
+      update: (dt) => {
+        // ONE SNAPSHOT, BOTH DEBUG LAYERS. The goal markers and the range rings
+        // are two views of the same soft-control frame, so they are fed from a
+        // single `debugSnapshot` here rather than each walking the session
+        // again — two walks could disagree mid-frame, and the whole point of
+        // these overlays is to be believed. Off-toggle it costs nothing.
+        if (pathDebugOn) feedDebugOverlays(session);
+        for (const o of overlays) o.update(dt);
+      },
       dispose: () => { for (const o of overlays) o.dispose(); },
     };
     // Render composed glyphs in in-world speech bubbles EXACTLY as the response
@@ -21160,20 +22601,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             ? (id, isLocal) =>
                 !isLocal && isRemotePeerId(id) ? remoteSparkModel(id) : base(id, isLocal)
             : base;
-          return spirit
+          // ATTACHED-AVATAR mode is a spark locally too: the body the player
+          // watches is the CREATED creature (an ordinary model from the same
+          // factory as everyone else), while PLAYER_ID stays the formless
+          // spark it is in a spirit session.
+          return sparkLocal()
             ? (id, isLocal) => (isLocal ? sparkAvatarModel() : withPeers(id, isLocal))
             : withPeers;
-        })(
-          session.town
-            ? makeTownModelFactory(
-                session.npcIcons,
-                session.town.plan.species ?? "human_cute", // the town's constructing species
-                familyOverrides(session),
-                session.dress, // the town's culture palette
-                tierOf, // Phase 3 view tier — PER BODY, read at every model build
-              )
-            : makePuzzleCharacterFactory(session.npcIcons),
-        ),
+        })(sessionModelFactory(session, tierOf)),
         // A living town paints its streets on the ground (render-only ribbons).
         ...(session.town ? { roads: session.town.stage.roads } : {}),
       },
@@ -21230,13 +22665,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // WATER: the engine's terrain gate makes it impassable.
       ...(deps.waterAt ? { waterAt: deps.waterAt } : {}),
       // SPIRIT: the avatar never moves; carry goes distance-free (pick/place by gaze).
-      ...(spirit ? { stationary: true } : {}),
+      // ATTACHED-AVATAR: the local body never moves EITHER — it is the spark,
+      // and the created creature walks by following it. This is the one place
+      // pointer steering is refused, so there is no second movement door.
+      ...(sparkLocal() ? { stationary: true } : {}),
       // MULTIPLAYER + SPIRIT: broadcast where the SPIRIT hovers, so peers see
       // this player's light travel the town instead of resting on the spawn
       // point forever. Suppressed while riding a body — a claimed spark is
       // parked beside its body by stepMultiplayerFrame, and streaming a second
       // position would fight that park.
-      ...(mp && spirit
+      ...(mp && sparkLocal()
         ? { netLocalPos: () => (possession.creatureId ? null : sess?.spiritPos ?? null) }
         : {}),
       // A living town streams pure steering BODIES (the 2D lab's shared
@@ -21370,20 +22808,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // LIVING TOWN: stream the stage around the player — walls of the
         // nearby houses, residents embodying mid-errand, fresh shopping
         // trips on the street clock. The stage is cheap when nothing moves.
+        // ⚖️ IT IS THE SESSION'S CLOCK; THE TOWN ONLY FLAVOURS IT (ruling ②,
+        // 2026-08-16 — "never gate interaction machinery on session.town
+        // existence"). `townClock` is the seconds counter the whole interaction
+        // layer times itself against: engagement holds (`sparkEngageHold`), the
+        // explicit-draw hold (`sparkExplicitUntil`), refusal latches, the tidy
+        // grace, the parked-need backstop. Advancing it INSIDE the town gate
+        // froze it at 0 for every wilderness session, which does not merely
+        // stop those timers — it INVERTS them: `townClock < hold` is
+        // permanently true, so a hover engagement taken once was held forever
+        // and the avatar could never be re-aimed. Hoisted out; the day edges
+        // and everything else below stay exactly as town-gated as they were,
+        // and a town session reads this identically (prevDay before the
+        // increment, newDay after, same frame position).
+        //
+        // FOLLOWER: the clock is world-mutating OWNER state — frozen here, so
+        // the once-a-day steps below never fire (newDay===prevDay) and the
+        // goods clock stops emitting fresh trips, while the stage STREAMING
+        // below still runs (bodies/walls/furniture spawn around this peer's own
+        // camera — the deterministic cast, as replicas).
+        const prevDay = Math.floor(session.townClock / FOOD_DAY_SEC);
+        if (!mpFollower()) session.townClock += dt;
         if (session.town) {
-          const prevDay = Math.floor(session.townClock / FOOD_DAY_SEC);
-          // FOLLOWER: the town clock is world-mutating OWNER state — frozen
-          // here, so the once-a-day steps below never fire (newDay===prevDay)
-          // and the goods clock stops emitting fresh trips, while the stage
-          // STREAMING below still runs (bodies/walls/furniture spawn around
-          // this peer's own camera — the deterministic cast, as replicas).
-          if (!mpFollower()) session.townClock += dt;
           const newDay = Math.floor(session.townClock / FOOD_DAY_SEC);
           // AUTOMATIC EXPANSION (construction v1) and the rest of the once-a-day
           // arm — extracted to `stepTownDay` so the CLOCK WARP runs the very
           // same block per bucket (clock-warp.ts law ②) instead of a twin.
           if (newDay > prevDay) stepTownDay(session, newDay);
-          const meTown = state.avatars[PLAYER_ID];
+          const meTown = playerBody();
           const townHost = world;
           if (meTown && townHost) {
             // ROOF STATE is the gate for showing an interior — both its people AND
@@ -21414,7 +22866,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // camera) — the street-level 120 m circle let bodies pop
               // in/out in plain sight from above (the reported blink on
               // the plaza). The guard must cover what the camera covers.
-              spiritNow() ? Math.max(240, session.town.plan.radius * 2 + 80) : 120,
+              sessionVisibleR(session),
               (houseIndex) => {
                 if (houseIndex === session.dollhouse) return true; // the dollhouse never abstracts
                 // ANY room of the house counts (rooms are separate buildings
@@ -21692,9 +23144,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // if it does not, because the hands are the whole inventory of a body with no
         // container. A pending gift is settled first so debts still clear.
         if (session.creatures) {
-          for (const [objId, rec] of [...session.smallProps]) {
+          for (const [objId, rec] of [...looseEntries(session)]) {
             if (state.objects[objId]?.carriedBy !== PLAYER_ID) continue;
-            if (session.creatures.world.items[rec.entityId]?.pendingTransferTo === LOCAL_PLAYER_CID) {
+            if (rec.entityId && session.creatures.world.items[rec.entityId]?.pendingTransferTo === LOCAL_PLAYER_CID) {
               concludeTransfer(session.creatures.world, LOCAL_PLAYER_CID, rec.entityId);
             }
             pocketLoose(session, objId);
@@ -21862,7 +23314,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // the CREATURE (not the player) to arrive — each has its own loop below.
         if (session.creatures) {
           const cworld = session.creatures.world;
-          const player = state.avatars[PLAYER_ID];
+          const player = playerBody();
           const zone = player ? zoneAt(session.embedding.layout, { x: player.x, y: player.y }) : null;
           if (zone) {
             for (const cid of [...session.creatures.nodeByCreature.keys()].sort()) {
@@ -21892,7 +23344,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // you!", the need fulfills, the condition clears.
         if (session.creatures) {
           const cworld = session.creatures.world;
-          const player = state.avatars[PLAYER_ID];
+          const player = playerBody();
           for (const cid of [...session.creatures.nodeByCreature.keys()].sort()) {
             const need = openNeeds(cworld.creatures[cid]!).find((n) => n.stay && n.atPlace);
             if (!need) {
@@ -21925,7 +23377,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // reaching the DESTINATION creature's zone fulfills ("take me to Bear").
         if (session.creatures && session.escorting.size > 0) {
           const cworld = session.creatures.world;
-          const player = state.avatars[PLAYER_ID];
+          // Same leader read as the party follow below (one follow shape).
+          const player = followLeaderPos(session);
           for (const cid of [...session.escorting].sort()) {
             const need = openNeeds(cworld.creatures[cid]!)?.find((n) => n.escort && n.atPlace);
             if (!need?.atPlace) {
@@ -21971,7 +23424,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // and sets it down within the recipient's reach. Re-triggers until the
         // recipient actually takes it (emergent, self-healing).
         if (session.creatures) {
-          const playerAv = state.avatars[PLAYER_ID];
+          const playerAv = playerBody();
           for (const cid of session.creatures.nodeByCreature.keys()) {
             const npcId = `npc_${cid}`;
             if (!state.avatars[npcId] || playerAv === undefined) continue;
@@ -22032,7 +23485,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (playerAv && gzTake && !playerHolds) {
             const pendings: Array<{ objId: string; entityId: string }> = [];
             for (const [objId, item] of session.convItems) pendings.push({ objId, entityId: item.entityId });
-            for (const [objId, rec] of session.smallProps) pendings.push({ objId, entityId: rec.entityId });
+            for (const [objId, rec] of looseEntries(session)) {
+              if (rec.entityId) pendings.push({ objId, entityId: rec.entityId });
+            }
             for (const { objId, entityId } of pendings) {
               const st = session.creatures.world.items[entityId];
               if (st?.pendingTransferTo !== LOCAL_PLAYER_CID) continue;
@@ -22059,18 +23514,138 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // errand takes precedence — one task at a time). Their need-schedule is
         // suspended (they're excluded from the goal loop below), so a command wins.
         if (session.party.size > 0) {
-          const player = state.avatars[PLAYER_ID];
+          // THE LEADER, not the local body: in attached-avatar mode the party
+          // trails the SPARK.
+          const player = followLeaderPos(session);
           if (player) {
             for (const cid of session.party) {
+              // AN ATTACHED AVATAR IS NOT A FOLLOWER (⚖️ USER RULING
+              // 2026-08-14). A created body is DIRECTED — see the direction
+              // arm below, which runs flow A on it — so it must not also be
+              // trailed along behind its own player by this loop. Skipping it
+              // here is what leaves ONE mover aiming it. In a spirit session
+              // there are no attached avatars, so this clause never fires and
+              // the loop is the pre-round one exactly.
+              if (attachedAvatarPeerOf(cid) !== null) continue;
               const npcId = avatarIdOf(cid);
               const npc = state.avatars[npcId];
               if (!npc) continue;
               const gap = Math.hypot(npc.x - player.x, npc.y - player.y);
               if (gap > FOLLOW_GAP && (session.npcTasks.get(npcId)?.length ?? 0) === 0) {
                 session.lastDrive.set(npcId, "follow");
-                enqueueNpcErrand(session, npcId, { points: [{ x: player.x + 1.4, y: player.y + 1.0 }] });
+                enqueueNpcErrand(session, npcId, {
+                  points: [{ x: player.x + 1.4, y: player.y + 1.0 }],
+                });
               }
             }
+          }
+        }
+        // ── THE ATTACHED AVATAR IS A DIRECTED CREATURE ────────────────────────
+        // ⚖️ USER RULING 2026-08-14 (GOVERNING): "In house spirit mode, you can
+        // hover over a creature in your group and then hover over an object or
+        // point and it goes there… That's exactly how the avatar should respond
+        // to the spark. There is no need for an additional function; this is how
+        // 'directing a creature' works."
+        //
+        // So this is not a follow at all, and there is no follow machinery left
+        // in it: the avatar is PERMANENTLY the engaged creature (as if hovered),
+        // and the player's spark point is the second half of the same gesture
+        // (as if hovered next). `directCreatureTo` is flow A's own entry — the
+        // one `stepSparkOsc` fires on an oscillation and the one a relayed
+        // `sendTo` reaches — so the avatar gets the whole path for free: the
+        // idle gate (arrive-then-reaim, never a mid-stride yank), the
+        // no-jitter/too-far band, the `goTo` pursuit, `announceSparkIntent`, and
+        // — when refusal is un-bypassed later — refusal, with nothing here to
+        // update. Board presses need no wiring at all: `attentionAddressee`
+        // already prefers the ENGAGED creature, which this keeps the avatar.
+        //
+        // PER PLAYER, one row each: ours reads the local spark, a peer's reads
+        // the spark it streamed us (`state.peerSparks`, the landed wire). A peer
+        // whose first spark has not arrived STANDS — never fall back to the
+        // local one, or a stranger's body would march to our cursor. Whole
+        // block is skipped in a spirit session (the map is empty).
+        if (attachedAvatars.size > 0) {
+          for (const [peerId, cid] of attachedAvatars) {
+            const mine = peerId === localAvatarPeer();
+            const spark = mine ? followLeaderPos(session) : (world?.state.peerSparks?.[peerId] ?? null);
+            if (!spark) continue;
+            // WHOSE gesture it is (⑩): each player's engagement is filed under
+            // that player's own author row, so directing my body never rewrites
+            // a peer's engaged creature.
+            const author = mine ? LOCAL_PLAYER_CID : playerCidOf(peerId, mp?.localId);
+            // Read the live hover NOW (was read further down before) — the
+            // held-check right below needs it.
+            const hoverNow = mine ? world?.getGaze().hover : null;
+            // A LIVE HOVER ON SOMEBODY ELSE IS A DIFFERENT GESTURE — the WHO
+            // half of it. While it stands this player is aiming THAT creature,
+            // not their own body, so the avatar HOLDS (exactly as a dollhouse
+            // body holds while you look at a neighbour) and resumes as the
+            // hover decays.
+            //
+            // ⚖️ RULING (2026-08-16, avatar break-away): this must be a LIVE
+            // hover, never `session.sparkAttention`'s HELD row. A conversation
+            // keeps that row parked on the PARTNER for ENGAGE_CONVO_HOLD_S past
+            // the chat's own end (`engageCreature(convo.nodeId, ...)`, re-set
+            // every frame the chat runs, never cleared — a follow-up board
+            // selection must still land on the partner) — and that residue used
+            // to freeze the avatar solid: a POINT focus always steers the
+            // AVATAR in avatar mode, full stop; the conversation is untouched
+            // here and ends by its own distance rule once the avatar walks off.
+            // A REMOTE peer's live hover never reaches this device (gaze is not
+            // on the wire), so its row still falls back to the held check —
+            // that peer's own copy of this loop enforces the live-hover rule on
+            // itself, exactly as before.
+            const heldElsewhere = mine
+              ? hoverNow?.kind === "avatar" && hoverNow.id !== avatarIdOf(cid)
+              : (() => {
+                  const held = session.sparkAttention.get(author);
+                  return !!held && held.cid !== cid;
+                })();
+            if (heldElsewhere) continue;
+            // …AND AN OSCILLATION ANCHORED ON THIS BODY IS ALSO A DIFFERENT
+            // GESTURE (2026-08-16, A4). `stepSparkOsc` counts creature↔point
+            // flips and only ACTS on the third; until then it has installed
+            // nothing, so a bare walk order issued here would (a) beat the
+            // gesture to the body and (b) make it non-idle, which is the very
+            // gate `stepSparkOsc` re-reads when it finally fires — the
+            // deliberate gesture would be silently swallowed by the passive
+            // follow every time. Let it finish. Local-only, like every hover
+            // read: a peer's gaze is not on the wire.
+            if (mine && session.sparkOsc?.cid === cid) continue;
+            // ⚖️ HOVER A POINT ⇒ GO THERE; HOVER A THING ⇒ GO TO IT AND DO WHAT
+            // IT ASKS (ruling ① verbatim: "hover over an object or point and it
+            // goes there… it interacts with it as needed"). That distinction is
+            // ALREADY the whole of `directCreatureTo`'s two arms — an `objId`
+            // tries the object's own table act first (`performAttentionAction`,
+            // meter-gated, refuses aloud once and latches) and falls through to
+            // the plain walk when the thing asks nothing. It was never fed one
+            // from here, so the avatar could only ever walk to bare points and
+            // the object half of the gesture did not exist for a player's own
+            // body. Reading the hover this frame keeps it crisp: look away and
+            // the next frame is a plain point again. (`hoverNow` itself was
+            // read above, before the held-check.)
+            const hoverObjId = hoverNow?.kind === "object" ? hoverNow.id : null;
+            // PERMANENTLY THE DIRECTED CREATURE (as if hovered) — this is what
+            // makes a board press land on the avatar without a single line of
+            // press-side wiring: `attentionAddressee` prefers the engaged body.
+            //
+            // NOTHING IN PROGRESS IS STOMPED, and not by a new rule: no
+            // `command` is passed, so `directCreatureTo` runs the ordinary idle
+            // gate — a need, a queued task, or someone else's order all still
+            // refuse the re-aim. That gate is only HONEST once the driver
+            // that retires those states runs in this scope (the town-gate lift
+            // above) and once a pursuit no driver is advancing expires
+            // (`pursuitDrivenAt`, `idleForDirect`) — a latch that cannot clear
+            // is indistinguishable from work in progress, which is exactly how
+            // the first direct froze the avatar forever.
+            //
+            // ⚖️ THE ONE EXCEPTION IS R1 (2026-08-16): a live walk leg is no
+            // longer an automatic refusal by itself — if it belongs to a
+            // `source:"command"` pursuit THIS author placed, `directCreatureTo`
+            // retargets it instead (past REDIRECT_DRIFT_M), which is exactly
+            // what lets the avatar's per-frame cursor feed steer it mid-stride.
+            engageCreature(session, cid, ENGAGE_DIRECT_HOLD_S, author);
+            directCreatureTo(session, cid, { x: spark.x, y: spark.y }, hoverObjId, { author });
           }
         }
         if (session.goals && session.creatures && world) {
@@ -22113,35 +23688,76 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           });
         }
         simMark("goals", descendNow() - _bm); _bm = descendNow(); // TEMP
+        // TEMP sim-phase probe (view-distance-lod-tiers.md): time each sub-step
+        // group so a slow quest-sim frame names its culprit. Logged over 120ms;
+        // `__simPhase` in the console. Remove with the other probes. Declared
+        // out here because BOTH blocks below fill it now; emitted once, after
+        // both, so the key set a town session reports is unchanged.
+        const _sp: Record<string, number> = {};
+        // ⚖️ THE ORDER IS PART OF THE CONTRACT. Splitting the old single block in
+        // two would have re-ordered a town's frame (spark/pursuit ahead of the
+        // economy sweep, where they used to follow it), and the dollhouse
+        // transcripts are a BYTE pin on that order. So the town half is split at
+        // the seam the interaction group used to sit in and the group stays
+        // exactly where it was — economy · [PLAYER INTERACTION] · rituals/needs —
+        // with only the GATE around the middle third removed. `shownE` is hoisted
+        // so both town thirds share the one definition; it is null off a town and
+        // neither third runs then.
+        // Hoisted OUT of the IIFE below: the dollhouse heartbeat further down
+        // reads it too (`explainResident` measures candidacy from the player),
+        // and it was left inside when the town half was split at this seam —
+        // which put the heartbeat's three reads out of scope.
+        const meE = playerBody();
+        const shownE: ((hi: number) => boolean) | null =
+          session.town && world
+            ? (() => {
+                const occupiedE = meE ? (buildingAt(state, meE.x, meE.y)?.id ?? null) : null;
+                const revealedE = world.revealedBuildings();
+                return (hi: number) => {
+                  if (hi === session.dollhouse) return true; // the dollhouse never abstracts
+                  // ANY room of the house counts (rooms-as-buildings, round 4).
+                  if (occupiedE !== null && houseIndexOfBuildingId(occupiedE) === hi) return true;
+                  for (const id of revealedE) if (houseIndexOfBuildingId(id) === hi) return true;
+                  return false;
+                };
+              })()
+            : null;
         // LIVE NEEDS (doc §13): residents of an ON-SHOW house run their need templates
         // (eat from the pantry, restock it when it runs low), gated on the roof-reveal
         // state — the same "interior on show" signal the crowd streaming uses. The
         // LOAD/UNLOAD edges do the chest↔schedule handoff first, so a freshly-revealed
         // pantry reads the schedule's truth before anyone eats from it.
-        if (session.town && world) {
-          const meE = state.avatars[PLAYER_ID];
-          const occupiedE = meE ? (buildingAt(state, meE.x, meE.y)?.id ?? null) : null;
-          const revealedE = world.revealedBuildings();
-          const shownE = (hi: number) => {
-            if (hi === session.dollhouse) return true; // the dollhouse never abstracts
-            // ANY room of the house counts (rooms-as-buildings, round 4).
-            if (occupiedE !== null && houseIndexOfBuildingId(occupiedE) === hi) return true;
-            for (const id of revealedE) if (houseIndexOfBuildingId(id) === hi) return true;
-            return false;
-          };
-          // Reconcile each resident's shopping need with the goods clock (want is
-          // true only while out for the good) — an ON-SHOW house's clock is
-          // suppressed fiction, so its members' dialogue never reads it. Runs
-          // before chatter so idle townsfolk talk with fresh state.
-          // TEMP sim-phase probe (view-distance-lod-tiers.md): time each sub-step
-          // group so a slow quest-sim frame names its culprit. Logged over 120ms;
-          // `__simPhase` in the console. Remove with the other probes.
-          const _sp: Record<string, number> = {};
-          let _sm = descendNow();
+        //
+        // Reconcile each resident's shopping need with the goods clock (want is
+        // true only while out for the good) — an ON-SHOW house's clock is
+        // suppressed fiction, so its members' dialogue never reads it. Runs
+        // before chatter so idle townsfolk talk with fresh state.
+        if (shownE) {
+          const _sm = descendNow();
           stepResidentEconomyNeeds(session, shownE);
           stepHouseholdEdges(session, shownE);
           stepConstructionHousekeeping(session, shownE); // craft / auto-place / clutter (construction v1)
-          _sp.economy = descendNow() - _sm; _sm = descendNow();
+          _sp.economy = descendNow() - _sm;
+        }
+        // ── PLAYER INTERACTION — NOT TOWN MACHINERY ──────────────────────────
+        // ⚖️ RULING ② (2026-08-16): "never gate interaction machinery on
+        // session.town existence… feed it the smallest containing object; then
+        // it can walk its way up the tree to find the relevant context."
+        //
+        // Everything in here is how a PLAYER touches the world: the attention
+        // spark's engagement/draw field, the two directed gestures, the action
+        // holds those gestures crouch on, the spoken tails they finish, THE ONE
+        // PURSUIT DRIVER that carries every commanded body, and the lids the
+        // takers leave open. None of it is about a town. It sat inside the
+        // town/household block anyway, so a wilderness session
+        // (`host.start(game, null, …)`) installed pursuits nobody ever stepped:
+        // the avatar's very first direct latched it (`idleForDirect` refuses
+        // while `session.pursuits.has(cid)`) and it never moved again — the
+        // frozen-avatar bug. The town-flavoured context these want (reveal
+        // state, laws, the clock) is resolved from the subject's own scope and
+        // tolerates absence; nothing here is re-gated.
+        if (world) {
+          let _sm = descendNow();
           // SOFT CONTROL (attention-spark.md): refresh the spark's attention
           // field (engagement + object draw) from the gaze BEFORE needs decide,
           // so an engaged creature's draw bonus is live this tick. Fades while a
@@ -22169,7 +23785,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           stepSpokenTails(session); // ⛓️ heads that finished last frame hand over to their tails
           stepPursuit(session, state, dt); // per-tick goal pursuits (owns its bodies before needs sweep)
           stepContainerLids(session, state); // auto-close access-opened lids once the taker has left
-          _sp.pursuit = descendNow() - _sm; _sm = descendNow();
+          stepContainerBoardReach(state); // …and release the BOARD (and the camera) the same way
+          _sp.pursuit = descendNow() - _sm;
+        }
+        // …AND THE REST OF THE HOUSEHOLD SIM, still exactly as town-gated as it
+        // was, resuming at the point the interaction group used to sit at.
+        if (session.town && world && shownE) {
+          let _sm = descendNow();
           // RITUALS FIRST — the roster, bill and phase this frame's need
           // decides are made against (it shapes the context; it drives nobody).
           stepRituals(session, state, dt);
@@ -22186,7 +23808,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           _sp.cohort = descendNow() - _sm;
           pushKnownNouns(session); // the Speak menu tracks the house (diff-gated)
           pushAddressees(session); // ⑫ — and tracks who is standing in the circle
-          for (const [k, v] of Object.entries(_sp)) simMark(`n.${k}`, v); // TEMP → sim-blocks
           // DOLLHOUSE HEARTBEAT: a 5-second household state line per member, so
           // a playtest can SEE why someone isn't home — embodied? which clock
           // phase owns them? live step? meters. Diagnostic; remove once the
@@ -22256,6 +23877,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
           }
         }
+        for (const [k, v] of Object.entries(_sp)) simMark(`n.${k}`, v); // TEMP → sim-blocks
         simMark("needsBlock", descendNow() - _bm); _bm = descendNow(); // TEMP (n.* are its sub-steps)
         // Idle townsfolk chat among themselves (ambient, personality-driven). Runs
         // unconditionally — it registers nearby residents into the dialogue world.
@@ -22274,7 +23896,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // rested and whether a conversation is running. Nothing else reads the
         // gaze to decide an interaction, and the SAME target feeds the spark's
         // own highlight, so what is lit is always what will fire.
-        const meAv = state.avatars[PLAYER_ID];
+        const meAv = playerBody();
         let progress = 0;
         if (world && meAv) {
           const gz = world.getGaze();
@@ -22320,7 +23942,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // it in the container it rests on, or drops it on ground within reach.
           // (Selecting a stack WHILE in conversation presents it instead.)
           if (session.selectedPocketGlyph && !active && !container) {
-            const box = target?.kind === "object" && session.containers.has(target.id!) ? target : null;
+            const box = target?.kind === "object" && isContainerId(session, target.id!) ? target : null;
             const spot = target?.kind === "ground" ? target : null;
             const canDrop = !!spot && Math.hypot(meAv.x - spot.x, meAv.y - spot.y) <= CONVO_RADIUS;
             const at = box ?? (canDrop ? spot : null);
@@ -22563,7 +24185,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // goal-tree runtime — owner-only, like everything else above.
         if (mpFollower()) return;
         if (!steering()) return;
-        const me = state.avatars[PLAYER_ID];
+        const me = playerBody();
         if (!me) return;
         for (const input of detectSpace3D(session.embedding.layout, session.sState, { x: me.x, y: me.y }, dt)) {
           // Choose/converse nodes begin by DWELLING on the poser (conversation),
@@ -22651,9 +24273,21 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     opts: {
       spirit?: boolean; dollhouse?: number; wilderness?: WildernessParams;
       scale?: WorldScale; culture?: WorldCultureSpec | null;
+      /** The species created avatars are built from — the spec's
+       *  `avatar_species`, lowered by the boot (see the interface). */
+      avatarSpecies?: string;
     } = {},
   ) {
     spirit = !!opts.spirit;
+    // Set BEFORE the avatar spawn at the foot of this function reads it.
+    avatarSpeciesOpt = opts.avatarSpecies ?? null;
+    // THE SPEC DECIDES, NOT THE CALLER (see `avatarMode`): every boot resolves
+    // `avatarKind(game)` and hands the answer down as `spirit`, and avatar kind
+    // "none" routes to the spirit path too — so a session that is not a spirit
+    // one is exactly a WALKER spec, and a walker spec plays attached-avatar.
+    avatarMode = spirit ? "spark" : "creature";
+    // Bodies belong to the session that made them; the next one starts clean.
+    despawnAllAttachedAvatars();
     if (possession.creatureId) possession.dismiss(); // a new session is never born possessed
     // CONVERSATIONS DIE WITH THEIR WORLD. The roster book keys on creature ids
     // that the next town rebuilds from scratch, and the sync counters restart at
@@ -22757,6 +24391,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     seedSettlers(sess); // the founding group camped at an age-0 town (city-founding ②)
     _dp?.mark("seedSettlers");
     if (opts.dollhouse !== undefined) enterDollhouse(sess, opts.dollhouse);
+    // ATTACHED AVATAR: the body this player plays through — CREATED beside the
+    // spawn rather than selected, which is the whole of the difference from a
+    // spirit session.
+    //
+    // DEAD LAST, and specifically AFTER `enterDollhouse`: the seeders and the
+    // dollhouse entry both move the local body, and a body created before the
+    // last of those moves is a body created somewhere the player no longer is
+    // (measured: 250 m adrift, then walking the whole way back).
+    if (avatarMode === "creature") {
+      spawnAttachedAvatar(localAvatarPeer(), peerName(localAvatarPeer()));
+      // …and one for every OTHER member already in the session, when a roster
+      // arrived before the world did (a peer that joins later comes in through
+      // `setPeers`). Inert in single-player: the roster is empty, so this
+      // spawns nothing and — the local peer being exempt — despawns nothing.
+      reconcileAttachedAvatars();
+    }
+    // 🐕 ARM THE PURSUIT WATCHDOG AT THE SESSION'S OWN CLOCK. Left at its
+    // `-Infinity` seed, the very first `idleForDirect` of a session — the
+    // avatar arm's, or a board press landing between the boot and frame 1 —
+    // would judge a just-installed pursuit stale before `stepPursuit` had had
+    // a single chance to run, and reap it. "The driver has never run" is only
+    // a fault once the clock has moved WITHOUT it, so start it level.
+    pursuitDrivenAt = sess.townClock;
     if (_dp && typeof console !== "undefined") // TEMP descent probe
       console.log(`[descent-probe] armed ${descendProbe?.key} — start ${descendProbe?.totalStartMs}ms`, descendProbe?.phases);
   }
@@ -22929,9 +24586,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       });
     }
     if (!stood) return false;
-    session.containers.set(key, "in");
-    session.containerStock.set(key, { ...f.stock });
-    session.containerOwner.set(key, null); // nature is nobody's
+    registerContainer(session, key, "in", null, { ...f.stock }); // nature is nobody's
     return true;
   }
 
@@ -22975,7 +24630,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const ground = wildAreaGround(session);
     const rec = condenseWildArea({
       features: w.features,
-      liveStock: (id) => session.containerStock.get(id),
+      liveStock: (id) => session.containerRecords.get(id)?.stock,
       now: session.taskClock,
       area: ground.area,
       seed: wildAreaSeedOf(session),
@@ -22990,9 +24645,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (container?.objId === objId) closeContainer();
       if (world?.state.objects[objId]) world.removeObject(objId);
       else if (world?.state.avatars[objId]) world.removeNpc(objId);
-      session.containers.delete(objId);
-      session.containerStock.delete(objId);
-      session.containerOwner.delete(objId);
+      deleteContainerRecord(session, objId);
     }
     w.features.length = 0;
     session.wildAreas.set(key, rec);
@@ -23066,6 +24719,541 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return true;
   }
 
+  /**
+   * ⚖️ F-④ ASKED, NEVER RE-DERIVED — the ONE place a wild area's fold is put to
+   * the generic dispatch with this session's own books.
+   *
+   * `foldWildArea` above reaches `condenseWildArea` DIRECTLY, on purpose: it is
+   * the S4 mechanism, and a mechanism has no opinion. THIS is the question —
+   * "may these units stop being simulated right now?" — and the answer belongs
+   * to `condense`, where the three fates are decided once for every kind (a
+   * reservation RIDES, a serviced standing leg STAYS, a live pair of hands or a
+   * leg booked against a STANDING FEATURE BLOCKS).
+   *
+   * Its record is DISCARDED and `foldWildArea` re-derives an identical one: the
+   * inputs are the same, the derivation is deterministic, and nothing between
+   * the two calls stores anything. The ask is taken for its ANSWER.
+   *
+   * TWO CALLERS, ONE DEFINITION: the session handover (may these goods leave
+   * this authority?) and the H3 LOD driver (may this stand stop being drawn?).
+   * They are different questions with the same guard, and the guard must not
+   * be written twice or one of them will quietly drift out of the books.
+   */
+  function askWildFold(
+    session: QuestSession,
+    key: string,
+  ): FoldRecord<WildAreaRecord> | FoldRefusal {
+    const ground = wildAreaGround(session);
+    const ctx: WildFoldCtx = {
+      now: session.taskClock,
+      endpoints: wildFoldEndpointsOf(session),
+      books: sessionFoldBooks(session),
+      features: session.wilderness?.features ?? [],
+      liveStock: (id) => session.containerRecords.get(id)?.stock,
+      area: ground.area,
+      seed: wildAreaSeedOf(session),
+      prev: session.wildAreas.get(key) ?? null,
+    };
+    return condense<WildAreaRecord>(wildAreaId(key), ctx);
+  }
+
+  // ── ⚖️ H3 — THE UNWATCHED-STAND SWEEP (the LOD driver) ────────────────────
+  //
+  // ⚖️ THE LAW, TRANSFERRED FROM RESIDENTS (project: resident streamer bands):
+  // A STAND MAY CHANGE FORM ONLY WHERE IT CANNOT BE SEEN. A forest popping out
+  // of frame is the same defect as a resident blinking in on the plaza, and it
+  // is the worse one — a tree is scenery the player is looking AT. So the BAND
+  // decides whether; the timer only decides when to ask.
+  //
+  // THE BAND ADDS NO DISTANCE CONSTANT OF ITS OWN. Both readings already exist:
+  //   FOLD_IN  = sessionVisibleR               — the camera's own reach
+  //   FOLD_OUT = sessionVisibleR + VIEW_RADIUS — one no-snap radius beyond it
+  // so the hysteresis band IS the no-snap radius the host already trusts for
+  // "could the player have seen that happen?". A stand folds only once every
+  // anchor is a full no-snap radius outside the camera's reach, and unfolds the
+  // moment one is back inside it. TWO thresholds, never one: a single line
+  // makes a wood flap in and out every time a body paces across it.
+  //
+  // AND WHAT IT ASKS IS `condense`, NOT `foldWildArea` — through `askWildFold`,
+  // with the books — so the F-④ guard fires. ⚖️ ITS BOUNDARY IS THE CLOCK'S OWN
+  // (clock-warp law ③, read at the scope rung): COMMITMENTS OF GOODS REFUSE,
+  // PROJECTIONS OF WALKS FOLD. An unloaded body merely walking toward the wood
+  // is a projection — it re-decides against the world it finds when it arrives
+  // — so folding under its feet wastes a walk and never a good. The moment
+  // anything real is in motion or booked (a loaded haul, a leg posted FROM a
+  // tree's own endpoint) the TRANSFER book sees it and the fold is refused.
+
+  /** Sweep accumulator, and the consecutive out-of-band readings behind it.
+   *  Reset by ANY in-band reading: the debounce is about a STAY, not a visit. */
+  let wildLodT = 0;
+  let wildLodOutSweeps = 0;
+
+  /**
+   * 🚨 THE DRIVER UNFOLDS ONLY WHAT THE DRIVER FOLDED.
+   *
+   * An LOD transition is REVERSIBLE HOUSEKEEPING; every other fold in the host
+   * is a DECISION somebody made — `/wild fold` is an instrument a developer is
+   * holding, a session handover is an authority transfer, and the world-size
+   * round's regional sheds are draw partners that were never this session's
+   * scenery. A driver that unfolded those would be overruling the caller, and
+   * it measurably did: with this set absent, `/wild fold` was undone within one
+   * sweep (five sim-seconds), turning F5b's own live proofs — f5-shed.txt,
+   * f5-unfold.txt, h2-shed.txt — from `folded wild:area:home: 14 source(s)`
+   * into `loaded: oak×8 …`. The rect-match gate below does not catch that case:
+   * a cheat folds THIS session's ground, which is exactly the rect that
+   * matches.
+   *
+   * So the driver owns a key only from the moment it folds it, and forgets the
+   * key the moment it unfolds it or anybody else expands it.
+   */
+  const wildLodFolded = new Set<string>();
+
+  /** Distance from a point to a RECT — 0 anywhere inside it. The stand's ground
+   *  IS a rect, and a spirit in one corner of the forest is in the forest;
+   *  measuring to the centre would fold a 240 m wood around a player standing
+   *  halfway across it. */
+  function rectDistance(
+    r: { x: number; y: number; w: number; h: number },
+    p: { x: number; y: number },
+  ): number {
+    return Math.hypot(
+      Math.max(r.x - p.x, 0, p.x - (r.x + r.w)),
+      Math.max(r.y - p.y, 0, p.y - (r.y + r.h)),
+    );
+  }
+
+  const sameRect = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ): boolean => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+
+  /** ⚖️ H3 — one sweep of the driver. Called on the frame clock (never inside
+   *  `stepLedgerSweeps`): a CLOCK WARP is books-only and carries no camera, so
+   *  an LOD decision has no business running in one. */
+  function stepWildLod(session: QuestSession): void {
+    if (!world) return;
+    const anchors = attentionAnchors(session);
+    // NO ANCHOR, NO VERDICT — `viewNear` takes the same line ("no known focus →
+    // assume watched"). With nowhere to measure from, the honest move is to
+    // leave the world exactly as it is.
+    if (!anchors.length) return;
+    const ground = wildAreaGround(session);
+    const visibleR = sessionVisibleR(session);
+    const nearest = (r: { x: number; y: number; w: number; h: number }): number =>
+      anchors.reduce((best, a) => Math.min(best, rectDistance(r, a)), Infinity);
+
+    // ── THE FOLD ARM — the live stand, once nobody is near its ground ───────
+    const live = session.wilderness;
+    if (live && live.features.length > 0) {
+      if (nearest(ground.area) <= visibleR + VIEW_RADIUS) {
+        wildLodOutSweeps = 0;
+        return;
+      }
+      if ((wildLodOutSweeps += 1) < WILD_LOD_FOLD_SWEEPS) return;
+      if (isFoldRefusal(askWildFold(session, HOME_WILD_AREA))) {
+        // STAY LIVE AND RETRY NEXT SWEEP. The counter is HELD at the threshold
+        // rather than reset, so a blocker clearing costs one period instead of
+        // a whole fresh debounce. NO TOAST: this arm fires on a timer, and a
+        // banner would nag once a period, forever, about a condition the player
+        // never asked about and cannot act on. `/wild` is where it is legible.
+        wildLodOutSweeps = WILD_LOD_FOLD_SWEEPS;
+        return;
+      }
+      if (foldWildArea(session, HOME_WILD_AREA)) wildLodFolded.add(HOME_WILD_AREA);
+      wildLodOutSweeps = 0;
+      return; // an area is loaded or condensed, never both — nothing to unfold
+    }
+    wildLodOutSweeps = 0;
+
+    // ── THE UNFOLD ARM — what the driver folded, on its own ground ──────────
+    // Keys nobody here folded are dropped first (see `wildLodFolded`): the
+    // driver reverses its own housekeeping and never anybody else's decision.
+    for (const key of [...wildLodFolded].sort()) {
+      if (!session.wildAreas.has(key)) {
+        wildLodFolded.delete(key); // somebody else expanded it — no longer ours
+        continue;
+      }
+      const rec = session.wildAreas.get(key);
+      // ⚖️ A REMOTE SHED NEVER UNFOLDS HERE. It is a DRAW PARTNER — a region
+      // somewhere else that this town ships from — not scenery anybody is
+      // walking up to, and the band says nothing about ground the camera can
+      // never reach. 🔴 It is also the guard on a real hole: `unfoldWildArea`
+      // re-lays through `wildAreaGround(session)` and never reads `rec.area`
+      // at all, so a remote record put through it would be dealt onto the
+      // LOCAL ground. Teaching it to honour `rec.area` is a wild-area change
+      // and is not this round's; this gate is what keeps the hole unreachable.
+      if (!rec || !sameRect(rec.area, ground.area)) continue;
+      if (nearest(rec.area) < visibleR) {
+        unfoldWildArea(session, key);
+        wildLodFolded.delete(key);
+        return; // v1 runs ONE live wilderness content per session
+      }
+    }
+  }
+
+  /* ─────────────────── SESSION HANDOVER (N6c) — the two halves ────────────
+   * The contract these build and validate is `SessionHandoverPayload`, whose
+   * declaration above carries the ⚖️ SPLIT ≠ CONDENSE law in full. Read it
+   * first: everything below is that law, executed.
+   */
+
+  /** ONE definition of "what this body has on it", as a plain glyph→count bag:
+   *  the goods `bodyCarryView` reports PLUS each container as one unit of its
+   *  own glyph, because THE BAGS TRAVEL TOO — a body walking from one host's
+   *  world into another's takes its containers with it, and `restorePocket`
+   *  re-creates the bag before it fills it, which is what makes the two sides'
+   *  capacities agree.
+   *
+   *  `pocketSnapshot` is this asked about the player's own hands; a handover
+   *  asks it about every departing member's avatar. One formula, so the two can
+   *  never drift apart. */
+  function bodyCarrySnapshot(session: QuestSession, cid: string): Record<string, number> {
+    const carry = bodyCarryOf(session, cid);
+    const out: Record<string, number> = { ...bodyCarryView(carry) };
+    for (const bag of [carry.inHand?.bag ?? null, carry.worn]) {
+      if (bag) out[bag.glyph] = (out[bag.glyph] ?? 0) + 1;
+    }
+    return out;
+  }
+
+  /** A finite number, or null — the one numeric gate every field below goes
+   *  through, so a NaN can never enter a record from the wire. */
+  function finiteOrNull(x: unknown): number | null {
+    return typeof x === "number" && Number.isFinite(x) ? x : null;
+  }
+
+  /** A plain glyph→count map, COPIED, or null when it is not one. */
+  function readNumMap(x: unknown): Record<string, number> | null {
+    if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      const n = finiteOrNull(v);
+      if (n === null) return null;
+      out[k] = n;
+    }
+    return out;
+  }
+
+  /** An array of finite numbers, COPIED, or null. */
+  function readNumList(x: unknown): number[] | null {
+    if (!Array.isArray(x)) return null;
+    const out: number[] = [];
+    for (const v of x) {
+      const n = finiteOrNull(v);
+      if (n === null) return null;
+      out.push(n);
+    }
+    return out;
+  }
+
+  /**
+   * THE WILD RECORD'S PLAIN-DATA SHAPE, in ONE place — used BOTH to copy a
+   * record out of this session on the way into a payload AND to validate one
+   * arriving from a peer. Deliberately the same function for both directions:
+   * a shape the sender cannot express is a shape the receiver must not accept,
+   * and two hand-written copies of `WildAreaRecord` would be two chances to
+   * disagree about it.
+   *
+   * Returns a DEEP COPY (never an alias of the caller's record, in either
+   * direction — the donor's live record must not be mutable through the
+   * payload, and a wire-decoded object must not be trusted by reference), or
+   * null when the value is not a wild-area record.
+   */
+  function readWildRecord(x: unknown): WildAreaRecord | null {
+    if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+    const r = x as Record<string, unknown>;
+    if (typeof r.key !== "string") return null;
+    const a = r.area as Record<string, unknown> | undefined;
+    if (!a || typeof a !== "object") return null;
+    const ax = finiteOrNull(a.x), ay = finiteOrNull(a.y);
+    const aw = finiteOrNull(a.w), ah = finiteOrNull(a.h);
+    if (ax === null || ay === null || aw === null || ah === null) return null;
+    const seed = finiteOrNull(r.seed), at = finiteOrNull(r.at);
+    if (seed === null || at === null) return null;
+    const draw = readNumList(r.draw);
+    if (!draw) return null;
+    if (!Array.isArray(r.stands)) return null;
+    const stands: WildAreaRecord["stands"] = [];
+    for (const raw of r.stands) {
+      if (!raw || typeof raw !== "object") return null;
+      const s = raw as Record<string, unknown>;
+      if (typeof s.species !== "string") return null;
+      const byClass = readNumList(s.byClass);
+      const stock = readNumMap(s.stock);
+      const cap = readNumMap(s.cap);
+      if (!byClass || !stock || !cap) return null;
+      if (!Array.isArray(s.climbAt)) return null;
+      const climbAt: WildAreaRecord["stands"][number]["climbAt"] = [];
+      for (const rawC of s.climbAt) {
+        if (!rawC || typeof rawC !== "object") return null;
+        const c = rawC as Record<string, unknown>;
+        const cls = finiteOrNull(c.cls), cAt = finiteOrNull(c.at);
+        if (cls === null || cAt === null) return null;
+        climbAt.push({ cls, at: cAt });
+      }
+      if (!s.regrowAt || typeof s.regrowAt !== "object" || Array.isArray(s.regrowAt)) return null;
+      const regrowAt: Record<string, number[]> = {};
+      for (const [g, v] of Object.entries(s.regrowAt as Record<string, unknown>)) {
+        const list = readNumList(v);
+        if (!list) return null;
+        regrowAt[g] = list;
+      }
+      stands.push({ species: s.species, byClass, stock, cap, climbAt, regrowAt });
+    }
+    return { key: r.key, area: { x: ax, y: ay, w: aw, h: ah }, seed, at, stands, draw };
+  }
+
+  /**
+   * THE ENDPOINTS THAT STOP EXISTING AT A WILD FOLD — every standing feature's
+   * container id. This is what makes the F-④ guard MEAN something for a wild
+   * area: the codec's own note says a standing leg booked against the AREA is
+   * serviced by the record, while "a leg against a STANDING FEATURE
+   * (`wild:oak_3`) is not covered and refuses: that endpoint is precisely what
+   * stops existing at this fold". Handing the guard the feature ids is how it
+   * can see that difference at all.
+   */
+  function wildFoldEndpointsOf(session: QuestSession): string[] {
+    const w = session.wilderness;
+    if (!w) return [];
+    return w.features.map((f) => wildFeatureContainerId(f));
+  }
+
+  /**
+   * ⚖️ THE DONATING HALF (`assembleSessionHandover`). See the contract's own
+   * header for the law; the shape of this function is that law's two halves in
+   * order — condense the wild, then COUNT (never condense) the members.
+   */
+  function assembleHandover(session: QuestSession, memberIds: string[]): SessionHandoverPayload {
+    const refusals: SessionHandoverRefusal[] = [];
+    const wild: SessionHandoverWild[] = [];
+    const members: SessionHandoverMember[] = [];
+    /** The F-④ fates the gate answered with, per key — kept to ride along in
+     *  the payload beside the record they belong to. */
+    const fates = new Map<string, { commitments: FoldCommitment[]; serviced?: FoldCommitment[] }>();
+
+    // ── HALF ONE: THE WILD SLICE, WHICH CONDENSES ──────────────────────────
+    //
+    // v1 has ONE live wilderness content per session, and `foldWildArea` folds
+    // all of it under one key (the round's own `HOME_WILD_AREA`); already-
+    // folded areas under other keys ride along untouched below. When the live
+    // content is empty there is nothing to fold and the guard is not asked.
+    const liveKey = HOME_WILD_AREA;
+    const hasLive = !!session.wilderness && session.wilderness.features.length > 0;
+    let folded = false;
+    if (hasLive) {
+      // 🚨 F-④ IS ASKED, NEVER RE-DERIVED. `foldWildArea` reaches
+      // `condenseWildArea` DIRECTLY — no books, no guard — because it is the
+      // S4 LOD path, where ceasing to be simulated is not a decision anybody
+      // may refuse. A HANDOVER is a different question ("may these units leave
+      // this authority?"), and the answer to it belongs to `condense`: the
+      // three fates (a reservation RIDES, a serviced standing leg STAYS, a
+      // claimed pair of hands BLOCKS) are decided there, once, for every kind.
+      // So the generic dispatch is asked FIRST, with this session's own books,
+      // and its answer is taken verbatim.
+      //
+      // Its RECORD is discarded and `foldWildArea` re-derives an identical one
+      // (same inputs, deterministic, and nothing between the two calls stores
+      // anything) — the ask is taken for its ANSWER, the way
+      // `mintCondensedShelf` takes its own for its one effect. The record that
+      // TRAVELS is the one the session ends up holding, so there is exactly one
+      // record per area and no second opinion about it.
+      const asked = askWildFold(session, liveKey);
+      if (isFoldRefusal(asked)) {
+        // ⚖️ AND THE SPLIT GOES AHEAD ANYWAY. The refusal is NAMED, this area
+        // stays live with the donor, and the members still walk.
+        refusals.push({
+          where: "wild",
+          key: liveKey,
+          id: asked.id,
+          note: asked.note,
+          blockers: [...asked.blockers],
+          ...(asked.blocked === undefined ? {} : { blocked: asked.blocked }),
+        });
+      } else {
+        fates.set(liveKey, {
+          commitments: [...asked.commitments],
+          ...(asked.serviced ? { serviced: [...asked.serviced] } : {}),
+        });
+        folded = true;
+      }
+    }
+
+    if (folded) {
+      // ⚖️ CONSERVATION PINNED — `sessionStockAudit` counts the live tree AND
+      // every folded record, so a fold that loses a single unit throws HERE
+      // instead of shipping a lossy payload. (The audit is the wild half's; the
+      // member half is a READ and moves nothing — see below.)
+      try {
+        withFoldConservation(
+          () => sessionStockAudit(session),
+          () => {
+            foldWildArea(session, liveKey);
+          },
+          "assembleSessionHandover(wild)",
+        );
+      } catch (err) {
+        // A drifting audit is a BUG, and it is reported as one — loudly in the
+        // log and named in the payload. It still may not block the split: the
+        // fold has already run by the time the after-audit reads, so the
+        // records exist and the members are still leaving either way.
+        const note = err instanceof Error ? err.message : String(err);
+        console.warn(`[handover] ${note}`);
+        refusals.push({ where: "conservation", key: liveKey, id: wildAreaId(liveKey), note, blockers: [] });
+      }
+    }
+
+    // THE COMPLETE WILD STATE, not just the slice we just folded: an area that
+    // was already condensed (never loaded, or folded long ago) is state the
+    // receiver must have too, or those units simply stop existing at the split.
+    for (const [key, rec] of session.wildAreas) {
+      const copy = readWildRecord(rec);
+      if (!copy) {
+        // Unreachable in practice (the record came from this engine's own
+        // codec) — but a record that cannot be expressed as plain data cannot
+        // cross a wire, and saying so is better than shipping a hole.
+        refusals.push({
+          where: "wild",
+          key,
+          id: wildAreaId(key),
+          note: `handover refused — the record for "${key}" is not plain data and cannot travel.`,
+          blockers: [],
+        });
+        continue;
+      }
+      const f = fates.get(key);
+      wild.push({
+        key,
+        rec: copy,
+        ...(f && f.commitments.length ? { commitments: f.commitments } : {}),
+        ...(f && f.serviced ? { serviced: f.serviced } : {}),
+      });
+    }
+
+    // ── HALF TWO: THE MEMBERS, WHO TRANSFER AND NEVER CONDENSE ─────────────
+    //
+    // Nothing here may refuse, and nothing here is folded: this is a COUNT of
+    // live bodies that are about to be owned by somebody else. It moves no
+    // stock at all (every read below is a read), which is why the conservation
+    // pin above encloses only the wild half — the member half is
+    // counted-not-audited BY CONSTRUCTION, and the units it names are counted
+    // twice on purpose while both authorities exist, exactly as two copies of a
+    // walking body do.
+    const me = localAvatarPeer();
+    for (const id of memberIds) {
+      if (typeof id !== "string" || !id) continue;
+      const entry: SessionHandoverMember = { id };
+      // WHERE THEY ARE, in the only frame two sessions share. Ours is the
+      // presence the embedder feeds us; a peer's is the beacon it sent.
+      const at = id === me ? planetLoc : (world?.state.peerLocs?.[id] ?? null);
+      if (at) entry.loc = { d: [at.d[0], at.d[1], at.d[2]], e: at.e };
+      // WHAT THEY CARRY. Ours is the hands the player is actually playing
+      // through (`handsCid` follows possession — the `pocketSnapshot`
+      // precedent, deliberately kept); a peer's is the avatar created for it.
+      const cid = id === me ? session.handsCid : (attachedAvatars.get(id) ?? null);
+      if (cid) {
+        const stacks = bodyCarrySnapshot(session, cid);
+        if (Object.keys(stacks).length) entry.stacks = stacks;
+      }
+      members.push(entry);
+    }
+
+    return {
+      v: SESSION_HANDOVER_V,
+      from: me,
+      at: session.taskClock,
+      wild,
+      members,
+      ...(refusals.length ? { refusals } : {}),
+    };
+  }
+
+  /**
+   * THE ONE VALIDATOR. Reads an untrusted value into the contract or answers
+   * null — never half of one. Two-phase by design: this builds a fully checked
+   * and fully COPIED payload, and only then does the caller apply it, so a
+   * malformed record in the last entry cannot leave the first three installed.
+   */
+  function readHandoverPayload(x: unknown): SessionHandoverPayload | null {
+    if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+    const p = x as Record<string, unknown>;
+    // VERSION FIRST. A peer on another engine hands us a shape we do not know;
+    // declining it whole is the skew law, and guessing at it is how state gets
+    // silently corrupted.
+    if (p.v !== SESSION_HANDOVER_V) return null;
+    if (typeof p.from !== "string") return null;
+    const at = finiteOrNull(p.at);
+    if (at === null) return null;
+    if (!Array.isArray(p.wild) || !Array.isArray(p.members)) return null;
+
+    const wild: SessionHandoverWild[] = [];
+    for (const raw of p.wild) {
+      if (!raw || typeof raw !== "object") return null;
+      const e = raw as Record<string, unknown>;
+      if (typeof e.key !== "string" || !e.key) return null;
+      const rec = readWildRecord(e.rec);
+      if (!rec) return null;
+      // The F-④ disclosure rides through UNREAD. It is never acted on (v1 does
+      // not re-post foreign promises into local books), so validating its
+      // interior would be inventing a rule for data we have promised not to
+      // use; being an array is the whole of the requirement.
+      wild.push({
+        key: e.key,
+        rec,
+        ...(Array.isArray(e.commitments) ? { commitments: e.commitments as FoldCommitment[] } : {}),
+        ...(Array.isArray(e.serviced) ? { serviced: e.serviced as FoldCommitment[] } : {}),
+      });
+    }
+
+    const members: SessionHandoverMember[] = [];
+    for (const raw of p.members) {
+      if (!raw || typeof raw !== "object") return null;
+      const m = raw as Record<string, unknown>;
+      if (typeof m.id !== "string" || !m.id) return null;
+      const entry: SessionHandoverMember = { id: m.id };
+      if (m.loc !== undefined) {
+        const l = m.loc as Record<string, unknown> | null;
+        if (!l || typeof l !== "object") return null;
+        const d = readNumList(l.d);
+        const e = finiteOrNull(l.e);
+        if (!d || d.length !== 3 || e === null) return null;
+        entry.loc = { d: [d[0] as number, d[1] as number, d[2] as number], e };
+      }
+      if (m.stacks !== undefined) {
+        const stacks = readNumMap(m.stacks);
+        if (!stacks) return null;
+        entry.stacks = stacks;
+      }
+      members.push(entry);
+    }
+
+    return { v: SESSION_HANDOVER_V, from: p.from, at, wild, members };
+  }
+
+  /**
+   * ⚖️ THE RECEIVING HALF's wild step — install the handed-over records and
+   * stand them back up.
+   *
+   * 🚨 REPLACE, NEVER ADD. This session has ALREADY scattered this area from
+   * the seed (that is what `start` does), so unfolding the donor's record on
+   * top of it would stand a second forest and double the audit. The local
+   * scatter therefore folds away FIRST and its record is discarded — those are
+   * the same trees, laid from the same seed, in their un-played state — and the
+   * donor's evolved record takes its place. That discard is why this step is
+   * NOT conservation-wrapped: it is deliberately not a conserving move on this
+   * host. Conservation is pinned where it is meaningful (the donor's fold), and
+   * the pair is checked ACROSS the handover by comparing `wildAreaStock` sums.
+   */
+  function applyHandoverWild(session: QuestSession, payload: SessionHandoverPayload): void {
+    if (!payload.wild.length) return;
+    // ONE live wilderness content per session (v1), so this fold happens once,
+    // under the first key the payload names — otherwise the second pass would
+    // fold the first record's freshly-laid stand back up under another key.
+    const firstKey = payload.wild[0]?.key ?? HOME_WILD_AREA;
+    foldWildArea(session, firstKey);
+    for (const entry of payload.wild) session.wildAreas.set(entry.key, entry.rec);
+    for (const entry of payload.wild) unfoldWildArea(session, entry.key);
+  }
+
   /** One line per glyph the session holds, all in — the conservation reading
    *  a fold has to keep identical (`sessionStockAudit`, sorted for diffing). */
   function stockLine(session: QuestSession): string {
@@ -23094,7 +25282,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const stock = Object.entries(wildAreaStock(rec))
         .map(([g, n]) => `${g}:${n}`)
         .join(" ");
-      return `folded ${wildAreaId(rec.key)}: ${wildAreaPopulation(rec)} source(s) ${classes} — ${stock} — draw[${rec.draw.map((n) => Math.round(n)).join(",")}]`;
+      // ⚖️ F5 — …and what is waiting AT THE ROAD, when anything is. A shed with
+      // an empty boundary shelf prints exactly what it always printed.
+      const shelf = Object.entries(session.partnerStock[wildAreaId(rec.key)] ?? {})
+        .filter(([, n]) => n > 0)
+        .map(([g, n]) => `${g}:${n}`)
+        .join(" ");
+      return `folded ${wildAreaId(rec.key)}: ${wildAreaPopulation(rec)} source(s) ${classes} — ${stock} — draw[${rec.draw.map((n) => Math.round(n)).join(",")}]${shelf ? ` — shelf ${shelf}` : ""}`;
     });
     return [
       `loaded: ${counts || "(none)"}${loaded ? ` — ${loaded}` : ""}`,
@@ -23102,9 +25296,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     ].join("\n");
   }
 
-  /** ⚖️ S&D S4 — the `/wild` cheat's whole body (see `wildProbe`). */
-  function wildAreaReport(session: QuestSession, verb: string): string {
+  /** ⚖️ S&D S4 — the `/wild` cheat's whole body (see `wildProbe`).
+   *  ⚖️ F5 adds `draw <good>`: order a standing draw on the folded shed and run
+   *  the first load out to its road, so the region-reach seam can be exercised
+   *  from text mode — the same argument the fold verbs were given ("a
+   *  conservation law that can only be exercised in a browser is a law nobody
+   *  checks"). The stock lines around it ARE the conservation proof: units
+   *  leave the record and land on the shelf, and the session total holds. */
+  function wildAreaReport(session: QuestSession, verbLine: string): string {
     const lines: string[] = [];
+    const [verb = "", ...rest] = verbLine.split(/\s+/).filter((w) => w.length > 0);
+    if (verb === "draw") {
+      const good = rest[0] ?? "wood";
+      lines.push(`before: ${stockLine(session)}`);
+      const shed = shedPartnerOf(session, HOME_WILD_AREA);
+      const order = shed ? orderRegionDraw(session, HOME_WILD_AREA, good, 1) : null;
+      if (!shed) lines.push("nothing folded to draw from");
+      else if (!order) lines.push("nowhere here to put it (no yard, no site)");
+      else {
+        const road = shed.distanceM === null ? "no road" : `${Math.round(shed.distanceM)}m`;
+        lines.push(
+          `ordered ${good} from ${shed.id} — ${road}, ` +
+            `leg ${Math.round(partnerLegSeconds(session, shed))}s, due ${Math.round(order.nextDueAt ?? 0)}`,
+        );
+        // The sweep's own arm, run now so one cheat call shows the draw: the
+        // shelf fills out of the record and the leg ships it when it comes due.
+        drawShedShelf(session, HOME_WILD_AREA, order.goods);
+        lines.push(`drawn: ${stockLine(session)}`);
+      }
+    }
     if (verb === "fold" || verb === "cycle") {
       lines.push(`before: ${stockLine(session)}`);
       const rec = foldWildArea(session);
@@ -23133,9 +25353,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the container board on the same dwell).
       if (c.species) {
         const body = wildAnimalBodyId(c);
-        session.containers.set(body, "in");
-        session.containerStock.set(body, { ...(c.stock ?? {}) });
-        session.containerOwner.set(body, null); // wild — nobody's, until tamed
+        registerContainer(session, body, "in", null, { ...(c.stock ?? {}) }); // wild — nobody's, until tamed
         world.addNpc({
           id: body,
           x: c.x,
@@ -23249,9 +25467,338 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
   }
 
+  // ── ATTACHED AVATARS (avatarMode "creature") ─────────────────────────────
+  // The body a session CREATES for a player, which then follows that player's
+  // spark through the ordinary creature machinery. Everything here is inert
+  // while avatarMode is "spark": the accessors are identity functions and the
+  // map stays empty, so a spirit session is byte-identical.
+
+  /** The key this device's own attached avatar is filed under (its network id
+   *  when there is a mesh, else the single-player stand-in). */
+  const localAvatarPeer = (): string => mp?.localId ?? LOCAL_AVATAR_PEER;
+
+  /** Is `cid` an attached avatar — ANY peer's? The mouth gate asks this. */
+  function isAttachedAvatarCid(cid: string): boolean {
+    for (const held of attachedAvatars.values()) if (held === cid) return true;
+    return false;
+  }
+
+  /** WHOSE attached avatar `cid` is, or null when it is not one — the reverse
+   *  of the map, which the follow loop needs to ask "which player does this
+   *  body belong to?". A linear scan on purpose: the map holds one entry per
+   *  player in the session (a handful), and a second index would be a second
+   *  thing to keep true. */
+  function attachedAvatarPeerOf(cid: string): string | null {
+    for (const [peerId, held] of attachedAvatars) if (held === cid) return peerId;
+    return null;
+  }
+
+  /** The roster name recorded for `peerId` (`setPeers`), if the platform sent
+   *  one. Undefined = an unnamed peer, which is what a created body gets.
+   *
+   *  THE ROSTER IS THE NAME BOOK, not the spawned `NpcSpec.name` — a member can
+   *  be renamed while its body stands, and no body is torn down over a word. A
+   *  surface that wants to LABEL an avatar should ask this (via
+   *  `attachedAvatarPeerOf`), which is always current. */
+  function peerName(peerId: string): string | undefined {
+    return mpPeers.find((p) => p.id === peerId)?.name;
+  }
+
+  /** THE BODY THIS PEER'S LIGHT RIDES, for the mesh's park rule: the possessed
+   *  creature first (possession outranks — riding a baker means the light sits
+   *  on the baker), else this player's own created avatar, else nothing.
+   *
+   *  ONE definition for all three announcement sites — the possession swap, the
+   *  ~5 s heartbeat and the avatar's own spawn — so a peer can never hold two
+   *  different opinions about where its light is. In a spirit session the
+   *  second clause is dead (no created bodies), which is what makes the claim
+   *  traffic of a dollhouse run byte-identical. */
+  function localClaimBody(): string | null {
+    if (possession.creatureId) return avatarIdOf(possession.creatureId);
+    if (avatarMode === "creature") return localAvatarBodyId();
+    return null;
+  }
+
+  /** The LOCAL player's attached-avatar BODY id; null before it spawns. */
+  function localAvatarBodyId(): string | null {
+    const cid = attachedAvatars.get(localAvatarPeer());
+    return cid ? avatarIdOf(cid) : null;
+  }
+
+  /**
+   * The avatar record every distance / zone / reach rule measures the LOCAL
+   * player at. In attached-avatar mode that is the CREATED body, because that
+   * is the thing actually standing in the world; otherwise it is
+   * `state.avatars[PLAYER_ID]` exactly as before.
+   *
+   * ⚠️ Deliberately NOT `playerWorldPos`: that one answers spiritPos in a
+   * SPIRIT session, so routing these sites through it would move dollhouse
+   * behavior. This helper is the strict identity function while avatarMode is
+   * "spark", which is what keeps the flag-off path byte-identical.
+   */
+  function playerBody() {
+    const st = world?.state;
+    if (!st) return undefined;
+    if (avatarMode === "creature") {
+      const bid = localAvatarBodyId();
+      const b = bid ? st.avatars[bid] : undefined;
+      if (b) return b;
+    }
+    return st.avatars[PLAYER_ID];
+  }
+
+  /**
+   * Whom a FOLLOWER trails. THE PLAYER IS THE SPARK, so in attached-avatar
+   * mode the party — the player's own created body included — trails the
+   * spark's hover; otherwise the local body, exactly as before.
+   *
+   * ⚖️ ONE CREATURE BEHAVIOR MODEL: this is a LEADER READ, not a mover. The
+   * attached avatar reaches its leader through the same party-follow loop and
+   * the same `enqueueNpcErrand` every recruited creature uses, so door-aware
+   * routing, separation and clock-dodge come free and there is no second
+   * movement door to keep in sync.
+   */
+  function followLeaderPos(session: QuestSession): { x: number; y: number } | null {
+    if (avatarMode === "creature" && session.spiritPos) {
+      return { x: session.spiritPos.x, y: session.spiritPos.y };
+    }
+    const p = world?.state.avatars[PLAYER_ID];
+    return p ? { x: p.x, y: p.y } : null;
+  }
+
+  /** The physical species of a created avatar. The spec's `avatar_species` does
+   *  NOT ride the GoalTreeGame `start` receives (it carries no manifest
+   *  settings), so a boot that reads the manifest lowers it as
+   *  `start({ avatarSpecies })` — the same shape `avatarKind` already travels
+   *  in. Absent, this resolves the same chain the settlers do, exactly as it
+   *  did before the opt existed. */
+  function attachedAvatarSpecies(session: QuestSession): string {
+    return (
+      avatarSpeciesOpt ?? session.town?.config.species ?? session.town?.plan.species ?? "human_cute"
+    );
+  }
+
+  /** Where a new attached avatar stands: beside the session spawn, fanned by
+   *  the peer's rank so a whole roster of them never lands on one spot. */
+  function attachedAvatarSpawn(peerId: string): { x: number; y: number } {
+    const p = world?.state.avatars[PLAYER_ID];
+    const base = p ? { x: p.x, y: p.y } : (sess?.spiritPos ?? { x: 0, y: 0 });
+    const peers = [...new Set([...attachedAvatars.keys(), peerId])].sort();
+    const i = Math.max(0, peers.indexOf(peerId));
+    const ang = (i / peers.length) * Math.PI * 2 + 0.7;
+    return { x: base.x + Math.cos(ang) * 1.6, y: base.y + Math.sin(ang) * 1.6 };
+  }
+
+  /** Point the grounded chase rig at a body (render3d `setFollowBody`, landed
+   *  by stage N4-pre), or null to hand it back to the local id. Optional on the
+   *  view interface — the 2D and owner-mode views have no chase rig — so the
+   *  call is an ordinary optional-method call, no cast. */
+  /** ⚖️ USER RULING 2026-08-14: any camera focus may use either scheme; we
+   *  "continue to use the directed system for now". Flip this ONE word to
+   *  "orbiting" when asked — the seam (render3d setCameraScheme) is landed
+   *  and the selection below makes the choice legible at the spawn and
+   *  release sites instead of hiding in a default. */
+  const ATTACHED_CAMERA_SCHEME = "directed" as const;
+
+  /**
+   * ⚖️ WHY THIS IS NOT `world.claimBody` (USER RULING 2026-08-14: "you attach to
+   * it, just as if it was in free-roaming spirit mode… the camera should be
+   * exactly the same"). IT IS THE SAME CAMERA. Free-roam attach is POSSESSION,
+   * whose camera is a pure consequence of the claim: `claimBody` moves
+   * `state.drivenId`, and render3d's chase rig frames `subjectBody` =
+   * `followBodyId ?? drivenId ?? localId`. An attached avatar rides that SAME
+   * rig, the same scheme and the same follow constant — it just names the body
+   * through rung ① instead of rung ②. No second camera mode exists.
+   *
+   * The CLAIM itself cannot be reused here, and the reason is structural rather
+   * than stylistic: `stationary` (world-host) means BOTH "this player's presence
+   * is a formless spark" AND "the driven body is that spark". Claiming a real
+   * body while stationary breaks that identity in at least three places —
+   * `advanceNpcs` SUSPENDS the driven body's controller (a claimed body is
+   * steered by the spark in `tickWorld`), which is the very controller flow A's
+   * pursuits and errands drive it through, so the avatar would freeze; the
+   * spirit carry rules would give it distance-free reach; and `snapSpiritCarried`
+   * would fly whatever it picked up to the gaze point. Clearing `stationary`
+   * un-freezes it by restoring POINTER STEERING — precisely what the
+   * stationary-spark rule forbids and what the direction arm now owns.
+   *
+   * So attach-without-steering is not expressible through `claimBody` today. It
+   * would take splitting `stationary` into two ideas ("the local presence is a
+   * spark" vs "the driven body is not pointer-steered") in world-host — a
+   * contract change for every game, deliberately NOT made here.
+   */
+  function followCamera(bodyId: string | null): void {
+    questView?.setFollowBody?.(bodyId);
+    questView?.setCameraScheme?.(bodyId ? ATTACHED_CAMERA_SCHEME : "directed");
+  }
+
+  /**
+   * CREATE `peerId`'s attached avatar and hand it to the one creature behavior
+   * model. Returns its body id, or null when the session cannot spawn one.
+   *
+   * Per-peer BY CONSTRUCTION — the next stage spawns one of these per roster
+   * member, naming each from `world_session.peers[].name`. v1 calls it once,
+   * for the local player.
+   *
+   * ⚖️ THE WILL is the party set: `joinParty` is the EXISTING suppression
+   * mechanism (it drops the body's queued tasks, clears its need step and
+   * cancels its errand), and party membership is what the twelve
+   * `session.party.has(...)` guards already read to keep a member out of
+   * chatter, chores, curfew goals, the task pool and the clock's errand feed.
+   * No parallel "no-mind" flag exists, because none is needed.
+   *
+   * ⚖️ THE MIND is absent on purpose: `ensureWildCreature` is NOT called, so
+   * no dialogue node is ever minted. That makes the body unreachable by the
+   * talk targeter — which is a consequence, NOT the silence mechanism. The
+   * mouth is closed by VoicePolicy at the speech chokepoint (see sayNpcLine).
+   */
+  /** Human walking pace for the attached avatar's body (m/s) — a touch under
+   *  the real-world average (~1.4 m/s) so a hover/hold reads as a stroll. */
+  const AVATAR_WALK_MPS = 1.1;
+  /** ⚠️ STAND-IN FOR A REAL GAIT SYSTEM (2026-08-16, user ruling: "have the
+   *  player avatar — and any creatures in their party following them — move
+   *  at their running speed"). The engine has no distinct running GAIT (no
+   *  run-cycle animation, no separate steerMaxSpeed tier) — one body has one
+   *  `NpcSpec.behavior.speed`, set once at spawn. Until a real walk/run split
+   *  exists, this flat multiplier stands in for "running"; documented here so
+   *  it reads as a placeholder, not a measured number, and so the next real
+   *  gait system has one obvious place to replace it. */
+  const AVATAR_RUN_MULT = 2;
+  function spawnAttachedAvatar(peerId: string, name?: string): string | null {
+    const s = sess;
+    if (!s || !world) return null;
+    const existing = attachedAvatars.get(peerId);
+    if (existing) return avatarIdOf(existing);
+    const cid = `${ATTACHED_AVATAR_CID_PREFIX}${peerId}`;
+    const body = avatarIdOf(cid);
+    if (world.state.avatars[body]) return body;
+    const at = attachedAvatarSpawn(peerId);
+    const species = attachedAvatarSpecies(s);
+    // THE MODEL, not just the collision radius. `NpcSpec.species` sizes the
+    // BODY (locomotion, the router, detours); what the RENDERER dresses is the
+    // overrides row the town model factory reads per build — the same row an
+    // authored family member or a settler is dressed from. Registered BEFORE
+    // `addNpc` so the row is already there when the view first builds a model
+    // for this id; without it the factory falls back to the town species, and
+    // before the factory's avatar arm existed it fell all the way back to an
+    // emoji capsule.
+    modelOverrides.set(body, { species });
+    const spec: NpcSpec = {
+      id: body,
+      x: at.x,
+      y: at.y,
+      species,
+      ...(name ? { name } : {}),
+      behavior: {
+        // STATIONARY, not wander: a player's body holds its ground when idle
+        // instead of roaming off. An errand always outranks the movement kind
+        // (npc-controller `computeAim`), so following is unaffected.
+        movement: "stationary",
+        conversationRadius: 3,
+        // RUNNING, not walking (⚖️ 2026-08-16 ruling — see AVATAR_RUN_MULT):
+        // the player's own body is the one locomotion NPC errand/need speeds
+        // must NOT touch (those stay at their own species pace — the dollhouse
+        // replay is the arbiter).
+        speed: AVATAR_WALK_MPS * AVATAR_RUN_MULT,
+      },
+    };
+    const added = world.addNpc(girthSafeSpawn(world, spec));
+    if (!added) {
+      modelOverrides.delete(body); // the body never stood — leave no dressing behind
+      return null;
+    }
+    attachedAvatars.set(peerId, cid);
+    // ⛔ NO EMOJI ROW FOR A PLAYER'S OWN BODY (2026-08-16). This used to seed
+    // `npcIcons` with a smiley as the "no-town fallback", on the belief that a
+    // town-less session had no creature factory to route to. It has one now
+    // (`sessionModelFactory` peels created PEOPLE off in front of the puzzle
+    // cast in every scope), so the row bought nothing and cost everything: it
+    // is the single input the emoji arm keys off, so any future path that
+    // reached `makeNpcModelFactory` with this id would resurrect the capsule
+    // and its floating face. The species row registered above is the dressing.
+    joinParty(s, cid);
+    if (peerId === localAvatarPeer()) {
+      followCamera(body);
+      // OUR LIGHT RIDES OUR OWN BODY from the moment it stands. Peers park a
+      // remote spark beside the body it claims (stepMultiplayerFrame), so
+      // without this announcement this player would render on every other
+      // screen as a light adrift at the spawn point until the ~5 s heartbeat
+      // caught up. Same message, same machinery as a possession claim.
+      if (mpNet) {
+        mpNet.send([claimMessage(PLAYER_ID, body)]);
+        mpClaimT = 0;
+      }
+    }
+    return body;
+  }
+
+  /** Remove `peerId`'s attached avatar (peer left, or the session ended).
+   *  `removeNpc` releases any driven id itself. */
+  function despawnAttachedAvatar(peerId: string): void {
+    const cid = attachedAvatars.get(peerId);
+    if (!cid) return;
+    attachedAvatars.delete(peerId);
+    const body = avatarIdOf(cid);
+    modelOverrides.delete(body); // its dressing dies with it
+    if (sess) {
+      leaveParty(sess, cid);
+      sess.npcIcons.delete(body);
+    }
+    world?.removeNpc(body);
+    if (peerId === localAvatarPeer()) followCamera(null);
+  }
+
+  /** Tear down every attached avatar (session end / rebuild). */
+  function despawnAllAttachedAvatars(): void {
+    for (const peerId of [...attachedAvatars.keys()]) despawnAttachedAvatar(peerId);
+  }
+
+  /**
+   * ONE CREATED BODY PER MEMBER: bring the standing avatars into agreement with
+   * the roster (`mpPeers`). A set difference in both directions — spawn what
+   * the roster has and the world lacks, despawn what the world has and the
+   * roster dropped — which is what makes it IDEMPOTENT (the same roster twice
+   * is a no-op) and ORDER-INSENSITIVE (nothing reads the array's order; the
+   * spawn fan-out ranks peers by sorted id itself).
+   *
+   * THE OWNER ALONE SPAWNS. A follower hosts no creature bodies at all — it
+   * runs the same deterministic cast as controller-less replicas the owner's
+   * avatar packets drive — so a follower minting its own would be a body no
+   * stream ever animates, standing next to the real one. The owner's created
+   * bodies ride `ownedAvatarIds` like every other NPC and arrive on their own.
+   *
+   * OUR OWN AVATAR IS NEVER ROSTER-MANAGED: `start` creates it and `stop`
+   * removes it, because it exists in single-player too, where there is no
+   * roster at all. A roster that has not (yet) mentioned us must not delete the
+   * body the player is standing in.
+   */
+  function reconcileAttachedAvatars(): void {
+    if (avatarMode !== "creature" || !sess || !world) return;
+    if (mpFollower()) return;
+    const self = localAvatarPeer();
+    const roster = new Set(mpPeers.map((p) => p.id));
+    for (const peerId of [...attachedAvatars.keys()]) {
+      if (peerId !== self && !roster.has(peerId)) despawnAttachedAvatar(peerId);
+    }
+    // Sorted so a roster delivered in any order lays its bodies down in the
+    // same places — the spawn fan-out is a function of peer RANK.
+    for (const peerId of [...roster].sort()) {
+      if (peerId === self || attachedAvatars.has(peerId)) continue;
+      spawnAttachedAvatar(peerId, peerName(peerId));
+    }
+  }
+
   /** The player's EFFECTIVE position for distance rules: the walker body when
-   *  embodied (possessed / plain walker), else where the spirit hovers. */
+   *  embodied (possessed / plain walker), else where the spirit hovers.
+   *  ATTACHED-AVATAR: the created body, because reach is measured from the
+   *  thing that stands in the world — falling back to the spark's hover only
+   *  until that body exists. */
   function playerWorldPos(session: QuestSession): { x: number; y: number } | null {
+    if (avatarMode === "creature" && possession.creatureId === null) {
+      const b = playerBody();
+      if (b) return { x: b.x, y: b.y };
+      return session.spiritPos ? { x: session.spiritPos.x, y: session.spiritPos.y } : null;
+    }
     const p = world?.state.avatars[PLAYER_ID];
     if (!spiritNow()) return p ? { x: p.x, y: p.y } : null;
     return session.spiritPos ?? (p ? { x: p.x, y: p.y } : null);
@@ -23282,6 +25829,55 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       (f) =>
         Math.hypot(f.x - a.x, f.y - a.y) < VIEW_RADIUS || Math.hypot(f.x - b.x, f.y - b.y) < VIEW_RADIUS,
     );
+  }
+
+  /** A SPIRIT sees the whole town from its orbit (the ladder camera); a BODY
+   *  sees the street-level circle. Both were written inline at the stage
+   *  `frame` call and are named here so the two consumers cannot drift. */
+  const SPIRIT_ORBIT_VISIBLE_R = 240;
+  const STREET_VISIBLE_R = 120;
+
+  /**
+   * ⚖️ H3 — THE SESSION'S OWN CAMERA REACH, in world metres: the ONE answer to
+   * "how far can this player see from where they are".
+   *
+   * Extracted from the stage `frame` call, which is where it was written and
+   * where it is still consumed — the resident streamer's pop-in guard must
+   * cover what the camera covers, and now so must the LOD driver. Two readings
+   * of the same fact would be exactly the drift that lets a stand fold inside
+   * the very circle the streamer is protecting.
+   */
+  function sessionVisibleR(session: QuestSession): number {
+    if (!spiritNow()) return STREET_VISIBLE_R;
+    const townR = session.town ? session.town.plan.radius * 2 + 80 : 0;
+    return Math.max(SPIRIT_ORBIT_VISIBLE_R, townR);
+  }
+
+  /**
+   * ⚖️ H3 — EVERY LOCAL ATTENTION ANCHOR: everywhere this device's player is
+   * currently standing or looking. `viewNear`'s two — the possessed body and
+   * the spark (spirit or walker; ⭐ the player IS the spark) — PLUS the PARTY,
+   * because a party member is a body the player recruited and travels with,
+   * and the camera goes where they go.
+   *
+   * ⚠️ `viewNear` IS DELIBERATELY NOT RE-POINTED AT THIS. It governs TELEPORT
+   * SUPPRESSION, and widening its focus set changes when a stuck body may snap
+   * — a behaviour change that deserves its own pins, recorded here rather than
+   * smuggled in under an LOD driver's skirts.
+   */
+  function attentionAnchors(session: QuestSession): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    const possessed = possession.creatureId
+      ? world?.state.avatars[avatarIdOf(possession.creatureId)]
+      : null;
+    if (possessed) out.push({ x: possessed.x, y: possessed.y });
+    const pp = playerWorldPos(session);
+    if (pp) out.push(pp);
+    for (const cid of session.party) {
+      const a = world?.state.avatars[avatarIdOf(cid)];
+      if (a) out.push({ x: a.x, y: a.y });
+    }
+    return out;
   }
 
   // ── UNTARGETED ORDERS → TASK POOL (city-expansion phase ①a §2) ─────────────
@@ -23440,7 +26036,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const o of Object.values(state.objects)) {
       if (o.carriedBy) continue;
       const nameable =
-        session.smallProps.has(o.id) || /^furn_\d+_/.test(o.id) || isWellId(o.id);
+        isLooseProp(session, o.id) || /^furn_\d+_/.test(o.id) || isWellId(o.id);
       if (!nameable) continue;
       const d = Math.hypot(o.x - p.x, o.y - p.y);
       if (d > bestD) continue;
@@ -23525,7 +26121,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (p.kind === "named") {
           // A world-object id speaks its WORD ("furn_3_bed_0" → "bed", a prop
           // its glyph) — never the raw id.
-          if (session.smallProps.has(p.id) || /^furn_\d+_/.test(p.id) || isWellId(p.id)) {
+          if (isLooseProp(session, p.id) || /^furn_\d+_/.test(p.id) || isWellId(p.id)) {
             return objectWord(session, p.id);
           }
           return p.id;
@@ -23580,6 +26176,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // It also has no intent line, being outside the command vocabulary
     // (`AddressGoal`), which is the type system agreeing.
     if (goal.kind === "address") return;
+    // ⚖️ A BODY WITH NO VOICE HAS NO INTENT TO ANNOUNCE. Same policy read as the
+    // speech chokepoint (sayNpcLine), asked HERE because the `ensure…` calls
+    // below would otherwise MINT the dialogue mind an attached avatar
+    // deliberately has not got (spawnAttachedAvatar: "THE MIND is absent on
+    // purpose") — the bubble would still be swallowed downstream, but the
+    // creature record, its needs and its likes would already exist, and the
+    // talk targeter would find a player's body standing there to chat to.
+    // Reached in ordinary play now that the avatar is a DIRECTED creature: every
+    // aim installs a `goTo` and every install announces it.
+    if (!DEFAULT_VOICE_POLICY.attachedAvatarSpeaks && isAttachedAvatarCid(cid)) return;
     const line = goalIntentLine(goal, intentLineSyms(session, { deixis: true, speaker: cid }));
     if (!line) return;
     if (isPetCid(cid)) ensurePetCreature(session, cid);
@@ -23614,6 +26220,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stepTaskPool(session: QuestSession, dt: number) {
     session.taskClock += dt;
     if (!world || !session.creatures) return;
+    // ⚖️ H3 — THE UNWATCHED-STAND SWEEP, on its own slow clock. Here and not in
+    // `stepLedgerSweeps` deliberately: that block is the one a CLOCK WARP
+    // replays per day bucket, and a warp is books-only — there is no camera in
+    // it, so there is no band, so there is no honest LOD verdict to make.
+    wildLodT += dt;
+    if (wildLodT >= WILD_LOD_SWEEP_S) {
+      // Subtract the period rather than zeroing (the cadence must not stretch
+      // at a coarse dt), and clamp below it so one huge frame still sweeps once
+      // — the same arithmetic the claim sweep below uses, for the same reason.
+      wildLodT -= WILD_LOD_SWEEP_S;
+      if (wildLodT >= WILD_LOD_SWEEP_S) wildLodT %= WILD_LOD_SWEEP_S;
+      stepWildLod(session);
+    }
     taskSweepT += dt;
     if (taskSweepT < TASK_CLAIM_INTERVAL_S) return;
     // subtract the period (carry overshoot) instead of resetting to 0, so the
@@ -24061,16 +26680,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * hold eight of something instead of being a bag of holding.
    *
    * Null = uncapped, which is what every non-goods container was until now.
+   *
+   * ⑤ PAYOFF: one glyph read replaces the old two-store search (`smallProps`
+   * first, then a linear scan of `wornBags.values()`) — loose or worn, the
+   * glyph is on the SAME row now.
    */
   function containerUnitCap(session: QuestSession, id: string): number | null {
     const good = houseChestCap(session, id);
     if (good !== null) return good;
-    // A WORN bag has no world prop while it is worn (see `wornBags`) — its
-    // glyph is on the record instead, and its capacity must survive being put
-    // on, or a satchel would become a bag of holding the moment it was donned.
-    const glyph =
-      session.smallProps.get(id)?.glyph ??
-      [...session.wornBags.values()].find((w) => w.objId === id)?.glyph;
+    const glyph = session.containerRecords.get(id)?.glyph;
     if (glyph) return containerDefOfGlyph(glyph)?.capacity ?? null;
     return null;
   }
@@ -24206,9 +26824,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // This is the whole law in one line: a scope's inventory is the sum of
       // the containers it holds. A WORN bag has no world object to ask, so
       // the wear register answers for it.
-      for (const [cid, w] of session.wornBags) {
-        if (w.objId === objectId) return `${POCKET_EP}${cid}`;
-      }
+      //
+      // ⑤ PAYOFF: one record read replaces the old linear scan of
+      // `wornBags` — the wearer is `mount:"worn"`'s own `wearer` field now.
+      const wornRec = session.containerRecords.get(objectId);
+      if (wornRec?.mount === "worn") return `${POCKET_EP}${wornRec.wearer}`;
       const o = world?.state.objects[objectId];
       if (!o || !world) return null;
       if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
@@ -24228,7 +26848,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (censusMemo) return censusMemo;
       censusMemo = new Map();
       if (!world) return censusMemo;
-      for (const [objId, rec] of session.smallProps) {
+      for (const [objId, rec] of looseEntries(session)) {
         const o = world.state.objects[objId];
         if (!o || o.containedIn) continue; // in a box: counted as that box's stack
         const parent = parentOfObject(objId);
@@ -24238,7 +26858,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           bucket = {};
           censusMemo.set(parent, bucket);
         }
-        bucket[rec.glyph] = (bucket[rec.glyph] ?? 0) + 1;
+        const glyph = rec.glyph!; // mount:"loose" always carries a glyph
+        bucket[glyph] = (bucket[glyph] ?? 0) + 1;
       }
       return censusMemo;
     };
@@ -24272,11 +26893,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           for (const key of shellFurnPilesOf(session).keys()) out.add(`${BFURN_EP}${key}`);
           for (const p of tradePartnersOf(session)) out.add(townEndpointId(p.key));
         }
-        // Registered containers AND known stacks: a far unshown house's
-        // woodstore holds real goods whether or not its object is staged, and
-        // the audit has to see them or it will report items as lost.
-        for (const id of session.containers.keys()) out.add(id);
-        for (const id of session.containerStock.keys()) out.add(id);
+        // ⚖️ F5 — AND EVERY REGION SHED'S BOUNDARY SHELF. The folded stands
+        // themselves are counted through their codec (`foldedStock("wild", …)`
+        // in `sessionStockAudit`); the shelf a draw lands on is a live stack
+        // like any other and belongs in the tree, or a draw would read as
+        // timber destroyed on its way out of the forest. No town needed: a
+        // founded site draws on the region too — and the SHELF is listed even
+        // where the record is gone (the stand loaded back in), because cut
+        // timber does not stop existing when the trees come back.
+        for (const key of session.wildAreas.keys()) out.add(wildAreaId(key));
+        for (const id of Object.keys(session.partnerStock)) {
+          const ref = parseScopeId(id);
+          if (ref.kind === "wild" && ref.form === "area") out.add(id);
+        }
+        // Registered containers: a far unshown house's woodstore holds real
+        // goods whether or not its object is staged, and the audit has to see
+        // them or it will report items as lost.
+        //
+        // ⑤ PAYOFF: one loop replaces the old `containers.keys()` +
+        // `containerStock.keys()` pair — every container row carries both now.
+        for (const [id] of containerEntries(session)) out.add(id);
         // BODIES — as stackless parent nodes. They carry no stack of their own
         // (their containers, already enumerated above, do), so listing one adds
         // structure to the tree without adding a single unit to the audit. The
@@ -24284,9 +26920,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // or holding a container, which is the only way a body can have goods
         // on it at all.
         out.add(`${POCKET_EP}${LOCAL_PLAYER_CID}`);
-        for (const cid of session.wornBags.keys()) out.add(`${POCKET_EP}${cid}`);
+        for (const cid of session.wornBagIndex.keys()) out.add(`${POCKET_EP}${cid}`);
         for (const [objId, o] of Object.entries(world?.state.objects ?? {})) {
-          if (o.carriedBy && session.containers.has(objId)) {
+          if (o.carriedBy && isContainerId(session, objId)) {
             out.add(`${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`);
           }
         }
@@ -24358,7 +26994,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // 45–90 s backoff of its own. (Rebuilding per town-second cost ~10% of the
     // whole sim step on a 200-house town; per stock epoch was far worse, since
     // it rebuilt mid-tick for each household in turn.)
-    const sig = `${session.containerStock.size}|${session.smallProps.size}|${Math.floor(session.townClock / 5)}`;
+    const sig = `${stockedCount(session)}|${looseCount(session)}|${Math.floor(session.townClock / 5)}`;
     let memo = buildingStockMemo.get(session);
     if (!memo || memo.sig !== sig) {
       memo = { sig, anywhere: null, stored: null };
@@ -24381,15 +27017,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  with the tree rather than after it. */
   function sessionStockAudit(session: QuestSession): Record<string, number> {
     const totals = auditScopeTree(scopeTreeOf(session));
-    // ⚖️ S&D S4 — AND WHAT ITS OFFLOADED STANDS HOLD. An area that folded is
-    // not a place the tree can walk (it has no live stacks, by definition);
-    // its units are just as real, and a probe blind to them would report the
-    // fold itself as a hundred trees' worth of wood destroyed.
-    for (const rec of session.wildAreas.values()) {
-      for (const [glyph, n] of Object.entries(wildAreaStock(rec))) {
-        if (n > 0) totals[glyph] = (totals[glyph] ?? 0) + n;
-      }
+    // ⚖️ S&D S4 / F1 (fold-round.md) — AND WHAT ITS OFFLOADED STANDS HOLD. An
+    // area that folded is not a place the tree can walk (it has no live
+    // stacks, by definition); its units are just as real, and a probe blind
+    // to them would report the fold itself as a hundred trees' worth of wood
+    // destroyed. Counted through the registered codec's own `stockOf`
+    // (`kernel/town/fold.ts` `foldedStock`) rather than a wild-specific
+    // formula inlined here — the dissolution F1 promised: a future kind's own
+    // offloaded collection plugs into this SAME call, by its own kind, and
+    // never needs a second copy of this loop.
+    for (const [glyph, n] of Object.entries(foldedStock("wild", session.wildAreas.values()))) {
+      if (n > 0) totals[glyph] = (totals[glyph] ?? 0) + n;
     }
+    // 🚨 AND NOT THE TOWN KIND (F3), for the structural reason F2 recorded for
+    // cohort rows: a CONDENSED partner's shelf is always a live StockEndpoint
+    // (`ids()` lists `town:<key>` for every partner and `stockEndpointOf`
+    // aliases its stack), so it is already counted in the tree above. Adding
+    // `foldedStock("town", …)` here would count every unit on it twice.
     return totals;
   }
 
@@ -24506,10 +27150,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // across both economies); an abstract partner aliases its synthetic
     // shelf. No `at`: abstract, scheduled-only (transfer.ts convention).
     // ("town:yard" is a registered container and never reaches this branch.)
-    if (ref.kind === "town" && !session.containers.has(id)) {
+    if (ref.kind === "town" && !isContainerId(session, id)) {
       const p = tradePartnersOf(session).find((tp) => townEndpointId(tp.key) === id);
       if (!p) return null;
       return { id, kind: "town", stack: p.stack, owner: null };
+    }
+    // ⚖️ F5 — AN OFFLOADED REGION SHED (`wild:area:<key>`): the partner endpoint
+    // one rung out of town, aliasing its boundary shelf — what has been cut and
+    // is waiting at the road. ONE-WAY by the endpoint's own capacity (0), which
+    // is `scopeReceivesGoods`'s "a source only YIELDS" made executable rather
+    // than merely believed. No `at`: abstract and scheduled-only, exactly like
+    // a partner town's shelf — you do not walk to a region.
+    // A STANDING feature (`wild:oak_3`) is a registered container and never
+    // reaches this branch: only the AREA form does.
+    //
+    // The SHELF, not the record, is what has to exist here — cut timber waiting
+    // at the road is not standing timber, so an area that loads its stand back
+    // in leaves the shelf (and any leg still owed against it) alone.
+    if (ref.kind === "wild" && ref.form === "area") {
+      if (!session.wildAreas.has(ref.tag) && !session.partnerStock[id]) return null;
+      return wildShedEndpoint(ref.tag, shedShelf(session, ref.tag));
     }
     // A CONSTRUCTION ORDER's PILE (phase 2): `orderpile:<ord>` aliases the
     // order's live pile — the staked plot's material heap. Communal,
@@ -24562,22 +27222,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       };
       return { id, kind: "site", at, stack, owner: null };
     }
-    if (session.marketStore.has(id) || session.produceBox.has(id) || id.startsWith("trade:")) return null;
+    if (isDerivedStoreObject(session, id) || id.startsWith("trade:")) return null;
     // A KNOWN STACK is a real endpoint even when its container object isn't
     // STAGED right now (⑥ — the coincidence law): a far unshown house's
     // woodstore holds real goods, and civic resolution already reads its
     // stack; refusing the endpoint here made every draw from unstreamed
     // ground fail at claim time. The anchor is deterministic either way.
-    if (!session.containers.has(id) && !session.containerStock.has(id)) return null;
-    let stack = session.containerStock.get(id);
-    if (!stack) {
-      stack = {};
-      session.containerStock.set(id, stack); // a registered but never-stocked container (a cupboard)
-    }
+    const rec0 = session.containerRecords.get(id);
+    if (!rec0 || (rec0.relation === undefined && rec0.stock === undefined)) return null;
+    const stack = ensureContainerStock(session, id); // a registered but never-stocked container (a cupboard)
     const at = containerAnchor(session, id);
     if (!at) return null;
     const kind = id === TOWN_YARD_ID ? "yard" : id === SITE_STOCK_ID ? "site" : "container";
-    const ep: StockEndpoint = { id, kind, at, stack, owner: session.containerOwner.get(id) ?? null };
+    const ep: StockEndpoint = { id, kind, at, stack, owner: session.containerRecords.get(id)?.owner ?? null };
     const cap = containerUnitCap(session, id);
     if (cap !== null) ep.capacity = cap;
     return ep;
@@ -24617,9 +27274,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function houseEndpointId(session: QuestSession, hi: number, goodsHead: string): string | null {
     if (!session.town) return null;
     const chest = `furn_${hi}_chest_${goodKeyOfGlyph(goodsHead)}`;
-    if (session.containers.has(chest)) return chest;
+    if (isContainerId(session, chest)) return chest;
     const cupboard = `furn_${hi}_cupboard`;
-    return session.containers.has(cupboard) ? cupboard : null;
+    return isContainerId(session, cupboard) ? cupboard : null;
   }
 
   /** The stock ENDPOINT a transfer destination names, or null when the place
@@ -24638,7 +27295,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (id === "yard") return session.town ? TOWN_YARD_ID : session.foundedSite ? SITE_STOCK_ID : null;
     const hm = /^house:(\d+)$/.exec(id);
     if (hm) return houseEndpointId(session, Number(hm[1]), goodsHead);
-    if (session.containers.has(id) && stockEndpointOf(session, id)) return id;
+    if (isContainerId(session, id) && stockEndpointOf(session, id)) return id;
     // A spoken container noun ("box"/"chest"/"cupboard"/"table"): the nearest
     // registered container answering to it (the resolver's token rule). Ids
     // carry the fixture KIND, so the board's word folds back first ("cabinet"
@@ -24647,7 +27304,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const at = playerWorldPos(session);
     let best: string | null = null;
     let bestD = Infinity;
-    for (const boxId of session.containers.keys()) {
+    for (const boxId of containerIds(session)) {
       if (!boxId.split(/[_:]/).includes(kindToken)) continue;
       const anchor = containerAnchor(session, boxId);
       if (!anchor || !stockEndpointOf(session, boxId)) continue;
@@ -24674,11 +27331,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const issuerHouse = familyOf(session)?.house ?? null;
     const sources: TransferSource[] = [];
     let foreignOwner: string | null = null;
-    for (const [boxId, stack] of session.containerStock) {
+    for (const [boxId, boxRec] of stockedEntries(session)) {
+      const stack = boxRec.stock!;
       if (boxId === destId) continue;
-      if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
+      if (isDerivedStoreObject(session, boxId) || boxId.startsWith("trade:")) continue;
       if (stackUnits(stack, goodsHead) <= 0) continue;
-      const owner = session.containerOwner.get(boxId);
+      const owner = boxRec.owner;
       if (!mayUse(LOCAL_PLAYER_CID, issuerHouse, owner)) {
         foreignOwner = owner ?? foreignOwner;
         continue;
@@ -24703,9 +27361,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  phrased as that PERSON — "bring it to Mara", not "to the basket": the
    *  container is how the goods get there, the creature is who they are for. */
   function transferDestPlaceRef(session: QuestSession, destId: string): PlaceRef {
-    for (const [cid, w] of session.wornBags) {
-      if (w.objId === destId) return { kind: "creature", id: cid };
-    }
+    const wornRec = session.containerRecords.get(destId);
+    if (wornRec?.mount === "worn") return { kind: "creature", id: wornRec.wearer! };
     const holder = world?.state.objects[destId]?.carriedBy;
     if (holder) return { kind: "creature", id: creatureOfAvatar(holder) };
     if (destId.startsWith(POCKET_EP)) return { kind: "creature", id: destId.slice(POCKET_EP.length) };
@@ -24936,7 +27593,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // furniture path in this file already does.
     const bodyR = world.npcRadiusOf(npcId);
     const standAt = (epAt: { x: number; y: number }, epId: string, from2: { x: number; y: number }) =>
-      session.containers.has(epId)
+      isContainerId(session, epId)
         ? standPointFor(world!.state, epId, epAt, from2, bodyR, standAvoid(cid))
         : { x: epAt.x, y: epAt.y };
     const bodyNow = world.state.avatars[npcId] ?? { x: from.at.x, y: from.at.y };
@@ -25101,11 +27758,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Drop a loose small prop from the world + the session's books — a prop that
    *  has become a unit in somebody's bag, or been swept up by a founding. */
   function removeLooseProp(session: QuestSession, objId: string) {
-    const rec = session.smallProps.get(objId);
+    const rec = loosePropOf(session, objId);
     if (!rec) return;
-    session.smallProps.delete(objId);
     world?.removeObject(objId);
-    if (session.creatures) delete session.creatures.world.items[rec.entityId];
+    if (session.creatures && rec.entityId) delete session.creatures.world.items[rec.entityId];
+    clearLooseProp(session, objId);
   }
 
 
@@ -25145,8 +27802,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   interface TradePartner {
     key: string;
     at: { x: number; y: number } | null;
-    /** True = a real sim's books (cluster neighbor); false = the stub proxy. */
-    real: boolean;
+    /** ⚖️ F-⑤ (fold-round.md F3) — DERIVED, NEVER STORED: "is this partner's
+     *  town currently EXPANDED", i.e. are its books loaded. It used to be a
+     *  literal written `true` at one construction site and `false` at the
+     *  other, which is two places for a flag to disagree with the ledger it is
+     *  a claim about; `tradePartner` below makes it a getter over `books` and
+     *  the disagreement stops being expressible. */
+    readonly real: boolean;
     signals: BarterSignals;
     stack: Record<string, number>;
     /** ⚖️ BATCH 3 · B6 — THE PARTNER'S OWN LEDGER, when one is loaded (a
@@ -25155,6 +27817,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
      *  ledger is not running — its shelf mint is that town's condensed twin.
      *  The seat is what lets a real ledger slot in where the stub stands. */
     books: { town: TownWorld; eco: CompiledEconomy } | null;
+    /** ⚖️ F-⑤ — THE CONDENSED TWIN, when this partner's town is NOT expanded:
+     *  the `TownRecord` `condense(town:<key>)` answers with, and the one seat
+     *  of everything that used to be "the stub" — its shelf, its terrain, its
+     *  road, and the closed form its shortage is read off. Null exactly when
+     *  `books` is not: a town is either running or folded, never both. */
+    record: TownRecord | null;
     /** ⚖️ HOW FAR THE ROAD RUNS (world metres), for `barterLegSeconds`. Null =
      *  NO REAL GEOMETRY: a stub's `at` is the town's own gate, not the
      *  partner's place, so measuring it would price a fiction. Nulls take the
@@ -25166,7 +27834,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     signalsAtDay: ((day: number) => BarterSignals) | null;
   }
 
-  /** An abstract partner's synthetic shelf (created on first touch). */
+  /** A condensed town's synthetic shelf (created on first touch) — the object
+   *  `TownDeltas.partnerStock` persists and the `town:<key>` endpoint aliases,
+   *  and therefore the object a `TownRecord`'s `stack` IS. */
   function abstractPartnerStack(session: QuestSession, key: string): Record<string, number> {
     let s = session.partnerStock[key];
     if (!s) {
@@ -25174,6 +27844,423 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.partnerStock[key] = s;
     }
     return s;
+  }
+
+  /** ⚖️ F-⑤ — EVERY partner is built HERE, and `real` is the one thing neither
+   *  branch writes: it is a getter over `books`, so "is this town expanded"
+   *  has exactly one answer and no second field to contradict it. */
+  function tradePartner(p: Omit<TradePartner, "real">): TradePartner {
+    return { ...p, get real() { return p.books !== null; } };
+  }
+
+  /**
+   * ⚖️ F-⑤ — A CONDENSED PARTNER IS ITS FOLD RECORD (fold-round.md F3).
+   *
+   * Shelf, terrain, road, place and the closed form its scarcity is read off
+   * all come from the ONE `TownRecord`, so "the stub" stops being a second
+   * kind of partner and becomes a town nobody has expanded. `signals` and
+   * `signalsAtDay` are the SAME reading at two days — `townRecordSignals`,
+   * which for a never-expanded town is `stubPartnerSignals(key, floor(day),
+   * geo)` bit for bit.
+   */
+  function condensedPartner(rec: TownRecord, day: number): TradePartner {
+    return tradePartner({
+      key: rec.key,
+      at: rec.at,
+      record: rec,
+      books: null, // ⚖️ B6: nothing to credit — this town's ledger is not loaded
+      signals: townRecordSignals(rec, day),
+      stack: rec.stack,
+      distanceM: rec.distanceM,
+      signalsAtDay: (d) => townRecordSignals(rec, d),
+    });
+  }
+
+  /**
+   * ⚖️ F-⑤ / F-③ — TOP A CONDENSED PARTNER'S SHELF UP, THROUGH THE FOLD.
+   *
+   * The stub's boundary mint was never an exception to conservation (B6): it
+   * is what the town we are NOT running would have produced by now, and F3
+   * says that in the type — `condense` of a town that has never been expanded,
+   * dispatched through `kernel/town/fold.ts` exactly like a wild area's fold.
+   * `floors` is the integral (UNITS, the fold's own side of F-③'s scalar⇄stack
+   * join); the arithmetic underneath is still `stockAbstractPartner`, minting
+   * into the same live shelf object the endpoint aliases and the save
+   * persists. An EXPANDED partner has no record and mints nothing — its shelf
+   * is its own books' business, which is the whole `p.real` test, now asked of
+   * the state itself.
+   */
+  function mintCondensedShelf(
+    session: QuestSession,
+    partner: TradePartner,
+    floors: Record<string, number>,
+    onMint?: () => void,
+  ): void {
+    const rec = partner.record;
+    if (!rec) return;
+    // The record `condense` answers with restates the SAME facts (`prev`
+    // carried forward) over the SAME live shelf object, so the partner's own
+    // record stays current and this call is taken for its one effect: the
+    // mint. The id is `townEndpointId` of a key the partner table already
+    // resolved an endpoint for, so it is neither our root nor our yard: the
+    // only refusal that can reach here is F-④'s, below.
+    //
+    // ⚖️ F5 — AND THE BOOKS ARE WIRED. F4 left them out with the reason
+    // recorded (its 🔶 finding): partner shelves are the far end of standing
+    // trade legs, so a guard that treated every leg as a blocker would have
+    // refused every trading partner there is. The serviceability split is what
+    // changed — a standing scheduled leg is SERVICED BY this closed form
+    // (`standingLegServiced`, and the arms below are the proof: they mint and
+    // ship against `p.record` with no town running), so it neither blocks nor
+    // rides, and what still refuses is a live body: a claimed pair of hands, a
+    // `moving` load already on the road. That refusal is now REACHABLE and is
+    // exactly the one we want — you cannot restock a shelf somebody is walking
+    // goods into. `sessionFoldBooks` gathers only (nothing may leave a book at
+    // a top-up: the partner was condensed before this call and stays condensed
+    // after it), so the discarded record's `commitments` field is a reading,
+    // not a move.
+    const ctx: TownFoldCtx = {
+      now: session.taskClock,
+      prev: rec,
+      floors,
+      books: sessionFoldBooks(session),
+      ...(onMint ? { minted: () => onMint() } : {}),
+    };
+    const out = condense<TownRecord>(townEndpointId(rec.key), ctx);
+    if (isFoldRefusal(out)) {
+      presenter.toast(`⚠️ ${rec.key}: ${out.note}`, "feedback");
+    }
+  }
+
+  /**
+   * ⚖️ F-④'s CTX SEAM, composed for this session (fold-round.md F4): the three
+   * forward books behind ONE `gather` — the composition `fold.ts` deliberately
+   * does not own (it never imports a book; it reads `FoldCommitment.book` and
+   * nothing else), assembled from each book's own gather function.
+   *
+   * GATHER ONLY, and that is a decision rather than an omission. The live
+   * caller is `mintCondensedShelf`, a TOP-UP of a partner that is already
+   * condensed and stays condensed: no scope changes state, so no promise may
+   * leave its book (`release`) and none is coming back (`repost`). What the
+   * books are here for is the GUARD.
+   */
+  function sessionFoldBooks(session: QuestSession): FoldBooks {
+    return {
+      gather: (scope): FoldCommitment[] => [
+        ...gatherTaskCommitments(session.taskPool, scope),
+        ...gatherTransferCommitments(session.transfers, scope),
+        ...gatherReservationCommitments(session.reservations, scope),
+      ],
+    };
+  }
+
+  /** ⚖️ F-⑤ — ONE LEG-TIME PATH: how long one shipment to this partner is on
+   *  the road. Its ROAD where the tier knows one (a bound caravan line's
+   *  measured length, a cluster neighbour's chord — both carried on the
+   *  partner, and for a condensed town on its record), the flat fallback day
+   *  where it honestly does not. Order time AND the per-leg re-derive read
+   *  THIS, so one partner can never be priced two ways.
+   *
+   *  ⚖️ F5 — AND THE REGION SHED PRICES THROUGH IT TOO. The parameter is the
+   *  ROAD and nothing else, so a `WildShedPartner` (its distance measured off
+   *  the record's own ground) is priced by the same seat, at the same
+   *  `transactionDayFrac({kind:"shipment-leg"})` floor, as a stub town three
+   *  kilometres out. A second pricing path for "but it's a forest" is exactly
+   *  what F3 dissolved. */
+  function partnerLegSeconds(
+    session: QuestSession,
+    partner: { distanceM: number | null } | null,
+  ): number {
+    return barterLegSeconds(session.scale, partner?.distanceM ?? null);
+  }
+
+  // ── ⚖️ F5 — THE REGION SHED AS A ONE-WAY TRADE PARTNER ────────────────────
+  //
+  // (fold-round.md F5, REGION REACH: *"a town draws on the region exactly as it
+  // trades with a stub town, price and legs included."*) An offloaded stand is
+  // already a conserving closed-form record with its own ground, its own stock
+  // and its own harvest history — everything a condensed partner is. So the
+  // draw rides the SAME seam a condensed town's trade does: a scheduled
+  // agreement on the ② ledger, priced by the ONE `partnerLegSeconds` road,
+  // executed against a boundary shelf that a pre-sweep arm tops up.
+  //
+  // 🚨 WITH ONE DIFFERENCE THE TYPES ENFORCE, TWICE. The shed's endpoint id is
+  // its own scope id (`wild:area:<key>`), so `scopeReceivesGoods` reads FALSE
+  // off it — the law scope.ts already wrote for "an offloaded region shed" —
+  // and the endpoint itself carries capacity 0, so `putStock` refuses every
+  // unit and `transferStock` hands it back. A buy-from-shed leg exists; a
+  // sell-to-shed leg cannot move a thing.
+  //
+  // AND THE SHELF IS FILLED BY A DRAW, NOT A MINT. That is the whole
+  // difference between a fiction and a record: a stub town's shelf is topped
+  // up with what its unsimulated production WOULD have made (F-③'s integral),
+  // while every unit the shed sells was already standing in the record and
+  // leaves it (`drawWildArea` — felling where it must, and booking the
+  // direction it was drawn from).
+
+  /** A shed's BOUNDARY SHELF — what has been cut and is waiting at the road.
+   *  The exact counterpart of `abstractPartnerStack`, and it rides the same
+   *  persisted map (`TownDeltas.partnerStock`) keyed by the shed's ENDPOINT ID:
+   *  a shed has no partner key, and no partner key can collide with one,
+   *  because no town is called `wild:area:…`. */
+  function shedShelf(session: QuestSession, key: string): Record<string, number> {
+    const id = wildAreaId(key);
+    let s = session.partnerStock[id];
+    if (!s) {
+      s = {};
+      session.partnerStock[id] = s;
+    }
+    return s;
+  }
+
+  /** Where a draw is measured FROM, and the direction the shed's harvest
+   *  histogram books it against: our own gate. Null ⇒ no geometry, which takes
+   *  the flat leg and books no direction (the place-less stub's honest null). */
+  function shedDrawOrigin(session: QuestSession): { x: number; y: number } | null {
+    return session.town?.stage.center ?? session.foundedSite?.at ?? null;
+  }
+
+  /** One folded stand, read as a partner (its road measured from our gate).
+   *  Kept OUT of `tradePartnersOf` deliberately: that list is the two-way
+   *  barter vocabulary — a partner quotes, wants, refuses and RECEIVES — and a
+   *  forest does none of those; putting one in it would let "trade wood with
+   *  the city" resolve to a stand of oaks. */
+  function shedPartnerOf(session: QuestSession, key: string): WildShedPartner | null {
+    const rec = session.wildAreas.get(key);
+    return rec ? wildShedPartner(rec, shedDrawOrigin(session)) : null;
+  }
+
+  /**
+   * ⚖️ H2 — EVERY CONDENSED AREA, CHEAPEST ROAD FIRST. v1 folds one stand per
+   * session, but `session.wildAreas` has ALWAYS been a keyed map and the
+   * world-size round mints a region of many — so the spoken route reads the
+   * whole map rather than the `home` key, and does it in an order that cannot
+   * drift: cheapest `partnerLegSeconds` (the same ONE seat the order is priced
+   * by, so the shed we pick IS the shed that is cheapest to ship from), ties
+   * broken on the area KEY. Never Map insertion order, which is a fold history
+   * and not a fact about the world.
+   */
+  function shedsByLeg(session: QuestSession): WildShedPartner[] {
+    const out: WildShedPartner[] = [];
+    for (const key of [...session.wildAreas.keys()].sort()) {
+      const shed = shedPartnerOf(session, key);
+      if (shed) out.push(shed);
+    }
+    return out.sort(
+      (a, b) =>
+        partnerLegSeconds(session, a) - partnerLegSeconds(session, b) ||
+        (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    );
+  }
+
+  /**
+   * ⚖️ H2 — WHAT THIS SHED CAN ACTUALLY HAND OVER: what is STANDING in the
+   * record (`yields`, i.e. `wildAreaStock`) plus what is already CUT and
+   * waiting on its boundary shelf.
+   *
+   * The shelf half is not a flourish. `wildShedEndpoint`'s own law is that the
+   * shelf OUTLIVES the record — timber already at the road is not standing
+   * timber — so a shed whose stand has been drawn down to nothing may still
+   * have a load ready to ship, and calling that shed empty would refuse an
+   * order it can serve. Read straight off `partnerStock`, never through
+   * `shedShelf`, because that one MINTS the entry it fails to find and a
+   * question must not leave a mark on the books.
+   */
+  function shedCanYield(session: QuestSession, shed: WildShedPartner, glyph: string): number {
+    const shelf = session.partnerStock[shed.id] ?? {};
+    return (shed.yields[glyph] ?? 0) + stackUnits(shelf, glyph);
+  }
+
+  /**
+   * ⚖️ THE DRAW ARM — the mint's twin, run before the scheduled sweep for
+   * exactly the goods a due row asks of a shed.
+   *
+   * Conserving by construction: `drawWildArea` answers what LEFT the record,
+   * and every one of those units lands on the shelf — the record's own audit
+   * total (`foldedStock("wild", …)`) falls by exactly what the shelf gains,
+   * and both are in `sessionStockAudit`. Nothing is drawn that the shelf
+   * already holds, so a route that ships less than the shed yields (a felled
+   * tree is bigger than one order) draws nothing on its next leg.
+   */
+  function drawShedShelf(
+    session: QuestSession,
+    key: string,
+    goods: Readonly<Record<string, number>>,
+  ): void {
+    let rec = session.wildAreas.get(key);
+    if (!rec) return;
+    const shelf = shedShelf(session, key);
+    const from = shedDrawOrigin(session);
+    for (const [glyph, qty] of Object.entries(goods)) {
+      const need = Math.ceil(qty) - stackUnits(shelf, glyph);
+      if (!(need > 0)) continue;
+      const out = drawWildArea(rec, {
+        glyph,
+        units: need,
+        from,
+        now: session.taskClock,
+      });
+      for (const [g, n] of Object.entries(out.taken)) shelf[g] = (shelf[g] ?? 0) + n;
+      rec = out.rec;
+    }
+    session.wildAreas.set(key, rec);
+  }
+
+  /**
+   * ORDER A STANDING DRAW from the region shed — the shed's half of
+   * `orderTribute`, and the same shape: a scheduled ② row, our end the yard or
+   * the site crate, the first load a full LEG out (`partnerLegSeconds` over the
+   * shed's own road), one load per street day after that.
+   *
+   * Returns false when there is no such shed or nowhere here to put the goods.
+   */
+  function orderRegionDraw(
+    session: QuestSession,
+    key: string,
+    glyph: string,
+    perDay = 1,
+  ): TransferAgreement | null {
+    const shed = shedPartnerOf(session, key);
+    const homeId = tradeHomeEndpointId(session);
+    if (!shed || !homeId) return null;
+    return session.transfers.post({
+      from: shed.id,
+      to: homeId,
+      goods: { [glyph]: Math.max(1, Math.floor(perDay)) },
+      issuer: LOCAL_PLAYER_CID,
+      mode: "scheduled",
+      now: session.taskClock,
+      every: FOOD_DAY_SEC,
+      dueAt: session.taskClock + partnerLegSeconds(session, shed),
+      sourceGlyph: `draw ${glyph} from ${shed.id}`,
+    });
+  }
+
+  /**
+   * ⚖️ H1 — "GET WOOD FROM THE FOREST", SPOKEN. The region shed's half of
+   * `orderTrade`: the sentence the child already knows how to build, routed to
+   * the same ② scheduled row the `/wild draw` cheat posts, with the terms said
+   * ALOUD. Until now the word `forest` reached nothing at all — the fetch
+   * pooled as an ordinary errand and some body walked off to look for a tree
+   * that had been folded away hours ago (H1 baseline, transcripts/
+   * h1-draw-before.txt).
+   *
+   * THE THREE ANSWERS, and why they are three:
+   *  • CONDENSED ⇒ DRAW. The stand is a closed-form record with its own stock
+   *    and its own road, i.e. a partner — so the order is a shipment, priced by
+   *    the ONE leg seat, and no body walks anywhere.
+   *  • LIVE ⇒ TODAY'S BEHAVIOUR, BYTE FOR BYTE (`return false`). The trees are
+   *    standing right there; walking to one is the correct answer and the
+   *    errand path already gives it. ⚖️ AND THE ORDER NEVER FOLDS THE STAND TO
+   *    SERVE ITSELF — a fold is an LOD transition the driver owns (H3), never
+   *    something a sentence triggers, or the player's own word would make the
+   *    world he is looking at pop out of existence.
+   *  • NEITHER ⇒ REFUSED ALOUD. No stand, no record: there is no forest here,
+   *    and saying so is the whole of the honest answer.
+   *
+   * ⚖️ H2 adds the FOURTH: A SHED THAT HAS NO SUCH GOOD REFUSES BY NAME. The
+   * candidates are ALL condensed areas (`shedsByLeg`), cheapest road first, and
+   * the one drawn from is the cheapest that can actually hand the good over —
+   * so "get metal from the forest" against a stand of oaks does not post a row
+   * that would ship nothing forever. It says "they don't give metal" and the
+   * banner names what the forest DOES yield. (`/wild draw` keeps its own HOME
+   * behaviour: a cheat probes ONE named area, deliberately.)
+   *
+   * Returns false ONLY for "this is not a region draw at all" — the caller then
+   * lets the ordinary fetch paths have the sentence. True means HANDLED:
+   * posted with the terms spoken, or refused with the reason named.
+   */
+  function orderSpokenDraw(
+    session: QuestSession,
+    goal: Extract<GoalSpec, { kind: "fetch" }>,
+    quantityWord: string | undefined,
+    sentence: string,
+    issuer: string = LOCAL_PLAYER_CID,
+  ): boolean {
+    if (!namesTheWild(goal.from)) return false;
+    // An EXACT instance ("get THAT wood") names a thing that exists somewhere
+    // findable; a region ships kinds, not instances.
+    if (!("match" in goal.item)) return false;
+    const glyph = goal.item.match.kind ?? goal.item.match.category;
+    if (!glyph) return false;
+    // 🚨 THE TWO CHANNELS, AS `orderTrade` RUNS THEM — a clerk bubble for the
+    // child and a banner for the adult, and THE BANNER IS UNCONDITIONAL.
+    // `saySystem` was used here first and the H2 transcript caught it: it hands
+    // the line to whatever body its own ladder finds, returns "spoken", and
+    // suppresses the banner — so `say get meat from forest` produced NOTHING a
+    // player could see, no toast and no SAY line (transcripts/h2-shed.txt,
+    // pre-fix). An order-layer verdict is not a pursuit-layer mutter; it always
+    // banners, exactly like every refusal `orderTrade` speaks. The clerk ladder
+    // is orderTrade's too, deliberately WITHOUT `nearestCreature` — in a town
+    // with wilderness the nearest body is a wild animal.
+    const syntax = session.game.meta.syntax ?? "b";
+    const clerk = session.addressedFamily ?? gazeCreature(session) ?? convo?.nodeId ?? null;
+    const speak = (line: LeveledGlyphs | string) => {
+      if (clerk && session.creatures?.nodeByCreature.has(clerk)) {
+        npcChatBubble(session, clerk, typeof line === "string" ? line : line[syntax]);
+      }
+    };
+    const answer = (line: LeveledGlyphs | string, banner: string): true => {
+      speak(line);
+      presenter.toast(banner, "feedback");
+      return true;
+    };
+    // ⚖️ H2 — WHICH SHED. Every condensed area, cheapest road first; the one we
+    // draw from is the cheapest that can actually hand the good over.
+    const sheds = shedsByLeg(session);
+    const shed = sheds.find((s) => shedCanYield(session, s, glyph) > 0);
+    if (!shed) {
+      // STILL STANDING ⇒ not our business: the trees are there and the errand
+      // path is the right answer. Checked BEFORE the shortfall so a live world
+      // with some OTHER area folded keeps its errand (H1's live law).
+      if ((session.wilderness?.features.length ?? 0) > 0) return false;
+      if (sheds.length) {
+        // ⚖️ H2 — DRAW SHORTFALL, SPOKEN HONESTLY. There is a forest and it
+        // does not have this: the partner-refusal vocabulary already has the
+        // sentence for that ("they + give.not + metal"), and a shed is a
+        // partner. The banner names what it DOES yield, so the answer teaches
+        // instead of merely refusing — a region that stocks nothing at all
+        // says so rather than listing an empty set.
+        const nearest = sheds[0]!;
+        const has = Object.entries(nearest.yields)
+          .filter(([, n]) => n > 0)
+          .map(([g]) => g)
+          .sort()
+          .join(", ");
+        return answer(
+          barterWontPartLine(glyph),
+          `💬 "${sentence}" — the forest has no ${glyph}${has ? ` — it yields ${has}` : ""}`,
+        );
+      }
+      // Nothing standing, nothing folded ⇒ the honest "there is no forest here".
+      return answer(CANT_HERE, `💬 "${sentence}" — there is no forest here`);
+    }
+    const homeId = tradeHomeEndpointId(session);
+    if (!homeId) return answer(CANT_HERE, `💬 "${sentence}" — nowhere here to put it`);
+    // ⚖️ H1 — EVERY SPOKEN DRAW IS STANDING, and the quantity word scales the
+    // DAILY LOAD instead of splitting standing from one-shot the way `trade`
+    // does. RECORDED GAP, not a preference: a one-shot NON-barter row is not
+    // representable in today's ledger — `runDueTransfers` ends every leg with
+    // `ledger.advance`, which re-arms a row with no `every` at `now + 0`, so a
+    // "just one load" draw would fire again on the very next sweep, forever.
+    // Barter rows escape that through `runDueBarters`' own one-shot arm; a draw
+    // is not a barter. Inventing a third mode is a transfer-ledger change this
+    // round does not own (fold-round.md H1: "do not invent ledger modes").
+    // So: the tribute rule, which is the same standing-pull-from-a-remote-scope
+    // shape — 1–3 a day, `all` reading as the plain standing 1.
+    const q = orderQuantity(quantityWord);
+    const perDay = Number.isFinite(q) ? Math.max(1, Math.min(3, q)) : 1;
+    const order = orderRegionDraw(session, shed.key, glyph, perDay);
+    if (!order) return answer(CANT_HERE, `💬 "${sentence}" — nowhere here to put it`);
+    const road = shed.distanceM === null ? "no road" : `${Math.round(shed.distanceM)}m`;
+    const legS = Math.round(partnerLegSeconds(session, shed));
+    const terms =
+      `🌲 draw: ${perDay} ${glyph} each day from ${shed.id} — ${road}, ` +
+      `first load in ${legS}s`;
+    // THE CLERK SPEAKS THE STANDING FACT the player just created, exactly as
+    // the tribute clerk does — "they give wood" — and the PRICE (the road and
+    // the leg it buys) rides the banner, where `trade` puts its numbers too.
+    return answer(tributeLine(glyph, "in"), terms);
   }
 
   /**
@@ -25259,36 +28346,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       seen.add(p.key);
       out.push(p);
     };
-    /** A closed-form partner. `opts.distanceM` is the ROAD where one is known
-     *  (null = no geometry, the flat leg); `opts.geo` is what its terrain
-     *  declares, absent ⇒ the pure-hash proxy, byte-identical. */
+    /** ⚖️ F-⑤ — A CONDENSED partner: the town, folded. `opts.distanceM` is the
+     *  ROAD where one is known (null = no geometry, the flat leg); `opts.geo`
+     *  is what its terrain declares, absent ⇒ the pure-hash proxy,
+     *  byte-identical. The record is built by the codec's own PURE half
+     *  (`condenseTown`, no floors ⇒ no mint) rather than through the dispatch,
+     *  exactly as `foldWildArea` calls `condenseWildArea` directly: this runs
+     *  per partner per endpoint read, and an envelope per read would be
+     *  allocation for nothing. The MINT — the one place the fold actually
+     *  changes anything — goes through the dispatch (`mintCondensedShelf`). */
     const stub = (
       key: string,
       at: { x: number; y: number } | null,
       opts: { distanceM?: number | null; geo?: PartnerGeography | null } = {},
     ) => {
-      const geo = opts.geo ?? null;
-      push({
-        key,
-        at,
-        real: false,
-        signals: stubPartnerSignals(key, Math.floor(day), geo),
-        stack: abstractPartnerStack(session, key),
-        books: null, // ⚖️ B6: nothing to credit — this town's ledger is not loaded
-        // A stub with no bound place has none — see `TradePartner.distanceM`.
-        distanceM: opts.distanceM ?? null,
-        signalsAtDay: (d) => stubPartnerSignals(key, Math.floor(d), geo),
-      });
+      push(condensedPartner(
+        condenseTown({
+          key,
+          stack: abstractPartnerStack(session, key),
+          at,
+          // A stub with no bound place has none — see `TradePartner.distanceM`.
+          distanceM: opts.distanceM ?? null,
+          geo: opts.geo ?? null,
+        }),
+        day,
+      ));
     };
     const t = session.town;
     const center = t?.stage.center ?? null;
     for (const cp of t?.stage.cluster?.partners?.() ?? []) {
       if (cp.books) {
         const books = cp.books;
-        push({
+        // ⚖️ F-⑤ — an EXPANDED town: a sim is running it, so its own books
+        // answer every question and there is no record to read. The ONE
+        // branch that survives the fork, and the only place `books` is set.
+        push(tradePartner({
           key: cp.key,
           at: cp.at,
-          real: true,
+          record: null,
           signals: { shortage: (g) => shortageOfBooks(books.eco, books.town, g) },
           stack: books.stock,
           // ⚖️ B6: a REAL ledger — the far half of the pairwise transfer.
@@ -25298,7 +28393,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // A live sim's books are not a closed form: no derived wake exists,
           // and inventing one would be worse than the epoch + backstop.
           signalsAtDay: null,
-        });
+        }));
       } else stub(cp.key, cp.at);
     }
     const route = t?.stage.trade?.route;
@@ -25406,8 +28501,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       now: session.taskClock,
       every: FOOD_DAY_SEC,
       // ⚖️ The first load TRAVELS — priced off the partner's own road
-      // (`barterLegSeconds`), flat for a stub with no geometry.
-      dueAt: session.taskClock + barterLegSeconds(session.scale, partner.distanceM),
+      // (`partnerLegSeconds`), flat for a partner with no geometry.
+      dueAt: session.taskClock + partnerLegSeconds(session, partner),
       sourceGlyph: sentence,
     });
     const clerk = session.addressedFamily ?? gazeCreature(session) ?? convo?.nodeId ?? null;
@@ -25522,8 +28617,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       now: session.taskClock,
       // The caravan takes TRAVEL TIME: the shipment lands a leg out, and a
       // standing route runs one leg per street day after that — or one leg per
-      // ROAD, where the road is longer than a day (⚖️ `barterLegSeconds`).
-      dueAt: session.taskClock + barterLegSeconds(session.scale, partner.distanceM),
+      // ROAD, where the road is longer than a day (⚖️ `partnerLegSeconds`).
+      dueAt: session.taskClock + partnerLegSeconds(session, partner),
       ...(standing ? { every: FOOD_DAY_SEC } : {}),
       sourceGlyph: sentence,
       barter: {
@@ -25667,12 +28762,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (due.length) {
         const partners = tradePartnersOf(session);
         for (const a of due) {
-          const p = partners.find((tp) => townEndpointId(tp.key) === a.from);
-          if (p && !p.real) {
-            for (const [g, n] of Object.entries(a.goods)) {
-              stockAbstractPartner(p.stack, g, Math.max(3, n * 2));
-            }
+          // ⚖️ F5 — A REGION SHED IS DRAWN, NOT MINTED: the units it ships were
+          // standing in its record and leave it (`drawShedShelf`), which is the
+          // one place a real closed form differs from a fictional one. Same arm,
+          // same moment, same purpose — the far end has stock before the leg runs.
+          const shed = parseScopeId(a.from);
+          if (shed.kind === "wild" && shed.form === "area") {
+            drawShedShelf(session, shed.tag, a.goods);
+            continue;
           }
+          const p = partners.find((tp) => townEndpointId(tp.key) === a.from);
+          // ⚖️ F-⑤: a CONDENSED town mints (it is not running, so this fold is
+          // where its production lands); an EXPANDED one has no record and its
+          // real yard can honestly run dry.
+          if (!p?.record) continue;
+          const floors: Record<string, number> = {};
+          for (const [g, n] of Object.entries(a.goods)) floors[g] = Math.max(3, n * 2);
+          mintCondensedShelf(session, p, floors);
         }
       }
     }
@@ -25924,21 +29030,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // would wake every park the moment it was set.
       if (a.every === undefined && townParked(session, `agreement|${a.id}`, now)) continue;
       const p = byKey.get(b.partnerKey);
-      if (p && !p.real) {
-        // ⚖️ BATCH 3 · B6 — THE STUB'S MINT IS THE CONDENSED TWIN OF AN
-        // UNLOADED LEDGER, not an exception to conservation. A real neighbour's
-        // shelf is stocked by a sim we are not running; a stub stands in for
+      if (p?.record) {
+        // ⚖️ BATCH 3 · B6 / F-⑤ — THE MINT IS THE CONDENSED TWIN OF AN UNLOADED
+        // LEDGER, not an exception to conservation. A real neighbour's shelf is
+        // stocked by a sim we are not running; a condensed town stands in for
         // that whole town with a closed form, and this mint is what its
-        // unsimulated production would have put on the shelf. The pairwise
-        // transfer below is written so a real ledger slots straight in: when
-        // `p.real`, the partner's OWN books take the credit and nothing is
-        // minted at all.
-        const minted = stockAbstractPartner(
-          p.stack,
-          b.takeGood,
-          Math.max(9, Object.values(b.take)[0] ?? 0),
+        // unsimulated production would have put on the shelf — which since F3
+        // is spelled as what it is: `condense` of a town that has never been
+        // expanded. The pairwise transfer below is written so a real ledger
+        // slots straight in: an EXPANDED partner has no record, its OWN books
+        // take the credit, and nothing is minted at all.
+        mintCondensedShelf(
+          session,
+          p,
+          { [b.takeGood]: Math.max(9, Object.values(b.take)[0] ?? 0) },
+          () => bumpPartnerStockEpoch(session), // ⏸️ their shelf moved
         );
-        if (minted > 0) bumpPartnerStockEpoch(session); // ⏸️ their shelf moved
       }
     }
     const us = ourBarterSignals(session);
@@ -25950,8 +29057,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         us,
         themOf: (key) => byKey.get(key)?.signals ?? null,
         // ⚖️ The road, per leg — a standing route re-derives it every time, so
-        // a partner rebound to a nearer neighbour speeds up on its own.
-        legSecondsOf: (key) => barterLegSeconds(session.scale, byKey.get(key)?.distanceM ?? null),
+        // a partner rebound to a nearer neighbour speeds up on its own. Same
+        // ONE seat the order-time `dueAt` above priced itself off.
+        legSecondsOf: (key) => partnerLegSeconds(session, byKey.get(key) ?? null),
         parked: (a) => townParked(session, `agreement|${a.id}`, now),
         park: (a, why) => parkAgreement(session, a, why, byKey.get(a.barter!.partnerKey) ?? null, us, now),
       },
@@ -26662,9 +29770,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         contains: [{ relation: "in", capacity: 99 }],
         glyph: "water",
       });
-      session.containers.set(wid, "in");
-      session.containerStock.set(wid, { water: 99 });
-      session.containerOwner.set(wid, TOWN_SCOPE); // communal at the TOWN tier
+      registerContainer(session, wid, "in", TOWN_SCOPE, { water: 99 }); // communal at the TOWN tier
       presenter.toast("⛲ the neighborhood digs a well", "feedback");
     }
   }
@@ -26779,16 +29885,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       //    home as a whole object instead, which is the only honest answer.
       for (const bagRef of [carry.inHand?.bag ?? null, carry.worn]) {
         if (!bagRef) continue;
-        if (!mayDissolveToStack(bagRef.glyph, session.containerStock.get(bagRef.objId))) {
+        if (!mayDissolveToStack(bagRef.glyph, session.containerRecords.get(bagRef.objId)?.stock)) {
           const at = world?.state.avatars[avatarIdOf(cid)];
-          if (session.wornBags.get(cid)?.objId === bagRef.objId && at) doffWornBag(session, cid, at);
+          if (session.wornBagIndex.get(cid) === bagRef.objId && at) doffWornBag(session, cid, at);
           continue;
         }
         if (bagRef !== carry.inHand?.bag) bank(bagRef.glyph, 1); // the held one already banked at ②
-        session.containerStock.delete(bagRef.objId);
-        session.containers.delete(bagRef.objId);
-        session.containerOwner.delete(bagRef.objId);
-        if (session.wornBags.get(cid)?.objId === bagRef.objId) session.wornBags.delete(cid);
+        const wasWorn = session.wornBagIndex.get(cid) === bagRef.objId;
+        deleteContainerRecord(session, bagRef.objId);
+        if (wasWorn) session.wornBagIndex.delete(cid);
       }
       stressSum += session.stress.get(cid) ?? 0;
       clearNeedStep(session, cid);
@@ -27350,12 +30455,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // use that item — willing-gated, refused aloud.
         //
         // CLAIM A BODY and the same press is that body's own act: it takes the
-        // stack into ITS inventory (`spiritNow()` is false the moment the spark
+        // stack into ITS inventory (the test goes false the moment the spark
         // rides something, exactly as it is for a plain walker — one rule, one
         // question: does the player have hands here?). This used to key on
         // `dollhouse !== null` instead, so a spark gliding a live town's
         // streets teleported goods out of boxes it had no body to reach.
-        if (spiritNow()) {
+        //
+        // ⚖️ USER RULING 2026-08-14: AN ATTACHED AVATAR ANSWERS THAT QUESTION
+        // THE SAME WAY — "you can click on an item in the button board and it
+        // interacts with it as needed — eats food, wears clothes". The player
+        // is still the spark and still has no hands; the hands belong to the
+        // created body, which takes the press as a DIRECTED CREATURE through
+        // the gate below (`attentionAddressee` resolves to it — the direction
+        // arm keeps it engaged). Hence `sparkLocal()` — spirit OR attached —
+        // rather than `spiritNow()`, whose `spirit` half is false for a walker
+        // spec and would have routed the press into `takeFromContainer`,
+        // teleporting the goods into the formless spark's own inventory.
+        // Possession still overrides both: ride a baker and the baker's hands
+        // are the ones in the box, which is the `possession.creatureId` half
+        // (the same one `spiritNow` carries).
+        if (sparkLocal() && possession.creatureId === null) {
           const glyph = id.slice(5);
           const said = playerStatement(glyph);
           if (opts.spokenExternally) yieldToStatement(said);
@@ -28156,6 +31275,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         saySystem(s, CANT_HERE, `💬 "${sentence}" — can't do that here`);
         return;
       }
+      // ⚖️ H1 — REGION DRAW: "get wood from the forest". A fetch whose SOURCE
+      // is the wild and whose wild is FOLDED is not an errand at all — it is a
+      // shipment from a condensed partner, and it rides the ② ledger like every
+      // other one (fold-round.md H1). Sits here, beside tribute and above the
+      // transfer arm, because those three are the same sentence family: goods
+      // pulled from a scope that is not running. A live stand falls straight
+      // through to the errand paths below, unchanged.
+      if (goal.kind === "fetch" && orderSpokenDraw(s, goal, frame.quantity, sentence, speaker)) return;
       // TRIBUTE (nations P3/E5): "bring <good> from <partner>" — a STANDING
       // pull from a member settlement's yard into ours, the sovereign's
       // decree. Same ② scheduled-agreement machinery the dawn carts run
@@ -28323,6 +31450,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     pathDebugOn() {
       return pathDebugOn;
     },
+    debugSnapshot() {
+      return sess ? buildDebugSnapshot(sess) : null;
+    },
     resize(width, height, dpr) {
       world?.resize(width, height, dpr);
     },
@@ -28403,9 +31533,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (world.state.objects[key]) world.removeObject(key);
       else if (world.state.avatars[key]) world.removeNpc(key);
       w.features.splice(fi, 1);
-      s.containers.delete(key);
-      s.containerStock.delete(key);
-      s.containerOwner.delete(key);
+      deleteContainerRecord(s, key);
       return true;
     },
     get camera() {
@@ -28423,17 +31551,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     pocketSnapshot() {
       const s = sess;
       if (!s) return {};
-      // THE BAGS TRAVEL TOO. A body walking from one host's world into
-      // another's takes its containers with it, so the snapshot lists each bag
-      // as one unit of its own glyph alongside the goods it holds — and
-      // `restorePocket` re-creates the bag before it fills it, which is what
-      // makes the two sides' capacities agree.
-      const carry = bodyCarryOf(s, s.handsCid);
-      const out: Record<string, number> = { ...bodyCarryView(carry) };
-      for (const bag of [carry.inHand?.bag ?? null, carry.worn]) {
-        if (bag) out[bag.glyph] = (out[bag.glyph] ?? 0) + 1;
-      }
-      return out;
+      // THE BAGS TRAVEL TOO — the formula lives in `bodyCarrySnapshot` (its
+      // doc carries the reason), because a session handover asks the very same
+      // question about every OTHER departing member's avatar and the two
+      // answers may never drift apart. This is that question, asked about the
+      // hands this player is playing through.
+      return bodyCarrySnapshot(s, s.handsCid);
     },
     restorePocket(stacks) {
       const s = sess;
@@ -28447,11 +31570,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (old.inHand) setDownFromHands(s, avatarIdOf(cid), { kind: "consumed" }, { objId: old.inHand.objId, quiet: true });
       for (const bag of [old.inHand?.bag ?? null, old.worn]) {
         if (!bag) continue;
-        s.containerStock.delete(bag.objId);
-        s.containers.delete(bag.objId);
-        s.containerOwner.delete(bag.objId);
+        deleteContainerRecord(s, bag.objId);
       }
-      s.wornBags.delete(cid);
+      s.wornBagIndex.delete(cid);
       // CONTAINERS FIRST, then their goods — the order is the capacity: fill
       // before the bag exists and the units have nowhere but the hands to go.
       const goods: [string, number][] = [];
@@ -28465,7 +31586,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (let k = 0; k < n; k++) {
           const objId = spawnLooseProp(s, g, at.x, at.y);
           if (!objId) break;
-          if (def.hold === "wear" && !s.wornBags.has(cid)) donWornBag(s, cid, objId);
+          if (def.hold === "wear" && !s.wornBagIndex.has(cid)) donWornBag(s, cid, objId);
           else if (!takeIntoHands(s, avatarIdOf(cid), { kind: "object", objId })) break; // it stays at their feet
         }
       }
@@ -28487,11 +31608,105 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return possession.creatureId;
     },
     stop() {
+      despawnAllAttachedAvatars(); // a created body dies with its session
       world?.stop();
       world = null;
       setWorld(null); // the director's binding follows (phase 1a)
       questView = null;
       voice?.cancel();
+    },
+    setPeers(peers) {
+      // Copy (and drop anything id-less): the caller keeps its own array and
+      // may mutate it, and a roster entry with no id can name no avatar.
+      mpPeers = (Array.isArray(peers) ? peers : [])
+        .filter((p) => !!p && typeof p.id === "string" && p.id.length > 0)
+        .map((p) => (p.name === undefined ? { id: p.id } : { id: p.id, name: p.name }));
+      reconcileAttachedAvatars();
+    },
+    setPlanetLoc(d, e, radiusM) {
+      // GUARDED, not trusted: a NaN slipping in here would poison every
+      // great-circle distance the coordinator computes (and quietly, since
+      // acos(NaN) is NaN and every comparison against it is false). A
+      // malformed feed leaves the last good presence standing.
+      if (!Array.isArray(d) || d.length !== 3) return;
+      if (!d.every((n) => typeof n === "number" && Number.isFinite(n))) return;
+      if (typeof e !== "number" || !Number.isFinite(e)) return;
+      planetLoc = { d: [d[0], d[1], d[2]], e };
+      // The radius is OPTIONAL per call and STICKY: an embedder may feed the
+      // presence every frame and the radius once, and a world whose planet
+      // changes scale re-states it with the datum it belongs to.
+      if (typeof radiusM === "number" && Number.isFinite(radiusM) && radiusM > 0) planetRadiusM = radiusM;
+    },
+    applySessionControl(sc) {
+      // The wire is untrusted and mixed (WorldCommand / PlayerAction /
+      // session-control all ride it): a foreign or half-read envelope parses
+      // to null and is DROPPED, never half-applied.
+      const parsed = parseSessionControl(sc);
+      if (!parsed) return;
+      switch (parsed.sc) {
+        case "assign":
+          applySessionAssignment({ epoch: parsed.epoch, sessions: parsed.sessions });
+          break;
+        case "anchor": {
+          // Per-session epoch monotonicity: a re-delivered older anchor must
+          // not drag a session back to where its members no longer are.
+          const prev = sessionAnchors.get(parsed.sessionId);
+          if (prev && parsed.epoch < prev.epoch) break;
+          sessionAnchors.set(parsed.sessionId, { epoch: parsed.epoch, loc: parsed.loc });
+          break;
+        }
+        case "handover":
+          // STORE-ONLY v1: handovers carry no epoch (they are one-shot
+          // announcements, not a running roster), so the latest per session id
+          // simply wins. The payload stays opaque — reading it is the job of
+          // the stage that defines it.
+          sessionHandovers.set(parsed.sessionId, { from: parsed.from, to: parsed.to, payload: parsed.payload });
+          break;
+      }
+    },
+    sessionAssignment() {
+      return sessionAssign;
+    },
+    sessionCoordination() {
+      return coordPrev ? { assignment: coordPrev, decisions: coordDecisions } : null;
+    },
+    sessionAnchorOf(sessionId) {
+      return sessionAnchors.get(sessionId)?.loc ?? null;
+    },
+    sessionHandoverOf(sessionId) {
+      return sessionHandovers.get(sessionId) ?? null;
+    },
+    assembleSessionHandover(memberIds) {
+      const s = sess;
+      if (!s) return null;
+      return assembleHandover(s, Array.isArray(memberIds) ? memberIds : []);
+    },
+    applySessionHandover(payload) {
+      const s = sess;
+      if (!s) return false;
+      // VALIDATE WHOLE, THEN APPLY. Nothing below this line can fail on shape,
+      // which is what makes "a declined payload changes NOTHING" true.
+      const read = readHandoverPayload(payload);
+      if (!read) return false;
+      applyHandoverWild(s, read);
+      handoverMembers = read.members.map((m) => ({
+        id: m.id,
+        ...(m.loc ? { loc: { d: [m.loc.d[0], m.loc.d[1], m.loc.d[2]] as [number, number, number], e: m.loc.e } } : {}),
+        ...(m.stacks ? { stacks: { ...m.stacks } } : {}),
+      }));
+      // OUR OWN CARRY comes back through the precedent door. Every OTHER
+      // member's stacks stay filed above: their bodies are the embedder's to
+      // respawn, and `restorePocket` only ever speaks for this device's hands.
+      const mine = read.members.find((m) => m.id === localAvatarPeer());
+      if (mine?.stacks) api.restorePocket(mine.stacks);
+      return true;
+    },
+    sessionHandoverMembers() {
+      return handoverMembers.map((m) => ({
+        id: m.id,
+        ...(m.loc ? { loc: { d: [m.loc.d[0], m.loc.d[1], m.loc.d[2]] as [number, number, number], e: m.loc.e } } : {}),
+        ...(m.stacks ? { stacks: { ...m.stacks } } : {}),
+      }));
     },
     applyNetInbound(msgs) {
       if (!mp || !world) return;
@@ -28506,8 +31721,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // ECHO GUARD: never let the wire move/claim OUR avatar — neither under
         // our public personId (a loopback relay) nor under a raw PLAYER_ID
         // (an old snapshot that didn't translate its wire identity).
+        //
+        // SPARK belongs in this list for the same reason and one more: our own
+        // spark round-tripping would file US into `peerSparks`, and the follow
+        // loop would then drive our avatar from a stale, network-delayed copy
+        // of the cursor it already reads live from `spiritPos`.
+        //
+        // LOC likewise: our own beacon coming back would file us into
+        // `peerLocs` as if we were a peer, and the coordinator would then
+        // cluster this player twice — once from the live `setPlanetLoc` value
+        // and once from a network-delayed copy of it. (The coordinator skips
+        // its own id defensively too; a message that never enters is better
+        // than one filtered on the way out.)
         if (
-          (m.t === "avatar" || m.t === "say" || m.t === "leave" || m.t === "claim") &&
+          (m.t === "avatar" ||
+            m.t === "say" ||
+            m.t === "leave" ||
+            m.t === "claim" ||
+            m.t === "spark" ||
+            m.t === "loc") &&
           (m.id === mp.localId || m.id === PLAYER_ID)
         ) {
           continue;
@@ -28599,6 +31831,68 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!s) return "no session.";
       return wildAreaReport(s, (verb ?? "").trim().toLowerCase());
     },
+    orderBook() {
+      // ⚖️ THE ORDER BOOK, DUMPED (`/orders`) — the harness gap the frontier
+      // deadlock diagnosis ran into: `/scope` shows a pile's STOCK and `/stock`
+      // the session total, but NOTHING showed the rows themselves, so "which
+      // book posted this second 105-wood mill, and why does one house need
+      // two?" could not be answered from a transcript at all. A pure read: one
+      // row per live order, the bill in three columns (want / have / short),
+      // the in-flight hauls that are already promised against it, and the two
+      // fields that decide how it behaves — its BOOK (`scope`, the per-scope
+      // order-book law: two books each post a full-size mill against one
+      // finite commons and neither dedupes the other) and whether the bill
+      // that asked for it was SPOKEN.
+      //
+      // `book` IS the provenance, and it is the only provenance a row carries:
+      // no order records the call site that posted it, so a dump cannot invent
+      // one. What it can say is which queue the row belongs to, which is the
+      // question that actually distinguishes the two rows.
+      const s = sess;
+      if (!s) return [];
+      const deltas = s.town?.deltas ?? s.foundedSite?.deltas;
+      if (!deltas) return [];
+      return deltas.orders().map((o) => {
+        const pileId = `${ORDER_PILE_EP}${o.ord}`;
+        const row = o as {
+          costs?: Record<string, number>;
+          pile?: Record<string, number>;
+          scope?: string;
+          spoken?: boolean;
+          laborStartDay?: number;
+          labor?: number;
+          buildDays?: number;
+        };
+        const costs = row.costs ?? {};
+        const pile = row.pile ?? {};
+        const inflight: Record<string, number> = {};
+        for (const a of s.transfers.all()) {
+          if (a.status !== "pending" && a.status !== "moving") continue;
+          if (a.to !== pileId) continue;
+          for (const [g, n] of Object.entries(a.goods)) {
+            const h = stackHead(g);
+            inflight[h] = (inflight[h] ?? 0) + n;
+          }
+        }
+        const ep = stockEndpointOf(s, pileId);
+        return {
+          ord: o.ord,
+          kind: o.kind,
+          book: row.scope ?? "town",
+          spoken: row.spoken === true,
+          ...(o.kind === "found" ? { type: o.type, completed: o.completed === true } : {}),
+          ...(o.kind === "refine" ? { produces: o.produces, count: o.count } : {}),
+          want: costs,
+          have: pile,
+          short: stagingMissing({ costs, pile }),
+          inflight,
+          staged: row.laborStartDay !== undefined,
+          labor: `${(row.labor ?? 0).toFixed(2)}/${(row.buildDays ?? 0).toFixed(2)}`,
+          pile_id: pileId,
+          at: ep?.at ? { x: Number(ep.at.x.toFixed(1)), y: Number(ep.at.y.toFixed(1)) } : null,
+        };
+      });
+    },
     advanceLedgerDays(days) {
       const s = sess;
       if (!s) return refuseLedgerWarp(days, 0, ["no-session"]);
@@ -28688,15 +31982,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!objId) return null;
       // A PERSONAL BAG IS THEIRS (`donWornBag` says the same for the worn one) —
       // so the walkers' private-property gate keeps housemates out of it.
-      s.containerOwner.set(objId, creatureScope(cid));
+      setContainerOwner(s, objId, creatureScope(cid));
       const took =
         def.hold === "wear"
           ? donWornBag(s, cid, objId)
           : !!takeIntoHands(s, avatarIdOf(cid), { kind: "object", objId });
       if (!took) {
         removeLooseProp(s, objId);
-        s.containers.delete(objId);
-        s.containerOwner.delete(objId);
+        deleteContainerRecord(s, objId);
         return null;
       }
       if (cid === s.handsCid) pushPocket(s);

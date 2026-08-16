@@ -49,6 +49,11 @@ import { Slider } from '@/components/ui/slider';
 import { openUI } from '@/lib/uiEvents';
 import { useRegimes } from '@/hooks/useRegimes';
 
+// The CLINICIAN's own workflow/locale preference — deliberately NOT
+// ProgramFramework. It is unpersisted local state whose only effect is picking
+// an app language, so it has no "personal" member: a learner outside a school
+// system has no jurisdiction to switch the UI language to. A student's actual
+// framework is set per-student in StudentInfoPanel.
 type SystemType = 'tala' | 'us_iep';
 
 export function SettingsPanel() {

@@ -61,6 +61,17 @@ import {
   type BridgeBuilderBackend,
 } from "@/lib/engine-builder";
 
+/** App ids that mount on the (vendored) world-engine — GameEmbed with the WE
+ *  bridge (glyph_input, builder_state/surface, world_data/world_cmd for a
+ *  shared call). Single source of truth for every gate that must key off
+ *  "is this app the WE engine" — add a new WE game's appId here and every
+ *  gate below (sentence-builder routing, world HUD, sidebar layout, exit
+ *  confirm, call auto-launch/detach, the call ferry) picks it up. */
+const WORLD_ENGINE_APP_IDS = new Set(["dollhouse", "nature-hike"]);
+function isWorldEngineApp(appId: string | null | undefined): boolean {
+  return !!appId && WORLD_ENGINE_APP_IDS.has(appId);
+}
+
 /** Build a one-page response board from a game's locked options, laid out 2×4 so
  *  2–4 choices read large. Each option's id is preserved as the button id so a
  *  press maps straight back to `board_option_selected`. */
@@ -578,6 +589,19 @@ function renderAppContent(
       />
     );
   }
+  if (activeApp.appId === "nature-hike") {
+    return (
+      <GameEmbed
+        ref={gameRef}
+        gameId="nature-hike"
+        src="/games/nature-hike/"
+        forwardGaze
+        onBoardOptions={onBoardOptions}
+        onMessage={onGameMessage}
+        onClose={dismissApp}
+      />
+    );
+  }
   if (activeApp.appId === "browser" && activeApp.appData?.url) {
     return (
       <BrowserApp
@@ -909,7 +933,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   gameVoiceServerRef.current = gameVoiceServer;
   // Which active apps run on the (vendored) world-engine — their embeds accept
   // glyph_input and push engine boards onto the sidebar.
-  const worldEngineGameActive = activeApp?.appId === "dollhouse";
+  const worldEngineGameActive = isWorldEngineApp(activeApp?.appId);
   const worldEngineGameActiveRef = useRef(worldEngineGameActive);
   worldEngineGameActiveRef.current = worldEngineGameActive;
   // In-game Exit is a guarded affordance: pressing it (with the sentence
@@ -965,8 +989,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   useEffect(() => {
     const prev = prevIframeQuestRef.current;
     prevIframeQuestRef.current = iframeQuestGameId;
-    if (iframeQuestGameId === "dollhouse" && prev !== iframeQuestGameId) {
-      if (activeAppIdRef.current !== "dollhouse") launchAppFnRef.current?.("dollhouse");
+    if (iframeQuestGameId && isWorldEngineApp(iframeQuestGameId) && prev !== iframeQuestGameId) {
+      if (activeAppIdRef.current !== iframeQuestGameId) launchAppFnRef.current?.(iframeQuestGameId);
     } else if (!iframeQuestGameId && prev && activeAppIdRef.current === prev) {
       dismissAppRef.current?.();
     }
@@ -974,7 +998,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   useEffect(() => {
     const prev = activeAppIdRef.current;
     activeAppIdRef.current = activeApp?.appId ?? null;
-    if (prev === "dollhouse" && !activeApp && prevIframeQuestRef.current === "dollhouse") {
+    if (prev && isWorldEngineApp(prev) && !activeApp && prevIframeQuestRef.current === prev) {
       stopCallGameFnRef.current?.();
     }
   }, [activeApp]);
@@ -3384,12 +3408,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           <SocialGameReporter onChange={setActiveSocialGame} />
           <SocialWorldOverlay host={gameHost} selfSpeech={gameSelfSpeech} />
           <SocialWorldPeople host={peopleHost} />
-          {/* Shared-dollhouse call ferry: moves the iframe's world traffic
-              over the call transports and keeps its owner/follower role
-              current. Renders nothing; inert unless an iframe-quest game is
-              attached to the call. */}
+          {/* Shared world-engine call ferry: moves the attached iframe-quest
+              game's world traffic over the call transports and keeps its
+              owner/follower role current. gameId tracks whichever WE game
+              (dollhouse, nature-hike, …) is actually attached to the call —
+              renders nothing and stays inert when none is (iframeQuestGameId
+              is null, so it never matches a real game's appId). */}
           <CallWorldGameFerry
-            gameId="dollhouse"
+            gameId={iframeQuestGameId ?? ""}
             embedRef={gameEmbedRef}
             sendersRef={callWorldSendersRef}
             stopGameRef={stopCallGameFnRef}

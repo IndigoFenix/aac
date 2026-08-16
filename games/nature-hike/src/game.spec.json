@@ -1,0 +1,24 @@
+{
+  "engine": "aivota-world",
+  "engineVersion": 1,
+  "uses": [],
+  "packs": [],
+  "game": {
+    "scope": "planet",
+    "world": {
+      "geology": {
+        "seed": 11
+      },
+      "radius": 5000,
+      "rain": 1.5
+    },
+    "avatar": true,
+    "avatar_species": "human_cute",
+    "scale": {
+      "rotation": 360,
+      "sleep_fraction": 0.05,
+      "gap_compression": 30,
+      "locomotion": 2
+    }
+  }
+}

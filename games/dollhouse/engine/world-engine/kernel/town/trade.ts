@@ -31,7 +31,11 @@ import { townPlaza, type TownPlan } from "./plan";
 // NOT IMPORTED BY ANY TOWN OR BODY MODULE" — this import is that sentence
 // being served. freight.ts is read-only from here, forever.
 import { carryReachM, freightOf } from "../../freight";
-import { DOLLHOUSE_SCALE, type WorldScale } from "../../scale";
+// ⚖️ THE TRANSACTION-PACING SEAT (user law, 2026-08-13): `transactionDayFrac`
+// is the ONE place the caravan's in-town visit budget now anchors — see its
+// doc comment in scale.ts, and barter.ts's `BARTER_LEG_DAY_FRAC` for the
+// other transaction kind this seat merges.
+import { DOLLHOUSE_SCALE, transactionDayFrac, type WorldScale } from "../../scale";
 // R&T ⑤ (T2): the pair's complementary read. It lives in a LEAF sibling of
 // barter.ts precisely so this call can exist — barter.ts itself reads
 // transfer.ts, which reads this module, and a value edge into it would be a
@@ -370,8 +374,12 @@ export function createTownTrade(
     }
     const len = cum[cum.length - 1]!;
     if (len < 1e-3) return null;
-    // Timing: the whole visit fits comfortably in the day whatever the length.
-    const speed = Math.max(2.2, (len * 2) / Math.max(30, FOOD_DAY_SEC * 0.35 - TRADE_DWELL_SEC));
+    // Timing: the whole visit fits comfortably in the day whatever the
+    // length. The caravan's own visit budget — ⚖️ MERGED (user law,
+    // 2026-08-13, scale.ts's own doc comment): `transactionDayFrac({ kind:
+    // "caravan-visit" })`, bit-identical to the shipped `0.35`.
+    const visitFrac = transactionDayFrac({ kind: "caravan-visit" });
+    const speed = Math.max(2.2, (len * 2) / Math.max(30, FOOD_DAY_SEC * visitFrac - TRADE_DWELL_SEC));
     return { route, cum, len, speed, walk: len / speed };
   };
 

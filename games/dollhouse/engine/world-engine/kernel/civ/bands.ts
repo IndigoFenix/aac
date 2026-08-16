@@ -35,6 +35,7 @@ import {
   REAL_PORTER_BULK, freightOf, storedFraction, type Freight,
 } from "../../freight";
 import { needFillDays, townSpacingM, type WorldScale } from "../../scale";
+import { carryCapacityOf } from "../town/scope-shape";
 
 /** One wild species' presence on the grid: its key, and the capacity
  *  field its crowds are read off (the base `forage` for humans; a
@@ -303,9 +304,18 @@ export interface CarryOpts {
 
 /** What the band can WALK AWAY WITH, in rations-worth: backs × pack ×
  *  the staple's worth per bulk. The left side of Gate A — literally the
- *  backs available. */
+ *  backs available. A thin call into the shared carry-capacity law
+ *  (scope-shape.ts `carryCapacityOf`, worklist ⑧): the collective branch
+ *  gives the bulk headcount (backs × pack), and the value-density
+ *  conversion to rations-worth stays here — it has no body analogue. */
 export function bandCarryCapacity(band: Band, freight: Freight, opts: CarryOpts = {}): number {
-  return band.size * (opts.portableBulk ?? REAL_PORTER_BULK) * freight.valueDensity;
+  return (
+    carryCapacityOf({
+      kind: "collective",
+      size: band.size,
+      perMemberBulk: opts.portableBulk ?? REAL_PORTER_BULK,
+    }) * freight.valueDensity
+  );
 }
 
 export interface PressureOpts {

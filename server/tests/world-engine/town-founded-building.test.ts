@@ -137,7 +137,7 @@ describe("TownDeltas — the founded/stock mutation layer", () => {
 describe("applyFoundedBuildings — replay materializes the EXACT serialized rects", () => {
   const bareLot = (): TownPlan => ({
     key: KEY, biome: "farmland", groundColor: "#8fae62", radius: 45,
-    want: 0, built: 0, houses: [], works: [], fields: [],
+    want: 0, built: 0, popCap: 0, popSpill: 0, houses: [], works: [], fields: [],
     streets: growStreets(SEED, KEY, 0),
   });
 

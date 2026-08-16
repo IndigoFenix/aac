@@ -19,18 +19,34 @@ import {
   advanceWildArea,
   condenseWildArea,
   dealUnits,
+  drawWildArea,
   expandWildArea,
+  wildAreaCenter,
   wildAreaCounts,
   wildAreaPopulation,
   wildAreaStock,
   wildDrawSectorOf,
+  wildShedEndpoint,
+  wildShedPartner,
   type WildAreaRecord,
 } from "@shared/world-engine/interaction/quest/wild-area.js";
+import {
+  putStock,
+  stackUnits,
+  transferStock,
+  type StockEndpoint,
+} from "@shared/world-engine/kernel/town/transfer.js";
+import { barterLegSeconds, BARTER_LEG_DAY_FRAC } from "@shared/world-engine/kernel/town/barter.js";
+import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
+import {
+  DOLLHOUSE_SCALE, dailyTravelM, transactionDayFrac,
+} from "@shared/world-engine/scale.js";
 import {
   buildWilderness,
   wildFeatureContainerId,
   type WildernessFeature,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
+import { growthClassYield, naturalSourceOf } from "@shared/world-engine/products.js";
 
 const AREA = { x: 0, y: 0, w: 240, h: 240 };
 
@@ -289,5 +305,192 @@ describe("S4 — an unloaded stand still grows", () => {
     const rocks = buildWilderness({ seed: 3, side: 120, mix: [{ species: "rock", count: 3 }] });
     const rec = fold(rocks.features, 0);
     expect(advanceWildArea(rec, 1e9, () => 10)).toBe(rec); // same object: untouched
+  });
+});
+
+/**
+ * ⚖️ F5 (fold-round.md) — THE REGION SHED AS A TRADE ENDPOINT: *"a town draws
+ * on the region exactly as it trades with a stub town, price and legs
+ * included"* — with the one difference the whole design turns on.
+ *
+ * A CONDENSED TOWN'S SHELF IS MINTED (closed-form production nobody is
+ * simulating); A SHED'S IS DRAWN. Every unit it sells was already standing in
+ * the record and leaves it — so these are conservation pins first: what the
+ * draw hands out equals what the record lost, to the unit, and the stand's
+ * POPULATION follows the timber out of the wood (or the next class climb would
+ * grow the sold trees straight back).
+ *
+ * And it is ONE-WAY, structurally: the endpoint is the shed's own `wild:` scope
+ * id, which `scopeReceivesGoods` reads FALSE off, carrying capacity 0 so
+ * `putStock` cannot find room for a single unit.
+ */
+describe("F5 — the region shed yields, and never receives", () => {
+  const OAK = naturalSourceOf("oak")!;
+  const WOOD = OAK.products.find((p) => p.method === "kill")!;
+  const MATURE = OAK.growth!.classes.length - 1;
+  /** One mature oak's timber, off the catalogue's own class yield — the very
+   *  number `advanceWildArea` re-derives a stand's stock from. */
+  const PER_TREE = growthClassYield(WOOD, OAK.growth!.classes[MATURE]!.yieldMul);
+
+  const oak = (
+    i: number, x: number, y: number, over: Partial<WildernessFeature> = {},
+  ): WildernessFeature => ({
+    id: `wild:oak_${i}`, species: "oak", x, y, stock: { wood: PER_TREE }, ...over,
+  });
+
+  /** Four mature oaks, two east of centre and two west. */
+  const grove = (): WildernessFeature[] => [
+    oak(0, 200, 120), oak(1, 190, 130), oak(2, 40, 120), oak(3, 30, 110),
+  ];
+
+  const total = (m: Readonly<Record<string, number>>): number =>
+    Object.values(m).reduce((a, b) => a + b, 0);
+
+  it("🚨 A DRAW CONSERVES — what leaves the record is exactly what the drawer is handed", () => {
+    const rec = fold(grove());
+    const before = wildAreaStock(rec);
+    const out = drawWildArea(rec, { glyph: "wood", units: 1, from: { x: 400, y: 120 } });
+    const after = wildAreaStock(out.rec);
+    for (const g of new Set([
+      ...Object.keys(before), ...Object.keys(after), ...Object.keys(out.taken),
+    ])) {
+      expect((before[g] ?? 0) - (after[g] ?? 0)).toBe(out.taken[g] ?? 0);
+    }
+    expect(out.taken).toEqual({ wood: PER_TREE }); // one tree, whole
+    // …and the input record is UNTOUCHED: the draw is pure, exactly as
+    // `advanceWildArea` is.
+    expect(wildAreaStock(rec)).toEqual(before);
+    expect(wildAreaPopulation(rec)).toBe(4);
+    // The stand it came out of is one tree lighter, and the expand of the new
+    // record still balances to the unit.
+    expect(wildAreaPopulation(out.rec)).toBe(3);
+    expect(sumStocks(expandWildArea({ rec: out.rec }))).toEqual(wildAreaStock(out.rec));
+  });
+
+  it("🚨 A KILL DRAW FELLS — and the sold timber does NOT grow back at the next class climb", () => {
+    // Two mature oaks and two saplings still climbing: the case where the
+    // record's own growth arm RE-DERIVES a stand's timber from its classes.
+    const stand = [
+      oak(0, 200, 120), oak(1, 190, 130),
+      oak(2, 40, 120, { stock: { wood: 0 }, sizeClass: 0, growAt: 100 }),
+      oak(3, 30, 110, { stock: { wood: 0 }, sizeClass: 0, growAt: 100 }),
+    ];
+    const rec = fold(stand, 0);
+    expect(wildAreaStock(rec).wood).toBe(2 * PER_TREE);
+    const out = drawWildArea(rec, { glyph: "wood", units: 1, from: { x: 400, y: 120 }, now: 10 });
+    expect(out.taken).toEqual({ wood: PER_TREE });
+    // The POPULATION moved with the timber — one mature oak fewer.
+    expect(wildAreaCounts(out.rec).oak).toEqual([2, 0, 1]);
+    // Both saplings climb to mature. Untouched, the stand would be worth four
+    // trees; sold from, it is worth three. THAT is the pin: a stock debit with
+    // no felling would have grown the drawn tree straight back.
+    const grownUntouched = advanceWildArea(rec, 250, () => 100);
+    const grownAfterDraw = advanceWildArea(out.rec, 250, () => 100);
+    expect(wildAreaStock(grownUntouched).wood).toBe(4 * PER_TREE);
+    expect(wildAreaStock(grownAfterDraw).wood).toBe(3 * PER_TREE);
+    // …and the clock came down with the tree it belonged to: two saplings
+    // climbing, never three.
+    expect(wildAreaCounts(grownAfterDraw).oak).toEqual([0, 0, 3]);
+  });
+
+  it("a PICK does not fell — harvest stock comes off the bough and the tree stands", () => {
+    const orchard = buildWilderness({
+      seed: 9, side: 240, mix: [{ species: "apple_tree", count: 3 }],
+    }).features;
+    const rec = fold(orchard);
+    const apples = wildAreaStock(rec).apple ?? 0;
+    expect(apples).toBeGreaterThan(1);
+    const out = drawWildArea(rec, { glyph: "apple", units: 2, from: { x: 400, y: 120 } });
+    expect(out.taken).toEqual({ apple: 2 });
+    expect(wildAreaStock(out.rec).apple).toBe(apples - 2);
+    expect(wildAreaPopulation(out.rec)).toBe(3); // every tree still standing
+    expect(wildAreaCounts(out.rec)).toEqual(wildAreaCounts(rec));
+  });
+
+  it("🚨 THE LAST SOURCE CARRIES THE REMAINDER — a stand with nothing standing holds nothing", () => {
+    // `expandWildArea` deals no features for a population of 0, so a record
+    // left listing stock under an empty stand would lose it at the next load.
+    const rec = fold([oak(0, 200, 120, { stock: { wood: PER_TREE, apple: 3 } })]);
+    const out = drawWildArea(rec, { glyph: "wood", units: 999, from: { x: 400, y: 120 } });
+    expect(out.taken).toEqual({ wood: PER_TREE, apple: 3 });
+    expect(wildAreaStock(out.rec)).toEqual({});
+    expect(wildAreaPopulation(out.rec)).toBe(0);
+    expect(sumStocks(expandWildArea({ rec: out.rec }))).toEqual({});
+    // An honest partial: asking for more than the wood holds takes what there
+    // is and says so, never inventing a unit.
+    expect(total(out.taken)).toBeLessThan(999);
+  });
+
+  it("🚨 THE DIRECTION IS BOOKED — the draw's own sector, through the fold's own histogram", () => {
+    const rec = fold(grove());
+    const from = { x: 400, y: 120 }; // due east of the area's centre
+    const centre = wildAreaCenter(rec);
+    const east = wildDrawSectorOf(from.x - centre.x, from.y - centre.y);
+    const out = drawWildArea(rec, { glyph: "wood", units: 1, from });
+    expect(out.rec.draw[east]! - rec.draw[east]!).toBe(total(out.taken));
+    expect(total(out.rec.draw) - total(rec.draw)).toBe(total(out.taken)); // and nowhere else
+    // The stand re-expands THINNER on the side that bought — the same gradient
+    // the fold's own inference feeds.
+    const eastCount = (fs: readonly WildernessFeature[]) => fs.filter((f) => f.x > 120).length;
+    const back = expandWildArea({ rec: out.rec });
+    const flat = expandWildArea({ rec: { ...out.rec, draw: out.rec.draw.map(() => 0) } });
+    expect(sumStocks(back)).toEqual(sumStocks(flat));
+    expect(eastCount(back)).toBeLessThanOrEqual(eastCount(flat));
+    // A draw nobody says where from books no direction at all (the honest
+    // silence a place-less partner keeps).
+    expect(drawWildArea(rec, { glyph: "wood", units: 1 }).rec.draw).toEqual(rec.draw);
+  });
+
+  it("🚨 ONE-WAY: the shed endpoint cannot RECEIVE, and the units bounce back to the sender", () => {
+    const rec = fold(grove());
+    const shed = wildShedPartner(rec, { x: 400, y: 120 });
+    // The law is read off the ID, everywhere and by everyone (scope.ts).
+    expect(shed.id).toBe(wildAreaId("home"));
+    expect(scopeReceivesGoods(parseScopeId(shed.id))).toBe(false);
+    const shelf: Record<string, number> = {};
+    // KEYED, not recorded: the shelf outlives the stand it was cut from.
+    const ep = wildShedEndpoint(shed.key, shelf);
+    expect(ep.id).toBe(shed.id);
+    expect(ep.capacity).toBe(0);
+    expect(ep.stack).toBe(shelf); // the live shelf, never a copy
+    // …and it is not merely unused: `putStock` finds no room for a unit.
+    expect(putStock(ep, { wood: 3 })).toEqual({ accepted: {}, refused: { wood: 3 } });
+    const yard: StockEndpoint = { id: "town:yard", kind: "yard", stack: { wood: 5 }, owner: null };
+    const sale = transferStock(yard, ep, { wood: 3 });
+    expect(sale.moved).toEqual({});
+    expect(yard.stack).toEqual({ wood: 5 }); // nothing lost in the refusal
+    expect(shelf).toEqual({});
+    // The BUY leg is ordinary: a drawn shelf ships out of the same endpoint.
+    const out = drawWildArea(rec, { glyph: "wood", units: 1, from: { x: 400, y: 120 } });
+    for (const [g, n] of Object.entries(out.taken)) shelf[g] = (shelf[g] ?? 0) + n;
+    const buy = transferStock(ep, yard, { wood: 2 });
+    expect(buy.moved).toEqual({ wood: 2 });
+    expect(stackUnits(yard.stack, "wood")).toBe(7);
+    expect(stackUnits(shelf, "wood")).toBe(PER_TREE - 2);
+  });
+
+  it("🚨 PRICED THROUGH THE ONE LEG SEAT — the shed's road, not a second formula", () => {
+    const rec = fold(grove());
+    const home = { x: 3000, y: 120 };
+    const shed = wildShedPartner(rec, home);
+    const centre = wildAreaCenter(rec);
+    expect(centre).toEqual({ x: 120, y: 120 });
+    expect(shed.distanceM).toBeCloseTo(Math.hypot(centre.x - home.x, centre.y - home.y), 9);
+    expect(shed.yields).toEqual(wildAreaStock(rec)); // what it has to sell IS the record
+    // The SAME seat a stub town three kilometres out is priced by — no forest
+    // special case, and `transactionDayFrac`'s floor underneath both.
+    const leg = barterLegSeconds(DOLLHOUSE_SCALE, shed.distanceM);
+    expect(leg).toBeCloseTo(
+      (shed.distanceM! / dailyTravelM(DOLLHOUSE_SCALE)) * DOLLHOUSE_SCALE.dayLengthS, 9,
+    );
+    expect(leg).toBeGreaterThan(barterLegSeconds(DOLLHOUSE_SCALE, null));
+    // A shed nobody measured from takes the flat leg — the same honest null a
+    // place-less stub takes, and the same anchored fraction of a day.
+    const placeless = wildShedPartner(rec, null);
+    expect(placeless.distanceM).toBeNull();
+    expect(barterLegSeconds(DOLLHOUSE_SCALE, placeless.distanceM)).toBeCloseTo(
+      FOOD_DAY_SEC * transactionDayFrac({ kind: "shipment-leg" }), 9,
+    );
+    expect(BARTER_LEG_DAY_FRAC).toBe(transactionDayFrac({ kind: "shipment-leg" }));
   });
 });

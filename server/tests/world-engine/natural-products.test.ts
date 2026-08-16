@@ -25,7 +25,7 @@ import {
   sourcesForGood,
   takeUnitsOf,
 } from "@shared/world-engine/products.js";
-import { FRUIT_TREES } from "@shared/world-engine/creatures/species.js";
+import { FRUIT_TREES, getSpecies } from "@shared/world-engine/creatures/species.js";
 import { FOOD_KINDS } from "@shared/world-engine/kernel/town/goods-kinds.js";
 import { SITE_MATERIAL_GLYPHS } from "@shared/world-engine/interaction/town/founding.js";
 
@@ -157,7 +157,8 @@ describe("goods seam — sourcesForGood", () => {
   it("food's living plant sources are the orchard, and kill-fed animals stay out of the herd query", () => {
     expect(
       sourcesForGood("food", { kind: "plant", method: "harvest" }).map((s) => s.species),
-    ).toEqual(["apple_tree", "banana_plant", "grape_vine"]);
+      // 🥕 …and the first VEGETABLE (food-scale-round E-a), appended last.
+    ).toEqual(["apple_tree", "banana_plant", "grape_vine", "carrot_plant"]);
     // Meat (a kill product) feeds food, but a HARVEST query never puts a
     // herd of it beside the farm — kill yields come from features/hunting.
     expect(sourcesForGood("food", { kind: "animal", method: "harvest" })).toEqual([]);
@@ -170,8 +171,13 @@ describe("goods seam — sourcesForGood", () => {
 
 describe("derived vocabularies — the registry IS the source of truth", () => {
   it("FOOD_KINDS = the orchard plants' harvest yields, order pinned (likes hash by index)", () => {
-    expect(foodGlyphs()).toEqual(["apple", "banana", "grape"]);
-    expect(FOOD_KINDS).toEqual(["apple", "banana", "grape"]);
+    // 🥕 CARROT IS APPENDED, NEVER INSERTED (food-scale-round E-a): the food
+    // vocabulary was three fruits and no vegetable, so "farmland" had no crop
+    // behind it. Residents' and pets' favourite foods hash BY INDEX into this
+    // list, so a new food species may only ever land at the END — apple,
+    // banana and grape keep index 0/1/2 and nobody's likes re-roll.
+    expect(foodGlyphs()).toEqual(["apple", "banana", "grape", "carrot"]);
+    expect(FOOD_KINDS).toEqual(["apple", "banana", "grape", "carrot"]);
   });
 
   it("SITE_MATERIAL_GLYPHS = the building CHAIN's glyphs (phase 3)", () => {
@@ -180,11 +186,35 @@ describe("derived vocabularies — the registry IS the source of truth", () => {
     expect(SITE_MATERIAL_GLYPHS).toEqual(["wood", "block", "stone"]);
   });
 
+  it("every catalogue species has a real body in the species registry", () => {
+    // The seam this pins: the CATALOGUE names a species, the species registry
+    // builds its blueprint from a worked example at module load — but nothing
+    // joined the two, so a catalogue row could name a species that does not
+    // exist and every consumer of FRUIT_TREES/orchardPlants() would receive an
+    // id that getSpecies() cannot resolve (found live 2026-08-16: carrot_plant
+    // shipped with only the `carrot` FRUIT body, no plant).
+    // Minerals are exempt: a rock is a standing FEATURE (`feature:` on the
+    // row), never a grown body, so it has no registry entry by design.
+    const grown = naturalSources().filter((src) => src.kind !== "mineral");
+    const missing = grown.filter((src) => !getSpecies(src.species)).map((src) => src.species);
+    expect(missing).toEqual([]);
+    for (const src of grown) {
+      // Catalogue "animal" is registry "creature"; plants match by name.
+      const want = src.kind === "animal" ? "creature" : src.kind;
+      expect(getSpecies(src.species)!.kind).toBe(want);
+    }
+  });
+
   it("FRUIT_TREES = the orchard mapping", () => {
+    // The mapping is DERIVED from the catalogue's food-harvest plants, so the
+    // carrot row joins it automatically (a "fruit tree" that is neither — the
+    // name is older than the vocabulary; what the mapping means is "the plant
+    // that yields this food glyph").
     expect(orchardPlants()).toEqual([
       { fruit: "apple", species: "apple_tree" },
       { fruit: "banana", species: "banana_plant" },
       { fruit: "grape", species: "grape_vine" },
+      { fruit: "carrot", species: "carrot_plant" },
     ]);
     expect([...FRUIT_TREES]).toEqual(orchardPlants());
   });

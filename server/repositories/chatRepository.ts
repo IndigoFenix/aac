@@ -18,7 +18,7 @@ import {
   type ChatMessage,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, ne, and, isNull, desc, asc, or, sql, gte, lte, lt, count } from "drizzle-orm";
+import { eq, ne, and, isNull, desc, asc, or, sql, gte, lte, lt, count, ilike } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -31,6 +31,21 @@ export interface ChatAdminSessionFilters {
   userId?: string;
   startDate?: string;
   endDate?: string;
+  limit: number;
+  offset: number;
+}
+
+export interface AACAdminSessionFilters {
+  studentId?: string;
+  /** Free-text search against student name (ILIKE) or exact student ID. */
+  student?: string;
+  startDate?: string;
+  endDate?: string;
+  minCost?: number;
+  maxCost?: number;
+  minDurationMin?: number;
+  maxDurationMin?: number;
+  minImportance?: number;
   limit: number;
   offset: number;
 }
@@ -466,10 +481,20 @@ export class ChatRepository {
     return result?.total ?? 0;
   }
 
-  async getAACSessionsAdmin(opts: ChatAdminSessionFilters & { studentId?: string }) {
+  /** Shared WHERE-clause builder for the AAC admin session list/count, so the
+   *  two queries can never drift out of sync on filter semantics. */
+  buildAACSessionsAdminConditions(opts: AACAdminSessionFilters) {
     const conditions = [isNull(chatSessions.deletedAt), eq(chatSessions.chatMode, "aac")];
     if (opts.studentId) {
       conditions.push(eq(chatSessions.studentId, opts.studentId));
+    }
+    if (opts.student) {
+      conditions.push(
+        or(
+          ilike(students.name, `%${opts.student}%`),
+          eq(chatSessions.studentId, opts.student),
+        )!,
+      );
     }
     if (opts.startDate) {
       conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
@@ -479,6 +504,32 @@ export class ChatRepository {
       end.setDate(end.getDate() + 1);
       conditions.push(lte(chatSessions.started, end));
     }
+    if (opts.minCost != null) {
+      conditions.push(gte(chatSessions.creditsUsed, opts.minCost));
+    }
+    if (opts.maxCost != null) {
+      conditions.push(lte(chatSessions.creditsUsed, opts.maxCost));
+    }
+    // Duration = lastUpdate - started, in minutes (matches the client's
+    // active-session duration fallback, which also uses lastUpdate/lastActivity).
+    if (opts.minDurationMin != null) {
+      conditions.push(
+        sql`extract(epoch from (${chatSessions.lastUpdate} - ${chatSessions.started})) / 60 >= ${opts.minDurationMin}`,
+      );
+    }
+    if (opts.maxDurationMin != null) {
+      conditions.push(
+        sql`extract(epoch from (${chatSessions.lastUpdate} - ${chatSessions.started})) / 60 <= ${opts.maxDurationMin}`,
+      );
+    }
+    if (opts.minImportance != null) {
+      conditions.push(gte(chatSessions.importance, opts.minImportance));
+    }
+    return conditions;
+  }
+
+  async getAACSessionsAdmin(opts: AACAdminSessionFilters) {
+    const conditions = this.buildAACSessionsAdminConditions(opts);
 
     return await db
       .select({
@@ -493,6 +544,7 @@ export class ChatRepository {
         status: chatSessions.status,
         started: chatSessions.started,
         lastUpdate: chatSessions.lastUpdate,
+        importance: chatSessions.importance,
       })
       .from(chatSessions)
       .leftJoin(users, eq(chatSessions.userId, users.id))
@@ -503,23 +555,13 @@ export class ChatRepository {
       .offset(opts.offset);
   }
 
-  async getAACSessionsAdminCount(opts: ChatAdminSessionFilters & { studentId?: string }): Promise<number> {
-    const conditions = [isNull(chatSessions.deletedAt), eq(chatSessions.chatMode, "aac")];
-    if (opts.studentId) {
-      conditions.push(eq(chatSessions.studentId, opts.studentId));
-    }
-    if (opts.startDate) {
-      conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
-    }
-    if (opts.endDate) {
-      const end = new Date(opts.endDate);
-      end.setDate(end.getDate() + 1);
-      conditions.push(lte(chatSessions.started, end));
-    }
+  async getAACSessionsAdminCount(opts: AACAdminSessionFilters): Promise<number> {
+    const conditions = this.buildAACSessionsAdminConditions(opts);
 
     const [result] = await db
       .select({ total: count() })
       .from(chatSessions)
+      .leftJoin(students, eq(chatSessions.studentId, students.id))
       .where(and(...conditions));
     return result?.total ?? 0;
   }

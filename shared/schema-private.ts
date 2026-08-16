@@ -28,8 +28,10 @@ export const verbalAbilityEnum = pgEnum("verbal_ability", [
 
 export const instituteTypeEnum = pgEnum("institute_type", ["school", "clinic", "family"]);
 
-// IEP/TALA specific enums
-export const programFrameworkEnum = pgEnum("program_framework", ["tala", "us_iep"]);
+// Program framework enums. "personal" = learner outside any school system —
+// a real program with no statutory scaffolding. Capability flags per framework
+// live in shared/program-framework.ts; keep the two lists in step.
+export const programFrameworkEnum = pgEnum("program_framework", ["tala", "us_iep", "personal"]);
 export const programStatusEnum = pgEnum("program_status", ["draft", "active", "archived"]);
 export const profileDomainTypeEnum = pgEnum("profile_domain_type", [
   "cognitive_academic",
@@ -462,7 +464,7 @@ export const students = pgTable("students", {
   birthDate: date("birth_date"), // Date of birth
 
   // Educational framework
-  framework: programFrameworkEnum("framework").default("tala"), // 'tala' | 'us_iep'
+  framework: programFrameworkEnum("framework").default("tala"), // see shared/program-framework.ts
   country: text("country").default("IL"), // 'IL', 'US', etc.
   primaryLanguage: text("primary_language").default("he"), // Primary language code
   additionalLanguages: text("additional_languages").array(), // Additional language codes
@@ -1109,7 +1111,7 @@ export const programs = pgTable("programs", {
   instituteId: varchar("institute_id"),
 
   // Framework and identification
-  framework: programFrameworkEnum("framework").notNull(), // 'tala' | 'us_iep'
+  framework: programFrameworkEnum("framework").notNull(), // see shared/program-framework.ts
   title: text("title"), // Optional custom title
 
   // Status and timeline
@@ -3359,7 +3361,10 @@ export type ShareInviteBundle = {
 };
 
 // Domain types
-export type ProgramFramework = 'tala' | 'us_iep';
+// ProgramFramework is owned by shared/program-framework.ts (which also carries
+// the per-framework capability flags); re-exported here so `@shared/schema`
+// consumers keep working.
+export type { ProgramFramework } from './program-framework';
 export type ProgramStatus = 'draft' | 'active' | 'archived';
 export type ProfileDomainType = 'cognitive_academic' | 'communication_language' | 'social_emotional_behavioral' | 'motor_sensory' | 'life_skills_preparation' | 'other';
 export type AssessmentSourceType = 'standardized_test' | 'structured_observation' | 'parent_questionnaire' | 'teacher_input' | 'curriculum_based' | 'behavioral_records';

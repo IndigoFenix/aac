@@ -19,6 +19,7 @@ export interface AACSessionSummary {
   lastActivity: string;
   ended: string | null;
   source?: "dual-agent" | "chat";
+  importance: number;
 }
 
 export interface ChatSessionSummary {
@@ -63,9 +64,17 @@ export interface SessionFilters {
   limit: number;
   offset: number;
   studentId?: string;
+  /** Free-text search against student name or exact student ID (AAC tab only). */
+  student?: string;
   userId?: string;
   startDate?: string;
   endDate?: string;
+  /** AAC tab only. */
+  minCost?: number;
+  maxCost?: number;
+  minDurationMin?: number;
+  maxDurationMin?: number;
+  minImportance?: number;
 }
 
 interface PaginatedResponse<T> {
@@ -99,7 +108,15 @@ function buildParams(filters: SessionFilters, extra?: Record<string, string | un
 }
 
 export function useAACSessionsAdmin(filters: SessionFilters) {
-  const qs = buildParams(filters, { studentId: filters.studentId });
+  const qs = buildParams(filters, {
+    studentId: filters.studentId,
+    student: filters.student,
+    minCost: filters.minCost != null ? String(filters.minCost) : undefined,
+    maxCost: filters.maxCost != null ? String(filters.maxCost) : undefined,
+    minDurationMin: filters.minDurationMin != null ? String(filters.minDurationMin) : undefined,
+    maxDurationMin: filters.maxDurationMin != null ? String(filters.maxDurationMin) : undefined,
+    minImportance: filters.minImportance != null ? String(filters.minImportance) : undefined,
+  });
   return useQuery<PaginatedResponse<AACSessionSummary>>({
     queryKey: ["/api/admin/sessions/aac", qs],
     queryFn: async () => {

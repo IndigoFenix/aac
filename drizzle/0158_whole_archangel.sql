@@ -1,0 +1,1 @@
+ALTER TYPE "public"."program_framework" ADD VALUE 'personal';

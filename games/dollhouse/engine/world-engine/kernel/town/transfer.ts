@@ -39,6 +39,10 @@ import { journeyTimeS, priceOf } from "./pricing.js";
 import { costTotalS } from "./scope-shape.js";
 import { ERRAND_WALK_MPS } from "../../scale.js";
 import { countUnits, stackHead } from "./goods-kinds.js";
+// ⚖️ F-④ (fold-round.md) — TYPE-ONLY: `fold.ts` imports `scope.ts` which
+// imports THIS file, so a value import here would close a runtime cycle. The
+// fold seat needs no values from us and we need none from it.
+import type { FoldCommitment, FoldScope } from "./fold.js";
 
 // ---------------------------------------------------------------------------
 // Stock endpoints — ONE shape over every stack-map holder
@@ -512,6 +516,56 @@ export function createTransferLedger(json?: SerializedTransferLedger): TransferL
       agreements: rows.map((a) => JSON.parse(JSON.stringify(a)) as TransferAgreement),
     }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// ⚖️ F-④ — THE LEGS BOOK AT THE FOLD (fold-round.md stage F4)
+// ---------------------------------------------------------------------------
+
+/**
+ * ⚖️ F-④ GATHER — every IN-FLIGHT transfer touching `scope`, as
+ * `FoldCommitment`s. READ-ONLY (the ledger is not touched); the fold turns
+ * these into a REFUSAL, because unlike a reservation a transfer is not
+ * bookkeeping — a `moving` row is goods in a body's hands on a road, and a
+ * `pending` scheduled row is a leg the clock will run against endpoints that
+ * must still be there. Neither survives being restated as a number on a
+ * record, so v1 declines the fold and names them.
+ *
+ * IN FLIGHT = `active()`: pending or moving, in creation order. Terminal rows
+ * (done/failed) are history and block nothing. Barter rows (⑤) are ordinary
+ * agreements here — they are in flight exactly as any other row is.
+ *
+ * TOUCHING = either ENDPOINT is one of the scope's ids (the usual case: the
+ * scope is the `from` a shipment draws from or the `to` it lands in), or the
+ * scope IS the executor or the issuer (a body scope folding out from under
+ * its own haul). `holder` is the executor where one has taken the job, else
+ * the issuer who asked; `against` is whichever of the scope's ids matched, so
+ * the refusal names the seam it blocked rather than an arbitrary end.
+ */
+export function gatherTransferCommitments(
+  ledger: TransferLedger,
+  scope: FoldScope,
+): FoldCommitment[] {
+  const ids = new Set<string>([scope.id, ...scope.endpoints]);
+  const out: FoldCommitment[] = [];
+  for (const a of ledger.active()) {
+    const holder = a.executor ?? a.issuer;
+    const against =
+      ids.has(a.from) ? a.from
+      : ids.has(a.to) ? a.to
+      : a.executor !== undefined && ids.has(a.executor) ? a.executor
+      : ids.has(a.issuer) ? a.issuer
+      : null;
+    if (against === null) continue;
+    out.push({
+      book: "transfer",
+      id: a.id,
+      holder,
+      against,
+      payload: { status: a.status, mode: a.mode },
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

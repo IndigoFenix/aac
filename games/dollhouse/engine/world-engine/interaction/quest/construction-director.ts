@@ -86,6 +86,17 @@ import {
 } from "@shared/world-engine/kernel/town/placement.js";
 import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
 import {
+  registerContainer,
+  setContainerStock,
+  ensureContainerStock,
+  stockedEntries,
+  stockedIds,
+  hasStock,
+  deleteContainerRecord,
+  isLooseProp,
+  looseEntries,
+} from "@shared/world-engine/kernel/town/containers.js";
+import {
   blueprintDelta,
   blueprintSlots,
   hasDrift,
@@ -668,6 +679,25 @@ export const ORDER_PILE_EP = "orderpile:";
  *  stands it up in the building's program room. Session-lived stacks (the
  *  agreement itself persists; a reload's orphan rescue re-runs the leg). */
 export const BFURN_EP = "bfurn:";
+/** 🚨 IS THIS ID A PILE WHOSE STACK LIVES ON THE ORDER BOOK rather than in
+ *  `containerRecords`? Four spellings, one law:
+ *   • `orderpile:`/`sitepile:`/`annexpile:` — the ORDER ROW's own live `pile`
+ *     (quest-host `pileOrderRow`/`pileEndpointOf`, which own the per-spelling
+ *     eligibility and the annex `legacyOrd`-first fallback);
+ *   • `bfurn:` — the shell's furniture-delivery pile on TownDeltas
+ *     (`shellFurnPiles`, quest-host's `buildingFurnPile` branch).
+ *  Every reader resolves all four through `stockEndpointOf`, so any WRITER
+ *  that reaches for `containerRecords` under one of them is filling a store
+ *  nobody will ever read, and the goods it debited are destroyed — see
+ *  frontier-conservation-diagnosis.md §4 and §8. */
+export function isPileEndpointId(id: string): boolean {
+  return (
+    id.startsWith(ORDER_PILE_EP) ||
+    id.startsWith(SITE_PILE_EP) ||
+    id.startsWith(ANNEX_PILE_EP) ||
+    id.startsWith(BFURN_EP)
+  );
+}
 /** Annex labor, RELATIVE like StructureSpec.buildDays (house = 1) — a room
  *  is half a house's raising. */
 export const ANNEX_BUILD_DAYS = 0.5;
@@ -852,6 +882,48 @@ export const PROSPERITY_DEMAND_MET = 0.05;
  *  of on principle. */
 export const HOUSEHOLD_KEEP_ONE = (): number => 1;
 
+/**
+ * ⚖️ IS THIS A DERIVED-STOCK OBJECT — a market shelf (`marketStore`) or a
+ * producer's gate pile (`produceBox`)? Both stand as staged world objects
+ * with a `containerRecords` row (so they anchor, get walked to, get
+ * glyphed) but deliberately carry NO `.stock` map of their own — the
+ * quest-host seeding comment says so at each ("NO containerStock — a
+ * market shelf's stack is DERIVED (marketStore), never stored"; "a
+ * producer pile's stack is DERIVED too"). The number a shopper sees is
+ * computed live from the town's economy (`marketStoreUnits`/
+ * `produceBoxUnits`) each time it's asked, never held as a stack anyone
+ * could put into or a `stockedEntries` sweep could find. Nothing may PUT
+ * into one, offer it as a transfer/craft SOURCE, or get a `StockEndpoint`
+ * for one directly.
+ *
+ * This exact `session.marketStore.has(x) || session.produceBox.has(x)` test
+ * was copy-pasted at eight call sites across quest-host.ts and this file.
+ * SIX of them (quest-host's `stowCarriedIn`/`putSelectedIn`/`stockEndpointOf`/
+ * `transferSourcesOf`; this file's `craftMaterialSources`/`siteMaterialSources`)
+ * ALSO reject `x.startsWith("trade:")`, a "trade <good>" civic-board OPTION
+ * id (quest-host's build/area/trade board), never a `containerRecords` entry
+ * at all. The other two (`craftSpotOf`, `refineDepositId`) never see a
+ * `trade:` id in the first place — one walks a building's furniture, the
+ * other a `stockedEntries`/`stockedIds` sweep, and neither iteration source
+ * can yield a bare UI-option id. So the `trade:` leg is a different
+ * vocabulary (UI affordance ids, not economy objects), not a fact this
+ * predicate could honestly fold in — it stays written out at the six call
+ * sites whose id space can actually see one.
+ *
+ * RELATION TO THE GRAMMAR (scope.ts): every id these two maps hold is
+ * seeded already shaped `store:<good>:<idx>` / `produce:<good>:<work>` —
+ * exactly `SHELF_PREFIX`/`PRODUCE_PREFIX`, so `parseScopeId` would call them
+ * `shelf`/`produce` ScopeRefs, and `scopeReceivesGoods` would say they DO
+ * receive goods (they are shelving, not a `wild` source that only yields).
+ * That is a fact about what KIND of place these are; this predicate asks a
+ * narrower, ORTHOGONAL question — not "can this be stocked" but "is this
+ * session's registry, right now, saying the stock is computed rather than
+ * stored." The grammar says a shelf may hold goods; the object registry
+ * says these particular shelves don't, yet.
+ */
+export function isDerivedStoreObject(session: QuestSession, objId: string): boolean {
+  return session.marketStore.has(objId) || session.produceBox.has(objId);
+}
 
 /** The host-service seam: every quest-host closure the verbatim-moved
  *  bodies still reach for. Function entries destructure under their host
@@ -1095,7 +1167,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // ── ③ BREADTH — spare stacks, not stacks ─────────────────────────────
     let stacks = 0;
     for (const objId of houseContainerKeys(session, houseIndex)) {
-      const stock = session.containerStock.get(objId);
+      const stock = session.containerRecords.get(objId)?.stock;
       if (!stock) continue;
       const free = unreservedStock(stock, session.reservations, objId);
       stacks += Object.values(spareStock(free, HOUSEHOLD_KEEP_ONE)).filter((n) => n > 0).length;
@@ -1111,7 +1183,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const head = stackHead(good);
     let n = 0;
     for (const objId of houseContainerKeys(session, houseIndex)) {
-      const stock = session.containerStock.get(objId);
+      const stock = session.containerRecords.get(objId)?.stock;
       if (!stock) continue;
       for (const [g, q] of Object.entries(stock)) {
         if (q > 0 && stackHead(g) === head) n += q;
@@ -1291,10 +1363,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // in a box (a fresh workshop's empty woodstore has no row yet, and
       // that is precisely the box the bench wants).
       for (const p of buildingFurnitureOf(session, key)) {
-        if (!p.openable && !session.containerStock.has(p.id)) continue;
+        if (!p.openable && session.containerRecords.get(p.id)?.stock === undefined) continue;
         // Economy-driven stacks are never a workbench's bin (the same
         // exclusion craftMaterialSources draws).
-        if (session.marketStore.has(p.id) || session.produceBox.has(p.id)) continue;
+        if (isDerivedStoreObject(session, p.id)) continue;
         const same = !!benchRoom && inRect(benchRoom, p.x, p.y);
         const d = Math.hypot(p.x - bench.x, p.y - bench.y);
         const better =
@@ -1537,10 +1609,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const member = `resident_${hi}_0`;
     const reach = civicRecruitRadius(session);
     const sources: TransferSource[] = [];
-    for (const [boxId, stack] of session.containerStock) {
+    for (const [boxId, boxRec] of stockedEntries(session)) {
+      const stack = boxRec.stock!;
       if (boxId === excludeId) continue;
-      if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
-      if (!mayUse(member, hi, session.containerOwner.get(boxId))) continue;
+      if (isDerivedStoreObject(session, boxId) || boxId.startsWith("trade:")) continue;
+      if (!mayUse(member, hi, boxRec.owner)) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
       const communal = isCivicStockDest(session, boxId);
@@ -1630,8 +1703,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // never read a craft spot's gathered wood as free supply, not even for
     // one tick).
     const spotHolder = `craftspot:${hi}`;
-    const spot = session.containerStock.get(job.spotId) ?? {};
-    session.containerStock.set(job.spotId, spot);
+    const spot = ensureContainerStock(session, job.spotId);
     const consumes = job.consumes;
     const member = `resident_${hi}_0`;
     // Units this job has already banked ON the spot (its own reservations).
@@ -1854,7 +1926,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           } else if (twinMayRun) {
             // THE ABSTRACT TWIN: the hidden house draws the same units from
             // the same stacks, instantly — conservation and coincidence.
-            const src = session.containerStock.get(d.endpoint);
+            const src = session.containerRecords.get(d.endpoint)?.stock;
             if (src) {
               const taken = takeStock(src, d.glyph, d.take);
               for (const [g, c] of Object.entries(taken)) {
@@ -2167,7 +2239,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (!house) continue;
       let stacks = 0;
       for (const objId of houseContainerKeys(session, hi)) {
-        const stock = session.containerStock.get(objId);
+        const stock = session.containerRecords.get(objId)?.stock;
         if (!stock) continue;
         for (const g of Object.keys(stock)) {
           if (furnitureKindOfGlyph(g)) stacks += stock[g] ?? 0;
@@ -2229,10 +2301,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     pushPocket(session);
     // …and so do material PILES already dropped at the spot (loose props
     // within arm's-reach radius of the founding point).
-    for (const [objId, rec] of [...session.smallProps]) {
+    for (const [objId, rec] of [...looseEntries(session)]) {
       const obj = world.state.objects[objId];
       if (!obj || Math.hypot(obj.x - at.x, obj.y - at.y) > 8) continue;
-      const stack: Record<string, number> = { [rec.glyph]: 1 };
+      const stack: Record<string, number> = { [rec.glyph!]: 1 };
       const moved = depositSiteStock(site, stack);
       if (Object.keys(moved).length) removeLooseProp(session, objId);
     }
@@ -2252,9 +2324,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       iconRef: "🏗️",
       glyph: "wood",
     });
-    session.containers.set(SITE_STOCK_ID, "in");
-    session.containerStock.set(SITE_STOCK_ID, site.stock);
-    session.containerOwner.set(SITE_STOCK_ID, null); // communal — the founders'
+    registerContainer(session, SITE_STOCK_ID, "in", null, site.stock); // communal — the founders'
     session.foundedSite = site;
     // The session's ledger/shelves become the SITE's (deltas-owned) — a
     // standing route agreed at the frontier serializes with the site and
@@ -2292,9 +2362,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     if (Math.hypot(pos.x - site.at.x, pos.y - site.at.y) <= siteAbandonRadius(side)) return;
     if (!siteIsEmpty(site)) return;
     const spill = abandonSite(site);
-    session.containers.delete(SITE_STOCK_ID);
-    session.containerStock.delete(SITE_STOCK_ID);
-    session.containerOwner.delete(SITE_STOCK_ID);
+    deleteContainerRecord(session, SITE_STOCK_ID);
     world.removeObject(SITE_STOCK_ID);
     // Spill the materials back where they were gathered to (bounded — a
     // wilderness stock is small; anything past the cap merges into the last pile).
@@ -3088,13 +3156,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   ): TransferSource[] {
     const issuerHouse = familyOf(session)?.house ?? null;
     const sources: TransferSource[] = [];
-    for (const [boxId, stack] of session.containerStock) {
-      if (session.marketStore.has(boxId) || session.produceBox.has(boxId) || boxId.startsWith("trade:")) continue;
-      const owner = session.containerOwner.get(boxId);
+    for (const [boxId, boxRec] of stockedEntries(session)) {
+      if (isDerivedStoreObject(session, boxId) || boxId.startsWith("trade:")) continue;
+      const owner = boxRec.owner;
       if (!mayUse(issuer, issuerHouse, owner)) continue;
       const at = containerAnchor(session, boxId);
       if (!at) continue;
-      sources.push({ id: boxId, stack, d: sourceDistanceM(session, destAt, at) });
+      sources.push({ id: boxId, stack: boxRec.stock!, d: sourceDistanceM(session, destAt, at) });
     }
     return sources;
   }
@@ -3197,7 +3265,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     session: QuestSession,
     sources: readonly TransferSource[],
   ): TransferSource[] {
-    return sources.filter((s) => mayUseByScopes(CIVIC_SCOPES, session.containerOwner.get(s.id)));
+    return sources.filter((s) => mayUseByScopes(CIVIC_SCOPES, session.containerRecords.get(s.id)?.owner));
   }
 
   /**
@@ -3333,11 +3401,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // A prop is a WORLD OBJECT: no world (a pure-arithmetic host, a fixture)
     // means no floor for anything to be lying on, and the answer is zero.
     const objects = world?.state.objects;
-    if (!objects || !session.smallProps) return 0;
+    if (!objects) return 0; // no world (a pure-arithmetic host): nothing lying on a floor
     const head = stackHead(glyph);
     let n = 0;
-    for (const [objId, rec] of session.smallProps) {
-      if (stackHead(rec.glyph) !== head) continue;
+    for (const [objId, rec] of looseEntries(session)) {
+      if (stackHead(rec.glyph!) !== head) continue;
       const o = objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue; // in hand / already put away
       n++;
@@ -3541,6 +3609,274 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return want;
   }
 
+  // ── ⚖️ ① PREEMPT-TO-FEASIBILITY — THE RELEASE PATH FOR A STARVED PILE ────
+  //
+  // 🚨 WHAT THIS FIXES: a HOLD-AND-WAIT RESOURCE DEADLOCK
+  // (frontier-conservation-diagnosis.md, RECURRENCE CHECK (d)). Two refine
+  // rows milling at the same yard spot asked for ≈132 and ≈105 wood in a world
+  // that contains 144. Every unit that landed was spoken for at the instant it
+  // landed (`onTransferLanded` — *"spoken for from the instant it exists
+  // there"*), `commitRefineOrder` returns early while `stagingMissing` is
+  // non-empty, and NOTHING anywhere gave a pile a reason to let go: no
+  // timeout, no preemption, no yield. Conservation was EXACT — wood 144 at
+  // t=0 and 144 at the end, nothing destroyed — and both heaps simply froze.
+  // The house site sat at `0% worked` for 1 237 sim-s while the 20 s gate
+  // re-announced the same mill 62 times. THE PERMANENCE, not the shortage, is
+  // the defect: a slow town is honest, a frozen one is a bug.
+  //
+  // THE RULE, and only this rule. An order whose shortfall CANNOT BE FETCHED
+  // — the "and there is none to fetch" condition the two callers below have
+  // already computed, which is the only place this runs — yields raws to a
+  // sibling IF AND ONLY IF THAT MAKES THE SIBLING FEASIBLE: the recipient's
+  // WHOLE remaining shortfall, every head of it, covered out of what this
+  // donor is holding. A release that would merely move a shortage around is
+  // refused, and the donor KEEPS HOLDING — which is the correct behaviour,
+  // because "none to fetch" is a statement about today: the wild regrows, the
+  // condition clears on its own and ordinary filling resumes. Only the
+  // pointless shuffle is forbidden.
+  //
+  // 🚨 NO OSCILLATION, AND FEASIBILITY IS THE WHOLE ARGUMENT. Released goods
+  // cannot ping-pong because a recipient made feasible STAGES on the very next
+  // sweep — `stagingMissing` is empty, so the ladder moves it to labor — and a
+  // staged row is not in the arbitration pool at all (`pileAccountOf` returns
+  // null for it: its raws are committed work with a mill running on them, not
+  // a hoard). Goods therefore leave the pool the moment they move. Between the
+  // release and that staging the recipient cannot donate either: its shortfall
+  // is zero, so the starved arm this lives in never runs for it. A release is
+  // a one-way door by construction.
+  //
+  // ⚖️ AND THE RECIPIENT IS THE ONE NEAREST FINISHING (progress descending,
+  // then lowest ord — deterministic, so the same standoff resolves the same
+  // way every run). NOT a direction constraint: a donor may perfectly well be
+  // further along than the sibling it feeds, and MUST be able to be. The
+  // measured arc is exactly that case — a 132-wood row sat on 114 in a world
+  // whose remaining wood could never reach 132, while two 34- and 50-wood rows
+  // starved beside it. Forbidding the "downhill" release would have re-frozen
+  // that wood under a new name; what makes it safe is not the direction, it is
+  // that the goods land in a mill that immediately starts running.
+  //
+  // ⚖️ NOT A TELEPORT, AND NOT A NEW LIFECYCLE. An OBSERVED release posts a
+  // real pile→pile haul a real body walks — the same agreement, the same
+  // `agrHolder` reservation, the same pooled task, the same landing law as
+  // every other haul (`pileShortfall` counts it against the recipient's bill
+  // the moment it is posted, so nothing is promised twice). An UNOBSERVED one
+  // moves the units as ledger arithmetic, exactly as `twinStagePile` already
+  // draws its own raws. No pile is ever made a resolvable SOURCE, so the
+  // engine's "a source yields but never receives" law (`scopeReceivesGoods`)
+  // is untouched: this is one named order handing another named order its own
+  // bill, not a shelf anybody may raid.
+
+  /** A gathering order's PILE ACCOUNT — the two maps a release arbitrates
+   *  over. Null for a row with nothing to arbitrate: a demolition (no pile at
+   *  all), a costless legacy row, or one already STAGED — a staged pile's
+   *  raws are committed work with a mill running on them, not a hoard. */
+  type PileAccount = { ord: number; costs: Record<string, number>; pile: Record<string, number> };
+  /** `forWrite` MATERIALIZES a missing `pile` map; the default READ path must
+   *  not, because a probe that mutates the rows it measures is a probe that
+   *  changes the run (a found row with no pile serializes differently once one
+   *  is hung on it). Arbitration reads; only the credit below writes. */
+  function pileAccountOf(o: ConstructionOrder, forWrite = false): PileAccount | null {
+    if (o.kind === "demolish") return null;
+    if (o.laborStartDay !== undefined) return null;
+    if (o.kind === "found" && o.completed) return null;
+    const costs = o.costs;
+    if (!costs || !Object.keys(costs).length) return null;
+    const row = o as { pile?: Record<string, number> };
+    if (forWrite) row.pile ??= {};
+    return { ord: o.ord, costs, pile: row.pile ?? {} };
+  }
+
+  /** How far along a pile is, in UNITS of its own bill (0..1) — the ranking
+   *  key of the release: goods flow toward the order nearest finishing. */
+  function pileProgress(acct: PileAccount): number {
+    let total = 0;
+    let filled = 0;
+    for (const [g, n] of Object.entries(acct.costs)) {
+      const want = Math.max(0, n);
+      total += want;
+      filled += Math.min(want, stackUnits(acct.pile, stackHead(g)));
+    }
+    return total > 0 ? filled / total : 1;
+  }
+
+  /** Is `a` a BETTER recipient than `b`? Progress descending, then ord
+   *  ascending — a strict total order, so the pick is deterministic and the
+   *  same standoff resolves the same way in every run. */
+  function nearerDone(a: { p: number; ord: number }, b: { p: number; ord: number }): boolean {
+    const EPS = 1e-9;
+    return a.p > b.p + EPS || (Math.abs(a.p - b.p) <= EPS && a.ord < b.ord);
+  }
+
+  /**
+   * The starved pile `donorPileId` yields to the sibling it can FINISH, if
+   * there is one. Returns true when a release was made.
+   *
+   * `mode` follows the caller's own observation split: `"haul"` from the
+   * watched arm (a body walks it), `"ledger"` from the twin.
+   */
+  function releaseStarvedPile(
+    session: QuestSession,
+    donorPileId: string,
+    issuer: string,
+    mode: "haul" | "ledger",
+  ): boolean {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas || !donorPileId.startsWith(ORDER_PILE_EP)) return false;
+    const donorOrd = Number(donorPileId.slice(ORDER_PILE_EP.length));
+    if (!Number.isInteger(donorOrd)) return false;
+    const rows = deltas.orders();
+    const donorRow = rows.find((o) => o.ord === donorOrd);
+    const donor = donorRow ? pileAccountOf(donorRow) : null;
+    if (!donor) return false;
+    // ONE RELEASE AT A TIME. A donation already walking is already counted
+    // against the recipient's bill (`pileShortfall` subtracts in-flight
+    // goods), so a second posted on the next 20 s gate would promise the same
+    // heap twice and strand the difference.
+    for (const a of session.transfers.all()) {
+      if ((a.status === "pending" || a.status === "moving") && a.from === donorPileId) return false;
+    }
+    let best: { acct: PileAccount; row: ConstructionOrder; gap: Record<string, number>; p: number } | null = null;
+    for (const o of rows) {
+      if (o.ord === donorOrd) continue;
+      const acct = pileAccountOf(o);
+      if (!acct) continue;
+      const gap = pileShortfall(session, {
+        pileId: orderPileId(acct.ord),
+        ...(o.kind === "found" ? { legacyPileId: sitePileId(acct.ord) } : {}),
+        missing: stagingMissing(acct),
+      });
+      if (!Object.keys(gap).length) continue; // already fed — nothing to make feasible
+      // FEASIBILITY, THE WHOLE OF IT: every head this sibling still misses,
+      // covered out of this donor's own heap. A release that leaves the
+      // recipient short has moved a shortage, not ended one.
+      if (!Object.entries(gap).every(([head, n]) => stackUnits(donor.pile, head) >= n)) continue;
+      const p = pileProgress(acct);
+      if (!best || nearerDone({ p, ord: acct.ord }, { p: best.p, ord: best.acct.ord })) {
+        best = { acct, row: o, gap, p };
+      }
+    }
+    if (!best) return false;
+    const toPileId = orderPileId(best.acct.ord);
+    const at = stockEndpointOf(session, toPileId)?.at;
+    if (!at) return false;
+    const bill = Object.entries(best.gap)
+      .map(([g, n]) => `${n} ${g}`)
+      .join(", ");
+    const word = pileHaulDestWord(session, best.row);
+    if (mode === "ledger") {
+      // NOW the recipient's map is written to, so now it is materialized.
+      const dst = pileAccountOf(best.row, true)?.pile;
+      if (!dst) return false;
+      for (const [head, n] of Object.entries(best.gap)) {
+        const taken = takeStock(donor.pile, head, n);
+        for (const [g, c] of Object.entries(taken)) {
+          dst[g] = (dst[g] ?? 0) + c;
+        }
+      }
+      // ⏸️ A PILE GAINED UNITS — the same wake the watched unload bumps, for
+      // the same reason (twin parity).
+      bumpStockEpoch(session);
+    } else {
+      const a = session.transfers.post({
+        from: donorPileId,
+        to: toPileId,
+        goods: { ...best.gap },
+        issuer,
+        mode: "haul",
+        now: session.taskClock,
+        sourceGlyph: `bring ${bill}`,
+      });
+      for (const [head, n] of Object.entries(best.gap)) {
+        session.reservations.reserve(agrHolder(a.id), donorPileId, head, n);
+      }
+      postPooledTask(
+        session,
+        { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: word } },
+        issuer,
+        { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
+        `bring ${bill}`,
+        goodsValueS(
+          Object.values(a.goods).reduce((s, n) => s + n, 0),
+          1,
+          townFillS(session.scale),
+          1,
+        ),
+      );
+    }
+    presenter.toast(`🔁 ${bill} goes to the ${word} — the other order cannot finish today`, "feedback");
+    return true;
+  }
+
+  /**
+   * ⚖️ A HAUL'S DESTINATION IS A PLACE, NEVER THE CARGO — `shellHaulDestWord`'s
+   * law (§4.1), one pipeline over and for the same user report.
+   *
+   * The `to` PlaceRef on a pooled TRANSFER goal is WORDING and nothing else
+   * (the haul runs off the agreement's endpoint); `goalIntentLine` phrases it
+   * as `carry <goods> to <place>`. The REFINE arm passed `stackHead(r.produces)`
+   * — a COMMODITY, literally `"block"` — so a porter walking wood to the mill
+   * announced *"I will carry the wood to the block"*, which is the line the
+   * user reported (diagnosis RECURRENCE CHECK (b)). It was the last caller in
+   * the file still naming a destination with a product head; every other arm
+   * already passes a structure glyph, a `ROOM_GLYPH` or `shellHaulDestWord`.
+   *
+   * ONE definition for all four order kinds, so the staging poster and the
+   * reload re-pool can never drift apart on it.
+   */
+  function pileHaulDestWord(session: QuestSession, o: ConstructionOrder | undefined): string {
+    if (!o) return "room";
+    if (o.kind === "found") {
+      return resolveStructure(structureCatalogOf(session), o.type)?.glyph ?? "yard";
+    }
+    if (o.kind === "refine") return refineMillWord(session, o);
+    if (o.kind === "annex" || o.kind === "interior") {
+      return ROOM_GLYPH[pendingRoomKindOf(o) as HouseRoom["kind"]] ?? "room";
+    }
+    return "room";
+  }
+
+  /** WHERE THE MILLING HAPPENS, as a word — `refineSpotOf`'s own three answers
+   *  read back as place words: a household's own bench (the HOUSE), the town's
+   *  standing station for that raw (its catalogue TYPE, a lexeme in every
+   *  locale — `shellHaulDestWord`'s argument), else the YARD crate, which is
+   *  literally where the benchless fallback puts the heap and what
+   *  `postSiteHauls` already calls it. */
+  function refineMillWord(session: QuestSession, r: RefineOrder): string {
+    if (houseOfOrderScope(r.scope) !== null) return "house";
+    const raws = rawsForRefined(stackHead(r.produces));
+    const rawGlyph = Object.keys(r.costs ?? {})[0];
+    const p = raws.find((q) => q.glyph === rawGlyph) ?? raws[0];
+    const workType = p?.refinesTo?.at ?? REFINE_WORK_DEFAULT;
+    return refineStationSpot(session, workType) ? workType : "yard";
+  }
+
+  /**
+   * 🚨 WHERE AND WHEN a live pile haul's carrier was last SEEN MOVING (the haul
+   * twin of `buildClaimSeenAt`): the sweep re-stamps it for as long as the body
+   * is really walking the trip, and a row that goes a whole CLAIM WINDOW
+   * without moving is retired — see the "a claim is not a carrier" note in the
+   * staging sweep. Session-lived and pruned as rows leave `pending`/`moving`,
+   * exactly like the bag claims.
+   */
+  const haulSeenWalking = new Map<string, { at: number; x: number; y: number }>();
+
+  /** How far a carrier must have moved between sweeps to count as WALKING.
+   *  Small enough that a body threading a doorway still reads as moving, big
+   *  enough that a standing idle's jitter does not. */
+  const HAUL_STEP_EPS_M = 0.25;
+
+  /** Is this haul's LOAD already on its carrier? A loaded row is never retired
+   *  for staleness: the goods are on the body, so the arrival and the body's
+   *  own banking own them from here — the same split the unobserved twin makes
+   *  (`twinResolveHauls` delivers a loaded row and only fails an unloaded one). */
+  function haulIsLoaded(session: QuestSession, a: TransferAgreement): boolean {
+    if (a.carried && Object.values(a.carried).some((n) => n > 0)) return true;
+    if (!a.executor) return false;
+    // Only the row's OWN heads count — a porter's lunch is not a delivery.
+    const held = bodyCarryView(bodyCarryOf(session, a.executor));
+    return Object.keys(a.goods).some((g) => stackUnits(held, g) > 0);
+  }
+
   /** RESOLVE the in-flight hauls of an UNOBSERVED pile (phase 2 step 3).
    *  An off-screen carrier is scenery — its body may not step at all — so
    *  a haul frozen mid-walk would block the twin forever (the shortfall
@@ -3585,7 +3921,27 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // per trip, unobserved exactly as it would in view (decision 9).
       const exCarry = bodyCarryOf(session, exec);
       const held = bodyCarryView(exCarry);
-      const dstStock = session.containerStock.get(a.to) ?? {};
+      // 🚨 ONE DOOR FOR THE DESTINATION — the same one every reader uses.
+      // A PILE id is not a container: `stockEndpointOf` dispatches
+      // `orderpile:`/`sitepile:`/`annexpile:` to the ORDER ROW's own live
+      // `pile` map (legacy spellings and the annex `legacyOrd`-first fallback
+      // included) and `bfurn:` to the shell's `shellFurnPiles` stack on
+      // TownDeltas, and the container fallback is unreachable for any id that
+      // parses as one of them. Crediting `containerRecords` under one wrote a
+      // SHADOW STORE read by nothing — not the audit, not `pileShortfall`,
+      // not `stagingMissing`, not `stepShellPrograms`' own `pile` read one
+      // line under its twin call — so an unobserved delivery destroyed its
+      // load and the site re-ordered it forever (the reported "carry the wood
+      // to the block" loop; frontier-conservation-diagnosis.md §4, §8). A pile
+      // whose row is gone (committed, abandoned, a shell key with no pending
+      // building) has no stack to land in at all: leave the row for the
+      // no-endpoint sweep below rather than pour the load into an account
+      // nobody reads.
+      const toPile = isPileEndpointId(a.to);
+      const dstStock = toPile
+        ? (stockEndpointOf(session, a.to)?.stack ?? null)
+        : (session.containerRecords.get(a.to)?.stock ?? {});
+      if (!dstStock) continue;
       const delivered: Record<string, number> = {};
       for (const [g, n] of Object.entries(a.carried ?? {})) {
         let give = Math.min(n, stackUnits(held, g));
@@ -3604,7 +3960,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         session.reservations.release(bagHolder(a.id));
         continue;
       }
-      session.containerStock.set(a.to, dstStock);
+      // A pile's map is the row's own and is already live — only a container
+      // record needs its store written back (byte-identical to before).
+      if (!toPile) setContainerStock(session, a.to, dstStock);
       // The seam's landing law, unobserved: reserved before "done".
       onTransferLanded(session, a.id, delivered);
       // ⏸️ TWIN PARITY: the watched unload bumps the stock epoch, so this one
@@ -3683,10 +4041,18 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       } else if (milling > 0) {
         presenter.toast(`🪚 milling ${milling} ${BLOCK_GLYPH} for the site`, "feedback");
       }
+      // ⚖️ ① THE RELEASE PATH — nothing reachable covers this bill and no
+      // chain was launched for it (`milling === 0` is ②'s spoken refusal:
+      // the mill itself was refused for want of raws), so what this pile is
+      // holding may be worth more to a sibling it can FINISH. Unobserved arm
+      // ⇒ ledger arithmetic, exactly like the draw below.
+      if (Object.keys(rest).length || milling === 0) {
+        releaseStarvedPile(session, opts.pileId, issuer, "ledger");
+      }
       return;
     }
     for (const d of draws) {
-      const src = session.containerStock.get(d.endpoint);
+      const src = session.containerRecords.get(d.endpoint)?.stock;
       if (!src) continue;
       const taken = takeStock(src, d.glyph, d.take);
       for (const [g, c] of Object.entries(taken)) {
@@ -3760,6 +4126,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         presenter.toast(`🪵 the site still needs ${bill} — and there is none to fetch`, "feedback");
       } else if (milling > 0) {
         presenter.toast(`🪚 milling ${milling} ${BLOCK_GLYPH} for the site`, "feedback");
+      }
+      // ⚖️ ① THE RELEASE PATH — see `releaseStarvedPile` (and the twin's copy
+      // of this gate). Watched arm, so a body walks the yield exactly as it
+      // walks every other haul.
+      if (Object.keys(rest).length || milling === 0) {
+        releaseStarvedPile(session, opts.pileId, issuer, "haul");
       }
       return;
     }
@@ -3962,7 +4334,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           w: wk.w,
           h: wk.h,
         };
-        for (const boxId of session.containerStock.keys()) {
+        for (const boxId of stockedIds(session)) {
           // ⚖️ A DELIVERY TARGET MUST RECEIVE (S&D S4). "A tree is not
           // shelving" used to be a scan of `session.wilderness.features` for
           // this id; it is a question about the ENDPOINT — a shelf receives, a
@@ -3970,8 +4342,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           // renderer at once (a standing oak, an embodied plant's body, a
           // grazing cow, an offloaded stand).
           if (!scopeIdReceivesGoods(boxId)) continue;
-          if (session.containerOwner.get(boxId) !== null && session.containerOwner.get(boxId) !== undefined) continue;
-          if (session.marketStore.has(boxId) || session.produceBox.has(boxId)) continue;
+          const boxOwner = session.containerRecords.get(boxId)?.owner;
+          if (boxOwner !== null && boxOwner !== undefined) continue;
+          if (isDerivedStoreObject(session, boxId)) continue;
           const at = containerAnchor(session, boxId);
           if (!at) continue;
           if (at.x >= rect.x && at.x <= rect.x + rect.w && at.y >= rect.y && at.y <= rect.y + rect.h) {
@@ -3979,10 +4352,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           }
         }
       }
-      return session.containerStock.has(TOWN_YARD_EP) ? TOWN_YARD_EP : null;
+      return hasStock(session, TOWN_YARD_EP) ? TOWN_YARD_EP : null;
     }
     if (session.foundedSite) {
-      return session.containerStock.has(SITE_STOCK_ID) ? SITE_STOCK_ID : null;
+      return hasStock(session, SITE_STOCK_ID) ? SITE_STOCK_ID : null;
     }
     return null;
   }
@@ -4103,9 +4476,34 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // A spare of zero posts NOTHING and stays quiet — the caller's `milling`
       // still counts the bill, so the bench says "milling N" rather than "there
       // is none to fetch" over a shelf that has some.
-      let count = n - open;
-      if (!spoken) count = Math.min(count, Math.floor(pick.free / Math.max(1, inPerOut)));
+      // ⚖️ ② …AND A SPOKEN BILL IS SIZED TO SUPPLY TOO (2026-08-15). The cap
+      // above used to be skipped outright for a spoken order — `if (!spoken)`
+      // — so `say build house` posted a 120-block / 132-wood mill regardless
+      // of what stood in the world, and a second book posting its own
+      // full-size mill against the same finite commons produced 237 wood of
+      // demand in a world holding 144 (the deadlock ① releases). Appetite is
+      // not supply for anybody. What stays TRUE of ⑥ is the distinction the
+      // S2 note already draws: a PARTIAL clamp is not a refusal — the order is
+      // posted at the size the shelf can feed and waits honestly for hands,
+      // and the delivery toast names the honest bill. Only a clamp to ZERO is
+      // a refusal, and a refusal is VOCAL.
+      const feasible = Math.floor(pick.free / Math.max(1, inPerOut));
+      let count = Math.min(n - open, feasible);
       if (count <= 0) {
+        if (spoken) {
+          // 🚨 REFUSALS ARE VOCAL (engine law) — the two-channel shape
+          // `orderZone`/`orderTrade` use: the addressed clerk says no, and the
+          // banner says it unconditionally so a player with nobody addressed
+          // still hears an answer. Never a silent no-op. Rate-limited by the
+          // caller's own per-pile retry gate, exactly like the starved toast.
+          const clerk = session.addressedFamily ?? gazeCreature(session) ?? convoNodeId() ?? null;
+          if (clerk && session.creatures?.nodeByCreature.has(clerk)) npcChatBubble(session, clerk, "no");
+          presenter.toast(
+            `💬 can't mill the ${head} — there is no ${raw.glyph} to cut`,
+            "feedback",
+          );
+          continue; // NOT counted as `milling`: nothing was ordered and nothing is coming
+        }
         milling += n; // the bill IS known and the chain IS the answer — just not today
         continue;
       }
@@ -4141,9 +4539,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     for (const [head, n] of Object.entries(r.costs)) takeStock(r.pile, head, n);
     const destId = refineDepositId(session, r.scope);
     const stack = destId
-      ? (session.containerStock.get(destId) ?? {})
+      ? ensureContainerStock(session, destId)
       : (deltas.stock as Record<string, number>);
-    if (destId) session.containerStock.set(destId, stack);
     stack[r.produces] = (stack[r.produces] ?? 0) + r.count;
     for (const [g, n] of Object.entries(r.pile)) {
       if (n > 0) stack[g] = (stack[g] ?? 0) + n;
@@ -4456,9 +4853,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             contains: [{ relation: "in", capacity: 4 }],
           });
           if (ok && piece.openable) {
-            session.containers.set(piece.id, "in");
-            session.containerStock.set(piece.id, {});
-            session.containerOwner.set(piece.id, null); // communal — the founders'
+            registerContainer(session, piece.id, "in", null, {}); // communal — the founders'
           }
         }
       }
@@ -4696,10 +5091,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             ? [
                 ...siteMaterialSources(session, at, issuer),
                 ...houseContainerKeys(session, heldAt.house)
-                  .filter((id) => (session.containerStock.get(id)?.[glyph] ?? 0) > 0)
+                  .filter((id) => (session.containerRecords.get(id)?.stock?.[glyph] ?? 0) > 0)
                   .map((id) => ({
                     id,
-                    stack: session.containerStock.get(id)!,
+                    stack: session.containerRecords.get(id)!.stock!,
                     d: sourceDistanceM(session, at, containerAnchor(session, id) ?? at),
                   })),
               ]
@@ -5335,7 +5730,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // Already loose on the floor (deconstructed to clear a path, or dropped):
     // it IS the thing hands take, and it is registered, so nothing to record.
     if (piece.id.startsWith("small:")) {
-      if (!session.smallProps.has(piece.id)) return null; // somebody else took it
+      if (!isLooseProp(session, piece.id)) return null; // somebody else took it
       return takeIntoHands(session, npcId, { kind: "object", objId: piece.id });
     }
     // Standing: materialize so the piece is a row (never the drawing), then
@@ -5413,16 +5808,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // across the room stands up still holding its water: the stock moves from
     // the prop's id to the standing piece's, which is the same move `break`
     // made in the other direction. Nothing is ever poured into a sibling.
-    const carriedStock = session.containerStock.get(token);
+    const tokenRec = session.containerRecords.get(token);
+    const carriedStock = tokenRec?.stock;
     if (carriedStock && Object.keys(carriedStock).length) {
-      session.containerStock.delete(token);
-      session.containerStock.set(rowId, carriedStock);
-      session.containers.set(rowId, session.containers.get(token) ?? "in");
-      const owner = session.containerOwner.get(token);
-      if (owner) session.containerOwner.set(rowId, owner);
+      registerContainer(session, rowId, tokenRec?.relation ?? "in", tokenRec?.owner ?? null, carriedStock);
     }
-    session.containers.delete(token);
-    session.containerOwner.delete(token);
+    deleteContainerRecord(session, token);
     placeFurniture(t.deltas, key, {
       id: rowId,
       kind: slot.kind,
@@ -5557,15 +5948,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         const foundGlyph = (b: FoundedBuilding | undefined): string =>
           b ? (resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard") : "yard";
         const glyph = a.to.startsWith(ORDER_PILE_EP)
-          ? (() => {
-              const o = deltas.orders().find((q) => q.ord === Number(a.to.slice(ORDER_PILE_EP.length)));
-              if (o?.kind === "found") return foundGlyph(o);
-              if (o?.kind === "refine") return stackHead(o.produces);
-              if (o && (o.kind === "annex" || o.kind === "interior")) {
-                return ROOM_GLYPH[pendingRoomKindOf(o) as HouseRoom["kind"]] ?? "room";
-              }
-              return "room";
-            })()
+          ? // ⚖️ ③ ONE DEFINITION for the destination word — the same
+            // `pileHaulDestWord` the staging poster uses, so a re-pooled haul
+            // and its original can never announce different places (and the
+            // refine arm's old `stackHead(o.produces)` — the "…to the block"
+            // line — is gone from both).
+            pileHaulDestWord(
+              session,
+              deltas.orders().find((q) => q.ord === Number(a.to.slice(ORDER_PILE_EP.length))),
+            )
           : a.to.startsWith(SITE_PILE_EP)
             ? foundGlyph(deltas.founded().find((f) => f.ord === Number(a.to.slice(SITE_PILE_EP.length))))
             : a.to.startsWith(BFURN_EP)
@@ -5593,12 +5984,75 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         );
       } else if (a.status === "moving" && a.executor && world) {
         const body = avatarIdOf(a.executor);
-        if (!world.state.avatars[body]) {
+        const av = world.state.avatars[body];
+        if (!av) {
           session.transfers.fail(a.id, "no-executor");
+          haulSeenWalking.delete(a.id);
         } else if (!world.npcErrandActive(body) && !(session.npcTasks.get(body)?.length ?? 0)) {
           issueTransferHaul(session, a.executor, a.id);
+          haulSeenWalking.set(a.id, { at: session.taskClock, x: av.x, y: av.y }); // re-aimed
+        } else {
+          const seen = haulSeenWalking.get(a.id);
+          // WALKING = THE BODY MOVED, never merely "has an errand". An errand
+          // that cannot advance stays ACTIVE forever, so the errand flag says
+          // a trip was ordered, not that anyone is making it (measured: a
+          // carrier stood on one spot for 1 400 s with `npcErrandActive` true).
+          // A LOADED row is alive by definition — the goods are on the body.
+          const walking =
+            !seen ||
+            Math.hypot(av.x - seen.x, av.y - seen.y) > HAUL_STEP_EPS_M ||
+            haulIsLoaded(session, a);
+          if (walking) {
+            // Moving, loaded, or seen for the first time — a claimant gets one
+            // whole window to get going before anything judges it
+            // (`buildClaimSeenAt` seeds itself for the same reason).
+            haulSeenWalking.set(a.id, { at: session.taskClock, x: av.x, y: av.y });
+          } else if (session.taskClock - seen.at >= DEFAULT_TASK_TTL_S) {
+            // 🚨 A CLAIM IS NOT A CARRIER (2026-08-13) — the haul twin of the
+            // build-work claim rule below (`claimStale` in `workSite`). A
+            // claimed transfer task NEVER expires (the pool only retires OPEN
+            // rows, and the FILLED→DONE sweep completes a transfer task off
+            // the AGREEMENT's status), and the re-aim above cannot fire while
+            // the body still holds an errand or a queued step — so one porter
+            // that took a haul and then stopped walking held BOTH the whole
+            // remaining bill and the yard stock that would cover it:
+            // `pileShortfall` subtracts every pending/moving row's goods, so
+            // one dead 170-block row answered a 170-block shortfall with {}
+            // and `postPileHauls` posted nothing for the rest of the session.
+            // The site sat at 102 of a 272-block bill for 3 000 s of sim with
+            // ~200 blocks in the yard, 170 of them spoken for by the dead row
+            // (frontier seed 12, `say build farm`).
+            //
+            // A haul that has gone one whole CLAIM WINDOW without MOVING and
+            // without a load is dead: it fails NAMED, exactly as the
+            // unobserved twin fails an unclaimed one, and its two claims (the
+            // source units and the basket) go back on the shelf — nothing has
+            // left the yard, so nothing can be double-drawn. The re-post is
+            // the ordinary one: `postPileHauls` finds the shortfall honest
+            // again next sweep. The window is the pool's own TTL — no new
+            // constant, the same "one posting cycle unanswered" the
+            // build-work rule already means by it.
+            session.transfers.fail(a.id, "no-executor");
+            session.reservations.release(agrHolder(a.id));
+            session.reservations.release(bagHolder(a.id));
+            haulSeenWalking.delete(a.id);
+            // ⚖️ AND IT SAYS SO. A site that quietly re-posts its own bill is
+            // indistinguishable from a stalled one (the homestead report's
+            // lesson, the same reason a starved pile toasts) — so the hand-off
+            // is spoken once, when it happens.
+            presenter.toast(
+              `📦 ${a.sourceGlyph ?? "the haul"} — nobody came; calling again`,
+              "feedback",
+            );
+          }
         }
       }
+    }
+    // The stamps of rows that are over (or that a reload lost) — the same
+    // blind, idempotent GC the bag claims get above.
+    for (const id of [...haulSeenWalking.keys()]) {
+      const a = session.transfers.get(id);
+      if (!a || (a.status !== "pending" && a.status !== "moving")) haulSeenWalking.delete(id);
     }
     // ── BUILDERS MAKE BUILDINGS (⑥): a staged site banks labor only while
     // builders STAND at it — more of them, proportionally faster (capped).
@@ -5905,7 +6359,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
                 pileId: orderPileId(r.ord),
                 at: r.at,
                 missing: stagingMissing(r),
-                glyph: stackHead(r.produces),
+                // ⚖️ ③ A DESTINATION IS A PLACE, NEVER THE CARGO. This line
+                // read `stackHead(r.produces)` — the COMMODITY — and produced
+                // the user's *"I will carry the wood to the block"*
+                // (`pileHaulDestWord`; diagnosis RECURRENCE CHECK (b)).
+                glyph: pileHaulDestWord(session, r),
                 // A chained refine stays in the book that asked for it.
                 ...(r.scope ? { scope: r.scope } : {}),
                 // …and keeps the standing of the bill that chained it.
@@ -6261,7 +6719,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         session,
         wantHeads,
         [
-          { id: spotId, stack: session.containerStock.get(spotId) ?? {}, d: 0 },
+          { id: spotId, stack: session.containerRecords.get(spotId)?.stock ?? {}, d: 0 },
           ...craftMaterialSources(session, hi, spotAt, spotId),
         ],
         LOCAL_PLAYER_CID,
@@ -6902,7 +7360,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         furnStock: (glyph) => {
           let n = 0;
           for (const objId of houseContainerKeys(session, house.index)) {
-            n += session.containerStock.get(objId)?.[glyph] ?? 0;
+            n += session.containerRecords.get(objId)?.stock?.[glyph] ?? 0;
           }
           return n;
         },
@@ -7490,8 +7948,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const b = pendingBuildingOf(session, buildingKey);
     if (!b || !world) return [];
     const out: FurniturePiece[] = [];
-    for (const [objId, rec] of session.smallProps) {
-      const kind = furnitureKindOfGlyph(rec.glyph);
+    for (const [objId, rec] of looseEntries(session)) {
+      const kind = furnitureKindOfGlyph(rec.glyph!);
       if (!kind) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue; // in hand or in a box already
@@ -7604,19 +8062,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const destId = hm
       ? (houseContainerKeys(session, Number(hm[1])).find((id) => !gone.has(id)) ?? null)
       : null;
-    const dest = destId ? (session.containerStock.get(destId) ?? {}) : t.deltas.stock;
+    const dest = destId ? (session.containerRecords.get(destId)?.stock ?? {}) : t.deltas.stock;
     for (const [kind, n] of Object.entries(stowed)) {
       const g = furnitureGlyph(kind as StationKind);
       dest[g] = (dest[g] ?? 0) + (n ?? 0);
     }
     for (const [g, n] of Object.entries(refund)) dest[g] = (dest[g] ?? 0) + n;
     for (const boxId of removedBoxes) {
-      const stock = session.containerStock.get(boxId);
+      const stock = session.containerRecords.get(boxId)?.stock;
       if (!stock) continue;
       for (const [g, n] of Object.entries(stock)) dest[g] = (dest[g] ?? 0) + n;
-      session.containerStock.delete(boxId);
+      delete session.containerRecords.get(boxId)!.stock; // stock ONLY — relation/owner untouched, as before
     }
-    if (destId) session.containerStock.set(destId, dest);
+    if (destId) setContainerStock(session, destId, dest);
   }
 
   /**
@@ -7808,16 +8266,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     //
     // Only the headless case still banks: with no world there is no prop to
     // hold anything, and re-homing beats vanishing.
-    const contents = session.containerStock.get(pieceId);
+    const pieceRec = session.containerRecords.get(pieceId);
+    const contents = pieceRec?.stock;
     if (prop && contents && Object.keys(contents).length) {
-      session.containerStock.delete(pieceId);
-      session.containerStock.set(prop, contents);
-      session.containers.set(prop, session.containers.get(pieceId) ?? "in");
-      const owner = session.containerOwner.get(pieceId);
-      if (owner) session.containerOwner.set(prop, owner);
+      registerContainer(session, prop, pieceRec?.relation ?? "in", pieceRec?.owner ?? null, contents);
     }
-    session.containers.delete(pieceId);
-    session.containerOwner.delete(pieceId);
+    deleteContainerRecord(session, pieceId);
     // `removedBoxes` still names the piece so it can't be chosen as its own
     // destination; its stock has already left, so the pour-out loop finds
     // nothing to pour.
@@ -7976,7 +8430,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             .filter((q) => q.roomId === p.roomId)
             .map((q) => q.id)
         : []
-    ).concat(generated.filter((g) => session.containerStock.has(g.id)).map((g) => g.id));
+    ).concat(generated.filter((g) => hasStock(session, g.id)).map((g) => g.id));
     const res = empty
       ? emptyRoom(t.deltas, p.buildingKey, plan, p.roomId, generated)
       : demolishRoom(t.deltas, p.buildingKey, plan, p.roomId);

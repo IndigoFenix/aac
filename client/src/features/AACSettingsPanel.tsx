@@ -2913,6 +2913,24 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
 
+              {/* Nature Hike — hyphenated app id (matches CallGame.appId), so
+                  index with bracket access rather than a dotted property. */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🥾</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appNatureHike')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appNatureHikeDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig["nature-hike"]?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, "nature-hike": { ...prev["nature-hike"], enabled: checked } }))
+                  }
+                />
+              </div>
+
               {/* Game options — how world-engine games (Dollhouse, …) use the
                   live AI and the student's voice. Stored in appConfig.gameOptions. */}
               <div className="pt-4 mt-4 border-t space-y-4">

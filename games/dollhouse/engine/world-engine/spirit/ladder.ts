@@ -178,6 +178,33 @@ export interface SpiritLadder {
   /** Raise (or set) the zoom-out ceiling — a CONTROL limit, clamped to the
    *  provider's scope. */
   setCeiling(level: SpiritLevel): void;
+  /** THE HOST OWNS THE VIEW ON THE GROUND RUNG (walker-driven embeds only).
+   *
+   *  A DESIGNATED AVATAR (manifest `avatar: true`) is played through the
+   *  embedded quest host's OWN chase rig: `setDriveCamera(true)` at the mount
+   *  hands that host the shared camera, and the host draws its own gaze spark.
+   *  The ladder still runs the ground rung — the glide (which is the walker's
+   *  leader), dwell, the ceiling holds, the ascent-gesture suppression,
+   *  `focusWorld`, the town-content refresh and the streaming rebase are all
+   *  untouched — but it stops POSING the camera and stops claiming the cursor,
+   *  because two rigs writing one camera with readers in between is how the
+   *  gaze pick came to resolve through a pose that never reached the screen
+   *  (the camera that hovered overhead while the spark went missing).
+   *
+   *  With this ON the ladder's own camera-dependent reads (the gaze march, the
+   *  provider's cursor ray, the post-frame streaming) all read the pose the
+   *  host presented LAST frame — one self-consistent frame of lag, exactly what
+   *  a standalone walker host (games/nature-hike) has always run on.
+   *
+   *  PRECONDITION on the caller: the host must actually write the camera EVERY
+   *  frame the ladder is passive (i.e. its step runs in the same frames), and
+   *  the provider's `rebaseOnCamera` must not shift the world out from under
+   *  the un-reposed camera — a fixed-origin provider (world-lab's planet scope,
+   *  the only caller today) satisfies both. A floating-origin streaming
+   *  provider does NOT: its rebase moves every body by the frame's anchor
+   *  delta, so a walker there would need the host's pose carried through the
+   *  shift before this may be turned on. GROUND rung only; ignored elsewhere. */
+  setHostDrivesView(on: boolean): void;
   /** POSSESSION seam: place the ladder at the GROUND rung over `worldPoint`
    *  (the dismissed avatar's spot) — the glide resumes there, blending from
    *  wherever the camera currently is. `townRef` keeps town context. */
@@ -199,7 +226,8 @@ export interface SpiritLadder {
    *  `rep` (an entity engine under the glide resolved it: wall stop, entity
    *  snap, dwell — the good path, identical to the flat host's), `prov` (the
    *  provider's bare drawn-world ray: position only, no engine reporting),
-   *  `host` (a FLAT standalone drawing its own), `fallb` (overlay at the
+   *  `host` (a FLAT standalone drawing its own), `hostrig` (a walker-driven
+   *  embed drawing its own — setHostDrivesView), `fallb` (overlay at the
    *  analytic gaze point), or `none`.
    *
    *  USER LAW the string still guards: the cursor is the PLAYER's, so it must
@@ -352,6 +380,10 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
    *  ground rung (it reports; the provider draws). Held so the opt-out can be
    *  handed back when the rung ends or the engine changes under the glide. */
   let cursorOptedOut: SpiritCursorHost | null = null;
+  /** GROUND RUNG ONLY: an embedded host's own rig owns the VIEW this frame —
+   *  see `setHostDrivesView`. Read nowhere else; every other rung poses and
+   *  draws exactly as before. */
+  let hostView = false;
   /** DIAGNOSTICS: last ground frame's cursor-owner fork — see `debugGround`. */
   let groundDbg = "-";
   /** This frame's flight steering RATES (s⁻¹), captured by `driveFlightRegimes`
@@ -1084,7 +1116,18 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     _fromPose.fov = g.fromRel.fov;
     g.t = Math.min(1, g.t + dt / GROUND_BLEND_S);
     blendPose(_fromPose, _toPose, g.t, _outPose);
-    applyPose(_outPose, camera);
+    // ONE CAMERA WRITER PER FRAME. When an embedded host's chase rig owns the
+    // view (setHostDrivesView — a designated avatar the player cannot leave),
+    // the pose above is computed but NOT written: the host writes the camera
+    // later this frame and its pose is the one that presents, so writing here
+    // first only meant every reader between the two writes (the gaze march
+    // below, the cursor ray, the host's own pointer pick, the post-frame
+    // streaming) resolved against a pose nobody ever saw. The rig keeps easing
+    // its state either way, so a release of the drive glides from the live
+    // pose instead of snapping. Everything below is unconditional: the clip
+    // planes are the PROVIDER's (the chase rig writes fov only), and the
+    // matrix refresh is what makes this frame's reads read the presented pose.
+    if (!hostView) applyPose(_outPose, camera);
     camera.near = nf.near;
     camera.far = nf.far;
     camera.updateProjectionMatrix();
@@ -1242,40 +1285,59 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     // The march's committed point still drives steering/dwell/possession —
     // simulation truth — but the visible cursor never depends on it.
     let owner: string;
-    // Assert the opt-out every frame (self-healing — the host may have
-    // (re)mounted mid-glide, and its view mounts late). A host that draws its
-    // own spark AND reports would put two cursors on screen.
     const reporter = provider.groundSpark ? (provider.cursorHost?.() ?? host) : null;
     if (reporter !== cursorOptedOut) releaseGroundCursor(); // the engine changed under the glide
-    reporter?.setExternalCursor?.(true);
-    cursorOptedOut = reporter;
-    const report = provider.groundSpark && pointer
-      ? (reporter?.cursorWorld?.(_sparkPos) ?? null)
-      : null;
-    if (provider.groundSpark) {
-      // ONE call, one cursor: the provider puts its ground cursor where the
-      // pointer ray meets the DRAWN world — unless an entity engine has SNAPPED
-      // the gaze onto something it owns (a creature's head, an object's top),
-      // which no ground ray can produce, in which case that point wins.
-      provider.groundSpark(
-        pointer ? { x: pointer.x, y: pointer.y } : null,
-        report?.select ?? 0,
-        report?.hovering ? _sparkPos : undefined,
-      );
-      owner = report?.hovering ? "rep" : report ? "prov+" : "prov";
-    } else if (hostHere) {
-      // FLAT standalone: the host draws its own engine cursor (unchanged).
-      provider.spark(null);
-      owner = "host";
-    } else if (committedLoc) {
-      // Fallback: TRUE surface point (frame-free), floated just above the
-      // ground along the local up.
-      g.geom.surfaceAt(committedLoc, _sparkPos).addScaledVector(frame.up, 0.4);
-      provider.spark(_sparkPos);
-      owner = "fallb";
+    if (hostView) {
+      // WALKER-DRIVEN GROUND: the host that owns the view owns its cursor too
+      // (setHostDrivesView). It is a standalone walker in everything but the
+      // scene it draws into — the reference behaviour is games/nature-hike,
+      // where the host's own 3D-occluded spark, fed by the forwarded pointer,
+      // IS the cursor. The planet-owns-the-spark law above is a SPIRIT law: it
+      // exists because a bodiless glide has no engine of its own to draw one,
+      // and honouring it here cost the walker its cursor entirely — the
+      // opt-out hid the host's spark while the replacement was raycast through
+      // the ladder's pose, which is no longer the pose on screen.
+      //
+      // Asserted OFF every frame, mirroring the opt-out's own self-healing
+      // (the host may re-mount under the glide, and its view mounts late).
+      reporter?.setExternalCursor?.(false);
+      cursorOptedOut = null;
+      provider.spark(null); // the ladder's overlay stays dark — one cursor
+      owner = "hostrig";
     } else {
-      provider.spark(null);
-      owner = "none";
+      // Assert the opt-out every frame (self-healing — the host may have
+      // (re)mounted mid-glide, and its view mounts late). A host that draws its
+      // own spark AND reports would put two cursors on screen.
+      reporter?.setExternalCursor?.(true);
+      cursorOptedOut = reporter;
+      const report = provider.groundSpark && pointer
+        ? (reporter?.cursorWorld?.(_sparkPos) ?? null)
+        : null;
+      if (provider.groundSpark) {
+        // ONE call, one cursor: the provider puts its ground cursor where the
+        // pointer ray meets the DRAWN world — unless an entity engine has SNAPPED
+        // the gaze onto something it owns (a creature's head, an object's top),
+        // which no ground ray can produce, in which case that point wins.
+        provider.groundSpark(
+          pointer ? { x: pointer.x, y: pointer.y } : null,
+          report?.select ?? 0,
+          report?.hovering ? _sparkPos : undefined,
+        );
+        owner = report?.hovering ? "rep" : report ? "prov+" : "prov";
+      } else if (hostHere) {
+        // FLAT standalone: the host draws its own engine cursor (unchanged).
+        provider.spark(null);
+        owner = "host";
+      } else if (committedLoc) {
+        // Fallback: TRUE surface point (frame-free), floated just above the
+        // ground along the local up.
+        g.geom.surfaceAt(committedLoc, _sparkPos).addScaledVector(frame.up, 0.4);
+        provider.spark(_sparkPos);
+        owner = "fallb";
+      } else {
+        provider.spark(null);
+        owner = "none";
+      }
     }
     // PROBE: which owner drew the cursor, and the town state that decided it.
     // `rep` = an entity engine resolved it (the good path — hover + dwell);
@@ -1401,6 +1463,7 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     get level() { return level; },
     get ceiling() { return ceiling; },
     setCeiling(l) { ceiling = clampCeiling(l); },
+    setHostDrivesView(on) { hostView = on; },
     dropToGround(worldPoint, townRef = null) {
       // Keep FACING: resume the glide along the camera's current forward.
       camera.getWorldDirection(_tmpDir);

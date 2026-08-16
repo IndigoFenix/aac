@@ -171,8 +171,9 @@ export const costTotalS = (c: VerbCost): number => c.journeyS + c.handsS + c.spo
 export interface BagRef {
   objId: string;
   glyph: string;
-  /** The container's LIVE stock map — the alias law: the same object
-   *  `session.containerStock` holds, never a copy. */
+  /** The container's LIVE stock map — the alias law: the same object its
+   *  `ContainerRecord` (kernel/town/containers.ts, worklist ⑤) holds, never
+   *  a copy. */
   stock: Record<string, number>;
   /** Unit capacity (containers.ts `ContainerDef.capacity`). */
   capacity: number;
@@ -204,15 +205,56 @@ export function handsFree(carry: BodyCarry): boolean {
 }
 
 /**
+ * A carry-capacity input shape — worklist ⑧'s behaviour-preserving
+ * unification of the two carry-capacity laws that turned out to be the same
+ * idea at two rungs:
+ *  - "body": a single organism. Capacity is what its hands/bag have LEFT
+ *    right now — NET of whatever is already stacked in the active bag (the
+ *    body binding's decision 3, unchanged below).
+ *  - "collective": a member group with no modeled containers of its own (a
+ *    band — kernel/civ/bands.ts `bandCarryCapacity`). Capacity is Σ over
+ *    members of a per-body default bulk allowance — GROSS, because a band
+ *    has one pooled `store`, not per-member stacks to net against.
+ */
+export type CarryCapacityInput =
+  | { kind: "body"; carry: BodyCarry }
+  | { kind: "collective"; size: number; perMemberBulk: number };
+
+/**
+ * THE CARRY-CAPACITY LAW (worklist ⑧) — "how much can this scope carry
+ * away", the settlement-emergence.md Gate A master variable
+ * ("you own more than you can carry") read at the body rung too. Previously
+ * two unrelated formulas: this module's `stackRoom` and civ/bands.ts
+ * `bandCarryCapacity` (compared against `band.store` in `gateASettles`).
+ * Both are now thin calls into this one, with EXACT prior numeric behavior
+ * (pinned in scope-shape.test.ts and band-gate-a.test.ts).
+ *
+ * The two branches share the SHAPE — a per-body default bulk capacity,
+ * summed over however many bodies this scope is — not the arithmetic: a
+ * body's is net of what it already holds, a collective's is a gross
+ * headcount × default, because there is nothing per-member to net against.
+ * `bandCarryCapacity` layers its value-density conversion (rations-worth per
+ * bulk unit) on top of this call — that conversion has no body analogue
+ * (see the module's header on why inventory is never a pooled scalar), so it
+ * stays at the band rung rather than moving into this law.
+ */
+export function carryCapacityOf(input: CarryCapacityInput): number {
+  if (input.kind === "body") {
+    const bag = activeBag(input.carry);
+    if (bag) return Math.max(0, bag.capacity - totalStackUnits(bag.stock));
+    return handsFree(input.carry) ? 1 : 0;
+  }
+  return Math.max(0, input.size) * input.perMemberBulk;
+}
+
+/**
  * UNITS this body can still take into stacks. No bag → the hands slot (one
  * unit fetched as a real instance), if it is free. This number is what makes
  * "bring a basket to market" a real decision: without one, every trip moves
  * one unit, and the difference is priced by step ④ rather than scripted.
  */
 export function stackRoom(carry: BodyCarry): number {
-  const bag = activeBag(carry);
-  if (bag) return Math.max(0, bag.capacity - totalStackUnits(bag.stock));
-  return handsFree(carry) ? 1 : 0;
+  return carryCapacityOf({ kind: "body", carry });
 }
 
 // ── The fold (§3.5) ───────────────────────────────────────────────────────

@@ -119,12 +119,26 @@ export function mountGamesStatic(app: Express, distPathGames: string): void {
     process.env.NODE_ENV === "production"
       ? ""
       : " http://localhost:* http://127.0.0.1:*";
-  app.use("/games", (_req: Request, res: Response, next: NextFunction) => {
+  app.use("/games", (req: Request, res: Response, next: NextFunction) => {
     res.removeHeader("X-Frame-Options");
     res.setHeader(
       "Content-Security-Policy",
       `frame-ancestors 'self' app:${devAncestors}`,
     );
+    // ENTRY DOCUMENTS ARE NEVER CONDITIONALLY CACHED. The games dir is
+    // rebuilt in place while the server runs; a fetch landing mid-write can
+    // cache a truncated index.html stamped with the FINAL file's ETag, after
+    // which every revalidation 304s and the browser replays the broken body
+    // forever (observed: a clinician profile stuck on an empty nature-hike
+    // while every other profile served fine). Hashed assets keep their
+    // normal caching — only the tiny HTML shells pay the no-store cost.
+    // Stripping the conditional headers forces express.static to send a
+    // full-body 200, which also HEALS any profile poisoned before this fix.
+    if (req.path.endsWith("/") || req.path.endsWith(".html")) {
+      delete req.headers["if-none-match"];
+      delete req.headers["if-modified-since"];
+      res.setHeader("Cache-Control", "no-store");
+    }
     next();
   });
 

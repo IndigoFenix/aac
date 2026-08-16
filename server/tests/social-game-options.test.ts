@@ -1,7 +1,7 @@
 // Verifies the in-call game picker list (listSocialGameOptions): the built-in
-// default social world comes first, the Dollhouse iframe game second, and the
-// institute's certified multiplayer custom apps follow. Apps whose stored spec
-// is missing or no longer certifies are silently skipped.
+// default social world comes first, then the Dollhouse and Nature Hike iframe
+// games, and the institute's certified multiplayer custom apps follow. Apps
+// whose stored spec is missing or no longer certifies are silently skipped.
 //
 // DB-free: the custom-app repository is mocked (unstable_mockModule — plain
 // jest.mock is a no-op under the ESM preset), so this runs under
@@ -17,7 +17,7 @@ jest.unstable_mockModule("../repositories/customAppRepository", () => ({
 }));
 
 const { listSocialGameOptions } = await import("../services/social-game/socialGameOptions");
-const { DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME } = await import("@shared/social-world/default-game");
+const { DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME, NATURE_HIKE_CALL_GAME } = await import("@shared/social-world/default-game");
 const { socialFieldSpec } = await import("@shared/world-engine/specs/index");
 
 describe("listSocialGameOptions", () => {
@@ -26,9 +26,9 @@ describe("listSocialGameOptions", () => {
     getApp.mockResolvedValue(null);
   });
 
-  it("returns the built-ins (default world, then Dollhouse) when there are no custom apps", async () => {
+  it("returns the built-ins (default world, then Dollhouse, then Nature Hike) when there are no custom apps", async () => {
     const options = await listSocialGameOptions("inst-1");
-    expect(options).toEqual([DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME]);
+    expect(options).toEqual([DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME, NATURE_HIKE_CALL_GAME]);
   });
 
   it("describes the Dollhouse as an iframe-quest game mounted from /games/dollhouse/", async () => {
@@ -47,25 +47,26 @@ describe("listSocialGameOptions", () => {
     listMultiplayerAppsForInstitute.mockResolvedValue([{ id: "app-1", name: "My World" }]);
     getApp.mockResolvedValue({ id: "app-1", name: "My World", definition: socialFieldSpec });
     const options = await listSocialGameOptions("inst-1");
-    expect(options).toHaveLength(3);
+    expect(options).toHaveLength(4);
     expect(options[0]).toEqual(DEFAULT_SOCIAL_GAME);
     expect(options[1]).toEqual(DOLLHOUSE_CALL_GAME);
-    expect(options[2]!.appId).toBe("app-1");
-    expect(options[2]!.name).toBe("My World");
-    expect(options[2]!.worldSpec).toBeDefined();
+    expect(options[2]).toEqual(NATURE_HIKE_CALL_GAME);
+    expect(options[3]!.appId).toBe("app-1");
+    expect(options[3]!.name).toBe("My World");
+    expect(options[3]!.worldSpec).toBeDefined();
   });
 
   it("skips custom apps whose stored spec no longer certifies", async () => {
     listMultiplayerAppsForInstitute.mockResolvedValue([{ id: "app-bad" }]);
     getApp.mockResolvedValue({ id: "app-bad", name: "Broken", definition: { not: "a spec" } });
     const options = await listSocialGameOptions("inst-1");
-    expect(options).toEqual([DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME]);
+    expect(options).toEqual([DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME, NATURE_HIKE_CALL_GAME]);
   });
 
   it("skips custom apps whose full record is missing", async () => {
     listMultiplayerAppsForInstitute.mockResolvedValue([{ id: "app-gone" }]);
     getApp.mockResolvedValue(null);
     const options = await listSocialGameOptions("inst-1");
-    expect(options).toEqual([DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME]);
+    expect(options).toEqual([DEFAULT_SOCIAL_GAME, DOLLHOUSE_CALL_GAME, NATURE_HIKE_CALL_GAME]);
   });
 });

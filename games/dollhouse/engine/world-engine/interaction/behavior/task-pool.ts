@@ -25,6 +25,7 @@
 import type { CreatureId } from "@shared/world-engine/interaction/behavior/creatures.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
 import { costTotalS, type VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
+import type { FoldCommitment, FoldScope } from "@shared/world-engine/kernel/town/fold.js";
 
 /** The issuer's attention area at issue time — claims are scoped to it. */
 export interface TaskFocus {
@@ -167,6 +168,50 @@ export function createTaskPool(json?: SerializedTaskPool): TaskPool {
       tasks: tasks.map((t) => JSON.parse(JSON.stringify(t)) as PooledTask),
     }),
   };
+}
+
+// ── ⚖️ F-④ — THE HANDS BOOK AT THE FOLD (fold-round.md stage F4) ───────────
+
+/**
+ * ⚖️ F-④ GATHER — every IN-FLIGHT pooled task touching `scope`, as
+ * `FoldCommitment`s. READ-ONLY (the pool is not touched); the fold turns
+ * these into a REFUSAL, because a task books HANDS and hands are embodied
+ * (scope-unification.md §BREAKS: *"a body's concurrency is anatomical"*) — a
+ * claimed task is a body mid-errand, and no closed-form record can stand in
+ * for it the way one stands in for a reserved number. v1 declines the fold
+ * and names the tasks rather than pretend either way.
+ *
+ * IN FLIGHT = `open` or `claimed`: a claimed task is being executed right
+ * now, and an OPEN one is a promise still owed to its issuer — it has not
+ * expired, so folding the scope out from under it would drop it silently,
+ * which is the same violation. `done`/`expired` rows are history and block
+ * nothing. Order is open rows then claimed rows, each in creation order: the
+ * pool exposes the two lists and no combined one, and grouping them puts the
+ * unclaimed promises first in a capped blocker list, which is the more useful
+ * half to read.
+ *
+ * TOUCHING = the scope IS the issuer (the order was spoken by it) or the
+ * claimant (it is the body on the hook). `holder` is the claimant where one
+ * exists, else the issuer — nobody has taken it, so the issuer still carries
+ * it; `against` is always the issuer, who is owed the work.
+ */
+export function gatherTaskCommitments(pool: TaskPool, scope: FoldScope): FoldCommitment[] {
+  const ids = new Set<string>([scope.id, ...scope.endpoints]);
+  const out: FoldCommitment[] = [];
+  for (const t of [...pool.open(), ...pool.claimed()]) {
+    if (!ids.has(t.issuer) && !(t.claimedBy !== undefined && ids.has(t.claimedBy))) continue;
+    out.push({
+      book: "task",
+      id: t.id,
+      holder: t.claimedBy ?? t.issuer,
+      against: t.issuer,
+      payload: {
+        status: t.status,
+        ...(t.sourceGlyph !== undefined ? { sourceGlyph: t.sourceGlyph } : {}),
+      },
+    });
+  }
+  return out;
 }
 
 /** One creature's standing toward a task, as the WORLD evaluated it:

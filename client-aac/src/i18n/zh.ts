@@ -904,6 +904,7 @@ export const zh: Translations = {
       social_world: "和朋友一起玩",
       symbol_learning: "学习符号",
       dollhouse: "娃娃屋",
+      "nature-hike": "自然远足",
     },
   },
 

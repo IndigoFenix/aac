@@ -158,6 +158,7 @@ const CATALOGUE: ReadonlyArray<{
   { id: "apple_tree", kind: "plant", example: "Apple tree" },
   { id: "banana_plant", kind: "plant", example: "Banana plant" },
   { id: "grape_vine", kind: "plant", example: "Grape vine" },
+  { id: "carrot_plant", kind: "plant", example: "Carrot plant" },
   // ── Fruit bodies (market/ground items) ────────────────────────────────────
   { id: "apple", kind: "fruit", example: "Apple" },
   { id: "banana", kind: "fruit", example: "Banana" },

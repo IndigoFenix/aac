@@ -159,6 +159,20 @@ export interface WorldView {
    *  scene implements it — WALKING drives the camera, the flight camera owns it
    *  airborne. Omitted by the owner-mode / 2D views. */
   setDriveCamera?(on: boolean): void;
+  /** ATTACHED-AVATAR MODE: point the grounded chase rig at a BODY OTHER than
+   *  the local avatar — the creature the session created for this player,
+   *  which is the thing actually standing in the world (the local avatar is a
+   *  formless spark parked at the spawn). Null hands the rig back to the local
+   *  id, which is the default and the byte-identical case. 3D-only. */
+  setFollowBody?(id: string | null): void;
+  /** CAMERA SCHEME (⚖️ user ruling 2026-08-14): how the grounded chase rig
+   *  films whatever it follows — "directed" (gaze-led heading + overhead
+   *  tilt; the default and the byte-identical case) or "orbiting" (a corner
+   *  gaze swings the rig around the focus, reusing the dollhouse turntable
+   *  law). Orthogonal to setFollowBody: any focus may use either scheme.
+   *  Union declared inline — importing CameraScheme from render3d.ts would
+   *  make a type cycle; the two are structurally identical. 3D-only. */
+  setCameraScheme?(scheme: "directed" | "orbiting"): void;
   /** HOST-EMBED: turn on the SPIRIT (dollhouse) cutaway for a focused building
    *  WITHOUT taking the camera — an owner-camera host (the flight world orbiting
    *  a town) reveals a building's interior with the footprint, clears with null.

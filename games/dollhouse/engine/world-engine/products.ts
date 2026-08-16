@@ -284,6 +284,33 @@ const CATALOGUE: NaturalSource[] = [
       },
     ],
   },
+  // 🥕 THE FIRST VEGETABLE (food-scale-round.md E-round, E-a). USER RULING
+  // (2026-08-15), verbatim: *"Farmland should really be handled in the same way
+  // that forests are — regions that are harvested to produce goods, which are
+  // stored in town and then purchased as needed. We don't have a bread industry
+  // set up, so it would probably be simpler to start with vegetables."*
+  //
+  // Until this row, `foodGlyphs()` yielded three FRUITS and nothing a field
+  // grows, so "farmland" had no crop behind it at all — the farm's output was a
+  // book identity with no glyph in it. Carrot costs nothing to add: it already
+  // has a species BODY (`creatures/species.ts` `carrot`, rendered by the root
+  // profile — the storage body grows DOWN) and a fully translated glyph
+  // (`shared/glyph-registry.ts` `aac.glyph.carrot`, 🥕, all 11 locales), so this
+  // is a data row and ZERO locale work. Turnip and wheat are deliberately
+  // deferred: both need a new registry row across 11 locale files, and wheat
+  // additionally needs the bread refine chain the user has put off.
+  //
+  // 🚨 APPENDED, NEVER INSERTED. `FOOD_KINDS` is `foodGlyphs()` in CATALOGUE
+  // order and residents' favourite foods hash BY INDEX — inserting mid-list
+  // re-rolls every resident's and pet's likes. New food species go HERE, last.
+  {
+    species: "carrot_plant",
+    kind: "plant",
+    bodyHeightM: 0.4,
+    products: [
+      { glyph: "carrot", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+    ],
+  },
 ];
 
 const BY_SPECIES = new Map(CATALOGUE.map((s) => [s.species, s]));

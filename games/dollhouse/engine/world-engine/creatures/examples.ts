@@ -731,6 +731,25 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       { name: "grape vine", skin: { baseColor: "#5c4630", accentColor: "#41321f" } },
     ),
   },
+  {
+    name: "Carrot plant",
+    blueprint: plant(
+      {
+        seed: 31,
+        // Feathery rosette over a buried root: many near-ground stems fanned
+        // wide, narrow ferny leaves, and the "fruit" is the orange crown
+        // showing at the soil line — the harvest reads without unearthing
+        // geometry (the pulled root itself is the standalone `carrot` body).
+        stem: { lengthFrac: 6, girth: 0.02, segments: 3, taper: 0.6, lean: 0.3, waviness: 0.3, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.1, hardness: 0.3, rootFlare: 1.1 },
+        branching: { levels: 1, branchStart: 0.05, nodes: 2, whorl: 6, phyllotaxis: 2.4, branchAngle: 1.2, lengthRatio: 0.8, radiusRatio: 0.6, jitter: 0.4 },
+        foliage: { leafDensity: 6, leafSizeFrac: 2.2, leafAspect: 0.15, leafDroop: 0.15, leafColor: "#4c8a3a" },
+        fruit: { sizeM: 0.055, aspect: 2.6, bulge: 0.35, neck: 0.05, tipTaper: 0.8, stemFrac: 0, color: "#e2762d" },
+        fruitDensity: 0.5,
+        fruitPlacement: "along",
+      },
+      { name: "carrot plant", skin: { baseColor: "#4c8a3a", accentColor: "#3a6b2c" } },
+    ),
+  },
   // ── Fruit samples & root vegetables (type "fruit" / "root"). Each is
   // ONE determinate fruit body — the shape lives in the profile (bulge /
   // neck / tipTaper), curvature, lobes, and pole crown. These double as

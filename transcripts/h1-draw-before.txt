@@ -1,0 +1,39 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=12  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-14T09:20:24.718Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /stock
+CHEAT  /stock
+> say get wood from forest
+OK     said: get + wood + from + forest
+TOAST  🪧 get + wood + from + forest — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 5
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+TICK   waited 5.0s.
+> /wild fold
+CHEAT  /wild fold
+> /wild state
+CHEAT  /wild state
+> say get wood from forest
+OK     said: get + wood + from + forest
+TOAST  🪧 get + wood + from + forest — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 5
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+TICK   waited 5.0s.
+> /wild state
+CHEAT  /wild state
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=10  presses=0  screens=1  sim=16.6s
+# events: TICK 5  CHEAT 5  SAY 4  OK 2  TOAST 2  BOARD 1  NOTE 1

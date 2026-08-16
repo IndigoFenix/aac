@@ -107,6 +107,21 @@ export type WorldNetMessage =
   // holder, so a late joiner converges without a state sync. Display-only —
   // it feeds WorldState.peerClaims, which only the render layer reads.
   | { t: "claim"; id: string; body: string | null }
+  // LOOSE MESH: peer `id`'s SPARK position (chart-local x/y), ~10 Hz,
+  // latest-wins, loss-tolerant like the rest of this channel. Sent EXPLICITLY
+  // by its producer — unlike `avatar`/`object`, it never rides
+  // collectOutbound, so a peer chooses when to emit it (Phase 1: only in
+  // attached-avatar mode). Feeds WorldState.peerSparks; consumed by the
+  // session authority to drive that member's avatar-follow. Display/consumer
+  // state only — the sim itself never reads it.
+  | { t: "spark"; id: string; x: number; y: number }
+  // LOOSE MESH: peer `id`'s PLANET-FRAME presence — body-local unit direction
+  // `d` and elevation `e` — ~1 Hz, latest-wins, loss-tolerant like `spark`
+  // above. Feeds WorldState.peerLocs; consumed by the Phase-4 session
+  // coordinator (nature-hike split/merge) to cluster members and elect
+  // authority (planning-docs/games/world-engine/nature-hike-round.md, N6).
+  // Display/consumer state only — the sim itself never reads it.
+  | { t: "loc"; id: string; d: [number, number, number]; e: number }
   // OWNER→FOLLOWER conversation sync: how the owner is projecting ONE member's
   // place in creature `cid`'s conversation — `member` is that member's wire id,
   // `level` its own syntax tier (the world holds every rung at once, so two
@@ -290,6 +305,32 @@ export function applyInbound(
       break;
     }
 
+    case "spark": {
+      // Track each peer's latest spark position (WorldState.peerSparks) for
+      // the session authority to drive that member's avatar-follow (Phase 1
+      // attached-avatar mode). Cheap structural guard — the mesh is
+      // untrusted and version-skewed, same discipline as the convo arm below
+      // — then latest-wins, like avatar/object.
+      if (typeof msg.id !== "string" || !msg.id) break;
+      if (typeof msg.x !== "number" || !Number.isFinite(msg.x)) break;
+      if (typeof msg.y !== "number" || !Number.isFinite(msg.y)) break;
+      (state.peerSparks ??= {})[msg.id] = { x: msg.x, y: msg.y };
+      break;
+    }
+
+    case "loc": {
+      // Track each peer's latest planet-frame presence (WorldState.peerLocs)
+      // for the Phase-4 session coordinator (nature-hike-round.md N6). Cheap
+      // structural guard — same discipline as the spark arm above — then
+      // latest-wins.
+      if (typeof msg.id !== "string" || !msg.id) break;
+      if (!Array.isArray(msg.d) || msg.d.length !== 3) break;
+      if (!msg.d.every((n) => typeof n === "number" && Number.isFinite(n))) break;
+      if (typeof msg.e !== "number" || !Number.isFinite(msg.e)) break;
+      (state.peerLocs ??= {})[msg.id] = { d: [msg.d[0], msg.d[1], msg.d[2]], e: msg.e };
+      break;
+    }
+
     case "convo": {
       // STORED, not acted on: the host re-projects a follower's board from this
       // on its own frame (quest-host, multi-entity-conversations.md §4.6).
@@ -341,6 +382,20 @@ export function sayMessage(id: string, text: string, glyph?: string): WorldNetMe
  *  spark claims avatar `body` (`null` = released back to its own light). */
 export function claimMessage(id: string, body: string | null): WorldNetMessage {
   return { t: "claim", id, body };
+}
+
+/** Build the loose-mesh spark-position message peer `id` broadcasts (~10 Hz)
+ *  while its spark is up — chart-local (x, y). Latest-wins, loss-tolerant:
+ *  never retried, never buffered. */
+export function sparkMessage(id: string, x: number, y: number): WorldNetMessage {
+  return { t: "spark", id, x, y };
+}
+
+/** Build the loose-mesh presence message peer `id` broadcasts (~1 Hz) while a
+ *  Phase-4 hike session is live — body-local unit direction `d` and elevation
+ *  `e`. Latest-wins, loss-tolerant: never retried, never buffered. */
+export function locMessage(id: string, d: [number, number, number], e: number): WorldNetMessage {
+  return { t: "loc", id, d, e };
 }
 
 /**

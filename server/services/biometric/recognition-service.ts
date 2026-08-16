@@ -1932,6 +1932,24 @@ export async function getContactsByStudent(studentId: string): Promise<StudentCo
     .where(and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)));
 }
 
+// Same rows as getContactsByStudent, plus whether the linked biometric record
+// actually has a photo. The AI references contacts by `face:ID` — it needs to
+// know when a contact has no photo behind that id so it can fall back to an
+// emoji/generic symbol instead of a silently blank face.
+export async function getContactsWithPhotoStatusByStudent(
+  studentId: string,
+): Promise<Array<StudentContact & { hasFaceImage: boolean }>> {
+  const rows = await db
+    .select({
+      contact: studentContacts,
+      faceImageUrl: biometricData.faceImageUrl,
+    })
+    .from(studentContacts)
+    .leftJoin(biometricData, eq(biometricData.id, studentContacts.biometricDataId))
+    .where(and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)));
+  return rows.map(r => ({ ...r.contact, hasFaceImage: !!r.faceImageUrl }));
+}
+
 export async function updateContact(
   id: string,
   data: UpdateStudentContact,

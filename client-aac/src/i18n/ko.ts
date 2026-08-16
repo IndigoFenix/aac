@@ -904,6 +904,7 @@ export const ko: Translations = {
       social_world: "친구들과 놀기",
       symbol_learning: "기호 배우기",
       dollhouse: "인형의 집",
+      "nature-hike": "자연 하이킹",
     },
   },
 

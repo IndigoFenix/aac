@@ -350,11 +350,23 @@ export interface WorldHost {
   addNpc(npc: NpcSpec): boolean;
   /** Despawn a runtime-hosted NPC (body, controller, proximity). False = unknown. */
   removeNpc(npcId: string): boolean;
+  /** Runtime locomotion override for a hosted NPC body — e.g. party-follow
+   *  (quest-host.ts joinParty) walking a recruited creature at the player's
+   *  run speed instead of its spawn pace. `mps` sets steerMaxSpeed; `null`
+   *  restores the spawn snapshot exactly (the config as it stood before the
+   *  first override — see npcConfig/npcConfigs above). Non-party NPC
+   *  errand/need speeds are never touched by this. False = unknown npcId. */
+  setNpcMaxSpeed(npcId: string, mps: number | null): boolean;
   /** THE body's collision radius — what locomotion actually enforces for this
    *  NPC (its species-sized per-NPC config, else the engine default). Route
    *  planners MUST probe at exactly this girth: fatter reads a legal lane as
    *  a wall, thinner plans through furniture. */
   npcRadiusOf(npcId: string): number;
+  /** THE body's SPAWN walk pace (its species/behavior steerMaxSpeed, or the
+   *  engine default) — reads through any active setNpcMaxSpeed override to
+   *  the snapshot underneath, so callers (party-follow) can multiply off the
+   *  true spawn speed regardless of when they ask. 0 for an unknown npcId. */
+  npcMaxSpeedOf(npcId: string): number;
   /** Replace the streamed structure set (walls/doors around the player — see
    *  engine.setWorldStructures). Collision, door swing, and rendering follow
    *  immediately; door states persist across swaps for surviving ids. */
@@ -559,6 +571,11 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   // sizes its collision/planning radius (speciesBodyRadius — a big creature
   // collides AND plans at its own girth).
   const npcConfigs = new Map<string, WorldEngineConfig>();
+  // Runtime speed override (setNpcMaxSpeed, driven by party-follow): the
+  // steerMaxSpeed npcConfigs held BEFORE the first override, so `null`
+  // restores exactly rather than drifting toward whatever the last write
+  // left behind. Absent = no override active for that npc.
+  const npcSpeedOverrideBase = new Map<string, number>();
   const npcConfig = (n: NpcSpec): void => {
     const radius = speciesBodyRadius(n.species);
     if (n.behavior?.speed || radius !== WORLD_ENGINE_DEFAULTS.avatarRadius) {
@@ -1500,6 +1517,13 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     npcRadiusOf(npcId) {
       return (npcConfigs.get(npcId) ?? WORLD_ENGINE_DEFAULTS).avatarRadius;
     },
+    npcMaxSpeedOf(npcId) {
+      if (!npcIds.has(npcId)) return 0;
+      return (
+        npcSpeedOverrideBase.get(npcId) ??
+        (npcConfigs.get(npcId) ?? WORLD_ENGINE_DEFAULTS).steerMaxSpeed
+      );
+    },
     removeNpc(npcId) {
       if (!npcIds.has(npcId)) return false;
       npcIds.delete(npcId);
@@ -1511,10 +1535,31 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
       if (oi >= 0) ownedAvatarIds.splice(oi, 1);
       npcRadii.delete(npcId);
       npcConfigs.delete(npcId);
+      npcSpeedOverrideBase.delete(npcId); // no dangling override for a reused id
       detourSides.forget(npcId);
       pathSnaps.delete(npcId);
       removeAvatar(state, npcId);
       lastProximityKey = "\0";
+      return true;
+    },
+    setNpcMaxSpeed(npcId, mps) {
+      if (!npcIds.has(npcId)) return false;
+      if (mps === null) {
+        const original = npcSpeedOverrideBase.get(npcId);
+        if (original === undefined) return true; // no override active — no-op
+        npcSpeedOverrideBase.delete(npcId);
+        const cfg = npcConfigs.get(npcId);
+        if (cfg) npcConfigs.set(npcId, { ...cfg, steerMaxSpeed: original });
+        return true;
+      }
+      if (!npcSpeedOverrideBase.has(npcId)) {
+        npcSpeedOverrideBase.set(
+          npcId,
+          (npcConfigs.get(npcId) ?? WORLD_ENGINE_DEFAULTS).steerMaxSpeed,
+        );
+      }
+      const base = npcConfigs.get(npcId) ?? WORLD_ENGINE_DEFAULTS;
+      npcConfigs.set(npcId, { ...base, steerMaxSpeed: mps });
       return true;
     },
     rebase(mapPoint, mapVec) {

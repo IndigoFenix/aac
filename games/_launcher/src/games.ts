@@ -57,6 +57,13 @@ export const GAMES: GameEntry[] = [
     gradient: "from-rose-500 to-purple-900",
   },
   {
+    id: "nature-hike",
+    name: "Nature Hike",
+    description: "Hike across an Earthlike planet's biomes — multiplayer walk from forest to steppe.",
+    emoji: "🥾",
+    gradient: "from-emerald-600 to-lime-900",
+  },
+  {
     id: "seagull-dream",
     name: "Seagull Dream",
     description: "Fly a seagull over a tiny world. Look up to take off, look down to land. Hands-free 3D exploration.",

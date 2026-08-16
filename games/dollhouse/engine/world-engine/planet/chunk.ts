@@ -87,11 +87,11 @@ export interface ChunkGeometryData {
   positions: Float32Array;
   colors: Float32Array;
   normals: Float32Array;
-  /** 0..1 water at this vertex: 1 where it was clamped up to sea level, 0
-   *  everywhere else. OCEAN ONLY — rivers are curves and render as draped
-   *  ribbons, not as wet terrain vertices (a substrate cell is far too coarse
-   *  to be a river; see the note at the wet assignment). Lets the render
-   *  adapter shade the sea without a second mesh — see three.ts. */
+  /** 0..1 water at this vertex: 1 on sea (clamped up to sea level) and inside
+   *  a river channel, 0 everywhere else. A SHADING flag, not geometry — the
+   *  vertex already sits at its own water surface (rivers.ts folds bed + water
+   *  into `surface.heightAt`; the sea is `seaClamp`). Lets the render adapter
+   *  shade both without a second mesh — see three.ts. */
   water: Float32Array;
   /** CURRENT direction per vertex (2 per vertex), in the same detail-UV metres
    *  `detailUv` is in — the shader scrolls the wave field along it. Currently
@@ -209,18 +209,24 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       // shell.
       const isOcean = !!params.seaClamp && h < 0;
       surface.colorAt(h, dir, rgb);
-      // RIVERS: paint + the actual water layer, one relief lookup. Both are
+      // RIVERS: paint + the wetness/current signal, one relief lookup. Both are
       // the channel's TRUE width — a band narrower than this chunk's vertex
       // spacing FADES by coverage instead of widening (width glyphs washed
       // whole regions blue from orbit). (Cell-field wetness was tried and pulled: a
       // substrate cell is ~15 km at the flight tier, and marking riverine
       // CELLS wet turned every watercourse into a region-sized sheet of
       // animated "sea" with trees standing in it. The relief index knows the
-      // channel as a curve, so this water is a river-shaped band.) A wet
-      // vertex clamps UP to the water surface — the river analogue of
-      // seaClamp — and its downstream direction feeds the water shader's
-      // clamped current path (terrain-shading.ts), so the flow logic is
-      // VISIBLE: the wave pattern drifts the way the solver routed the water.
+      // channel as a curve, so this water is a river-shaped band.) The
+      // downstream direction feeds the water shader's clamped current path
+      // (terrain-shading.ts), so the flow logic is VISIBLE: the wave pattern
+      // drifts the way the solver routed the water.
+      //
+      // THE DEPTH IS NOT A LIFT. `heightAt` already placed this vertex at the
+      // river's water surface (rivers.ts attachRiverRelief folds bed + water
+      // into the one datum every ground consumer reads). Adding it to `r` here
+      // as well is a DOUBLE LIFT, and it was: the mesh drew river vertices up
+      // to 58 m above the walk chart on a planet whose entire relief budget is
+      // 25 m. Read it for `isRiver` and the flow frame, never for radius.
       let riverDepth = 0;
       flowT[0] = 0; flowT[1] = 0; flowT[2] = 0;
       if (!isOcean) {
@@ -235,7 +241,11 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       }
       const isRiver = riverDepth > 0.05; // ankle-deep floor keeps damp banks dry
       const wet = isOcean || isRiver ? 1 : 0;
-      const r = radius + (isOcean ? 0 : h + (isRiver ? riverDepth : 0));
+      // ONE DATUM: the drawn radius is the walk datum, full stop. Ocean is the
+      // single exception and an explicit one (seaClamp draws a flat sea over
+      // the basin the datum still reports); land — river beds and river water
+      // included — draws at exactly `surface.heightAt`.
+      const r = radius + (isOcean ? 0 : h);
       const idx = (j * N + i) * 3;
       abs[idx + 0] = dx * r;
       abs[idx + 1] = dy * r;
@@ -290,8 +300,9 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       detailUv[wOff + 1] = vv * radius - detailOriginT;
       // The rendered elevation, so strata band the surface you can actually see:
       // a sea-clamped vertex sits AT sea level whatever the seabed below says.
-      // `isOcean`, not `wet`: a river is water but is NOT clamped — it runs at
-      // its bed's altitude, so its strata band there and not at the sea line.
+      // `isOcean`, not `wet`: a river is water but is not SEA — it runs at
+      // whatever altitude its valley sits at (`h` is already that altitude),
+      // so its strata band there and not at the sea line.
       detailW[j * N + i] = isOcean ? 0 : h;
       cx += abs[idx + 0];
       cy += abs[idx + 1];

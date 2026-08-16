@@ -54,6 +54,12 @@ import {
   Save,
   ShieldCheck,
 } from 'lucide-react';
+import {
+  DEFAULT_PROGRAM_FRAMEWORK,
+  PROGRAM_FRAMEWORKS,
+  frameworkLabelSuffix,
+  normalizeFramework,
+} from '@shared/program-framework';
 
 interface StudentInfoPanelProps {
   isOpen: boolean;
@@ -118,7 +124,7 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   } = useInstitute();
 
   const [form, setForm] = useState<ProfileForm>({
-    framework: 'tala',
+    framework: DEFAULT_PROGRAM_FRAMEWORK,
     country: 'IL',
     grade: '',
     primaryLanguage: language,
@@ -145,7 +151,10 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   useEffect(() => {
     if (student) {
       setForm({
-        framework: (student as any).framework || 'tala',
+        // Absent framework reads as "personal", never as a statutory one — the
+        // form is a write path, so the wrong fallback would silently enroll the
+        // student in a school system they aren't in.
+        framework: normalizeFramework((student as any).framework) ?? DEFAULT_PROGRAM_FRAMEWORK,
         country: (student as any).country || 'IL',
         grade: (student as any).grade || '',
         primaryLanguage: (student as any).primaryLanguage || language,
@@ -521,10 +530,16 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="tala">{t('student.frameworkTala') || 'TALA (Israel)'}</SelectItem>
-                      <SelectItem value="us_iep">{t('student.frameworkIep') || 'IEP (US)'}</SelectItem>
+                      {PROGRAM_FRAMEWORKS.map((fw) => (
+                        <SelectItem key={fw} value={fw}>
+                          {t(`student.framework${frameworkLabelSuffix(fw)}`)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {t(`student.frameworkHint${frameworkLabelSuffix(form.framework)}`)}
+                  </p>
                 </div>
 
                 <div className="space-y-2">

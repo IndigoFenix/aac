@@ -373,6 +373,20 @@ export interface WorldState {
    *  the sim never reads it; the game layer parks a remote peer's spark light
    *  beside the claimed body. Absent ⇒ no remote claims known. */
   peerClaims?: Record<string, string>;
+  /** LATEST-KNOWN SPARK POSITION per peer (chart-local): peer network id →
+   *  that peer's own spark position, written by the net layer's loose-mesh
+   *  `spark` message (net.ts applyInbound, ~10 Hz, latest-wins). Phase 1:
+   *  consumed by the session authority to drive that member's avatar-follow
+   *  (attached-avatar mode) — the sim itself never reads it. Absent ⇒ no
+   *  remote spark positions known. */
+  peerSparks?: Record<string, { x: number; y: number }>;
+  /** LATEST-KNOWN PLANET-FRAME PRESENCE per peer: peer network id → that
+   *  peer's body-local unit direction and elevation, written by the net
+   *  layer's loose-mesh `loc` message (net.ts applyInbound, ~1 Hz,
+   *  latest-wins). Phase 4: consumed by the session coordinator (nature-hike
+   *  split/merge) to cluster members and elect authority — the sim itself
+   *  never reads it. Absent ⇒ no remote presence known. */
+  peerLocs?: Record<string, { d: [number, number, number]; e: number }>;
   time: number;
 }
 

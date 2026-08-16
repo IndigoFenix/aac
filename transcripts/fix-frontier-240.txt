@@ -1,0 +1,151 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-15T20:43:40.455Z
+# ─────────────────────────────────────────
+> /stock
+CHEAT  /stock
+> say build house
+OK     said: build + house
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+SAY    mara: "I will build the house."  [build.will + house]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+SAY    orrin: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   quiet after 2.5s.
+> wait 60
+EXIT   orrin went out of the orange house.
+EXIT   mara went out of the orange house.
+TICK   waited 60.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+TOAST  📦 bring 120 block — delivered (feedback)
+ENTER  mara came into view there north.
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+SAY    mara: [water]
+SAY    mara: "Where are you going?"  [place#question + you + go]
+ENTER  orrin came into view there north.
+SAY    orrin: "I'm going to the kitchen."  [go + kitchen]
+SAY    mara: [sit]
+SAY    mara: "Are you okay?"  [you + ok#question]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: "I don't help you."  [help.not + you]
+SAY    orrin: [water]
+SAY    mara: [sit]
+SAY    mara: "I'm sad."  [i_me + sad]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view here east.
+EXIT   mara left view there west.
+TOAST  📦 bring 112 block — delivered (feedback)
+ENTER  mara came into view there west.
+ENTER  orrin came into view here east.
+SAY    mara: [apple]
+EXIT   orrin went out of the orange house.
+EXIT   mara left view here east.
+TOAST  📦 bring 108 block — delivered (feedback)
+ENTER  mara came into view here south.
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+ENTER  orrin came into view there north.
+SAY    mara: "Where are you going?"  [place#question + you + go]
+EXIT   mara left view here south.
+EXIT   orrin left view here east.
+ENTER  mara came into view here east.
+ENTER  orrin came into view there south.
+SAY    orrin: "Where are you going?"  [place#question + you + go]
+EXIT   orrin left view there south.
+SAY    mara: "I'm going to the kitchen."  [go + kitchen]
+SAY    mara: "I don't have food."  [have.not + food]
+EXIT   mara left view there west.
+SAY    mara: "bye-bye"  [goodbye]
+ENTER  mara came into view there west.
+ENTER  orrin came into view here south.
+SAY    mara: [apple]
+SAY    orrin: [apple]
+EXIT   orrin went out of the orange house.
+SAY    mara: [water]
+EXIT   mara left view here east.
+ENTER  mara came into view here east.
+TOAST  📦 bring 104 block — delivered (feedback)
+EXIT   mara left view here east.
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+ENTER  orrin came into view there north.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin left view here east.
+ENTER  mara came into view here south.
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view here east.
+TOAST  📦 bring 96 block — delivered (feedback)
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    orrin: [water]
+SAY    mara: [banana]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [banana]
+EXIT   orrin left view here east.
+SAY    mara: [water]
+ENTER  orrin came into view here east.
+EXIT   mara left view here east.
+SAY    orrin: "Where are you going?"  [place#question + you + go]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+ENTER  mara came into view there east.
+EXIT   orrin left view here east.
+EXIT   mara left view there east.
+TOAST  📦 bring 88 block — delivered (feedback)
+ENTER  orrin came into view here south.
+ENTER  mara came into view there east.
+EXIT   mara left view there east.
+EXIT   orrin went out of the orange house.
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [grape]
+TOAST  📦 bring 80 block — delivered (feedback)
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=14  presses=0  screens=1  sim=1263.0s
+# events: SAY 54  EXIT 25  ENTER 24  TOAST 8  CHEAT 7  TICK 7  OK 1  BOARD 1  NOTE 1

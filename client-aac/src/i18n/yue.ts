@@ -904,6 +904,7 @@ export const yue: Translations = {
       social_world: "同朋友一齊玩",
       symbol_learning: "學習符號",
       dollhouse: "公仔屋",
+      "nature-hike": "自然行山",
     },
   },
 

@@ -5,6 +5,8 @@
  * operations without requiring a real database connection.
  */
 
+import type { ProgramFramework } from '@shared/program-framework';
+
 export interface MockUser {
   id: string;
   email: string;
@@ -26,7 +28,7 @@ export interface MockStudent {
   lastName?: string;
   gender?: 'male' | 'female' | 'other';
   birthDate?: string;
-  framework?: 'tala' | 'us_iep';
+  framework?: ProgramFramework;
   country?: string;
   primaryLanguage?: string;
   additionalLanguages?: string[];
@@ -55,7 +57,7 @@ export interface MockProgram {
   id: string;
   studentId: string;
   instituteId?: string;
-  framework: 'tala' | 'us_iep';
+  framework: ProgramFramework;
   title?: string;
   status: 'draft' | 'active' | 'archived';
   startDate?: string;

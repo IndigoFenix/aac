@@ -904,6 +904,7 @@ export const en = {
       social_world: "Play with friends",
       symbol_learning: "Learn Symbols",
       dollhouse: "Dollhouse",
+      "nature-hike": "Nature Hike",
     },
   },
 

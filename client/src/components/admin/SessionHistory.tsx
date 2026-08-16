@@ -322,6 +322,134 @@ function FilterBar({
   );
 }
 
+const IMPORTANCE_LABELS: Record<number, string> = {
+  0: "0 · nothing happened",
+  1: "1 · routine",
+  2: "2 · interesting",
+  3: "3 · major milestone",
+};
+
+/** AAC-tab-only filters: student search, cost range, duration range, min importance. */
+function AACFilterBar({
+  student,
+  minCost,
+  maxCost,
+  minDurationMin,
+  maxDurationMin,
+  minImportance,
+  onStudentChange,
+  onMinCostChange,
+  onMaxCostChange,
+  onMinDurationChange,
+  onMaxDurationChange,
+  onMinImportanceChange,
+}: {
+  student: string;
+  minCost: string;
+  maxCost: string;
+  minDurationMin: string;
+  maxDurationMin: string;
+  minImportance: string;
+  onStudentChange: (v: string) => void;
+  onMinCostChange: (v: string) => void;
+  onMaxCostChange: (v: string) => void;
+  onMinDurationChange: (v: string) => void;
+  onMaxDurationChange: (v: string) => void;
+  onMinImportanceChange: (v: string) => void;
+}) {
+  const hasAny =
+    student || minCost || maxCost || minDurationMin || maxDurationMin || (minImportance && minImportance !== "__any__");
+
+  return (
+    <div className="flex items-center gap-3 mb-4 flex-wrap">
+      <label htmlFor="aac-filter-student" className="text-sm text-muted-foreground">Student</label>
+      <Input
+        id="aac-filter-student"
+        placeholder="Name or ID"
+        className="w-40 h-8"
+        value={student}
+        onChange={(e) => onStudentChange(e.target.value)}
+      />
+
+      <label htmlFor="aac-filter-min-cost" className="text-sm text-muted-foreground">Cost</label>
+      <div className="flex items-center gap-1">
+        <Input
+          id="aac-filter-min-cost"
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="min $"
+          className="w-24 h-8"
+          value={minCost}
+          onChange={(e) => onMinCostChange(e.target.value)}
+        />
+        <span className="text-muted-foreground text-sm">–</span>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="max $"
+          className="w-24 h-8"
+          value={maxCost}
+          onChange={(e) => onMaxCostChange(e.target.value)}
+        />
+      </div>
+
+      <label htmlFor="aac-filter-min-duration" className="text-sm text-muted-foreground">Duration (min)</label>
+      <div className="flex items-center gap-1">
+        <Input
+          id="aac-filter-min-duration"
+          type="number"
+          min="0"
+          placeholder="min"
+          className="w-20 h-8"
+          value={minDurationMin}
+          onChange={(e) => onMinDurationChange(e.target.value)}
+        />
+        <span className="text-muted-foreground text-sm">–</span>
+        <Input
+          type="number"
+          min="0"
+          placeholder="max"
+          className="w-20 h-8"
+          value={maxDurationMin}
+          onChange={(e) => onMaxDurationChange(e.target.value)}
+        />
+      </div>
+
+      <label htmlFor="aac-filter-importance" className="text-sm text-muted-foreground">Importance</label>
+      <Select value={minImportance || "__any__"} onValueChange={onMinImportanceChange}>
+        <SelectTrigger id="aac-filter-importance" className="w-44 h-8">
+          <SelectValue placeholder="Any" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__any__">Any</SelectItem>
+          {[0, 1, 2, 3].map((lvl) => (
+            <SelectItem key={lvl} value={String(lvl)}>{IMPORTANCE_LABELS[lvl]}+</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {hasAny && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            onStudentChange("");
+            onMinCostChange("");
+            onMaxCostChange("");
+            onMinDurationChange("");
+            onMaxDurationChange("");
+            onMinImportanceChange("");
+          }}
+        >
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function LogMessage({ msg }: { msg: any }) {
   const role = msg.role || msg.type || "unknown";
   const content =
@@ -565,6 +693,12 @@ function AACTab() {
   const [filters, setFilters] = useState<SessionFilters>({ limit: 25, offset: 0 });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [student, setStudent] = useState("");
+  const [minCost, setMinCost] = useState("");
+  const [maxCost, setMaxCost] = useState("");
+  const [minDurationMin, setMinDurationMin] = useState("");
+  const [maxDurationMin, setMaxDurationMin] = useState("");
+  const [minImportance, setMinImportance] = useState("");
   const [logSession, setLogSession] = useState<string | null>(null);
   const [debugSession, setDebugSession] = useState<string | null>(null);
 
@@ -573,21 +707,43 @@ function AACTab() {
       ...filters,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
+      student: student || undefined,
+      minCost: minCost ? Number(minCost) : undefined,
+      maxCost: maxCost ? Number(maxCost) : undefined,
+      minDurationMin: minDurationMin ? Number(minDurationMin) : undefined,
+      maxDurationMin: maxDurationMin ? Number(maxDurationMin) : undefined,
+      minImportance: minImportance && minImportance !== "__any__" ? Number(minImportance) : undefined,
     }),
-    [filters, startDate, endDate]
+    [filters, startDate, endDate, student, minCost, maxCost, minDurationMin, maxDurationMin, minImportance]
   );
 
   const { data, isLoading } = useAACSessionsAdmin(queryFilters);
   const sessions = data?.data ?? [];
   const pagination = data?.pagination ?? { total: 0, limit: 25, offset: 0, hasMore: false };
 
+  const resetOffset = () => setFilters((f) => ({ ...f, offset: 0 }));
+
   return (
     <>
       <FilterBar
         startDate={startDate}
         endDate={endDate}
-        onStartDateChange={(v) => { setStartDate(v); setFilters((f) => ({ ...f, offset: 0 })); }}
-        onEndDateChange={(v) => { setEndDate(v); setFilters((f) => ({ ...f, offset: 0 })); }}
+        onStartDateChange={(v) => { setStartDate(v); resetOffset(); }}
+        onEndDateChange={(v) => { setEndDate(v); resetOffset(); }}
+      />
+      <AACFilterBar
+        student={student}
+        minCost={minCost}
+        maxCost={maxCost}
+        minDurationMin={minDurationMin}
+        maxDurationMin={maxDurationMin}
+        minImportance={minImportance}
+        onStudentChange={(v) => { setStudent(v); resetOffset(); }}
+        onMinCostChange={(v) => { setMinCost(v); resetOffset(); }}
+        onMaxCostChange={(v) => { setMaxCost(v); resetOffset(); }}
+        onMinDurationChange={(v) => { setMinDurationMin(v); resetOffset(); }}
+        onMaxDurationChange={(v) => { setMaxDurationMin(v); resetOffset(); }}
+        onMinImportanceChange={(v) => { setMinImportance(v); resetOffset(); }}
       />
 
       {isLoading ? (
@@ -605,13 +761,14 @@ function AACTab() {
                 <TableHead>Duration</TableHead>
                 <TableHead className="text-right">Cost</TableHead>
                 <TableHead className="text-right">Cost/min</TableHead>
+                <TableHead>Importance</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {sessions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No AAC sessions found.
                   </TableCell>
                 </TableRow>
@@ -634,6 +791,9 @@ function AACTab() {
                     </TableCell>
                     <TableCell className="text-right">
                       ${formatCostPerMin(s.creditsUsed, s.started, s.ended, s.lastActivity)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{s.importance}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

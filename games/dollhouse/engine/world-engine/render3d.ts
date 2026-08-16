@@ -1956,6 +1956,40 @@ export interface RenderHost {
   castGroundRay?(origin: THREE.Vector3, dir: THREE.Vector3, far: number): THREE.Vector3 | null;
 }
 
+/**
+ * WHICH SCHEME the grounded chase rig films with (⚖️ USER RULING 2026-08-14).
+ * Deliberately ORTHOGONAL to WHOSE body it films (the focus ladder — see
+ * `subjectId`): the ruling is that "any camera focus can use either system", so
+ * nothing here may key on what KIND of body the focus is.
+ *
+ *  - "directed" — the heading FOLLOWS THE GAZE: the rig swings to look where the
+ *    player is looking, and lifts from over-the-shoulder to overhead as the gaze
+ *    falls BEHIND the subject (the "tilt downwards as the player moves toward the
+ *    bottom of the screen" feel). Today's behavior, and the DEFAULT.
+ *  - "orbiting" — the heading is a TURNTABLE: a gaze parked in a screen CORNER
+ *    swings the camera around the subject under the ONE turntable law
+ *    (spirit/corner-orbit.ts — the same law the spirit ladder and the dollhouse
+ *    orbit with), and the rig HOLDS the travel pose instead of tilting. The
+ *    scheme for a subject that does not track the spark precisely, where a
+ *    gaze-led heading fights the body's own walk.
+ *
+ * ⚖️ BYTE-IDENTITY PIN: "directed" is the initial value of `cameraScheme`, and
+ * NOTHING in this file changes a single pixel unless `setCameraScheme("orbiting")`
+ * is actually called. No existing caller calls it (the AAC symbol games, the
+ * spirit ladder, the dollhouse and the walk/fly coordinator never mention it), so
+ * every existing path renders exactly what it rendered before this type existed.
+ * There is no transcript gate for GL code — that pin is the contract.
+ *
+ * FUTURE, NOT BUILT (user, 2026-08-14): a THIRD scheme is anticipated for MOBILE
+ * ENTITIES THAT DON'T FOLLOW THE SPARK PRECISELY — neither a gaze-led heading nor
+ * a pure turntable, but a rig that reads the BODY's own travel (the creature
+ * walks its own way; the camera leads the body and the gaze only trims it). It
+ * arrives as a third member of this union plus one arm in updateCamera's heading
+ * switch and one in its pose switch; the seam is a union and not a boolean
+ * precisely so that adding it moves no existing behavior.
+ */
+export type CameraScheme = "directed" | "orbiting";
+
 /** Merge partial camera/comfort overrides over the defaults (nested poses too). */
 function mergeCamera(p?: Partial<CameraTunables>): CameraTunables {
   return {
@@ -2000,6 +2034,25 @@ export class World3DRenderer {
   /** OWNER-mode camera opt-out (setExternalCamera): the spirit ladder owns
    *  the camera while this renderer keeps drawing. Never set by the AAC. */
   private externalCamera = false;
+  /** ATTACHED-AVATAR override (setFollowBody): the grounded chase rig follows
+   *  this body instead of `state.avatars[localId]` — the local player stays
+   *  the formless spark while an avatar creature carries the camera. Null
+   *  (default) is the local-spark follow, byte-identical to before this
+   *  existed. Never set by the AAC. */
+  private followBodyId: string | null = null;
+  /** WHICH CAMERA SCHEME the grounded chase rig runs (see CameraScheme).
+   *  "directed" = today's behavior to the pixel, and the default.
+   *
+   *  ONE LIVE SCHEME, not a per-focus table — the v1 storage choice. The
+   *  renderer films exactly ONE focus at a time, and the layer that names the
+   *  focus (setFollowBody) is the same layer that would name its scheme, in the
+   *  same breath. A Map<focusId, scheme> would have to be garbage-collected as
+   *  bodies stream out, and would still need an answer for a focus nobody
+   *  registered — this field IS that answer, with no bookkeeping. The seam does
+   *  not hard-couple scheme to focus KIND (the ruling forbids that), so if
+   *  per-focus storage is ever wanted it is a Map consulted by a `schemeFor(id)`
+   *  helper that falls back to this field; no call site below changes. */
+  private cameraScheme: CameraScheme = "directed";
   /** CURSOR opt-out (setExternalCursor): the PLANET owns the one spark — the
    *  player is on a planet, and a town drawing the player's cursor is a frame
    *  leak. With this on, updateSpark still computes the full cursor target
@@ -2201,6 +2254,21 @@ export class World3DRenderer {
   private vignetteUniforms!: { uStrength: { value: number }; uInner: { value: number }; uColor: { value: THREE.Color } };
   /** Angular speed (rad/s) actually applied to the camera last frame. */
   private lastYawSpeed = 0;
+  // --- Camera diagnostics (debugCamera) ---------------------------------------
+  // The grounded rig decides its heading from three values that are FRAME LOCALS
+  // — the gaze fixation, its alignment with the current heading, and the
+  // faceTarget override. Stamped here each frame purely so `debugCamera()` can
+  // report them; nothing reads them back, so the rig is untouched.
+  private dbgGazeX = 0;
+  private dbgGazeZ = 0;
+  private dbgHaveGaze = false;
+  private dbgAhead = -1;
+  private dbgFaceX = 0;
+  private dbgFaceY = 0;
+  private dbgHaveFace = false;
+  /** Has the grounded rig run at all? Until it has, every field above is a
+   *  constructor default and reporting them would be inventing a camera. */
+  private dbgCameraSeen = false;
   /** Eased vignette strength (0..maxVignette), so it fades rather than snaps. */
   private vignetteStrength = 0;
 
@@ -2230,6 +2298,10 @@ export class World3DRenderer {
   // gaze fixation to screen space for the edge (orbit) trigger.
   private spiritAz = 0;
   private readonly _camScratch = new THREE.Vector3();
+  /** Scratch for the ORBITING scheme's NDC projections (projectLocalNdc) — kept
+   *  separate from `_camScratch` so the spirit branch and the grounded branch can
+   *  never alias, and reused so the orbit costs no per-frame allocation. */
+  private readonly _ndcScratch = new THREE.Vector3();
   // SPIRIT conversation dolly (slice 4). `convFocus` is the LATCHED conversation
   // — not whatever the intent published this frame — because the latch is what
   // gives the camera its hysteresis (`convHold` seconds of grace before it lets
@@ -2700,6 +2772,24 @@ export class World3DRenderer {
     this.externalCamera = on;
   }
 
+  /** ATTACHED-AVATAR mode: point the grounded chase rig's follow target at
+   *  body `id` instead of the local spark's own avatar — set from quest-host
+   *  when a member's spark is riding an avatar creature. `null` restores the
+   *  default (follow the local spark), so an unused override is
+   *  byte-identical to before this existed. */
+  setFollowBody(id: string | null): void {
+    this.followBodyId = id;
+  }
+
+  /** Pick the camera SCHEME (see CameraScheme) — "directed" (the default:
+   *  gaze-led heading + tilt) or "orbiting" (corner-gaze turntable around the
+   *  focus). ORTHOGONAL to setFollowBody, which picks WHOSE body is filmed: a
+   *  caller that changes the focus and wants a different scheme for it calls
+   *  both. Never called by the AAC — its paths keep the directed default. */
+  setCameraScheme(scheme: CameraScheme): void {
+    this.cameraScheme = scheme;
+  }
+
   /** The render camera — for an EXTERNAL rig (the spirit ladder) that owns
    *  its pose while this renderer keeps drawing. */
   getCamera(): THREE.PerspectiveCamera {
@@ -2741,6 +2831,41 @@ export class World3DRenderer {
    *  — the lab surfaces it while diagnosing the descended dollhouse. */
   debugCutaway(): string {
     return this.cutawayDebug;
+  }
+
+  /**
+   * WHAT THE GROUNDED RIG DECIDED LAST FRAME — the five values the heading and
+   * tilt are computed from, exposed so a camera that is pointing somewhere
+   * nobody asked for can be read instead of guessed at.
+   *
+   * `faceTarget` is the one that OVERRIDES the gaze: while it is non-null the
+   * heading slews to it unconditionally and the gaze is ignored, so a stuck
+   * `faceTarget` is a camera locked onto a point. Read it first.
+   *
+   * Coordinates: `gaze` is reported in THREE space, where the game plane's
+   * (x, y) is (x, z) and `y` is the planar height the heading math works at
+   * (always 0 — the rig's swing is flat). `faceTarget` stays in GAME (x, y)
+   * because that is the shape the intent supplies it in.
+   *
+   * READ-ONLY and zero behaviour change: the three frame locals behind it are
+   * stamped into fields during the update and never read back by the rig.
+   * Null before the first grounded frame has run.
+   */
+  debugCamera(): {
+    gaze: { x: number; y: number; z: number } | null;
+    ahead: number;
+    travel: number;
+    faceTarget: { x: number; y: number } | null;
+    yawSpeed: number;
+  } | null {
+    if (!this.dbgCameraSeen) return null;
+    return {
+      gaze: this.dbgHaveGaze ? { x: this.dbgGazeX, y: 0, z: this.dbgGazeZ } : null,
+      ahead: this.dbgAhead,
+      travel: this.travelCommit,
+      faceTarget: this.dbgHaveFace ? { x: this.dbgFaceX, y: this.dbgFaceY } : null,
+      yawSpeed: this.lastYawSpeed,
+    };
   }
 
   /** The DOLLHOUSE rig pose for `frame` at orbit azimuth `spiritAz`, in
@@ -3032,6 +3157,49 @@ export class World3DRenderer {
     return out;
   }
 
+  /** THE CAMERA SUBJECT — the id of the body this VIEW IS FROM, in precedence
+   *  order (the ONE focus ladder; every "where is the viewer" read below goes
+   *  through it, so there is exactly one place this order is written):
+   *
+   *   ① `followBodyId` — the explicit override (setFollowBody): attached-avatar
+   *      mode points it at the creature the session created for this player.
+   *   ② `state.drivenId` — THE BODY THIS SPARK IS ACTUALLY STEERING. While
+   *      nothing is possessed this IS `localId` (engine.ts seeds
+   *      `drivenId: localId` and `removeAvatar` reverts it), so the default path
+   *      is unchanged to the pixel; the moment the player POSSESSES a creature
+   *      it becomes that creature and the view goes with it.
+   *   ③ `localId` — the floor: if neither body is in the state yet (a spawn
+   *      race, or an override pointed at a body that has not streamed in), fall
+   *      back to the local one rather than to the manifold CENTRE, which is a
+   *      fixed point the rig would happily plant on.
+   *
+   *  ⚖️ WHAT KEYS ON THE SUBJECT vs ON `localId` (USER RULINGS 2026-08-14 —
+   *  "'stationary spark' shouldn't be a thing while the camera is attached to
+   *  anything", and interior reveal follows what the CREATURE can see):
+   *  everything that means "the viewer" reads the SUBJECT — the chase rig's
+   *  target and altitude, the interior reveal, the storey fade, the
+   *  camera→subject blackout sightline, the cursor's floor, and the
+   *  motion-comfort vignette. Everything that means "this process's player
+   *  IDENTITY" stays on `localId`: pick ownership (`pickScreen`'s isLocal — a
+   *  ray passes through your own body), the model factory's local skin, the
+   *  speech-bubble exemption roster, and the conversation frame's
+   *  drop-the-parked-spark rule.
+   *
+   *  UNATTACHED THIS IS `localId` (no override, and drivenId is seeded to it),
+   *  so every existing path — including the spirit specs' reveal — is
+   *  byte-identical to before the ladder existed. */
+  private subjectId(state: WorldState): string {
+    const id = this.followBodyId ?? state.drivenId;
+    return id && state.avatars[id] ? id : this.localId;
+  }
+
+  /** The camera subject's body (see subjectId). Undefined only when neither it
+   *  nor the local body is in the state yet (a spawn race) — every caller below
+   *  already handles a missing body. */
+  private subjectBody(state: WorldState): AvatarState | undefined {
+    return state.avatars[this.subjectId(state)];
+  }
+
   render(
     state: WorldState,
     dt: number,
@@ -3052,7 +3220,13 @@ export class World3DRenderer {
     // mode is the "dollhouse": a formless overhead viewer sees every ACCESSIBLE
     // room (reachable through unlocked doors) unconditionally, while a puzzle
     // that LOCKS an area keeps its roof — so it reveals accessibleBuildings.
-    const me = state.avatars[this.localId];
+    // THE VIEWER for every test in this method is the CAMERA SUBJECT (see
+    // subjectId), not the local spark: while a creature carries the camera, the
+    // spark is a parked, stationary stand-in and every "where the viewer is"
+    // read taken from it — reveal, storey fade, blackout sightline, cursor
+    // floor — describes a body nobody is looking through. Unattached the two
+    // are the same record, so this is byte-identical on every existing path.
+    const subject = this.subjectBody(state);
     // Roads build on the first frame, once the world's ground sampler is known.
     if (this.pendingRoads) {
       this.buildRoads(this.pendingRoads, this.pendingRoadColor, state.ground);
@@ -3084,15 +3258,27 @@ export class World3DRenderer {
       this._hostCam.updateMatrixWorld();
     }
     const camPos = this.camLocalFrame.position;
-    // Gaze picking intersects the ground at the PLAYER'S local level — a single
-    // plane (v1): exact where the player stands, approximate for far aims on a
-    // slope. Flat worlds keep the y=0 plane.
-    this.groundPlane.constant = -(me ? standHeightAt(state, me.x, me.y) : 0);
+    // Gaze picking intersects the ground at the SUBJECT'S local level — a single
+    // plane (v1): exact where the filmed body stands, approximate for far aims on
+    // a slope. Flat worlds keep the y=0 plane. (Attached: the plane must ride the
+    // creature the camera is on; the parked spark's spawn level would skew every
+    // pick by the hill the avatar has since walked up.)
+    this.groundPlane.constant = -(subject ? standHeightAt(state, subject.x, subject.y) : 0);
     // THE REVEAL RULE lives in `revealedInteriors` (module scope, above) — one
     // owner, so the headless text view reveals EXACTLY what this view does (the
     // town streamer keys interior embodiment on it). See there for the reveal-
     // off / avatar / spirit / focused-frame reasoning.
-    const visible = revealedInteriors(state, this.localId, {
+    // ⚖️ USER RULING 2026-08-14: "Interior reveal while attached to a creature
+    // should be based on whether or not the creature can see inside the room."
+    // The SUBJECT is the viewer, so the reveal keys on the focus ladder — and
+    // the answer to "can it see in" is the EXISTING visibility system, unchanged
+    // and not re-implemented here: revealedInteriors → visibleBuildings floods
+    // from the room the viewer STANDS in (inside ⇒ that room and everything an
+    // open, unlocked, near-enough door joins to it — ⚖️ doors open by ACT) and,
+    // when it stands outdoors, admits only what an open exterior door grants.
+    // A closed door reveals nothing, gaze notwithstanding. Unattached the id is
+    // `localId` and the read is byte-identical (the spirit specs' pin).
+    const visible = revealedInteriors(state, this.subjectId(state), {
       interiorReveal: this.interiorReveal,
       spirit: this.spiritCamera,
       spiritFrame: this.spiritFrame,
@@ -3101,10 +3287,12 @@ export class World3DRenderer {
     // math (floor × FLOOR_HEIGHT, ground-free) still holds on a sloped site.
     const fade: FadeContext = {
       visible,
-      floor: me?.floor ?? 0,
+      floor: subject?.floor ?? 0,
       // Subtract the flight altitude too, so the storey-fade math stays rig-relative
       // (not "way above the roofs") while airborne.
-      camY: camPos.y - (me ? standHeightAt(state, me.x, me.y) + (me.altitude ?? 0) : 0),
+      camY:
+        camPos.y -
+        (subject ? standHeightAt(state, subject.x, subject.y) + (subject.altitude ?? 0) : 0),
     };
     // The gaze pick reads these to refuse hits inside a hidden room.
     this.pickVisible = visible;
@@ -3131,12 +3319,16 @@ export class World3DRenderer {
         }
         this.cutawayBlackout.add(b.id);
       }
-    } else if (me) {
+    } else if (subject) {
       const cxp = camPos.x;
       const czp = camPos.z;
       for (const b of state.spec.buildings ?? []) {
         if (visible.has(b.id)) continue;
-        if (segmentEntersRect(cxp, czp, me.x, me.y, b.footprint)) this.cutawayBlackout.add(b.id);
+        // The sightline is camera → SUBJECT: the rig sits behind the body it
+        // films, so that segment is what the view actually looks along.
+        if (segmentEntersRect(cxp, czp, subject.x, subject.y, b.footprint)) {
+          this.cutawayBlackout.add(b.id);
+        }
       }
     }
 
@@ -3181,7 +3373,7 @@ export class World3DRenderer {
         // cursors drawn, which reads as one spark with the wrong behaviour.
         `spk:${this.spark.debugState()} ` +
         //`rev:${this.dbgRoofRev} minOp:${this.dbgRoofMinOp.toFixed(2)} dt:${this.dbgDt.toFixed(4)} ` +
-        `me:${me ? `${Math.round(me.x)},${Math.round(me.y)}@${buildingAt(state, me.x, me.y)?.id ?? "out"}` : "none"}`;
+        `me:${subject ? `${Math.round(subject.x)},${Math.round(subject.y)}@${buildingAt(state, subject.x, subject.y)?.id ?? "out"}` : "none"}`;
     }
 
     let _rb = rbNow(); // TEMP render-block reporter
@@ -3199,7 +3391,7 @@ export class World3DRenderer {
     // this frame drew with, the space the camera's subject stands in (the SAME
     // body the reveal keys on), and the bodies whose lines are never gated.
     this.syncBubbles(state, glyphFor, {
-      subjectSpace: me ? buildingAt(state, me.x, me.y)?.id ?? null : null,
+      subjectSpace: subject ? buildingAt(state, subject.x, subject.y)?.id ?? null : null,
       revealed: visible,
       exempt: exemptSpeakers({
         localId: this.localId,
@@ -3308,7 +3500,11 @@ export class World3DRenderer {
       return;
     }
     if (cur.point) {
-      const floorY = (state.avatars[this.localId]?.floor ?? 0) * FLOOR_HEIGHT;
+      // The storey the cursor skims is the SUBJECT'S (see subjectId) — the body
+      // the view is from. While attached, the local spark is parked on the
+      // ground floor at the spawn, so its storey would sink the cursor through
+      // the floor of an upstairs room the avatar is standing in.
+      const floorY = (this.subjectBody(state)?.floor ?? 0) * FLOOR_HEIGHT;
       this.placeCursor(
         cur.point.x,
         floorY + standHeightAt(state, cur.point.x, cur.point.y) + 0.45,
@@ -3338,10 +3534,21 @@ export class World3DRenderer {
 
   /** Drive the vignette from how fast the camera is translating + rotating, so
    *  the periphery dims during motion (rotation weighted heaviest — it's the
-   *  worst nausea trigger) and clears when you settle. */
+   *  worst nausea trigger) and clears when you settle.
+   *
+   *  🚨 SAFETY: the linear term MUST come from the body the camera is actually
+   *  riding — the CAMERA SUBJECT (see subjectId), not `localId`. ⚖️ USER RULING
+   *  2026-08-14: "'stationary spark' shouldn't be a thing while the camera is
+   *  attached to anything". Reading the parked spark meant this vignette saw
+   *  speed 0 for the whole of an attached session — the rig flew across the
+   *  world behind a walking creature with the comfort feature switched off,
+   *  which is the exact failure mode this exists to prevent. Under-engaging is
+   *  the dangerous direction here; over-engaging only dims a periphery.
+   *  (The angular term already came from the real camera — `lastYawSpeed` is
+   *  the yaw the rig APPLIED last frame, under either camera scheme.) */
   private updateComfort(state: WorldState, dt: number): void {
-    const me = state.avatars[this.localId];
-    const speed = me ? Math.hypot(me.vx, me.vy) : 0;
+    const subject = this.subjectBody(state);
+    const speed = subject ? Math.hypot(subject.vx, subject.vy) : 0;
     const linT = Math.min(1, speed / this.comfort.refSpeed);
     const angT = Math.min(1, this.lastYawSpeed / this.comfort.refYaw);
     const motion = Math.min(1, linT * 0.5 + angT * 1.0);
@@ -4430,6 +4637,81 @@ export class World3DRenderer {
     }
   }
 
+  /** Project a SCENE-LOCAL point to normalized device coords through the camera
+   *  as it stands right now (updateCamera writes the new pose after reading
+   *  this, so it is last frame's — the same one-frame staleness the dollhouse
+   *  orbit and the face-camera already accept; invisible at these rates).
+   *
+   *  HOST mode lifts the point into the PLANET frame first: the shared camera
+   *  lives there, and the local-frame stand-in (`camLocalFrame`) is a pose-only
+   *  proxy carrying no projection matrix of its own. Returns null when the point
+   *  is not inside the view frustum's depth range (|ndc z| > 1 — behind the eye,
+   *  where x/y come back sign-flipped, or past the far plane), and the scratch
+   *  it returns is CLOBBERED by the next call: read what you need first. */
+  private projectLocalNdc(x: number, y: number, z: number): THREE.Vector3 | null {
+    const p = this._ndcScratch.set(x, y, z);
+    if (this.host) {
+      this.host.anchor.updateWorldMatrix(true, false);
+      p.applyMatrix4(this.host.anchor.matrixWorld);
+    }
+    p.project(this.camera);
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || Math.abs(p.z) > 1) return null;
+    return p;
+  }
+
+  /** ORBITING scheme: the heading change (rad) a corner gaze asks of the grounded
+   *  chase rig this frame, around the CAMERA SUBJECT. 0 when the gaze is absent,
+   *  in the aiming dead-zone, or unprojectable.
+   *
+   *  REUSE, NOT A FORK: the mapping is `cornerOrbitDelta` — the ONE turntable law
+   *  (spirit/corner-orbit.ts) the spirit ladder's district/city orbit and the
+   *  dollhouse already spin with, including its dead-zone, its near/far rim
+   *  crossover and the ramp that keeps a gaze resting on the crossover from
+   *  chattering. This function supplies only the two things that law says a
+   *  caller owns — WHERE THE NDC COMES FROM and WHICH AZIMUTH IT ADDS TO — which
+   *  is exactly what generalizing it to an arbitrary focus body means.
+   *
+   *  ① NDC, measured ABOUT THE SUBJECT rather than about the screen centre. The
+   *     dollhouse may project the gaze raw because its rig looks straight AT the
+   *     framed target, so the target IS the screen middle — the law's stated
+   *     premise. The chase rig does not: it looks at a point `lookAhead` metres
+   *     BEYOND the subject, so the subject projects BELOW centre and a raw ndcY
+   *     would put the near/far crossover somewhere above the creature's head.
+   *     Projecting the subject too and taking the DIFFERENCE restores the premise
+   *     exactly: ndcY < 0 means the gaze sits below the body on screen (the NEAR
+   *     rim), > 0 above it (the FAR rim), and |ndcX| past ORBIT_EDGE means a
+   *     screen side measured from the body being filmed. Both points are taken at
+   *     GROUND level, so the difference is the honest on-screen offset between
+   *     "where I am looking" and "where it stands".
+   *  ② SIGN. The law returns a delta for the DOLLHOUSE's azimuth convention
+   *     (`dollhousePoseMath`: camera position = centre + R·(cos az, sin az) in
+   *     x/z, az = π/2 + spiritAz). The chase rig walks the same circle
+   *     parameterised by its HEADING θ = atan2(f.x, f.z), with the camera at
+   *     centre − back·f — i.e. position angle ψ = −θ − π/2, so dθ = −daz. Hence
+   *     the negation: without it, a corner would spin a creature the OPPOSITE way
+   *     from the way the same corner spins a house, and the one turntable law
+   *     would stop being one law. */
+  private orbitYawDelta(
+    state: WorldState,
+    subject: AvatarState,
+    gaze: { x: number; y: number } | null,
+    dt: number,
+  ): number {
+    if (!gaze) return 0;
+    const g = this.projectLocalNdc(gaze.x, standHeightAt(state, gaze.x, gaze.y), gaze.y);
+    if (!g) return 0;
+    // Read before the second projection — one shared scratch.
+    const gx = g.x;
+    const gy = g.y;
+    const s = this.projectLocalNdc(
+      subject.x,
+      standHeightAt(state, subject.x, subject.y) + (subject.altitude ?? 0),
+      subject.y,
+    );
+    if (!s) return 0;
+    return -cornerOrbitDelta(gx - s.x, gy - s.y, dt);
+  }
+
   private updateCamera(state: WorldState, dt: number, intent?: RenderIntent): void {
     // SPIRIT: a FIXED angled-overhead vantage that frames the whole manifold. The
     // formless player never moves, so there is nothing to follow — a static
@@ -4512,13 +4794,33 @@ export class World3DRenderer {
     // happen here is UNWINDING a face-camera turn left over from spirit mode —
     // free when there is none (the method's own first line returns).
     this.spiritFaceCamera(state, Math.max(0, dt), false);
-    const me = state.avatars[this.localId];
+    // WHOSE BODY THE GROUND RIG RIDES: the CAMERA SUBJECT — followBodyId ??
+    // drivenId ?? localId. The ladder and the reasoning for each rung live on
+    // `subjectId` (ONE definition; the reveal, the fade, the blackout sightline
+    // and the comfort vignette all resolve the viewer through the same call).
+    const me = this.subjectBody(state);
     const step = Math.max(0, dt);
     const cam = this.cameraCfg;
+    // host mode: don't stomp the shared camera; owner mode drives unless an
+    // external rig (the spirit ladder) claimed the camera. Resolved HERE (it was
+    // computed further down, from the same three unchanged fields) because the
+    // orbiting scheme's gaze input is only meaningful while WE own the camera it
+    // projects through.
+    const drive = this.driveCamera || (!this.host && !this.externalCamera);
+    // WHICH SCHEME films the subject (see CameraScheme). "directed" is the
+    // default and every line under it is untouched; "orbiting" replaces exactly
+    // two gaze-driven halves — the HEADING (gaze-led swing → corner turntable)
+    // and the TILT (overhead lift when the gaze falls behind → hold the travel
+    // pose). Nothing else in the rig differs, so both schemes ride the same
+    // follow-centre, the same terrain-riding placement and the same comfort caps.
+    const orbiting = this.cameraScheme === "orbiting";
     // The camera's heading follows the GAZE FIXATION (cursor.point), not the engine
     // `aim`. So it keeps responding to where you look even when the avatar is frozen
     // — while SITTING (aim null) you can still look around; only the body stays put.
     const gaze = intent?.cursor?.point ?? intent?.aim ?? null;
+    this.dbgCameraSeen = true;
+    this.dbgHaveGaze = !!gaze;
+    if (gaze) { this.dbgGazeX = gaze.x; this.dbgGazeZ = gaze.y; }
 
     // Position: ease the followed centre toward the local avatar.
     const target = this._scratch.set(
@@ -4560,6 +4862,7 @@ export class World3DRenderer {
     // How aligned the aim is with the current heading: + = ahead (screen-top), − =
     // behind. Decides the overhead↔shoulder transition (computed pre-turn).
     const ahead = haveDir ? aimx * this.camForward.x + aimz * this.camForward.z : -1;
+    this.dbgAhead = ahead;
 
     // Heading: ease toward the gaze direction. Held when the gaze is on the avatar
     // (gd ≤ moveThreshold) or absent — so a watcher's glances never rotate the world
@@ -4567,14 +4870,20 @@ export class World3DRenderer {
     // capped BOTH by the gaze-distance rule (near gaze ⇒ fast pivot, far gaze ⇒ slow
     // reveal) AND comfort.maxYawSpeed. A `faceTarget` (NPC conversation) OVERRIDES
     // the gaze: the avatar is frozen but the view slews to face the speaker.
+    // ORBITING keeps the faceTarget override (a conversation still slews the
+    // view onto the speaker — that is not a gaze-led heading, it is the game
+    // naming a subject) but drops the gaze-direction target: under the turntable
+    // the gaze picks a DIRECTION OF SPIN, not a direction to look.
     const faceTarget = intent?.faceTarget ?? null;
+    this.dbgHaveFace = !!faceTarget;
+    if (faceTarget) { this.dbgFaceX = faceTarget.x; this.dbgFaceY = faceTarget.y; }
     let tgtAngle: number | null = null;
     let facing = false;
     if (faceTarget && this.camCenter) {
       const dx = faceTarget.x - this.camCenter.x;
       const dz = faceTarget.y - this.camCenter.z;
       if (Math.hypot(dx, dz) > 1e-3) { tgtAngle = Math.atan2(dx, dz); facing = true; }
-    } else if (haveDir && gazeDistance > cam.moveThreshold) {
+    } else if (!orbiting && haveDir && gazeDistance > cam.moveThreshold) {
       tgtAngle = Math.atan2(aimx, aimz);
     }
     let appliedYaw = 0;
@@ -4592,7 +4901,30 @@ export class World3DRenderer {
       const next = cur + stepAngle;
       this.camForward.set(Math.sin(next), 0, Math.cos(next));
       appliedYaw = stepAngle;
+    } else if (orbiting && me && drive) {
+      // TURNTABLE: a gaze parked in a screen corner swings the rig around the
+      // subject. RATE-driven, so it deliberately does NOT go through the
+      // directed path above: that path eases toward a TARGET angle, which would
+      // damp each frame's delta to a fraction of the law's rate, and its
+      // `yawDeadband` is a threshold on a target ERROR — against a per-frame
+      // orbit step (~0.02 rad at 60 Hz) it would swallow the whole orbit.
+      // The COMFORT ceiling still binds, and binds hard: maxYawSpeed (0.7 rad/s)
+      // is below the turntable's full-deflection ORBIT_RATE (1.3 rad/s), so a
+      // deep corner orbits at the comfort cap. That is the intended reading of
+      // the standing law — rotation is the worst nausea trigger and the grounded
+      // rig is the closest view we have to first-person.
+      const want = this.orbitYawDelta(state, me, gaze, step);
+      if (want !== 0) {
+        const maxStep = this.comfort.maxYawSpeed * step;
+        const clamped = Math.max(-maxStep, Math.min(maxStep, want));
+        const cur = Math.atan2(this.camForward.x, this.camForward.z);
+        const next = cur + clamped;
+        this.camForward.set(Math.sin(next), 0, Math.cos(next));
+        appliedYaw = clamped;
+      }
     }
+    // The comfort vignette reads this — so an ORBIT dims the periphery exactly
+    // as a directed swing does (same variable, same units, one owner).
     this.lastYawSpeed = step > 0 ? Math.abs(appliedYaw) / step : 0;
 
     // Over-the-shoulder is the DEFAULT; the camera lifts to overhead ONLY when the
@@ -4604,7 +4936,13 @@ export class World3DRenderer {
     const gazeAhead = !haveDir || ahead > cam.travelAheadEnter; // clearly ahead → shoulder
     // An explicit shoulder REQUEST (gaze on a speech bubble / conversation speaker)
     // always wins.
-    if (intent?.shoulder || gazeAhead) this.travelTarget = 1;
+    if (orbiting) {
+      // ORBITING replaces the tilt: "what is behind me?" is answered by ORBITING
+      // there, not by lifting overhead, so the rig HOLDS the travel (shoulder)
+      // pose — the one stable frame a turntable can spin without also pitching.
+      // The ease below still runs, so a scheme swap mid-session glides.
+      this.travelTarget = 1;
+    } else if (intent?.shoulder || gazeAhead) this.travelTarget = 1;
     else if (gazeBehind) this.travelTarget = 0;
     // else: inside the band — hold the current pose.
     this.travelCommit += (this.travelTarget - this.travelCommit) * (1 - Math.exp(-cam.travelEase * step));
@@ -4622,7 +4960,8 @@ export class World3DRenderer {
     // (driveCamera); while the flight camera is in charge we just ease our rig
     // state so the handoff back to walking is smooth. Owner mode drives
     // unless an external rig (the spirit ladder) claimed the camera.
-    const drive = this.driveCamera || (!this.host && !this.externalCamera);
+    // (`drive` is resolved at the top of the grounded branch — same expression,
+    // same three fields, none of them touched in between.)
     if (drive && Math.abs(fov - this.camera.fov) > 1e-3) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
@@ -4632,7 +4971,12 @@ export class World3DRenderer {
     const c = this.camCenter;
     // FLIGHT: the follow camera rides the followed body's altitude, so lifting
     // off raises the whole rig with the avatar (no scene swap). 0 when grounded.
-    const followAlt = state.avatars[this.localId]?.altitude ?? 0;
+    // `me` IS the followed body (resolved above) — which is what this comment
+    // always claimed and what the flight case wants: with no override and
+    // nothing possessed it is still `state.avatars[localId]`, so lift-off is
+    // unchanged, and a ridden/created body now lifts the rig with ITSELF
+    // rather than with a spark parked on the ground.
+    const followAlt = me?.altitude ?? 0;
     if (drive) this.placeCamera(c.x, c.z, standHeightAt(state, c.x, c.z) + followAlt);
   }
 
@@ -4724,6 +5068,21 @@ export function createWorld3DView(
     camera: renderer.getCamera(),
     dollhousePose: (frame, spiritAz, out) => renderer.dollhousePose(frame, spiritAz, out),
     debugCutaway: () => renderer.debugCutaway(),
+    // ⚠️ THE BUG THIS LINE FIXES: the renderer has had `setFollowBody` since
+    // stage N4-pre, but the adapter never forwarded it — and every caller
+    // reaches it as `view.setFollowBody?.(id)` (optional, because the 2D and
+    // owner-mode views have no chase rig). An optional call on a method that
+    // is simply ABSENT is a silent no-op, so the override could never take
+    // effect: `followBodyId` stayed null for the life of the process and the
+    // ground rig went on following the local spark — which, in attached-avatar
+    // mode, is a `stationary: true` body parked at the spawn. That is the
+    // camera that "plants at touchdown and stays while the avatar walks away".
+    setFollowBody: (id) => renderer.setFollowBody(id),
+    // ⚠️ Land WITH the world-view.ts declaration, never without it: callers
+    // use `view.setCameraScheme?.(…)` — on an absent method that is a SILENT
+    // no-op (the exact bug class that made setFollowBody do nothing for a
+    // whole stage). Directed default keeps the miss invisible; browser-verify.
+    setCameraScheme: (scheme) => renderer.setCameraScheme(scheme),
     setAvatarHidden: (id, hidden) => renderer.setAvatarHidden(id, hidden),
     resetAvatarModel: (id) => renderer.resetAvatarModel(id),
     rebaseLocal: (delta) => renderer.rebaseLocal(delta),

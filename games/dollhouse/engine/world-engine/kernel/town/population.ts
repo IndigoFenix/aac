@@ -35,6 +35,11 @@ import { zoneAt, type TownGrowthSignals, type ZoneCharter } from "./zoning.js";
 import { stackTotal, stackUnits, type StockEndpoint } from "./transfer.js";
 import { headOf } from "../../variations.js";
 import type { FoundedBuilding, TownDeltas } from "./construction.js";
+import {
+  registerFoldCodec,
+  type FoldCodec, type FoldCtx, type FoldRecord, type FoldRefusal,
+} from "./fold.js";
+import { parseScopeId, type ScopeId } from "./scope.js";
 
 // ---------------------------------------------------------------------------
 // Move-in — the immigration rule (deterministic, data-driven)
@@ -539,3 +544,147 @@ export function cohortWalkerSpots(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// The registered codec (F2 — fold-round.md) — households ⇄ the district pool
+// ---------------------------------------------------------------------------
+//
+// ⚖️ F-② — population is the SECOND codec through the one fold (F1: wild,
+// wild-area.ts). `demoteHousehold`/`promoteHousehold` above are UNTOUCHED
+// and byte-stable: the one live caller (quest-host.ts `demoteHouse`/
+// `promoteHouse`) keeps calling them directly. What follows is the same
+// thin second front door F1 cut for wild — the generic dispatch
+// (`kernel/town/fold.ts` `condense`/`expand`) — registered so `kind:
+// "district"` is foldable through it too.
+//
+// 🚨 UNLIKE WILD, THIS DOOR PLUGS NO AUDIT GAP. A cohort row is ALWAYS a
+// live `StockEndpoint` (`cohortEndpoint`, above) whether or not any
+// household is pooled in it — a session's own scope tree already lists
+// `cohortEndpointId(row.district)` for every row it holds (quest-host.ts
+// `scopeTreeOf`), so `auditScopeTree` counts a pool's stack the ordinary
+// way. An unloaded WILD AREA has no live stack at all (the standing
+// features it would otherwise be are simply gone), which is the actual gap
+// `foldedStock("wild", …)` bridges. Nothing here needs that bridge; this
+// codec exists only to make `kind: "district"` dispatchable, exactly as
+// wild's does for `kind: "wild"` — quest-host's real audit and real
+// demote/promote call sites are untouched by either.
+//
+// THE SCOPE THE CODEC OWNS: the DISTRICT (`cohort:<district>`, kind
+// "district" — scope.ts `COHORT_PREFIX`), never the household. A TRACKED
+// household's own id (`h_<index>`, kind "building") is a DIFFERENT
+// `ScopeKind` — scope.ts gives it no shared discriminator with "district"
+// the way `wild:area:*` and `wild:oak_3` share `kind: "wild"` with a `form`
+// field telling the area from its trees. So `condense`/`expand` here fold
+// exactly what the wild precedent folds: what stands UNDER an aggregate
+// scope (an area's trees; a district's currently-tracked households, named
+// by `ctx.households`) into that aggregate's OWN closed form
+// (`WildAreaRecord`; `CohortRow`) — never a household's own id, which this
+// codec never receives and never answers for. A pooled household has no
+// scope id of its own in this grammar either way (`scopeTreeOf` never lists
+// one per house once pooled — only the district row), so there is nothing
+// this codec is declining to speak for.
+
+/**
+ * What the codec's `condense`/`expand` need from the live host, beyond the
+ * base clock (`FoldCtx.now`) — the union of what `demoteHousehold` and
+ * `promoteHousehold` themselves take, minus what the scope id already
+ * answers (the district number is the id's own tail).
+ */
+export interface CohortFoldCtx extends FoldCtx {
+  /** condense: households to fold into this district right now — the same
+   *  triple `demoteHousehold` already takes (house, carried stack,
+   *  wellbeing). Absent ⇒ none fold (an empty condense of a fresh or
+   *  already-empty pool). */
+  households?: readonly {
+    house: CohortHouse;
+    carried: Readonly<Record<string, number>>;
+    wellbeing: number;
+  }[];
+  /** condense: the pool this district already holds, when there is one —
+   *  carried forward exactly as `demoteHousehold`'s own `rows` array
+   *  accumulates a pre-existing row. Read-only: condense never mutates it
+   *  (a clone folds households in), matching wild's own `prev` contract. */
+  prev?: CohortRow | null;
+  /**
+   * condense: the town STREET-DAY `demoteHousehold`'s own `day` param wants
+   * — NOT `now` (`FoldCtx`'s clock is absolute taskClock SECONDS; a
+   * cohort's rate-integration clock is a different unit entirely, exactly
+   * as `cohortRatesStep`'s own `day` is, and the live caller's conversion —
+   * `session.townClock / FOOD_DAY_SEC` — is a host constant this pure
+   * kernel module never sees). Default 0, matching `demoteHousehold`'s own.
+   */
+  day?: number;
+  /** expand: receives each promoted household back — the live host's hook
+   *  to re-track it, a test's hook to collect the results. Optional: omit
+   *  for a dry run that only wants the ids back. */
+  place?(district: number, house: CohortHouse): void;
+}
+
+/** A defensive copy — condense/expand read `prev`/`record.payload` without
+ *  ever mutating the caller's own row (demoteHousehold/promoteHousehold
+ *  mutate their `rows` array in place, so the codec must hand them a copy). */
+function cloneCohortRow(row: CohortRow): CohortRow {
+  return {
+    district: row.district,
+    pop: row.pop,
+    wellbeing: row.wellbeing,
+    needs: { ...row.needs },
+    stack: { ...row.stack },
+    houses: row.houses.map((h) => ({ ...h })),
+    ratesDay: row.ratesDay,
+  };
+}
+
+function condenseCohortPayload(id: ScopeId, ctx: CohortFoldCtx): CohortRow | FoldRefusal {
+  const ref = parseScopeId(id);
+  if (ref.kind !== "district") {
+    return { refused: true, kind: "district", id, blockers: [], note: `not a cohort/district id ("${id}")` };
+  }
+  const rows: CohortRow[] = ctx.prev ? [cloneCohortRow(ctx.prev)] : [];
+  const day = ctx.day ?? 0;
+  for (const h of ctx.households ?? []) {
+    demoteHousehold(rows, ref.district, h.house, h.carried, h.wellbeing, day);
+  }
+  return cohortRowOf(rows, ref.district) ?? emptyCohortRow(ref.district, day);
+}
+
+function expandCohortPayload(
+  record: FoldRecord<CohortRow>,
+  ctx: CohortFoldCtx,
+): ScopeId[] | FoldRefusal {
+  const rows: CohortRow[] = [cloneCohortRow(record.payload)];
+  const out: ScopeId[] = [];
+  for (const h of record.payload.houses) {
+    const promoted = promoteHousehold(rows, h.index);
+    if (!promoted) continue;
+    ctx.place?.(promoted.district, promoted.house);
+    out.push(`h_${promoted.house.index}`);
+  }
+  return out;
+}
+
+/** Every unit a cohort row holds, by glyph — the read side `foldedStock`
+ *  sums over (a session's own `t.deltas.cohorts` plugs in exactly as
+ *  `session.wildAreas.values()` plugs into wild's). Population itself is
+ *  not a glyph — `cohortPopulation`/`cohortTotals` answer that question;
+ *  this is the MATERIAL half only, matching `wildAreaStock`'s own scope. */
+function cohortRowStock(row: CohortRow): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [g, n] of Object.entries(row.stack)) if (n > 0) out[g] = n;
+  return out;
+}
+
+/**
+ * THE COHORT CODEC — registered below at module load, so importing this
+ * module (already the whole game does, for `demoteHousehold`/
+ * `promoteHousehold` themselves) is enough to make `kind: "district"`
+ * foldable through the generic dispatch.
+ */
+export const COHORT_CODEC: FoldCodec<CohortRow, CohortFoldCtx> = {
+  kind: "district",
+  condense: condenseCohortPayload,
+  expand: expandCohortPayload,
+  stockOf: cohortRowStock,
+};
+
+registerFoldCodec(COHORT_CODEC);

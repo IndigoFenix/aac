@@ -46,6 +46,7 @@ import {
 import {
   PROGRESS_PROGRAM_FIELD,
   PROGRESS_SYSTEM_PROMPT,
+  buildFrameworkGuidance,
   getProgressMemoryFields as getBaseProgressMemoryFields,
 } from "./memory-schema/progress-memory-schema";
 
@@ -73,6 +74,7 @@ import type { AccessCtx } from "./sharing/visibility";
 import { withInstituteVisibility } from "./sharing/visibility";
 import { recordShareDerivedViewSingle } from "./sharing/audit";
 import { getLanguageName } from "@shared/language-names";
+import { normalizeFramework } from "@shared/program-framework";
 
 // Re-export for convenience
 export { PROGRESS_PROGRAM_FIELD, PROGRESS_SYSTEM_PROMPT };
@@ -640,15 +642,10 @@ export class ChatContextManager {
    */
   getProgramSummary(): string {
     if (!this.state.program) {
-      const framework = this.state.student?.framework;
-      let framworkText = '';
-      if (framework === 'tala') {
-        framworkText = ` using "tala" framework`;
-      } else if (framework === 'us_iep') {
-        framworkText = ` using "us_iep" framework`;
-      } else {
-        framworkText = ` after consulting with the user about the appropriate framework`;
-      }
+      const framework = normalizeFramework(this.state.student?.framework);
+      const framworkText = framework
+        ? ` using "${framework}" framework`
+        : ` after consulting with the user about the appropriate framework`;
       return `No program loaded for this student. If asked to edit program info, create a new program for the current year${framworkText}.`;
     }
 
@@ -815,11 +812,13 @@ export function getProgressMemoryFields(
  * - Institute instructions are always included
  * - Progress/student instructions are only included when hasStudent is true
  * - Institute language is used to set the default language for report content
+ * - Framework decides which statutory elements the assistant may raise at all
  */
 export function buildProgressSystemPrompt(
   permissions: AccessPermissions = DEFAULT_REPORT_PERMISSIONS,
   hasStudent: boolean = true,
-  instituteLanguage?: string | null
+  instituteLanguage?: string | null,
+  framework?: string | null
 ): string {
   // Always include institute prompt (institute management doesn't require a student)
   let prompt = INSTITUTE_SYSTEM_PROMPT;
@@ -827,6 +826,7 @@ export function buildProgressSystemPrompt(
   // Only include student-related prompts if we have a student
   if (hasStudent) {
     prompt += PROGRESS_SYSTEM_PROMPT;
+    prompt += buildFrameworkGuidance(framework);
 
     const hasVisibleReports =
       permissions.medical !== 'hidden' ||

@@ -13,6 +13,7 @@ import { licenseService } from '../../services/licenseService.js';
 import { userRepository, instituteRepository, licenseRepository } from '../../repositories/index.js';
 import type { User, Student, Institute, InstituteUser, UserStudent, License, StudentWithAacSettings } from '@shared/schema';
 import type { LicensePermissions } from '@shared/license-permissions';
+import type { ProgramFramework } from '@shared/program-framework';
 
 let userCounter = 0;
 let studentCounter = 0;
@@ -111,7 +112,7 @@ export interface MakeStudentOptions {
   name?: string;
   firstName?: string;
   lastName?: string;
-  framework?: 'tala' | 'us_iep';
+  framework?: ProgramFramework;
   primaryLanguage?: string;
   country?: string;
 }

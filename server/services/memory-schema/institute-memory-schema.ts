@@ -56,7 +56,8 @@ import {
   import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
-  
+  import { PROGRAM_FRAMEWORKS } from "@shared/program-framework";
+
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
@@ -2045,8 +2046,9 @@ import {
       framework: {
         id: "framework",
         type: "string",
-        enum: ["tala", "us_iep"],
-        description: "Educational framework: TALA (Israel) or US IEP",
+        enum: PROGRAM_FRAMEWORKS as unknown as string[],
+        description:
+          "Educational framework. tala = Israeli TALA; us_iep = US IEP; personal = not in a school system (home, private clinic, adult learner) — programs still apply, statutory paperwork does not.",
       },
       country: { id: "country", type: "string", enum: ["IL", "US"], default: "IL", description: "IL (Israel) or US (United States)" },
       primaryLanguage: { id: "primaryLanguage", type: "string", enum: ["he", "en", "es", "pt", "fr", "ru", "de", "ar", "zh", "yue", "ko"], default: "he", description: "Language code: he, en, es, pt, fr, ru, de, ar, zh, yue, ko" },

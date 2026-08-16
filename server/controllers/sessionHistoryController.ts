@@ -7,10 +7,31 @@ class SessionHistoryController {
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 25, 1), 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       const studentId = req.query.studentId as string | undefined;
+      const student = (req.query.student as string | undefined)?.trim() || undefined;
       const startDate = req.query.startDate as string | undefined;
       const endDate = req.query.endDate as string | undefined;
+      const minCost = req.query.minCost != null ? parseFloat(req.query.minCost as string) : undefined;
+      const maxCost = req.query.maxCost != null ? parseFloat(req.query.maxCost as string) : undefined;
+      const minDurationMin =
+        req.query.minDurationMin != null ? parseFloat(req.query.minDurationMin as string) : undefined;
+      const maxDurationMin =
+        req.query.maxDurationMin != null ? parseFloat(req.query.maxDurationMin as string) : undefined;
+      const minImportance =
+        req.query.minImportance != null ? parseInt(req.query.minImportance as string, 10) : undefined;
 
-      const opts = { studentId, startDate, endDate, limit, offset };
+      const opts = {
+        studentId,
+        student,
+        startDate,
+        endDate,
+        minCost: Number.isFinite(minCost) ? minCost : undefined,
+        maxCost: Number.isFinite(maxCost) ? maxCost : undefined,
+        minDurationMin: Number.isFinite(minDurationMin) ? minDurationMin : undefined,
+        maxDurationMin: Number.isFinite(maxDurationMin) ? maxDurationMin : undefined,
+        minImportance: Number.isFinite(minImportance) ? minImportance : undefined,
+        limit,
+        offset,
+      };
 
       const [data, total] = await Promise.all([
         chatRepository.getAACSessionsAdmin(opts),
@@ -30,6 +51,7 @@ class SessionHistoryController {
         started: s.started,
         lastActivity: s.lastUpdate,
         ended: s.status === "closed" ? s.lastUpdate : null,
+        importance: s.importance,
       }));
 
       res.json({

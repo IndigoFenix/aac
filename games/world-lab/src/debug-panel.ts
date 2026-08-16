@@ -14,8 +14,14 @@ import {
   type InspectProbes,
 } from "@shared/world-engine/interaction/quest/creature-inspect";
 
-const host = (): QuestHost3D | null =>
-  (window as unknown as { __questLab?: QuestHost3D }).__questLab ?? null;
+/** THE HOSTED SESSION THIS PANEL READS. A town boot publishes `__questLab`, a
+ *  wilderness (walker) boot `__questWild` — a walker run only ever has the
+ *  latter, so reading one handle left the panel blank out in open country.
+ *  Town first when both stand: it is the richer roster. */
+const host = (): QuestHost3D | null => {
+  const w = window as unknown as { __questLab?: QuestHost3D; __questWild?: QuestHost3D };
+  return w.__questLab ?? w.__questWild ?? null;
+};
 
 /** THE PROBE BUNDLE, wired from the host's EXISTING read-only surface — no new
  *  sim state, no mutation. Rebuilt per call because `__questLab` is replaced on

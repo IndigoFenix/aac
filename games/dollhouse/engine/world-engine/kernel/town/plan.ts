@@ -24,7 +24,8 @@ import {
   type GrowSeed, type TownStreets, type Vec2,
 } from "./streets";
 import {
-  farmAreaPerPersonM2, producerSurplusFrac, REAL_SCALE, serviceRadiusM, townExtentM, type WorldScale,
+  farmAreaPerPersonM2, producerSurplusFrac, REAL_SCALE, serviceRadiusM, tierExtentM,
+  type SettlementTier, type WorldScale,
 } from "../../scale";
 
 /** Meters per substrate tile — a tile is a square kilometer. */
@@ -158,6 +159,24 @@ export interface TownPlan {
    *  nothing, and the growth governor skips replans that couldn't
    *  change the town. */
   built: number;
+  /**
+   * POPULATION FOLLOWS CAPACITY (food-scale-round.md, Stage α) — the souls this
+   * site can actually seat: `built × HOUSEHOLD`. The aggregate sim ASSIGNS a
+   * population (`dual.settlementScalar`) and nothing used to reconcile it with
+   * the lots the street tree found, so a 71 m Earthlike town carried a want of
+   * 195 houses against 0-1 placed ones and still raised 11 workplaces
+   * (`earthlike-city-regression.md`). This is the honest local number.
+   */
+  popCap: number;
+  /**
+   * The assigned population this site could NOT seat (`max(0, pop − popCap)`).
+   * A site too small for its population gets a SMALLER POPULATION, and the
+   * region is meant to answer with MORE SITES — that answer is Stage β
+   * (`planet/refine.ts` founding pressure) and does not exist yet, so today
+   * this is a published truth rather than a consumed one. Never zero-filled:
+   * a plan that reports 0 spill really did seat everybody.
+   */
+  popSpill: number;
   houses: TownHouse[];
   works: TownWork[];
   /** The town's CONSTRUCTING SPECIES — stamped on every house/work row (and
@@ -220,6 +239,18 @@ const CIVIC_FRONT = 6;
 /** Extra frontage the tree is grown for, because the hall and the market
  *  now take lots of their own (a 20 m footprint covers two or three). */
 const CIVIC_SLOT_RESERVE = 12;
+
+/** THE GOLDEN ANGLE (2π / φ²) — the low-discrepancy step the works' fallback
+ *  ring advances by. Its whole point is that it NEVER repeats: the arm it
+ *  replaced advanced by 2π/6 and so stacked work N on work N+6 exactly. */
+const GOLDEN_ANGLE = 2.399963229728653;
+/** Candidate positions the fallback ring tries before it gives up and stands
+ *  the building on the last one anyway (a placed building the player can see
+ *  overlapping beats a building the economy counts and the map lacks). */
+const RING_TRIES = 24;
+/** Angle candidates per ring before the arm steps outward — a whole turn's
+ *  worth at the golden angle, after which this circle is genuinely full. */
+const RING_TURN = 8;
 
 /**
  * THE PLAZA: the junction CLOSEST to the founding generation — argmin over
@@ -632,8 +663,17 @@ export function* townPlanSteps(
    *  the real-scale answer, which IS `dimensions.townRMax`.
    *
    *  Street growth holds its built margin back from this, so `radius` below
-   *  is an OUTPUT that fits inside. */
-  const extentM = townExtentM(scale ?? REAL_SCALE);
+   *  is an OUTPUT that fits inside.
+   *
+   *  ⚖️ THE TIER SEAT (food-scale-round ④⑵): the clip is read through
+   *  `tierExtentM`, so a hamlet, a village and a market town can declare
+   *  different BODIES on one world instead of all declaring 450 m and being
+   *  told apart only by the clip. Nothing hands this generator a tier yet —
+   *  `planet/refine.ts`/`planet/border.ts` own the tier ladder and are
+   *  SEQUENCED-AFTER — so it reads `"town"`, which IS `townExtentM` and is
+   *  byte-identical to what shipped. */
+  const tier: SettlementTier = "town";
+  const extentM = tierExtentM(tier, scale ?? REAL_SCALE);
   const net = growStreets(
     seed, siteKey, slotNeed + CIVIC_SLOT_RESERVE,
     { seeds: bias.seeds, extentM, ...(obstacles.length ? { obstacles } : {}) },
@@ -665,6 +705,24 @@ export function* townPlanSteps(
     // Hall first: `works.find(type === "market")` must stay the plaza one.
     if (hall) civic.push(hall.work);
     if (market) civic.push(market.work);
+  }
+
+  // ⚖️ THE CIVIC CORE MAY NOT EAT THE LAST LOT (earthlike-city-regression Q2,
+  // the second-order defect). `works` below drops the civic rows when no house
+  // stood, but the frontage they claimed above was never released — so on a
+  // 2-4 slot street tree the hall and the market consumed every lot and then
+  // did not exist, leaving a town of nothing. A reservation that leaves the
+  // households nowhere to stand is not a reservation, it is the town's death:
+  // RELEASE it and let the houses have the frontage. `claimed` also carries
+  // the FOUNDED slots, which are history and are never released.
+  //
+  // Exactly equivalent to "release when `count === 0`", checked before the
+  // fact: the loop below lots every unclaimed slot until the want is met, so
+  // zero houses ⇔ zero unclaimed slots.
+  if (houseCount > 0 && civicSlots.length > 0 && net.slots.length - claimed.size <= 0) {
+    for (const s of civicSlots) claimed.delete(s);
+    civicSlots.length = 0;
+    civic.length = 0;
   }
 
   yield "framing houses";
@@ -803,6 +861,23 @@ export function* townPlanSteps(
     }
   }
 
+  // ⚖️ POPULATION FOLLOWS CAPACITY (food-scale-round, Stage α). The aggregate
+  // sim ASSIGNS a population and the street tree finds however many lots the
+  // ground allows; until now nothing reconciled the two, so a plan could carry
+  // a want of 195 against 1 placed house and still raise a full economy's
+  // worth of workplaces around 5 residents. `built` is the household capacity
+  // this site really provides (lots placed + build-up storeys), so `popCap` is
+  // what it can seat and `popSpill` is the demand it turned away. Stage β
+  // (planet/refine.ts) is what will FOUND ANOTHER SITE with the spill; this
+  // stage only stops the plan lying to itself.
+  const popCap = (count + extraFloors) * HOUSEHOLD;
+  const popSpill = Math.max(0, pop - popCap);
+  // The share of its own assigned population this site actually holds — the
+  // factor everything sized off the population must be read through. At or
+  // above capacity it is 1 and every count is byte-identical to what shipped
+  // (REAL scale seats 195 lots against a want of 195).
+  const seatedFrac = count > 0 ? (pop > 0 ? Math.min(1, popCap / pop) : 1) : 0;
+
   yield "raising works";
   // The civic rows lead (hall, then plaza market — see above); production
   // works cap the street TIPS (the town's edge, where the lanes peter out
@@ -847,10 +922,18 @@ export function* townPlanSteps(
   // whichever way it points — the forge's fire risk lives at the
   // town's edge). settlementScalar reads 0 for vars a world doesn't
   // declare, so a base world simply places none of a goods2 building.
+  //
+  // ⚖️ GATED AND SCALED BY WHAT ACTUALLY STOOD (earthlike-city-regression Q2 /
+  // food-scale-round ④⑴). This loop was the ONE list with no `count > 0` guard
+  // — the civic list above and the field block below both have it — so a town
+  // that housed nobody still raised 11 workplaces around empty ground. And the
+  // count itself is now read through `seatedFrac`: a site seating a fifth of
+  // its assigned population employs a fifth of its assigned economy. A town at
+  // or above capacity scales by exactly 1, so nothing shipped moves.
   const workCounts: Array<[string, number, number | null, { color: string; w: number; h: number }]> =
-    eco.works.map(def => [
+    count <= 0 ? [] : eco.works.map(def => [
       def.key,
-      Math.min(def.mapCap, Math.round(dual.settlementScalar(siteKey, def.countScalar))),
+      Math.min(def.mapCap, Math.round(dual.settlementScalar(siteKey, def.countScalar) * seatedFrac)),
       def.leansToward ? bias.toward[def.leansToward] ?? null : null,
       def.style,
     ]);
@@ -881,11 +964,42 @@ export function* townPlanSteps(
         // above), so the plan under-reported its own built area. It now
         // widens like every other placement AND is clamped inside the
         // declared extent, which is what makes `radius ≤ extentM` true.
-        const a = toward ?? (works.length / 6) * Math.PI * 2 + 0.7;
+        //
+        // ⚖️ DEFECT S3 (earthlike-city-regression Q3): the angle generator used
+        // to be `(works.length / 6) × 2π`, which advances by exactly 60° and
+        // WRAPS EVERY SIX placements, while `out` saturates at the same clamp
+        // for all of them — so work N and work N+6 landed on the identical
+        // point to the metre (measured: 5 exact overlaps, purple weavers and
+        // tailors standing inside green farms). `spread` could not save it:
+        // it is 0 whenever `toward === null`, which is always true for a
+        // town-play host (`fieldBearing` returns null). TWO fixes, both
+        // needed: the GOLDEN ANGLE never repeats, and — unlike the arm this
+        // was copied from, which at least tests `workMinSpacing` — the ring
+        // now REJECTS a footprint that clashes, against the houses too.
+        const base = toward ?? 0.7;
         const spread = toward === null ? 0 : (k - (n - 1) / 2) * 0.5;
-        const out = Math.min(radius + TOWN_DIMS.workTipOut, extentM - TOWN_DIMS.workPad);
-        const x = plaza.x + Math.cos(a + spread) * out;
-        const y = plaza.y + Math.sin(a + spread) * out;
+        const cap = extentM - TOWN_DIMS.workPad;
+        const ring = Math.min(radius + TOWN_DIMS.workTipOut, cap);
+        let x = plaza.x + Math.cos(base + spread) * ring;
+        let y = plaza.y + Math.sin(base + spread) * ring;
+        for (let attempt = 0; attempt < RING_TRIES; attempt++) {
+          // Angle first, then step the ring outward when a whole turn of
+          // angles is spoken for — concentric rings sized by footprint, and
+          // never past the declared extent.
+          const a = base + spread + attempt * GOLDEN_ANGLE;
+          const out = Math.min(
+            ring + Math.floor(attempt / RING_TURN) * TOWN_DIMS.workMinSpacing,
+            cap,
+          );
+          const cx = plaza.x + Math.cos(a) * out;
+          const cy = plaza.y + Math.sin(a) * out;
+          x = cx;
+          y = cy;
+          const rect: Rect = { x: cx - style.w / 2, y: cy - style.h / 2, w: style.w, h: style.h };
+          if (works.some(wk => rectsClash(wk, rect, 1))) continue;
+          if (houses.some(hs => rectsClash(hs, rect, 1))) continue;
+          break;
+        }
         const door = doorToward(x, y, plaza.x, plaza.y);
         works.push({ type, dx: x - style.w / 2, dy: y - style.h / 2, w: style.w, h: style.h, door, color: style.color });
         if (type === "farm") farmSpots.push({ x, y });
@@ -919,8 +1033,23 @@ export function* townPlanSteps(
   // absent `scale` ⇒ 1 — the SAME default S2 shipped, so a caller that
   // still passes no scale (worldgen, far-LOD twins, this file's own
   // fixtures) is byte-identical.
+  //
+  // ⚖️ FIELDS ARE THE HINTERLAND, NOT THE HOUSING (earthlike-city-regression Q1
+  // / food-scale-round ④⑷). The gate used to be `count` — the houses the street
+  // tree found room for — so on a cramped world whether a town had any
+  // countryside at all was a coin flip on lot luck: 3 of 6 measured seeds grew
+  // a fully-populated economy with ZERO fields. Land is farmed because a
+  // HOUSEHOLD eats, so the gate is the WANT: a town that means to house 195
+  // families has their fields whether or not the street tree found their lots.
+  //
+  // ⚖️ THE WANT, NOT THE POPULATION, and the difference is the FOUNDING LAW: a
+  // town aged ≤ FOUNDING_AGE_DAYS sets `houseCount = 0` however many souls
+  // arrived, because everything it will ever have goes up through founded
+  // deltas — *"no phantom founding farm; food must be built, not assumed"*
+  // (`server/tests/world-engine/town-founding-age.test.ts`). Gating on `pop`
+  // would hand the wagon a cultivated hinterland on day 0.
   const fields: TownField[] = [];
-  if (biome === "farmland" && count > 0) {
+  if (biome === "farmland" && houseCount > 0) {
     const anchors = farmSpots.length
       ? farmSpots
       : tips.slice(0, 2).map(t => ({ x: t.p.x, y: t.p.y }));
@@ -989,7 +1118,8 @@ export function* townPlanSteps(
     radius: Math.min(radius + TOWN_DIMS.planPad, extentM),
     // `built` = household capacity PROVIDED: placed lots plus the upper
     // storeys — the growth governor's "can a replan change anything".
-    want: houseCount, built: count + extraFloors, houses: homes, works, plaza, fields, streets: net,
+    want: houseCount, built: count + extraFloors, popCap, popSpill,
+    houses: homes, works, plaza, fields, streets: net,
     ...(civicSlots.length ? { civicSlots: civicSlots.slice().sort((a, b) => a - b) } : {}),
     ...(scale ? { wells } : {}),
     ...(servicePoints.length ? { services: servicePoints } : {}),

@@ -1,0 +1,611 @@
+// shared/world-engine/types.ts
+//
+// Closed data model for the data-driven world engine. A WorldSpec is a pure
+// JSON document an app ships (and, later, an AI generates) describing a world;
+// the engine turns it into a live simulation. Same discipline as the goal-tree
+// engine (shared/goal-tree): mechanics are playtested CODE, content is DATA.
+// Nothing expressible in a WorldSpec can crash or diverge the simulation —
+// every field is an enum, a clamped number, a validated reference, or flavor.
+//
+// v1 is intentionally minimal: a flat 2D manifold, flat terrain, spawn points,
+// and arcade "toys" (the soccer ball). The shape leaves room for the planned
+// axes (sphere manifold, terrain archetypes, an embedded goal-tree content
+// layer) without committing to them yet — those land as new enum members /
+// spec variants, never as engine rewrites.
+
+// ---------------------------------------------------------------------------
+// Geometry primitive
+// ---------------------------------------------------------------------------
+
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
+/** A waypoint from `routeThroughDoors`. `doorId` is present on the two transit
+ *  points that straddle a doorway and absent on the leg's own endpoint — the
+ *  tag that tells whoever steers the body which door it is walking through, so
+ *  `tickDoors` can open that door and only that door. */
+export interface TransitPoint extends Vec2 {
+  doorId?: string;
+}
+
+/** An axis-aligned rectangle in world units (origin at its min corner). */
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * A road/path RIBBON painted flat on the ground — render-only cosmetic geometry
+ * a 3D view flattens onto the field to designate streets. NOT part of the
+ * certified WorldSpec and never touches the sim: a view receives it out-of-band
+ * (World3DRendererOptions.roads), the way `backdrop` is a view option, not spec.
+ * Points are world coords (a world point (x, y) → the 3D ground point (x, 0, y)).
+ */
+export interface RoadPath {
+  /** Centerline polyline in world coords; ≥2 points draw a ribbon. */
+  points: Vec2[];
+  /** Full ribbon width, world units. */
+  width: number;
+}
+
+// ---------------------------------------------------------------------------
+// Spec enums (reserved members are documented but not yet schema-valid)
+// ---------------------------------------------------------------------------
+
+export type ManifoldKind = "flat"; // "sphere" reserved for a later milestone
+export type TerrainKind = "flat";
+/** An object's visual + collision form. "sphere" = a ball; "box" = a crate/table. */
+export type ObjectShape = "sphere" | "box";
+/** How a player may interact with an object:
+ *   • "push"  — move into it to dribble/kick it around (the soccer-ball behavior),
+ *   • "carry" — pick it up (it follows you), then put it down at a dwelled spot. */
+export type ObjectInteraction = "push" | "carry";
+/** Where a held object rests when placed in/on a container — basic relational
+ *  concepts a learning game can teach. A table offers "on" and "under". */
+export type ContainRelation = "on" | "in" | "under";
+export type ContentKind = "sandbox"; // "goal-tree" reserved (embed via Space)
+export type MultiplayerAuthority = "distributed";
+
+// ---------------------------------------------------------------------------
+// Spec
+// ---------------------------------------------------------------------------
+
+export interface WorldMeta {
+  title: string;
+  description?: string;
+  /** BCP-47 locale for any player-facing strings. */
+  locale: string;
+  /** Free-text theme ("playground", "meadow"). */
+  theme: string;
+}
+
+/**
+ * The geometry the world lives on. v1: a finite flat rectangle in abstract
+ * world units, origin at (0,0), extent (width, height). "Up" is implicit (the
+ * sim is 2D); a 3D renderer interprets this rectangle as a ground plane.
+ */
+export interface FlatManifoldSpec {
+  kind: "flat";
+  width: number;
+  height: number;
+  /**
+   * Whether the rectangle is a PHYSICAL boundary (default true). When false,
+   * the extent describes the CONTENT only (procgen footprint, render framing,
+   * spec certification) and physics is unclamped: bodies and objects may move
+   * freely past the edge. Planet-mounted sessions (an embedded town, a
+   * wilderness chunk) set false — there the planet is the reference frame and
+   * the ground sampler answers everywhere, so a city edge must never be a
+   * wall. Standalone worlds (2D quests, the city viewer) keep true.
+   */
+  bounded?: boolean;
+}
+export type ManifoldSpec = FlatManifoldSpec;
+
+export interface FlatTerrainSpec {
+  kind: "flat";
+  /** Cosmetic ground tint, hex. Render-only; never affects the sim. */
+  groundColor?: string;
+}
+export type TerrainSpec = FlatTerrainSpec;
+
+export interface SpawnSpec {
+  id: string;
+  x: number;
+  y: number;
+  /** Initial facing in radians (0 = +x). Defaults to 0. */
+  facing?: number;
+}
+
+/**
+ * Possession-dribble tuning for a "push" object (the soccer-ball behavior):
+ * whoever touches it controls it while moving; a hard stop or a sharp brake
+ * releases it carrying the player's velocity, so the "kick" is emergent rather
+ * than a separate verb. All params are clamped by the schema. Present only when
+ * an object's interactions include "push".
+ */
+export interface PushSpec {
+  /** Distance ahead of the possessor the object is carried. */
+  dribbleDistance: number;
+  /** Fraction of velocity RETAINED per second while rolling free (0..1). */
+  friction: number;
+  /** A possessor slower than this (units/sec) drops the object. */
+  releaseSpeed: number;
+  /** An avatar within this distance of a FREE object may take possession. */
+  touchRadius: number;
+}
+
+/** One containment slot a container object offers — a relation (on/in/under) and
+ *  how many held objects can occupy it. A table = [{relation:"on"},{relation:"under"}]. */
+export interface ContainmentSlot {
+  relation: ContainRelation;
+  /** Max objects in this slot. Defaults to 1. */
+  capacity?: number;
+}
+
+/**
+ * A world object — the generalized primitive that replaces the soccer-ball toy.
+ * Its `shape` is how it looks/collides and its `interactions` are what the player
+ * can do with it (push it around, or carry it and put it down). A container also
+ * declares `contains` slots — what can be placed on/in/under it.
+ */
+/** Archetypal FURNITURE: static containers stood along a room's walls.
+ *  A chest and a cupboard hold things "in" (lidded — they ease open when
+ *  someone stands close, the door rule); a table holds things "on",
+ *  visibly (containment lifts them to the tabletop). The household
+ *  STATIONS (Sims-mode: needs are satisfied AT furniture) — a bed
+ *  (energy), a chair at the table (meals/social), a box (fun). */
+export type FixtureKind =
+  | "chest" | "cupboard" | "table" | "bed" | "chair" | "box"
+  // Sims-mode round 2 stations: the water BARREL (thirst's home container),
+  // the BATH tub (hygiene), the TOILET (waste), the trash BIN ("throw it
+  // away"), and the pet's food BOWL (a floor dish — pets eat what waits there).
+  | "barrel" | "bath" | "toilet" | "bin" | "bowl"
+  // Round 7: the OVEN — food preparation's station (the cook's transform
+  // turns raw pantry food into hot meals here).
+  | "oven"
+  // Construction v1: the carpenter's WORKBENCH — the furniture-craft
+  // transform station, standing only in a workshop (an optional room).
+  | "workbench"
+  // The FOOD box — the goods corner raises this for the `food` good in place
+  // of a generic chest (anachronism deliberate; tech levels come later).
+  | "refrigerator"
+  // The PLACE-MAKING stations (stations.ts): the signature fixture of a room
+  // kind the town can now name — an ANVIL makes a forge, an ALTAR a shrine, a
+  // LOOM a weaving room, a SHELF a study. Each speaks its own name.
+  | "anvil" | "altar" | "loom" | "shelf"
+  // Construction phase 5's pair. The STONECUTTER is the masonry's place-making
+  // bench — the anvil's twin, one trade over. The DOOR is the leaf that hangs
+  // in a doorway (construction-structures.md: the doorway is wall, the door
+  // itself is furniture): the one fixture kind pinned to an OPENING rather
+  // than a floor spot, so it renders as part of its wall run once hung and as
+  // a loose object only while it is being carried or stored.
+  | "stonecutter" | "door";
+
+/** Fixture kinds a walker passes THROUGH: no collision footprint. A chair
+ *  is knee-high and tucked right against the table — making it solid
+ *  would wall off the table's own use (sitting at it). Everything else
+ *  stays solid like a chest. The pet BOWL is ankle-high on the floor —
+ *  a solid dish would trip the household. */
+export const PASSTHROUGH_FIXTURES: ReadonlySet<FixtureKind> = new Set<FixtureKind>(["chair", "bowl"]);
+
+/** THE WORD A FIXTURE ANSWERS TO on the board — its own kind, unless the kind
+ *  draws a distinction the VOCABULARY doesn't. The sim keeps `chest` and `box`
+ *  apart (a goods container vs the toy box) but nobody needs two words for
+ *  them, and the `cupboard` kind speaks the vocabulary's `cabinet`.
+ *
+ *  Every value here MUST be a registered glyph key (shared/glyph-registry.ts).
+ *  A kind that speaks a word the registry never heard of is exactly how a
+ *  button ends up labelled but iconless — the `chest`/`cupboard` bug. */
+const FIXTURE_WORD: Readonly<Partial<Record<FixtureKind, string>>> = {
+  chest: "box",
+  cupboard: "cabinet",
+};
+
+/** The vocabulary word for a fixture kind (see {@link FIXTURE_WORD}). Takes a
+ *  bare string so callers holding a spec's untyped `fixture` need no cast. */
+export function fixtureWord(kind: string): string {
+  return FIXTURE_WORD[kind as FixtureKind] ?? kind;
+}
+
+/** THE INVERSE OF {@link FIXTURE_WORD} — the kind a spoken word names, for the
+ *  machinery that only knows kinds (station properties, craft recipes, the
+ *  `furn_<n>_cupboard` id tokens the resolver matches on). Only words that are
+ *  NOT already kinds appear: `box` is its own kind (the toy box), so it stays
+ *  itself even though `chest` also speaks it; `cabinet` names the `cupboard`.
+ *
+ *  Without this the fold is one-way and a word the board offers can't be acted
+ *  on — the board says "cabinet" and nothing in the house answers to it. */
+const WORD_FIXTURE: Readonly<Record<string, FixtureKind>> = {
+  cabinet: "cupboard",
+};
+
+/** The fixture kind a vocabulary word names (see {@link WORD_FIXTURE}); the
+ *  word itself when it isn't one of the folded ones. */
+export function fixtureKindForWord(word: string): string {
+  return WORD_FIXTURE[word] ?? word;
+}
+
+export interface ObjectSpec {
+  id: string;
+  x: number;
+  y: number;
+  shape: ObjectShape;
+  /** Collision/visual radius, world units (a box's half-extent). */
+  radius: number;
+  /** A FIXTURE: static furniture — solid to walk into (a square footprint
+   *  of `radius` half-extent), never pushed or carried; `interactions`
+   *  may be empty since a fixture is a container. Streamed worlds may
+   *  abstract fixtures away with their building (add/removeWorldObject). */
+  fixture?: FixtureKind;
+  /** SOLIDITY, stated outright (phase 5). Absent ⇒ the historical rule: solid
+   *  iff it is a non-passthrough `fixture`. That rule silently conflated "has a
+   *  furniture archetype" with "you cannot walk through it", which held only
+   *  while every solid thing in the world was furniture. A wild boulder is
+   *  solid and is no kind of furniture — it used to borrow the chest archetype
+   *  purely to collide, and modelling it properly took its collision away with
+   *  the chest. Set it explicitly and neither fact depends on the other:
+   *  `true` collides with no archetype, `false` is a fixture you walk through. */
+  solid?: boolean;
+  /** A lidded fixture eases open while someone stands beside it. */
+  openable?: boolean;
+  /** Which way the fixture faces (radians, 0 = +x) — into the room. */
+  facing?: number;
+  /** SET-UP state (construction ⑥): `false` renders the fixture TIPPED ON ITS
+   *  SIDE — delivered but not yet assembled; the view eases it upright when it
+   *  flips true. Absent/true = standing. Render-only; the sim never reads it. */
+  setUp?: boolean;
+  /**
+   * Optional emoji drawn as a billboarded sprite floating over the object, so
+   * carryable props read as what they ARE (a cookie, an apple) rather than
+   * identical boxes — needed for "carry the right one" selection. Render-only;
+   * never affects the sim.
+   */
+  iconRef?: string;
+  /**
+   * Composed AAC glyph for the floating icon (e.g. "ball.big"). When set, the
+   * renderer swaps the emoji for the game's glyph-rastered image as soon as it
+   * decodes — variant items (descriptors) must LOOK like their glyph, which a
+   * shared emoji can't show. `iconRef` stays the instant placeholder.
+   * Render-only; never affects the sim.
+   */
+  glyph?: string;
+  /** What the player may do with it (≥1). */
+  interactions: ObjectInteraction[];
+  /** Possession-dribble tuning — used only when interactions include "push". */
+  push?: PushSpec;
+  /** Containment slots, for a container (a table). Omit for plain objects. */
+  contains?: ContainmentSlot[];
+}
+
+// ---------------------------------------------------------------------------
+// Structures — static collision geometry the engine owns
+// ---------------------------------------------------------------------------
+
+/**
+ * A structure is fixed collision geometry the ENGINE builds a MoveConstraint
+ * from — unlike `objects`, which are movable (push/carry/contain). v1 ships the
+ * two floor-less kinds: a `wall` (a solid segment) and a `door` (a wall segment
+ * with a gate that swings open on approach). Buildings + stairs (which need a
+ * vertical floor index) are a later phase.
+ */
+export type StructureKind = "wall" | "door" | "stairs";
+
+/** A solid wall: anything within `thickness`/2 of the centerline segment a→b is
+ *  impassable (a capsule, so corners are rounded by the avatar radius). */
+export interface WallSpec {
+  kind: "wall";
+  id: string;
+  a: Vec2;
+  b: Vec2;
+  /** Full wall thickness, world units. */
+  thickness: number;
+  /** Floor this wall exists on. Omit ⇒ it blocks on EVERY floor (a full-height
+   *  exterior wall); set it to confine the wall to one storey's interior. */
+  floor?: number;
+  /** Render tint (hex). Omit ⇒ the renderer's default wall color. */
+  color?: string;
+}
+
+/**
+ * A door — a wall segment with a leaf that swings open. It blocks like a wall
+ * while CLOSED and is passable while OPEN; the engine eases it open whenever an
+ * avatar is within `openRadius` (and it isn't locked) and shut again once nobody
+ * is near, so it "swings out as you walk through, then closes."
+ *
+ * THE SPEC IS THE DOORWAY, NOT THE LEAF (construction phase 5, the law's
+ * "doorways are part of the wall, but the doors themselves should be
+ * constructed as furniture pieces"). A `door` structure is the GAP the wall run
+ * leaves — it is emitted whether or not anything hangs in it, so routing
+ * portals, `doorConnectivity` and `visibleBuildings` are identical either way.
+ * `leaf` is the only thing that changes.
+ */
+export interface DoorSpec {
+  kind: "door";
+  id: string;
+  a: Vec2;
+  b: Vec2;
+  thickness: number;
+  /** Does a swinging LEAF hang in this doorway? ABSENT or true ⇒ yes (every
+   *  spec authored before phase 5, and every worldgen building — the law lets
+   *  worldgen abstract its walls, doors included). `false` ⇒ a bare opening:
+   *  nothing blocks it, nothing swings, nothing latches. The leaf is furniture
+   *  (`FURNITURE_ITEMS.door`) the construction pipeline makes and hangs; until
+   *  it does, the hole in the wall is exactly a hole in the wall. */
+  leaf?: boolean;
+  /** Endpoint the leaf is hinged at (swings about it). Defaults to "a". */
+  hinge?: "a" | "b";
+  /** An avatar within this distance of the door's center opens it. Defaults to
+   *  a sensible multiple of the door's width. */
+  openRadius?: number;
+  /** Starts locked — stays solid (a wall) until unlocked. */
+  locked?: boolean;
+  /** A carryable object id that acts as this door's key: an avatar carrying it
+   *  into `openRadius` unlocks the door (then it opens like any other). */
+  keyObjectId?: string;
+  /** Floor the door sits on. Omit ⇒ all floors (see WallSpec.floor). */
+  floor?: number;
+  /** Render tint (hex) for the doorway's LINTEL (the wall band above the leaf)
+   *  — buildings propagate their wall color here. The leaf itself always keeps
+   *  the door colors (incl. the darker locked shade) so it reads as a door. */
+  color?: string;
+}
+
+/**
+ * A stairway — the floor-changer. It isn't solid; standing on its `rect` ramps
+ * the avatar's `floor` from `fromFloor` (at the start edge) to `toFloor` (at the
+ * end edge) as it crosses along `axis`. Step off the top and you're on the upper
+ * floor; off the bottom, the lower. Generated inside multi-storey buildings.
+ */
+export interface StairSpec {
+  kind: "stairs";
+  id: string;
+  rect: Rect;
+  fromFloor: number;
+  toFloor: number;
+  /** Direction of ASCENT across the footprint: floor reaches `toFloor` at this
+   *  edge. e.g. "+y" ⇒ low at rect.y, high at rect.y + rect.h. */
+  axis: "+x" | "-x" | "+y" | "-y";
+}
+
+export type StructureSpec = WallSpec | DoorSpec | StairSpec;
+
+/** A gap in a building's perimeter where a door is generated. `offset` is the
+ *  distance along the edge (from its start corner: N/S run +x, W/E run +y). */
+export interface BuildingDoorway {
+  edge: "north" | "south" | "east" | "west";
+  offset: number;
+  width: number;
+  locked?: boolean;
+  /** Threaded straight through to the generated `DoorSpec.leaf` (see there):
+   *  absent/true = a leaf hangs, `false` = a bare opening. This is how a
+   *  building AUTHOR (town-stage reading a construction delta's `doorless`)
+   *  says "the doorway is cut but nobody has hung the door yet". */
+  leaf?: boolean;
+}
+
+/**
+ * A building — a multi-storey enclosure. It is sugar over the structural layer:
+ * `expandWorldBuildings` turns each one into real perimeter wall + door
+ * structures (minus its doorways) and, when `floors` > 1, a stairway per storey,
+ * so collision stays uniform. The renderer additionally draws its floor slabs +
+ * roof and fades floors above the occupant when the camera is overhead, so you
+ * can see a player who has walked inside.
+ */
+export interface BuildingSpec {
+  id: string;
+  footprint: Rect;
+  /** Number of storeys (≥1). */
+  floors: number;
+  /** Exterior wall thickness, world units. */
+  wallThickness: number;
+  doorways?: BuildingDoorway[];
+  /** Auto-generate a stairway connecting each storey. Defaults to true when
+   *  floors > 1; set false to place stairs by hand as `structures`. */
+  stairs?: boolean;
+  /** Render tint (hex) for the walls + roof — "the blue house". Propagated to
+   *  the generated wall structures by expandWorldBuildings. */
+  color?: string;
+}
+
+// ---------------------------------------------------------------------------
+// NPCs — AI-driven inhabitants of the world
+// ---------------------------------------------------------------------------
+
+/**
+ * How an NPC moves when it isn't actively engaged in conversation.
+ *   • "stationary"      — holds its spawn; turns to face the nearest person.
+ *   • "wander"          — roams to random waypoints, pausing between them.
+ *   • "approach_nearest"— walks up to the nearest person and holds a
+ *                         conversational distance (roams when nobody is around).
+ * The behavior only ever produces a STEERING AIM; the same locomotion that moves
+ * a player avatar (engine.advanceAvatar) carries the NPC, so it can't diverge.
+ */
+export type NpcMovement = "stationary" | "wander" | "approach_nearest";
+
+export interface NpcBehaviorSpec {
+  movement: NpcMovement;
+  /**
+   * Distance (world units) at which the NPC treats a person as a conversation
+   * partner — it stops approaching and holds here, and (Phase 2) this is the
+   * range the social brain engages over. Defaults to the proximity-circle radius.
+   */
+  conversationRadius?: number;
+  /**
+   * Tether for `wander` (and the roam fallback of `approach_nearest`): waypoints
+   * are picked within this distance of the NPC's SPAWN point instead of anywhere
+   * on the manifold. Omit for free roam (the pre-existing behavior — right for a
+   * world that IS one place; a streamed large world sets it so villagers stay in
+   * their village).
+   */
+  wanderRadius?: number;
+  /**
+   * Tether ANCHOR for `wanderRadius`. Defaults to the spawn point — right when
+   * an NPC spawns at home. A streamed NPC spawned mid-errand (a villager
+   * embodied on their way to market) sets this to where they live, so once the
+   * errand ends they drift around their own house, not around the spot they
+   * happened to materialize.
+   */
+  home?: Vec2;
+  /**
+   * Walking pace, world units/sec. Defaults to the engine's steerMaxSpeed
+   * (player pace, 5). Townsfolk stroll slower — and a game layer that
+   * projects an NPC's position from a schedule clock (grand-dream's food
+   * errands) sets this to the SAME speed the clock assumes, so the body and
+   * the projection stay in step.
+   *
+   * ZERO IS A DECLARATION, NOT A SLOW WALK: it makes the body ROOTED
+   * (isRootedNpc) — a tree. See WORLD_MAX_ROOTED_NPCS.
+   */
+  speed?: number;
+}
+
+/**
+ * ROOTED = this body can never walk, because its spec says its pace is zero.
+ * A living thing that stands still (a shopkeeper at their stall) does NOT
+ * qualify: it declares no speed, so it keeps player pace and merely chooses
+ * to hold position — it can be given an errand and walk off at any moment.
+ * A tree cannot, so the host spends no steering on it and budgets it apart
+ * from the creature cast. The FUNCTION decides, never an id prefix or a kind.
+ */
+export const isRootedNpc = (npc: NpcSpec): boolean => npc.behavior?.speed === 0;
+
+/**
+ * The NPC's social persona. These fields MIRROR the `social_trainer` app's
+ * startup params (server/services/dual-agent/app-registry.ts) one-for-one so the
+ * social brain (Phase 2) can pass them straight to generatePersona /
+ * DirectedSession — an NPC and a hand-launched Social Trainer share one character
+ * pipeline. All optional: the generator samples anything omitted.
+ */
+export interface NpcPersonaSpec {
+  /** "any" → randomized. */
+  genderHint?: "male" | "female" | "any";
+  /** Personality archetype id, or "any" to randomize. Validated by the brain, not
+   *  the world schema, so new archetypes don't require a world-engine bump. */
+  archetypeHint?: string;
+  /** Up to a few topics the NPC should love — ideally the student's interests. */
+  interestHints?: string[];
+  /** How demanding the NPC is. */
+  difficulty?: "gentle" | "medium" | "challenging";
+  /** The social situation to frame ("greeting", "making_friends", …). */
+  scenario?: string;
+  /** Optional social skills to focus the session on. */
+  targetSkills?: string[];
+}
+
+/**
+ * An AI-driven inhabitant of the world. In the sim it is just an avatar whose
+ * steering aim comes from an NpcController (shared/world-engine/npc-controller.ts)
+ * instead of a pointer — so it networks and renders exactly like a player. Its
+ * persona drives the social brain (Phase 2); its behavior drives its body.
+ */
+export interface NpcSpec {
+  id: string;
+  /** Spawn position in world units. */
+  x: number;
+  y: number;
+  /** Initial facing in radians (0 = +x). Defaults to 0. */
+  facing?: number;
+  /** Display name. When omitted the brain's generated persona name is shown. */
+  name?: string;
+  /** Species id (creature registry) — sets the body's COLLISION/PLANNING
+   *  radius via speciesBodyRadius (locomotion, the indoor router, detours all
+   *  read it). Absent = the people default. The avatar MODEL may resolve its
+   *  own species elsewhere (icons, family overrides) — this field is the
+   *  physical body. */
+  species?: string;
+  persona?: NpcPersonaSpec;
+  behavior?: NpcBehaviorSpec;
+  /**
+   * The NPC's needs are FROZEN — they don't drift on the town clock, so its
+   * asks and behaviour stay determinate. THE flag that marks a puzzle-bound
+   * resident (a quest-giver) apart from a regular townsperson whose needs
+   * evolve — both are the SAME kind of NPC (see docs/TOWN_AND_NPCS.md), not
+   * separate object types. The sim ignores it; a game layer (the symbol-game
+   * quest host) reads it to decide a dwell-to-talk opens the puzzle flow vs. a
+   * needs-based default line.
+   */
+  needsFrozen?: boolean;
+}
+
+export interface MultiplayerSpec {
+  /** Hard cap; the lobby/WebRTC mesh inherits this (mesh is O(n²)). */
+  maxPlayers: number;
+  /**
+   * "distributed": each client owns its own avatar; a toy is owned by its
+   * possessor (or its last possessor while it rolls free). The server owns
+   * only the possession token. No server physics tick.
+   */
+  authority: MultiplayerAuthority;
+}
+
+export interface ContentSpec {
+  kind: ContentKind;
+}
+
+export interface WorldSpec {
+  engine: "world";
+  engineVersion: 1;
+  meta: WorldMeta;
+  manifold: ManifoldSpec;
+  terrain: TerrainSpec;
+  spawns: SpawnSpec[];
+  objects: ObjectSpec[];
+  /** Static collision geometry (walls + doors + stairs). Optional; the engine
+   *  derives a MoveConstraint from it and composes it with any external one. */
+  structures?: StructureSpec[];
+  /** Multi-storey enclosures. `expandWorldBuildings` lowers each into perimeter
+   *  structures; the renderer draws slabs/roof + the overhead floor-fade. */
+  buildings?: BuildingSpec[];
+  /** AI-driven inhabitants. Optional (most worlds have none). Hosted by exactly
+   *  one peer at runtime — see shared/world-engine/world-host.ts. */
+  npcs?: NpcSpec[];
+  multiplayer: MultiplayerSpec;
+  content: ContentSpec;
+}
+
+// ---------------------------------------------------------------------------
+// Limits (enforced by the schema; generators should cite them)
+// ---------------------------------------------------------------------------
+
+export const WORLD_MAX_SPAWNS = 16;
+export const WORLD_MAX_OBJECTS = 32;
+/** Walls + doors + stairs. A building expands into several of these, so the cap
+ *  is generous. */
+export const WORLD_MAX_STRUCTURES = 128;
+export const WORLD_MAX_BUILDINGS = 16;
+/** Max storeys in one building. */
+export const WORLD_MAX_FLOORS = 8;
+/** Each NPC is hosted + voiced (a live social session) on one peer; keep the
+ *  count low so a single host can drive them all. Counts MOVERS only — see
+ *  WORLD_MAX_ROOTED_NPCS. */
+export const WORLD_MAX_NPCS = 8;
+/** ROOTED bodies (trees and the like) are budgeted SEPARATELY and far more
+ *  generously: a body that declares zero pace can never walk, so it skips
+ *  the whole per-frame steering pipeline (aim → detour → steer, the
+ *  expensive part) and costs only its avatar record — rendering, hover,
+ *  proximity, containers. A forest is therefore affordable in a way a crowd
+ *  is not, and standing one must never crowd out a creature. */
+export const WORLD_MAX_ROOTED_NPCS = 128;
+export const WORLD_MAX_PLAYERS = 12;
+/** Max world-units per manifold axis. World units read as METERS (avatar
+ *  radius 0.4, walk speed 5/s), so this admits an Earth-circumference
+ *  landmass (~40,000 km) — streamed worlds (grand-dream) put whole
+ *  regions in one coordinate space, and their stated trajectory is
+ *  planet-sized maps (a 144×64-km tectonic continent already tripped
+ *  the old 100 km bound). Purely a schema sanity bound: nothing in the
+ *  engine's math depends on it, and f64 keeps sub-micrometer precision
+ *  at this range. */
+export const WORLD_MANIFOLD_MAX = 40_000_000;
+
+/**
+ * `custom_apps.type` discriminator for world-engine apps — the third engine in
+ * the family (alongside the grid "game" and the goal-tree "goal_tree_game").
+ * A world app's `definition` is a WorldSpec; world apps are inherently
+ * multiplayer (they carry a MultiplayerSpec), so this type also signals "can be
+ * attached to a call as a social game".
+ */
+export const WORLD_APP_TYPE = "social_world";

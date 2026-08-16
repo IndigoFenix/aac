@@ -112,27 +112,44 @@ export const TEST_WORLDS: NamedWorld[] = [
         exhaustive: ["body"],
         contains: [
           { kind: "body", params: { mass: 333000, age: 4.6 } },
-          { kind: "body", params: { orbitAU: 1, mass: 1, radius: 2000, geology: { seed: 42 } } },
-          { kind: "body", params: { orbitAU: 1.6, mass: 0.3, radius: 1400, geology: { seed: 7 } } },
+          { kind: "body", params: { orbitAU: 1, mass: 1, radius: 10000, geology: { seed: 42 } } },
+          { kind: "body", params: { orbitAU: 1.6, mass: 0.3, radius: 7000, geology: { seed: 7 } } },
         ],
       },
-      // ⚖️ A 2 km PLANET DECLARES ITS SETTLEMENT GAP (growth phase C §1.1/§3.1).
-      // Earth's day's walk is 25 km; these bodies have 131 m and 92 m chart
-      // cells, so their towns really do stand ~1/88 of a real gap apart.
+      // ⚖️ THE PLANET GREW TO FIT ITS TOWNS (food-scale-round.md Q3, 2026-08-15).
       //
-      // THE DECLARATION IS NOW WHAT FOUNDS THEM (GL fix round, R3). It used to
-      // be decoration: `space/planet-geography.ts` authored a `founding`
-      // literal, authored content outranks derivation, and the two disagreed —
-      // the world said 781 m and founded at 284 m inside 450 m extents, so
-      // EVERY road ran to the town centre (measured: 63/63 ends unclipped,
-      // 61/63 crossing a roof). With no literal to outrank it, the scan
-      // derives from this number: spacing `townSpacingM(scale)` in chart cells
-      // (2 cells = 262 m, realized p50 284 m — the declaration re-measured),
-      // extent `townExtentM(scale)` = 71 m, and the clip law
-      // `2·extent + 10 = 152 m < 284 m` holds BY CONSTRUCTION rather than by
-      // luck. 88 is the measured value, not a round one: it is 25 km ÷ the gap
-      // these planets actually found at, on both bodies (284 m and 286 m).
-      session: { avatar: "spirit", scale: { gap_compression: 88 } },
+      // It used to declare `gap_compression: 88` — honestly measured (25 km ÷
+      // the 284 m gap these 2 km bodies really founded at) and, precisely
+      // because it was honest, ruinous: `townExtentM` fell to 71 m, the street
+      // tree's growth gate hit its 32 m floor, and a town whose assigned
+      // population was 973 got 2-4 frontage lots. Measured headless: 0-1
+      // houses, 11 workplaces around them, and (3 seeds of 6) no fields at all,
+      // with weavers standing INSIDE farms — `earthlike-city-regression.md`.
+      //
+      // The user's ruling replaced the dial rather than the symptom: a village
+      // is 100-300 m across, about 1/10 of realistic size, not 1/88. So:
+      //
+      //   gap_compression 10      → 25 000 / 10 = 2 500 m between villages,
+      //                             extent 450 m (the clip ceiling is 625, so
+      //                             the declared town body binds), 210-233 lots
+      //                             and 195 houses MEASURED at 4 seeds.
+      //   resource_compression 20 → the food requirement lowered where it
+      //                             belongs (`farmAreaPerPersonM2`): 2 428 m²
+      //                             per person instead of 48 562, so a village's
+      //                             fields fit inside the territory its lattice
+      //                             gives it with lean-season slack to spare.
+      //   radius 2000 → 10000     → and THAT is what a 2 500 m lattice costs.
+      //                             A 2 km body holds 4π·2000²·0.29 / 2 500² =
+      //                             2.3 sites — a two-hamlet world. 50 sites
+      //                             wants R = sqrt(50 · 2500² / (4π · 0.29)) =
+      //                             9 262 m. The companion body keeps the ratio
+      //                             (1400 → 7000).
+      //
+      // ⚖️ THE RADIUS IS THE ONE-LINE REVERT. If the small two-body toy is wanted
+      // back, put `radius` at 2000/1400 and leave the two dials alone: the
+      // preset then declares itself a TWO-HAMLET world (which is true) instead
+      // of an 88× city world (which was not).
+      session: { avatar: "spirit", scale: { gap_compression: 10, resource_compression: 20 } },
     },
   },
   {
@@ -151,6 +168,34 @@ export const TEST_WORLDS: NamedWorld[] = [
       // at; the derived scan holds that lattice (2 cells = 785 m, realized p50
       // 844 m) and the extent falls to 208 m, clearing the clip law at 427 m.
       session: { avatar: "spirit", scale: { gap_compression: 30 } },
+    },
+  },
+  {
+    id: "nature-hike",
+    name: "Nature Hike — an Earthlike planet on foot",
+    world: {
+      // The same lone BODY as Home Planet, but INHABITED: `avatar: true` is the
+      // WALKER (manifest.ts `avatarKind`) — the hike is played on the ground,
+      // from a wilderness chunk anchored at a deterministic founding site,
+      // with the planet itself rendered around and under it.
+      tree: { kind: "body", params: { geology: { seed: 11 }, radius: 5000, rain: 1.5 } },
+      // ⚖️ SMALL RADIUS + gap_compression IS THE BIOME COMPRESSION. Climate
+      // bands (climate.ts) are latitude-driven and span the WHOLE sphere, so on
+      // a 5 km body the walk from steppe to forest to ice is minutes, not
+      // months — that compression is the point of a hike, and it is DECLARED
+      // here rather than faked by painting biomes small. `gap_compression: 30`
+      // is Home Planet's measured value (25 km ÷ the ~844 m gap a body this
+      // size really founds at), carried over so the settlement lattice this
+      // planet derives stays the one that satisfies the clip law. `world
+      // .founding` is deliberately OMITTED: an authored `founding` literal
+      // outranks derivation, and the derived scan reads exactly the gap
+      // declared above (planetFoundingOpts) — declaring both is how the two
+      // came to disagree on the older presets. `locomotion: 2` doubles the
+      // gait so the compressed country is crossed at a walker's patience.
+      session: {
+        avatar: true, avatar_species: "human_cute",
+        scale: { rotation: 360, sleep_fraction: 0.05, gap_compression: 30, locomotion: 2 },
+      },
     },
   },
 ];

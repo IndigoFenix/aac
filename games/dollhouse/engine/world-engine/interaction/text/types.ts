@@ -487,6 +487,12 @@ export interface TextCheatHost {
   conversationAudit?(): unknown;
   scopeTree?(): unknown;
   stockAudit?(): unknown;
+  /** ⚖️ THE ORDER BOOK, DUMPED (`/orders`) — one row per live construction
+   *  order: bill want/have/short, in-flight hauls, pile id + spot, WHICH BOOK
+   *  it belongs to and whether it was SPOKEN. `/scope` shows a pile's stock and
+   *  `/stock` the session total; neither could ever say WHOSE order a heap is,
+   *  which is the question the frontier deadlock turned on. */
+  orderBook?(): unknown;
   carryOf?(cid: string): unknown;
   /** ⚖️ THE OBJECT IN THE HANDS (`carriedBy`), which `carryOf` DELIBERATELY
    *  drops — a held bag is "the shelf, not the goods". Without it `/carry` said
@@ -498,7 +504,8 @@ export interface TextCheatHost {
    *  do? A pure read — deriving a chain moves nothing (law ③). */
   whyProbe?(cid: string): unknown;
   /** ⚖️ S&D S4 — the wild stand, and the LOD fold between its two forms
-   *  (`/wild [fold|load|cycle]`). 🚨 THE ONE CHEAT THAT MOVES SOMETHING: the
+   *  (`/wild [fold|load|cycle]`); ⚖️ F5 adds `draw <good>`, the region-reach
+   *  draw on an already-folded shed. 🚨 THE ONE CHEAT THAT MOVES SOMETHING: the
    *  driver that folds a stand lives in the GL boot, so headless has no other
    *  way to exercise the conservation law. See `QuestHost3D.wildProbe`. */
   wildProbe?(verb?: string): string;

@@ -43,6 +43,18 @@ export const DOLLHOUSE_CALL_GAME: CallGame = {
   name: "Dollhouse",
 };
 
+/**
+ * CallGame reference for the Nature Hike iframe world game. Same iframe-quest
+ * pattern as Dollhouse — every participant mounts /games/nature-hike/ locally
+ * (its own vendored engine); the platform only ferries opaque world payloads.
+ */
+export const NATURE_HIKE_CALL_GAME: CallGame = {
+  appId: "nature-hike",
+  engine: "iframe-quest",
+  src: "/games/nature-hike/",
+  name: "Nature Hike",
+};
+
 /** World spec key for the NPC demo field (social-field + AI characters). */
 export const NPC_DEMO_WORLD_SPEC_KEY = "social-field-npcs";
 

@@ -1,0 +1,108 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-13T16:06:40.913Z
+# ─────────────────────────────────────────
+> wait 20
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 20.0s.
+> say trade all wood with city
+OK     said: trade + all + wood + with + city
+TOAST  🐴 trade with away:12: 2 wood for 3 food — every day (feedback)
+TICK   quiet after 0.8s.
+> wait 40
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   orrin left view there south.
+EXIT   mara left view there west.
+EXIT   biscuit left view here south.
+EXIT   pip left view here north.
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there south.
+TICK   waited 40.0s.
+> warp 2d
+# warp 2d — 2 day edges, books only (no physics).
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🐴 caravan from away:12: 2 wood → 3 food (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+TOAST  🐴 caravan from away:12: 2 wood → 2 food (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 71 block for the site (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  💬 no one can do that: "bring 161 block" (feedback)
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view there south.
+TOAST  🪚 materials in — milling 232 block (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 1.9s.
+> wait 20
+TOAST  🪚 milling 232 block for the site (feedback)
+CLOSE  the board closed.
+TICK   waited 20.0s.
+> say trade three food with city
+OK     said: trade + three + food + with + city
+TOAST  💬 away:12 has enough food (feedback)
+TICK   quiet after 0.8s.
+> wait 40
+TOAST  🪚 milling 90 block for the site (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TICK   waited 40.0s.
+> warp 2d
+# warp refused — 1 body/bodies mid-errand (resident_207_0). An interrupted errand may not complete abstractly.
+TOAST  🪚 milling 90 block for the site (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TICK   quiet after 1.2s.
+> wait 20
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TICK   waited 20.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-46 (house), there north, purple, door open, shut to you.
+  43 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   2 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, close north, 83 m
+  site-2: a market — marked ground, 0% worked, close west, 58 m
+TOAST  🪚 milling 90 block for the site (feedback)
+TOAST  🪚 milling 232 block for the site (feedback)
+TICK   quiet after 1.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=11  presses=0  screens=2  sim=146.5s
+# events: TOAST 24  EXIT 12  TICK 11  ENTER 10  SAY 4  NOTE 3  BOARD 2  OK 2  WARP 2  CLOSE 2  SCENE 1  SITE 1  SELF 1

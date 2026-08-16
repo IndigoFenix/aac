@@ -126,11 +126,13 @@ export function wrapUntrusted(value: string | null | undefined): string {
 }
 
 /** Known-contacts list. Each contact is keyed by face:ID so the renderer
- *  can show the photo. */
+ *  can show the photo — except contacts with no photo on file, marked
+ *  "(no face image)"; for those, use an emoji or another symbol instead of
+ *  face:ID, since it would render as a blank/generic head. */
 export function knownPeopleLine(contacts: KnownContact[] | undefined): string {
   if (!contacts || contacts.length === 0) return "";
   return `Known people: ${contacts.map(c =>
-    `${wrapUntrusted(c.name)}${c.relationship ? ` (${wrapUntrusted(c.relationship)})` : ""} [face:${c.id}]`
+    `${wrapUntrusted(c.name)}${c.relationship ? ` (${wrapUntrusted(c.relationship)})` : ""} [face:${c.id}]${c.hasFaceImage ? "" : " (no face image)"}`
   ).join(", ")}`;
 }
 

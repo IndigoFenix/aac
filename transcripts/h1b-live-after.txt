@@ -1,0 +1,38 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=12  locale=en  grid=8  dt=0.0167  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-14T10:13:43.595Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> say you go to forest
+OK     said: you + go + to + forest
+TOAST  🪧 you + go + to + forest — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 10
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+TICK   waited 10.0s.
+> say get wood from forest
+OK     said: get + wood + from + forest
+TOAST  🪧 get + wood + from + forest — anyone nearby may take it (feedback)
+SAY    orrin: "get wood from forest"  [get + wood + from + forest]
+TICK   quiet after 1.0s.
+> wait 10
+EXIT   orrin went out of the orange house.
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=6  presses=0  screens=1  sim=27.5s
+# events: TICK 6  SAY 6  OK 2  TOAST 2  BOARD 1  NOTE 1  EXIT 1  SELF 1

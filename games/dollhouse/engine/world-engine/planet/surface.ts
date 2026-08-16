@@ -48,8 +48,14 @@ export interface PlanetSurface {
   /** Planet base radius (sea level), in render units. */
   radius: number;
   /** Elevation above (+) / below (−) the sea-level sphere at a unit direction.
-   *  This is the CARVED ground — what the mesh, the walk chart and collision
-   *  all read. */
+   *
+   *  THE ONE DATUM. This is the DRAWN surface — carved ground, with any river
+   *  valley cut into it and the channel's standing water filled back in
+   *  (planet/rivers.ts attachRiverRelief) — and it is what the mesh, the walk
+   *  chart, collision and the chase camera all read, so they cannot disagree.
+   *  Nothing downstream may add relief of its own on top of it: the mesh
+   *  builder once added the river water a second time and drew the water 58 m
+   *  above the ground the walker was standing on. */
   heightAt(dir: Vec3): number;
   /** Elevation off the MACRO height field — the drainage/climate potential,
    *  before its rivers cut valleys into it. Only refinement needs this: a
@@ -72,14 +78,17 @@ export interface PlanetSurface {
    *  `minHalfWidthM` is the mesh builder's vertex spacing: thin channels
    *  widen to it (capped) so rivers survive coarse chunks. Absent = none. */
   riverTintAt?(dir: Vec3, minHalfWidthM: number, rgb: [number, number, number]): void;
-  /** RIVER WATER + PAINT in one lookup (planet/rivers.ts attachRiverRelief
+  /** RIVER PAINT + WETNESS in one lookup (planet/rivers.ts attachRiverRelief
    *  installs this): does riverTintAt's recolor AND returns the depth of
-   *  standing water above the carved ground at `dir` (0 = dry), filling
-   *  `outFlow` with the unit DOWNSTREAM direction when wet. The mesh builder
-   *  clamps wet vertices up to the water surface and feeds the flow to the
-   *  water shader's clamped current path — the actual water layer, at the
-   *  channel's TRUE width only (the LOD glyph applies to paint, never to
-   *  water: glyphed water was the region-sized animated "sea" bug). */
+   *  standing water in the channel at `dir` (0 = dry), filling `outFlow` with
+   *  the unit DOWNSTREAM direction when wet. At the channel's TRUE width only
+   *  (the LOD glyph applies to paint, never to water: glyphed water was the
+   *  region-sized animated "sea" bug).
+   *
+   *  A SHADING SIGNAL, NEVER A LIFT — read it for "is this wet, which way does
+   *  it run", and let `heightAt` place the vertex. The depth is already inside
+   *  heightAt; the mesh builder adding it again is the 58 m double-lift the
+   *  note on heightAt describes. */
   riverSampleAt?(dir: Vec3, vertSpanM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
   /** ROAD RECOLOR (planet/route-paint.ts): blends packed-dirt colour into a
    *  vertex colour where `dir` lies on a painted lane — true width, faded by

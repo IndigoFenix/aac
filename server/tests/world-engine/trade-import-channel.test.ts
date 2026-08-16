@@ -53,6 +53,7 @@ import {
   createTownTrade,
   IMPORT_ALLOTMENT,
   RARE_IMPORT_KIND,
+  TRADE_DWELL_SEC,
   TRADE_IMPORT_KINDS,
 } from "@shared/world-engine/kernel/town/trade.js";
 import { exportSpareScale } from "@shared/world-engine/kernel/town/complementary.js";
@@ -61,6 +62,7 @@ import { BARTER_WANT_MIN, stubPartnerSignals } from "@shared/world-engine/kernel
 import { activeTradePairs } from "@shared/world-engine/kernel/town/money.js";
 import { hinterlandJobs, cityLicense } from "@shared/world-engine/kernel/civ/jobs.js";
 import { parasiteReading, type CeilingReading } from "@shared/world-engine/kernel/cells/ceilings.js";
+import { transactionDayFrac } from "@shared/world-engine/scale.js";
 
 const SEED = 12;
 /** The age at which this content has a weaver and NO tailor (probed, and
@@ -297,6 +299,26 @@ describe("T3 — the cargo list is a READING, and the bind is only when it start
     expect(tr.dayPhase(flip)).toBeLessThan(0.5 / FOOD_DAY_SEC + 1e-9); // just past 0
     expect(tr.dayPhase(flip - 0.5)).toBeGreaterThan(0.99); // just short of 1
     expect(tr.dayPhase(flip + FOOD_DAY_SEC / 2)).toBeCloseTo(0.5, 2);
+  });
+
+  // ⚖️ THE TRANSACTION-PACING SEAT (user law, 2026-08-13, scale.ts
+  // `transactionDayFrac`): trade.ts's inline `FOOD_DAY_SEC * 0.35` (sizing the
+  // caravan's on-street speed) now routes through the seat as the
+  // "caravan-visit" kind. This pins the LIVE object — not just the formula
+  // in isolation — so a call site that forgot to route through the seat
+  // would fail here even if the seat itself were correct.
+  it("🚨 the caravan's speed is bit-identical through the transaction-pacing seat", () => {
+    const tr = line();
+    const pts = tr.route.route;
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) {
+      len += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
+    }
+    // OLD: trade.ts's own pre-seat inline formula, reimplemented verbatim —
+    // the oracle, never asserted, only reused.
+    const oldSpeed = Math.max(2.2, (len * 2) / Math.max(30, FOOD_DAY_SEC * 0.35 - TRADE_DWELL_SEC));
+    expect(transactionDayFrac({ kind: "caravan-visit" })).toBe(0.35);
+    expect(tr.caravan(0).speed).toBeCloseTo(oldSpeed, 9);
   });
 });
 

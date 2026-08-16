@@ -37,6 +37,10 @@
  * `city:<cell>` stub) gets a CLOSED-FORM PROXY: a hash-seeded base per
  * (partner, good) plus a slow triangular season over the town day — so
  * terms shift over time against a stub too, deterministically.
+ * ⚖️ AND THE TWO ARE ONE TYPE (F-⑤, fold-round.md F3): the "abstract partner"
+ * is a town nobody has EXPANDED, its whole state the `TownRecord` at the
+ * bottom of this file, its shelf mint `condense` of a town that has never run.
+ * See the codec section's own header.
  *
  * EXECUTION rides the ② ledger: a barter agreement is a TransferAgreement
  * whose `barter` field carries the return flow + quote; `runDueBarters`
@@ -58,7 +62,11 @@ import {
 } from "./transfer.js";
 // ⚖️ §7 step 6: `journeyS` into the barter leg. The region rung already owns
 // "how far one day of legs carries you" — the town stops inventing it.
-import { dailyTravelM, type WorldScale } from "../../scale.js";
+// ⚖️ THE TRANSACTION-PACING SEAT (user law, 2026-08-13): `transactionDayFrac`
+// is the ONE place `BARTER_LEG_DAY_FRAC` now anchors — see its own doc
+// comment below and the seat's header in scale.ts for why the merge lives
+// there and not in kernel/town/pricing.ts.
+import { dailyTravelM, transactionDayFrac, type WorldScale } from "../../scale.js";
 // ⚖️ R&T ⑤ (T5): the freight registry classes a good by how it travels, so the
 // geography term never has to name one. Read-only from here, exactly as
 // trade.ts reads it — the town rung asks, it never re-derives.
@@ -72,6 +80,14 @@ import type { NodeType } from "../cells/node-typing.js";
 // ONE definition — and keeps its established name here.
 import { BARTER_WANT_MIN } from "./complementary.js";
 export { BARTER_WANT_MIN };
+// ⚖️ F3 (fold-round.md): the TOWN codec at the bottom of this file registers
+// itself with the one fold, exactly as wild-area.ts and population.ts do.
+import {
+  registerFoldCodec,
+  type FoldCodec, type FoldCommitment, type FoldCtx, type FoldRecord, type FoldRefusal,
+  type FoldScope,
+} from "./fold.js";
+import { parseScopeId, scopeIdOf, TOWN_YARD_ID, type ScopeId } from "./scope.js";
 
 // ---------------------------------------------------------------------------
 // Signals — the model's whole input
@@ -103,8 +119,17 @@ export const BARTER_FAMINE_MAX = 0.7;
  * pricing, not new exchange logic"). This is no longer the leg: it is the leg
  * of a partner with NO GEOMETRY, and the floor under every other leg. See
  * `barterLegSeconds`.
+ *
+ * ⚖️ MERGED INTO THE GENERIC TRANSACTION-PACING SEAT (user law, 2026-08-13 —
+ * scale.ts `transactionDayFrac`'s own doc comment carries the law verbatim
+ * and the reasoning for why the value belongs to the transaction and its
+ * parties, not the clock). This is no longer an independent literal: it is
+ * `transactionDayFrac({ kind: "shipment-leg" })`, read once at module load,
+ * bit-identical to the `0.35` this constant has always held — a standing
+ * barter route's shipment leg is ONE transaction kind the seat now names,
+ * trade.ts's caravan visit budget is the other.
  */
-export const BARTER_LEG_DAY_FRAC = 0.35;
+export const BARTER_LEG_DAY_FRAC = transactionDayFrac({ kind: "shipment-leg" });
 
 /**
  * ⚖️ HOW LONG ONE SHIPMENT LEG TAKES — `journeyS` at caravan scale.
@@ -801,3 +826,264 @@ export function inboundRouteHealth(
   }
   return total === 0 ? 1 : running / total;
 }
+
+// ---------------------------------------------------------------------------
+// ⚖️ F-⑤ — THE TOWN CODEC: A STUB IS A NEVER-EXPANDED TOWN
+// ---------------------------------------------------------------------------
+//
+// (fold-round.md stage F3, law F-⑤: *"`stockAbstractPartner` becomes 'condense
+// of a town that has never run'; `TradePartner.real` dissolves into 'is this
+// partner currently expanded'."*) The THIRD codec registered with the one fold
+// (`kernel/town/fold.ts`), after wild-area's and population's, and the one the
+// round names its whole point: the condensed-twin doctrine this module has
+// carried in prose since ⑤ stops being a doctrine and becomes the type.
+//
+// WHAT A CONDENSED TOWN IS — everything the trade tier ever asks a partner, in
+// one record: what stands on its shelf (UNITS), what its terrain declares,
+// where it is, how long the road is, and — only where it has actually RUN —
+// what its own books last read. Everything else is closed form:
+// `stubPartnerSignals` answers "how short is it of X on day D" with no
+// simulation behind it, which is precisely what lets a record stand in for a
+// town.
+//
+// ⚖️ F-③ THE INTEGRAL LIVES AT THE FOLD. A condensed scope reports FLOWS and an
+// expanded one UNITS, and `condense` is the only place one becomes the other:
+// `ctx.floors` is what this town's unsimulated production would have put on the
+// shelf by `now`, and topping the shelf up to it IS that integral. The
+// arithmetic is `stockAbstractPartner` above, byte-unchanged and still the ONE
+// boundary mint — this codec gives it its name, not a second implementation.
+// No rate the books do not carry is invented anywhere below.
+//
+// 🚨 NOT A SECOND COPY OF THE SHELF, AND NOT IN A SESSION'S `foldedStock` SUM.
+// A condensed partner's `stack` IS the live object the `town:<key>` endpoint
+// aliases and `TownDeltas.partnerStock` persists (a frozen save shape: partner
+// key → glyph stack), minted into IN PLACE exactly as it always was. It is
+// therefore already a live `StockEndpoint` in the host's audit tree — the same
+// structural difference F2 recorded for cohort rows, one rung up — so a
+// session that ALSO added `foldedStock("town", …)` to its audit would count
+// every unit twice. `stockOf` exists because the codec interface owes it, for
+// the caller that holds a record the tree cannot walk.
+
+/**
+ * A TOWN, CONDENSED — the payload of `condense(town:<key>)`, and the whole of
+ * what a partner nobody is simulating consists of.
+ */
+export interface TownRecord {
+  /** Its partner key — what `town:<key>` endpoint ids are built from. */
+  key: string;
+  /** UNITS on its shelf. THE LIVE OBJECT, not a copy: the same stack the
+   *  `town:<key>` endpoint aliases, so a shipment executed against the
+   *  endpoint and the mint at this fold are writing one shelf. */
+  stack: Record<string, number>;
+  /** What its terrain declares (T5). Null ⇒ the pure-hash proxy, byte for
+   *  byte as the stub shipped: a tier that knows nothing about its neighbour
+   *  must not be made to pretend it does. */
+  geo: PartnerGeography | null;
+  /** Where it stands (world metres), or null when nobody bound a place. */
+  at: { x: number; y: number } | null;
+  /** Its ROAD (world metres) for `barterLegSeconds`, or null for NO REAL
+   *  GEOMETRY — the honest unknown that takes the flat leg. */
+  distanceM: number | null;
+  /** ⚖️ F-③ — WHAT ITS OWN BOOKS READ, at the fold, for the goods it was
+   *  condensed over. Present only for a town that HAS run: folding a live
+   *  neighbour into a hash would replace its real scarcity with a fiction, so
+   *  the books' own numbers ride the record instead (and unlisted goods read
+   *  0, exactly as a books read of a good with no fill does). NULL for a
+   *  never-expanded town — F-⑤'s subject — whose shortage is the closed form
+   *  and nothing else. */
+  shortages: Record<string, number> | null;
+}
+
+/**
+ * ⚖️ F-⑤ — THE ONE SHORTAGE READING, off the record.
+ *
+ * Before F3 a partner's scarcity was read two ways at two construction sites —
+ * a live-books read for a cluster neighbour, `stubPartnerSignals` for a stub —
+ * and the fork between them was the scar law F-⑤ names. This is where the two
+ * meet: a record that carries its town's own books answers with THOSE (the
+ * fold conserved them), and one that does not is a town that has never run,
+ * whose scarcity is the closed form. Same signature either way, so no caller
+ * can tell which state its partner is in — which is the point.
+ *
+ * BIT-IDENTICAL for the never-expanded case: `stubPartnerSignals(key,
+ * Math.floor(day), geo)`, the shipped call, unchanged including the day floor.
+ */
+export function townRecordSignals(rec: TownRecord, day: number): BarterSignals {
+  const books = rec.shortages;
+  if (books) return { shortage: (good) => clamp01(books[good] ?? 0) };
+  return stubPartnerSignals(rec.key, Math.floor(day), rec.geo);
+}
+
+/** What `condense` of a town needs, minus the key (which comes from the scope
+ *  id). Split out from `TownFoldCtx` so the PURE half can be called directly —
+ *  the hot partner table builds a record per partner per read and has no
+ *  business allocating an envelope for it — exactly as `condenseWildArea` is
+ *  callable beside `WILD_AREA_CODEC.condense`. */
+export interface CondenseTownInput {
+  /** The partner key this record is for. */
+  key: string;
+  /** THE RECORD THIS TOWN CONDENSED TO LAST TIME (wild's own `prev`
+   *  contract): every field below defaults to what it already said, so a
+   *  re-fold that only mints does not have to restate the town. */
+  prev?: TownRecord | null;
+  /** Its live shelf, when there is no `prev` to take one from (the first
+   *  touch — the host's `partnerStock[key]`). Absent ⇒ an empty one. */
+  stack?: Record<string, number>;
+  /** ⚖️ F-③ THE INTEGRAL: units of each good this town's unsimulated
+   *  production has put on the shelf by now — the shelf is topped UP to each
+   *  (`stockAbstractPartner`), never beyond, and never down. Absent ⇒ no mint,
+   *  which is what a plain read of the partner table wants. */
+  floors?: Readonly<Record<string, number>>;
+  /** Called with what the integral actually added, per good (never with 0):
+   *  the epoch bump `partnerStockEpoch` needs, without this module knowing
+   *  what an epoch is. */
+  minted?(good: string, units: number): void;
+  /** Its terrain / place / road, for a town with no prior record. */
+  geo?: PartnerGeography | null;
+  at?: { x: number; y: number } | null;
+  distanceM?: number | null;
+  /** ⚖️ F-③ — ITS OWN BOOKS' SHORTAGE READ, for a town that is EXPANDED as it
+   *  folds. Supplying it (with `goods`, the vocabulary to sample) is what
+   *  makes the record answer with the books instead of the closed form; a
+   *  never-expanded town supplies neither. */
+  shortageOf?(good: string): number;
+  goods?: readonly string[];
+}
+
+/**
+ * ⚖️ CONDENSE A TOWN — the pure half. Mints the integral into the live shelf
+ * and answers the record. Deterministic; the only mutation is the mint, which
+ * is `stockAbstractPartner`'s, in place, as it has always been.
+ */
+export function condenseTown(input: CondenseTownInput): TownRecord {
+  const prev = input.prev ?? null;
+  const stack = input.stack ?? prev?.stack ?? {};
+  for (const [good, floor] of Object.entries(input.floors ?? {})) {
+    const minted = stockAbstractPartner(stack, good, floor);
+    if (minted > 0) input.minted?.(good, minted);
+  }
+  const read = input.shortageOf;
+  let shortages: Record<string, number> | null = prev?.shortages ?? null;
+  if (read) {
+    shortages = {};
+    for (const good of input.goods ?? []) shortages[good] = clamp01(read(good));
+  }
+  return {
+    key: input.key,
+    stack,
+    geo: input.geo !== undefined ? input.geo : prev?.geo ?? null,
+    at: input.at !== undefined ? input.at : prev?.at ?? null,
+    distanceM: input.distanceM !== undefined ? input.distanceM : prev?.distanceM ?? null,
+    shortages,
+  };
+}
+
+/**
+ * ⚖️ F5 — A STANDING LEG IS SERVICED BY THE CLOSED FORM (`FoldCodec.services`;
+ * law F-④'s serviceability split, fold-round.md F4's 🔶 finding).
+ *
+ * THE FINDING: partner shelf endpoints ARE the `from`/`to` of standing trade
+ * legs, and a standing route sits `pending` between visits forever — so a fold
+ * that treats every leg as a blocker refuses every trading partner, which is
+ * every partner worth folding.
+ *
+ * THE ANSWER, and why it is not a special case: a standing scheduled leg is
+ * ALREADY run against the condensed form. The host's caravan arms mint a
+ * CONDENSED partner's shelf and ship from it — `p.record` is exactly the test
+ * they make (quest-host `stepBarters` / `stepLedgerSweeps`) — and the clock
+ * warp settles whole days of those legs with no body anywhere near them. A
+ * partner is condensed *while it trades*, so "the closed form can keep this
+ * promise" is not a hope about this row: it is a description of the code that
+ * has been keeping it all along.
+ *
+ * WHAT STILL REFUSES, unchanged from F4:
+ *   · HANDS — a task books a body, and no record stands in for one.
+ *   · A `moving` LEG — goods in somebody's hands on a road.
+ *   · A `haul` LEG — a leg waiting for a body to walk it, pending or not.
+ *   · Anything booked against something OTHER than the scope itself (matched
+ *     through an executor or an issuer): the record answers for the shelf, not
+ *     for whoever mentioned it.
+ *
+ * ONE PREDICATE, TWO CODECS. The town's is the case the finding named, but the
+ * fact is about the LEG and the SCOPE it is booked against, not about towns:
+ * the region shed's own draw legs (wild-area.ts, F5's other half) are serviced
+ * by exactly the same arm on exactly the same terms, so `WILD_AREA_CODEC`
+ * shares this predicate rather than growing a second copy of it.
+ */
+export function standingLegServiced(c: FoldCommitment, scope: FoldScope): boolean {
+  if (c.book !== "transfer") return false; // hands never; stock rides (fold.ts)
+  if (c.against !== scope.id) return false;
+  return c.payload?.["mode"] === "scheduled" && c.payload?.["status"] === "pending";
+}
+
+/** The codec's context: everything `condenseTown` takes (the key comes from
+ *  the scope id) plus `expand`'s placer. */
+export interface TownFoldCtx extends FoldCtx, Omit<CondenseTownInput, "key"> {
+  /** expand: receives the town's shelf back — the live host's hook to hand it
+   *  to the sim that is about to run it, a test's hook to collect it.
+   *  Optional: omit for a dry run that only wants the ids back. */
+  place?(key: string, stack: Record<string, number>): void;
+}
+
+function townRefusal(id: ScopeId, blockers: readonly string[], note: string): FoldRefusal {
+  return { refused: true, kind: "town", id, blockers, note };
+}
+
+function condenseTownPayload(id: ScopeId, ctx: TownFoldCtx): TownRecord | FoldRefusal {
+  const ref = parseScopeId(id);
+  // 🚨 THE PARSE IS SYNTACTIC (scope.ts) — `town:` covers OUR OWN root and OUR
+  // OWN builder yard as well as a partner's shelf, and neither of those is a
+  // town this session could stop simulating. Both refuse NAMED rather than
+  // being condensed into a partner nobody trades with.
+  if (ref.kind !== "town") {
+    return townRefusal(id, [], `not a town id ("${id}")`);
+  }
+  if (!ref.key) {
+    return townRefusal(id, ["local"], `the local town is the one we ARE simulating ("${id}")`);
+  }
+  if (id === TOWN_YARD_ID) {
+    return townRefusal(id, ["yard"], `"${id}" is our own builder yard, not a partner town`);
+  }
+  return condenseTown({ ...ctx, key: ref.key });
+}
+
+function expandTownPayload(
+  record: FoldRecord<TownRecord>,
+  ctx: TownFoldCtx,
+): ScopeId[] | FoldRefusal {
+  const rec = record.payload;
+  if (!rec.key) {
+    return townRefusal(record.id, ["local"], "a town record with no partner key names nobody");
+  }
+  // ⚖️ F-① NOTHING EVAPORATES: the shelf goes to the placer BEFORE the id is
+  // answered, so a caller that materializes the town materializes its goods
+  // with it. The record itself is not emptied — expand is pure, and the host
+  // owns the transition (wild's `unfoldWildArea` deleting its own map entry is
+  // the precedent).
+  ctx.place?.(rec.key, rec.stack);
+  return [scopeIdOf({ kind: "town", key: rec.key })];
+}
+
+/** Every unit a condensed town holds, by glyph — see the 🚨 above for why a
+ *  session's own audit must NOT add this on top of its tree. */
+function townRecordStock(rec: TownRecord): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [g, n] of Object.entries(rec.stack)) if (n > 0) out[g] = n;
+  return out;
+}
+
+/**
+ * THE TOWN CODEC — registered below at module load, so importing this module
+ * (already the whole game does, for `stockAbstractPartner`/`barterQuote`
+ * themselves) is enough to make `kind: "town"` foldable through the generic
+ * dispatch.
+ */
+export const TOWN_CODEC: FoldCodec<TownRecord, TownFoldCtx> = {
+  kind: "town",
+  condense: condenseTownPayload,
+  expand: expandTownPayload,
+  stockOf: townRecordStock,
+  services: standingLegServiced,
+};
+
+registerFoldCodec(TOWN_CODEC);

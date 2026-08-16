@@ -95,6 +95,76 @@ export const goodKeyOfGlyph = (glyph: string): string => {
   if (CLOTHING_HEADS.includes(head)) return "clothing";
   return head;
 };
+
+// ── SATIATION: how much of a person-day ONE unit clears ────────────────────
+//
+// ⚖️ THE RATION AND THE ITEM COME APART (food-scale-round.md Q2). USER RULING
+// (2026-08-15), verbatim: *"Maybe the best way to handle this is to divide up
+// the rations better, so the player can have them eat many times before they
+// get full. Which would make sense, really — a person generally eats more than
+// an apple each day."*
+//
+// Until now one item cleared the whole hunger meter, so a RATION (one
+// person-day, the unit `PANTRY_CAP`/`perCapitaDaily`/the books all count in)
+// and an ITEM were welded together. They are not the same thing: a cookie is a
+// tenth of a day's eating and a cooked stew is a whole one. This table is the
+// weld's replacement — the ONE definition of that fraction, keyed by glyph.
+//
+// THE ACCOUNTING IS UNCHANGED BY IT. The economy keeps counting RATIONS;
+// `satiationDays` is how many rations one unit of a glyph IS, so a container's
+// ration total is `Σ units × satiationDays(glyph)`. Item conservation holds by
+// construction: a unit removed is a subtraction, never a division of a stack
+// (`feedback_item_conservation_law`).
+//
+// 🔴 DATA ONLY, THIS ROUND. Nothing reads this yet: the ingest effect still
+// zeroes the meter from one unit (`interaction/quest/quest-host.ts`
+// `applyIngestEffect`), and wiring it is Phase B of the food-scale round. The
+// DEFAULT is 1, so every glyph the table does not name behaves exactly as it
+// does today.
+
+/** Person-days one unit clears when nothing more specific is declared — 1, the
+ *  old welded behavior, so an unlisted glyph is byte-identical. */
+export const DEFAULT_SATIATION_DAYS = 1;
+
+/**
+ * Person-days of hunger ONE UNIT of a glyph clears (food-scale-round Q2's
+ * content table). Read through `satiationDaysOf`, never indexed directly — the
+ * cooked `.hot` variants and the treat kind are resolved by RULE, not by
+ * enumerating every fruit.
+ *
+ * | good | days | items per person-day |
+ * |---|---|---|
+ * | treat (the rare import: a cookie) | 0.1 | 10 |
+ * | raw food (apple, fruit) | 0.2 | 5 |
+ * | bread / loaf | 0.5 | 2 |
+ * | cooked meal (a `.hot` kind) | 1.0 | 1 |
+ *
+ * `bread` is a CONTENT row for a good the shipped plant catalogue does not
+ * mint (`products.ts` yields fruit, not loaves); it resolves the day a world
+ * declares one, and is listed here so the ladder is stated in one place rather
+ * than half here and half in a future document.
+ */
+export const SATIATION_DAYS: Readonly<Record<string, number>> = {
+  treat: 0.1,
+  food: 0.2,
+  bread: 0.5,
+  meal: 1,
+};
+
+/**
+ * Person-days one unit of `glyph` clears. COOKED FIRST: a `.hot` variant is a
+ * meal whatever it was raw (a hot cookie is a meal, `MEAL_KINDS`), which is
+ * also why the cook's transform is worth walking to — one stew is five apples.
+ */
+export const satiationDaysOf = (glyph: string): number => {
+  const head = headOf(glyph);
+  if (glyph.split(".").slice(1).includes("hot")) return SATIATION_DAYS.meal!;
+  if (TREAT_KINDS.includes(head)) return SATIATION_DAYS.treat!;
+  if (head in SATIATION_DAYS) return SATIATION_DAYS[head]!;
+  if (FOOD_KINDS.includes(head)) return SATIATION_DAYS.food!;
+  return DEFAULT_SATIATION_DAYS;
+};
+
 // ── ONE stack-counting core (unification pass) ─────────────────────────────
 //
 // Five functions in this module, transfer.ts and scope.ts count units in a

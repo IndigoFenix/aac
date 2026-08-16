@@ -1,0 +1,163 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-14T09:54:11.610Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> say build house
+OK     said: build + house
+SAY    mara: "I will build the house."  [build.will + house]
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+SAY    orrin: "I will carry the block to the house."  [carry.will + block + to + house]
+EXIT   mara went out of the orange house.
+EXIT   orrin went out of the orange house.
+TICK   quiet after 4.0s.
+> wait 120
+TICK   waited 120.0s.
+> /convos
+CHEAT  /convos
+> /stock
+CHEAT  /stock
+> /carry mara
+CHEAT  /carry mara
+> /carry orrin
+CHEAT  /carry orrin
+> wait 240
+TOAST  📦 bring 120 block — delivered (feedback)
+ENTER  mara came into view there north.
+SAY    mara: [water]
+SAY    orrin: "Help you."  [help + you]
+ENTER  orrin came into view there north.
+SAY    mara: "Thank you!"  [thank_you]
+SAY    mara: [sit]
+SAY    mara: "Where are you going?"  [place#question + you + go]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: "bye-bye"  [goodbye]
+SAY    orrin: [water]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view here east.
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+TOAST  📦 bring 112 block — delivered (feedback)
+SAY    mara: [apple]
+ENTER  orrin came into view here east.
+TICK   waited 240.0s.
+> /convos
+CHEAT  /convos
+> /stock
+CHEAT  /stock
+> /carry mara
+CHEAT  /carry mara
+> /carry orrin
+CHEAT  /carry orrin
+> wait 240
+EXIT   mara left view here east.
+SAY    orrin: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 104 block — nobody came; calling again (feedback)
+EXIT   orrin went out of the orange house.
+ENTER  mara came into view here south.
+TOAST  📦 bring 104 block — delivered (feedback)
+TICK   waited 240.0s.
+> /convos
+CHEAT  /convos
+> /stock
+CHEAT  /stock
+> /carry mara
+CHEAT  /carry mara
+> /carry orrin
+CHEAT  /carry orrin
+> /truth
+ERR    /truth needs a text id.
+> wait 300
+ENTER  orrin came into view there north.
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   orrin left view here east.
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [apple]
+ENTER  orrin came into view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view there west.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there west.
+SAY    mara: [water]
+EXIT   orrin went out of the orange house.
+EXIT   mara left view here east.
+ENTER  mara came into view here east.
+EXIT   mara left view here east.
+TOAST  📦 bring 96 block — delivered (feedback)
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there north.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [apple]
+EXIT   orrin left view here east.
+SAY    mara: "eat with I"  [eat + with + i_me]
+EXIT   mara left view here east.
+ENTER  mara came into view there south.
+ENTER  orrin came into view here east.
+SAY    orrin: "I'm bored."  [i_me + bored]
+EXIT   mara left view there south.
+ENTER  mara came into view there south.
+SAY    mara: "Where are you going?"  [place#question + you + go]
+EXIT   orrin left view here east.
+EXIT   mara left view there south.
+ENTER  orrin came into view here east.
+ENTER  mara came into view here south.
+EXIT   mara left view here south.
+SAY    orrin: [water]
+ENTER  mara came into view here south.
+SAY    mara: "Where are you going?"  [place#question + you + go]
+SAY    orrin: "I'm going to the bathroom."  [go + bathroom]
+EXIT   orrin left view here east.
+EXIT   mara left view here south.
+TICK   waited 300.0s.
+> /convos
+CHEAT  /convos
+> /stock
+CHEAT  /stock
+> /carry mara
+CHEAT  /carry mara
+> /carry orrin
+CHEAT  /carry orrin
+> /truth
+ERR    /truth needs a text id.
+> scene
+SCENE  house-1 — 8 thing(s) in view, 27 place(s) around you.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  basket-1 (basket), here north.
+  chair-1 (chair), here north.
+  a chair, here north.
+  a basket, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, close south, 71 m
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=25  presses=0  screens=1  sim=910.5s
+# events: SAY 35  EXIT 23  ENTER 21  CHEAT 16  TICK 7  TOAST 6  ERR 2  BOARD 1  NOTE 1  OK 1  SCENE 1  SITE 1

@@ -44,6 +44,7 @@ import {
   RARE_IMPORT_KIND,
   RARE_MAX_PER_VISIT,
   RARE_PORTER_BULK,
+  TRADE_DWELL_SEC,
   rarePerVisit,
 } from "@shared/world-engine/kernel/town/trade.js";
 import {
@@ -56,8 +57,10 @@ import {
   DOLLHOUSE_SCALE,
   ERRAND_WALK_MPS,
   REAL_SCALE,
+  TRANSACTION_DAY_FRAC_DEFAULT,
   dailyTravelM,
   serviceRadiusM,
+  transactionDayFrac,
 } from "@shared/world-engine/scale.js";
 
 const src = (id: string, d: number, stack: Record<string, number> = { wood: 5 }): TransferSource => ({
@@ -326,6 +329,51 @@ describe("⚖️ barterLegSeconds — the flat 0.35-day leg becomes a road", () 
       REAL_SCALE.dayLengthS * BARTER_LEG_DAY_FRAC,
       6,
     );
+  });
+});
+
+// ═══ ③b THE GENERIC TRANSACTION-PACING SEAT (user law, 2026-08-13) ═══════
+//
+// "Food per day isn't meant to be a constant, and other forms of barter
+// aren't either — they are supposed to emerge from the needs of the
+// entities performing the transaction... these constants probably SHOULD be
+// merged... tied to a generic variable that is given specific values by the
+// transaction in question." `BARTER_LEG_DAY_FRAC` above and trade.ts's
+// caravan visit budget were the two `0.35`s the law names; both now route
+// through `scale.ts`'s `transactionDayFrac`, and v1 answers every kind with
+// the SAME shipped default — bit-identical, old expression reimplemented
+// verbatim beside the new call, per this file's own §3 convention.
+
+describe("⚖️ transactionDayFrac — the generic seat both 0.35s now route through", () => {
+  it("🔒 both transaction kinds still answer the shipped 0.35, exactly", () => {
+    expect(transactionDayFrac({ kind: "shipment-leg" })).toBe(0.35);
+    expect(transactionDayFrac({ kind: "caravan-visit" })).toBe(0.35);
+    expect(TRANSACTION_DAY_FRAC_DEFAULT).toBe(0.35);
+  });
+
+  it("🔒 BARTER_LEG_DAY_FRAC IS the seat's shipment-leg answer, not a coincidence", () => {
+    expect(BARTER_LEG_DAY_FRAC).toBe(transactionDayFrac({ kind: "shipment-leg" }));
+  });
+
+  it("🔒 the caravan's speed formula (trade.ts createTownTrade) is bit-identical through the seat", () => {
+    // OLD: `Math.max(2.2, (len * 2) / Math.max(30, FOOD_DAY_SEC * 0.35 -
+    // TRADE_DWELL_SEC))` — trade.ts's inline formula before this round,
+    // reimplemented verbatim here as the oracle (never asserted, only reused).
+    const oldSpeed = (len: number) =>
+      Math.max(2.2, (len * 2) / Math.max(30, FOOD_DAY_SEC * 0.35 - TRADE_DWELL_SEC));
+    const newSpeed = (len: number) =>
+      Math.max(
+        2.2,
+        (len * 2) / Math.max(30, FOOD_DAY_SEC * transactionDayFrac({ kind: "caravan-visit" }) - TRADE_DWELL_SEC),
+      );
+    for (const len of [1, 30, 137.4, 500, 5000]) {
+      expect(newSpeed(len)).toBe(oldSpeed(len));
+    }
+  });
+
+  it("v1: every kind anchors to ONE default — merged, as the law asks, not two constants that agree by luck", () => {
+    const kinds = ["shipment-leg", "caravan-visit"] as const;
+    for (const kind of kinds) expect(transactionDayFrac({ kind })).toBe(TRANSACTION_DAY_FRAC_DEFAULT);
   });
 });
 

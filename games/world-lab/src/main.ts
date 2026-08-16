@@ -451,6 +451,10 @@ interface SpiritPlanet {
   group: THREE.Group;
   planetObj: PlanetObject;
   lights: THREE.Object3D[];
+  /** The vacuum planet's own body literal (bootPlanetScope) — no streaming
+   *  `flight` exists in this mode, so ground-content helpers (mountWildChunk,
+   *  castDrawnGround) read the body from HERE instead (see `groundBodyAt`). */
+  body: CelestialBody;
 }
 let spiritPlanet: SpiritPlanet | null = null;
 interface CityViz {
@@ -797,6 +801,22 @@ function attachSurfaceAnchor(point: SurfacePoint<CelestialBody>): THREE.Group {
 /** A failed wild boot must not re-throw every glide frame — back off. */
 let wildMountRetryAt = -1;
 
+/** THE ONE GROUND BODY under a world position, whichever mode is live: the
+ *  streaming galaxy's nearest body (every `flight`-driven boot), or the
+ *  vacuum planet's own lone body (bootPlanetScope — no streaming `flight`
+ *  exists there). The two modes are mutually exclusive (bootPlanetScope never
+ *  sets `flight`; the streaming boots never set `spiritPlanet`), so this is a
+ *  straight either/or, not a merge — it lets mountWildChunk/castDrawnGround/
+ *  castDrawnTerrain/clampCameraAboveDrawnGround run unmodified in both. */
+function groundBodyAt(pos: THREE.Vector3): { body: CelestialBody | null; altitude: number } {
+  if (spiritPlanet) {
+    const b = spiritPlanet.body;
+    return { body: b, altitude: pos.distanceTo(b.worldPosition) - b.radius };
+  }
+  if (!flight) return { body: null, altitude: Infinity };
+  return flight.world.nearestBodyAltitudeAt(pos);
+}
+
 /** Mount the walkable wilderness CHUNK (anchor + samplers + quest session) at
  *  a WORLD position, WITHOUT granting it the walker — the same proximity-mount
  *  contract a town has (mountLiveTown): the chunk renders and LIVES, camera
@@ -807,8 +827,20 @@ let wildMountRetryAt = -1;
  *  the entity engine: gatherable scatter + fauna + minds. */
 function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
   if (embedWild) return true;
-  if (!flight || performance.now() < wildMountRetryAt) return false;
-  const nb = flight.world.nearestBodyAltitudeAt(pos);
+  if (performance.now() < wildMountRetryAt) return false;
+  // THE SPEC DECIDES (quest-host.ts start(): `avatarMode = spirit ? "spark" :
+  // "creature"`) — read ONCE here, reused below for both the wild session's
+  // own `spirit` opt and the camera-ownership handoff, since both questions
+  // are "is this the document's declared walker or spirit."
+  const docAvatarKind = avatarKind(rootLoaded?.game ?? null);
+  // THE BODY'S SPECIES, from the SAME document, lowered the same way: a
+  // GoalTreeGame carries no manifest settings, so `avatar_species` only
+  // reaches the host if the boot that read the manifest passes it on
+  // (nature-hike's standalone quest-boot does exactly this on host.start).
+  // Undefined for a bare content world ⇒ the host's own settler-chain
+  // fallback, unchanged.
+  const docAvatarSpecies = rootLoaded?.game?.avatarSpecies;
+  const nb = groundBodyAt(pos);
   const body = nb.body;
   const geo = body?.geography;
   if (!body || !body.walkable || !geo) return false;
@@ -867,7 +899,15 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
             // fruit plants, animals) still comes from the mix.
             wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0)
               .filter(m => m.species !== FLORA_TREE_SPECIES),
-            spirit: spirit !== null,
+            // This must read the DOCUMENT's declared avatar kind, not "is a
+            // spirit-ladder camera rig active" (a walker spec riding the
+            // ladder — nature-hike — still glides the SAME ladder as a
+            // spirit run; only the doc's avatar setting says whether the
+            // session stays bodiless or auto-creates a follower). Verified
+            // live (traceWalk, __walk.trace): rootLoaded=set avatar=true
+            // kind=walker -> spirit:false, npc_avatar_local spawned.
+            spirit: docAvatarKind === "spirit",
+            ...(docAvatarSpecies ? { avatarSpecies: docAvatarSpecies } : {}),
             ...(docSessionScale() ? { scale: docSessionScale() } : {}),
             // Nearby planet cities as trade partners for a site FOUNDED out
             // here (P0). Late-bound off the LIVE anchor: a floating-origin
@@ -907,11 +947,35 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
       ? _lp2.copy(fwdWorld).transformDirection(_inv.copy(wildAnchor.matrixWorld).invert())
       : _lp2.set(0, 0, 1);
     embedWild.placePlayer(WILD_SIDE / 2, WILD_SIDE / 2, fwd.x, fwd.z);
-    // Mounted WITHOUT the walker: camera + avatar stay with their owner until
-    // a touchdown grants them (mountWildernessAt / maybeLand).
-    embedWild.host.setDriveCamera(false);
+    // CAMERA OWNERSHIP AT MOUNT: a SPIRIT session stays exactly as before —
+    // mounted WITHOUT the walker, camera + avatar stay with their owner (the
+    // ladder's gaze-driven ground rig) until a genuine touchdown grants them
+    // (mountWildernessAt / maybeLand — the streaming-galaxy path only). A
+    // WALKER session hands the shared camera to the embedded host's OWN
+    // chase rig instead: quest-host.ts already calls the renderer's
+    // setFollowBody on the local attached avatar the instant it spawns
+    // (spawnAttachedAvatar → followCamera(body), landed engine-side) —
+    // render3d's `drive = this.driveCamera || (!this.host && !this.externalCamera)`
+    // reduces to `driveCamera` alone for an embedded host, so `true` here is
+    // the ONLY seam needed; no setExternalCamera call, no new machinery. The
+    // ladder's OWN `ladder.step()` still runs every frame (glide, dwell,
+    // ceiling holds, streaming) but goes CAMERA-PASSIVE on the ground rung
+    // while this drive stands — `ladder.setHostDrivesView(true)`, asserted per
+    // frame in stepPlanetSpirit — because it used to pose the camera overhead
+    // first and every reader in between (its own gaze march, the provider's
+    // cursor ray, this host's pointer pick) then resolved against a pose the
+    // host immediately overwrote and nobody ever saw. Now this host's
+    // `step()` is the frame's ONLY camera writer. The local player's own body (the spark)
+    // stays hidden either way — it is never what a walker session shows;
+    // the ATTACHED avatar is a separate, distinct body.
+    embedWild.host.setDriveCamera(docAvatarKind === "walker");
     embedWild.host.setLocalAvatarHidden(true);
-    traceWalk(`wilderness chunk mounted (${UNIFIED_GROUND ? "quest" : "plain"})`);
+    // The Paths toggle is the LAB's choice and outlives every host: a fresh
+    // wilderness session starts with path debug OFF, and this chunk mounts
+    // long after boot's own re-apply ran (a descent, not a load). Re-assert.
+    applyPaths();
+    traceWalk(`wilderness chunk mounted (${UNIFIED_GROUND ? "quest" : "plain"}) ` +
+      `avatarKind=${docAvatarKind} driveCamera=${docAvatarKind === "walker"}`);
     return true;
   } catch (err) {
     traceWalk(`wilderness mount FAILED: ${(err as Error).message}`);
@@ -952,7 +1016,15 @@ const _rbDelta = new THREE.Matrix4();
 const _rbQ = new THREE.Quaternion();
 const _rbV = new THREE.Vector3();
 function maybeRebaseWild(): void {
-  if (!flight || !embedWild || !wildRoot || !wildAnchor || !wildGround || !wildPoint) return;
+  // GATED ON "a ground body context exists" — either the streaming galaxy's
+  // flight-sim walk, or the vacuum planet's own lone body (bootPlanetScope /
+  // stepPlanetSpirit's walker branch — spiritPlanet, never `flight`; the two
+  // are mutually exclusive, see groundBodyAt above). `flight` itself is never
+  // read below — it stood in for that broader condition and silently excluded
+  // the vacuum-planet walker, which is why this never fired on that path and
+  // the avatar instead walked into engine.ts's manifold clamp at the
+  // wilderness spec's edge (an invisible wall).
+  if (!(flight || spiritPlanet) || !embedWild || !wildRoot || !wildAnchor || !wildGround || !wildPoint) return;
   const pose = embedWild.playerPose();
   if (!pose) return;
   const MARGIN = 24;
@@ -1140,8 +1212,7 @@ function drawnGroundMeshes(body: CelestialBody): THREE.Mesh[] {
   return out;
 }
 function castDrawnGround(origin: THREE.Vector3, dir: THREE.Vector3, far: number): THREE.Vector3 | null {
-  if (!flight) { castDbg = "noflight"; return null; }
-  const body = flight.world.nearestBodyAltitudeAt(origin).body;
+  const body = groundBodyAt(origin).body;
   if (!body) { castDbg = "nobody"; return null; }
   // Refresh the mesh list ~1/s (streaming mounts/unmounts chunks and roads).
   const t = performance.now();
@@ -1179,8 +1250,7 @@ function castDrawnGround(origin: THREE.Vector3, dir: THREE.Vector3, far: number)
 let terrainCastMeshes: THREE.Mesh[] = [];
 let terrainCastMeshesAt = -1;
 function castDrawnTerrain(origin: THREE.Vector3, dir: THREE.Vector3, far: number): THREE.Vector3 | null {
-  if (!flight) return null;
-  const body = flight.world.nearestBodyAltitudeAt(origin).body;
+  const body = groundBodyAt(origin).body;
   if (!body) return null;
   const t = performance.now();
   if (t - terrainCastMeshesAt > 800) {
@@ -1215,8 +1285,7 @@ const _cfOrigin = new THREE.Vector3();
 const _cfDown = new THREE.Vector3();
 let camFloorTraceAt = 0;
 function clampCameraAboveDrawnGround(): void {
-  if (!flight) return;
-  const nb = flight.world.nearestBodyAltitudeAt(camera.position);
+  const nb = groundBodyAt(camera.position);
   const body = nb.body;
   // Near-surface concern only — high flight never grazes the skin.
   if (!body || !Number.isFinite(nb.altitude) || nb.altitude > 2000) return;
@@ -2779,9 +2848,16 @@ async function boot(): Promise<void> {
         bootSolarFlight(loaded.game); // the piloted real-scale flight
         break;
       case "surface-walker":
-        // INTERIM: a planet/region walker gets the gaze view until the
-        // streamed-ground avatar spawn lands (avatar-everywhere stage).
-        bootSpiritWorld(loaded.game);
+        // A planet (`body` root) walker rides the SAME vacuum-planet boot as
+        // a spirit run — "starting as a spirit… except it creates an avatar
+        // instead of selecting one" (user ruling): the ladder/glide mechanics
+        // are identical; only the doc's avatar kind (read where the ground
+        // rung mounts the wild chunk) decides whether the session stays
+        // bodiless or auto-creates a following avatar. INTERIM: a REGION
+        // walker (no `region`-scope preset exists yet) still falls back to
+        // the gaze view.
+        if (loaded.game.scope === "planet") bootPlanetScope(loaded.game);
+        else bootSpiritWorld(loaded.game);
         break;
       case "town-walker":
         bootTownPlay(loaded);
@@ -2835,10 +2911,21 @@ langSelect.addEventListener("change", () => {
 //    shared/world-engine/path-debug-3d.ts for the colour key). The choice is the
 //    LAB's and outlives a world reload: each boot builds a fresh QuestHost3D, so
 //    re-apply once the new one has published itself on window.__questLab.
+//
+//    TWO HANDLES, NOT ONE. A TOWN boot publishes `__questLab`; the WILDERNESS
+//    session publishes `__questWild` (quest-boot.ts) — and a walker run only
+//    ever has the latter, which is why this toggle read as INERT in walker
+//    mode. Both are driven when both stand (a glide near a town mounts a town
+//    host beside the wild one): one toggle, every hosted body. `setPathDebug`
+//    carries the whole overlay composition — route lines, the three fed marks
+//    (cursor / spark / pursuit goals) and the attention rings — so this single
+//    call is all the new layers need (quest-host.ts setPathDebug).
 let pathsOn = false;
 function applyPaths(): void {
   pathsBtn.setAttribute("aria-pressed", String(pathsOn));
-  (window as unknown as { __questLab?: QuestHost3D }).__questLab?.setPathDebug(pathsOn);
+  const w = window as unknown as { __questLab?: QuestHost3D; __questWild?: QuestHost3D };
+  w.__questLab?.setPathDebug(pathsOn);
+  w.__questWild?.setPathDebug(pathsOn);
 }
 pathsBtn.addEventListener("click", () => {
   pathsOn = !pathsOn;
@@ -3486,6 +3573,11 @@ function bootSpiritWorld(game: GameSettings): void {
   currentReboot = flightReboot;
 }
 
+// Scratches for the walker auto-descent's tangent camera basis (bootPlanetScope).
+const _descentUp = new THREE.Vector3();
+const _descentEast = new THREE.Vector3();
+const _descentNorth = new THREE.Vector3();
+
 // THE VACUUM PLANET (scope "planet" — a `body` root): build the planet from its
 // OWN doc params and render it ALONE (no galaxy, no star yet). Editing the doc's
 // geology/rain/radius re-runs buildPlanetWorld and changes what you see. Reuses
@@ -3521,13 +3613,16 @@ function bootPlanetScope(game: GameSettings): void {
   sun.position.set(1, 0.7, 0.6);
   const fill = new THREE.HemisphereLight(0xbcd4ff, 0x141a28, 0.5);
   scene.add(sun, fill);
-  spiritPlanet = { group, planetObj, lights: [sun, fill] };
 
   // The body the spirit provider drives — a plain literal at the origin (no
   // physics): the provider only reads position/orientation/radius/surface.
+  // `walkable: true` (createCelestialBody's own rule: rocky + nonzero relief
+  // — buildPlanetWorld's relief is schema-enforced > 0, so this vacuum body
+  // always qualifies) is what lets mountWildChunk/spiritForceGates treat this
+  // ground as landable — the hand-built literal never runs that computation.
   const radius = built.spec.radius;
   const body = {
-    id: "planet", type: "rocky", radius,
+    id: "planet", type: "rocky", radius, walkable: true,
     worldPosition: new THREE.Vector3(0, 0, 0),
     orientation: new THREE.Quaternion(),
     inverseOrientation: new THREE.Quaternion(),
@@ -3535,6 +3630,7 @@ function bootPlanetScope(game: GameSettings): void {
     geography: built,
     group,
   } as unknown as CelestialBody;
+  spiritPlanet = { group, planetObj, lights: [sun, fill], body };
 
   const maxAlt = radius * 2.5; // start over the whole planet; dive to descend.
   const startDir = new THREE.Vector3(0.35, 0.5, 0.79).normalize();
@@ -3572,28 +3668,316 @@ function bootPlanetScope(game: GameSettings): void {
     drivenBody: () => null,
     streamGround: () => ({ near: null }),
     forceGates: () => null,
+    // GROUND CONTENT (open country only — this scope has no towns/cityTowns
+    // loader): the SAME wild-mount/cursor/park functions the streaming boots
+    // use, now reachable here via groundBodyAt (see mountWildChunk). Wired
+    // exactly as bootSpiritWorld wires them — no new machinery.
+    castGroundRay: castDrawnGround,
+    cursorHost: spiritCursorHost,
+    parkWildAvatar: spiritParkWild,
   });
 
   const ladder = createSpiritLadder({ provider, ceiling: "flight" });
   spirit = { ladder, drone, spark, focusBody: body, pendingFocus: null };
+
+  // ⚖️ USER RULING 3b: a WALKER-spec planet world (nature-hike) never gazes
+  // the ladder down — Build world itself drives the SAME possession seam a
+  // probe uses to stand the camera on the ground without a human at the
+  // mouse (documented at stepSpirit's __spirit forensics: `drone.setGround`
+  // + `ladder.dropToGround(drone.groundPoint(...))`), landing at a
+  // DETERMINISTIC site before control ever reaches the player. A SPIRIT-spec
+  // world (home-planet) takes none of this — manual flight stays its play.
+  let landed = false;
+  if (avatarKind(game) === "walker") {
+    // Deterministic spawn: land-filtered sites, first biome 1|2 (forest/
+    // grass — ecology.ts's DEFAULT_BIOSPHERE), else the first land site,
+    // else sites[0] — the same rule the standalone nature-hike copy's own
+    // quest-boot documents (round ledger), reimplemented here against this
+    // scope's own `built` (that copy's module is out of bounds to import).
+    // DRY-LAND MARGIN (bug report, post river-datum-fix): a bare `>= 0`
+    // cell-centre test still let the render come up flat ocean-blue with no
+    // terrain at all — measured live (seed 11 r5000): site 266 (the biome-1
+    // "forest" pick) sits only 1.9 m above sea level, and even that thin a
+    // margin reproduced the bug. Site heights across this planet's 49
+    // candidates cluster in two bands with a real gap between them — a
+    // marginal/lowland band (0.5–4.9 m, where the bug reproduced) and a
+    // highland band (5.0–19.3 m, clean); 10 ocean sites sit below -19 m.
+    // 5 m lands in the highland band's floor rather than an arbitrary
+    // round number. Same existing datum (`surface.heightAt`), no new
+    // sampler. `landDry` walks sites in stable array order — "advance to the
+    // next site if wet" — rather than a single `.find`, so the fallback
+    // chain below is legible as an explicit ordered scan.
+    const DRY_MARGIN_M = 5;
+    const landDry: typeof built.sites = [];
+    for (const s of built.sites) {
+      if (built.surface.heightAt(built.topo.pos3!(s.cell)) >= DRY_MARGIN_M) landDry.push(s);
+    }
+    const preferred = landDry.find(s => {
+      const b = built.grid.fields.biome?.[s.cell];
+      return b === 1 || b === 2;
+    });
+    const site = preferred ?? landDry[0] ?? built.sites[0];
+    if (site) {
+      const dirArr = built.topo.pos3!(site.cell);
+      const dir = new THREE.Vector3(dirArr[0], dirArr[1], dirArr[2]).normalize();
+      const groundR = radius + Math.max(0, built.surface.heightAt(dirArr));
+      // `drone.setGround` still sets the drone's own internal unit-direction
+      // (`_pos`), which its pure, state-only `groundPoint(bc, R, out) = bc +
+      // _pos·R` reads next — a coordinate-system-agnostic formula, safe to
+      // reuse verbatim. `drone.place(camera)`, by contrast, is NOT reused:
+      // it assumes the streaming galaxy's FLOATING-ORIGIN camera scheme
+      // (world space rebased so the drone's ground point sits near the
+      // scene origin) — BUG traced live (browser pass, 2026-08-13): with
+      // drone.place(camera), camPos always landed at exactly `altitude` from
+      // the TRUE origin (~200 m), i.e. deep inside this fixed-origin vacuum
+      // body's 5000 m-radius core, backface-culled to a black screen (or,
+      // depending on rung, inside the ocean shell — read as "landed in a
+      // lake"). This body never rebases (`worldPosition` is the fixed origin
+      // throughout bootPlanetScope), so the camera is placed directly in
+      // TRUE world coordinates instead — the same convention every other
+      // vacuum-planet computation here already uses (createSurfaceChart,
+      // groundBodyAt).
+      drone.setGround(dir, 200);
+      const groundPoint = drone.groundPoint(body.worldPosition, groundR, new THREE.Vector3());
+      camera.position.copy(dir).multiplyScalar(groundR + 200).add(body.worldPosition);
+      // camera.up must NOT be `dir`: looking straight down at groundPoint
+      // means the look axis IS `-dir`, and lookAt's up×forward basis zeroes
+      // out when up is parallel to forward (this exact degenerate case —
+      // proven live: `dir`-as-up rendered nothing but a flat blue sphere from
+      // every angle, an undefined/garbage basis, not a legitimate top-down
+      // ocean view over freshly-confirmed dry land). Use a TANGENT up instead
+      // — the same east/north chart basis this file already builds elsewhere
+      // (e.g. siteOffsetM) — so the cross product stays well-defined.
+      const worldUp = Math.abs(dir.y) < 0.99 ? _descentUp.set(0, 1, 0) : _descentUp.set(1, 0, 0);
+      const east = _descentEast.crossVectors(worldUp, dir).normalize();
+      const north = _descentNorth.crossVectors(dir, east).normalize();
+      camera.up.copy(north);
+      camera.lookAt(groundPoint);
+      camera.updateMatrixWorld(true);
+      traceWalk(`nature-hike descent: site=${site.cell} dryM=${built.surface.heightAt(dirArr).toFixed(1)} ` +
+        `groundR=${groundR.toFixed(1)} camDist=${camera.position.length().toFixed(1)}`);
+      ladder.dropToGround(groundPoint);
+      landed = true;
+      // ⚖️ NEW RULE (user): a DESIGNATED avatar cannot be left — no rung
+      // exit, no detach gesture; the spark stays with its body. The ladder's
+      // own bottom-hover ascent gesture (stepGround) is already gated on
+      // `mayAscendTo(to) = LEVEL_RANK[to] <= LEVEL_RANK[ceiling]`
+      // (frame-provider.ts: flight=3 > town=2 > ground=1 > structure=0) —
+      // clamping the ceiling to "ground" makes every ascent target rank
+      // higher than the ceiling, so the EXISTING gesture handler takes its
+      // OWN "the ceiling holds here" no-op branch by construction. No new
+      // gesture code, no edit to ladder.ts. Set AFTER dropToGround (never
+      // before): the ladder starts at level "flight" > ceiling would be an
+      // inconsistent state the ladder was never designed to start in — this
+      // way ceiling only ever tightens once the glide is confirmed grounded.
+      ladder.setCeiling("ground");
+    }
+  }
+
   const ms = Math.round(performance.now() - t0);
-  baseStatus =
-    `PLANET (vacuum) · seed ${built.spec.geology.seed} · radius ${radius} · ` +
-    `${built.sites.length} sites · look to fly, up to descend · ${ms}ms`;
+  baseStatus = landed
+    ? `PLANET (vacuum) · seed ${built.spec.geology.seed} · radius ${radius} · ` +
+      `landed on the hike · ${ms}ms`
+    : `PLANET (vacuum) · seed ${built.spec.geology.seed} · radius ${radius} · ` +
+      `${built.sites.length} sites · look to fly, up to descend · ${ms}ms`;
   setStatus(baseStatus);
   flightReboot = () => bootPlanetScope(game);
   currentReboot = flightReboot;
 }
 
 /** The vacuum planet's per-frame step: gaze-drive the ladder, then LOD the mesh
- *  from the camera (body at origin, identity ⇒ camera-local = camera world). */
+ *  from the camera (body at origin, identity ⇒ camera-local = camera world).
+ *  OPEN-COUNTRY WILD DRIVING mirrors stepSpirit's glidingWild branch (no town
+ *  concept exists in this scope, so there is nothing to disambiguate against —
+ *  the ground rung's session is always the wild chunk, if one is mounted). */
+const _focusWorld = new THREE.Vector3();
+
+/** WALKER LEADER FEED — the CURSOR's ground point, in chart-local sim metres.
+ *
+ * ⚖️ THE TWO MODES FEED DIFFERENT POINTS ON PURPOSE.
+ *  • SPIRIT: creatures follow the SPIRIT. The fed point IS the glide — where
+ *    the bodiless player actually is (`ladder.focusWorld` = the glide's
+ *    surface address) — so a follower walking to it is walking to the player.
+ *  • WALKER: the player already HAS a body, and the fed point is a COMMAND
+ *    TARGET — "go there" — which the attached avatar chases through the
+ *    party-follow loop. Feeding the glide there makes the avatar chase a laggy
+ *    intermediate camera-rig point instead of the place the player pointed at,
+ *    which is the "walks to the wrong spot" report.
+ *
+ * Spaces, named (mirrors games/nature-hike/src/quest-boot.ts ⑥, the standalone
+ * reference): canvas px → NDC → a WORLD ray → the DRAWN ground hit
+ * (castDrawnGround — the pixels the player sees, never the analytic sampler
+ * under them) → CHART-LOCAL (x, y) via `wildAnchor.worldToLocal` (z becomes y).
+ *
+ * NO AIM ⇒ THE SPARK HOLDS. Pointer outside the stage, or a ray that hits no
+ * drawn chunk (LOD list mid-rebuild, or aimed at the sky), simply feeds
+ * NOTHING: `session.spiritPos` persists, and — unlike a remembered lab-side
+ * point — it is re-expressed by the host's own floating-origin rebase, so
+ * holding can never resurrect a stale pre-rebase coordinate. */
+const _lfRayO = new THREE.Vector3();
+const _lfRayD = new THREE.Vector3();
+const _lfHit = new THREE.Vector3();
+function feedWalkerLeader(pointer: { x: number; y: number } | null): void {
+  const ew = embedWild;
+  if (!ew?.quest || !wildAnchor || !pointer) return;
+  const w = viewEl.clientWidth || 1;
+  const h = viewEl.clientHeight || 1;
+  const nx = (pointer.x / w) * 2 - 1;
+  const ny = -((pointer.y / h) * 2 - 1);
+  if (nx < -1 || nx > 1 || ny < -1 || ny > 1) return; // aimed off the stage
+  camera.updateMatrixWorld(true);
+  _lfRayO.setFromMatrixPosition(camera.matrixWorld);
+  _lfRayD.set(nx, ny, 0.5).unproject(camera).sub(_lfRayO).normalize();
+  const hit = castDrawnGround(_lfRayO, _lfRayD, (spiritPlanet?.body.radius ?? 1e6) * 4);
+  if (!hit) return; // ray missed every drawn chunk — hold
+  wildAnchor.updateWorldMatrix(true, false);
+  wildAnchor.worldToLocal(_lfHit.copy(hit));
+  // CLAMPED TO THE CHART, not refused: a gaze at the horizon is a real
+  // instruction to walk that way, and the chart re-anchors under the walker
+  // (maybeRebaseWild) long before the edge becomes a wall.
+  const inset = 2;
+  const cx = Math.min(WILD_SIDE - inset, Math.max(inset, _lfHit.x));
+  const cy = Math.min(WILD_SIDE - inset, Math.max(inset, _lfHit.z));
+  ew.quest.setSpiritPosition(cx, cy);
+}
+
 function stepPlanetSpirit(dt: number, now: number): void {
   if (!spirit || !spiritPlanet) return;
+  const s = spirit;
   const pointer = flightPointer.inside
     ? { x: flightPointer.x, y: flightPointer.y, clientX: flightPointer.clientX, clientY: flightPointer.clientY }
     : null;
-  spirit.ladder.step(pointer, dt, now);
+  const glidingWild = s.ladder.level === "ground";
+  spiritWildDriven = glidingWild && embedWild !== null;
+  // ONE CAMERA WRITER PER FRAME. A WALKER document (manifest `avatar: true` —
+  // nature-hike) is played through the embedded host's OWN chase rig: the
+  // mount handed it the shared camera (`setDriveCamera(docAvatarKind ===
+  // "walker"`, mountWildChunk) and its `step` below writes the camera LAST, so
+  // that pose is the one that presents. The ladder must therefore not pose it
+  // first — every reader between the two writes (the ladder's own gaze march,
+  // the provider's cursor ray, THIS host's pointer pick) was resolving against
+  // an overhead pose nobody ever saw, which is what pinned render3d's travel
+  // hysteresis overhead: the gaze landed BEHIND the avatar, so the rig locked
+  // the overhead tilt, and only an off-screen cursor (no gaze at all) let it
+  // fall back to the shoulder view.
+  //
+  // The drive is granted by the DOCUMENT and never revoked on this path: the
+  // planet scope has no flight sim (`flight` is null — bootPlanetScope builds
+  // a stub for the provider only), so the take-off / town-handoff seams that
+  // hand the camera back elsewhere are unreachable here. The ladder keeps
+  // stepping in full — glide, dwell, ceiling holds, focusWorld, rebase.
+  const hostDrivesView = spiritWildDriven && avatarKind(rootLoaded?.game ?? null) === "walker";
+  s.ladder.setHostDrivesView(hostDrivesView);
+  const res = s.ladder.step(pointer, dt, now);
+  // FLOOR THE PRESENTED POSE, never an intermediate one: with the chase rig
+  // driving, the camera this frame is written by `host.step` below, so the
+  // clamp waits for it (the grounded walker branch floors after its own step
+  // for exactly this reason). Spirit-driven frames still clamp right here —
+  // the ladder just posed, and nothing else writes the camera afterwards.
+  if (!hostDrivesView) clampCameraAboveDrawnGround();
+  sparkToRung(s);
+  // Pointer forwarded so dwell-to-talk/containers/harvest hovers work
+  // mid-glide; external cursor asserted so the planet's spark stays the ONE
+  // cursor — exactly stepSpirit's wild-session treatment.
+  //
+  // NOT while the host drives the view: that opt-out is a SPIRIT law (a
+  // bodiless glide has no engine cursor of its own, so the planet draws one),
+  // and asserting it on a walker hid the host's spark and left the ladder's
+  // replacement raycasting through a pose that no longer reaches the screen —
+  // i.e. no cursor at all. A driven walker draws its own, as it does
+  // standalone (games/nature-hike). The ladder makes the same call from its
+  // side (setHostDrivesView); this site must not fight it.
+  if (embedWild?.quest) {
+    if (s.ladder.level === "ground" && pointer) {
+      embedWild.host.setPointer(pointer.clientX, pointer.clientY);
+    } else {
+      embedWild.host.clearPointer();
+    }
+    if (s.ladder.level === "ground" && !hostDrivesView) embedWild.quest.setExternalCursor(true);
+  }
+  // FOLLOW-LEADER FEED (creature avatarMode — quest-host.ts): the attached
+  // avatar's leader is session.spiritPos, fed through the host's own public
+  // setSpiritPosition(x, y) — the SAME derivation the embedded quest-boot
+  // ladder flow already uses (quest-boot.ts onFrame: "Feed the spirit's
+  // hover position to the host" via `ladder.focusWorld`); only the
+  // WORLD→wild-sim conversion differs here, since THIS ladder drives an
+  // EXTERNAL host rather than a flat provider whose world already is its sim.
+  // focusWorld is false before any ground session exists, so this is a no-op
+  // until dropToGround (or a manual descent) actually lands the glide.
+  //
+  // WALKER: the leader is the CURSOR's ground point, not the glide — see
+  // feedWalkerLeader for why the two modes feed different points. Spirit mode
+  // is untouched below.
+  if (hostDrivesView) feedWalkerLeader(pointer);
+  else if (embedWild?.quest && wildAnchor && s.ladder.focusWorld(_focusWorld)) {
+    wildAnchor.updateWorldMatrix(true, false);
+    const local = wildAnchor.worldToLocal(_focusWorld);
+    embedWild.quest.setSpiritPosition(local.x, local.z);
+  }
+  // The wild session's full-rate step while the glide stands on its ground —
+  // LAST, after the pointer landed. Which camera it picks the gaze through
+  // depends on who owns the view, and both answers are self-consistent:
+  //  • SPIRIT: the ladder posed THIS frame's camera above, and the host reads
+  //    it (the ordering stepSpirit documents — a pick against last frame's
+  //    matrix would be a full frame of planetary sweep off the surface);
+  //  • WALKER: nobody posed it yet, so the host picks through the pose IT
+  //    presented last frame and then writes this frame's — one frame of lag,
+  //    the same self-consistent loop a standalone walker host runs.
+  if (spiritWildDriven && embedWild) embedWild.host.step(dt, now);
+  // FLOATING ORIGIN: the vacuum-planet walker's own loop parks/rebases too —
+  // mirrors the flight-grounded branch's per-frame `maybeRebaseWild()` call
+  // (main.ts's "grounded && flight" step). Only while the host is actually
+  // driving the walker: spiritParkWild's own park calls (spirit-glide mode)
+  // already rebase through the same function on their own cadence.
+  if (hostDrivesView) maybeRebaseWild();
+  // The chase rig posed the camera — floor it (the clamp above is skipped on
+  // this path). Mirrors the grounded walker branch's ordering exactly.
+  if (hostDrivesView) clampCameraAboveDrawnGround();
   spiritPlanet.planetObj.update(camera.position);
+  if (res.waiting) { showVeil(res.waiting); forceVeil = true; }
+  else if (forceVeil) { hideVeil(); forceVeil = false; }
+  if (!statusEl.classList.contains("error")) {
+    let line = s.ladder.level === "ground" || s.ladder.level === "structure" ? res.status : baseStatus;
+    // 🧭 WALKER SOFT-CONTROL READOUT — only while the Paths toggle is on, and
+    // only on this rung. Same numbers the overlay lines draw (one
+    // `debugSnapshot`), so a "why is it walking there" question is answerable
+    // without pixel-peeping the 3-D marks.
+    // `quest` (the full QuestHost3D), not `host` — the WildernessGround handle
+    // exposes only the step/pointer/camera slice; the debug surface is quest-side.
+    if (hostDrivesView && embedWild?.quest?.pathDebugOn()) line += ` ‖ ${walkerDebugLine(embedWild.quest)}`;
+    setStatus(line);
+  }
+}
+
+/** ONE TERSE LINE of the walker session's soft-control state, from the host's
+ *  own `debugSnapshot` (the overlays' source) plus `debugGround`/`debugProbe`.
+ *  The reported body is the ENGAGED one if the spark holds one, else the first
+ *  directable body actually pursuing something — the rest would be noise.
+ *
+ *  ⚠️ GAPS, not omissions: (a) the renderer's `debugCamera()` (gaze / ahead /
+ *  travel / faceTarget / yawSpeed) is NOT reachable from the lab — QuestHost3D
+ *  exposes `camera`, `debugProbe` and `debugSnapshot`, but no getter for the
+ *  WorldView (`questViewOf` is an internal deps member), so `cam:` here is
+ *  whatever `debugProbe` carries (cutaway + committed gaze + hover) rather
+ *  than the rig's own numbers; (b) no sit/stand latch appears in any existing
+ *  debug string, so none is printed rather than re-deriving one lab-side. */
+function walkerDebugLine(host: QuestHost3D): string {
+  const snap = host.debugSnapshot();
+  if (!snap) return "dbg:none";
+  const pt = (x: number, y: number) => `${Math.round(x)},${Math.round(y)}`;
+  const c =
+    (snap.engage ? snap.creatures.find(k => k.cid === snap.engage!.cid) : null) ??
+    snap.creatures.find(k => k.pursuit) ??
+    null;
+  return (
+    `engage=${snap.engage ? `${snap.engage.cid}:${snap.engage.holdRemainS.toFixed(1)}s` : "—"}` +
+    ` pursuit=${c?.pursuit ? `${c.pursuit.kind}@${pt(c.pursuit.tx, c.pursuit.ty)}` : "—"}` +
+    ` walk=${c?.walkTarget ? pt(c.walkTarget.tx, c.walkTarget.ty) : "—"}` +
+    ` blocked=${c?.blockedBy ?? "—"}` +
+    ` face=${snap.conversationObj?.objId ?? "—"}` +
+    ` cap=${snap.directMinM.toFixed(1)}/${snap.directMaxM.toFixed(1)}` +
+    ` | ${host.debugProbe()}`
+  );
 }
 
 let lastT = performance.now();
@@ -4756,7 +5140,7 @@ if (flashWatch) {
   setStatus("flash watch armed — __flash.clean() then wait; __flash.save() to dump", false);
 }
 
-renderer.setAnimationLoop(() => {
+function tick(): void {
   try {
     frame();
     flashWatch?.sample();
@@ -4772,4 +5156,67 @@ renderer.setAnimationLoop(() => {
     }
     try { composer.render(); } catch { /* renderer itself is down — nothing to present */ }
   }
+}
+
+// ---- TESTING-ONLY background tick -------------------------------------
+// rAF (and renderer.setAnimationLoop, which rides on it) is throttled to
+// zero by the browser once the tab/window is hidden or minimized, which
+// freezes the sim and breaks automated browser testing. Opt in with
+// ?bgtick=1 in the URL (read once at boot) or at runtime via
+// `window.__bgTick = true/false`. Off by default: zero behavior change
+// for normal play. When enabled AND the document is hidden, a dedicated
+// Worker keeps a setInterval-based clock alive (main-thread timers get
+// intensively throttled after ~5 min hidden; a Worker's timer does not)
+// and posts tick messages back at a modest fixed cadence. We call the
+// same `tick()` the rAF path calls — separating "step the sim" from
+// "draw the frame" would mean threading that split through every branch
+// of frame() (quest/spirit/grounded/vacuum all render inline), so we
+// just run the whole frame; correctness over elegance while hidden.
+const BGTICK_HZ = 15;
+let bgTickEnabled = new URLSearchParams(location.search).get("bgtick") === "1";
+let rafActive = true; // guards so exactly one driver (rAF vs worker) runs at a time
+let bgWorker: Worker | null = null;
+
+function startBgWorker(): void {
+  if (bgWorker) return;
+  const src = `let id = null;
+    onmessage = (e) => {
+      if (e.data === "start" && id === null) id = setInterval(() => postMessage("tick"), ${1000 / BGTICK_HZ});
+      else if (e.data === "stop" && id !== null) { clearInterval(id); id = null; }
+    };`;
+  const url = URL.createObjectURL(new Blob([src], { type: "application/javascript" }));
+  bgWorker = new Worker(url);
+  URL.revokeObjectURL(url);
+  bgWorker.onmessage = () => {
+    if (document.visibilityState === "hidden" && bgTickEnabled) tick();
+  };
+  bgWorker.postMessage("start");
+}
+
+function stopBgWorker(): void {
+  if (!bgWorker) return;
+  bgWorker.postMessage("stop");
+  bgWorker.terminate();
+  bgWorker = null;
+}
+
+function syncBgTickDriver(): void {
+  const shouldRunInBackground = bgTickEnabled && document.visibilityState === "hidden";
+  if (shouldRunInBackground) {
+    if (rafActive) { renderer.setAnimationLoop(null); rafActive = false; }
+    startBgWorker();
+  } else {
+    stopBgWorker();
+    if (!rafActive) { renderer.setAnimationLoop(tick); rafActive = true; }
+  }
+}
+
+document.addEventListener("visibilitychange", syncBgTickDriver);
+
+Object.defineProperty(window, "__bgTick", {
+  get: () => bgTickEnabled,
+  set: (v: boolean) => { bgTickEnabled = !!v; syncBgTickDriver(); },
 });
+
+renderer.setAnimationLoop(tick);
+if (bgTickEnabled) syncBgTickDriver();

@@ -1,0 +1,25 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-13T17:55:53.846Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /stock
+CHEAT  /stock
+> /wild fold
+CHEAT  /wild fold
+> /wild draw wood
+CHEAT  /wild draw wood
+> /wild load
+CHEAT  /wild load
+> /stock
+CHEAT  /stock
+> /wild state
+CHEAT  /wild state
+# ─────────────────────────────────────────
+# commands=7  presses=0  screens=1  sim=5.1s
+# events: CHEAT 6  BOARD 1  NOTE 1  TICK 1

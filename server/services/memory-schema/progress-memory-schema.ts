@@ -88,6 +88,12 @@ import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
 import { canWriteObject, withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
 import { recordShareDerivedViewSingle } from "../sharing/audit";
 import { requireConsentForMemoryWrite } from "../consent/consentGate";
+import {
+  frameworkCapabilities,
+  isStatutoryFramework,
+  normalizeFramework,
+  PROGRAM_FRAMEWORKS,
+} from "@shared/program-framework";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -1435,8 +1441,9 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
     framework: {
       id: "framework",
       type: "string",
-      enum: ["tala", "us_iep"],
-      description: "TALA (Israel) or US IEP framework",
+      enum: PROGRAM_FRAMEWORKS as unknown as string[],
+      description:
+        "tala = Israeli TALA; us_iep = US IEP; personal = not in a school system (no statutory paperwork). Match the student's framework.",
     },
     title: { id: "title", type: "string" },
     status: {
@@ -1555,13 +1562,56 @@ You can:
 - Manage meetings
 - Record ICF contextual information: personalFactors (interests, temperament, motivators, coping, cultural background) and environmentalFactors (facilitators and barriers grouped by ICF category)
 
-When a TALA-framework goal is measured with Goal Attainment Scaling (useGas=true):
+When a goal is measured with Goal Attainment Scaling (useGas=true):
 - Pick one varying variable (achievement, mediation, time, or frequency) — all other conditions stay constant across levels
 - Write each of the 5 gasLevels with a concrete, present-tense observable behavior
 - Set gasBaselineLevel to where the student is when the goal is written (typically much_less_than_expected)
 - Data points should record achievedLevel — the ordinal level observed
 - Goals set with family should have setJointlyWithFamily=true and a clientImportanceRating (1-5)
 `;
+
+/**
+ * Framework-specific guidance appended to the progress prompt.
+ *
+ * The program schema is one shape for every framework; what changes is which
+ * parts are legally called for. Without this, the assistant volunteers US
+ * statutory paperwork (LRE, prior written consent, transition plans) at
+ * learners who are not in any school system.
+ */
+export function buildFrameworkGuidance(framework: string | null | undefined): string {
+  const caps = frameworkCapabilities(framework);
+  const slug = normalizeFramework(framework);
+
+  if (!isStatutoryFramework(slug)) {
+    return `
+<FRAMEWORK>
+This student's program is PERSONAL — they are not enrolled in a school system.
+The program is real and complete: domains, goals, objectives, services, accommodations, progress reports, data points, team.
+It has no statutory layer. Do NOT create or ask for:
+- Placement statements (LRE) or adverse-effect-on-education statements
+- Prior-written-consent forms, or statutory meetings (annual review, re-evaluation)
+- Filing deadlines — a personal program has no due date. Use endDate as a review date instead.
+Write goals in everyday functional terms (home, community, communication), not school-standards terms.
+</FRAMEWORK>
+`;
+  }
+
+  const applies: string[] = [];
+  if (caps.lre) applies.push("leastRestrictiveEnvironment (placement statement)");
+  if (caps.adverseEffect) applies.push("adverseEffectStatement on each profile domain");
+  if (caps.consentForms) applies.push("prior-written-consent forms");
+  if (caps.transitionPlan) applies.push("transition plan from age 16");
+  if (caps.interventionLevel) applies.push("ICF interventionLevel on goals");
+  if (caps.statutoryDueDate) applies.push("a statutory filing deadline (dueDate)");
+
+  return `
+<FRAMEWORK>
+This student's program follows the ${slug === "tala" ? "Israeli TALA" : "US IEP"} framework.
+Statutory elements that apply here:
+${applies.map((a) => `- ${a}`).join("\n")}
+</FRAMEWORK>
+`;
+}
 
 // ============================================================================
 // EXPORTS

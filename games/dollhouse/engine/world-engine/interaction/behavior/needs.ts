@@ -1312,7 +1312,20 @@ export function needDormDueIn(
 // counts as improper is decided where the ctx is built, per ROW — see
 // `StockCandidate.improper`.
 
-/** Hunger: a meter rising at `rate`/sec fires at one ration; eat at the preferred
+/** ⚖️ ONE FIRING IS ONE PERSON-DAY, AND THAT SURVIVES THE RATION SPLIT
+ *  (food-scale-round.md Q2). The meter fills over `NEED_FILL_DAYS.hunger` — one
+ *  game-day — and that period is what `serviceRadiusM` (and through it every
+ *  district, `shopPeriod` and `FOOD_DAY_SEC` schedule) is derived from. The
+ *  round that lets a glyph clear a FRACTION of the meter
+ *  (`kernel/town/goods-kinds.ts satiationDaysOf`, data-only today) therefore
+ *  has the NPC eat a MEAL at the table — as many units as the meter costs, one
+ *  arrival, meter to 0 — and only the PLAYER's hand-fed unit moves the meter a
+ *  fraction. If the autonomous body ate one unit per firing instead, the eating
+ *  interval would collapse to a fifth and the honest service radius with it
+ *  (96 m → 19 m: no body could leave its own street). Do not "simplify" that
+ *  asymmetry away.
+ *
+ *  Hunger: a meter rising at `rate`/sec fires at one ration; eat at the preferred
  *  station kinds (species data — people at the table, a pet at its bowl; else in
  *  place), getting the unit from the own-house box first, else buying at a source,
  *  else — mildly avoided — from whatever else in the house happens to hold food.

@@ -904,6 +904,7 @@ export const de: Translations = {
       social_world: "Mit Freunden spielen",
       symbol_learning: "Symbole lernen",
       dollhouse: "Puppenhaus",
+      "nature-hike": "Naturwanderung",
     },
   },
 

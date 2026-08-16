@@ -34,23 +34,65 @@ export interface AttentionDebugLink {
   trigger: number;
 }
 
+/**
+ * ONE DIRECTABLE BODY'S REACH, this frame. The direct gesture has two distances
+ * that decide everything and are invisible in play: below `minM` it is already
+ * there and will not re-path (the no-jitter floor), beyond `maxM` the order is
+ * out of scope and refused. A body that "ignores" the spark is nearly always
+ * standing on the wrong side of one of them, so the rings answer it directly.
+ */
+export interface AttentionDebugBody {
+  /** `groundY` is the TERRAIN lift under this body (render3d.ts's
+   *  `standHeightAt`, sampled by the feeder) — separate from `floor`, which
+   *  is only the building storey; 0 on a flat-town session (no ground
+   *  sampler), so the range rings/hold arc render unchanged. See R2,
+   *  2026-08-16. */
+  at: { x: number; y: number; floor: number; groundY?: number };
+  /** DIRECT_MIN_M — inside this the body is already there. */
+  minM: number;
+  /** directMaxM — the scope-derived ceiling on a directed move. */
+  maxM: number;
+  /** 0..1 of the ENGAGEMENT HOLD still to run (holdRemainS / ENGAGE_DIRECT_HOLD_S),
+   *  or null on a body that is not the engaged one. Drawn as a countdown arc:
+   *  while it has any length, a board press still lands on THIS body. */
+  hold: number | null;
+}
+
 const PATH_Y = 0.09; // a hair above the path-debug lines
 const RING_RADIUS = 0.55;
 const RING_SEGS = 28; // ring resolution (also the engagement granularity)
+/** Radius of the engagement-hold countdown arc — just outside the engagement
+ *  ring, so the two read as one dial rather than overlapping. */
+const HOLD_RADIUS = 0.78;
+/** Range rings are metres wide, not centimetres: their resolution scales with
+ *  radius (a 26 m circle at 28 segments is a visible polygon), clamped so a
+ *  tight one stays cheap and a wide one stays round. */
+const RANGE_SEGS_PER_M = 5;
+const RANGE_SEGS_MIN = 24;
+const RANGE_SEGS_MAX = 120;
 const TICK = 0.18; // half-size of the "triggered" cross at the target
 const DASH_PERIOD_FAR = 0.7; // world-unit gap between dashes at trigger 0
 const DASH_PERIOD_NEAR = 0.16; // …and at trigger 1 (dashes pack in)
 const DASH_FILL = 0.55; // fraction of each period that is drawn
-const MAX_SEGMENTS = 4000; // a handful of links — plenty
+/** A handful of links, plus two RANGE RINGS per directable body — and a wide
+ *  ring costs up to RANGE_SEGS_MAX on its own, so the headroom is no longer the
+ *  rounding it used to be. Ten bodies of rings + their links sit around 3k. */
+const MAX_SEGMENTS = 8000;
 
 const COLOR_RING = new THREE.Color(0xc084fc); // violet — "the player's attention"
 const COLOR_COOL = new THREE.Color(0x38bdf8); // cyan — attention landing, far from firing
 const COLOR_HOT = new THREE.Color(0xf97316); // orange — about to trigger
 const COLOR_FIRED = new THREE.Color(0x22c55e); // green — triggered
+const COLOR_MIN = new THREE.Color(0x475569); // slate — DIRECT_MIN_M, the no-jitter floor
+const COLOR_MAX = new THREE.Color(0x1e40af); // deep blue — directMaxM, the scope ceiling
+const COLOR_HOLD = new THREE.Color(0xfbbf24); // amber — the engagement hold running out
 
 export interface AttentionDebugOverlayDeps {
   /** This frame's links. Empty when the overlay is off. */
   getLinks: () => readonly AttentionDebugLink[];
+  /** Terrain lift under a sim point (render3d's standHeightAt). Omit ⇒ flat
+   *  datum — the link rings/dashes float on terrain without it. */
+  groundAt?: (x: number, y: number) => number;
 }
 
 export class AttentionDebugOverlay3D implements SceneOverlay {
@@ -63,6 +105,8 @@ export class AttentionDebugOverlay3D implements SceneOverlay {
   private lines!: THREE.LineSegments;
   private enabled = false;
   private n = 0;
+  /** This frame's directable bodies (see AttentionDebugBody), fed by the host. */
+  private bodies: readonly AttentionDebugBody[] = [];
 
   constructor(deps: AttentionDebugOverlayDeps) {
     this.deps = deps;
@@ -82,12 +126,20 @@ export class AttentionDebugOverlay3D implements SceneOverlay {
     this.group.visible = on;
     if (!on) {
       this.n = 0;
+      this.bodies = []; // don't redraw a stale roster when the toggle comes back
       this.geom.setDrawRange(0, 0);
     }
   }
 
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /** Feed this frame's directable bodies. The host calls it once per frame
+   *  while the overlay is on; leaving it unfed draws links only, exactly as
+   *  before the range rings existed. */
+  setBodies(bodies: readonly AttentionDebugBody[]): void {
+    this.bodies = bodies;
   }
 
   mount(scene: THREE.Scene): void {
@@ -102,8 +154,21 @@ export class AttentionDebugOverlay3D implements SceneOverlay {
   update(_dt: number): void {
     if (!this.enabled) return;
     this.n = 0;
+    // RANGE RINGS FIRST, under the attention dial: they are the standing
+    // geometry of the gesture, and the engagement ring is the live reading on
+    // top of it.
+    for (const b of this.bodies) {
+      const y = b.at.floor * FLOOR_HEIGHT + (b.at.groundY ?? 0) + PATH_Y;
+      this.rangeRing(b.at.x, y, b.at.y, b.minM, COLOR_MIN);
+      this.rangeRing(b.at.x, y, b.at.y, b.maxM, COLOR_MAX);
+      if (b.hold !== null && b.hold > 0) {
+        this.ring(b.at.x, y, b.at.y, b.hold, HOLD_RADIUS, COLOR_HOLD);
+      }
+    }
     for (const link of this.deps.getLinks()) {
-      const y = link.from.floor * FLOOR_HEIGHT + PATH_Y;
+      // Grounded at the FROM body (dashes are short proximity links — the
+      // from-endpoint's lift is close enough for debug chrome on a slope).
+      const y = link.from.floor * FLOOR_HEIGHT + (this.deps.groundAt?.(link.from.x, link.from.y) ?? 0) + PATH_Y;
       this.ring(link.from.x, y, link.from.y, link.engagement);
       if (link.to) this.dashed(link.from.x, y, link.from.y, link.to.x, link.to.y, link.trigger);
     }
@@ -113,16 +178,41 @@ export class AttentionDebugOverlay3D implements SceneOverlay {
     this.geom.computeBoundingSphere();
   }
 
-  /** The engagement progress ring: a fraction `frac` of a circle at the creature. */
-  private ring(cx: number, y: number, cz: number, frac: number): void {
+  /** A progress ring: a fraction `frac` of a circle at the creature. Defaults
+   *  to the ENGAGEMENT dial (violet, at the body's own radius); the countdown
+   *  arc passes its own radius and colour through the same primitive so the two
+   *  are drawn by one piece of code and can never drift apart. */
+  private ring(
+    cx: number, y: number, cz: number, frac: number,
+    radius: number = RING_RADIUS, color: THREE.Color = COLOR_RING,
+  ): void {
     const filled = Math.round(Math.max(0, Math.min(1, frac)) * RING_SEGS);
     for (let i = 0; i < filled; i++) {
       const a0 = (i / RING_SEGS) * Math.PI * 2;
       const a1 = ((i + 1) / RING_SEGS) * Math.PI * 2;
       this.seg(
-        cx + Math.cos(a0) * RING_RADIUS, y, cz + Math.sin(a0) * RING_RADIUS,
-        cx + Math.cos(a1) * RING_RADIUS, y, cz + Math.sin(a1) * RING_RADIUS,
-        COLOR_RING,
+        cx + Math.cos(a0) * radius, y, cz + Math.sin(a0) * radius,
+        cx + Math.cos(a1) * radius, y, cz + Math.sin(a1) * radius,
+        color,
+      );
+    }
+  }
+
+  /** A closed RANGE circle (a distance, not a progress) — resolution scales
+   *  with the radius so a 26 m ceiling doesn't read as a hexagon. */
+  private rangeRing(cx: number, y: number, cz: number, radius: number, color: THREE.Color): void {
+    if (!(radius > 0)) return;
+    const segs = Math.max(
+      RANGE_SEGS_MIN,
+      Math.min(RANGE_SEGS_MAX, Math.round(radius * RANGE_SEGS_PER_M)),
+    );
+    for (let i = 0; i < segs; i++) {
+      const a0 = (i / segs) * Math.PI * 2;
+      const a1 = ((i + 1) / segs) * Math.PI * 2;
+      this.seg(
+        cx + Math.cos(a0) * radius, y, cz + Math.sin(a0) * radius,
+        cx + Math.cos(a1) * radius, y, cz + Math.sin(a1) * radius,
+        color,
       );
     }
   }

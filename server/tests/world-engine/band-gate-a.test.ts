@@ -18,6 +18,7 @@ import {
   boxCapacity, PRESSURE_FLOOR_DEFAULT,
   type Band, type WildSpecies,
 } from "@shared/world-engine/kernel/civ/bands.js";
+import { carryCapacityOf } from "@shared/world-engine/kernel/town/scope-shape.js";
 
 const COLS = 24;
 const ROWS = 18;
@@ -130,6 +131,41 @@ describe("Gate A — store > carry AND nowhere to walk to", () => {
   it("carryCapacity is the backs available × the pack × the staple's worth", () => {
     expect(bandCarryCapacity(mkBand(0, 10), GRAIN)).toBe(10 * REAL_PORTER_BULK);
     expect(bandCarryCapacity(mkBand(0, 10), { valueDensity: 4, transit: "durable" })).toBe(10 * REAL_PORTER_BULK * 4);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // worklist ⑧ pin: bandCarryCapacity now routes through the shared
+  // carryCapacityOf law (scope-shape.ts). It must stay BIT-IDENTICAL to the
+  // pre-unification inline formula (`size × portableBulk × valueDensity`)
+  // across representative bands/freights, and must agree with computing the
+  // shared law's collective branch by hand and multiplying by valueDensity.
+  // ─────────────────────────────────────────────────────────────────────
+  it("worklist ⑧ pin — bit-identical to the old inline formula, across representative inputs", () => {
+    const oldBandCarryCapacityFormula = (band: Band, freight: Freight, portableBulk = REAL_PORTER_BULK): number =>
+      band.size * portableBulk * freight.valueDensity;
+
+    const cases: Array<{ band: Band; freight: Freight; portableBulk?: number }> = [
+      { band: mkBand(0, 10), freight: GRAIN },
+      { band: mkBand(0, 0), freight: GRAIN }, // empty band
+      { band: mkBand(0, 1), freight: MILK },
+      { band: mkBand(0, 250), freight: { valueDensity: 64, transit: "durable" } }, // precious tier
+      { band: mkBand(0, 10), freight: GRAIN, portableBulk: 5 }, // a non-default pack
+      { band: mkBand(0, 10), freight: { valueDensity: 0.5, transit: "durable" } }, // raw bulk
+    ];
+
+    for (const { band, freight, portableBulk } of cases) {
+      const opts = portableBulk !== undefined ? { portableBulk } : {};
+      const expected = oldBandCarryCapacityFormula(band, freight, portableBulk);
+      expect(bandCarryCapacity(band, freight, opts)).toBe(expected);
+      // The shared law's collective branch, computed by hand, times the
+      // value-density conversion that stays at the band rung.
+      const shared = carryCapacityOf({
+        kind: "collective",
+        size: band.size,
+        perMemberBulk: portableBulk ?? REAL_PORTER_BULK,
+      }) * freight.valueDensity;
+      expect(shared).toBe(expected);
+    }
   });
 
   it("pressure: a lone oasis is cornered (→1); a uniform frontier is free (0)", () => {

@@ -111,6 +111,13 @@ import type {
   EnvironmentalFactorCategory,
   PersonalFactors,
 } from '@shared/schema';
+import {
+  DEFAULT_PROGRAM_FRAMEWORK,
+  PROGRAM_FRAMEWORKS,
+  frameworkCapabilities,
+  frameworkLabelSuffix,
+  normalizeFramework,
+} from '@shared/program-framework';
 
 // support_relationships and attitudes are no longer ICF categories here — those
 // live on studentContacts rows (person-scoped), managed in the contacts panel.
@@ -589,8 +596,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
   // Form states - using schema-aligned field names
   const [programForm, setProgramForm] = useState({
-    framework: 'tala' as ProgramFramework,
+    framework: DEFAULT_PROGRAM_FRAMEWORK as ProgramFramework,
   });
+
+  // A new program defaults to the framework already recorded on the student —
+  // the clinician set it there deliberately, and it decides which statutory
+  // paperwork this program will carry.
+  useEffect(() => {
+    const fromStudent = normalizeFramework((student as any)?.framework);
+    setProgramForm((prev) => ({ ...prev, framework: fromStudent ?? DEFAULT_PROGRAM_FRAMEWORK }));
+  }, [student?.id, (student as any)?.framework]);
   
   const [goalForm, setGoalForm] = useState<GoalFormState>({
     goalStatement: '',
@@ -712,6 +727,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const consentForms = (programDetails?.consentForms || []) as ConsentForm[];
   const progressReports = (programDetails?.progressReports || []) as ProgressReport[];
   const allPrograms = (allProgramsData?.programs || []) as Program[];
+
+  // Which statutory elements this program's framework actually calls for.
+  // Unknown/absent framework resolves to the non-statutory bundle, so paperwork
+  // is never shown to a learner who has no authority attached to them.
+  const caps = frameworkCapabilities(program?.framework);
 
   // =============================================================================
   // MUTATIONS
@@ -1338,10 +1358,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="tala">{t('program.frameworkTala')}</SelectItem>
-                    <SelectItem value="us_iep">{t('program.frameworkIep')}</SelectItem>
+                    {PROGRAM_FRAMEWORKS.map((fw) => (
+                      <SelectItem key={fw} value={fw}>
+                        {t(`program.framework${frameworkLabelSuffix(fw)}`)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t(`program.frameworkHint${frameworkLabelSuffix(programForm.framework)}`)}
+                </p>
               </div>
 
               <Button
@@ -1384,7 +1410,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         <div>
                           <p className="font-medium">{getProgamYear(p)}</p>
                           <p className="text-xs text-muted-foreground">
-                            {t(`program.framework${p.framework === 'tala' ? 'Tala' : 'Iep'}`)} • {t(`program.status.${p.status}`)}
+                            {t(`program.framework${frameworkLabelSuffix(p.framework)}`)} • {t(`program.status.${p.status}`)}
                           </p>
                         </div>
                         <Badge className={STATUS_COLORS[p.status]}>{t(`program.status.${p.status}`)}</Badge>
@@ -1439,7 +1465,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 )}
               </div>
               <p className={cn('text-sm', isDark ? 'text-slate-400' : 'text-slate-600')}>
-                {t(`program.framework${program.framework === 'tala' ? 'Tala' : 'Iep'}`)} • {getProgamYear(program)}
+                {t(`program.framework${frameworkLabelSuffix(program.framework)}`)} • {getProgamYear(program)}
               </p>
             </div>
           </div>
@@ -1810,7 +1836,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         </div>
 
                         {/* Adverse Effect Statement - IEP specific, schema field (NOT educationalImpact) */}
-                        {program.framework === 'us_iep' && (
+                        {caps.adverseEffect && (
                           <div className="space-y-2">
                             <Label>{t('program.adverseEffectStatement')}</Label>
                             <Textarea
@@ -2681,8 +2707,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               </>
             )}
 
-            {/* Consent Forms Section */}
-            {consentForms.length > 0 && (
+            {/* Consent Forms Section — statutory (prior written consent), so it
+                stays hidden on frameworks that have no authority to consent to. */}
+            {caps.consentForms && consentForms.length > 0 && (
               <>
                 <Separator className="my-6" />
                 <div>

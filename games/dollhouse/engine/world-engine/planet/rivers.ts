@@ -201,12 +201,21 @@ export function extractRiverNetwork(built: BuiltPlanet, opts: RiverNetworkOpts =
 //     at every LOD by construction. The mesh builder passes its own vertex
 //     spacing so a thin channel widens to stay visible on coarse chunks (the
 //     glyph exaggeration roads use, applied to colour instead of geometry).
-//   - depthAt: a sub-cell VALLEY NOTCH subtracted from heightAt along the
-//     curve. carveValleys cuts real valleys, but at CELL resolution — a
-//     kilometre of depth spread over a hundreds-of-km cell is an invisible
-//     0.5% dish. The notch is what makes the depression exist at the scale a
-//     player sees. heightAt is the one seam every consumer reads (mesh, walk,
-//     collision, drapes), so the cut is real everywhere at once.
+//   - groundAt: a sub-cell VALLEY NOTCH subtracted from heightAt along the
+//     curve, refilled to the water line inside the channel. carveValleys cuts
+//     real valleys, but at CELL resolution — a kilometre of depth spread over
+//     a hundreds-of-km cell is an invisible 0.5% dish. The notch is what makes
+//     the depression exist at the scale a player sees. heightAt is the one seam
+//     every consumer reads (mesh, walk, collision, drapes), so the cut is real
+//     everywhere at once.
+//
+// ONE DATUM (walk-chart.ts's own header: "walkers stand on exactly the terrain
+// that draws"). The channel's standing WATER is part of that one answer, not a
+// second lift the mesh builder adds on its own: `groundAt` returns bed + water,
+// `attachRiverRelief` installs it as surface.heightAt, and chunk.ts draws each
+// vertex at exactly heightAt. Splitting them is what put the mesh 58 m above
+// the walk datum — the notch and the water were computed from the same profile
+// but clamped by different rules, and only the mesh saw the water at all.
 //
 // LAW GUARD (ground-vs-macro): the notch wraps surface.heightAt ONLY. The
 // flow solve reads grid FIELDS, refinement seeds children from macroHeightAt —
@@ -224,10 +233,41 @@ export function riverHalfWidthM(accum: number, floorM = 80): number {
   return Math.max(floorM, Math.min(1200, 120 * Math.sqrt(accum / RIVER_MIN_ACCUM)));
 }
 
-/** Notch depth for a channel half-width, metres. Sub-cell render relief only
- *  (macro/fields never see it), so it reads in absolute human scale. */
+/** Notch depth for a channel half-width: this aspect of the width, capped.
+ *
+ *  TWO CAPS, AND THE SECOND IS THE ONE THAT MATTERS. `NOTCH_DEPTH_MAX_M` is an
+ *  absolute human-scale ceiling — a valley 150 m deep is a big river's valley
+ *  and nothing on a real planet needs more. But a metre constant is a claim
+ *  about the WORLD, not about the river, and it was the only cap here: on the
+ *  5 km / relief 0.005 planet (a 25 m relief budget, `unitElev` 0.42 m) a
+ *  240 m-half-width trunk asked for a 95 m notch — four times the total relief
+ *  the planet is allowed, which is how a river ended up drawn 58 m above the
+ *  ground the walk chart hands the walker. So the depth is ALSO capped by the
+ *  world's own vertical scale: `NOTCH_MAX_UNITS` substrate height units, the
+ *  same currency `carveValleys` cuts in (its `maxDepth` is 2 units), because a
+ *  render notch exists to make the CELL-scale valley visible at player scale —
+ *  never to out-cut it. On a real-radius world one unit is ~531 m, so the
+ *  absolute 150 m ceiling still governs and nothing moves; on a compressed or
+ *  toy world the budget governs and the river stays inside the terrain.
+ *
+ *  Both are computed per planet in `buildRiverRelief` — a module-level
+ *  function cannot see the world it is cutting, which is the whole bug. */
 const NOTCH_DEPTH_MAX_M = 150;
-const notchDepthM = (halfW: number): number => Math.min(NOTCH_DEPTH_MAX_M, halfW * 0.4);
+const NOTCH_MAX_UNITS = 3;
+/** Depth-to-half-width aspect of a channel's valley, before the caps. */
+const NOTCH_ASPECT = 0.4;
+/** Top of the substrate's height range — `bakeHeight` clamps to 0..63, and
+ *  border.ts / refine.ts spell the same span out where they need metres per
+ *  unit. One height unit = relief·radius / (63 − SEA_HEIGHT). */
+const MAX_HEIGHT_UNITS = 63;
+/** The coastal floor a riverbed may never be cut below: a bed stays LAND, at
+ *  altitude, so a river reaching the sea doesn't punch its own estuary through
+ *  the coastline the substrate drew. Absolute metres, likewise capped by the
+ *  world's vertical scale — 2 m of exempt coast is a hairline on a real planet
+ *  and a fifth of the relief budget on a toy one (where it was clamping whole
+ *  river reaches to a flat 2.00 m while the mesh floated the water above it). */
+const COAST_FLOOR_M = 2;
+const COAST_FLOOR_UNITS = 0.5;
 /** The valley shoulder: the notch profile reaches zero at this multiple of
  *  the water's half-width — banks, not a slot canyon. */
 const SHOULDER = 2.5;
@@ -286,16 +326,27 @@ export interface RiverRelief {
    *  widens — the glyph washed regions blue from orbit). Pass 0 for full
    *  strength (exact queries, tests). */
   tintAt(dir: V3, vertSpanM: number, rgb: [number, number, number]): void;
-  /** Valley-notch depth at `dir`, metres (0 away from rivers). */
-  depthAt(dir: V3): number;
-  /** THE WATER LAYER: depth of standing water above the notched ground at
-   *  `dir` (0 = dry), filling `outFlow` with the unit DOWNSTREAM direction
-   *  (planet-local, tangent-ish to the sphere) when wet. The river fills the
-   *  top RIVER_FILL of its notch, so the water surface is level across the
-   *  channel and the banks stay dry. TRUE width only, like the paint. */
-  waterAt(dir: V3, outFlow: [number, number, number]): number;
-  /** ONE query for the mesh builder's hot path: paint (tintAt) + water depth
-   *  + flow direction (waterAt) from a single spatial lookup. */
+  /** THE ONE GROUND ANSWER: the uncarved elevation `h` at `dir`, with this
+   *  river's valley cut into it and the channel refilled to its water line —
+   *  i.e. the surface a walker stands on AND the surface the mesh draws, which
+   *  are required to be the same number (walk-chart.ts). Returns `h` unchanged
+   *  away from rivers, and NEVER more than `h`: a river is carved into the
+   *  terrain, never stacked above it.
+   *
+   *  `attachRiverRelief` installs this as `surface.heightAt`, so no consumer
+   *  ever has to know rivers exist. Separate notch/water probes used to hang
+   *  here; they disagreed with each other at the coast (the notch was clamped
+   *  to a floor, the water was not) and only the mesh ever added the water. */
+  groundAt(h: number, dir: V3): number;
+  /** ONE query for the mesh builder's hot path: paint (tintAt) + the CHANNEL's
+   *  standing-water depth + flow direction, from a single spatial lookup.
+   *
+   *  The depth is a SHADING signal — "is this vertex wet, and which way does
+   *  it run" — not a lift. `groundAt` already placed the vertex at the water
+   *  surface; adding this to it again is the defect this seam is written
+   *  against. The river fills the top RIVER_FILL of its notch, so the water
+   *  reads level across the channel and the banks stay dry; TRUE width only,
+   *  like the paint. */
   sampleAt(dir: V3, vertSpanM: number, rgb: [number, number, number], outFlow: [number, number, number]): number;
 }
 
@@ -309,6 +360,18 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
   const rivers = extractRiverNetwork(built, opts);
   if (!rivers.length) return null;
   const radius = built.spec.radius;
+
+  // ── THE WORLD'S VERTICAL SCALE ──────────────────────────────────────────
+  // Everything this module cuts downward is bounded by these, because the
+  // river is a feature OF the terrain and cannot be taller than the terrain
+  // is allowed to be. `maxElevationM` is exactly what surfaceFor hands the
+  // sampler (planet-game.ts); `unitElevM` is one substrate height unit, the
+  // finest step the macro field can take.
+  const maxElevationM = built.spec.relief * radius;
+  const unitElevM = maxElevationM / Math.max(1, MAX_HEIGHT_UNITS - SEA_HEIGHT);
+  const notchMaxM = Math.min(NOTCH_DEPTH_MAX_M, NOTCH_MAX_UNITS * unitElevM);
+  const coastFloorM = Math.min(COAST_FLOOR_M, COAST_FLOOR_UNITS * unitElevM);
+  const notchDepthM = (halfW: number): number => Math.min(notchMaxM, halfW * NOTCH_ASPECT);
 
   // Segment sampling step: fine enough to follow the chaikin curve (whose
   // wiggles are cell-sized), coarse enough to keep the index small.
@@ -396,8 +459,9 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
     }
   };
 
-  // The three reads off ONE query's state (qDist/qHalfW/qTx..) — so the mesh
-  // builder's combined sampleAt pays a single spatial lookup per vertex.
+  // Every read below works off ONE query's state (qDist/qHalfW/qTx..) — so
+  // `sampleAt` pays a single spatial lookup per mesh vertex, and `groundAt`
+  // (the walk/mesh datum) pays one per height sample.
   const paintFromQuery = (vertSpanM: number, rgb: [number, number, number]): void => {
     if (qDist === Infinity) return;
     // TRUE width, always — see the no-glyph note above. Full water inside
@@ -422,18 +486,32 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
     const f = 1 - qDist / shoulder;
     return notchDepthM(qHalfW) * f * f * (3 - 2 * f); // smooth banks, flat-ish floor
   };
-  const waterFromQuery = (outFlow: [number, number, number]): number => {
-    // Water fills the TOP slice of the notch: its own surface sits at a
-    // constant cut of (1−RIVER_FILL)×centerDepth, so depth here = how far the
-    // local notch dips below that surface. Zero on the banks by construction.
-    const cut = notchFromQuery();
-    if (cut <= 0) return 0;
-    const depth = cut - notchDepthM(qHalfW) * (1 - RIVER_FILL);
-    if (depth <= 0) return 0;
+  /** Standing water above the notched bed, from the same query. Water fills
+   *  the TOP slice of the notch: its own surface sits at a constant cut of
+   *  (1−RIVER_FILL)×centerDepth, so depth here = how far the local notch dips
+   *  below that surface. Zero on the banks by construction. */
+  const waterFromQuery = (cut: number): number =>
+    cut <= 0 ? 0 : Math.max(0, cut - notchDepthM(qHalfW) * (1 - RIVER_FILL));
+
+  const flowFromQuery = (outFlow: [number, number, number]): void => {
     const m = Math.hypot(qTx, qTy, qTz);
     if (m > 1e-12) { outFlow[0] = qTx / m; outFlow[1] = qTy / m; outFlow[2] = qTz / m; }
     else { outFlow[0] = 0; outFlow[1] = 0; outFlow[2] = 0; }
-    return depth;
+  };
+
+  /** THE ONE GROUND ANSWER, from the same query — see `groundAt`.
+   *
+   *  Bed then water, in that order and with the clamp between them, is what
+   *  keeps the two consistent: the bed may be lifted off the notch profile by
+   *  the coastal floor, and when it is, the fill has to come down with it or
+   *  the water floats. `Math.min(h, …)` states that as a LAW rather than
+   *  trusting the arithmetic — away from the clamp the fill already lands at
+   *  h − RIVER_FILL×notchDepth, a level surface strictly below the banks. */
+  const groundFromQuery = (h: number): number => {
+    const cut = notchFromQuery();
+    if (cut <= 0) return h;
+    const bed = Math.max(coastFloorM, h - cut);
+    return Math.min(h, bed + waterFromQuery(cut));
   };
 
   return {
@@ -449,27 +527,42 @@ export function buildRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}
       query(dir[0], dir[1], dir[2]);
       paintFromQuery(vertSpanM, rgb);
     },
-    depthAt(dir) {
+    groundAt(h, dir) {
+      // Below the coastal floor the answer is provably `h` (the bed clamps up
+      // to the floor, so bed + water ≥ h and the law below returns h) — so the
+      // sea and the shore skip the spatial query entirely. heightAt is the
+      // per-vertex hot path; most of a planet is ocean.
+      if (h <= coastFloorM) return h;
       query(dir[0], dir[1], dir[2]);
-      return notchFromQuery();
-    },
-    waterAt(dir, outFlow) {
-      query(dir[0], dir[1], dir[2]);
-      return waterFromQuery(outFlow);
+      return groundFromQuery(h);
     },
     sampleAt(dir, vertSpanM, rgb, outFlow) {
       query(dir[0], dir[1], dir[2]);
       paintFromQuery(vertSpanM, rgb);
-      return waterFromQuery(outFlow);
+      const depth = waterFromQuery(notchFromQuery());
+      if (depth > 0) flowFromQuery(outFlow);
+      else { outFlow[0] = 0; outFlow[1] = 0; outFlow[2] = 0; }
+      return depth;
     },
   };
 }
 
 /**
  * Fold the river relief into a built planet's surface: recolor via
- * `surface.riverTintAt` (the mesh builder calls it per vertex) and notch the
- * valley into `surface.heightAt`. macroHeightAt is untouched — refinement and
- * the flow solve keep reading the uncarved potential (the LAW above).
+ * `surface.riverTintAt` (the mesh builder calls it per vertex) and fold the
+ * whole watercourse — valley notch AND the water standing in it — into
+ * `surface.heightAt`. macroHeightAt is untouched — refinement and the flow
+ * solve keep reading the uncarved potential (the LAW above).
+ *
+ * WHY heightAt AND NOT A SECOND SAMPLER. Every ground consumer already reads
+ * heightAt (walk-chart's groundAt, the sim's terrain sampler, celestial-body's
+ * surfaceAt/altitudeAt for the chase camera and landing) and the mesh reads it
+ * too — so folding here is the only edit that leaves ONE definition of "the
+ * ground" and costs no new interface. The alternative, a `drawnHeightAt` the
+ * walk datum re-points at, would add a PlanetSurface method every foreign
+ * surface has to grow, and would leave two answers on the seam for the next
+ * consumer to pick the wrong one from. That is exactly how the water came to
+ * be added by the mesh builder alone.
  */
 export function attachRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {}): RiverRelief | null {
   const relief = buildRiverRelief(built, opts);
@@ -479,12 +572,6 @@ export function attachRiverRelief(built: BuiltPlanet, opts: RiverNetworkOpts = {
   surface.riverTintAt = relief.tintAt;
   surface.riverSampleAt = relief.sampleAt;
   const base = surface.heightAt.bind(surface);
-  surface.heightAt = (dir) => {
-    const h = base(dir);
-    if (h <= 2) return h; // the coast and the sea keep their line
-    const d = relief.depthAt(dir);
-    // Never notch below the coastal band: a riverbed stays land, at altitude.
-    return d > 0 ? Math.max(2, h - d) : h;
-  };
+  surface.heightAt = (dir) => relief.groundAt(base(dir), dir);
   return relief;
 }

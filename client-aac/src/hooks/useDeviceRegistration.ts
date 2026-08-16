@@ -10,7 +10,18 @@ export interface RegisteredDevice {
   createdAt: string;
 }
 
-export type DeviceRegistrationStatus = "idle" | "checking" | "allowed" | "blocked";
+export type DeviceRegistrationStatus =
+  | "idle"
+  | "checking"
+  | "allowed"
+  | "blocked"
+  /**
+   * The server said 403: this account has no access to this student. Unlike a
+   * network failure this is a definitive answer, so it must NOT fail open —
+   * it means the locally-cached student belongs to some other account (e.g. a
+   * previous login on a shared device) and should be dropped.
+   */
+  | "denied";
 
 export interface DeviceRegistrationState {
   status: DeviceRegistrationStatus;
@@ -61,9 +72,16 @@ export function useDeviceRegistration(studentId: string | null): DeviceRegistrat
       } else {
         setStatus("allowed");
       }
-    } catch {
-      // Fail open: an unreachable server must not brick the device.
-      if (seq === checkSeq.current) setStatus("allowed");
+    } catch (err) {
+      if (seq !== checkSeq.current) return;
+      // apiRequest throws `Error("<status>: <body>")` on non-ok responses.
+      // 403 is a definitive access answer, not a connectivity problem.
+      if (err instanceof Error && err.message.startsWith("403:")) {
+        setStatus("denied");
+      } else {
+        // Fail open: an unreachable server must not brick the device.
+        setStatus("allowed");
+      }
     }
   }, [studentId]);
 

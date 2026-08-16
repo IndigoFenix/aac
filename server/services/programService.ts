@@ -59,6 +59,7 @@ import {
   type InsertUserObjective,
   type UpdateUserObjective,
 } from "@shared/schema";
+import { frameworkCapabilities } from "@shared/program-framework";
 
 export class ProgramService {
   // ==========================================================================
@@ -69,12 +70,16 @@ export class ProgramService {
    * Create a new program for a student
    */
   async createProgram(insert: InsertProgram): Promise<Program> {
-    // Set default due date based on framework
-    if (!insert.dueDate && insert.framework === "tala") {
-      // TALA deadline is November 15th of the school year
-      const now = new Date();
-      const year = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
-      insert.dueDate = `${year}-11-15`;
+    // Statutory filing deadline, where the framework has one. A "personal"
+    // program answers to no authority, so it gets no auto due date — a date
+    // nobody has to meet reads as an overdue-looking deadline in the UI.
+    if (!insert.dueDate && frameworkCapabilities(insert.framework).statutoryDueDate) {
+      if (insert.framework === "tala") {
+        // TALA deadline is November 15th of the school year
+        const now = new Date();
+        const year = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+        insert.dueDate = `${year}-11-15`;
+      }
     }
 
     return programRepository.createProgram(insert);

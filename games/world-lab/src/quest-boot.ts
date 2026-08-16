@@ -975,6 +975,11 @@ export function bootWildernessQuest(
      *  falls back to the engine's oak-and-rock default. */
     wildMix?: ReadonlyArray<WildMixEntry>;
     spirit?: boolean;
+    /** THE WALKER'S SPECIES, as the DOCUMENT declared it (`avatar_species`).
+     *  A GoalTreeGame carries no manifest settings, so this is the only way it
+     *  reaches the host — the same lowering that turns `avatarKind` into the
+     *  `spirit` flag above. Absent ⇒ the host's settler-chain fallback. */
+    avatarSpecies?: string;
     scale?: WorldScale;
     /** Nearby settlements (planet cities) a FOUNDED SITE here can trade
      *  with, in the wilderness chart's sim coordinates (nations P0 —
@@ -1083,6 +1088,9 @@ export function bootWildernessQuest(
       ...(opts.wildMix ? { mix: opts.wildMix } : {}),
     },
     ...(opts.spirit ? { spirit: true } : {}),
+    // WALKER: no `spirit` flag ⇒ the host's own spec-driven switch resolves
+    // avatarMode "creature" and CREATES this player a body — of THIS species.
+    ...(opts.avatarSpecies ? { avatarSpecies: opts.avatarSpecies } : {}),
     scale: opts.scale ?? DOLLHOUSE_SCALE,
   });
   (window as unknown as Record<string, unknown>).__questWild = host;
@@ -1119,12 +1127,23 @@ export function bootWildernessQuest(
   for (let i = 0; i < opts.fauna.horses; i++) spawnHorse();
 
   const player = () => host?.world?.state.avatars[PLAYER_ID] ?? null;
+  // THE LOCAL PLAYER'S CREATED BODY (attached-avatar / "walker" sessions —
+  // opts.spirit false). In that mode PLAYER_ID stays the parked, formless
+  // spark that FEEDS a leader point (the aim/cursor target the avatar walks
+  // toward) — it is NOT where the player physically stands. Any reader that
+  // means "where is the player" (here: the floating-origin re-anchor's edge
+  // check below) has to resolve the AVATAR, exactly as nature-hike's own
+  // quest-boot does (`walker = avatarBody() ?? player()`). Single-player lab
+  // session ⇒ the fixed "local" peer id (no multiplayer roster here), the
+  // same LOCAL_AVATAR_PEER fallback quest-host.ts itself uses.
+  const avatarBody = () => host?.world?.state.avatars["npc_avatar_local"] ?? null;
+  const walker = () => avatarBody() ?? player();
 
   return {
     host,
     quest: host,
     playerPose() {
-      const p = player();
+      const p = walker();
       return p ? { x: p.x, y: p.y, fx: p.fx, fy: p.fy } : null;
     },
     placePlayer(x, y, fx, fy) {

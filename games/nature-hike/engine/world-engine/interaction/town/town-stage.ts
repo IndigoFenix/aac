@@ -1,0 +1,1375 @@
+// shared/world-engine/interaction/town/town-stage.ts
+//
+// The town HOSTED at avatar scale: a certified world-engine WorldSpec plus
+// the streaming plan that materializes it around the player — buildings
+// near you become real walls (setStructures), the quest CAST stands at its
+// real anchors (the wanter's own doorstep, the vendor's own counter), and
+// ambient residents embody mid-errand exactly where the goods clock says
+// they are, within the engine's NPC budget.
+//
+// OPEN TOWN (decided 2026-07-09): the goal-tree artifact keeps its formal
+// root — a tree needs a spine to certify — but the stage builds NO gate and
+// NO star. The locked door was a placeholder; a town session is open-ended
+// until real win conditions are designed.
+//
+// Body-authority, restated: this module drives resident BODIES from the
+// town's errand clock (NpcErrand points = the goods layer's walkTo, the
+// same closed form grand-dream's streets run). The creature sim never
+// steers a body; conversation freezes one, and the cycle resumes on its
+// own clock afterwards.
+
+import {
+  certifyWorldSpec,
+  type BuildingSpec,
+  type NpcSpec,
+  type ObjectSpec,
+  type RoadPath,
+  type WorldSpec,
+} from "@shared/world-engine/index.js";
+import { MARKET_CHANNEL, type CompiledEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
+import { probesOn } from "@shared/world-engine/perf-probes.js";
+import { houseFurniture, workFurniture } from "@shared/world-engine/kernel/town/furniture.js";
+import {
+  buildingRoomPlan, doorwaysWithLeaves, houseRoomPlan,
+} from "@shared/world-engine/kernel/town/rooms.js";
+import { workProgram, type BuildingProgram } from "@shared/world-engine/kernel/town/stations.js";
+import type { WorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
+import type { TownHost } from "@shared/world-engine/kernel/town/host.js";
+import type { TownWorld } from "@shared/world-engine/kernel/town/town-world.js";
+import { townPlaza, type TownHouse, type TownPlan, type TownWork } from "@shared/world-engine/kernel/town/plan.js";
+import { townPorts } from "@shared/world-engine/kernel/town/streets.js";
+import {
+  ERRAND_WALK, FOOD_DAY_SEC, HOUSEHOLD, doorTransit, hasLedger, houseDoorstep, streetGoods,
+  workDoorstep,
+  type ImportDepotReading, type TownGoods,
+} from "@shared/world-engine/kernel/town/goods.js";
+import {
+  annexWorldRect,
+  demolitionStage,
+  doorlessOf,
+  foundedBuildingDone,
+  foundedProgress,
+  foundedStage,
+  isInteriorCandidate,
+  laborFraction,
+  pendingAnnexStage,
+  pendingRoomKindOf,
+  workDeltaKey,
+  type FoundedBuilding,
+} from "@shared/world-engine/kernel/town/construction.js";
+import { roomKindDisplayGlyph } from "@shared/world-engine/kernel/town/programs.js";
+import {
+  resolveStructure,
+  structureDisplayGlyph,
+  type StructureSpec,
+} from "@shared/world-engine/kernel/town/structures.js";
+import { createTownTrade, type TownTrade } from "@shared/world-engine/kernel/town/trade.js";
+// ⚖️ G2: the want gate as a slope — ONE definition, shared with the derived
+// cargo list that draws the same line as a boolean (complementary.ts).
+// ⚖️ B4: …and the same slope at its FIXED POINT, once the lane's own volume
+// feeds back into the shortage the slope reads.
+import { equilibriumExportScale } from "@shared/world-engine/kernel/town/complementary.js";
+import { createResidentModel, STREET_NPCS } from "@shared/world-engine/kernel/town/residents.js";
+// ⚖️ B1: the street↔books exchange rate, so the export BURDEN can be measured
+// against the town's own daily need (the two are quoted in different units).
+import { bookUnitsPerStreetUnit } from "@shared/world-engine/interaction/town/town-quests.js";
+import type { TownQuestBundle } from "@shared/world-engine/interaction/town/town-quests.js";
+import type { TownDeltas } from "@shared/world-engine/kernel/town/construction.js";
+
+export { residentId } from "@shared/world-engine/kernel/town/residents.js";
+
+// THE PAVEMENT HIERARCHY (one place, three widths). The 2D map's read made
+// physical: an arterial is broader than the branch lanes it feeds, so the
+// same hierarchy shows underfoot. The ALLEY is the loops' width — a link
+// holds `LINK_GAP = MIN_GAP/2` of ground (kernel/town/streets.ts), so it is
+// half a thoroughfare and reads as the shortcut it is, never as a lane the
+// street tree grew.
+const ARTERIAL_W = 3.4;
+const BRANCH_W = 2.4;
+const ALLEY_W = BRANCH_W / 2;
+// Structure streaming, the 2D manager's numbers: buildings become real
+// walls inside the load radius and stay until they drift past the unload
+// radius (hysteresis) — grand-dream's STRUCT_LOAD_R / STRUCT_UNLOAD_R.
+const STRUCT_LOAD_R = 100;
+const STRUCT_UNLOAD_R = 130;
+// INTERIOR STAGING ON DEMAND (round 5c): a far house stages only its SHELL
+// (the historical single `h_<i>` BuildingSpec — one room, one street door);
+// the full room plan (~4-6 buildings per house, each with walls + interior
+// doors) swaps in when the house is NEAR or WATCHED, and back out once it's
+// concealed and far again. That keeps the per-frame structure scans
+// (collision, door connectivity, roof visibility) proportional to the
+// houses you could actually walk into, not 5× every roof in wall range.
+// The swap runs only while the interior is UNWATCHED (concealed), so no
+// body ever gets wedged in a materializing partition in front of the
+// camera — and a watched house is always FULL (the dollhouse never sheds
+// its rooms).
+export const INTERIOR_LOAD_R = 45;
+export const INTERIOR_UNLOAD_R = 60;
+
+export interface TownStageOpts {
+  seed: number;
+  /** Resident-body budget (defaults to the shared STREET_NPCS — these
+   *  are pure steering bodies; pass the same number to
+   *  `runWorldHost({ maxNpcs })` plus the cast's own count). */
+  ambient?: number;
+  /** Ship the quest cast as spec-time NPCs (default true). Hosts that
+   *  embody the cast themselves (the goal-tree player raises npc_{nodeId}
+   *  bodies from layout figures) pass false — the cast still reserves its
+   *  share of the NPC budget, and castSpawns still carries the anchors. */
+  castNpcs?: boolean;
+  /** Resident ids that must NEVER be generated (a mode-"all" DEFINED family:
+   *  the household's other members don't exist). Feeds the resident model's
+   *  exclusion set — roles hand down around them. */
+  excludedResidents?: string[];
+  /** THE CONSTRUCTION OVERLAY (construction v1). The stage consumes each
+   *  house's delta when raising its rooms/furniture, and `frame()` watches
+   *  `deltas.version` — a bumped building re-plans, re-furnishes and
+   *  re-stages the SAME frame (a visible new annex passes through a brief
+   *  door-less SCAFFOLD first). Absent ⇒ the pure base town, unchanged. */
+  deltas?: TownDeltas;
+  /** Per-resident SPECIES override (a defined family's frog_person aunt, a
+   *  pet) — the BODY's collision/planning girth (NpcSpec.species). Falls
+   *  back to the town's constructing species (plan.species). */
+  residentSpecies?: (npcId: string) => string | undefined;
+  /** True when the town stands on a REAL planet (embedded walk↔fly): the
+   *  manifold is marked unbounded — its rect stays the content/procgen
+   *  extent, but physics never walls a body at the town edge (the planet is
+   *  the reference frame; followers can leave). Standalone town-scope worlds
+   *  (own canvas, synthetic ground) stay bounded. */
+  onPlanet?: boolean;
+  /** THE WORKSTATION REGISTRY this town furnishes from (game.culture.
+   *  architecture, resolved). Absent = the default global registry. */
+  registry?: WorkstationRegistry;
+  /** The town's STRUCTURE CATALOG — read only to name a construction site
+   *  (⑦: the icon hovering over a staked plot is the structure's own display
+   *  glyph). Absent ⇒ sites fall back to a generic building frame. */
+  structures?: StructureSpec[];
+}
+
+/** A CONSTRUCTION SITE (city-founding): an ordered-but-unbuilt lot. A
+ *  marked plot, NOT a structure — flat ground marking in the renderer,
+ *  reserved ground in the engine (walk through, never drop on), swapped
+ *  for the real doored building at completion. World coords. */
+export interface ConstructionSite {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** StructureSpec type ("house", "farm") — "annex" for a house's growth rect. */
+  type: string;
+  /** VISIBLE BUILD STAGE (⑦ — construction.ts BuildStage): 0 marked ground,
+   *  1 floor laid, 2 pillars up. A room COMING DOWN walks the same ladder
+   *  backwards, and its walls are withheld from the building set while it
+   *  does. Absent ⇒ 0 (a bare marking — every pre-⑦ caller's meaning). */
+  stage?: 0 | 1 | 2;
+  /** BANKED-LABOR FRACTION 0..1 (phase 3 — worked pieces): drives the wall
+   *  COURSES the renderer stacks on a stage-2 site, so walls visibly rise
+   *  block by block as labor banks (and sink as a demolition works). Absent
+   *  ⇒ 0. Never its own clock — a pure read of the order's labor. */
+  progress?: number;
+  /** The composed GLYPH of what will stand here — a house, a bedroom — shown
+   *  as an icon hovering over the plot so a site is never an anonymous
+   *  rectangle. Absent = no icon. */
+  glyph?: string;
+  /** The SPOKEN word for the same thing ("bedroom", "market") — what a body
+   *  bound for this site calls it, and what a narrator names it by. Separate
+   *  from `glyph` on purpose: `glyph` is the composed DISPLAY form
+   *  (`room(bed)`), which is drawable and unsayable. Absent = unnameable. */
+  word?: string;
+  /** The finished building's wall tint, for the floor + pillars. */
+  color?: string;
+}
+
+export interface TownStageFrame {
+  /** Full replacement set for host.setBuildings — null when unchanged.
+   *  BUILDINGS, not flattened walls: the volumes carry the roofs, the
+   *  see-inside fade and the indoor-avatar cull; the host lowers them
+   *  into wall/door structures itself. */
+  buildings: BuildingSpec[] | null;
+  /** Full replacement set of CONSTRUCTION SITES — null when unchanged.
+   *  The host paints them (view setSites) and reserves their ground
+   *  (setReservedGround). */
+  sites: ConstructionSite[] | null;
+  /** Residents entering the world (host.addNpc). */
+  add: NpcSpec[];
+  /** Residents leaving it (host.removeNpc). */
+  remove: string[];
+  /** Fresh shopping trips (host.setNpcErrand) — once per cycle. */
+  errands: Array<{ npcId: string; points: Array<{ x: number; y: number; dwell?: number }> }>;
+  /** FURNITURE arriving with its house (host.addObject) — solid,
+   *  openable fixtures; abstracted away when the house unloads. */
+  addObjects: ObjectSpec[];
+  /** Furniture leaving with its house (host.removeObject). */
+  removeObjects: string[];
+}
+
+/** A clustered resident's OWN town, resolved from its reserved house range
+ *  (town-cluster.ts): live books + geometry, plus the offset lifting member
+ *  stage coordinates into the session's (window) coordinates. */
+export interface ClusterHouseCtx {
+  town: TownWorld;
+  eco: CompiledEconomy;
+  plan: TownPlan;
+  goods: TownGoods[];
+  /** The house index in the member's OWN plan (raw − houseBase). */
+  localHouse: number;
+  /** Member stage coords + offset = window coords. */
+  offset: { x: number; y: number };
+  /** The member town's center in WINDOW coords (its cluster `at`). */
+  center: { x: number; y: number };
+}
+
+/** A neighbor town as a TRADE PARTNER (city-expansion ⑤): its key, its
+ *  center in window coords, and — when the member is a REAL sim — the live
+ *  books barter reads (scarcity off eco fills/scalars) plus the yard stack
+ *  `town:<key>` transfers alias. `books` null = a bodies-only member: the
+ *  barter layer falls back to its closed-form stub proxy. Structural (no
+ *  TownPlay import — town-play imports this module). */
+export interface ClusterPartner {
+  key: string;
+  at: { x: number; y: number };
+  books: { town: TownWorld; eco: CompiledEconomy; stock: Record<string, number> } | null;
+}
+
+export interface TownStage {
+  /** Certified sparse world: ground, plaza spawn, and the quest cast. */
+  spec: WorldSpec;
+  center: { x: number; y: number };
+  /** The town's street network as flat ground ribbons (world coords) — the 3D
+   *  view paints these on the field. Render-only; the sim never reads them. The
+   *  same organic street tree the 2D map draws (streets.ts), just the whole set
+   *  (a single town fits one manifold; no streaming). */
+  roads: RoadPath[];
+  /** Where each cast member stands (fulfill node id → world point). */
+  castSpawns: Map<string, { x: number; y: number }>;
+  /** The town's street goods in SLOT order — the resources ambient residents shop
+   *  for (member `m` of a house is the runner for `goods[m]`). Surfaced so the
+   *  dialogue layer can give a resident its shopping want as a real need
+   *  (npc-behavior-and-town-economy.md §8). Same list the resident model runs on. */
+  goods: TownGoods[];
+  /** The town's INTERCITY trade line (kernel/town/trade.ts): the caravan from
+   *  the abstract partner, its gate/route, and the depot crates' clocks. Null
+   *  when the town has no road out. */
+  trade: TownTrade | null;
+  /** CLUSTER seam (composite stages only — town-cluster.ts): resolve a
+   *  resident's reserved-range house index (≥1000) to its OWN town's context.
+   *  Null for the primary's houses (<1000); absent on single-town stages.
+   *  `partners` (city-expansion ⑤) lists every neighbor as a TRADE PARTNER —
+   *  key, window-coord center, and its live TownPlay when it is a REAL sim
+   *  (null = a bodies-only member; barter falls back to the stub proxy). */
+  cluster?: {
+    resolveHouse(houseIndex: number): ClusterHouseCtx | null;
+    partners?(): ClusterPartner[];
+  };
+  /**
+   * Stream the town around the player. `bodyPos` reports a live body's
+   * current position (the resident model's lock + candidacy read REAL
+   * positions, not spawn points); `visibleR` is the camera's world
+   * reach, feeding only the pop-in rule. Mechanics never depend on the
+   * renderer — a top-down map and the 3D view pass different visibleR
+   * and get the SAME people in the SAME places.
+   */
+  frame(
+    p: { x: number; y: number },
+    tSec: number,
+    bodyPos?: (id: string) => { x: number; y: number } | null,
+    visibleR?: number,
+    isVisible?: (houseIndex: number) => boolean,
+    /** ROOM-granular visibility (building id → roof open / occupied) —
+     *  refines the resident view guard: a visible house's unrevealed back
+     *  rooms stay legitimate spawn cover (residents.ts). */
+    isRoomVisible?: (buildingId: string) => boolean,
+    /** COHORT TIER (④, population.ts): households of a POOLED house are
+     *  statistical — the model streams no bodies for them (their walls,
+     *  furniture and pantry closed forms stand untouched). Omit = every
+     *  house tracked, byte-identical to before. */
+    isHousePooled?: (houseIndex: number) => boolean,
+    /** AMBIENT CROWD BUDGET override (view-distance-lod-tiers.md Phase 2): max
+     *  street bodies to embody this frame, ramped by camera→town distance so the
+     *  crowd streams in gradually on descent. Omit = the stage's build-time
+     *  budget (STREET_NPCS). */
+    crowdBudget?: number,
+    /** RECRUITED CIVIC WORKERS (pipeline ⑥): busy bodies are PINNED — never
+     *  culled, never handed trips — until the host frees them. */
+    isBusy?: (id: string) => boolean,
+  ): TownStageFrame;
+  /** The ACTIVE construction sites right now (world coords) — the sim-side
+   *  query twin of the frame's `sites` push (reserved-ground checks read
+   *  this without waiting for a changed frame). Absent on composite
+   *  cluster stages. */
+  activeSites?(): ConstructionSite[];
+  /** The streamer's CURRENT per-lot materialization — house lots by their
+   *  plan `index`, work lots by their plan array position. THE single
+   *  source of truth for the static-plan↔live handoff: a proxy hides iff
+   *  its lot is in these sets (exactly one of low-res instance / live twin
+   *  renders — never both, never neither). Absent on composite cluster
+   *  stages. */
+  loadedLots?(): { houses: ReadonlySet<number>; works: ReadonlySet<number> };
+  /** DIAGNOSTIC passthrough (residents.ts explain): why is this member
+   *  embodied or not right now? Absent on composite cluster stages. */
+  explainResident?(
+    p: { x: number; y: number },
+    tSec: number,
+    houseIndex: number,
+    member: number,
+    bodyPos: (id: string) => { x: number; y: number } | null,
+    isVisible?: (houseIndex: number) => boolean,
+  ): string;
+  /** Ghost self-heal passthrough (residents.ts dropBody). */
+  dropResidentBody?(id: string): void;
+}
+
+
+const houseBuilding = (
+  center: { x: number; y: number },
+  id: string,
+  b: { dx: number; dy: number; w: number; h: number; door: TownHouse["door"]; color: string; floors?: number },
+  doorless: ReadonlySet<string> = new Set(),
+): BuildingSpec => {
+  const along = b.door === "north" || b.door === "south" ? b.w : b.h;
+  const footprint = { x: center.x + b.dx, y: center.y + b.dy, w: b.w, h: b.h };
+  return {
+    id,
+    footprint,
+    // Storeys from the plan (the build-up knob). Upper floors are visual
+    // for now — no stairs staged; ground floor keeps every mechanic.
+    floors: b.floors ?? 1,
+    stairs: false,
+    wallThickness: 0.4,
+    // Door gap centered on its wall — the same midpoint houseDoorstep /
+    // doorTransit aim at (grand-dream's centred-gap lesson). The SHELL form
+    // carries the leaf flag too: the street door's midpoint is the living
+    // room's street-door midpoint, so a house whose front door was broken off
+    // reads the same whether it is staged shell or full.
+    doorways: doorwaysWithLeaves({ rect: footprint }, [{ edge: b.door, offset: along / 2, width: 2 }], doorless),
+    color: b.color,
+  };
+};
+
+export function createTownStage(
+  town: TownHost,
+  eco: CompiledEconomy,
+  plan: TownPlan,
+  bundle: TownQuestBundle,
+  opts: TownStageOpts,
+): TownStage {
+  // The generator IS the implementation; the sync path drains it, so the
+  // two can never drift (staged output is byte-identical by construction).
+  const gen = createTownStageSteps(town, eco, plan, bundle, opts);
+  for (;;) {
+    const r = gen.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * WHERE A TOWN IS ENTERED, in town-local metres (growth-phase-B §2.3).
+ *
+ * There is no decreed centre any more: the plaza ring died with phase B and
+ * `TownPlan.plaza` is an OUTPUT (the busiest junction), so the frame origin
+ * is just the coordinate zero — on a through-road town it can fall inside
+ * somebody's kitchen. The arrival point is read off what the town HAS,
+ * in the order a traveller would find it:
+ *
+ *   1. A FOUNDED SITE (its settlers built everything it has, no base
+ *      houses) is entered at the FIRST founded building's doorstep — the
+ *      wagon stopped where they raised the first roof.
+ *   2. A ROUTE TOWN — one whose tree grew around a real road (a `span`
+ *      seed came through the §2.1 seam) — is entered at its PRIMARY PORT:
+ *      the gate the biggest incident road comes in by, canonical-first in
+ *      the seed order. You arrive ON the road and walk the high street in,
+ *      which is exactly the shape this phase exists to make true.
+ *   3. Anything else — a scope world, a fixture, any town with no road to
+ *      arrive along — is entered at the PLAZA. Its ports are the outer tips
+ *      of arterials that peter out in the fields; landing a visitor 300 m
+ *      into the crops to walk in from nowhere would be arrival theatre with
+ *      no road to justify it.
+ *
+ * Deterministic in the plan (and, for case 1, in the delta ord).
+ */
+export function townArrival(
+  plan: TownPlan,
+  founded: ReadonlyArray<{ dx: number; dy: number; w: number; h: number; door: TownWork["door"] }> = [],
+): { x: number; y: number } {
+  if (!plan.houses.length && founded.length) {
+    const b = founded[0]!;
+    return workDoorstep({ x: 0, y: 0 }, b as TownWork);
+  }
+  if (plan.streets.seeds.some(s => s.kind === "span")) {
+    const ports = townPorts(plan.streets);
+    if (ports.length) return { x: ports[0]!.x, y: ports[0]!.y };
+  }
+  return townPlaza(plan);
+}
+
+/**
+ * The stage raised in RESUMABLE STEPS: yields a progress note at each
+ * natural boundary (spec certified, goods stocked, residents modeled,
+ * furniture batches) so a live host can spread the founding's second-biggest
+ * synchronous lump across frames (the approach-load story).
+ */
+export function* createTownStageSteps(
+  town: TownHost,
+  eco: CompiledEconomy,
+  plan: TownPlan,
+  bundle: TownQuestBundle,
+  opts: TownStageOpts,
+): Generator<string, TownStage> {
+  const side = plan.radius * 2 + 80;
+  const center = { x: side / 2, y: side / 2 };
+  const siteKey = plan.key;
+  const arrival = townArrival(plan, opts.deltas?.founded() ?? []);
+
+  // Roads: the organic street tree (streets.ts), town-local points lifted into
+  // world coords. Widths follow the 2D map's read — arterials broader than the
+  // branch lanes — so the same hierarchy shows underfoot. EVERY street is
+  // pavement now: the artificial plaza ring that was topology-only (user,
+  // 2026-07-22) died with growth-phase-B; street 0 is the BASELINE, the real
+  // road the town formed around, and it is drawn like the road it is.
+  const roads: RoadPath[] = plan.streets.streets
+    .filter(s => s.pts.length >= 2)
+    .map(s => ({
+      points: s.pts.map(p => ({ x: center.x + p.x, y: center.y + p.y })),
+      width: s.gen === 0 ? ARTERIAL_W : BRANCH_W,
+    }));
+  // AND THE LOOPS ARE PAVEMENT TOO (growth phase C §2). `TownStreets.links`
+  // are the shortcuts growth cut when a lane died against a street it had
+  // walked half the town to reach, and routing has ridden them since they
+  // existed — `roadRoute` pushes their points verbatim. Nothing DREW them:
+  // this list was the one ribbon builder in the engine and it read only
+  // `streets`, so on the shipped riverside town 53% of door-to-door trips
+  // crossed ground with no road on it (MEASURED, seed 7: 415/780 trips over
+  // 9 undrawn links). Emitting them here is the whole fix — city-visuals'
+  // roadMesh, the quest host and the 2D city view all inherit `stage.roads`,
+  // so one emission paves them everywhere at once.
+  //
+  // At ALLEY width, by the same law that sizes the link itself: a shortcut
+  // holds `LINK_GAP = MIN_GAP/2` of ground (streets.ts), so it is HALF a
+  // thoroughfare and must not read as a branch lane the tree never grew.
+  for (const l of plan.streets.links ?? []) {
+    if (l.pts.length < 2) continue;
+    roads.push({
+      points: l.pts.map(p => ({ x: center.x + p.x, y: center.y + p.y })),
+      width: ALLEY_W,
+    });
+  }
+
+  // --- The quest cast: always-on NPCs at their REAL town anchors. ---
+  const castSpawns = new Map<string, { x: number; y: number }>();
+  const labelOf = (entityId: string): string | undefined =>
+    bundle.game.entities.find(e => e.id === entityId)?.label;
+  const castNpcs: NpcSpec[] = bundle.cast.map(entry => {
+    let at: { x: number; y: number };
+    if (entry.role === "wanter") {
+      const house = plan.houses.find(h => h.index === entry.house) ?? plan.houses[0];
+      at = house ? houseDoorstep(center, house) : { x: center.x, y: center.y + 6 };
+    } else {
+      const wk: TownWork | undefined =
+        plan.works.find(w => w.type === entry.workType) ?? plan.works.find(w => w.type === "hall");
+      at = wk ? doorTransit(center, wk).outside : { x: center.x, y: center.y - 6 };
+    }
+    castSpawns.set(entry.nodeId, at);
+    return {
+      id: entry.npcEntityId,
+      x: at.x,
+      y: at.y,
+      ...(plan.species ? { species: plan.species } : {}),
+      ...(labelOf(entry.npcEntityId) ? { name: labelOf(entry.npcEntityId) } : {}),
+      // A quest-giver is a resident with FROZEN needs (a fixed puzzle ask) — the
+      // flag that sets it apart from the ambient residents below (whose needs
+      // drift on the town clock). Same kind of NPC; see docs/TOWN_AND_NPCS.md.
+      needsFrozen: true,
+      behavior: { movement: "stationary" as const, conversationRadius: 5 },
+    };
+  });
+
+  const raw: WorldSpec = {
+    engine: "world",
+    engineVersion: 1,
+    meta: {
+      title: bundle.game.meta.title,
+      description: "A living town — its people, stalls and needs stream in around you.",
+      locale: bundle.game.meta.locale,
+      theme: `a ${plan.biome} town going about its day`,
+    },
+    manifold: { kind: "flat", width: side, height: side, ...(opts.onPlanet ? { bounded: false } : {}) },
+    terrain: { kind: "flat", groundColor: plan.groundColor },
+    // WHERE YOU ARRIVE (growth-phase-B §2.3). The frame origin used to be
+    // the plaza by decree; the ring is gone and the plaza is an OUTPUT that
+    // lands wherever the walks made a junction busiest, so `center` names
+    // nothing now — on a through-road town it can sit inside a lot.
+    spawns: [{ id: "plaza", x: center.x + arrival.x, y: center.y + arrival.y }],
+    objects: [],
+    npcs: opts.castNpcs === false ? [] : castNpcs,
+    multiplayer: { maxPlayers: 4, authority: "distributed" },
+    content: { kind: "sandbox" },
+  };
+  const cert = certifyWorldSpec(raw);
+  if (!cert.ok) {
+    throw new Error(`createTownStage(${siteKey}): spec failed certification: ${JSON.stringify(cert.errors)}`);
+  }
+
+  // --- Ambient residents: the founding good's shoppers, nearest first. ---
+  yield "stocking stalls";
+  // The INTERCITY line: a caravan a day, exporting ~a third of the food draw
+  // (the surplus the aggregate doesn't eat), importing trinkets. The partner
+  // stays abstract until hierarchical-cells lands real neighbors.
+  //
+  // ⚖️ R&T ⑤ (T3a) — BUILT BEFORE THE GOODS, because the goods now ask it a
+  // question: a good the caravan lands gets a DEPOT SOURCE in the source list,
+  // and that list is fixed the moment `createTownGoods` runs. The line needs
+  // only the food DESCRIPTOR for its export volume, which the registry holds
+  // directly — never the projection.
+  const foodSpec = eco.goods.find(
+    (g) => g.key === "food" && (g.slot === 0 || hasLedger(town, g)),
+  );
+  /** The AUTHORED daily shipment (street units): a third of what the town's
+   *  households draw. Fixed at construction — hoisted out of the
+   *  `createTownTrade` opts below because the export VALVE now has to weigh it
+   *  against the books' own daily need. ⚖️ ONE definition, two readers. */
+  const exportDaily = foodSpec
+    ? plan.houses.length * HOUSEHOLD * foodSpec.perCapitaDaily * 0.3
+    : 0;
+  /**
+   * ⚖️ G2 (batch 2) → ⚖️ B4 (batch 3) — WHAT THE TOWN CAN SPARE, read LIVE off
+   * the goods layer, AT THE FIXED POINT.
+   *
+   * `TownGoods.fill()` IS the town's own reading of "how fed are we on this
+   * good" (`got / need`, clamped) — the same books `townShortage` reads, and
+   * the ONE definition already in the street layer, so nothing here restates
+   * the fill arithmetic. Its complement is our PRE-EXPORT shortage S₀.
+   *
+   * B3 made the export rate BITE the books, so the shortage the valve reads is
+   * now partly caused by the valve's own answer. `equilibriumExportScale`
+   * solves that loop in closed form instead of chasing it: it takes S₀ and the
+   * BURDEN — the whole authored shipment measured against the town's own daily
+   * need, both in book units, which is what makes the two comparable at all
+   * (`bookUnitsPerStreetUnit`, B1). A town that exports nothing has burden 0
+   * and the expression collapses to batch 2's slope exactly.
+   *
+   * A LATE READ ON PURPOSE. The street goods are built AFTER the line (the
+   * lane's allotment is one of their inputs), so the thunk closes over a ref
+   * that fills in below — and it is only ever called by `exportPile` /
+   * `exportDailyUnits`, i.e. after the stage is standing. No goods yet, or no
+   * food row, reads 1: an unmeasured town exports exactly what it always did.
+   */
+  let streetGoodsRef: TownGoods[] | null = null;
+  const exportScaleNow = (): number => {
+    const g = streetGoodsRef?.find((x) => x.good.key === "food");
+    if (!g) return 1;
+    // The books' own daily draw of the good. 0 (a town whose ledger has no
+    // need) ⇒ burden 0 ⇒ the pure G2 slope, which is the honest answer when
+    // there is nothing for the shipment to be a fraction OF.
+    const need = town.dual.settlementScalar(siteKey, g.good.needScalar);
+    const burden =
+      need > 0 ? (exportDaily * bookUnitsPerStreetUnit(eco, g.good.key)) / need : 0;
+    return equilibriumExportScale(1 - g.fill(), burden);
+  };
+  const trade = foodSpec
+    ? createTownTrade(center, plan, plan.streets, opts.seed, {
+        exportGood: "food",
+        exportDaily,
+        exportScale: exportScaleNow,
+      })
+    : null;
+  /**
+   * ⚖️ R&T ⑤ (T3a) — DOES THE LANE FEED THIS GOOD'S HOUSEHOLDS? Two derived
+   * conditions, no name list:
+   *
+   *  ① THE BOOKS CAN RECEIVE IT. The good's flow net must FEED from its drift
+   *     stockpile (`transport.driftFeeds`) — that is the same flag T3b's
+   *     landing credit and `townShortage`'s relief term read, so a good whose
+   *     ledger cannot bank an import never grows a shop for one. It is also
+   *     the SCOPE CUT made mechanical: food's granary keeps `driftFeeds` off,
+   *     so staples stay yard-bound this batch by their own declaration.
+   *  ② THE TOWN MAKES NONE OF IT. With no GATE SELLER and no producer in the
+   *     plan, the depot REPLACES the empty hall stub these households were sent
+   *     to — the unlicensed-refinery case, and the one where an import is the
+   *     whole supply. A town that makes its own keeps its stalls: a depot beside
+   *     the hall would out-compete the market for the plaza quarter on distance
+   *     alone, which is a catchment question the lane has not earned yet.
+   *
+   *     ⚖️ A MARKET STALL IS A SHELF, NOT A SOURCE (2026-08-09): it sells what
+   *     a cart brings it, so its presence says nothing about whether the town
+   *     MAKES the good — only a gate seller (a building that `sells` it) does.
+   *     The distinction was invisible while only gate sellers were listed; the
+   *     moment clothing joined the market channel, reading the plaza stall as
+   *     "this town has a seller" switched the import lane off for every town
+   *     that has a market, which is every town. So the test is gate sellers and
+   *     producers, and `MARKET_CHANNEL` is filtered out by name.
+   *
+   * Both are FIXED for the session (the plan and the doc do not move), so the
+   * source list is stable; the ALLOTMENT behind it is re-read every `stockOf`.
+   */
+  const importable = new Map<string, boolean>();
+  const importsOf = (goodKey: string): ImportDepotReading | null => {
+    if (!trade) return null;
+    let ok = importable.get(goodKey);
+    if (ok === undefined) {
+      const spec = eco.goods.find((g) => g.key === goodKey);
+      const net = eco.flownets.find((f) => f.source === `${goodKey}_out`);
+      const gateSellers = spec?.sellers.filter((s) => s !== MARKET_CHANNEL) ?? [];
+      ok =
+        !!spec &&
+        !!net?.feed &&
+        !plan.works.some(
+          (w) => gateSellers.includes(w.type) || spec.producers.includes(w.type),
+        );
+      importable.set(goodKey, ok);
+    }
+    if (!ok) return null;
+    return {
+      at: trade.depot,
+      dailyUnits: trade.importUnitsPerVisit(goodKey),
+      dayFrac: (t) => trade.dayPhase(t),
+    };
+  };
+  const goods: TownGoods[] = streetGoods(
+    town, eco, { key: siteKey, center, plan }, opts.seed, undefined, importsOf,
+  );
+  streetGoodsRef = goods; // ⚖️ G2: the export scale's books, now that they exist
+  // The cast holds its NPC-budget share whether it ships in the spec or
+  // the host embodies it itself.
+  // RESIDENTS: the shared model owns the mechanics (who exists where,
+  // doing what) — the same rules the 2D canvas manager runs. This stage
+  // only maps its output onto host calls.
+  yield "waking residents";
+  const residents = createResidentModel({
+    center, plan, goods, seed: opts.seed,
+    ...(opts.excludedResidents?.length ? { excluded: new Set(opts.excludedResidents) } : {}),
+  });
+  const bodyBudget = Math.max(0, (opts.ambient ?? STREET_NPCS) - bundle.cast.length);
+
+  /** Non-house buildings (works) currently lowered into walls. */
+  const solid = new Set<string>();
+  const buildingById = new Map<string, BuildingSpec>();
+  let allBuildings: Array<{ id: string; cx: number; cy: number }> = [];
+  // A NEAR/WATCHED house raises ONE BuildingSpec PER ROOM
+  // (kernel/town/rooms.ts) — the living room keeps the historical
+  // `h_<index>` id; the engine's door-routing/visibility/cutaway machinery
+  // is already room-native. A FAR house keeps only its SHELL (the same
+  // `h_<index>` id over the whole footprint, one street door) — interiors
+  // stage on demand (INTERIOR_LOAD_R above). Concealed trips still route
+  // fine: their legs end at living-rect anchors, which the shell contains.
+  // All rooms share the house's color and storeys (upper floors tile the
+  // footprint, still visual-only).
+  interface HouseStaging {
+    house: TownHouse;
+    /** The far form: the historical footprint box, PLUS one door-less box
+     *  per annex (construction v1 — the annex ids persist across the
+     *  shell↔full swap, so door states and routing anchors survive). */
+    shell: BuildingSpec[];
+    full: BuildingSpec[];
+    /** Room id → its kind — the scaffold site's icon reads from here (⑦). */
+    kinds: Map<string, string>;
+    cx: number;
+    cy: number;
+  }
+  const houseStagings: HouseStaging[] = [];
+  /** Staged houses (absent = unloaded) — the hysteresis record. */
+  const houseMode = new Map<number, "shell" | "full">();
+  /** Construction-delta revision each house was last staged at. */
+  const stagedRev = new Map<number, number>();
+  // SCAFFOLD_S is DEAD (phase 3 — walls as worked pieces): the settle
+  // timer existed to hide the wall pop at commit, and a timer is exactly
+  // what nothing here may be. Since phase 3 the PENDING order's site rises
+  // its wall courses with banked labor (ConstructionSite.progress), so at
+  // the commit instant the courses ARE the walls — the full doored room
+  // swaps in continuously, with the crew still standing there.
+  /** In-progress FOUNDED works' site markings, by plan work index. The STAGE
+   *  is not stored: it moves with the banked labor, so `activeSites` reads it
+   *  fresh off the delta every time (registration happens once, the ladder
+   *  climbs for as long as builders stand there). */
+  const workSites = new Map<number, ConstructionSite>();
+  /** Frame-over-frame site signature — sites emit on ANY change (including
+   *  the first frame of a restored in-progress build, and every stage the
+   *  ladder climbs), never else. */
+  let lastSiteSig: string | null = null;
+  /** Frame-over-frame set of rooms a demolition has already unwalled — a
+   *  change here re-emits the building set (the walls really left). */
+  let lastFallingSig = "";
+  /** The last frame's town clock — the day the stage reads build progress
+   *  against when a caller asks for sites outside `frame()`. */
+  let lastFrameSec = 0;
+  /** A structure type → the glyph its site wears. Falls back to the generic
+   *  building frame when the stage was given no catalog. */
+  const structureGlyphOf = (type: string): string => {
+    const spec = opts.structures ? resolveStructure(opts.structures, type) : null;
+    return spec ? structureDisplayGlyph(spec) : `building(${type})`;
+  };
+  /** Clamp a kernel BuildStage to what a SITE can carry — a site is by
+   *  definition unfinished, so 3 (walls up) never reaches the renderer. */
+  const siteStage = (s: number): 0 | 1 | 2 => (s >= 2 ? 2 : s <= 0 ? 0 : 1);
+  /** Pending-designation GROUND MARKINGS (⑤): a staked annex rect reads as
+   *  a construction site while its materials gather, and CLIMBS the ⑦ stage
+   *  ladder as its builders bank labor. Interior designations skip — their
+   *  ground is indoors (the cutaway shows the room when it lands). */
+  const pendingSites = (): ConstructionSite[] => {
+    const out: ConstructionSite[] = [];
+    for (const p of opts.deltas?.annexSites() ?? []) {
+      if (isInteriorCandidate(p.candidate)) continue;
+      const m = /^h_(\d+)$/.exec(p.buildingKey);
+      const h = m ? plan.houses.find((hh) => hh.index === Number(m[1])) : undefined;
+      if (!h) continue;
+      const r = annexWorldRect(center, h, p.candidate);
+      out.push({
+        id: `site_pa_${p.ord}`,
+        ...r,
+        type: "annex",
+        stage: siteStage(pendingAnnexStage(p)),
+        progress: laborFraction(p),
+        glyph: roomKindDisplayGlyph(pendingRoomKindOf(p)),
+        word: pendingRoomKindOf(p),
+        ...(h.color ? { color: h.color } : {}),
+      });
+    }
+    return out;
+  };
+  /** A room named by a designation, resolved to live geometry — houses by
+   *  their delta key, works through workDeltaKey (the one door). */
+  const roomGeometryOf = (
+    buildingKey: string,
+    roomId: string,
+  ): { rect: { x: number; y: number; w: number; h: number }; kind: string; color?: string } | null => {
+    const hm = /^h_(\d+)$/.exec(buildingKey);
+    if (hm) {
+      const h = plan.houses.find((hh) => hh.index === Number(hm[1]));
+      if (!h) return null;
+      const room = houseRoomPlan(center, h, opts.deltas?.get(buildingKey)).rooms.find((r) => r.id === roomId);
+      return room ? { rect: room.rect, kind: room.kind, ...(h.color ? { color: h.color } : {}) } : null;
+    }
+    for (let i = 0; i < plan.works.length; i++) {
+      const wk = plan.works[i]!;
+      if (workDeltaKey(wk, i) !== buildingKey) continue;
+      const room = workPlans[i]?.rooms.find((r) => r.id === roomId);
+      return room ? { rect: room.rect, kind: room.kind, ...(wk.color ? { color: wk.color } : {}) } : null;
+    }
+    return null;
+  };
+  /** ROOMS COMING DOWN (⑦): an ordered demolition is MARKED from the moment
+   *  it is ordered (a designation the player can see standing, wearing the
+   *  break glyph over it); once its builders are really at work the room
+   *  loses its walls and runs the build ladder BACKWARDS — pillars, then bare
+   *  floor, then nothing. Its walls are withheld from the building set for
+   *  exactly as long as `fallingRoomIds` names it. */
+  const fallingSites = (): ConstructionSite[] => {
+    const out: ConstructionSite[] = [];
+    for (const p of opts.deltas?.demolitionSites() ?? []) {
+      const st = demolitionStage(p);
+      if (st <= 0) continue; // already gone — the row is about to commit
+      const g = roomGeometryOf(p.buildingKey, p.roomId);
+      if (!g) continue;
+      out.push({
+        id: `site_pd_${p.ord}`,
+        ...g.rect,
+        type: "demolish",
+        // Walls still standing ⇒ a bare marking (no floor, no posts): the
+        // room IS its own geometry until the work starts.
+        stage: st >= 3 ? 0 : siteStage(st),
+        // The courses run BACKWARDS — what remains of the walls.
+        progress: Math.max(0, Math.min(1, 1 - laborFraction(p))),
+        // `break + <room>` — a site coming down must not read the same as one
+        // going up, and both wear their kind.
+        glyph: `break + ${roomKindDisplayGlyph(g.kind)}`,
+        word: g.kind,
+        ...(g.color ? { color: g.color } : {}),
+      });
+    }
+    return out;
+  };
+  /** Building ids whose walls a demolition has already taken down. */
+  const fallingRoomIds = (): Set<string> => {
+    const ids = new Set<string>();
+    for (const p of opts.deltas?.demolitionSites() ?? []) {
+      const st = demolitionStage(p);
+      if (st < 3 && st > 0) ids.add(p.roomId);
+    }
+    return ids;
+  };
+  /** In-progress FOUNDED works, with their stage read fresh off the delta. */
+  const workSiteRows = (): ConstructionSite[] => {
+    const day = lastFrameSec / FOOD_DAY_SEC;
+    const out: ConstructionSite[] = [];
+    for (const [wi, base] of workSites) {
+      const wk = plan.works[wi];
+      const fb =
+        wk?.foundedOrd !== undefined
+          ? opts.deltas?.founded().find((f) => f.ord === wk.foundedOrd)
+          : undefined;
+      out.push({
+        ...base,
+        stage: siteStage(fb ? foundedStage(fb, day) : 0),
+        progress: fb ? foundedProgress(fb, day) : 0,
+      });
+    }
+    return out;
+  };
+  const activeSites = (): ConstructionSite[] => [
+    ...workSiteRows(),
+    ...pendingSites(),
+    ...fallingSites(),
+  ];
+  const houseStagingOf = (h: TownHouse): HouseStaging => {
+    const delta = opts.deltas?.get(`h_${h.index}`);
+    const rooms = houseRoomPlan(center, h, delta).rooms;
+    // Which of this house's openings have lost their leaf (phase 5). A
+    // worldgen house has none, so `doorwaysWithLeaves` is a pass-through and the
+    // staged spec is byte-identical to the pre-phase-5 one.
+    const doorless = doorlessOf(delta);
+    const roomSpec = (room: (typeof rooms)[number]): BuildingSpec => ({
+      id: room.id,
+      footprint: room.rect,
+      floors: h.floors ?? 1,
+      stairs: false,
+      wallThickness: 0.4,
+      doorways: doorwaysWithLeaves(room, room.doorways, doorless),
+      color: h.color,
+    });
+    const annexRooms = rooms.filter((r) => /_a\d+$/.test(r.id));
+    return {
+      house: h,
+      kinds: new Map(rooms.map((r) => [r.id, r.kind as string])),
+      shell: [
+        houseBuilding(center, `h_${h.index}`, h, doorless),
+        // Annexes keep their footprint (and id) in shell form — door-less
+        // boxes, like the shell itself keeps only its street door.
+        ...annexRooms.map((r) => ({ ...roomSpec(r), doorways: [] })),
+      ],
+      full: rooms.map(roomSpec),
+      cx: center.x + h.dx + h.w / 2,
+      cy: center.y + h.dy + h.h / 2,
+    };
+  };
+  const registerHouse = (h: TownHouse): void => {
+    houseStagings.push(houseStagingOf(h));
+    stagedRev.set(h.index, opts.deltas?.get(`h_${h.index}`)?.rev ?? 0);
+  };
+  yield "furnishing homes";
+  for (const h of plan.houses) registerHouse(h);
+  // WORKS (§9 slice 5): a work building raises its PROGRAM's rooms
+  // (buildingRoomPlan — the market/hall stay open, workshops grow a
+  // stock room; a FOUNDED row carries its StructureSpec's program, so it
+  // never falls through the generic default). Works are few, so their
+  // interiors stay FULL (no shell/full hysteresis); every room registers
+  // at the WORK's center so the whole interior loads and unloads as one —
+  // never a half-built wall set at the load radius. The front room keeps
+  // the historical `w_<i>` id.
+  //
+  // CONSTRUCTION IN PROGRESS (①b): a founded work whose build clock hasn't
+  // run out stands as a door-less SCAFFOLD box on its lot (walls first,
+  // doors + interior + furniture when the day passes — board words visibly
+  // change the world). Registration is DYNAMIC: completion re-registers
+  // the same frame, and works APPENDED live (a committed build order)
+  // register on the deltas version bump.
+  const workProgramOf = (wk: TownWork): BuildingProgram => wk.program ?? workProgram(wk.type);
+  const workDoneAt = (wk: TownWork, tSec: number): boolean => {
+    if (wk.foundedOrd === undefined) return true;
+    const b = opts.deltas?.founded().find((f) => f.ord === wk.foundedOrd);
+    return b ? foundedBuildingDone(b, tSec / FOOD_DAY_SEC) : true;
+  };
+  const workPlans: Array<ReturnType<typeof buildingRoomPlan>> = [];
+  /** Room/scaffold ids each work currently registers (re-registration clears). */
+  const workIds = new Map<number, string[]>();
+  /** Whether each work stood COMPLETE at its last registration. */
+  const workBuilt = new Map<number, boolean>();
+  /** The delta rev each work last staged with (⑤b — a founded shell's
+   *  interior rooms re-register on its rev bump, the house pattern). */
+  const workStagedRev = new Map<number, number>();
+  let _errLogAt = -Infinity; // TEMP stage-errands probe pacing
+  const registerWork = (i: number, tSec: number): void => {
+    const wk = plan.works[i]!;
+    const cx = center.x + wk.dx + wk.w / 2;
+    const cy = center.y + wk.dy + wk.h / 2;
+    // Clear the previous registration (completion swaps scaffold → rooms).
+    for (const id of workIds.get(i) ?? []) {
+      buildingById.delete(id);
+      solid.delete(id);
+    }
+    const old = new Set(workIds.get(i) ?? []);
+    if (old.size) allBuildings = allBuildings.filter((b) => !old.has(b.id));
+    if (wk.vacated) {
+      // VACATED (④ move-in): the row's household house stages under its
+      // own `h_<index>` — the work row keeps its index (jobs/attendance
+      // maps are positional) but registers nothing.
+      workBuilt.set(i, true);
+      workIds.set(i, []);
+      workSites.delete(i);
+      return;
+    }
+    const done = workDoneAt(wk, tSec);
+    workBuilt.set(i, done);
+    // The work's construction delta (⑤b): a founded shell's interior rooms
+    // ride its `f_<ord>` delta — the plan re-derives from it here.
+    const wkDelta = opts.deltas?.get(workDeltaKey(wk, i));
+    workStagedRev.set(i, wkDelta?.rev ?? 0);
+    workPlans[i] = buildingRoomPlan(center, i, wk, workProgramOf(wk), wkDelta);
+    const ids: string[] = [];
+    workSites.delete(i);
+    if (!done) {
+      // The SITE (city-founding "construction sites"): a marked plot, not
+      // a structure — no walls registered, ground stays walkable; the
+      // host paints the marking and reserves the lot against drops.
+      workSites.set(i, {
+        id: `site_w_${i}`,
+        x: center.x + wk.dx,
+        y: center.y + wk.dy,
+        w: wk.w,
+        h: wk.h,
+        type: wk.type,
+        // What will stand here, hovering over the plot (⑦).
+        glyph: structureGlyphOf(wk.type),
+        word: wk.type,
+        ...(wk.color ? { color: wk.color } : {}),
+      });
+    } else {
+      // A PIPELINE-RAISED work seeds every opening `doorless` at shell
+      // completion, so its rooms stand as bare openings until the furniture
+      // sweeps hang each leaf — the doors going in are visible, one at a time.
+      const doorless = doorlessOf(wkDelta);
+      for (const room of workPlans[i]!.rooms) {
+        buildingById.set(room.id, {
+          id: room.id,
+          footprint: room.rect,
+          floors: 1,
+          stairs: false,
+          wallThickness: 0.4,
+          doorways: doorwaysWithLeaves(room, room.doorways, doorless),
+          color: wk.color,
+        });
+        allBuildings.push({ id: room.id, cx, cy });
+        ids.push(room.id);
+      }
+    }
+    workIds.set(i, ids);
+  };
+  plan.works.forEach((_, i) => registerWork(i, 0));
+
+  // FURNITURE per house (deterministic — same house, same room forever):
+  // the goods chests at their errand corners, a cupboard, a table.
+  const goodDefs = goods.map(g => ({ key: g.good.key, slot: g.good.slot }));
+  const furnitureOf = new Map<string, ObjectSpec[]>();
+  const toObjectSpec = (piece: ReturnType<typeof houseFurniture>[number]): ObjectSpec => ({
+    id: piece.id,
+    x: piece.x,
+    y: piece.y,
+    shape: "box" as const,
+    radius: piece.radius,
+    fixture: piece.kind,
+    openable: piece.openable,
+    facing: piece.facing,
+    // Delivered-but-not-set-up pieces render tipped on their side (⑥).
+    ...(piece.setUp !== undefined ? { setUp: piece.setUp } : {}),
+    interactions: [],
+    // A table and the pet's floor bowl SHOW their contents ("on"); the
+    // lidded pieces hold theirs hidden ("in").
+    contains: [{ relation: piece.kind === "table" || piece.kind === "bowl" ? ("on" as const) : ("in" as const), capacity: 2 }],
+  });
+  let laidOut = 0;
+  for (const h of plan.houses) {
+    // Hundreds of houses each lay out a roomful — breathe between batches.
+    if (laidOut++ % 150 === 149) yield "furnishing homes";
+    furnitureOf.set(
+      `h_${h.index}`,
+      houseFurniture(center, h, goodDefs, "", opts.deltas?.get(`h_${h.index}`), opts.registry).map(toObjectSpec),
+    );
+  }
+  // Work interiors furnish from the town's registry (the culture's, or the
+  // default — counter, stock chests + any StructureSpec.stations), gated on
+  // show like a house's. A work UNDER CONSTRUCTION (①b) has no furniture until
+  // its build clock runs out.
+  const refreshWorkFurniture = (i: number): void => {
+    const wk = plan.works[i]!;
+    if (wk.vacated || !workBuilt.get(i)) {
+      furnitureOf.delete(`w_${i}`);
+      return;
+    }
+    const pieces = workFurniture(
+      center, i, wk, workProgramOf(wk), "", opts.deltas?.get(workDeltaKey(wk, i)), opts.registry,
+    );
+    if (pieces.length) furnitureOf.set(`w_${i}`, pieces.map(toObjectSpec));
+  };
+  plan.works.forEach((_, i) => refreshWorkFurniture(i));
+  /** House ids whose furniture is currently in the world. */
+  const furnished = new Set<string>();
+  /** Live hauler body ids (dawn-cart carriers, goods.ts `haul`). */
+  const liveHaulers = new Set<string>();
+  /** Haulers embody within this range of the player (meters). */
+  const HAULER_EMBODY_R = 160;
+  /** The overlay version the stage last reconciled (frame's dirty check). */
+  let stagedVersion = opts.deltas?.version ?? 0;
+
+  const frame = (
+    p: { x: number; y: number },
+    tSec: number,
+    bodyPos: (id: string) => { x: number; y: number } | null = () => null,
+    visibleR?: number,
+    isVisible?: (houseIndex: number) => boolean,
+    isRoomVisible?: (buildingId: string) => boolean,
+    isHousePooled?: (houseIndex: number) => boolean,
+    /** AMBIENT CROWD BUDGET override (view-distance-lod-tiers.md Phase 2): the
+     *  max street bodies to embody THIS frame, ramped by camera→town distance so
+     *  the crowd streams in a few per frame on descent instead of flooding all at
+     *  once at the mount. Undefined = the stage's build-time budget. */
+    crowdBudget?: number,
+    /** RECRUITED CIVIC WORKERS (⑥): pinned bodies — see TownStage.frame. */
+    isBusy?: (id: string) => boolean,
+  ): TownStageFrame => {
+    lastFrameSec = tSec; // build progress reads the clock through this
+    // The "interior on show" gate — shared by the interior staging, the
+    // furniture and the residents (see the FURNITURE note below). No signal
+    // ⇒ fall back to the raw footprint test (the 2D lab).
+    const houseVisible = (h: TownHouse): boolean =>
+      isVisible
+        ? isVisible(h.index)
+        : p.x > center.x + h.dx && p.x < center.x + h.dx + h.w &&
+          p.y > center.y + h.dy && p.y < center.y + h.dy + h.h;
+
+    // ── CONSTRUCTION DELTAS (v1): a bumped building re-plans, re-stages
+    // and re-furnishes THIS frame. A committed room's doored form lands
+    // the same frame (phase 3): its pending order's site rose the wall
+    // courses with banked labor, so the swap is continuous — construction
+    // was visible the whole way, as worked pieces rather than a timer.
+    let changed = false;
+    const deltaRemoveObjects: string[] = [];
+    // FOUNDED-WORK COMPLETION (①b): a build clock running out swaps the
+    // scaffold for the real doored rooms + furniture the same frame.
+    for (const [wi, done] of workBuilt) {
+      if (done || !workDoneAt(plan.works[wi]!, tSec)) continue;
+      const hadFurniture = furnished.has(`w_${wi}`);
+      registerWork(wi, tSec);
+      refreshWorkFurniture(wi);
+      if (hadFurniture) furnished.delete(`w_${wi}`);
+      changed = true;
+    }
+    if (opts.deltas && opts.deltas.version !== stagedVersion) {
+      stagedVersion = opts.deltas.version;
+      // Works APPENDED live (a committed build order added a plan row):
+      // register them — the scaffold stands the frame the order lands.
+      while (workIds.size < plan.works.length) {
+        const wi = workIds.size;
+        registerWork(wi, tSec);
+        refreshWorkFurniture(wi);
+        changed = true;
+      }
+      // Works VACATED live (④ move-in converted a founded house-role row
+      // into a real household): the row's walls/furniture clear — the
+      // house registration below stands the same building as a HOME.
+      plan.works.forEach((wk, wi) => {
+        if (!wk.vacated || (workIds.get(wi)?.length ?? 0) === 0) return;
+        if (furnished.has(`w_${wi}`)) {
+          for (const o of furnitureOf.get(`w_${wi}`) ?? []) deltaRemoveObjects.push(o.id);
+          furnished.delete(`w_${wi}`);
+        }
+        registerWork(wi, tSec); // vacated: clears and registers nothing
+        refreshWorkFurniture(wi);
+        changed = true;
+      });
+      // Work deltas BUMPED live (⑤b): a founded shell whose interior grew
+      // (or lost) a room re-registers + refurnishes — the house rev-watch
+      // pattern, one level over.
+      plan.works.forEach((wk, wi) => {
+        if (wk.vacated) return;
+        const rev = opts.deltas!.get(workDeltaKey(wk, wi))?.rev ?? 0;
+        if ((workStagedRev.get(wi) ?? 0) === rev) return;
+        const wkKey = `w_${wi}`;
+        if (furnished.has(wkKey)) {
+          for (const o of furnitureOf.get(wkKey) ?? []) deltaRemoveObjects.push(o.id);
+          furnished.delete(wkKey);
+        }
+        registerWork(wi, tSec);
+        refreshWorkFurniture(wi);
+        changed = true;
+      });
+      // Houses APPENDED live (④ move-in): register walls + furniture —
+      // the household streams in through the resident model as usual.
+      while (houseStagings.length < plan.houses.length) {
+        const h = plan.houses[houseStagings.length]!;
+        registerHouse(h);
+        furnitureOf.set(
+          `h_${h.index}`,
+          houseFurniture(center, h, goodDefs, "", opts.deltas.get(`h_${h.index}`), opts.registry).map(toObjectSpec),
+        );
+        changed = true;
+      }
+      for (const hs of houseStagings) {
+        const key = `h_${hs.house.index}`;
+        const rev = opts.deltas.get(key)?.rev ?? 0;
+        if ((stagedRev.get(hs.house.index) ?? 0) === rev) continue;
+        stagedRev.set(hs.house.index, rev);
+        const rebuilt = houseStagingOf(hs.house);
+        hs.shell = rebuilt.shell;
+        hs.full = rebuilt.full;
+        // A committed room's walls land THIS frame (phase 3 — no scaffold
+        // timer): the pending order's site already rose its courses with
+        // banked labor, so the swap is continuous.
+        // Refurnish: clear the old set now (quest-host removes before it
+        // adds, so a surviving id re-lands cleanly the same frame); the
+        // want-loop below re-adds the new set while the house is on show.
+        const old = furnitureOf.get(key) ?? [];
+        furnitureOf.set(
+          key,
+          houseFurniture(center, hs.house, goodDefs, "", opts.deltas.get(key), opts.registry).map(toObjectSpec),
+        );
+        if (furnished.has(key)) {
+          for (const o of old) deltaRemoveObjects.push(o.id);
+          furnished.delete(key);
+        }
+        changed = true;
+      }
+    }
+    // BUILDINGS: load within reach, keep until past the unload radius.
+    for (const b of allBuildings) {
+      const d = Math.hypot(b.cx - p.x, b.cy - p.y);
+      if (solid.has(b.id)) {
+        if (d > STRUCT_UNLOAD_R) {
+          solid.delete(b.id);
+          changed = true;
+        }
+      } else if (d <= STRUCT_LOAD_R) {
+        solid.add(b.id);
+        changed = true;
+      }
+    }
+    // HOUSES: same load/unload hysteresis, plus the SHELL↔FULL interior
+    // swap (INTERIOR_LOAD_R / INTERIOR_UNLOAD_R above). Full→shell only
+    // lands while the interior is CONCEALED (view-guard-safe); a watched
+    // house is always full — the dollhouse's focused house never sheds
+    // its rooms, whatever the distance.
+    for (const hs of houseStagings) {
+      const d = Math.hypot(hs.cx - p.x, hs.cy - p.y);
+      const watched = houseVisible(hs.house);
+      const cur = houseMode.get(hs.house.index);
+      let next: "shell" | "full" | undefined = cur;
+      if (cur === undefined) {
+        if (watched || d <= STRUCT_LOAD_R) {
+          next = watched || d <= INTERIOR_LOAD_R ? "full" : "shell";
+        }
+      } else if (d > STRUCT_UNLOAD_R && !watched) {
+        next = undefined; // the whole house unloads
+      } else if (watched || d <= INTERIOR_LOAD_R) {
+        next = "full";
+      } else if (cur === "full" && d > INTERIOR_UNLOAD_R) {
+        next = "shell"; // concealed AND far again — the swap is unseen
+      }
+      if (next !== cur) {
+        changed = true;
+        if (next === undefined) houseMode.delete(hs.house.index);
+        else houseMode.set(hs.house.index, next);
+      }
+    }
+    // A room whose walls have come down under a live demolition (⑦) leaves
+    // the building set the same way an unbuilt annex does — its marked
+    // ground IS its visible form now, running the ladder backwards.
+    const falling = fallingRoomIds();
+    const fallingSig = [...falling].sort().join("|");
+    if (fallingSig !== lastFallingSig) {
+      lastFallingSig = fallingSig;
+      changed = true;
+    }
+    // An annex under its site window emits NO walls (the site marking is
+    // the construction's visible form — city-founding "construction sites").
+    const buildings = changed
+      ? [
+          ...[...solid].map(id => buildingById.get(id)!).filter(b => !falling.has(b.id)),
+          ...houseStagings.flatMap(hs => {
+            const mode = houseMode.get(hs.house.index);
+            return mode === "full"
+              ? hs.full.filter(b => !falling.has(b.id))
+              : mode === "shell" ? hs.shell : [];
+          }),
+        ]
+      : null;
+    // SITES: emit the full set on ANY membership, STAGE or COURSE change
+    // (order landed, materials staged, pillars up, a wall course rising,
+    // build completed) — including the very first frame of a restored
+    // in-progress build. Progress is bucketed to course granularity so
+    // the walls climb in visible steps, not a re-emit every frame.
+    const siteList = activeSites();
+    const siteSig = siteList
+      .map(s => `${s.id}@${s.stage ?? 0}.${Math.floor((s.progress ?? 0) * 8)}`)
+      .join("|");
+    const sites = siteSig !== lastSiteSig ? siteList : null;
+    lastSiteSig = siteSig;
+
+    // FURNITURE: a house's interior fixtures follow the SAME roof-transparency
+    // gate the residents use — present while the interior is ON SHOW (the player
+    // occupies it, so the renderer fades its roof), abstracted the moment it's
+    // hidden again. Keying furniture and people on ONE signal keeps them in
+    // lockstep: no furnished-but-empty room, no peopled-but-bare room, and they
+    // appear/vanish together. A closed house you merely walk past shows only its
+    // exterior walls, so we never build a roomful of fixtures per house as the
+    // town scrolls by. Runs every frame so it flips with occupancy, not just
+    // wall-set changes.
+    const wantFurnished = new Set<string>();
+    for (const h of plan.houses) {
+      if (houseVisible(h)) wantFurnished.add(`h_${h.index}`);
+    }
+    // A work's interior is on show when any of its rooms is (occupied /
+    // roof open) — same gate, per-room signal; footprint fallback for
+    // hosts without one (the 2D lab).
+    plan.works.forEach((wk, i) => {
+      if (!furnitureOf.has(`w_${i}`)) return;
+      const vis = isRoomVisible
+        ? workPlans[i]!.rooms.some(r => isRoomVisible(r.id))
+        : p.x > center.x + wk.dx && p.x < center.x + wk.dx + wk.w &&
+          p.y > center.y + wk.dy && p.y < center.y + wk.dy + wk.h;
+      if (vis) wantFurnished.add(`w_${i}`);
+    });
+    const addObjects: ObjectSpec[] = [];
+    const removeObjects: string[] = [...deltaRemoveObjects];
+    for (const id of [...furnished]) {
+      if (wantFurnished.has(id)) continue;
+      for (const o of furnitureOf.get(id) ?? []) removeObjects.push(o.id);
+      furnished.delete(id);
+    }
+    for (const id of wantFurnished) {
+      if (furnished.has(id) || !furnitureOf.has(id)) continue;
+      // Pieces standing inside a PENDING order's marked ground defer until
+      // the room commits (the rev-bump refurnish re-adds them) — furniture
+      // never stands on an open construction site.
+      const siteRects = (opts.deltas?.annexSites() ?? [])
+        .filter((p) => p.buildingKey === id && !isInteriorCandidate(p.candidate))
+        .map((p) => {
+          const m = /^h_(\d+)$/.exec(p.buildingKey);
+          const h = m ? plan.houses.find((hh) => hh.index === Number(m[1])) : undefined;
+          return h ? annexWorldRect(center, h, p.candidate) : null;
+        })
+        .filter((r): r is { x: number; y: number; w: number; h: number } => !!r);
+      const pieces = siteRects.length
+        ? furnitureOf.get(id)!.filter(
+            o => !siteRects.some(r => o.x >= r.x && o.x <= r.x + r.w && o.y >= r.y && o.y <= r.y + r.h),
+          )
+        : furnitureOf.get(id)!;
+      addObjects.push(...pieces);
+      furnished.add(id);
+    }
+
+    // RESIDENTS: one model step; map spawns onto engine NPCs with the
+    // behavior that keeps the clock honest (indoor tether, errand pace).
+    const upd = residents.update(p, tSec, crowdBudget ?? bodyBudget, bodyPos, visibleR, isVisible, isRoomVisible, isHousePooled, isBusy);
+    const add: NpcSpec[] = upd.spawn.map(s => {
+      // The body's species: a defined member's own (frog_person aunt), else
+      // the town's constructing species — sizes collision AND planning.
+      const sp = opts.residentSpecies?.(s.id) ?? plan.species;
+      return {
+        id: s.id,
+        x: s.x,
+        y: s.y,
+        ...(sp ? { species: sp } : {}),
+        behavior: {
+          movement: "wander" as const,
+          conversationRadius: 5,
+          wanderRadius: s.wanderRadius,
+          home: s.home,
+          speed: ERRAND_WALK,
+        },
+      };
+    });
+    const errands: TownStageFrame["errands"] = [
+      // A body spawned mid-trip walks the REMAINDER of its trip...
+      ...upd.spawn.flatMap(s => (s.walkTo ? [{ npcId: s.id, points: s.walkTo }] : [])),
+      // ...and embodied runners head out when their cycle says so.
+      ...upd.trips.map(t => ({ npcId: t.id, points: t.points })),
+    ];
+    const _errSpawnN = errands.length - upd.trips.length; // TEMP stage-errands probe
+    const remove: string[] = [...upd.despawn];
+
+    // THE CARAVAN — the intercity line's pair of carriers, streamed exactly
+    // like haulers: bodies exist only mid-visit and in range. "In range"
+    // covers the CAMERA's reach too (visibleR): a spirit watching from
+    // orbit must never see a carrier blink in or out mid-street.
+    const embodyR = Math.max(HAULER_EMBODY_R, visibleR ?? 0);
+    if (trade) {
+      const trip = trade.caravan(tSec);
+      for (let i = 0; i < 2; i++) {
+        const id = `caravan_${i}`;
+        const live = liveHaulers.has(id);
+        if (trip.phase === "away") {
+          if (live) {
+            remove.push(id);
+            liveHaulers.delete(id);
+          }
+          continue;
+        }
+        const d = Math.hypot(trip.pos.x - p.x, trip.pos.y - p.y);
+        if (!live && d <= embodyR) {
+          liveHaulers.add(id);
+          add.push({
+            id, x: trip.pos.x + i * 1.1, y: trip.pos.y + i * 0.7,
+            ...(plan.species ? { species: plan.species } : {}),
+            behavior: {
+              movement: "wander" as const, conversationRadius: 5,
+              wanderRadius: 1.2, home: trade.depot, speed: trip.speed,
+            },
+          });
+          if (trip.walkTo) errands.push({ npcId: id, points: trip.walkTo });
+        } else if (live && d > embodyR + 60) {
+          remove.push(id);
+          liveHaulers.delete(id);
+        }
+      }
+    }
+
+    // HAULERS — the supply flow made visible: per SHELVED source with a haul,
+    // a carrier walks the dawn-cart round trip producer → stall → producer
+    // (goods.ts `haul`, time-pure). A body exists only MID-TRIP and in range:
+    // it pops in at the producer walking the remainder, and evicts once idle —
+    // the same spawn-mid-task discipline as the residents.
+    for (const g of goods) {
+      for (let si = 0; si < g.sources.length; si++) {
+        const src = g.sources[si];
+        const trip = g.haul(src, tSec);
+        const id = `hauler_${g.good.key}_${si}`;
+        const live = liveHaulers.has(id);
+        if (!trip || trip.phase === "idle") {
+          if (live) {
+            remove.push(id);
+            liveHaulers.delete(id);
+          }
+          continue;
+        }
+        const d = Math.hypot(trip.pos.x - p.x, trip.pos.y - p.y);
+        if (!live && d <= embodyR) {
+          liveHaulers.add(id);
+          add.push({
+            id, x: trip.pos.x, y: trip.pos.y,
+            ...(plan.species ? { species: plan.species } : {}),
+            behavior: {
+              movement: "wander" as const, conversationRadius: 5,
+              wanderRadius: 1.2, home: trip.producer, speed: trip.speed,
+            },
+          });
+          if (trip.walkTo) errands.push({ npcId: id, points: trip.walkTo });
+        } else if (live && d > embodyR + 60) {
+          remove.push(id);
+          liveHaulers.delete(id);
+        }
+      }
+    }
+
+    // TEMP stage-errands probe (view-distance-lod-tiers.md): WHICH source
+    // feeds the standing per-frame errand stream — mid-trip SPAWN remainders,
+    // cycle TRIPS, or HAULER/caravan pop-ins? ≤1 line/sim-second per stage.
+    if (probesOn() && errands.length && typeof console !== "undefined" && tSec - _errLogAt > 1) {
+      _errLogAt = tSec;
+      const haulerN = errands.length - _errSpawnN - upd.trips.length;
+      console.log(
+        `[stage-errands] ${plan.key ?? "town"} total=${errands.length} spawn=${_errSpawnN} trips=${upd.trips.length} hauler=${haulerN} ` +
+          `ids=${errands.slice(0, 3).map(e => e.npcId).join(",")}`,
+      );
+    }
+    return { buildings, sites, add, remove, errands, addObjects, removeObjects };
+  };
+
+  return {
+    spec: cert.spec, center, roads, castSpawns, goods, trade, frame, activeSites,
+    loadedLots: () => ({
+      houses: new Set(houseMode.keys()),
+      works: new Set(plan.works.map((_, i) => i).filter((i) => solid.has(`w_${i}`))),
+    }),
+    explainResident: (p, tSec, houseIndex, member, bodyPos, isVisible) =>
+      residents.explain(p, tSec, houseIndex, member, bodyPos, isVisible),
+    dropResidentBody: (id) => residents.dropBody(id),
+  };
+}

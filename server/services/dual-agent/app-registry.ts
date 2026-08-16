@@ -202,6 +202,22 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     // The first shipped world-engine game — on by default for every student.
     enabledByDefault: true,
   },
+  {
+    // NOTE: hyphenated id (unlike the snake_case ids above) — deliberately
+    // matches CallGame.appId (shared/social-world/default-game.ts) and the
+    // game's folder/src path ("/games/nature-hike/") so no id-mapping layer
+    // is needed between the app registry and the call/iframe-quest bridge.
+    id: "nature-hike",
+    name: "Nature Hike",
+    description:
+      "Opens Nature Hike — a calm, shared walk across a living 3D planet. The student (and any " +
+      "friends in the call) explore on foot, looking at plants, animals and terrain as they wander. " +
+      "It's a multiplayer world-engine game: opening it with others in a call lets everyone walk the " +
+      "same planet together. Use open_app(\"nature-hike\") when the student wants to go for a walk, " +
+      "explore nature, look at plants or animals outside, or asks for the nature hike / hiking game.",
+    icon: "🥾",
+    enabledByDefault: false,
+  },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];

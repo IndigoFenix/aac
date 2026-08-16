@@ -34,7 +34,7 @@ import {
 import { ttsFacade, isClientSideTtsVoice, sanitizeElevenLabsApiKey, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
-import { getContactsByStudent } from "../biometric";
+import { getContactsWithPhotoStatusByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
 import { classroomRepository } from "../../repositories/classroomRepository";
@@ -566,9 +566,9 @@ export class DualAgentService {
     // and degrades to the same empty/None result as before.
     const contactsPromise = (async (): Promise<NonNullable<DualAgentSessionState['cachedContacts']>> => {
       try {
-        const contacts = await getContactsByStudent(studentId);
+        const contacts = await getContactsWithPhotoStatusByStudent(studentId);
         return contacts.map(c => ({
-          id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+          id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: c.hasFaceImage,
         }));
       } catch { return []; }
     })();
@@ -994,9 +994,9 @@ export class DualAgentService {
 
         // Fetch and cache contacts for prompt
         try {
-          const contacts = await getContactsByStudent(state.studentId);
+          const contacts = await getContactsWithPhotoStatusByStudent(state.studentId);
           state.cachedContacts = contacts.map(c => ({
-            id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+            id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: c.hasFaceImage,
           }));
         } catch { state.cachedContacts = []; }
 

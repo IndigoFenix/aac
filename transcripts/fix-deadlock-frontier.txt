@@ -1,0 +1,700 @@
+# world-text v1   proto=1
+# world=worldlab-frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-15T20:51:06.221Z
+# ─────────────────────────────────────────
+> /stock
+CHEAT  /stock
+> say build house
+OK     said: build + house
+SAY    person-2: "I will build the house."  [build.will + house]
+SAY    person-5: "I will carry the stone to the storehouse."  [carry.will + stone + to + storehouse]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TICK   quiet after 2.5s.
+> /orders
+CHEAT  /orders
+> wait 60
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 13 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  📦 bring 18 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 18 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 12 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  💬 no one can do that: "bring 13 wood" (feedback)
+TOAST  💬 no one can do that: "bring 20 wood" (feedback)
+TOAST  📦 bring 17 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 19 wood — delivered (feedback)
+EXIT   person-5 left view there west.
+TOAST  📦 bring 12 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 12 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 12 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TICK   waited 60.0s.
+> /orders
+CHEAT  /orders
+> wait 120
+SAY    person-3: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  📦 bring 12 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 12 wood — delivered (feedback)
+TOAST  📦 bring 17 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 17 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 11 wood — delivered (feedback)
+TOAST  📦 bring 11 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 4 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 18 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 11 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 13 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 20 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+ENTER  person-5 came into view there west.
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 11 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 12 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 10 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  📦 bring 17 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  📦 bring 10 wood — delivered (feedback)
+TOAST  📦 bring 11 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 3 wood — delivered (feedback)
+TOAST  📦 bring 6 stone — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 14 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 15 wood — delivered (feedback)
+TOAST  📦 bring 12 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 9 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 11 wood — delivered (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TICK   waited 120.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  📦 bring 9 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+SAY    person-4: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  📦 bring 16 wood — delivered (feedback)
+TOAST  📦 bring 19 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 9 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 10 wood — delivered (feedback)
+TOAST  💬 no one can do that: "bring 8 wood" (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 11 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 14 wood — delivered (feedback)
+TOAST  💬 no one can do that: "bring 2 wood" (feedback)
+TOAST  📦 bring 4 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 10 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  📦 bring 15 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 7 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  💬 no one can do that: "bring 2 wood" (feedback)
+TOAST  📦 bring 10 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 18 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 3 wood — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 6 wood — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  💬 no one can do that: "bring 4 wood" (feedback)
+TOAST  📦 bring 13 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 7 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 9 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 6 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 9 wood — delivered (feedback)
+TOAST  📦 bring 14 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 10 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+SAY    person-5: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  📦 bring 12 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  🪵 the site still needs 34 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  💬 no one can do that: "bring 6 wood" (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 6 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 5 wood — delivered (feedback)
+TOAST  📦 bring 5 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 3 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 4 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 6 wood — delivered (feedback)
+TOAST  📦 bring 9 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 3 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 5 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-2: "Where are you going?"  [place#question + you + go]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-4: "I'm going there."  [go + there]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-2: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 11 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  📦 bring 4 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 33 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  💬 no one can do that: "bring 4 wood" (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 5 wood — delivered (feedback)
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  📦 bring 10 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 3 wood — delivered (feedback)
+TOAST  💬 no one can do that: "bring 1 wood" (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 9 wood — delivered (feedback)
+TOAST  📦 bring 4 wood — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 32 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  💬 no one can do that: "bring 2 wood" (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-5: "I will build."  [i_me + build.will]
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-3: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  🪵 the site still needs 16 wood — and there is none to fetch (feedback)
+TOAST  🔁 32 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> /stock
+CHEAT  /stock
+> wait 240
+SAY    person-1: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  📦 bring 3 wood — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 7 wood — delivered (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+TOAST  📦 bring 32 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  📦 bring 2 wood — delivered (feedback)
+TOAST  🪚 12 block milled and stored (feedback)
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+TOAST  📦 bring 2 wood — delivered (feedback)
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 17 wood — and there is none to fetch (feedback)
+TOAST  🔁 29 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 6 wood — delivered (feedback)
+SAY    person-2: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-3: "I don't have the block."  [have.not + block]
+TOAST  💬 no one can do that: "bring 1 wood" (feedback)
+TOAST  📦 bring 29 wood — delivered (feedback)
+TOAST  🪵 the site still needs 28 wood — and there is none to fetch (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  🪵 the site still needs 18 wood — and there is none to fetch (feedback)
+TOAST  🔁 28 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-4: "bye-bye"  [goodbye]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the storehouse."  [carry.will + wood + to + storehouse]
+TOAST  🪵 the site still needs 18 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 5 wood — delivered (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 28 wood — delivered (feedback)
+TOAST  📦 bring 5 wood — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 20 wood — and there is none to fetch (feedback)
+TOAST  🔁 26 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-4: "bye-bye"  [goodbye]
+TOAST  📦 bring 26 wood — delivered (feedback)
+TOAST  🪵 the site still needs 18 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 28 wood — and there is none to fetch (feedback)
+TOAST  🔁 18 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 18 wood — delivered (feedback)
+TOAST  🪵 the site still needs 17 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 29 wood — and there is none to fetch (feedback)
+TOAST  🔁 17 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 30 wood — and there is none to fetch (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 17 wood — delivered (feedback)
+TOAST  🪵 the site still needs 16 wood — and there is none to fetch (feedback)
+SAY    person-1: "bye-bye"  [goodbye]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 30 wood — and there is none to fetch (feedback)
+TOAST  🔁 16 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 16 wood — delivered (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+TOAST  🪵 the site still needs 15 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 31 wood — and there is none to fetch (feedback)
+TOAST  🔁 15 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TICK   waited 240.0s.
+> scene
+SCENE  outdoors — 6 thing(s) in view.
+  person-4 (person), here east.
+  person-1 (person), there north.
+  person-5 (person), there west, holding basket-1.
+  person-3 (person), there east.
+  person-2 (person), there south.
+  wood-1 (wood), here west.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, there east, 12 m
+TICK   quiet after 1.0s.
+> /stock
+CHEAT  /stock
+> wait 240
+TOAST  📦 bring 15 wood — delivered (feedback)
+TOAST  🪵 the site still needs 14 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 32 wood — and there is none to fetch (feedback)
+TOAST  🔁 14 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-4: "I don't have the block."  [have.not + block]
+TOAST  📦 bring 14 wood — delivered (feedback)
+TOAST  🪵 the site still needs 13 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 33 wood — and there is none to fetch (feedback)
+TOAST  🔁 13 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-1: "bye-bye"  [goodbye]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 13 wood — delivered (feedback)
+TOAST  🪵 the site still needs 5 wood — and there is none to fetch (feedback)
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 41 wood — and there is none to fetch (feedback)
+TOAST  🔁 5 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 5 wood — delivered (feedback)
+SAY    person-3: "Are you okay?"  [you + ok#question]
+TOAST  📦 bring 12 block — delivered (feedback)
+TOAST  🪵 the site still needs 4 wood — and there is none to fetch (feedback)
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 42 wood — and there is none to fetch (feedback)
+TOAST  🔁 4 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 4 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 17 block (feedback)
+SAY    person-5: "I will build."  [i_me + build.will]
+SAY    person-3: "I don't have wood."  [have.not + wood]
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 46 wood — and there is none to fetch (feedback)
+TOAST  🔁 50 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 46 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 50 wood — delivered (feedback)
+TOAST  🪵 the site still needs 49 wood — and there is none to fetch (feedback)
+SAY    person-1: "bye-bye"  [goodbye]
+TOAST  🪚 17 block milled and stored (feedback)
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 47 wood — and there is none to fetch (feedback)
+TOAST  🔁 49 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 29 block — delivered (feedback)
+TOAST  📦 bring 49 wood — delivered (feedback)
+TOAST  🪵 the site still needs 48 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 48 wood — and there is none to fetch (feedback)
+TOAST  🔁 48 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 48 wood — delivered (feedback)
+TOAST  🪵 the site still needs 47 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 49 wood — and there is none to fetch (feedback)
+TOAST  🔁 47 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+TOAST  📦 bring 47 wood — delivered (feedback)
+TOAST  🪵 the site still needs 46 wood — and there is none to fetch (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 50 wood — and there is none to fetch (feedback)
+TOAST  🔁 46 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  📦 bring 46 wood — delivered (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+TOAST  🪵 the site still needs 45 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 51 wood — and there is none to fetch (feedback)
+TOAST  🔁 45 wood goes to the yard — the other order cannot finish today (feedback)
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> scene
+SCENE  outdoors — 6 thing(s) in view.
+  person-5 (person), here south, holding basket-1.
+  person-3 (person), there east.
+  person-1 (person), there south.
+  person-4 (person), there east.
+  person-2 (person), there south.
+  wood-1 (wood), here west.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, there east, 12 m
+TICK   quiet after 1.0s.
+> wait 240
+SAY    person-4: "bye-bye"  [goodbye]
+TOAST  📦 bring 45 wood — delivered (feedback)
+TOAST  🪵 the site still needs 44 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 52 wood — and there is none to fetch (feedback)
+TOAST  🔁 44 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 44 wood — delivered (feedback)
+TOAST  🪵 the site still needs 43 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 53 wood — and there is none to fetch (feedback)
+TOAST  🔁 43 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 43 wood — delivered (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+TOAST  🪵 the site still needs 42 wood — and there is none to fetch (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 54 wood — and there is none to fetch (feedback)
+TOAST  🔁 42 wood goes to the yard — the other order cannot finish today (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 54 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 42 wood — delivered (feedback)
+TOAST  🪵 the site still needs 41 wood — and there is none to fetch (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 55 wood — and there is none to fetch (feedback)
+TOAST  🔁 41 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 29 block — delivered (feedback)
+TOAST  🪵 the site still needs 56 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 41 wood — delivered (feedback)
+TOAST  🪵 the site still needs 40 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 56 wood — and there is none to fetch (feedback)
+TOAST  🔁 40 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 57 wood — and there is none to fetch (feedback)
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-1: "Where are you going?"  [place#question + you + go]
+TOAST  📦 bring 40 wood — delivered (feedback)
+TOAST  🪵 the site still needs 39 wood — and there is none to fetch (feedback)
+SAY    person-3: "I'm going to the house."  [go + house]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 57 wood — and there is none to fetch (feedback)
+TOAST  🔁 39 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 39 wood — delivered (feedback)
+TOAST  🪵 the site still needs 38 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  🪵 the site still needs 58 wood — and there is none to fetch (feedback)
+TOAST  🔁 38 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 38 wood — delivered (feedback)
+TOAST  🪵 the site still needs 37 wood — and there is none to fetch (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 59 wood — and there is none to fetch (feedback)
+TOAST  🔁 37 wood goes to the yard — the other order cannot finish today (feedback)
+TOAST  📦 bring 29 block — delivered (feedback)
+SAY    person-1: "bye-bye"  [goodbye]
+TOAST  📦 bring 37 wood — delivered (feedback)
+TOAST  🪵 the site still needs 29 wood — and there is none to fetch (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-3: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪵 the site still needs 67 wood — and there is none to fetch (feedback)
+TOAST  🔁 29 wood goes to the yard — the other order cannot finish today (feedback)
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> scene
+SCENE  outdoors — 6 thing(s) in view.
+  person-5 (person), here east, holding basket-1.
+  person-3 (person), here west.
+  person-2 (person), there south.
+  person-4 (person), there east.
+  person-1 (person), there north.
+  wood-1 (wood), here west.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, there east, 12 m
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=19  presses=0  screens=3  sim=1146.0s
+# events: TOAST 346  SAY 229  TICK 10  CHEAT 9  BOARD 3  NOTE 3  SCENE 3  SITE 3  OK 1  EXIT 1  ENTER 1

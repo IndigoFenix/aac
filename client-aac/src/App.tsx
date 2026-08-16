@@ -120,9 +120,43 @@ function MainApp() {
   const aacSignedOut = localStorage.getItem('aac_signed_out') === 'true';
   const authedUser = !error && !aacSignedOut ? authData?.user ?? null : null;
 
+  // synapse_student_id is a bare localStorage value with no notion of WHICH
+  // user picked it. On a shared device, a prior account's selection can
+  // outlive that account's session (e.g. the server session simply expired
+  // instead of going through handleLogout/handleExitStudent, which clear it)
+  // and get inherited by the next login. synapse_student_owner_id records who
+  // made the selection, so a login under a different account clears the
+  // stale student instead of trying — and failing — to load their boards.
+  useEffect(() => {
+    if (!authedUser || !selectedStudentId) return;
+    const storedOwnerId = localStorage.getItem('synapse_student_owner_id');
+    if (storedOwnerId && storedOwnerId !== authedUser.id) {
+      localStorage.removeItem('synapse_student_id');
+      localStorage.removeItem('synapse_classroom_id');
+      localStorage.removeItem('synapse_student_owner_id');
+      setSelectedStudentId(null);
+      setSelectedClassroomId(null);
+    }
+  }, [authedUser?.id]);
+
   // Register this device to the selected student (and re-check the license
   // device limit) on every selection AND on startup with a restored student.
   const deviceReg = useDeviceRegistration(authedUser ? selectedStudentId : null);
+
+  // "You tried to connect to a student with the wrong permissions" must never
+  // strand the app: the server definitively said this account cannot act for
+  // the cached student (typically a stale synapse_student_id left by a
+  // different account on a shared device), so drop the selection and fall
+  // back to the student selector. No deregister call here — it would hit the
+  // same 403.
+  useEffect(() => {
+    if (deviceReg.status !== "denied") return;
+    localStorage.removeItem('synapse_student_id');
+    localStorage.removeItem('synapse_classroom_id');
+    localStorage.removeItem('synapse_student_owner_id');
+    setSelectedStudentId(null);
+    setSelectedClassroomId(null);
+  }, [deviceReg.status]);
 
   const handleLoginSuccess = () => {
     refetch();
@@ -136,6 +170,7 @@ function MainApp() {
     setSelectedClassroomId(null);
     localStorage.removeItem('synapse_student_id');
     localStorage.removeItem('synapse_classroom_id');
+    localStorage.removeItem('synapse_student_owner_id');
     localStorage.removeItem('synapse_user_profile');
     // Mark as signed out locally — do NOT call server /auth/logout
     // so the admin client's session stays alive
@@ -145,6 +180,7 @@ function MainApp() {
 
   const handleStudentSelect = (studentId: string, classroomId?: string | null) => {
     localStorage.setItem('synapse_student_id', studentId);
+    if (authedUser) localStorage.setItem('synapse_student_owner_id', authedUser.id);
     setSelectedStudentId(studentId);
     if (classroomId) {
       localStorage.setItem('synapse_classroom_id', classroomId);
@@ -159,6 +195,7 @@ function MainApp() {
     if (selectedStudentId) void deregisterCurrentDevice(selectedStudentId);
     localStorage.removeItem('synapse_student_id');
     localStorage.removeItem('synapse_classroom_id');
+    localStorage.removeItem('synapse_student_owner_id');
     setSelectedStudentId(null);
     setSelectedClassroomId(null);
   };
@@ -209,7 +246,9 @@ function MainApp() {
   // Step 2.5: device gate — don't start the (expensive) AAC session until this
   // device is confirmed against the student's license device limit. The check
   // fails open on network errors, so offline devices are never locked out.
-  if (deviceReg.status === "checking") {
+  // "denied" holds here too: the effect above is about to clear the student
+  // and re-render into the selector — the AAC session must not start first.
+  if (deviceReg.status === "checking" || deviceReg.status === "denied") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center" dir={direction}>
         <div className="text-center">

@@ -1,0 +1,36 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=39dddfb3+dirty
+# started=2026-08-15T18:17:23.422Z
+# ─────────────────────────────────────────
+> /stock
+CHEAT  /stock
+> wait 30
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  mara came into view here north.
+ENTER  pip came into view here north.
+SAY    pip: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    pip: "I'm happy."  [i_me + happy]
+EXIT   mara left view here west.
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   biscuit left view here south.
+ENTER  mara came into view there west.
+ENTER  pip came into view here west.
+ENTER  orrin came into view here west.
+ENTER  biscuit came into view here south.
+SAY    mara: "I'm happy."  [i_me + happy]
+EXIT   mara left view there west.
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 30.0s.
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=3  presses=0  screens=1  sim=30.5s
+# events: EXIT 7  ENTER 6  SAY 6  CHEAT 2  BOARD 1  NOTE 1  TICK 1

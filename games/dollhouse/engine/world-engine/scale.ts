@@ -31,6 +31,50 @@ export const REAL_TOWN_SPACING_M = 25_000;
  * `townExtentM` then caps by the size the world can actually hold.
  */
 export const REAL_TOWN_EXTENT_M = 450;
+/**
+ * THE TIER ANCHORS — a settlement's declared BUILT extent BY TIER, at real
+ * scale (food-scale-round.md Q3). `REAL_TOWN_EXTENT_M` was never wrong; it was
+ * wrong *applied to every tier*, hamlets included, so a hamlet and a market
+ * town declared the same 450 m body and only the clip law told them apart.
+ *
+ * Content, not physics — the same kind of truth as `REAL_TOWN_EXTENT_M`, which
+ * IS the `town` row (one definition, read here). USER RULING (2026-08-15):
+ * *"Villages are often about 100-300 meters across in typical adventure
+ * games"* — the `village` row is 120 m of radius, 240 m across, dead centre of
+ * that band. A real village's BUILT radius is already ~120 m, so the town BODY
+ * never needed compressing: only the GAP between bodies and the FIELD YIELD
+ * did.
+ */
+export const REAL_TIER_EXTENT_M = {
+  hamlet: 60,
+  village: 120,
+  town: REAL_TOWN_EXTENT_M,
+  city: 1_500,
+} as const;
+
+export type SettlementTier = keyof typeof REAL_TIER_EXTENT_M;
+
+/**
+ * THE GEOMETRIC FLOOR, stated once so no tier is declared under it by
+ * accident: the street tree grows to `gate = extentM − BUILT_MARGIN 46`
+ * (`kernel/town/streets.ts`), and below `PLAZA_R 30` plus two lot pitches the
+ * gate is its own plaza — the tree yields a handful of frontage slots and the
+ * town cannot house anybody. **≈106 m of extent is where a town starts being a
+ * town.**
+ *
+ * MEASURED (food-scale-round step 0, headless `buildTownPlay`, 4 seeds,
+ * startPop 200 / 160 d): extent 60 ⇒ 1-4 slots / 0-1 houses; extent 106 ⇒ 9-12
+ * slots / 5-8 houses; extent 120 ⇒ 12-34 slots / 8-32 houses; extent 150 ⇒
+ * 63-70 slots; extent 208 ⇒ 136-156 slots. The 71 m Earthlike extent of
+ * `earthlike-city-regression.md` sat under this floor, and that is the whole
+ * of that regression.
+ *
+ * ⚖️ THIS IS NOT A FLOOR ON `townExtentM` — see the no-floor law there. It is a
+ * fact about the street tree that the TIER ANCHORS respect: `hamlet 60` is
+ * deliberately below it and must be handled as a CLUSTER OF LOTS with no
+ * street tree, never as a shrunken town.
+ */
+export const STREET_TREE_MIN_EXTENT_M = 106;
 /** A real house takes roughly half a year to raise — the construction
  *  factor's anchor (a structure's relative buildDays are multiples of it). */
 export const REAL_HOUSE_BUILD_DAYS = 180;
@@ -700,9 +744,83 @@ export function serviceRadiusM(
  * 450: the town would swallow four of its neighbours. Distance compression is
  * `gapCompression`'s job, and time compression must not do it by the back
  * door.
+ *
+ * THE 1/360, WRITTEN OUT, because it is the reason the clock stays out
+ * (food-scale-round.md Q1). The compression ratio is not a tuning choice; it
+ * IS `rotation`:
+ *
+ * ```
+ * food-derived one-way reach = walk × hungerPeriodS × ERRAND_SHARE / 2
+ * REAL      : 1.6 × 86 400 × 0.5 / 2 = 34 560 m   (1.38× the 25 km anchor)
+ * DOLLHOUSE : 1.6 ×    240 × 0.5 / 2 =     96 m
+ * ratio     : 34 560 / 96 = 360      ← EXACTLY `rotation`
+ * ```
+ *
+ * The day is compressed 360× while legs (`locomotion 1`) and need-days
+ * (`metabolism 1`) stay real, so EVERY food-PACED distance is 1/360 of its
+ * real self. That is the shrink this function refuses to inherit.
+ *
+ * BUT FOOD DOES ENTER — THROUGH THE SHED, NEVER THROUGH THE DAY. `popCap`
+ * turns the declared lattice into `max(declared, foodShedSpacingM(popCap))`:
+ * how far apart these settlements must stand for each to have LAND enough to
+ * eat. That term is pure AREA — population × acres ÷ arable share — with no
+ * clock in it at all, which is exactly why it is allowed in where
+ * `dailyTravelM` is not. Absent `popCap` the answer is the declared lattice,
+ * byte-identical to every existing caller.
  */
-export function townSpacingM(scale: WorldScale): number {
-  return (REAL_TOWN_SPACING_M * scale.locomotion) / scale.gapCompression;
+export function townSpacingM(scale: WorldScale, popCap?: number): number {
+  const declared = (REAL_TOWN_SPACING_M * scale.locomotion) / scale.gapCompression;
+  if (popCap === undefined || !(popCap > 0)) return declared;
+  return Math.max(declared, foodShedSpacingM(popCap, scale));
+}
+
+/**
+ * Share of a settlement's territory that is FIELD. The rest is wood, pasture,
+ * water and rock — the wilds the resource shed needs, and the reason a town's
+ * hinterland is not a disc of wheat. Earth-temperate anchor (the F4 pattern);
+ * a biome that knows better is the spec's business.
+ */
+export const REAL_ARABLE_FRACTION = 0.25;
+
+/**
+ * Share of its arable territory a settlement keeps UNPLOUGHED — lean-season
+ * slack, which is what makes a granary worth building rather than mandatory to
+ * survive. Sized against `REAL_LEAN_FRACTION`: a third of the lean season's
+ * bite, carried as land rather than as store.
+ */
+export const REAL_FOOD_HEADROOM = 0.3;
+
+/**
+ * THE FOOD SHED: metres between neighbouring settlements of `pop` souls at
+ * which each still has the LAND to feed itself, at this world's conversion
+ * dial (food-scale-round.md Q3).
+ *
+ * ```
+ * territory   = spacing²                       (a site owns its lattice cell)
+ * field need  = pop × farmAreaPerPersonM2(tier, resourceCompression) × (1 + σ)
+ * usable      = territory × REAL_ARABLE_FRACTION × (1 − REAL_FOOD_HEADROOM)
+ * ⇒ spacing   = sqrt(field need / (arable × (1 − headroom)))
+ * ```
+ *
+ * ⚖️ THE FAMINE TRAP BECOMES UNREPRESENTABLE. A world that declares a tight gap
+ * and a stingy `resource_compression` no longer starves — the shed pushes its
+ * towns apart until they can eat. Same inversion `serviceRadiusM` performs one
+ * rung down: the need sizes the space, the space is not hand-tuned and then
+ * hoped over.
+ *
+ * ⚖️ σ IS THE PRODUCER'S, NOT A DIAL (`REAL_SURPLUS_FRAC`) — `staple` here,
+ * because a settlement's shed is sized by its staple, and `resource_compression`
+ * is applied ONCE inside `farmAreaPerPersonM2` and never multiplied into σ.
+ */
+export function foodShedSpacingM(
+  pop: number,
+  scale: WorldScale,
+  tier: FarmTechTier = "ancient",
+  surplusFrac: number = REAL_SURPLUS_FRAC.staple,
+): number {
+  if (!(pop > 0)) return 0;
+  const needM2 = pop * farmAreaPerPersonM2(tier, scale.resourceCompression) * (1 + surplusFrac);
+  return Math.sqrt(needM2 / (REAL_ARABLE_FRACTION * (1 - REAL_FOOD_HEADROOM)));
 }
 
 /**
@@ -754,7 +872,31 @@ export function townExtentM(
   scale: WorldScale,
   spacingM: number = townSpacingM(scale),
 ): number {
-  return Math.min(REAL_TOWN_EXTENT_M, (spacingM * (1 - OPEN_COUNTRY_SHARE)) / 2);
+  return tierExtentM("town", scale, spacingM);
+}
+
+/**
+ * THE TOWN EXTENT, BY TIER — `townExtentM`'s clip law applied to the tier's own
+ * declared body (`REAL_TIER_EXTENT_M`) instead of to the market town's.
+ * `townExtentM` IS `tierExtentM("town", …)`, so there is still exactly one clip
+ * and one place the extent is decided.
+ *
+ * A hamlet is not a market town: before the tier anchors, every settlement on a
+ * world declared 450 m and only the clip law (a physics term, about roads) told
+ * them apart — so a compressed world shrank its CITY to hamlet size while its
+ * hamlets stayed 450. The tier is CONTENT ("how big is this kind of place"),
+ * the clip is PHYSICS ("how big can this world hold"), and the answer is the
+ * smaller of the two, as it always was.
+ *
+ * The geometric floor lives at the TIER (see `STREET_TREE_MIN_EXTENT_M`), never
+ * here: no floor under the clip, for the reason stated above.
+ */
+export function tierExtentM(
+  tier: SettlementTier,
+  scale: WorldScale,
+  spacingM: number = townSpacingM(scale),
+): number {
+  return Math.min(REAL_TIER_EXTENT_M[tier], (spacingM * (1 - OPEN_COUNTRY_SHARE)) / 2);
 }
 
 // ------------------------------------------------------------ farmland realism
@@ -800,6 +942,44 @@ export function farmAcresPerPerson(tier: FarmTechTier, conversionDial = 1): numb
  *  actually wants. */
 export function farmAreaPerPersonM2(tier: FarmTechTier, conversionDial = 1): number {
   return farmAcresPerPerson(tier, conversionDial) * M2_PER_ACRE;
+}
+
+/**
+ * ITEMS one square metre of crop hands over per day — the FIELD'S MINT RATE
+ * (food-scale-round.md E-round §E2②), and the closed form that turns the field
+ * from a coloured slab into a resource source with a real output.
+ *
+ * ```
+ * yieldPerM2Daily = 1 / ( farmAreaPerPersonM2(tier, dial) × satiationDays )
+ *                 = 1 / ( 2 428 × 0.2 )  =  1 carrot per 485.6 m² per day
+ * ```
+ *
+ * ⚖️ IT IS THE TWO ANCHORS DIVIDED, NOT A THIRD NUMBER. `farmAreaPerPersonM2`
+ * says how much land feeds one person for a day; `satiationDays` says how much
+ * of that person-day ONE ITEM is (`kernel/town/goods-kinds.ts satiationDaysOf`,
+ * passed in rather than imported — this module sits under the glyph
+ * vocabulary). Their product is "land per item per day", and this is its
+ * reciprocal. Nothing here is tuned.
+ *
+ * THE σ IDENTITY, which is what makes it safe to size a region this way: a
+ * field sized for `pop` at surplus σ is `pop × A × (1 + σ)` m², so its output
+ * is `pop × (1 + σ) / satiationDays` items/day against a table demand of
+ * `pop / satiationDays` — the ratio is EXACTLY `1 + σ`, at any dial, any tier
+ * and any crop. The Q3 village: 1 092 651 m² ÷ 485.6 = 2 250 items/day against
+ * 375 ÷ 0.2 = 1 875 wanted, and 2 250 / 1 875 = 1.20 = σ.
+ *
+ * ⚖️ GROWTH TIMING IS NOT THIS. How fast a crop ripens rides `generation` (the
+ * ecosystem-wide life-acceleration dial every creature ages on); only YIELD PER
+ * ACT reads `resource_compression`. Growing faster and yielding more are
+ * orthogonal facts about a compressed world — see the dial law above.
+ */
+export function yieldPerM2Daily(
+  tier: FarmTechTier,
+  scale: WorldScale,
+  satiationDays: number,
+): number {
+  if (!(satiationDays > 0)) return 0;
+  return 1 / (farmAreaPerPersonM2(tier, scale.resourceCompression) * satiationDays);
 }
 
 // ------------------------------------------------------------ σ, THE SURPLUS
@@ -1112,4 +1292,89 @@ export function scaleWarnings(scale: WorldScale): string[] {
     );
   }
   return out;
+}
+
+// ------------------------------------------------------ transaction pacing
+//
+// THE GENERIC TRANSACTION-PACING SEAT.
+//
+// USER LAW (2026-08-13), verbatim: *"Food per day isn't meant to be a
+// constant, and other forms of barter aren't either - they are supposed to
+// emerge from the needs of the entities performing the transaction, whether
+// they are people, people and livestock, caravans, cities, countries, or
+// otherwise. So... these constants probably SHOULD be merged, or more
+// accurately, tied to a generic variable that is given specific values by
+// the transaction in question."*
+//
+// WHY THIS LIVES HERE, NOT IN kernel/town. `barter.ts`'s standing-route
+// shipment leg (`BARTER_LEG_DAY_FRAC`) and `trade.ts`'s abstract caravan's
+// in-town visit budget (the day-fraction its speed is sized against) were two
+// separately-declared `0.35`s — the same number, meaning the same thing
+// (how much of a street day one shipment's travel/dwell eats), typed twice
+// because neither module could import the other's home without closing
+// barter → transfer → trade into a cycle. `scale.ts` sits BELOW that whole
+// chain (both `barter.ts` and `trade.ts` already import it directly, and it
+// imports nothing from `kernel/town`), so it is the one place both call
+// sites can reach without adding an edge either has to worry about.
+// `kernel/town/pricing.ts` was the first candidate — the codebase's own
+// "one-formula-home" for cross-rung pricing seats — but it transitively
+// depends on `trade.ts` already (`pricing.ts` → `scope-shape.ts` →
+// `goods-kinds.ts` → `import { RARE_IMPORT_KIND } from "./trade.js"`, a real
+// value import), so `trade.ts` importing `pricing.ts` would close exactly
+// the cycle this seat exists to avoid. `scale.ts` has no imports of its own
+// and is the one module already legal on both sides of the chain.
+//
+// ⚖️ THE VALUE BELONGS TO THE TRANSACTION AND ITS PARTIES, not the clock.
+// A day-fraction like this is not a fact about the WORLD (unlike
+// `dayLengthS` or `metabolism` above it in this file) — it is a fact about
+// WHO IS TRADING: a caravan's own carry capacity and the hunger of its
+// porters, a household's own time-elasticity between a chore and a errand, a
+// city's own logistics and standing garrisons, a country's own diplomatic
+// patience. Two people trading a basket of eggs across a fence do not
+// share a shipment leg with a caravan crossing a kingdom, even though both
+// are "a transaction" — the FRACTION OF A DAY either one spends in the act
+// is a property of the entities doing it, not a constant the calendar hands
+// down.
+//
+// ⚖️ ENTITY-DERIVED VALUES ARRIVE WITH THE DETAILED SUPPLY-AND-DEMAND
+// ECONOMICS, not before, and not as a guess. A caravan's real pacing wants
+// its own carry-capacity and appetite (the Ox Paradox this file's
+// `carryDays` already prices); a city's wants its own granary and
+// population; a nation's wants its own logistics network. None of that
+// exists yet at the transaction rung, so v1 of this seat answers every
+// `kind` with the SAME shipped default — `TRANSACTION_DAY_FRAC_DEFAULT`,
+// bit-identical to the two `0.35`s it replaces. This seat changes WHO ASKS
+// (both call sites now name their transaction kind explicitly), never WHAT
+// IS ANSWERED, until an entity actually has needs to derive from.
+//
+// ⚖️ AND `FOOD_DAY_SEC` ITSELF IS INDICTED THE SAME WAY. The street day a
+// transaction's fraction multiplies (`goods.ts` `FOOD_DAY_SEC`) is its own
+// flat, undeclared constant — every shipment leg and every caravan visit
+// answers "how long is a day" with one hard-coded number regardless of who
+// is asking, exactly the fault this seat was built to fix one rung up. That
+// is RECORDED here, not fixed: `FOOD_DAY_SEC` is unquestioned by this round,
+// its own future seat for a later pass.
+
+/** Every transaction kind this seat answers today — barter.ts's standing
+ *  shipment leg and trade.ts's abstract caravan visit. Both anchor to the
+ *  SAME shipped default until either has entity-derived needs to read
+ *  instead (see the section header above). */
+export type TransactionKind = "shipment-leg" | "caravan-visit";
+
+/** The flat day-fraction every transaction kind anchors to today — the ONE
+ *  number `BARTER_LEG_DAY_FRAC` (barter.ts) and the caravan visit budget
+ *  (trade.ts, sizing the abstract caravan's on-street speed) separately
+ *  declared before this seat existed. */
+export const TRANSACTION_DAY_FRAC_DEFAULT = 0.35;
+
+/**
+ * THE SEAT: a transaction's day-fraction, keyed by what kind of transaction
+ * it is. v1 answers every kind with the shipped default — bit-identical to
+ * the two constants this merges — because no `kind` yet carries the
+ * entities' own needs, time-elasticity or carry arrangements to derive a
+ * real answer from (see the section header for what changes when one does).
+ */
+export function transactionDayFrac(txn: { kind: TransactionKind }): number {
+  void txn; // v1: every kind reads the same anchor — see the header above.
+  return TRANSACTION_DAY_FRAC_DEFAULT;
 }
