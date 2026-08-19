@@ -245,7 +245,7 @@ function bootQuestGame(
       objectivesEl.textContent = "";
       for (const o of objectives) {
         const chip = el("span", `quest-chip${o.locked ? " locked" : ""}`, objectivesEl);
-        const node = session?.ctx.nodeById.get(o.nodeId);
+        const node = session?.ctx?.nodeById.get(o.nodeId);
         chip.textContent = `${objectiveEmoji(node, iconOf)}${o.locked ? "🔒" : ""}`;
       }
     },
@@ -262,7 +262,7 @@ function bootQuestGame(
       const burst = el("div", "quest-win-burst", winEl);
       burst.textContent = "🎉";
       const title = el("div", "quest-win-title", winEl);
-      title.textContent = session?.game.root.outro ?? session?.game.meta.title ?? "You did it!";
+      title.textContent = session?.game?.root.outro ?? session?.meta.title ?? "You did it!";
       const replay = el("button", "quest-replay", winEl);
       replay.textContent = "🔁 Play again";
       replay.addEventListener("click", () => host?.replay());

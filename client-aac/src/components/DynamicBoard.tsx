@@ -5,7 +5,7 @@ import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { ButtonBusyIndicator } from "@/components/ButtonBusyIndicator";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowBack, forwardTriangle } from "@/components/ui/directional-icons";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveStaticIconPath } from "@/lib/utils";
 import { Glyph } from "@/components/Glyph";
@@ -18,10 +18,36 @@ import { IntentCoreMark } from "@/components/IntentCoreMark";
 import { ratioLevel } from "@shared/button-sizing";
 import { restSpaceRatio, type RestSpace } from "@shared/button-shape";
 import { pageGrid } from "@shared/board-grid";
+// WHAT IS IN EACH CELL — placement, patching and the fade hand-off — is decided
+// in one pure module so it can be tested without a DOM. This component owns the
+// React state and the fade TIMER; the rules live there.
+import {
+  applyBoardPatch,
+  applySymbolUpdate,
+  BLANK_SLOT,
+  layoutSlots,
+  resolveFades,
+  type SlotState,
+} from "@/lib/board-slots";
+// Page navigation WITHIN this board (the link buttons, Back, Home). Distinct
+// from lib/board-history, which steps across whole AI boards.
+import {
+  canGoBackPage,
+  emptyPageNav,
+  initPageNav,
+  pageNavReducer,
+  resolvePage,
+  type PageNav,
+  type PageNavAction,
+} from "@/lib/page-nav";
+// WHAT a press means (navigate / launch / actuate / speak), as a priority-
+// ordered classification. The effects stay here; only the decision moves.
+import { pressIntentFor, shouldSpeakLocally } from "@/lib/press-intent";
 import { ShapedButton } from "@client-shared/board/ShapedButton";
 import type { SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import { ProceduralFace, NEUTRAL_FACE } from "@shared/social-bot/ProceduralFace";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
+import { getVocabularyItem } from "@shared/glyph-registry";
 import HomeActionConfirm, { type PendingHomeAction } from "@/components/HomeActionConfirm";
 import { confirmPlacementFor, type ConfirmPlacement } from "@/lib/home-confirm-placement";
 // One estimator for "how long will this utterance take" — the same one the
@@ -82,7 +108,11 @@ interface DynamicBoardProps {
    *  round-trips built-in apps so their startup params resolve (open_app);
    *  `onRequestBoardOpen` asks the server to load a pre-built board (open_board). */
   onLaunchApp?: (appId: string, appData?: any) => void;
-  onRequestAppOpen?: (appId: string) => void;
+  /** `appData` carries what the app was opened FOR (a picture search's query).
+   *  Typed here because the PROP path is the working one on the AAC — the board
+   *  renders outside the provider, so the context fallback is null and a
+   *  signature that stops at `appId` drops the query silently. */
+  onRequestAppOpen?: (appId: string, appData?: any) => void;
   onRequestBoardOpen?: (boardKey: string) => void;
   /** Fire one of the student's curated smart-home actions (run_home_action).
    *  The command phrase is SPOKEN here, in place — this callback only reports
@@ -189,15 +219,12 @@ function CornerVoids({
   return <>{voids}</>;
 }
 
-/** Slot state for the grid */
-type SlotState =
-  | { type: "occupied"; button: BoardButton; anim: "stable" | "entering" }
-  | { type: "fading"; button: BoardButton; replaceWith?: BoardButton }
-  | { type: "blank" };
-
 const DEFAULT_ROWS = 3;
 const DEFAULT_COLS = 4;
-const BLANK_SLOT: SlotState = { type: "blank" };
+
+/** How long a removed button stays on screen fading out, holding its cell.
+ *  Must outlast the exit animation below, or a cell is reused mid-fade. */
+const FADE_MS = 1500;
 
 /** Returns true if the string should be rendered as text (emoji or single character/number) rather than a Font Awesome icon class */
 function isDisplayableIcon(str: string): boolean {
@@ -235,22 +262,6 @@ function getEmojiForLabel(label: string): string {
 // so the yes/no auto-coloring applies uniformly across surfaces.
 function getButtonColor(color?: string, glyph?: string): string {
   return resolveButtonBackground(color, glyph);
-}
-
-/** Create a BoardButton from a patch add entry */
-function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: string; glyph?: string; sentence?: string }, index: number): BoardButton {
-  return {
-    id: `btn-patch-${Date.now()}-${index}`,
-    label: entry.label,
-    spokenText: entry.label,
-    ...(entry.sentence ? { sentence: entry.sentence } : {}),
-    ...(entry.glyph ? { glyph: entry.glyph } : {}),
-    row: 0,
-    col: 0,
-    iconRef: entry.iconRef,
-    symbolPath: entry.symbolPath,
-    action: { type: "speak", text: entry.label },
-  } as BoardButton;
 }
 
 export default function DynamicBoard({
@@ -297,17 +308,17 @@ export default function DynamicBoard({
   // Icon/text sizing based on ratio level
   const level = ratioLevel(iconTextRatio);
 
-  // Multi-page navigation state
-  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
-  const [pageHistory, setPageHistory] = useState<string[]>([]);
+  // Multi-page navigation state. The RULES live in lib/page-nav (pure); this
+  // holds the state and fires onNavigate when the reducer says we landed.
+  const [pageNav, setPageNav] = useState<PageNav>(emptyPageNav);
+  const currentPageId = pageNav.currentPageId;
   const isMultiPage = (board?.pages?.length || 0) > 1;
 
   // Grid dimensions: the page's own `layout`, else the board grid, else our
   // defaults. Resolved through the shared `pageGrid` so the clinician editor,
   // the call mirror and the AI's edit guard cannot disagree about which cells
   // this page has — a disagreement means buttons the student never sees.
-  const activePageForGrid =
-    (currentPageId ? board?.pages?.find((p) => p.id === currentPageId) : undefined) || board?.pages?.[0];
+  const activePageForGrid = resolvePage(board, pageNav) ?? undefined;
   const { rows: gridRows, cols: gridCols } = pageGrid(board, activePageForGrid, {
     rows: DEFAULT_ROWS,
     cols: DEFAULT_COLS,
@@ -365,9 +376,7 @@ export default function DynamicBoard({
   useEffect(() => {
     if (board && board !== prevBoardRef.current) {
       // Different board object — reset navigation
-      const firstPageId = board.pages?.[0]?.id || null;
-      setCurrentPageId(firstPageId);
-      setPageHistory([]);
+      setPageNav(initPageNav(board));
       prevBoardRef.current = board;
       // An unanswered confirm belongs to the board it was raised from. A new
       // board means the question is stale — drop it rather than let a Yes
@@ -377,14 +386,7 @@ export default function DynamicBoard({
   }, [board]);
 
   // Get current page based on navigation state
-  const getCurrentPage = useCallback(() => {
-    if (!board?.pages?.length) return null;
-    if (currentPageId) {
-      const found = board.pages.find(p => p.id === currentPageId);
-      if (found) return found;
-    }
-    return board.pages[0];
-  }, [board, currentPageId]);
+  const getCurrentPage = useCallback(() => resolvePage(board, pageNav), [board, pageNav]);
 
   // Full board update — from board prop or page navigation
   useEffect(() => {
@@ -394,28 +396,8 @@ export default function DynamicBoard({
     }
 
     const page = getCurrentPage();
-    const buttons: BoardButton[] = page?.buttons || [];
-
-    // Use row/col placement if buttons have position data (e.g. imported boards),
-    // otherwise fall back to sequential placement (e.g. AI-generated boards)
-    const hasPositions = buttons.length > 0 && buttons.some(b => b.row != null && b.col != null);
-
-    setSlots(
-      Array.from({ length: totalSlots }, (_, i): SlotState => {
-        if (hasPositions) {
-          const row = Math.floor(i / gridCols);
-          const col = i % gridCols;
-          const button = buttons.find(b => b.row === row && b.col === col);
-          if (button) {
-            return { type: "occupied", button, anim: "entering" };
-          }
-        } else if (i < buttons.length) {
-          return { type: "occupied", button: buttons[i], anim: "entering" };
-        }
-        return BLANK_SLOT;
-      })
-    );
-  }, [board, currentPageId, totalSlots, getCurrentPage]);
+    setSlots(layoutSlots(page?.buttons || [], { rows: gridRows, cols: gridCols }));
+  }, [board, currentPageId, totalSlots, getCurrentPage, gridRows, gridCols]);
 
   // Patch update — from boardPatch prop (detection)
   useEffect(() => {
@@ -425,92 +407,23 @@ export default function DynamicBoard({
     const { add, remove } = boardPatch;
     if (add.length === 0 && remove.length === 0) return;
 
-    const removeLower = new Set(remove.map((r) => r.toLowerCase().trim()));
+    setSlots((prev) => applyBoardPatch(prev, boardPatch));
 
-    setSlots((prev) => {
-      const next = [...prev];
-
-      // Step 1: Mark buttons to remove as fading
-      for (let i = 0; i < next.length; i++) {
-        const slot = next[i];
-        if (
-          (slot.type === "occupied") &&
-          removeLower.has(slot.button.label.toLowerCase().trim())
-        ) {
-          next[i] = { type: "fading", button: slot.button };
-        }
-      }
-
-      // Step 1.5: Deduplicate — filter out buttons that already exist on the board
-      // (same label AND same icon). This prevents the AI from adding duplicates.
-      const existingButtons = new Set(
-        next
-          .filter((s): s is { type: "occupied"; button: BoardButton; anim: "stable" | "entering" } => s.type === "occupied")
-          .map(s => `${s.button.label.toLowerCase().trim()}|${(s.button.iconRef || "").toLowerCase().trim()}`),
-      );
-      const dedupedAdd = add.filter(
-        btn => !existingButtons.has(`${btn.label.toLowerCase().trim()}|${(btn.iconRef || "").toLowerCase().trim()}`),
-      );
-
-      // Step 2: Place new buttons in blank slots first
-      let addIndex = 0;
-      for (let i = 0; i < next.length && addIndex < dedupedAdd.length; i++) {
-        if (next[i].type === "blank") {
-          next[i] = {
-            type: "occupied",
-            button: makeBoardButton(dedupedAdd[addIndex], addIndex),
-            anim: "entering",
-          };
-          addIndex++;
-        }
-      }
-
-      // Step 3: Queue remaining new buttons as replacements for fading slots
-      for (let i = 0; i < next.length && addIndex < dedupedAdd.length; i++) {
-        if (next[i].type === "fading" && !(next[i] as any).replaceWith) {
-          next[i] = {
-            type: "fading",
-            button: (next[i] as { type: "fading"; button: BoardButton }).button,
-            replaceWith: makeBoardButton(dedupedAdd[addIndex], addIndex),
-          };
-          addIndex++;
-        }
-      }
-
-      return next;
-    });
-
-    // After fade animation completes: replace fading slots with queued buttons or blank.
-    // Only reset timer when this patch includes removes (which creates new fading slots).
-    // Add-only patches must NOT clear an existing timer — otherwise fading slots from a
-    // previous remove would never complete their transition (stuck invisible forever).
+    // After the fade animation completes, hand the vacated cells over.
+    // Only reset the timer when this patch includes removes (which is what
+    // creates fading slots). An add-only patch must NOT clear an existing timer
+    // — fading slots from a previous remove would then never complete their
+    // transition and would sit invisible forever.
     if (remove.length > 0) {
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-      fadeTimerRef.current = setTimeout(() => {
-        setSlots((prev) =>
-          prev.map((s): SlotState => {
-            if (s.type !== "fading") return s;
-            if (s.replaceWith) {
-              return { type: "occupied", button: s.replaceWith, anim: "entering" };
-            }
-            return BLANK_SLOT;
-          })
-        );
-      }, 1500);
+      fadeTimerRef.current = setTimeout(() => setSlots(resolveFades), FADE_MS);
     }
   }, [boardPatch]);
 
   // Symbol update — auto-generated symbol is ready, update the button's image
   useEffect(() => {
     if (!symbolUpdate) return;
-    const { buttonLabel, symbolPath } = symbolUpdate;
-    setSlots((prev) =>
-      prev.map((slot) => {
-        if (slot.type !== "occupied" && slot.type !== "fading") return slot;
-        if (slot.button.label.toLowerCase() !== buttonLabel.toLowerCase()) return slot;
-        return { ...slot, button: { ...slot.button, symbolPath } };
-      })
-    );
+    setSlots((prev) => applySymbolUpdate(prev, symbolUpdate));
   }, [symbolUpdate]);
 
   // Cleanup timer on unmount
@@ -520,43 +433,22 @@ export default function DynamicBoard({
     };
   }, []);
 
-  // Navigate to a linked page
-  const navigateToPage = useCallback((targetPageId: string) => {
-    if (!board?.pages) return;
-    const targetPage = board.pages.find(p => p.id === targetPageId);
-    if (!targetPage) return;
-
-    // Push current page to history
-    if (currentPageId) {
-      setPageHistory(prev => [...prev, currentPageId]);
+  /** Run one navigation through the pure reducer, then tell the parent where
+   *  the student ended up. `landed` is null for a no-op, which is exactly when
+   *  the server must NOT be told anything moved. */
+  const navigate = useCallback((action: PageNavAction) => {
+    // Reduced against the CURRENT value rather than inside a setState updater:
+    // notifying the parent is a side effect, and React may run an updater twice.
+    const { nav, landed, fallbackLabelKey } = pageNavReducer(pageNav, board, action);
+    if (nav !== pageNav) setPageNav(nav);
+    if (landed) {
+      onNavigate?.(landed.id, landed.name || t(fallbackLabelKey), landed.buttons || []);
     }
-    setCurrentPageId(targetPageId);
+  }, [pageNav, board, onNavigate, t]);
 
-    // Notify parent about navigation
-    onNavigate?.(targetPageId, targetPage.name || t("builder.untitledPage"), targetPage.buttons || []);
-  }, [board, currentPageId, onNavigate]);
-
-  // Go back to previous page
-  const navigateBack = useCallback(() => {
-    if (pageHistory.length === 0) return;
-    const prevPageId = pageHistory[pageHistory.length - 1];
-    setPageHistory(prev => prev.slice(0, -1));
-    setCurrentPageId(prevPageId);
-
-    const prevPage = board?.pages?.find(p => p.id === prevPageId);
-    if (prevPage) {
-      onNavigate?.(prevPageId, prevPage.name || t("builder.untitledPage"), prevPage.buttons || []);
-    }
-  }, [pageHistory, board, onNavigate]);
-
-  // Go to home (first) page
-  const navigateHome = useCallback(() => {
-    const firstPage = board?.pages?.[0];
-    if (!firstPage) return;
-    setPageHistory([]);
-    setCurrentPageId(firstPage.id);
-    onNavigate?.(firstPage.id, firstPage.name || t("quickActions.home"), firstPage.buttons || []);
-  }, [board, onNavigate]);
+  const navigateToPage = useCallback((targetPageId: string) => navigate({ type: "to", pageId: targetPageId }), [navigate]);
+  const navigateBack = useCallback(() => navigate({ type: "back" }), [navigate]);
+  const navigateHome = useCallback(() => navigate({ type: "home" }), [navigate]);
 
   // Handle AI button press — navigate to the target page
   const lastAiPressRef = useRef(aiButtonPress);
@@ -656,109 +548,89 @@ export default function DynamicBoard({
       console.log("[DynamicBoard] click:", button.label, "| buttonType:", (button as any).buttonType, "| action:", button.action?.type ?? "(none)");
       const action = button.action;
 
-      // Board-to-board navigation (constructed boards only). If a handler is
-      // wired and the button targets another saved board, load it and stop —
-      // no speak, no page nav. On the dynamic path (no handler) this falls
-      // through to normal handling.
-      if (action?.type === "link" && action.toBoardId && onNavigateToBoard) {
-        onNavigateToBoard(action.toBoardId);
-        return;
-      }
-
-      // Handle navigation actions
-      if (action?.type === "link" && action.toPageId) {
-        navigateToPage(action.toPageId);
-        return;
-      }
-      if (action?.type === "back") {
-        navigateBack();
-        return;
-      }
-      if (action?.type === "home") {
-        navigateHome();
-        return;
-      }
-
-      // Handle exit action or exitBoard flag — send to server for unloading
-      if (action?.type === "exit" || (button as any).exitBoard) {
-        onButtonClick(button, button.label);
-        return;
-      }
-
-      // Handle open_website action — open the in-frame browser app. Prefer the
-      // prop (the AAC board renders outside the DualAgentProvider, so the
-      // optional context is null here); fall back to context for in-provider use.
-      if (action?.type === "open_website" && action.url) {
-        const launch = onLaunchApp ?? dualAgent?.launchApp;
-        console.log("[DynamicBoard] open_website press:", action.url, "| via", onLaunchApp ? "prop" : dualAgent?.launchApp ? "context" : "NONE (no handler!)");
-        launch?.("browser", { url: action.url, label: button.label });
-        return;
-      }
-
-      // Handle open_app action — launch a built-in app / custom game. Route
-      // through requestAppOpen so apps that declare startup params get them
-      // resolved server-side before the app_open payload comes back.
-      if (action?.type === "open_app" && action.appId) {
-        const open = onRequestAppOpen ?? dualAgent?.requestAppOpen;
-        console.log("[DynamicBoard] open_app press:", action.appId, "| via", onRequestAppOpen ? "prop" : dualAgent?.requestAppOpen ? "context" : "NONE (no handler!)");
-        open?.(action.appId);
-        return;
-      }
-
-      // Handle open_board action — load a pre-built board the AI offered. The
-      // server owns the key→board lookup and the "which board is loaded"
-      // session state, so this always round-trips; the board arrives back as a
-      // normal set_board message.
-      if (action?.type === "open_board" && action.boardKey) {
-        const open = onRequestBoardOpen ?? dualAgent?.requestBoardOpen;
-        console.log("[DynamicBoard] open_board press:", action.boardKey, "| via", onRequestBoardOpen ? "prop" : dualAgent?.requestBoardOpen ? "context" : "NONE (no handler!)");
-        open?.(action.boardKey);
-        return;
-      }
+      // WHAT the press means is decided in lib/press-intent (pure, priority
+      // ordered); this switch only carries it out. `canNavigateToBoard` is what
+      // makes a `toBoardId` link board navigation on the constructed path and
+      // an ordinary button on the AI's dynamic one, where no loader is wired.
+      const intent = pressIntentFor(button, { canNavigateToBoard: !!onNavigateToBoard });
 
       // Respect the header audio-output mute: it silences EVERYTHING from this
       // window, including the immediate local button speech below (the streaming
       // player is already gated by audioEnabled; this Web-Speech path was the leak).
       const outputMuted = dualAgent?.audioEnabled === false;
 
-      // Handle run_home_action — a curated smart-home trigger the clinician
-      // authored. The button never navigates and never opens anything: the
-      // student stays right here while `actuateHomeAction` fires it (see there
-      // for what actuating means and why it speaks).
-      //
-      // Actions the clinician flagged `requiresConfirmation` do NOT actuate on
-      // this press. It raises the confirm step instead — nothing is spoken and
-      // nothing is reported until the student answers Yes, at which point the
-      // press carries `confirmed: true` and the server will execute it. A No,
-      // or no answer at all, ends here: no speech, no report, no actuation.
-      if (action?.type === "run_home_action" && action.actionId) {
-        if (action.requiresConfirmation) {
-          console.log("[DynamicBoard] run_home_action press:", action.actionId, "| awaiting confirmation");
-          setPendingHomeAction({ action, button, ...confirmPlacement(index) });
+      switch (intent.kind) {
+        case "navigate-board":
+          onNavigateToBoard?.(intent.boardId);
+          return;
+        case "navigate-page":
+          navigateToPage(intent.pageId);
+          return;
+        case "page-back":
+          navigateBack();
+          return;
+        case "page-home":
+          navigateHome();
+          return;
+        // Exit / exitBoard — send to the server for unloading.
+        case "exit":
+          onButtonClick(button, button.label);
+          return;
+        // Open the in-frame browser app. Prefer the prop (the AAC board renders
+        // outside the DualAgentProvider, so the optional context is null here);
+        // fall back to context for in-provider use. Same pattern for the two below.
+        case "open-website": {
+          const launch = onLaunchApp ?? dualAgent?.launchApp;
+          console.log("[DynamicBoard] open_website press:", intent.url, "| via", onLaunchApp ? "prop" : dualAgent?.launchApp ? "context" : "NONE (no handler!)");
+          launch?.("browser", { url: intent.url, label: intent.label });
           return;
         }
-        actuateHomeAction(action, button);
-        return;
+        // Launch a built-in app / custom game. Routed through requestAppOpen so
+        // apps that declare startup params get them resolved server-side before
+        // the app_open payload comes back.
+        case "open-app": {
+          const open = onRequestAppOpen ?? dualAgent?.requestAppOpen;
+          console.log("[DynamicBoard] open_app press:", intent.appId, "| via", onRequestAppOpen ? "prop" : dualAgent?.requestAppOpen ? "context" : "NONE (no handler!)");
+          open?.(intent.appId, intent.appData);
+          return;
+        }
+        // Load a pre-built board the AI offered. The server owns the key→board
+        // lookup and the "which board is loaded" session state, so this always
+        // round-trips; the board arrives back as a normal set_board message.
+        case "open-board": {
+          const open = onRequestBoardOpen ?? dualAgent?.requestBoardOpen;
+          console.log("[DynamicBoard] open_board press:", intent.boardKey, "| via", onRequestBoardOpen ? "prop" : dualAgent?.requestBoardOpen ? "context" : "NONE (no handler!)");
+          open?.(intent.boardKey);
+          return;
+        }
+        // A curated smart-home trigger. The button never navigates and never
+        // opens anything: the student stays right here while `actuateHomeAction`
+        // fires it (see there for what actuating means and why it speaks).
+        //
+        // Actions flagged `requiresConfirmation` do NOT actuate on this press.
+        // It raises the confirm step instead — nothing is spoken and nothing is
+        // reported until the student answers Yes, at which point the press
+        // carries `confirmed: true` and the server will execute it. A No, or no
+        // answer at all, ends here: no speech, no report, no actuation.
+        case "home-action":
+          if (intent.requiresConfirmation) {
+            console.log("[DynamicBoard] run_home_action press:", intent.actionId, "| awaiting confirmation");
+            setPendingHomeAction({ action: action!, button, ...confirmPlacement(index) });
+            return;
+          }
+          actuateHomeAction(action!, button);
+          return;
+        case "speak":
+          // Guessing-mode SUGGESTION buttons land here too, and are voiced by
+          // home's handler instead (it speaks even during an AI session, where
+          // local speech is otherwise suppressed) — hence `meta`. They then
+          // route through onButtonClick to pressSuggestion rather than interpret.
+          if (shouldSpeakLocally(intent, { suppressLocalSpeech, outputMuted })) {
+            speak(intent.text, language, voiceType as any);
+          }
+          onButtonClick(button, intent.text);
+          return;
       }
-
-      // Guessing-mode SUGGESTION buttons fall through to the default path
-      // below: speak() for local feedback, then onButtonClick → home's
-      // handleBoardButtonClick, which routes them to pressSuggestion (rather
-      // than interpret). Routing through the same prop as every other button
-      // avoids DynamicBoard's optional context, which is the working path.
-
-      // Default: speak action. Suggestion buttons are voiced by home's
-      // handler instead (it speaks even during an AI session, where local
-      // speech is otherwise suppressed). Word Finder and More buttons are
-      // mode/meta actions — never voice them. Skip local speak in those
-      // cases to avoid double speech / spurious utterances.
-      const textToSpeak = button.spokenText || button.label;
-      const bt = (button as any).buttonType;
-      const isMeta = bt === "suggestion" || bt === "wordfinder" || bt === "more";
-      if (!suppressLocalSpeech && !isMeta && !outputMuted) {
-        speak(textToSpeak, language, voiceType as any);
-      }
-      onButtonClick(button, textToSpeak);
     },
     [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen, onRequestBoardOpen, actuateHomeAction, confirmPlacement]
   );
@@ -775,21 +647,53 @@ export default function DynamicBoard({
   }
 
   const currentPage = getCurrentPage();
-  const canGoBack = pageHistory.length > 0;
+  const canGoBack = canGoBackPage(pageNav);
 
-  // Localize a guessing-mode SUGGESTION button. The server bakes an English
-  // label (labelEn) into the button; here we translate it from the shared
-  // registry's i18n key. t() returns the key unchanged when a translation is
-  // missing, in which case we keep the server's English label.
-  const localizeSuggestion = (button: BoardButton): BoardButton => {
-    if ((button as any).buttonType !== "suggestion") return button;
-    const key = (button as any).suggestionKey as string | undefined;
-    const parsed = key ? parseSuggestionKey(key) : null;
-    const entry = parsed ? getSuggestionEntry(parsed.dimension, parsed.value) : null;
-    if (!entry) return button;
-    const translated = t(entry.labelKey);
-    const label = translated && translated !== entry.labelKey ? translated : button.label;
-    return { ...button, label, spokenText: label };
+  // Localize a server-baked English label from a shared registry. The server
+  // has no t(), so it bakes English and the client translates here. Two kinds
+  // opt in, and nothing else is touched:
+  //
+  //   - guessing-mode SUGGESTION buttons → suggestion registry labelKey
+  //   - `localizeFromGlyph` buttons (the restaurant floor board) →
+  //     aac.glyph.<key> from the shared glyph registry
+  //
+  // t() returns the key unchanged when a translation is missing, in which case
+  // we keep the server's English label rather than rendering a raw key.
+  const localizeButton = (button: BoardButton): BoardButton => {
+    if ((button as any).buttonType === "suggestion") {
+      const key = (button as any).suggestionKey as string | undefined;
+      const parsed = key ? parseSuggestionKey(key) : null;
+      const entry = parsed ? getSuggestionEntry(parsed.dimension, parsed.value) : null;
+      if (!entry) return button;
+      const translated = t(entry.labelKey);
+      const label = translated && translated !== entry.labelKey ? translated : button.label;
+      return { ...button, label, spokenText: label };
+    }
+
+    // Opt-in only — see BoardButton.localizeFromGlyph. Board Manager buttons
+    // carry authored sentences and must never be flattened to the bare word.
+    if (button.localizeFromGlyph && button.glyph) {
+      // Single key only. A composed fragment or multi-slot string has no one
+      // tKey to translate from.
+      if (/[+.()]/.test(button.glyph)) return button;
+      const item = getVocabularyItem(button.glyph);
+      if (!item) return button;
+      const translated = t(item.tKey);
+      if (!translated || translated === item.tKey) return button;
+      return {
+        ...button,
+        label: translated,
+        spokenText: translated,
+        sentence: translated,
+        // The press speaks action.text, so it has to move too or the student
+        // sees Hebrew and hears English.
+        ...(button.action?.type === "speak"
+          ? { action: { ...button.action, text: translated } }
+          : {}),
+      };
+    }
+
+    return button;
   };
 
   const renderSlot = (slot: SlotState, index: number) => {
@@ -806,7 +710,7 @@ export default function DynamicBoard({
     }
 
     if (slot.type === "fading") {
-      const button = localizeSuggestion(slot.button);
+      const button = localizeButton(slot.button);
       return (
         <ShapedButton
           as="div"
@@ -835,7 +739,7 @@ export default function DynamicBoard({
 
     // occupied
     const { button: rawButton, anim } = slot;
-    const button = localizeSuggestion(rawButton);
+    const button = localizeButton(rawButton);
     const isEntering = anim === "entering";
     const actionType = button.action?.type;
     const isLinkButton = actionType === "link";
@@ -1059,10 +963,10 @@ export default function DynamicBoard({
             <>
               {busyPhase && busyButtonId && button.id === busyButtonId ? <ButtonBusyIndicator phase={busyPhase} /> : null}
               {isLinkButton ? (
-                <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: "0.55em" }}>▶</span>
+                <span className="absolute text-blue-600 opacity-70" style={{ top: 2, insetInlineEnd: 2, fontSize: "0.55em" }}>{forwardTriangle(isRTL)}</span>
               ) : null}
               {isLaunchButton ? (
-                <span className="absolute top-0.5 right-0.5 text-teal-600 opacity-80" style={{ fontSize: "0.6em" }}>⤢</span>
+                <span className="absolute text-teal-600 opacity-80" style={{ top: 2, insetInlineEnd: 2, fontSize: "0.6em" }}>⤢</span>
               ) : null}
               {selectionArea ? <SelectionAreaMark size={selectionMarkSize} /> : null}
             </>
@@ -1172,7 +1076,7 @@ export default function DynamicBoard({
             onClick={navigateBack}
             className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded-md hover:bg-blue-50"
           >
-            {isRTL ? <ArrowRight className="w-3 h-3" /> : <ArrowLeft className="w-3 h-3" />}
+            <ArrowBack className="w-3 h-3" />
             {t("common.back")}
           </button>
           {currentPage?.name && (

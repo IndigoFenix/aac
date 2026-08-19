@@ -44,7 +44,13 @@ export function buttonActionFromOpen(
   homeActions: HomeAction[] = [],
 ): BoardButtonAction {
   if (open?.website) return { type: "open_website", url: open.website };
-  if (open?.app) return { type: "open_app", appId: open.app };
+  if (open?.app) {
+    return {
+      type: "open_app",
+      appId: open.app,
+      ...(open.appQuery ? { appData: open.appQuery } : {}),
+    };
+  }
   if (open?.board) return { type: "open_board", boardKey: open.board };
   if (open?.home) {
     const action = findHomeAction(homeActions, open.home);

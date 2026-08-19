@@ -257,6 +257,7 @@ function Router() {
       <Route path="/interpret/sessions/:sessionId" component={ProtectedDashboard} />
       <Route path="/docuslp" component={ProtectedDashboard} />
       <Route path="/symbols" component={ProtectedDashboard} />
+      <Route path="/photos" component={ProtectedDashboard} />
       
       {/* Student management features */}
       <Route path="/overview" component={ProtectedDashboard} />

@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { genderedAddressDirective } from "../services/dual-agent/prompts/shared";
+import { geminiVoiceGender } from "../services/social-bot/voice-pick";
 import { ex } from "../services/memory-schema/prompt-examples";
 import { buildSessionPrefix, buildLivePeerPrompt } from "../services/social-bot/prompt-assembly";
 
@@ -53,6 +54,52 @@ describe("genderedAddressDirective (Speaker / Board Manager)", () => {
 
   it("accepts a display name as the language too (peer path passes 'Hebrew')", () => {
     expect(genderedAddressDirective("שחף", "female", "Hebrew")).toContain("feminine");
+  });
+});
+
+describe("genderedAddressDirective — the AI's OWN gender (from its voice)", () => {
+  it("adds a self-reference line matching the AI voice, independent of the student", () => {
+    // Male student, female-voiced AI — the two genders must not bleed together.
+    const out = genderedAddressDirective("Daniel", "male", "he", "female");
+    expect(out).toContain("Daniel");
+    expect(out).toContain("masculine"); // student line
+    expect(out).toContain("a woman's"); // AI line names the voice
+    expect(out).toContain("yourself in the first person");
+    expect(out).toContain("feminine verb and adjective forms");
+  });
+
+  it("emits an AI-only block when the student's gender is unknown", () => {
+    const out = genderedAddressDirective("Sam", undefined, "he", "male");
+    expect(out).toContain("<grammatical_gender>");
+    expect(out).toContain("a man's");
+    expect(out).toContain("Hebrew marks grammatical gender"); // language claim survives without the student line
+    expect(out).not.toContain("[Sam] is"); // no claim about the student
+  });
+
+  it("still returns empty for non-gendered languages even with an AI gender", () => {
+    expect(genderedAddressDirective("Emma", "female", "en", "female")).toBe("");
+  });
+
+  it("omitting aiGender leaves the student-only block byte-identical (Board Manager path)", () => {
+    const without = genderedAddressDirective("שחף", "female", "he");
+    const withUnknown = genderedAddressDirective("שחף", "female", "he", undefined);
+    expect(withUnknown).toBe(without);
+    expect(without).not.toContain("Your own voice");
+  });
+});
+
+describe("geminiVoiceGender — classifying the AI voice", () => {
+  it("classifies the pools, with Zephyr (the default AI voice) as female", () => {
+    expect(geminiVoiceGender("Zephyr")).toBe("female");
+    expect(geminiVoiceGender("Leda")).toBe("female");
+    expect(geminiVoiceGender("Puck")).toBe("male");
+    expect(geminiVoiceGender("Charon")).toBe("male");
+  });
+
+  it("returns null for unknown or missing names — never guesses", () => {
+    expect(geminiVoiceGender("NotAVoice")).toBeNull();
+    expect(geminiVoiceGender(undefined)).toBeNull();
+    expect(geminiVoiceGender(null)).toBeNull();
   });
 });
 

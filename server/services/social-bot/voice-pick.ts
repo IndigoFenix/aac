@@ -53,6 +53,20 @@ export function peerVoiceFormantSemitones(ageYears?: number | null): number {
   return 0;
 }
 
+/**
+ * Grammatical gender of a named Gemini prebuilt voice, for prompts that must
+ * gender the AI's own first-person forms (Hebrew, Arabic, …). "Zephyr" sits in
+ * both pools as a neutral fallback, but it is the platform's default "woman"
+ * AI voice (VOICE_MAP.woman in gemini-tts-service), so it classifies female —
+ * hence the female pool is checked first. Unknown names → null.
+ */
+export function geminiVoiceGender(voiceName?: string | null): "male" | "female" | null {
+  if (!voiceName) return null;
+  if (FEMALE_VOICES.includes(voiceName)) return "female";
+  if (MALE_VOICES.includes(voiceName)) return "male";
+  return null;
+}
+
 export function pickVoice(
   gender: "male" | "female" | null,
   exclude: ReadonlyArray<string | undefined | null>,

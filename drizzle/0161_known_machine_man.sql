@@ -1,0 +1,2 @@
+ALTER TABLE "aac_settings" ADD COLUMN "press_response_delay" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "aac_settings" ADD COLUMN "interrupt_on_new_press" boolean DEFAULT false NOT NULL;

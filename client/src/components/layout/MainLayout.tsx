@@ -27,6 +27,7 @@ import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 import { VideoCaptionPanel } from '@/features/VideoCaptionPanel';
 import { SymbolsPanel } from '@/features/SymbolsPanel';
+import { PhotosPanel } from '@/features/PhotosPanel';
 import { CalendarPanel } from '@/features/CalendarPanel';
 import { LocationsPanel } from '@/features/LocationsPanel';
 import { PersonChatPanel } from '@/features/personChat/PersonChatPanel';
@@ -186,6 +187,8 @@ export function MainLayout() {
         return <AACSettingsPanel isOpen={isPanelOpen} />;
       case 'symbols':
         return <SymbolsPanel isOpen={isPanelOpen} />;
+      case 'photos':
+        return <PhotosPanel isOpen={isPanelOpen} />;
       case 'calendar':
         return <CalendarPanel isOpen={isPanelOpen} />;
       case 'locations':

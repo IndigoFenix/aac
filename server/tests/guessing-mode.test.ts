@@ -550,6 +550,39 @@ describe("contrast ('closer to A or B?') expansion", () => {
     expect(b?.label).toBe("Spider-Man");
   });
 
+  // Regression (2026-08-19): `value` doubled as the visible label, so
+  // English machine values ("sea", "land") rendered on a Hebrew board. The
+  // authored `label` now wins; `value` stays machine-readable and is only a
+  // display fallback (pinned by the two tests above).
+  it("kind:narrow — the authored label wins over the machine value", () => {
+    const b = parseStructuredBoardButton({
+      kind: "narrow", dimension: "habitat", value: "sea", label: "ים", speech: "בים", glyph: [{ sym: "🌊" }],
+    });
+    expect(b?.label).toBe("ים");           // shown: user's language
+    expect(b?.narrowValue).toBe("sea");    // recorded: machine value
+    expect(b?.narrowDimension).toBe("habitat");
+    expect(b?.sentence).toBe("בים");
+  });
+
+  it("kind:guess — the authored label wins over the value", () => {
+    const b = parseStructuredBoardButton({ kind: "guess", value: "dog", label: "כלב", speech: "כלב" });
+    expect(b?.buttonType).toBe("guess");
+    expect(b?.label).toBe("כלב");
+  });
+
+  it("structured contrast poles — per-pole label wins over the pole value", () => {
+    const out = expandContrastButton({
+      kind: "contrast",
+      dimension: "feel",
+      poles: [
+        { value: "cat_like", label: "כמו חתול", speech: "יותר כמו חתול", glyph: [{ sym: "🐱" }] },
+        { value: "dog_like", label: "כמו כלב", speech: "יותר כמו כלב", glyph: [{ sym: "🐶" }] },
+      ],
+    })!;
+    expect(out.map((b) => b.label)).toEqual(["כמו חתול", "כמו כלב"]);
+    expect(out.map((b) => b.narrowValue)).toEqual(["cat_like", "dog_like"]);
+  });
+
   it("parseStructuredButtonsExpanding: contrast→2, normal→1, invalid→0", () => {
     expect(parseStructuredButtonsExpanding({ label: "[CONTRAST:feel] a | b" })).toHaveLength(2);
     expect(parseStructuredButtonsExpanding({ label: "Hello", sentence: "👋" })).toHaveLength(1);

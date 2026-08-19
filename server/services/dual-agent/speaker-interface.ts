@@ -29,6 +29,15 @@ export interface ISpeakerAgent {
    *  transcribed speech addressed to the AI, composed sentence). */
   sendUserTurn(text: string): void;
 
+  /** Abandon the turn currently being generated, if any, WITHOUT starting a
+   *  replacement. Used by the barge-in press option: the student pressed a
+   *  different button over the AI's answer, so the answer is dead — the HTTP
+   *  path aborts its in-flight completion so no further sentences reach TTS.
+   *  Optional: the Live path has no cancel of its own (its generation is cut
+   *  when the next user turn lands, and its audio is already dropped by the
+   *  Coordinator), so it implements this as a no-op. */
+  cancelTurn?(reason: string): void;
+
   /** Downward context the model should remember but NOT respond to
    *  directly (mode changes, mute toggles, observer hints, [BUILDER STATE]).
    *  In the HTTP path this buffers without firing a completion. */

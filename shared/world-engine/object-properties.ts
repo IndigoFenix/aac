@@ -160,6 +160,34 @@ export const AXIS_WORDS: Readonly<Record<DescriptorAxis, readonly string[]>> = {
   quality: ["good", "bad"],
 };
 
+/**
+ * WHICH AXIS A DESCRIPTOR BELONGS TO — the reverse of `AXIS_WORDS`, and the one
+ * owner of that question.
+ *
+ * It exists because an axis is MUTUALLY EXCLUSIVE by nature: a thing cannot be
+ * hot and cold, or one and three. A builder that lets two words from the same
+ * axis land on the same head composes a sentence nobody means ("a hot cold
+ * apple"), so every surface that applies a descriptor needs to be able to ask
+ * this — and none of them should carry its own copy of the table.
+ *
+ * A word may appear under two axes (`none` is both fill and quantity, `full`
+ * both bodily and fill). First match wins, in declaration order, so the answer
+ * is deterministic; exclusivity within the winning axis is still the useful
+ * reading.
+ */
+const AXIS_OF_WORD: ReadonlyMap<string, DescriptorAxis> = (() => {
+  const m = new Map<string, DescriptorAxis>();
+  for (const axis of Object.keys(AXIS_WORDS) as DescriptorAxis[]) {
+    for (const w of AXIS_WORDS[axis]) if (!m.has(w)) m.set(w, axis);
+  }
+  return m;
+})();
+
+/** The axis `word` belongs to, or null when it is not a descriptor at all. */
+export function axisOf(word: string): DescriptorAxis | null {
+  return AXIS_OF_WORD.get(word.trim().toLowerCase()) ?? null;
+}
+
 /** Verbs whose natural continuation is a DESCRIPTOR list rather than a noun —
  *  the §3.1 pre-load read for the attribute side: "feel" implies an emotion
  *  ("i_me + feel + happy"), never a thing. Same fixed-table contract as

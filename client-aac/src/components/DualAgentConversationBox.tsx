@@ -18,8 +18,6 @@ import {
   Speech,
   Maximize,
   LogOut,
-  ArrowLeft,
-  ArrowRight,
   Bug,
   SlidersHorizontal,
   AlertTriangle,
@@ -32,6 +30,7 @@ import {
   MonitorSmartphone,
   Ear,
 } from "lucide-react";
+import { ArrowBack } from "@/components/ui/directional-icons";
 import { AacAvatar, AacCave } from "@/components/AacAvatar";
 import { EnergyBar } from "@/components/EnergyBar";
 import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
@@ -199,7 +198,7 @@ export function DualAgentConversationBox({
   const callActive = !!call?.active;
   // DEBUG-only: social-trainer parameter/internals inspector dialog.
   const [showSocialDebug, setShowSocialDebug] = useState(false);
-  const { t, isRTL } = useLanguage();
+  const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { mode: dwellMode } = useEyeTrackingDwell();
   const { scanning: audioScanning, toggleScan: toggleAudioScan } = useBoardAudio();
@@ -720,7 +719,7 @@ export function DualAgentConversationBox({
                       className="text-white hover:text-orange-300 hover:bg-white/10 h-7 w-7 p-0"
                       title={t('conversation.switchStudent')}
                     >
-                      {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+                      <ArrowBack className="w-4 h-4" />
                     </Button>
                   )}
 

@@ -8,6 +8,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ChatMessage, HomeAction, ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { normalizeHomeActions } from "@shared/home-actions";
+import { normalizePictureSearchConfig, pictureSearchConfigFrom } from "@shared/picture-search";
 import { resolvePermittedYoutubeItems, splitYoutubeItems } from "@shared/youtube-items";
 import { fetchRecentVideosForChannels, fetchRecentVideosForPlaylists } from "../youtube/channel-search";
 import { creditsForModelUsage, creditsForLiveUsageByModality, creditsForTtsUsage, creditsForSttUsage, type TtsProvider } from "../chat/cost-helpers";
@@ -34,6 +35,7 @@ import {
 import { ttsFacade, isClientSideTtsVoice, sanitizeElevenLabsApiKey, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
+import { buildPhotoLibrarySummary } from "../photos/photo-context";
 import { getContactsWithPhotoStatusByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
@@ -573,6 +575,12 @@ export class DualAgentService {
       } catch { return []; }
     })();
 
+    // Family-photo digest for the Speaker prompt. Prefetched alongside the other
+    // session-start loads (it runs during the startup LLM call, so it costs no
+    // extra wall-clock) and resolves to undefined for the majority of students,
+    // who have no photos — which is also how the prompt block stays absent.
+    const photoLibraryPromise = buildPhotoLibrarySummary(studentId);
+
     const symbolsPromise = (async (): Promise<NonNullable<DualAgentSessionState['cachedSymbols']>> => {
       try {
         const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
@@ -684,6 +692,7 @@ export class DualAgentService {
     const cachedDiagnosis = await diagnosisPromise;
     const classroomContext = await classroomPromise;
     const availableBoards = await boardsPromise;
+    const photoLibrary = await photoLibraryPromise;
 
     // Build the function-calling prompt with contacts + boards + symbols + demographics.
     // If thorough startup produced structured sections, weave each one into
@@ -777,6 +786,7 @@ export class DualAgentService {
       pendingMessages: [],
       muteState,
       appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
+      pictureSearch: pictureSearchConfigFrom(aacSt?.appConfig),
       permittedWebsites,
       permittedYoutubeChannels,
       permittedYoutubeVideos,
@@ -790,6 +800,7 @@ export class DualAgentService {
       monitorConsecutiveFailures: 0,
       cachedContacts,
       cachedSymbols,
+      photoLibrary,
       availableBoards,
       cachedDiagnosis,
       memoryContext: initResult.initialContext,
@@ -930,6 +941,7 @@ export class DualAgentService {
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         muteState: (chatState as any)?.muteState || 'unmuted',
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
+        pictureSearch: normalizePictureSearchConfig(undefined), // Populated with aacSettings below
         permittedWebsites: [], // Populated with aacSettings below
         permittedYoutubeChannels: [], // Populated with aacSettings below
         permittedYoutubeVideos: [], // Populated with aacSettings below
@@ -971,6 +983,7 @@ export class DualAgentService {
         const aacSt = student.aacSettings;
         state.remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
         state.appState.enabledApps = getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null);
+        state.pictureSearch = pictureSearchConfigFrom(aacSt?.appConfig);
         state.permittedWebsites = Array.isArray(aacSt?.permittedWebsites)
           ? (aacSt!.permittedWebsites as PermittedWebsite[])
           : [];

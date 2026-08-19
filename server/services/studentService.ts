@@ -68,10 +68,11 @@ const AAC_SETTINGS_FIELDS = new Set([
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
   "autoAddContacts",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
-  "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "homeActions",
+  "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "homeActions", "venueMenus",
   "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
   "accessibility", "definedGestures", "seizureDetection",
   "allowFacilitatorControl",
+  "pressResponseDelay", "interruptOnNewPress",
 ]);
 
 /**

@@ -13,6 +13,7 @@ import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import { getLanguageName } from "@shared/language-names";
 import { type LanguageLevel, languageLevelDirective } from "@shared/aac-language-level";
 import { flattenPermittedWebsites } from "@shared/permitted-websites";
+import { PICTURE_SEARCH_APP_ID } from "@shared/picture-search";
 import type { PermittedWebsite } from "@shared/schema";
 import { T } from "../../memory-schema/canonical-terms";
 import type { AACAppDefinition } from "../types";
@@ -32,6 +33,7 @@ import {
   REMAIN_SILENT,
   DEBUG_MESSAGE,
   debugIntrospectionEnabled,
+  wrapUntrusted,
 } from "./shared";
 
 // ===========================================================================
@@ -44,6 +46,12 @@ import {
 
 export interface SpeakerPromptConfig extends BaseStudentContext {
   persona: string;
+  /** The AI's OWN grammatical gender, derived from the voice it speaks with
+   *  (see AgentCoordinator.aiVoiceGender). In gendered languages the model
+   *  must gender its own first-person forms to match the voice being heard;
+   *  omit when unknown (e.g. custom ElevenLabs voice) — the prompt then stays
+   *  silent about self-reference rather than guessing. */
+  aiGender?: "male" | "female";
   memoryContext?: string;
   muteState: "unmuted" | "muted";
   /** True when the model's own output IS the spoken reply (either Gemini
@@ -77,6 +85,9 @@ export interface SpeakerPromptConfig extends BaseStudentContext {
   availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
   /** Pre-fetched permitted-website list for the open_website tool. */
   permittedWebsites?: PermittedWebsite[];
+  /** Digest of the student family photo library, when they have one. Absent for
+   *  most students, which is how this block stays out of most prompts. */
+  photoLibrary?: import("../../photos/photo-context").PhotoLibrarySummary;
 }
 
 export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
@@ -88,21 +99,23 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
     interactModeExamples, assistModeExamples: _assistModeExamples,
     gestureOverrides, safetyNotes,
     availableBoards, enabledApps, availableCustomApps, permittedWebsites,
+    photoLibrary,
   } = config;
 
   const languageName = getLanguageName(language);
   const descriptor = studentDescriptor(config);
-  const genderBlock = genderedAddressDirective(studentName, config.studentGender, language);
+  const genderBlock = genderedAddressDirective(studentName, config.studentGender, language, config.aiGender);
   const aiIdentity = aiName ? `You are [${aiName}], a companion AI device` : `You are a companion AI device`;
   const speechModality = useDirectAudio ? "spoken dialogue" : "speak() text";
   const isMuted = muteState === "muted";
   // Gemini Live native-audio + non-muted: buildSpeakerToolDeclarations
-  // returns an empty tool surface to dodge MALFORMED bursts. The prompt
-  // must NOT mention tools the model can't actually call — otherwise it
-  // tries to invoke them by speaking the call out loud (the spoken
-  // "private_thought ..." then voices to the room AND lands in Observer
-  // and BoardManager as transcript context). Keep this condition in
-  // lock-step with buildSpeakerToolDeclarations's early-return guard.
+  // strips the tool surface down to ONE tool (open_app; nothing else) to
+  // dodge MALFORMED bursts. The prompt must NOT mention tools the model
+  // can't actually call — otherwise it tries to invoke them by speaking
+  // the call out loud (the spoken "private_thought ..." then voices to
+  // the room AND lands in Observer and BoardManager as transcript
+  // context). Keep this condition — and the open_app exception in the
+  // <activities> block — in lock-step with buildSpeakerToolDeclarations.
   const toolsSuppressed = liveAudio && !isMuted;
 
   const muteOverride = isMuted
@@ -258,6 +271,8 @@ EXAMPLE narrowing flow:
   //     in speech ("want to read your book?"); the Board Manager then places the
   //     launch button. Without this the Speaker never mentions apps/sites it
   //     can't see. Mention-only, mirrors <available_surfaces> for boards.
+  const pictureSearchEnabled = (enabledApps ?? []).some(a => a.id === PICTURE_SEARCH_APP_ID);
+
   if (toolsSuppressed) {
     const appNames = [
       ...(enabledApps ?? []).map(a => a.name),
@@ -266,8 +281,33 @@ EXAMPLE narrowing flow:
     const sites = (permittedWebsites ?? []).map(s => (s.description ? `${s.label} (${s.description})` : s.label));
     if (appNames.length > 0 || sites.length > 0) {
       prompt += `\n\n<activities>
-Suggest one of these when it fits the moment ("want to read your book?", "play Bubbles?"). You do NOT open them — the Board Manager adds a button when you mention one. Never speak an id or url; use the name.`;
-      if (appNames.length > 0) prompt += `\nApps & games: ${appNames.join(", ")}.`;
+Suggest one of these when it fits the moment ("want to read your book?", "play Bubbles?"). Never speak an id or url aloud; use the name.`;
+      if (appNames.length > 0) {
+        prompt += `\nApps & games: ${appNames.join(", ")}. You OPEN these YOURSELF: call open_app(app_id[, data]) when the user asks for one or agrees to your offer — never promise an app without calling it. Keep talking normally around the call (say what you're opening); opening silently is still better than promising and not opening.
+open_app requires the user's OWN request or agreement from THIS turn — never open one because a topic came up, and NEVER while the Word Finder is open (they are finding a word; taking over the screen loses it).`;
+      }
+      // The SAME trap the picture search fell into, and it caught the family
+      // album first: <photos> — the block that carries the captions — lives in
+      // the TOOL branch below, so a live native-audio Speaker saw the bare word
+      // "Photos" in the list above and had no idea whose faces were in there.
+      // It could never offer "want to see Grandma?", which is the entire point
+      // of the feature. The captions belong in BOTH shapes; since 2026-08-19
+      // the live Speaker also OPENS apps itself (open_app is its one tool).
+      if (photoLibrary && photoLibrary.count > 0) {
+        const captionList = photoLibrary.captions.length > 0
+          ? `: ${photoLibrary.captions.map(wrapUntrusted).join(", ")}${photoLibrary.truncated ? ", and more" : ""}`
+          : "";
+        prompt += `\n${studentName} has ${photoLibrary.count} family photo${photoLibrary.count === 1 ? "" : "s"} on this device${captionList}.${photoLibrary.captions.length > 0 ? ` open_app("photos", "<caption words>") opens the album on THAT photo — use the caption words verbatim.` : ` They have no captions, so a specific one cannot be asked for — open_app("photos") with no data and let ${studentName} choose.`} You never see the photos yourself, so never describe one you were not told is on screen${photoLibrary.uncaptionedCount > 0 ? ", and NEVER guess who is in an uncaptioned one" : ""}.`;
+      }
+      // Picture search is the one activity a user asks for by naming a THING
+      // rather than the app ("an owl"), so the Speaker has to know it is real
+      // and how its offer lands. Without this it saw only the words "Find a
+      // Picture" in a list and could not connect them to "let's look at an owl"
+      // — which is exactly how it ended up promising pictures it could not
+      // produce.
+      if (pictureSearchEnabled) {
+        prompt += `\nYou CAN show real pictures of things from the web: open_app("picture_search", "<what to find>") — e.g. the user asks to see pictures of owls → open_app("picture_search", "an owl"). You never see the pictures, so do not describe one until you are told what is on screen.`;
+      }
       if (sites.length > 0) prompt += `\nWebsites: ${sites.join(", ")}.`;
       prompt += `\n</activities>`;
     }
@@ -289,6 +329,26 @@ Launch apps via open_app(app_id, [data]) when the conversation calls for it.
       prompt += `\n</apps>`;
     }
 
+    // Family photos. The captions are listed because the assistant can only ask
+    // for a photo it knows exists: open_app("photos", "<caption words>") is
+    // matched against exactly these strings server-side. Captions are
+    // caretaker-authored free text, so each is wrapped as data.
+    if (photoLibrary && photoLibrary.count > 0) {
+      const plural = photoLibrary.count === 1 ? "" : "s";
+      prompt += `\n\n<photos>`;
+      prompt += `\n${studentName} has ${photoLibrary.count} family photo${plural} on this device.`;
+      if (photoLibrary.captions.length > 0) {
+        prompt += `\nCaptions: ${photoLibrary.captions.map(wrapUntrusted).join(", ")}${photoLibrary.truncated ? ", and more" : ""}.`;
+        prompt += `\nTo show one, call open_app("photos", "<words from a caption>"). If nothing matches you will be told so plainly — never describe a photo you were not told is on screen.`;
+      } else {
+        prompt += `\nNone of them have captions, so you cannot ask for a specific one — call open_app("photos") and let them choose.`;
+      }
+      if (photoLibrary.uncaptionedCount > 0) {
+        prompt += `\n${photoLibrary.uncaptionedCount} of them have no caption. NEVER guess who is in an uncaptioned photo — ask ${studentName} to tell you about it instead.`;
+      }
+      prompt += `\n</photos>`;
+    }
+
     if (permittedWebsites && permittedWebsites.length > 0) {
       prompt += `\n\n<websites>
 Call open_website(url, label) to open a permitted site in the in-frame browser. Only URLs in the list below (and their subpages) are permitted.
@@ -299,6 +359,16 @@ Sites:`;
       }
       prompt += `\n</websites>`;
     }
+  }
+
+  // The capability this model invents most often. When picture search IS
+  // enabled, its registry description above already covers how to use it; when
+  // it is NOT, the absence of a tool has never been enough — the Speaker
+  // cheerfully promises to "find a picture of a giraffe" and then produces
+  // nothing, which to a student who cannot re-ask reads as being ignored. So
+  // say it once, plainly, in both the tool and the tool-suppressed shapes.
+  if (!pictureSearchEnabled) {
+    prompt += `\n\nYou CANNOT search the internet for pictures. There is no way for you to find, look up, fetch or show an image of anything${photoLibrary && photoLibrary.count > 0 ? " beyond the family photos listed above" : ""}. Never offer to — say plainly that you cannot show them one, then talk about the thing itself instead.`;
   }
 
   // Mention pre-built boards conversationally — SPEAKER may say "let's
@@ -526,9 +596,11 @@ function buildOpenAppTool(
   const customIds = customApps.map(a => a.id).join(", ");
   const sections = [builtInIds ? `Built-in IDs: ${builtInIds}.` : ""];
   if (customIds) sections.push(`Custom game IDs: ${customIds}.`);
+  // Self-contained on purpose: in live native-audio mode this is the ONLY
+  // tool, and the <apps> prompt block it used to lean on is not rendered.
   return {
     name: "open_app",
-    description: `Open an interactive app or custom game on the user's screen. See the <apps> section for full details. ${sections.filter(Boolean).join(" ")}`,
+    description: `Open an app or game on the user's screen NOW. Call it when the user asks for one or agrees to one you offered — then keep talking normally. ${sections.filter(Boolean).join(" ")}`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -539,7 +611,7 @@ function buildOpenAppTool(
         },
         data: {
           type: "string",
-          description: "Optional search query for media apps (YouTube/Spotify).",
+          description: `The thing the user named, in their words — ${enabledApps.filter(a => a.queryHint).map(a => `${a.id}: ${a.queryHint}`).join("; ") || "search query for media apps"}. These apps open EMPTY without it.`,
         },
       },
       required: ["app_id"],
@@ -585,12 +657,22 @@ ${list}`,
 
 export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] {
   // Gemini Live native-audio diagnostic: when the model is talking
-  // directly via AUDIO modality, the whole tool surface is suppressed
-  // to dodge MALFORMED_FUNCTION_CALL bursts. This shortcut applies
-  // ONLY to the Live path — HTTP completion handles tools reliably and
-  // actively needs them.
+  // directly via AUDIO modality, the tool surface is suppressed to dodge
+  // MALFORMED_FUNCTION_CALL bursts. This shortcut applies ONLY to the
+  // Live path — HTTP completion handles tools reliably and actively
+  // needs them.
+  //
+  // EXCEPTION — open_app (2026-08-19, Daniel): the known failure mode of
+  // live tools is calling the tool but dropping the spoken reply. For a
+  // conversational tool that's fatal; for open_app it's tolerable — an
+  // app that opens silently beats an app that is promised and never
+  // opens, which is the failure every relay attempt (Board Manager
+  // instructions, launch buttons) kept producing. ONE simple tool, not
+  // the surface.
   if (!config.httpMode && config.useDirectAudio && !config.isMutedMode) {
-    return [];
+    const hasApps = config.enabledApps.length > 0 || (config.availableCustomApps?.length ?? 0) > 0;
+    if (!hasApps) return [];
+    return [{ functionDeclarations: [buildOpenAppTool(config.enabledApps, config.availableCustomApps ?? [])] }];
   }
 
   const declarations: FunctionDeclaration[] = [];

@@ -374,9 +374,11 @@ export interface StructuredBoardButton {
   kind?: unknown;
   /** For kind "narrow"/"contrast" — the narrowing dimension label. */
   dimension?: unknown;
-  /** For kind "narrow" — the value the user picks (also the visible label). */
+  /** For kind "narrow"/"guess" — the machine-readable value the press records
+   *  (English snake_case for "narrow"). Display falls back to it only when
+   *  `label` is missing — it is NOT the visible label. */
   value?: unknown;
-  /** For kind "contrast" — the poles: each `{ value, speech?, glyph? }`. */
+  /** For kind "contrast" — the poles: each `{ value, label?, speech?, glyph? }`. */
   poles?: unknown;
 }
 
@@ -409,10 +411,16 @@ export function parseStructuredBoardButton(input: unknown): ParsedBoardButton | 
     buttonType = "narrow";
     narrowDimension = o.dimension.trim();
     narrowValue = o.value.trim();
-    label = o.value.trim();
+    // Display text: the authored `label` (user's language). `value` is the
+    // machine-readable fact value (English snake_case) — using it as the
+    // label shipped English buttons on Hebrew boards. Fall back to it only
+    // when the model omitted `label` entirely.
+    label = prefix.label || o.value.trim();
   } else if (o.kind === "guess") {
     buttonType = "guess";
-    label = (typeof o.value === "string" && o.value.trim()) || prefix.label;
+    // Same preference order as "narrow": the localized `label` wins; the
+    // recorded `value` is only a display fallback.
+    label = prefix.label || (typeof o.value === "string" && o.value.trim()) || "";
   }
 
   // A button needs a label — either provided, or derived from a structured
@@ -473,11 +481,11 @@ export function expandContrastButton(input: unknown): ParsedBoardButton[] | null
   if (!input || typeof input !== "object") return null;
   const o = input as StructuredBoardButton;
 
-  // PREFERRED structured form: { kind:"contrast", dimension, poles:[{value, speech?, glyph?}] }
+  // PREFERRED structured form: { kind:"contrast", dimension, poles:[{value, label?, speech?, glyph?}] }
   if (o.kind === "contrast" && typeof o.dimension === "string" && Array.isArray(o.poles)) {
     const dim = o.dimension.trim();
     const poles = o.poles.filter(
-      (p): p is { value: string; speech?: string; glyph?: unknown } =>
+      (p): p is { value: string; label?: string; speech?: string; glyph?: unknown } =>
         !!p && typeof p === "object" && typeof (p as any).value === "string" && !!(p as any).value.trim(),
     );
     if (!dim || poles.length < 2) return null;
@@ -487,9 +495,13 @@ export function expandContrastButton(input: unknown): ParsedBoardButton[] | null
       const glyph = ser.sentence || undefined;
       const glyphFallback = ser.fallback || undefined;
       const speech = (typeof p.speech === "string" && p.speech.trim()) || value;
+      // Display text: the authored pole `label` (user's language); `value`
+      // is machine-readable English and only a fallback (see the same
+      // preference in parseStructuredBoardButton).
+      const label = (typeof p.label === "string" && p.label.trim()) || value;
       const { iconRef, symbolPath, imageKey } = deriveRenderFields(glyph, glyphFallback);
       return {
-        label: value, iconRef, symbolPath, imageKey, glyph, glyphFallback,
+        label, iconRef, symbolPath, imageKey, glyph, glyphFallback,
         sentence: speech, buttonType: "narrow", narrowDimension: dim, narrowValue: value,
       };
     });

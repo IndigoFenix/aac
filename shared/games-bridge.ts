@@ -46,6 +46,15 @@ export interface BuilderWord {
   kind?: string;
   /** For persons/creatures: present in the current scene (prioritize + badge). */
   present?: boolean;
+  /**
+   * MODIFIER RAIL ONLY: the descriptor axis this word belongs to (temperature,
+   * quantity, size…). A client applying a rail word should REPLACE whichever
+   * modifier of the same axis is already on the head rather than stacking a
+   * second one — a thing cannot be both hot and cold. Carried on the wire
+   * because the in-game rail is computed by the game's vendored engine, so the
+   * platform has no other route to it.
+   */
+  axis?: string;
 }
 
 /** A sub-category chip within the active category (e.g. the engine lexicon's

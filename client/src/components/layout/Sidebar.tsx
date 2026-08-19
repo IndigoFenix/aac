@@ -29,6 +29,7 @@ import {
   Building2,
   MessageSquare,
   Image,
+  Images,
   CalendarDays,
   MapPin,
   MessageCircleQuestion,
@@ -189,6 +190,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       labelKey: 'nav.symbols',
       feature: 'symbols' as FeatureType,
       testId: 'nav-symbols',
+      badge: undefined as string | undefined,
+    }] : []),
+    // Family Photos — same gate as the symbol library: it is AAC board content.
+    ...((boardsEnabled || aacEnabled) ? [{
+      icon: Images,
+      labelKey: 'nav.photos',
+      feature: 'photos' as FeatureType,
+      testId: 'nav-photos',
       badge: undefined as string | undefined,
     }] : []),
     // Custom apps / games — gated on customAppsEnabled license permission

@@ -47,14 +47,14 @@ export const STRUCTURE_WORLD_FIELDS: GroupSpec = {
 };
 
 /** The STAR_CLUSTER scope's `world` descriptor — a neighbourhood of systems
- *  between solar_system and galaxy. Mirrors the galaxy/solar seed+quest shape. */
+ *  between solar_system and galaxy. Mirrors the galaxy/solar seed shape.
+ *  `questCount` DELETED (Shape B ruling 3): quests are declarable on the
+ *  town|structure scopes only; the strict gate rejects it here as unknown. */
 export const STAR_CLUSTER_WORLD_FIELDS: GroupSpec = {
   objectMessage: "expected an object (the star-cluster definition)",
   fields: [
     { key: "seed", kind: "number", min: 0, max: Number.MAX_SAFE_INTEGER, default: 1,
       facet: "boundary", ui: "seed", label: "Seed" },
-    { key: "questCount", kind: "int", min: 0, max: 3, facet: "interior",
-      label: "Quests per town", description: "Quest-giving residents per founded town (0..3)." },
   ],
 };
 

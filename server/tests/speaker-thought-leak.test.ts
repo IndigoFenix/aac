@@ -19,10 +19,21 @@
 // handlers. If a leaked turn emits NEITHER event, none of those reinforcement
 // paths can fire — the loop is severed at the source.
 
-import { jest } from "@jest/globals";
+import { describe, test, expect, beforeEach, jest } from "@jest/globals";
+
+// ---- ESM module mocks --------------------------------------------------
+//
+// MUST be `jest.unstable_mockModule` + dynamic `import()` below, NOT the
+// classic `jest.mock` + static import. This suite runs under jest's native-ESM
+// mode (`--experimental-vm-modules`, see jest.config.js), where static imports
+// are bound before any module-body statement executes — so a `jest.mock` call
+// never intercepts them. It fails SILENTLY: HttpSpeakerAgent would take the
+// REAL Gemini provider, `fireCompletion()` would fire a live request for the
+// fake model id, the 404 would land in the no-op `onError` below, and every
+// HTTP-path assertion would see an empty capture with no hint why.
 
 // Suppress the agent-flow debug log during tests.
-jest.mock("../services/dual-agent/agent-flow-logger", () => ({
+jest.unstable_mockModule("../services/dual-agent/agent-flow-logger", () => ({
   flowInput: () => {},
   flowOutput: () => {},
   flowTool: () => {},
@@ -33,35 +44,36 @@ jest.mock("../services/dual-agent/agent-flow-logger", () => ({
 // import.meta.url and breaks under jest's CommonJS transform. We never
 // connect a provider in these tests (we drive the handlers directly), so
 // stub it out to keep the import chain light.
-jest.mock("../services/dual-agent/gemini-live-provider", () => ({
+jest.unstable_mockModule("../services/dual-agent/gemini-live-provider", () => ({
   GeminiLiveProvider: class {},
 }));
 
-// Fake chat provider for the HTTP-path tests. `mockNextChunks` is the stream
-// the next fireCompletion() will see; `mockStreamChatCalls` counts how many
-// times streamChat ran (proves a leaked turn does NOT re-enter the orphan
-// re-prompt loop). Both are mock-prefixed so jest's hoisted factory may close
-// over them.
-let mockNextChunks: any[] = [];
-const mockStreamChatCalls = { n: 0 };
-jest.mock("../services/providers/provider-factory", () => ({
+// Fake chat provider for the HTTP-path tests. `nextChunks` is the stream the
+// next fireCompletion() will see; `streamChatCalls` counts how many times
+// streamChat ran (proves a leaked turn does NOT re-enter the orphan re-prompt
+// loop).
+let nextChunks: any[] = [];
+const streamChatCalls = { n: 0 };
+jest.unstable_mockModule("../services/providers/provider-factory", () => ({
   getChatProvider: () => ({
     completeChat: async () => ({ content: null, toolCalls: [] }),
     async *streamChat() {
-      mockStreamChatCalls.n += 1;
-      for (const c of mockNextChunks) yield c;
+      streamChatCalls.n += 1;
+      for (const c of nextChunks) yield c;
     },
   }),
 }));
 
-import {
+// ---- Dynamic imports (after the mocks are registered) ------------------
+const {
   SpeakerAgent,
   isLeakedThought,
   stripThoughtLeakMarker,
-  type SpeakerCallbacks,
-  type SpeakerOutputEvent,
-} from "../services/dual-agent/speaker-agent";
-import { HttpSpeakerAgent } from "../services/dual-agent/http-speaker-agent";
+} = await import("../services/dual-agent/speaker-agent.js");
+const { HttpSpeakerAgent } = await import("../services/dual-agent/http-speaker-agent.js");
+type SpeakerCallbacks = import("../services/dual-agent/speaker-agent.js").SpeakerCallbacks;
+type SpeakerOutputEvent = import("../services/dual-agent/speaker-agent.js").SpeakerOutputEvent;
+type HttpSpeakerAgent = InstanceType<typeof HttpSpeakerAgent>;
 
 // ---- Pure detection / stripping helpers --------------------------------
 
@@ -298,13 +310,13 @@ const doneChunk = { type: "done" };
 
 describe("HttpSpeakerAgent — thought-leak suppression", () => {
   beforeEach(() => {
-    mockNextChunks = [];
-    mockStreamChatCalls.n = 0;
+    nextChunks = [];
+    streamChatCalls.n = 0;
   });
 
   test("leaked turn: nothing reaches client subtitle or TTS; emits thought_leak, not speech", async () => {
     const { agent, cap } = makeHttpSpeaker();
-    mockNextChunks = [
+    nextChunks = [
       textDelta("private_thought The user "),
       textDelta("wants a hug from dad."),
       doneChunk,
@@ -327,12 +339,12 @@ describe("HttpSpeakerAgent — thought-leak suppression", () => {
 
     // Crucially, the leaked turn did NOT re-enter the orphan re-prompt loop
     // (that would fire a second completion on the empty reply).
-    expect(mockStreamChatCalls.n).toBe(1);
+    expect(streamChatCalls.n).toBe(1);
   });
 
   test("detection fires when the marker is split across deltas", async () => {
     const { agent, cap } = makeHttpSpeaker();
-    mockNextChunks = [
+    nextChunks = [
       textDelta("private_"),       // not yet a match on its own
       textDelta("thought here is my reasoning"),
       doneChunk,
@@ -353,7 +365,7 @@ describe("HttpSpeakerAgent — thought-leak suppression", () => {
 
   test("normal reply is unaffected: forwarded to client + TTS, speech_end emitted, no leak", async () => {
     const { agent, cap } = makeHttpSpeaker();
-    mockNextChunks = [
+    nextChunks = [
       textDelta("איזה כיף! "),
       textDelta("מה עוד בא לך?"),
       doneChunk,

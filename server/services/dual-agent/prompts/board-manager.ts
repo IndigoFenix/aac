@@ -30,7 +30,7 @@ import {
   securityBlock,
   studentDescriptor,
   genderedAddressDirective,
-  CALL_MONITOR,
+  wrapUntrusted,
 } from "./shared";
 
 // ===========================================================================
@@ -50,7 +50,13 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   loadedBoardKey?: string | null;
   loadedBoardName?: string | null;
   loadedPageName?: string | null;
-  enabledApps?: Array<{ id: string; name: string; description: string }>;
+  enabledApps?: Array<{ id: string; name: string; description: string; queryHint?: string }>;
+  /** The student's family photos, when the `photos` app is enabled. The Board
+   *  Manager needs the CAPTIONS, not just the app id: it is the only agent
+   *  that can open an app in a live-audio session, and a photos button with
+   *  no `appQuery` opens the album on the grid instead of on the person the
+   *  student just asked about. */
+  photoLibrary?: import("../../photos/photo-context").PhotoLibrarySummary;
   availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
   /** Smart-home slots the student may fire (ENABLED ones only). `description`
    *  is the author's when-to-surface hint, read like a board `hint`. Empty /
@@ -134,7 +140,7 @@ export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): Board
     studentName, language, memoryContext, muteState: _muteState,
     knownContacts, classroom,
     cachedSymbols, availableBoards, loadedBoardKey, loadedBoardName, loadedPageName,
-    enabledApps, availableCustomApps, homeActions, permittedWebsites,
+    enabledApps, availableCustomApps, homeActions, permittedWebsites, photoLibrary,
     autoSymbolsEnabled = false, singleGlyphButtons = false,
     glyphInputTranslation = false, languageLevel,
     gestureOverrides, safetyNotes, boardManagerGuidance,
@@ -175,7 +181,6 @@ Your tools:
   - \`interpret\` — voice a composed SENTENCE through the user's TTS.
   - \`exit_guessing\` — end Word Finder narrowing (only available in guessing mode).
   - \`no_change\` — current surface still fits, no action needed. UNIVERSAL FALLBACK.
-  - \`call_monitor\` — escalate to the supervisor agent.
 
 Choosing which tool:
   - Exactly TWO natural answers → \`show_binary_choice\`.
@@ -379,17 +384,32 @@ Write it like any other ${T.button}: first-person \`speech\` for the intent ("I 
     ...(enabledApps ?? []).map(a => `"${a.id}" (${a.name})`),
     ...(availableCustomApps ?? []).map(a => `"${a.id}" (${a.name})`),
   ];
+  // Apps whose launch button must carry the thing the user named.
+  const queryApps = (enabledApps ?? []).filter(a => a.queryHint);
   if (appList.length > 0) {
     // Build the example from a REAL app in this session's list so the id shown
     // is always one the model may actually use.
     const exampleApp = (enabledApps ?? [])[0] ?? (availableCustomApps ?? [])[0];
+    // Photos rides the SAME app pattern as everything else — its per-student
+    // detail (the captions a query is matched against) is one more data line
+    // on the "photos" entry, NOT a separate block with its own rules. A lone
+    // special-cased block taught the model that photos worked differently,
+    // which is exactly the confusion it doesn't need. Captions are
+    // caretaker-typed free text, so each is wrapped as untrusted.
+    const photosLine =
+      photoLibrary && photoLibrary.count > 0 && (enabledApps ?? []).some(a => a.id === "photos")
+        ? photoLibrary.captions.length > 0
+          ? `\n  - "photos" holds ${photoLibrary.count}: ${photoLibrary.captions.map(wrapUntrusted).join(", ")}${photoLibrary.truncated ? ", and more" : ""}. Its \`data\`/\`appQuery\` must be caption words, verbatim — non-matching words open the browse grid.`
+          : `\n  - "photos" holds ${photoLibrary.count}, none captioned — open it with NO \`data\`/\`appQuery\` and let ${studentName} choose.`
+        : "";
     prompt += `\n\n<apps_context>
-To open an app for the user, add a ${T.button} with \`open.app\` set to the app id — the user presses it to launch. Apps: ${appList.join(", ")}.
-  - The ${T.button} that AGREES to an app IS the ${T.button} that opens it. Asked "want to play ${exampleApp.name}?", the yes-${T.button} carries the launch: \`{ label: "Yes", speech: "Yes, I want ${exampleApp.name}", open: { app: "${exampleApp.id}" } }\`. A plain "yes" that only speaks leaves the user agreeing to something that never opens.
-  - Omit the \`glyph\` to use the app's own icon.
-  - When an app is already open, prefer add_context_button() and offer ${T.button}s relevant to it.
+Apps: ${appList.join(", ")}.
+The DEVICE opens apps ITSELF when the user asks it for one or agrees to its offer — never build an "open it" ${T.button} for an app the DEVICE just said it is opening.
+Your job is the OFFER: a launch ${T.button} the user can press to open an app on their own. Set \`open.app\`${queryApps.length > 0 ? ` and \`open.appQuery\` = the thing the user named (${queryApps.map(a => `${a.id}: ${a.queryHint}`).join("; ")}) — these apps open EMPTY without it` : ""}. The ${T.button} that agrees IS the ${T.button} that opens: \`{ label: "Yes", speech: "Yes, I want ${exampleApp.name}", open: { app: "${exampleApp.id}" } }\`. One that only speaks opens nothing.${photosLine}
+  - Omit \`glyph\` to use the app's own icon. App already open → prefer add_context_button().
 </apps_context>`;
   }
+
 
   if (homeActions && homeActions.length > 0) {
     const homeList = homeActions
@@ -488,12 +508,13 @@ On [GUESSING STATE] the user is finding a word they can't reach directly. Build 
   1. **Registry key** — when the latest [GUESSING STATE] \`offered_keys\` fit, emit a ${T.button} with ONLY \`label\` set to the key (e.g. \`{ label: "suggestion:things.kind:animal" }\`) — NO \`glyph\`, \`speech\`, or \`op\`; the system fills the picture + voiced label. NEVER invent keys.
     - ALWAYS use the full key. Even for a simple two-way question (e.g. fast or slow), emit \`{ label: "suggestion:actions.pace:fast" }\` and \`{ label: "suggestion:actions.pace:slow" }\` — do NOT re-author an offered key as a \`narrow\`/\`contrast\` button copying its value (\`{ kind:"narrow", value:"fast" }\`). That value is untranslated and routes wrong; the registry key is localized for the user.
   2. **Your own narrowing** — when no offered dimension fits, propose one. Use the SAME \`dimension\` across the batch.
-    - \`{ kind:"narrow", dimension:"genre", value:"Comedy", glyph:[{sym:"😂"}], speech:"funny" }\`
+    - \`{ kind:"narrow", dimension:"genre", value:"comedy", label:"Comedy", glyph:[{sym:"😂"}], speech:"funny" }\`
+    - \`dimension\`+\`value\` are internal English metadata; \`label\` + \`speech\` are what the user sees and hears — ALWAYS in the user's language.
   3. **"Closer to A or B?"** — to bisect a niche concept space, ONE contrast button (2+ poles allowed).
-    - \`{ kind:"contrast", dimension:"feel", poles:[{value:"cat-like", speech:"more like a cat", glyph:[{sym:"🐱"}]}, {value:"dog-like", speech:"more like a dog", glyph:[{sym:"🐶"}]}] }\`
-    - The system renders one ${T.button} per pole and records the chosen pole (its \`speech\` is kept as the clue).
+    - \`{ kind:"contrast", dimension:"feel", poles:[{value:"cat_like", label:"like a cat", speech:"more like a cat", glyph:[{sym:"🐱"}]}, {value:"dog_like", label:"like a dog", speech:"more like a dog", glyph:[{sym:"🐶"}]}] }\`
+    - The system renders one ${T.button} per pole and records the chosen pole (its \`speech\` is kept as the clue). Pole \`label\` + \`speech\` in the user's language.
   4. **Final guess** — when narrowing has converged.
-    - \`{ kind:"guess", value:"Spider-Man", glyph:[{sym:"🕷️"}] }\`
+    - \`{ kind:"guess", value:"Spider-Man", label:"Spider-Man", glyph:[{sym:"🕷️"}] }\` — \`label\` in the user's language.
 
 **Helper buttons** ("More"/"No") steer the registry questions — [GUESSING STATE] says which was pressed.
   - "More" → returns rarer answers to the SAME question; surface the fresh \`offered_keys\`.
@@ -970,7 +991,7 @@ export interface BoardManagerToolConfig {
   permittedWebsites?: PermittedWebsite[];
   /** Apps the BoardManager may author `open.app` launch-buttons for — the
    *  enabled built-in apps plus available custom games, as `{ id, name }`. */
-  enabledApps?: Array<{ id: string; name: string }>;
+  enabledApps?: Array<{ id: string; name: string; queryHint?: string }>;
   /** Smart-home actions the BoardManager may author `open.home` buttons for
    *  (ENABLED slots only). When empty the `open.home` sub-field stays off the
    *  schema entirely. Re-gated in the coordinator. */
@@ -1019,13 +1040,17 @@ function glyphItemSchema(): Record<string, unknown> {
 interface ButtonSchemaOpts {
   includeGuessingFields?: boolean;
   includeMetaButtonField?: boolean;
+  /** Compact `open` schema (binary-choice options): keeps the launch fields but
+   *  does not re-enumerate the allowed targets — rebuild_board's schema and
+   *  <apps_context> already list them once. */
+  openBrief?: boolean;
   /** When present + non-empty, exposes an `open` field so the button LAUNCHES
    *  an app/website/pre-built board — or FIRES a smart-home action — on press
    *  instead of voicing speech. Lists constrain the AI to the permitted
    *  targets; the coordinator re-gates server-side. */
   openTargets?: {
     websites: Array<{ url: string; label: string }>;
-    apps: Array<{ id: string; name: string }>;
+    apps: Array<{ id: string; name: string; queryHint?: string }>;
     /** Pre-built board KEYS. Not enumerated in the description — they are
      *  already listed with their names + author hints in <prebuilt_boards>,
      *  and this schema is inlined on every button of every rebuild. */
@@ -1091,6 +1116,22 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
 
   if (opts.openTargets && (opts.openTargets.websites.length > 0 || opts.openTargets.apps.length > 0 || opts.openTargets.boards.length > 0 || opts.openTargets.homeActions.length > 0)) {
     const { websites, apps, boards, homeActions } = opts.openTargets;
+    const appsWithQuery = apps.filter((a): a is { id: string; name: string; queryHint: string } => !!a.queryHint);
+    if (opts.openBrief) {
+      // Compact variant (binary-choice options): same fields, but the allowed
+      // targets are NOT re-enumerated — rebuild_board's schema and
+      // <apps_context> already carry the lists once.
+      properties.open = {
+        type: "object",
+        description: `OPTIONAL. Pressing this option also OPENS the target — same permitted targets and rules as rebuild_board's \`open\`${appsWithQuery.length > 0 ? " (incl. \`appQuery\`)" : ""}.`,
+        properties: {
+          ...(websites.length > 0 ? { website: { type: "string" } } : {}),
+          ...(apps.length > 0 ? { app: { type: "string" } } : {}),
+          ...(appsWithQuery.length > 0 ? { appQuery: { type: "string" } } : {}),
+          ...(boards.length > 0 ? { board: { type: "string" } } : {}),
+        },
+      };
+    } else {
     const allowed: string[] = [];
     if (websites.length > 0) {
       allowed.push(`WEBSITES — ${websites.map(w => `"${w.url}"${w.label ? ` (${w.label})` : ""}`).join(", ")}`);
@@ -1116,10 +1157,19 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
       properties: {
         ...(websites.length > 0 ? { website: { type: "string", description: `A permitted website URL to open in the browser (one of the listed WEBSITES, or a subpage of one).` } } : {}),
         ...(apps.length > 0 ? { app: { type: "string", description: `An app id to launch (one of the listed APPS).` } } : {}),
+        ...(appsWithQuery.length > 0
+          ? {
+              appQuery: {
+                type: "string",
+                description: `ONLY with \`app\`. The thing the user named, in their words — ${appsWithQuery.map(a => `"${a.id}"`).join(", ")} open EMPTY without it.`,
+              },
+            }
+          : {}),
         ...(boards.length > 0 ? { board: { type: "string", description: `A pre-built ${T.board} KEY from <prebuilt_boards> (snake_case, NOT the display name). Pressing loads that ${T.board} — the OFFER alternative to set_board. See <board_buttons>.` } } : {}),
         ...(homeActions.length > 0 ? { home: { type: "string", description: `A HOME ACTION id (one of the listed HOME ACTIONS). Pressing runs it in the user's home; nothing is voiced and the ${T.board} stays put. See <home_context>.` } } : {}),
       },
     };
+    }
   }
 
   if (opts.includeGuessingFields) {
@@ -1138,15 +1188,16 @@ Omit \`kind\` for a normal ${T.button} and for registry \`suggestion:\` keys (th
     };
     properties.value = {
       type: "string",
-      description: `For "narrow"/"guess": the value/word the user picks (becomes the visible label).`,
+      description: `For "narrow"/"guess": the MACHINE-READABLE value the press records — for "narrow" short English snake_case (e.g. "in_nature"); for "guess" the candidate word. NEVER shown: the user sees \`label\`, so ALWAYS fill \`label\` (and \`speech\`) in the user's language.`,
     };
     properties.poles = {
       type: "array",
-      description: `For "contrast": 2+ poles. Each is { value (shown), speech? (voiced + recorded clue), glyph? (visual array) }.`,
+      description: `For "contrast": 2+ poles. Each is { value (machine-readable, English), label (shown — user's language), speech? (voiced + recorded clue), glyph? (visual array) }.`,
       items: {
         type: "object",
         properties: {
           value: { type: "string" },
+          label: { type: "string" },
           speech: { type: "string" },
           glyph: { type: "array", items: glyphItemSchema() },
         },
@@ -1155,13 +1206,20 @@ Omit \`kind\` for a normal ${T.button} and for registry \`suggestion:\` keys (th
   }
 
   if (opts.includeMetaButtonField) {
+    // While the Word Finder is active (includeGuessingFields is set iff so),
+    // the "wordfinder" entry is a no-op the coordinator drops — keep it OUT
+    // of the enum entirely, not just prose-warned. With the value dangling in
+    // the schema, Flash stamped button_type:"wordfinder" onto its narrowing
+    // buttons; each was then canonicalized to a bare magnifier and dropped,
+    // shipping near-empty word-finder boards (2026-08-19 session).
+    const wordfinderAllowed = !opts.includeGuessingFields;
     properties.button_type = {
       type: "string",
-      enum: ["wordfinder", "more"],
+      enum: wordfinderAllowed ? ["wordfinder", "more"] : ["more"],
       description: `OPTIONAL. Marks this entry as a META button. The device renders a FIXED appearance and IGNORES \`speech\` / \`glyph\` / \`label\`:
-  - "wordfinder" — a magnifier; opens Word Finder narrowing.
-  - "more" — "something else" with a RELOAD symbol; asks you for fresh options on the same topic.
-See <meta_buttons> for when to use each.`,
+${wordfinderAllowed ? `  - "wordfinder" — a magnifier; opens Word Finder narrowing.
+` : ""}  - "more" — "something else" with a RELOAD symbol; asks you for fresh options on the same topic.
+See <meta_buttons> for when to use each. NEVER set this on a normal ${T.button} — it erases the ${T.button}'s own content.`,
     };
   }
 
@@ -1188,7 +1246,9 @@ function buildRebuildBoardTool(config: BoardManagerToolConfig): FunctionDeclarat
   return {
     name: "rebuild_board",
     description: `Replace the ${T.board} with up to 8 fresh ${T.button}s. See <when_to_act> for when to call this.
-
+${(config.enabledApps?.length || config.permittedWebsites?.length) ? `
+When the AI just OFFERED an app, photo, or site ("want to look at a picture of an owl?"), the agreeing ${T.button} MUST carry \`open\` (+\`appQuery\` for the thing named) — a yes that only speaks opens nothing. See <apps_context>.
+` : ""}
 The \`target\` field declares who the user's button replies are addressed to:
   - "DEVICE" (default) — user is talking to the AI.
   - "USER" — user is talking to themselves.
@@ -1339,6 +1399,19 @@ The \`sentence\` argument MUST be the FINAL natural-language sentence, first-per
   };
 }
 
+/** Launch targets for a binary-choice option: everything a board button may
+ *  open, MINUS home actions (see the note on the schema below). */
+function binaryChoiceOpenTargets(config: BoardManagerToolConfig): ButtonSchemaOpts["openTargets"] | undefined {
+  const targets = openTargetsFromConfig(config);
+  if (!targets) return undefined;
+  const withoutHome = { ...targets, homeActions: [] };
+  const empty =
+    withoutHome.websites.length === 0 &&
+    withoutHome.apps.length === 0 &&
+    withoutHome.boards.length === 0;
+  return empty ? undefined : withoutHome;
+}
+
 function buildShowBinaryChoiceTool(config: BoardManagerToolConfig): FunctionDeclaration {
   return {
     name: "show_binary_choice",
@@ -1347,14 +1420,21 @@ function buildShowBinaryChoiceTool(config: BoardManagerToolConfig): FunctionDecl
   - For yes/no, use the canonical \`yes\`/\`no\` SYMBOLs in each option's \`glyph\` field — they render with animated yes/no icons and default green/red coloring.
   - A "Neither" button is added automatically.
   - For open-ended questions, use rebuild_board() instead.
+  - When the question OFFERS an app/photo/site, the agreeing option MUST carry \`open\` (same rules as rebuild_board, incl. \`appQuery\`) — a yes that only speaks opens nothing.
 
 \`target\` semantics: same as rebuild_board.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        option1: buttonObjectSchema(),
-        option2: buttonObjectSchema(),
+        // Launch targets on BOTH options. Without these an app offer phrased as
+        // a yes/no question — which is how most of them are phrased — could
+        // only ever produce a dead press: the model picks show_binary_choice
+        // for "want to open X?", the student presses yes, and nothing opens.
+        // Home actions are deliberately excluded: firing a smart-home slot off
+        // an overlay bypasses the confirm step that flow is built around.
+        option1: buttonObjectSchema({ openTargets: binaryChoiceOpenTargets(config), openBrief: true }),
+        option2: buttonObjectSchema({ openTargets: binaryChoiceOpenTargets(config), openBrief: true }),
         target: {
           type: "string",
           description: `Who the choice is addressed to. "DEVICE" (default), "USER", or a person's name.`,
@@ -1512,6 +1592,10 @@ export function buildBoardManagerToolDeclarations(config: BoardManagerToolConfig
     declarations.push(buildPressButtonTool());
   }
 
+  // open_app is NOT declared here — it moved to the live Speaker
+  // (2026-08-19, Daniel): the agent that hears the consent is the agent that
+  // opens the app. The BM parse case + coordinator dispatch for "open_app"
+  // remain as gated tolerance for a stale model calling it anyway.
   declarations.push(buildShowBinaryChoiceTool(config));
   declarations.push(buildSuggestConstructionButtonsTool());
   declarations.push(buildSetMemoryChipsTool());
@@ -1523,8 +1607,9 @@ export function buildBoardManagerToolDeclarations(config: BoardManagerToolConfig
   }
   declarations.push(NO_CHANGE);
 
-  // call_monitor only — private_note intentionally omitted.
-  declarations.push(CALL_MONITOR);
+  // call_monitor removed (2026-08-19): the BM never had anything useful to
+  // escalate — the Observer and Speaker both carry it, and every tool on this
+  // surface costs schema budget on a saturated flash model.
 
   return [{ functionDeclarations: declarations }];
 }

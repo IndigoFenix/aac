@@ -68,8 +68,6 @@ export interface PlanetWorldSpec {
   /** Terrain colour bands. Omitted = earthlike; solar-system planets get one
    *  derived from their physics (Mars red, Moon grey, ice white, …). */
   palette?: PlanetPalette;
-  /** Quest-giving residents per founded town (0..3; default 0). */
-  questCount?: number;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -182,8 +180,9 @@ export const PLANET_WORLD_FIELDS: GroupSpec = {
       description: 'Terrain colour bands; each is "#rrggbb" or an [r,g,b] linear tuple.' },
     { key: "founding", kind: "object", fields: PLANET_FOUNDING_FIELDS, facet: "interior", label: "Founding",
       description: "Settlement-density overrides for the founding scan." },
-    { key: "questCount", kind: "int", min: 0, max: 3, facet: "interior", label: "Quests per town",
-      description: "Quest-giving residents per founded town (0..3; default 0)." },
+    // `questCount` DELETED (Shape B ruling 3, quest-spine-detachment.md): a
+    // quest declaration is only valid inside a structured scope — town or
+    // structure. The strict gate now rejects it here as an unknown field.
   ],
 };
 

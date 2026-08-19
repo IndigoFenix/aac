@@ -50,6 +50,45 @@ resource "aws_s3_bucket_logging" "uploads" {
   target_prefix = "s3-access-logs/uploads/"
 }
 
+# Prune old versions. Versioning is on for HIPAA recovery (above), but nothing
+# expired the superseded copies, so every replaced or deleted object stayed
+# billed indefinitely. That is a RETENTION problem before it is a cost one: a
+# student erasure that leaves noncurrent versions in the bucket has not actually
+# erased anything. 30 days matches the aac_updates bucket and leaves a generous
+# recovery window.
+#
+# Delete markers are cleaned up too — once the last noncurrent version behind a
+# marker expires, the marker itself is dead weight that slows down listings.
+resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    id     = "prune-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+
+  # Failed multipart uploads leave their parts billed forever and invisible in a
+  # normal object listing. Matters more as upload sizes grow.
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 # CORS configuration for uploads (if needed for direct browser uploads)
 resource "aws_s3_bucket_cors_configuration" "uploads" {
   bucket = aws_s3_bucket.uploads.id
@@ -202,6 +241,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
       days = 2190  # 6 years
     }
   }
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  # DELIBERATELY NOT SET: noncurrent_version_expiration. This bucket is versioned
+  # and under a 6-year compliance retention, so pruning superseded versions is a
+  # retention-policy decision, not a cleanup. Log objects are written once, so
+  # noncurrent versions should be rare in practice — confirm that's true before
+  # adding a rule here.
 }
 
 # =============================================================================

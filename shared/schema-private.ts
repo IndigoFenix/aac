@@ -353,6 +353,9 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "consent_record",
   // Content packages (planning-docs/aac-packages-plan.md §10).
   "package", "package_assignment",
+  // Family photos (planning-docs/aac-photos-plan.md). The subject is the PHOTO
+  // ASSET; the owning student/institute rides along as subject 2.
+  "photo",
 ]);
 
 // =============================================================================
@@ -739,6 +742,15 @@ export const aacSettings = pgTable("aac_settings", {
   // Smart-home action slots — array of clinician-authored { id, label, type, command, ... } the student can fire from a board (see shared/home-actions.ts)
   homeActions: jsonb("home_actions").default([]),
 
+  // Location Menus — one settings OBJECT (not N booleans), read through
+  // normalizeVenueMenuSettings in shared/venue-menus.ts and never raw.
+  // Off by default; `requireReview` / `showPrices` store 'auto' and resolve
+  // against the student's age at READ time. Deliberately excluded from the
+  // AI-editable whitelists — the AI may surface a venue it was told about, but
+  // must never enable location search or author a menu.
+  // See planning-docs/aac-restaurant-menus.md §4.7.
+  venueMenus: jsonb("venue_menus").default({}),
+
   // Unified permitted YouTube content — array of { type: 'channel'|'playlist'|'video', id, label, description? }.
   // Supersedes permittedYoutubeChannels/permittedYoutubeVideos below. The two
   // legacy columns are retained (and backfilled into this one by migration
@@ -779,6 +791,28 @@ export const aacSettings = pgTable("aac_settings", {
   // student's mirrored board (guided communication). Off by default — facilitator
   // presses from the call are ignored unless this is enabled per student.
   allowFacilitatorControl: boolean("allow_facilitator_control").default(false).notNull(),
+
+  // ── Press pacing ─────────────────────────────────────────────────────────
+  // How long the server holds a button press before letting the AI answer it,
+  // in ms. 0 (the default) = today's behavior: the press is voiced and routed
+  // to the agents in the same beat. Above zero, the press is still voiced
+  // IMMEDIATELY, but the turn is buffered for this long — any further presses
+  // that land inside the window join it, and the AI eventually answers ONE
+  // combined utterance ("I" + "want" + "juice"). Students who build a thought
+  // one button at a time were being answered after the first word. The board
+  // is left alone for the duration of the hold, so the buttons don't move out
+  // from under a chain in progress. See press-pacing.ts.
+  pressResponseDelay: integer("press_response_delay").default(0).notNull(),
+
+  // BARGE-IN. When on, pressing a DIFFERENT button while the AI is answering
+  // (or while its replacement board is still being generated) abandons that
+  // response outright: the reply is cut, the in-flight board build is
+  // cancelled, and the new press is voiced straight away. Off (the default)
+  // keeps today's behavior — the audible reply is still clipped so the student
+  // is never talked over, but the AI's turn and board rebuild run to
+  // completion. A re-press of the SAME button is never a barge-in; it stays
+  // with the repeated-press guard (perseveration, not a new thought).
+  interruptOnNewPress: boolean("interrupt_on_new_press").default(false).notNull(),
 
   // Metadata
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -2341,6 +2375,36 @@ export const boards = pgTable("boards", {
   index("idx_boards_scope_institute").on(table.scope, table.instituteId),
 ]);
 
+// Student ⇄ venue. THE PHI half of Location Menus, and the reason `venues` /
+// `venue_menus` can live in the public schema at all: a restaurant's menu is a
+// public fact, but WHICH student eats WHERE is a record of a child's movements
+// and belongs here, governed by studentId like everything else.
+//
+// This is also what makes visit two instant — a matched venue with a row here
+// opens its board with no lookup, no network call, and no outbound position.
+// See planning-docs/aac-restaurant-menus.md §4.4.
+export const studentVenues = pgTable("student_venues", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  // Cross-schema FK: venues.id lives in schema.ts — constraint via migration.
+  venueId: varchar("venue_id").notNull(),
+  // The generated menu board. An ORDINARY boards row (isGenerated, studentId
+  // set), so it inherits every existing PHI rule, external-storage routing and
+  // access check — the feature adds no new privacy surface for the board.
+  boardId: varchar("board_id").references(() => boards.id, { onDelete: "set null" }),
+  // What the family calls it ("our pizza place"), overriding the venue's name.
+  label: text("label"),
+  isFavorite: boolean("is_favorite").default(false).notNull(),
+  lastVisitedAt: timestamp("last_visited_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  // One row per student per venue — revisiting updates, never duplicates.
+  uniqueIndex("idx_student_venues_student_venue").on(table.studentId, table.venueId),
+  index("idx_student_venues_student_id").on(table.studentId),
+  index("idx_student_venues_venue_id").on(table.venueId),
+]);
+
 // Package → student attachment. Lives in the private schema because the row
 // itself is PHI-adjacent: it reveals what content a student uses. Mirrors
 // customAppAssignments, including instituteId for cross-institute visibility.
@@ -3024,6 +3088,13 @@ export const insertBoardSchema = createInsertSchema(boards).omit({
   updatedAt: true,
 });
 
+// Student-venue schema (Location Menus — the PHI half, §4.4)
+export const insertStudentVenueSchema = createInsertSchema(studentVenues).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Custom app schemas
 export const insertCustomAppSchema = createInsertSchema(customApps).omit({
   id: true,
@@ -3302,6 +3373,10 @@ export type LmnStatus = (typeof lmnStatusEnum.enumValues)[number];
 export type Board = typeof boards.$inferSelect;
 export type InsertBoard = z.infer<typeof insertBoardSchema>;
 
+// Student-venue types
+export type StudentVenue = typeof studentVenues.$inferSelect;
+export type InsertStudentVenue = z.infer<typeof insertStudentVenueSchema>;
+
 // Custom app types
 export type CustomApp = typeof customApps.$inferSelect;
 export type InsertCustomApp = z.infer<typeof insertCustomAppSchema>;
@@ -3579,3 +3654,135 @@ export type AccountLinkGrantRow = typeof accountLinkGrants.$inferSelect;
 export type InsertAccountLinkGrantRow = typeof accountLinkGrants.$inferInsert;
 export type AccountLinkCredentialRow = typeof accountLinkCredentials.$inferSelect;
 export type InsertAccountLinkCredentialRow = typeof accountLinkCredentials.$inferInsert;
+
+// =============================================================================
+// FAMILY PHOTOS (see planning-docs/aac-photos-plan.md)
+//
+// Photos a student looks at on the AAC: family faces, a pet, a trip. Curated by
+// a caretaker in the clinician client, stored in OUR S3, surfaced either by the
+// student browsing them or by the AI raising one mid-conversation.
+//
+// PRIVATE schema, not `schema.ts`, because a student-scoped photo is personal
+// data about the student's household and erasure must follow the student row —
+// the same reason `students` and `externalConnections` live here. `customSymbols`
+// is public because a symbol is vocabulary; a family photo is not.
+//
+// Google Photos can only ever be an IMPORT SOURCE. Google deleted the
+// `photoslibrary.readonly` scope family on 2025-03-31, so no stored credential
+// can read a user's library, and Picker `baseUrl`s expire in ~60 minutes. Every
+// available path ends with us holding copies — hence `photos` is an asset table,
+// not a pointer table. See the plan's §1 for the full reasoning.
+// =============================================================================
+
+// The image ASSET, content-addressed so the same bytes are stored once no matter
+// how many scopes or students show them. Carries NO scope columns: an asset is
+// inert until a `photoAssignments` row points at it.
+//
+// Originals are never stored. Ingest produces exactly two renders (display and
+// thumb) and discards the source buffer — a 3-5MB phone photo becomes ~200KB,
+// which is a ~20x reduction in both storage and egress. EXIF is stripped on
+// write except the capture time, lifted into `takenAt` first; GPS coordinates in
+// a child's photo library are a liability we have no use for.
+export const photos = pgTable("photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // sha256 of the ORIGINAL uploaded bytes, hex. The dedup key: a re-import of
+  // the same photo finds this row instead of writing a second copy. Hashing the
+  // original (not a render) keeps the key stable if the render ladder changes.
+  contentHash: text("content_hash").notNull(),
+  // S3 keys under `photos/<id>/` — distinct prefix from `symbols/`.
+  s3Key: text("s3_key").notNull(),          // display render, 1024px long edge
+  thumbS3Key: text("thumb_s3_key").notNull(), // grid thumb, 256px long edge
+  mimeType: text("mime_type").default("image/webp").notNull(),
+  // Dimensions and size of the DISPLAY render, not the original.
+  width: integer("width"),
+  height: integer("height"),
+  byteSize: integer("byte_size"),
+  // Vision-generated fallback label, used only for `show_photo` query matching
+  // when nobody wrote a caption. NEVER names a person: a confidently wrong name
+  // spoken to a student who cannot correct it is worse than silence. Populating
+  // this at all is a consent decision, not an engineering one — see plan §8.
+  aiDescription: text("ai_description"),
+  aiDescribedAt: timestamp("ai_described_at"),
+  // Plain text (not a pg enum) so a new import path needs no migration —
+  // same reasoning as `externalConnections.provider`.
+  source: text("source").default("upload").notNull(), // 'upload' | 'google_photos'
+  // Google media item id when imported. Stored so a re-pick of the same photo is
+  // recognised; it grants no access on its own (the scopes that would read it
+  // no longer exist).
+  sourceMediaItemId: text("source_media_item_id"),
+  takenAt: timestamp("taken_at"), // from EXIF, when present
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  // Unique: the whole point of content-addressing. An ingest races to insert and
+  // falls back to reading the existing row on conflict.
+  uniqueIndex("idx_photos_content_hash").on(table.contentHash),
+  index("idx_photos_source_media_item").on(table.sourceMediaItemId),
+]);
+
+// Scope, caption and order — one row per (asset, scope) pairing.
+//
+// Caption lives HERE rather than on the asset because the same photo means
+// different things in different scopes: a classroom shot is "my class" for one
+// student and "Room 3" institute-wide.
+//
+// Caps (100 per student, 100 per institute) count ASSIGNMENT rows, never assets,
+// so content-hash dedup can never let one family's re-import eat another scope's
+// allowance.
+//
+// NOTE — deviates from the `customSymbols` precedent, which uses two sibling
+// association tables (user / institute). One table with a CHECK is used instead
+// because cap counting and library listing are both single-scope-filtered
+// queries and two tables would double every one of them. The symbol precedent
+// also associates to *users*, not students, so it is not a clean template.
+export const photoAssignments = pgTable("photo_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  photoId: varchar("photo_id")
+    .references(() => photos.id, { onDelete: "cascade" })
+    .notNull(),
+  // Exactly one of these is set — enforced by the CHECK below.
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }),
+  // Cross-schema FK: institutes.id lives in schema.ts — constraint via migration.
+  instituteId: varchar("institute_id"),
+  // Caretaker-written, and the PRIMARY label everywhere: the browse button's
+  // text, what the AI matches `show_photo` queries against, and what it says
+  // aloud. `photos.aiDescription` is only a fallback when this is null.
+  caption: text("caption"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  // Retire a photo from the student's view without deleting it — a bereavement,
+  // a relative no longer in the picture. Deliberately reversible.
+  hiddenFromStudent: boolean("hidden_from_student").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  // Exactly one scope. Without this a row could be global (both null) or
+  // ambiguous (both set), and cap counting would silently disagree with what
+  // the student sees.
+  check(
+    "photo_assignments_exactly_one_scope",
+    sql`(${table.studentId} IS NULL) <> (${table.instituteId} IS NULL)`,
+  ),
+  uniqueIndex("idx_photo_assignments_photo_student").on(table.photoId, table.studentId),
+  uniqueIndex("idx_photo_assignments_photo_institute").on(table.photoId, table.instituteId),
+  index("idx_photo_assignments_student_id").on(table.studentId),
+  index("idx_photo_assignments_institute_id").on(table.instituteId),
+  index("idx_photo_assignments_photo_id").on(table.photoId),
+]);
+
+export type Photo = typeof photos.$inferSelect;
+export type InsertPhoto = typeof photos.$inferInsert;
+export type PhotoAssignment = typeof photoAssignments.$inferSelect;
+export type InsertPhotoAssignment = typeof photoAssignments.$inferInsert;
+
+export const insertPhotoSchema = createInsertSchema(photos).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPhotoAssignmentSchema = createInsertSchema(photoAssignments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});

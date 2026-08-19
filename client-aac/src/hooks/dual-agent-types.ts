@@ -257,6 +257,12 @@ export interface BinaryChoiceOption {
   iconRef?: string;
   symbolPath?: string;
   imageKey?: string;
+  /** Set when choosing this option also OPENS something — an app, a permitted
+   *  site, a pre-built board. Server-gated, in the same shape a board button
+   *  carries, so the overlay press reuses the board's launch path. Most offers
+   *  ("want to look at a picture?") are phrased as yes/no questions, so without
+   *  this the agreeing option could only ever speak. */
+  action?: import("@shared/schema").BoardButtonAction;
 }
 
 /** AI-driven memory chips for the construction board, scoped per category. */
@@ -310,6 +316,10 @@ export interface ProcessingState {
 export interface ActiveAppData {
   appId: string;
   appData?: any;
+  /** The free-text argument from `open_app(appId, data)` — a search query for
+   *  media apps, a caption fragment for photos. Sent by the coordinator at the
+   *  TOP level of the app_open payload, alongside appData, not inside it. */
+  data?: string;
 }
 
 /** Home-board "Practice friend" preview: the peer face shown on the button

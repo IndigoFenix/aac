@@ -19,11 +19,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  X, RefreshCw, ChevronLeft, Globe,
+  X, RefreshCw, Globe,
   ChevronUp, ChevronDown, ChevronsUp, ChevronsDown,
   Play, Pause, MousePointerClick, Keyboard as KeyboardIcon,
-  Delete, CornerDownLeft, ArrowLeftToLine, ArrowRightToLine, CircleDot,
+  Delete, CornerDownLeft, CircleDot,
 } from "lucide-react";
+// Back, and the tab-step arrows: both follow the reading direction, so they
+// come from the logical set rather than naming a physical side. Scroll
+// up/down and the transport icons above are axis-neutral and stay lucide's.
+import { ChevronBack, ArrowBackToLine, ArrowForwardToLine } from "@/components/ui/directional-icons";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { isUrlPermitted } from "@shared/permitted-websites";
@@ -355,7 +359,7 @@ export default function ElectronBrowserApp({
         <button type="button" data-dwell onClick={handleBack}
           className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center active:scale-95 transition-transform"
           aria-label={t("browserApp.back")}>
-          <ChevronLeft size={28} className="text-gray-700" />
+          <ChevronBack size={28} className="text-gray-700" />
         </button>
         <button type="button" data-dwell onClick={handleRefresh}
           className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center active:scale-95 transition-transform"
@@ -445,10 +449,10 @@ export default function ElectronBrowserApp({
           {/* Tab navigation: step focus through the page + activate, an
               eyegaze-friendly alternative to dwell-to-click on small targets. */}
           <ControlButton onClick={tabPrev} disabled={!ready} label={t("browserApp.tabPrev")}>
-            <ArrowLeftToLine size={24} />
+            <ArrowBackToLine size={24} />
           </ControlButton>
           <ControlButton onClick={tabNext} disabled={!ready} label={t("browserApp.tabNext")}>
-            <ArrowRightToLine size={24} />
+            <ArrowForwardToLine size={24} />
           </ControlButton>
           <ControlButton onClick={activateFocused} disabled={!ready} label={t("browserApp.activate")}>
             <CircleDot size={24} />

@@ -169,6 +169,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "iconTextRatio", "languageLevel", "usePcsSymbols", "singleGlyphButtons",
     "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols", "dynamicBoardsEnabled",
     "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "selectionMethod", "restSpace",
+    "pressResponseDelay", "interruptOnNewPress",
     "signLanguage", "multiCameraMode",
     "allowReadProgress", "allowReadReports", "allowNotes", "autoAddContacts",
     "appConfig", "chatAgentPrompt", "autoAacPrompt", "seizureDetection",
@@ -599,6 +600,20 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       title: "Rest Areas",
       description:
         "How much space is cut from board buttons' corners so the gap where four meet forms a circle the student can rest their gaze in without selecting: 'large', 'small', or 'none'",
+    },
+    pressResponseDelay: {
+      id: "pressResponseDelay",
+      type: "string",
+      title: "Response Delay",
+      description:
+        "How long (in MILLISECONDS) to wait after a button press before the AI answers, so the student can chain buttons into one thought. 0 = answer immediately (default). A value between 250 and 15000 holds the turn: the press is still voiced at once, and further presses inside the window join it, so the AI replies once to the whole thought.",
+    },
+    interruptOnNewPress: {
+      id: "interruptOnNewPress",
+      type: "string",
+      title: "New Press Interrupts",
+      description:
+        "When true, pressing a DIFFERENT button while the AI is answering (or while its new board is still being built) abandons that response — the reply is cut, the board build is cancelled, and the new press is voiced immediately. Pressing the SAME button again is never treated this way. Default false (true/false).",
     },
     signLanguage: {
       id: "signLanguage",

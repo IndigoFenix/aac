@@ -21,7 +21,7 @@
 // Import directly:  import { createQuestHost3D } from "@shared/world-engine/interaction/quest/quest-host";
 
 import * as THREE from "three";
-import type { EntityDef, FulfillNode, GoalTreeGame } from "../../solver/types.js";
+import type { EntityDef, FulfillNode, GoalTreeGame, GoalTreeGameMeta } from "../../solver/types.js";
 // The use-point contract (furniture-use.ts) is the ONE authority for how a body
 // uses a fixture — the rest primitive reads it so the pose it shows and the pose
 // the renderer/anchor compose can never disagree.
@@ -348,8 +348,10 @@ import {
   makeWallConstraint,
   PLAYER_ID,
   zoneAt,
+  type ConverseObjects,
   type ConverseWorldItem,
   type Space3DState,
+  type TransportObjects,
   type TransportPlacement,
   type WorldEmbedding,
 } from "../../solver/space3d.js";
@@ -1242,10 +1244,42 @@ export interface TownPark {
   why: string;
 }
 
+/** The session's CONFIG SNAPSHOT — the runtime-read knobs of `game.meta`,
+ *  copied ONCE in `makeQuestSession` with the defaults applied there (syntax
+ *  "b", seed 0) and an optional per-boot override layered on top (e.g. an
+ *  AAC-provided locale that the authored spec cannot know). IMMUTABLE:
+ *  `game.meta` is never written after boot and neither is this snapshot.
+ *  `game.meta` itself stays populated and authored exactly as before — only
+ *  the runtime READS moved here. */
+export interface SessionMeta {
+  title: string;
+  /** BCP-47 locale player-facing strings render in (TTS lang, RTL, glyph
+   *  translation, speaker gender). */
+  locale: string;
+  /** Dialogue syntax level (`GoalTreeGameMeta.syntax`), default applied. */
+  syntax: "a" | "b" | "c";
+  /** The uint32 world seed (`GoalTreeGameMeta.seed`), default applied. */
+  seed: number;
+  /** The authority knob (`GoalTreeGameMeta.playerRelation`), pass-through. */
+  playerRelation?: GoalTreeGameMeta["playerRelation"];
+}
+
 export interface QuestSession {
-  game: GoalTreeGame;
-  world: LogicalWorld;
-  ctx: RuntimeContext;
+  /** The authored goal tree, or NULL for a QUESTLESS session (Shape B,
+   *  quest-spine-detachment.md): a world with no quest carries no game object
+   *  at all — no solver world, no runtime, no overlay pads. `world`/`ctx` are
+   *  null exactly when this is. */
+  game: GoalTreeGame | null;
+  /** Immutable config snapshot of `game.meta` (+ boot override) — the thing
+   *  every RUNTIME read goes through. See `SessionMeta`. Questless sessions
+   *  get pure defaults + the boot's override (the boot passes the real seed). */
+  meta: SessionMeta;
+  /** The EXACT `start()` opts this session booted with — the session's boot
+   *  record (Shape B ruling 4): `replay()` rebuilds a non-town session from
+   *  `(game, bootOpts)` alone. Session-lived; stored verbatim in `start()`. */
+  bootOpts: QuestSessionStartOpts;
+  world: LogicalWorld | null;
+  ctx: RuntimeContext | null;
   embedding: WorldEmbedding;
   entities: Map<string, EntityDef>;
   rState: RuntimeState;
@@ -2468,26 +2502,47 @@ export interface QuestDebugSnapshot {
   }>;
 }
 
+/** `QuestHost3D.start` options. Stored VERBATIM on the session as its boot
+ *  record (`QuestSession.bootOpts`) — `replay()` rebuilds a non-town session
+ *  from `(game, bootOpts)` alone (Shape B ruling 4: a session is a pure
+ *  function of its boot record). */
+export interface QuestSessionStartOpts {
+  spirit?: boolean;
+  dollhouse?: number;
+  /** Lays the deterministic resource/creature scatter (wilderness.ts) over the
+   *  ground — the founding flow's stage. On a QUESTLESS session (game null)
+   *  this is also what SIZES the world: manifold `side`×`side`, spawn at the
+   *  scatter's centre clearing. */
+  wilderness?: WildernessParams;
+  scale?: WorldScale;
+  /** The world's cultural law (`game.culture` — nations P2): its
+   *  absolutes found the session's unrepealable law ring. */
+  culture?: WorldCultureSpec | null;
+  /** ATTACHED-AVATAR MODE: the species the bodies this session CREATES for
+   *  its players are built from (the spec's `avatar_species`, which the
+   *  GoalTreeGame does not carry — a boot that reads the manifest lowers it
+   *  here, exactly as it lowers `avatarKind` into `spirit`). Omitted =
+   *  resolve the settler chain (the town's own species, else "human_cute"). */
+  avatarSpecies?: string;
+  /** QUESTLESS PAD (game null, no `wilderness`): the flat pad's side in sim
+   *  metres — the structure scope's `world.side`. Omitted = 240 (the
+   *  descriptor's default). Ignored when a game/town/wilderness sizes the
+   *  world instead. */
+  side?: number;
+  /** Per-boot `SessionMeta` overrides layered over the `game.meta`
+   *  snapshot (e.g. the AAC platform's locale). See `makeQuestSession`. */
+  meta?: Partial<SessionMeta>;
+}
+
 export interface QuestHost3D {
-  /** (Re)build the whole session and world for a game. `wilderness` lays the
-   *  deterministic resource/creature scatter (wilderness.ts) over the ground —
-   *  the founding flow's stage. */
+  /** (Re)build the whole session and world for a game — or, with `game` null,
+   *  a QUESTLESS session (Shape B): no goal tree, no solver/projector/embed,
+   *  no win machinery; world content comes from `opts` (wilderness scatter /
+   *  flat pad) alone. */
   start(
-    game: GoalTreeGame,
+    game: GoalTreeGame | null,
     town?: TownPlay | null,
-    opts?: {
-      spirit?: boolean; dollhouse?: number; wilderness?: WildernessParams;
-      scale?: WorldScale;
-      /** The world's cultural law (`game.culture` — nations P2): its
-       *  absolutes found the session's unrepealable law ring. */
-      culture?: WorldCultureSpec | null;
-      /** ATTACHED-AVATAR MODE: the species the bodies this session CREATES for
-       *  its players are built from (the spec's `avatar_species`, which the
-       *  GoalTreeGame does not carry — a boot that reads the manifest lowers it
-       *  here, exactly as it lowers `avatarKind` into `spirit`). Omitted =
-       *  resolve the settler chain (the town's own species, else "human_cute"). */
-      avatarSpecies?: string;
-    },
+    opts?: QuestSessionStartOpts,
   ): void;
   /** Rebuild the CURRENT session from scratch (deterministic). */
   replay(): void;
@@ -3382,140 +3437,144 @@ function makeTownModelFactory(
   };
 }
 
-export function makeQuestSession(game: GoalTreeGame, town: TownPlay | null = null): QuestSession {
+export function makeQuestSession(
+  game: GoalTreeGame | null,
+  town: TownPlay | null = null,
+  /** Per-boot overrides layered over the `game.meta` snapshot (a boot that
+   *  knows better than the authored spec — e.g. the AAC platform's locale). */
+  metaOverride?: Partial<SessionMeta>,
+): QuestSession {
+  // SESSION META — the immutable snapshot every runtime read goes through
+  // (game.meta is never written after boot). Defaults are centralized HERE:
+  // syntax "b", seed 0. A QUESTLESS session (game null — Shape B) has no
+  // authored meta at all, so the snapshot is pure defaults + the boot's
+  // override — the boot passes the REAL seed/title (convo/chat RNG reads
+  // `meta.seed`, so a boot that dropped the seed would shift transcripts).
+  const meta: SessionMeta = {
+    title: game?.meta.title ?? "world",
+    locale: game?.meta.locale ?? "en",
+    syntax: game?.meta.syntax ?? "b",
+    seed: game?.meta.seed ?? 0,
+    ...(game?.meta.playerRelation ? { playerRelation: game.meta.playerRelation } : {}),
+    ...metaOverride,
+  };
+
+  let world: LogicalWorld | null = null;
+  let ctx: RuntimeContext | null = null;
+  let embedding: WorldEmbedding;
+  let transport: TransportObjects = { objects: [], placements: [] };
+  let converse: ConverseObjects = { objects: [], items: [], staging: [], dests: [], stations: [] };
+  let village: VillagePlan | null = null;
+  if (game) {
   const certified = certifyGoalTreeGame(game);
   if (!certified.ok) {
     console.error("quest-host: game failed certification", certified.errors);
   }
-  let world = certified.ok ? certified.world : buildLogicalWorld(game);
-  let layout = certified.ok ? certified.layout : projectGameLayout(game, world);
+    world = certified.ok ? certified.world : buildLogicalWorld(game);
+    let layout = certified.ok ? certified.layout : projectGameLayout(game, world);
 
-  // QUESTLESS ROOT (⭐ — solver/types.ts ReachNode.via): a `reach` root with no
-  // `via` guards nothing to prove — the old star-placeholder, never real
-  // content (the schema's own "questless" signal, universal across every
-  // goal-tree builder: creature-quests.ts/town-quests.ts's questCount: 0
-  // convention). Shape A (planning-docs/games/world-engine/
-  // quest-spine-detachment.md): questless ⇒ zero physical artifacts. A world
-  // WITH real quests keeps `via` populated, so none of this ever touches it.
-  const questlessRoot = game.root.type === "reach" && !game.root.via;
+    // HOUSE mode (docs/SPACE_EMBEDDING.md): map the certified star world onto a
+    // procedurally-generated house — the circulation becomes free pass-through
+    // zones, helpers land in role rooms, the prize sits behind a locked door. The
+    // embedded world is completability-equivalent to the certified one (free
+    // circulation changes nothing), so the certificate still holds. Falls back to
+    // the village when the house can't fit the puzzle (embedPuzzle → null).
+    let house: PuzzleEmbedding | null = null;
+    if (!town && game.meta.layout === "house") {
+      const seed = game.meta.seed ?? 0;
+      const space = generateHouse(world.zones.length - 1, seed);
+      house = embedPuzzle(game, world, space, seed);
+      if (house) {
+        world = house.world;
+        layout = house.layout;
+      }
+    }
 
-  // HOUSE mode (docs/SPACE_EMBEDDING.md): map the certified star world onto a
-  // procedurally-generated house — the circulation becomes free pass-through
-  // zones, helpers land in role rooms, the prize sits behind a locked door. The
-  // embedded world is completability-equivalent to the certified one (free
-  // circulation changes nothing), so the certificate still holds. Falls back to
-  // the village when the house can't fit the puzzle (embedPuzzle → null).
-  let house: PuzzleEmbedding | null = null;
-  if (!town && game.meta.layout === "house") {
-    const seed = game.meta.seed ?? 0;
-    const space = generateHouse(world.zones.length - 1, seed);
-    // A questless root claims no role room — exclude its zone (and marker
-    // figure) from what embedPuzzle sees, at the call site: the smaller seam
-    // vs. teaching embed.ts a new exclude param. The figure has to leave WITH
-    // the zone, not after — embedPuzzle's content pass places every figure by
-    // its zone's rect, and no room will ever claim this one, so leaving the
-    // figure behind would crash on a missing rect.
-    const questlessZoneId = questlessRoot
-      ? world.zones.find((z) => z.ownerNodeId === game.root.id)?.id
-      : undefined;
-    const houseWorld = questlessZoneId
-      ? {
-          ...world,
-          zones: world.zones.filter((z) => z.id !== questlessZoneId),
-          figures: world.figures.filter((f) => f.zoneId !== questlessZoneId),
-        }
-      : world;
-    house = embedPuzzle(game, houseWorld, space, seed);
+    embedding = town ? townEmbedding(world, layout, town) : embedLayoutInWorld(layout);
+    // Materialize any transport puzzles' carry object + container as real world
+    // objects in the embedded spec, so the engine moves/renders them.
+    transport = buildTransportObjects(game, world, embedding.layout);
+    ctx = createRuntimeContext(game, world);
+    // Converse items are REAL carry objects (props loose, stock behind counters).
+    converse = buildConverseObjects(game, ctx.instances, world, embedding.layout);
+    embedding.spec.objects = [...transport.objects, ...converse.objects];
+    // Raise the village's HOUSES: real world-engine buildings on the zone rects,
+    // expanded into wall/door structures. Collision then comes from the engine
+    // (locked quest doors are locked ENGINE doors) and the whole field is open
+    // ground — the invisible-wall constraint is only kept when no buildings
+    // could be raised (a layout whose doors don't sit on zone edges).
+    // The HOUSE's contiguous rooms, else the VILLAGE's per-zone houses. The house
+    // brings its own buildings from the embedding (one enclosed home); the village
+    // walls each zone into a separate house on the plaza.
+    village = town || house ? null : planVillageBuildings(game, world, embedding.layout);
     if (house) {
-      world = house.world;
-      layout = house.layout;
+      // embedLayoutInWorld TRANSLATED the layout into the manifold (everything
+      // shifted by EMBED_MARGIN - min). house.buildings carry the UNSHIFTED room
+      // rects, so shift their footprints by the SAME delta — else the walls/roofs
+      // (and buildingAt, and the dollhouse camera that frames them) land ~1.5 units
+      // off from the spawn, objects, and zones. Doorway offsets are edge-relative,
+      // so only the footprint origin moves.
+      const shifted = embedding.layout.zones[0];
+      const original = layout.zones[0];
+      const bdx = shifted && original ? shifted.rect.x - original.rect.x : 0;
+      const bdy = shifted && original ? shifted.rect.y - original.rect.y : 0;
+      embedding.spec.buildings = house.buildings.map((b) => ({
+        ...b,
+        footprint: { ...b.footprint, x: b.footprint.x + bdx, y: b.footprint.y + bdy },
+      }));
+      embedding.spec = expandWorldBuildings(embedding.spec);
+    } else if (village) {
+      embedding.spec.buildings = village.buildings;
+      embedding.spec = expandWorldBuildings(embedding.spec);
     }
+  } else {
+    // QUESTLESS SESSION (Shape B ruling 5, quest-spine-detachment.md): no goal
+    // tree ⇒ no certification, no solver world, no projector layout, no puzzle
+    // embedding, no runtime — and therefore nothing to fabricate-then-strip.
+    // The session's world is an empty flat pad built DIRECTLY from world
+    // inputs; `start()` sizes it from its opts (a wilderness scatter's side +
+    // centre-clearing spawn, or the structure scope's `world.side`). The 240
+    // default here matches STRUCTURE_WORLD_FIELDS' `side` default.
+    const side = 240;
+    const spawn = { x: side / 2, y: side / 2 };
+    embedding = {
+      spec: {
+        engine: "world",
+        engineVersion: 1,
+        meta: { title: "quest", locale: "en", theme: "quest" },
+        manifold: { kind: "flat", width: side, height: side },
+        terrain: { kind: "flat" },
+        spawns: [{ id: "spawn", x: spawn.x, y: spawn.y }],
+        objects: [],
+        multiplayer: { maxPlayers: 1, authority: "distributed" },
+        content: { kind: "sandbox" },
+      },
+      layout: { zones: [], doors: [], figures: [], items: [], spawn },
+    };
   }
-
-  const embedding = town ? townEmbedding(world, layout, town) : embedLayoutInWorld(layout);
-  // QUESTLESS ROOT — VILLAGE/PLAIN PATH: `embedLayoutInWorld` just above ran on
-  // the certified layout, which still carries the root's zone (projectGameLayout
-  // stays untouched — the LogicalWorld keeps the root zone as bookkeeping).
-  // Strip that zone and its passage's door from the EMBEDDING (not the
-  // LogicalWorld) before `planVillageBuildings` reads `embedding.layout.zones`
-  // below — houseZones then comes out empty and it returns null naturally, no
-  // village.ts change needed. Town already builds its own zone list from cast
-  // anchors (the root owns none) and the house path excluded the zone at the
-  // embedPuzzle call site above, so this only ever fires for the village/plain
-  // path. This is the rebase-jump class quest-spine-detachment.md traces: a
-  // fixed-position "star house" that the wilderness's chunk-rebase never
-  // re-streams (WorldHost.rebase skips structures/buildings by contract).
-  if (questlessRoot && !town && !house) {
-    const questlessZoneId = world.zones.find((z) => z.ownerNodeId === game.root.id)?.id;
-    const questlessPassageId = questlessZoneId
-      ? world.passages.find((p) => p.to === questlessZoneId)?.id
-      : undefined;
-    if (questlessZoneId) {
-      embedding.layout.zones = embedding.layout.zones.filter((z) => z.zoneId !== questlessZoneId);
-    }
-    if (questlessPassageId) {
-      embedding.layout.doors = embedding.layout.doors.filter((d) => d.passageId !== questlessPassageId);
-    }
-  }
-  // QUESTLESS ROOT MARKER (⭐) — every path: strip the placeholder star figure
-  // (town already drops it via townEmbedding; the house path already dropped
-  // it at the embedPuzzle call site — a no-op here for both). Kills the
-  // accidental-win bug by construction: with no figure in the embedding,
-  // detectSpace3D's proximity scan never emits touch-figure for the root, so
-  // it can never fire runtime.ts's complete() → "game-won".
-  if (questlessRoot) {
-    embedding.layout.figures = embedding.layout.figures.filter((f) => f.nodeId !== game.root.id);
-  }
-  // Materialize any transport puzzles' carry object + container as real world
-  // objects in the embedded spec, so the engine moves/renders them.
-  const transport = buildTransportObjects(game, world, embedding.layout);
-  const ctx = createRuntimeContext(game, world);
-  // Converse items are REAL carry objects (props loose, stock behind counters).
-  const converse = buildConverseObjects(game, ctx.instances, world, embedding.layout);
-  embedding.spec.objects = [...transport.objects, ...converse.objects];
-  // Raise the village's HOUSES: real world-engine buildings on the zone rects,
-  // expanded into wall/door structures. Collision then comes from the engine
-  // (locked quest doors are locked ENGINE doors) and the whole field is open
-  // ground — the invisible-wall constraint is only kept when no buildings
-  // could be raised (a layout whose doors don't sit on zone edges).
-  // The HOUSE's contiguous rooms, else the VILLAGE's per-zone houses. The house
-  // brings its own buildings from the embedding (one enclosed home); the village
-  // walls each zone into a separate house on the plaza.
-  const village = town || house ? null : planVillageBuildings(game, world, embedding.layout);
-  if (house) {
-    // embedLayoutInWorld TRANSLATED the layout into the manifold (everything
-    // shifted by EMBED_MARGIN - min). house.buildings carry the UNSHIFTED room
-    // rects, so shift their footprints by the SAME delta — else the walls/roofs
-    // (and buildingAt, and the dollhouse camera that frames them) land ~1.5 units
-    // off from the spawn, objects, and zones. Doorway offsets are edge-relative,
-    // so only the footprint origin moves.
-    const shifted = embedding.layout.zones[0];
-    const original = layout.zones[0];
-    const bdx = shifted && original ? shifted.rect.x - original.rect.x : 0;
-    const bdy = shifted && original ? shifted.rect.y - original.rect.y : 0;
-    embedding.spec.buildings = house.buildings.map((b) => ({
-      ...b,
-      footprint: { ...b.footprint, x: b.footprint.x + bdx, y: b.footprint.y + bdy },
-    }));
-    embedding.spec = expandWorldBuildings(embedding.spec);
-  } else if (village) {
-    embedding.spec.buildings = village.buildings;
-    embedding.spec = expandWorldBuildings(embedding.spec);
-  }
-  const entities = new Map(game.entities.map((e) => [e.id, e]));
-  const { embodiedNodeIds, npcIcons } = planEmbodiedNpcs(game, embedding, entities);
+  const entities = new Map((game?.entities ?? []).map((e) => [e.id, e]));
+  const { embodiedNodeIds, npcIcons } = game
+    ? planEmbodiedNpcs(game, embedding, entities)
+    : { embodiedNodeIds: new Set<string>(), npcIcons: new Map<string, string>() };
   const derivedCreatures = (() => {
+    if (!game) return null;
     const derived = creatureWorldFromGame(game);
     return derived.nodeByCreature.size ? derived : null;
   })();
   return {
     game,
+    meta,
+    // Overwritten by `start()` with the boot's REAL opts; `{}` only so a
+    // directly-constructed session (tests) is well-formed.
+    bootOpts: {},
     world,
     ctx,
     embedding,
     entities,
     rState: createRuntimeState(),
-    sState: createSpace3DState(world),
+    sState: world
+      ? createSpace3DState(world)
+      : { zoneId: "", unlocked: {}, removed: {}, inPickRadius: {}, inTouchRadius: {}, lastDoorTouch: {}, time: 0 },
     transports: transport.placements,
     embodiedNodeIds,
     npcIcons,
@@ -5002,7 +5061,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     lastBoardView = view;
     boardBack = back ?? null;
-    const locale = sess?.game.meta.locale ?? "en";
+    const locale = sess?.meta.locale ?? "en";
     const chrome = boardChrome({
       options: view.options,
       page: boardPage,
@@ -5082,7 +5141,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  frog still says "נותן" and a female resident "נותנת". */
   function npcSpeakerGender(speakerSymbol: string | undefined, speakerCid: string | undefined) {
     if (speakerCid) return genderFor(speakerCid);
-    return speakerGender(speakerSymbol, sess?.game.meta.locale);
+    return speakerGender(speakerSymbol, sess?.meta.locale);
   }
 
   /** Speak a character's line aloud (free browser TTS) in the game's language.
@@ -5091,7 +5150,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  the creature actually talking. */
   function speakNpc(text: string, speakerSymbol?: string, speakerCid?: string) {
     if (!text) return;
-    const locale = sess?.game.meta.locale;
+    const locale = sess?.meta.locale;
     const spoken = translateGlyph(text, locale, {
       speaker: npcSpeakerGender(speakerSymbol, speakerCid),
       ...(sess ? { names: sessionNames(sess) } : {}),
@@ -5102,14 +5161,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** Canned, already-localized lines skip glyph translation. */
   function speakRaw(text: string) {
     if (!text) return;
-    voice?.speak(text, { lang: sess?.game.meta.locale });
+    voice?.speak(text, { lang: sess?.meta.locale });
   }
 
   /** The PLAYER's statement for a glyph — same translation, but subject-less
    *  frames read FIRST PERSON ("give + ball" = "I'll give you the ball.", not
    *  the NPC's "Give me the ball."). Student gender isn't wired yet. */
   function playerStatement(glyph: string): string {
-    return translateGlyph(glyph, sess?.game.meta.locale, {
+    return translateGlyph(glyph, sess?.meta.locale, {
       firstPerson: true,
       ...(sess ? { names: sessionNames(sess) } : {}),
     });
@@ -5121,7 +5180,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function speakPlayerStatement(said: string) {
     if (!said) return;
     voice?.cancel();
-    voice?.speak(said, { lang: sess?.game.meta.locale, pitch: 1.35, voiceIndex: 0 });
+    voice?.speak(said, { lang: sess?.meta.locale, pitch: 1.35, voiceIndex: 0 });
   }
 
   /** The student's statement was voiced by ANOTHER surface (the AAC board in
@@ -5149,7 +5208,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * facets survive the trip: `shirt.color_red` labels "red shirt".
    */
   function labelOfGlyph(glyph: string): string {
-    return glyphLabel(drawnGlyph(glyph), sess?.game.meta.locale);
+    return glyphLabel(drawnGlyph(glyph), sess?.meta.locale);
   }
 
   /** An NPC's statement for a glyph — translation + the speaker's agreement. */
@@ -5162,7 +5221,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
      *  the one place that KNOWS says so. */
     vocative?: boolean,
   ): string {
-    const locale = sess?.game.meta.locale;
+    const locale = sess?.meta.locale;
     return translateGlyph(glyph, locale, {
       speaker: npcSpeakerGender(speakerSymbol, speakerCid),
       ...(sess ? { names: sessionNames(sess) } : {}),
@@ -5203,7 +5262,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!item || item.ownerId === LOCAL_PLAYER_CID) return undefined;
     if (item.ownerId) {
       // Creature ids ARE fulfill node ids — its room is where it lives.
-      const zoneId = session.world.sites[item.ownerId];
+      const zoneId = session.world?.sites[item.ownerId];
       return zoneId ? village.houseSymbolByZone[zoneId] : undefined;
     }
     // Loose: the physical object's current spot (staged spot until it moved).
@@ -6407,7 +6466,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // word — which is invisible until the board is Hebrew and every button but
     // these ones reads Hebrew. The lexicon answers for anything that is a word;
     // a NAME (a family member's, a pet's) has no lexeme and stays itself.
-    const nounLang = languageFor(session.game.meta.locale);
+    const nounLang = languageFor(session.meta.locale);
     const seen = new Set<string>();
     const out: { symbol: string; label: string; kind: NounKind; affords: string[]; properties: string[] }[] = [];
     // A STATION's OWN act verbs — the ones its need template satisfies
@@ -6658,7 +6717,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       { x: player.x, y: player.y },
       f,
     );
-    const locale = session.game.meta.locale;
+    const locale = session.meta.locale;
     const npcSym = session.entities.get(node.npcEntityId)?.glyph;
     const text = speakDirections(fact.thingGlyph, ans.proximity, ans.cardinal, locale, {
       speaker: npcSpeakerGender(npcSym, answerer),
@@ -6885,7 +6944,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function conversationWith(nodeId: string, memberCid: string = LOCAL_PLAYER_CID): HostConversation {
     const session = sess;
     const tick = session?.taskClock ?? 0;
-    const level = session?.game.meta.syntax ?? "b";
+    const level = session?.meta.syntax ?? "b";
     // A REMOTE author has no body and no row in the creature world until it
     // speaks here — register it the way a streamed resident is registered, on
     // first need, so relations/knowledge/debts have somewhere to land.
@@ -7173,7 +7232,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  hasn't got them (a turn from a client that never announced its join —
    *  `withConversationTurn` seats them, so this is belt and braces). */
   function levelOf(c: HostConversation, memberCid: string): SyntaxLevel {
-    return memberOf(c.convo, memberCid)?.level ?? sess?.game.meta.syntax ?? "b";
+    return memberOf(c.convo, memberCid)?.level ?? sess?.meta.syntax ?? "b";
   }
 
   /**
@@ -7314,7 +7373,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * same stream.
    */
   function convoRng(session: QuestSession, c: HostConversation): () => number {
-    return mulberry32(hashSeed(session.game.meta.seed ?? 0, "convo", c.id, c.convo.nextSeq));
+    return mulberry32(hashSeed(session.meta.seed, "convo", c.id, c.convo.nextSeq));
   }
 
   /**
@@ -14079,22 +14138,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       byId.set(t.nodeId, t);
       cands.push({ id: t.nodeId, dist, questGiver, gazed: gazedOn(t) });
     };
-    /** Is this tree node one that can be talked to at all, right now? */
+    /** Is this tree node one that can be talked to at all, right now?
+     *  (`ctx` is null on a QUESTLESS session — the figure list is empty there,
+     *  so the tree arms below never run; the `?.` is for the types.) */
     const talkableNode = (nodeId: string): boolean => {
-      const t = session.ctx.nodeById.get(nodeId)?.type;
+      const t = session.ctx?.nodeById.get(nodeId)?.type;
       if (t === "fulfill") return true; // a content creature still serves (vendor)
       if (t === "choose" || t === "converse") return !session.rState.completed[nodeId];
       return !!session.creatures?.nodeByCreature.has(nodeId); // off-tree local
     };
     for (const f of session.embedding.layout.figures) {
       if (!talkableNode(f.nodeId)) continue;
-      const t = session.ctx.nodeById.get(f.nodeId)?.type;
+      const t = session.ctx?.nodeById.get(f.nodeId)?.type;
       if (t !== "choose" && t !== "converse" && t !== "fulfill") continue;
       add({ nodeId: f.nodeId, pos: poserPos(session, f.nodeId) ?? f.pos, resident: false }, true);
     }
     // Off-tree creatures (wilderness locals) talk through their fulfill-shaped mind.
     for (const [cid] of session.creatures?.nodeByCreature ?? []) {
-      if (session.ctx.nodeById.has(cid)) continue; // tree posers handled above
+      if (session.ctx?.nodeById.has(cid)) continue; // tree posers handled above
       if (cid.startsWith("resident_") || cid.startsWith("pet_")) continue; // their own arm below
       const av = state.avatars[avatarIdOf(cid)];
       if (av) add({ nodeId: cid, pos: { x: av.x, y: av.y }, resident: false }, true);
@@ -14110,7 +14171,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The tree/creature node behind a talk target (an off-tree local's node lives
    *  in the creature book, not the goal tree). */
   function talkNodeOf(session: QuestSession, nodeId: string) {
-    return session.ctx.nodeById.get(nodeId) ?? session.creatures?.nodeByCreature.get(nodeId);
+    return session.ctx?.nodeById.get(nodeId) ?? session.creatures?.nodeByCreature.get(nodeId);
   }
 
   /** The APPROACH greeting a target previews while the player closes in: a
@@ -17396,7 +17457,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // confirmation the rest of this host refuses to give. The `▶ sentence`
       // toast already reports that the order itself was accepted.
       if (!tpl && DEFAULT_VOICE_POLICY.inertCompany) {
-        npcChatBubble(session, cid, noGatheringLine(need)[session.game.meta.syntax ?? "b"]);
+        npcChatBubble(session, cid, noGatheringLine(need)[session.meta.syntax]);
       }
     }
     return true;
@@ -20662,7 +20723,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (world.state.avatars[avatarId]) mpNet.send([sayMessage(avatarId, text, line.glyph)]);
     }
     if (doSpeak) {
-      if (line.text) voice?.speak(line.text, { lang: session.game.meta.locale, ...speakerVoiceOpts(cid) });
+      if (line.text) voice?.speak(line.text, { lang: session.meta.locale, ...speakerVoiceOpts(cid) });
       else speakNpc(line.glyph, sym, cid);
     }
   }
@@ -20805,7 +20866,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): boolean {
     // The session's SYNTAX level picks the register (one-word → full sentence),
     // exactly as every other creature line in the host resolves it.
-    const glyphLine = typeof line === "string" ? line : line[session.game.meta.syntax ?? "b"];
+    const glyphLine = typeof line === "string" ? line : line[session.meta.syntax];
     const cid =
       speaker ??
       session.addressedFamily ??
@@ -20921,7 +20982,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  different number of circles first.) */
   let chatTurn = 0;
   function chatRng(session: QuestSession): () => number {
-    return mulberry32(hashSeed(session.game.meta.seed ?? 0, "chat", chatTurn++));
+    return mulberry32(hashSeed(session.meta.seed, "chat", chatTurn++));
   }
 
   /**
@@ -21067,7 +21128,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const b = chatAvatar(state, partner);
     if (!a || !b) return null;
     const tick = session.taskClock;
-    const level = session.game.meta.syntax ?? "b";
+    const level = session.meta.syntax;
     const id = `conv:${convoIdSeq++}`;
     const c: HostConversation = {
       id,
@@ -21141,7 +21202,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       g.slots.delete(cid);
       return;
     }
-    seatMember(c, cid, session.taskClock, session.game.meta.syntax ?? "b");
+    seatMember(c, cid, session.taskClock, session.meta.syntax);
     sayGroupLine(session, c, cid, { glyph: "hi", ttl: 4 });
     if (world) reassertGroupFacing(world.state, c);
   }
@@ -21703,7 +21764,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const rareTail = fact.id.startsWith("buy:import:") ? " + rare" : "";
         reply = `${fact.thingGlyph}${rareTail}`; // the strip models the THING
         const rSym = session.entities.get(session.creatures.nodeByCreature.get(responderId)?.npcEntityId ?? "")?.glyph;
-        replyText = speakDirections(fact.thingGlyph, ans.proximity, ans.cardinal, session.game.meta.locale, {
+        replyText = speakDirections(fact.thingGlyph, ans.proximity, ans.cardinal, session.meta.locale, {
           speaker: npcSpeakerGender(rSym, responderId),
         });
         pointAt = f.worldPos;
@@ -21937,7 +21998,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const existingB = conversationOf(b);
     if (existingA && existingA === existingB) return existingA;
     const tick = session.taskClock;
-    const level = session.game.meta.syntax ?? "b";
+    const level = session.meta.syntax;
     // One of them is already talking: the other takes a seat in THAT circle.
     for (const [inside, outside] of [[existingA, b], [existingB, a]] as const) {
       if (!inside?.group) continue;
@@ -22120,7 +22181,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const remark =
         units <= 2
           ? inboundRouteHealth(session.transfers.active(), "food") < 1
-            ? embargoRemarkLine("food")[session.game.meta.syntax ?? "b"]
+            ? embargoRemarkLine("food")[session.meta.syntax]
             : "less + food"
           : units >= STORE_DISPLAY_CAP
             ? "more + food"
@@ -22368,7 +22429,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           presenter.action?.("game_won");
           // The companion celebrates with a canned, language-keyed line over the
           // player — the same bubble + voice path a character uses.
-          const line = resolveLine(SAMPLE_NPC_DIALOGUE, "celebrate", session.game.meta.locale);
+          const line = resolveLine(SAMPLE_NPC_DIALOGUE, "celebrate", session.meta.locale);
           if (world && line) {
             showWorldBubble(world.state, "companion", {
               anchor: { kind: "avatar", id: PLAYER_ID },
@@ -22422,6 +22483,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   function dispatchInput(input: SpaceInput) {
     const session = sess!;
+    // QUESTLESS (game null): there is no runtime and no win machinery — every
+    // space input is view-only. The one gate that keeps `complete()`/"game-won"
+    // and all goal bookkeeping unreachable without a goal tree.
+    if (!session.ctx) return;
     processResult(applyRuntimeInput(session.ctx, session.rState, input));
   }
 
@@ -22458,23 +22523,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  it still assigns the same outer closure lets (overlay, pathDebug,
    *  attentionDebug, questView) every downstream use optional-chains. */
   function buildGlView(session: QuestSession): WorldView {
-    overlay = new GoalTreeOverlay3D({
-      layout: session.embedding.layout,
-      world: session.world,
-      entities: session.entities,
-      embodiedNodeIds: session.embodiedNodeIds,
-      skipInstanceIds: new Set(
-        [...session.convItems.values()].filter((i) => i.kind === "prop").map((i) => i.objectId),
-      ),
-      // With real buildings, doorways have physical ENGINE doors — the overlay
-      // marks a locked one with a padlock badge instead of the red slab.
-      doorStyle: session.village ? "badge" : "box",
-      getView: () => ({
-        removed: session.sState.removed,
-        unlocked: session.sState.unlocked,
-        completed: session.rState.completed,
-      }),
-    });
+    // QUEST-ONLY CHROME: the goal-tree overlay draws zone pads/doors/markers
+    // for the PUZZLE — a QUESTLESS session (game/world null) has none, and
+    // skipping the overlay entirely is what kills the residual navy start-zone
+    // pad (quest-overlay-3d.ts start-zone pad; Shape B ruling 5).
+    const overlayWorld = session.world;
+    overlay = session.game && overlayWorld
+      ? new GoalTreeOverlay3D({
+          layout: session.embedding.layout,
+          world: overlayWorld,
+          entities: session.entities,
+          embodiedNodeIds: session.embodiedNodeIds,
+          skipInstanceIds: new Set(
+            [...session.convItems.values()].filter((i) => i.kind === "prop").map((i) => i.objectId),
+          ),
+          // With real buildings, doorways have physical ENGINE doors — the overlay
+          // marks a locked one with a padlock badge instead of the red slab.
+          doorStyle: session.village ? "badge" : "box",
+          getView: () => ({
+            removed: session.sState.removed,
+            unlocked: session.sState.unlocked,
+            completed: session.rState.completed,
+          }),
+        })
+      : null;
     // DEBUG PATHS: a second overlay riding the same scene. The view takes ONE
     // overlay, so the two are composed below rather than competing for the slot.
     // `world` is captured lazily — it doesn't exist until runWorldHost, further down.
@@ -22517,7 +22589,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       ...(deps.groundAt ? { groundAt: deps.groundAt } : {}),
     });
     const goalTreeOverlay = overlay;
-    const overlays: SceneOverlay[] = [goalTreeOverlay, pathDebug, attentionDebug, zoneOverlay];
+    const overlays: SceneOverlay[] = [
+      ...(goalTreeOverlay ? [goalTreeOverlay] : []),
+      pathDebug,
+      attentionDebug,
+      zoneOverlay,
+    ];
     const composedOverlay: SceneOverlay = {
       mount: (scene) => { for (const o of overlays) o.mount(scene); },
       update: (dt) => {
@@ -22539,7 +22616,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // bubble spoke its text right-to-left.
     const glyphSource = createGlyphImageSource({
       ...(deps.resolveImage ? { resolveImage: deps.resolveImage } : {}),
-      rtl: () => isRtlLocale(session.game.meta.locale),
+      rtl: () => isRtlLocale(session.meta.locale),
     });
     // Compose the bubble vocabulary NOW, while the world is still settling, so a
     // bubble is never up before its icon: the fixed dwell/rest set, plus the
@@ -23319,7 +23396,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (zone) {
             for (const cid of [...session.creatures.nodeByCreature.keys()].sort()) {
               const need = openNeeds(cworld.creatures[cid]!).find((n) => n.atPlace && !n.stay && !n.escort);
-              if (!need?.atPlace || session.world.sites[need.atPlace] !== zone) continue;
+              if (!need?.atPlace || session.world?.sites[need.atPlace] !== zone) continue;
               const events = noteArrival(cworld, LOCAL_PLAYER_CID, need.atPlace);
               for (const ev of events) {
                 if (ev.type !== "need-fulfilled") continue;
@@ -23390,7 +23467,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             if (!npc || !player) continue;
             // Arrived? The FOLLOWER's own position decides, not the player's.
             const zone = zoneAt(session.embedding.layout, { x: npc.x, y: npc.y });
-            if (zone && session.world.sites[need.atPlace] === zone) {
+            if (zone && session.world?.sites[need.atPlace] === zone) {
               session.escorting.delete(cid);
               session.npcTasks.delete(npcId);
               // It lives here now — home moves, so it doesn't wander back.
@@ -24191,7 +24268,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // Choose/converse nodes begin by DWELLING on the poser (conversation),
           // not by walking into them — skip the proximity auto-trigger for them.
           if (input.type === "touch-figure") {
-            const t = session.ctx.nodeById.get(input.nodeId)?.type;
+            const t = session.ctx?.nodeById.get(input.nodeId)?.type;
             if (t === "choose" || t === "converse") continue;
           }
           // Converse props are physical carryables now — no walk-over pickup.
@@ -24209,7 +24286,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                 }
               }
             };
-            const ownerNodeId = session.world.zones.find((z) => z.id === input.zoneId)?.ownerNodeId;
+            const ownerNodeId = session.world?.zones.find((z) => z.id === input.zoneId)?.ownerNodeId;
             const node = ownerNodeId ? session.creatures.nodeByCreature.get(ownerNodeId) : undefined;
             if (node) {
               for (const id of node.stockEntityIds ?? []) {
@@ -24268,15 +24345,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   function start(
-    game: GoalTreeGame,
+    game: GoalTreeGame | null,
     town: TownPlay | null = null,
-    opts: {
-      spirit?: boolean; dollhouse?: number; wilderness?: WildernessParams;
-      scale?: WorldScale; culture?: WorldCultureSpec | null;
-      /** The species created avatars are built from — the spec's
-       *  `avatar_species`, lowered by the boot (see the interface). */
-      avatarSpecies?: string;
-    } = {},
+    opts: QuestSessionStartOpts = {},
   ) {
     spirit = !!opts.spirit;
     // Set BEFORE the avatar spawn at the foot of this function reads it.
@@ -24306,7 +24377,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     hoverSpotId = null;
     clearSpotCache();
     setSites([]);
-    sess = makeQuestSession(game, town);
+    sess = makeQuestSession(game, town, opts.meta);
+    // THE SESSION'S BOOT RECORD (Shape B ruling 4): the exact opts, verbatim —
+    // replay() rebuilds a non-town session from (game, bootOpts) alone.
+    sess.bootOpts = opts;
+    // QUESTLESS PAD (game null, no scatter, no town): size the empty flat pad
+    // from the boot's declared side (structure `world.side`; makeQuestSession
+    // already defaulted 240). The wilderness branch below sizes from the
+    // scatter instead, exactly as before.
+    if (!game && !town && !opts.wilderness && opts.side) {
+      const side = opts.side;
+      sess.embedding.spec.manifold = { kind: "flat", width: side, height: side };
+      sess.embedding.spec.spawns = [{ id: "spawn", x: side / 2, y: side / 2 }];
+      sess.embedding.layout.spawn = { x: side / 2, y: side / 2 };
+    }
     if (opts.scale) sess.scale = opts.scale;
     // The world's universal absolute ring (game.culture) founds the law
     // book — issuer "world", unrepealable, everywhere.
@@ -25909,7 +25993,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const fam = familyOf(session);
         if (fam && fam.house === Number(cid.split("_")[1])) fallback = FAMILY_RELATION;
       }
-      return authoredRelation(session.game.meta, fallback);
+      return authoredRelation(session.meta, fallback);
     }
     return DEFAULT_RELATION;
   }
@@ -26150,7 +26234,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!line || perfect) return "ok";
     // The echo is a STATEMENT OF INTENT — the will-marked syntax ("I will
     // wash the clothes"), never the order's own imperative shape.
-    return asIntent(line)[session.game.meta.syntax ?? "b"];
+    return asIntent(line)[session.meta.syntax];
   }
 
   /** INTENT ANNOUNCEMENT (phase ①a §3): speak what the creature is ABOUT to do
@@ -26161,7 +26245,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!announceCriteria(ctx)) return;
     const line = goalIntentLine(ctx.goal, intentLineSyms(session, { deixis: true, speaker: ctx.creatureId }));
     if (!line) return;
-    npcChatBubble(session, ctx.creatureId, asIntent(line)[session.game.meta.syntax ?? "b"]);
+    npcChatBubble(session, ctx.creatureId, asIntent(line)[session.meta.syntax]);
   }
 
   /** SOFT CONTROL — a spark-directed act ALWAYS announces before acting
@@ -26190,7 +26274,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!line) return;
     if (isPetCid(cid)) ensurePetCreature(session, cid);
     else ensureResidentCreature(session, cid);
-    npcChatBubble(session, cid, asIntent(line)[session.game.meta.syntax ?? "b"]);
+    npcChatBubble(session, cid, asIntent(line)[session.meta.syntax]);
   }
 
   /** Per-sweep task lifecycle: expire stale OPEN tasks back to the player,
@@ -27391,7 +27475,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!("match" in goal.item)) return false; // an exact instance rides the legacy paths
     const head = goal.item.match.kind ?? goal.item.match.category;
     if (!head) return false;
-    const syntax = session.game.meta.syntax ?? "b";
+    const syntax = session.meta.syntax;
     // A single unit handed to a CREATURE stays the shipped give path (real
     // ownership + gratitude); endpoints and quantities come here.
     if (goal.kind === "give" && qty <= 1) return false;
@@ -27572,7 +27656,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return;
     }
     const npcId = avatarIdOf(cid);
-    const syntax = session.game.meta.syntax ?? "b";
+    const syntax = session.meta.syntax;
     const head = stackHead(Object.keys(a.goods)[0] ?? "thing");
     clearNeedStep(session, cid);
     session.npcTasks.delete(npcId);
@@ -28193,7 +28277,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // banners, exactly like every refusal `orderTrade` speaks. The clerk ladder
     // is orderTrade's too, deliberately WITHOUT `nearestCreature` — in a town
     // with wilderness the nearest body is a wild animal.
-    const syntax = session.game.meta.syntax ?? "b";
+    const syntax = session.meta.syntax;
     const clerk = session.addressedFamily ?? gazeCreature(session) ?? convo?.nodeId ?? null;
     const speak = (line: LeveledGlyphs | string) => {
       if (clerk && session.creatures?.nodeByCreature.has(clerk)) {
@@ -28510,7 +28594,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // barter clerk speaks its terms — "they give food", the standing fact
     // the player just created, not a bare "ok" the student can't read back.
     if (clerk && session.creatures?.nodeByCreature.has(clerk)) {
-      npcChatBubble(session, clerk, tributeLine(head, "in")[session.game.meta.syntax ?? "b"]);
+      npcChatBubble(session, clerk, tributeLine(head, "in")[session.meta.syntax]);
     }
     presenter.toast(`👑 tribute: ${perDay} ${head} each day from ${partner.key}`, "feedback");
     return true;
@@ -28537,7 +28621,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!homeId) return false;
     const partners = tradePartnersOf(session);
     if (!partners.length) return false;
-    const syntax = session.game.meta.syntax ?? "b";
+    const syntax = session.meta.syntax;
     const clerk = session.addressedFamily ?? gazeCreature(session) ?? convo?.nodeId ?? null;
     const speak = (line: { a: string; b: string; c: string } | "ok" | "no") => {
       if (clerk && session.creatures?.nodeByCreature.has(clerk)) {
@@ -29270,7 +29354,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (hadBoard) clearBoard();
       return;
     }
-    const locale = session.game.meta.locale ?? "en";
+    const locale = session.meta.locale ?? "en";
     pushBoard({
       kind: "choice",
       nodeId: "__structure__",
@@ -29316,7 +29400,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       buildSpotId = spots[0]!.id;
       spot = spots[0]!;
     }
-    const locale = session.game.meta.locale ?? "en";
+    const locale = session.meta.locale ?? "en";
     const options: QuestBoardView["options"] = [];
     let sig = `B${spots.length}:${spot?.id ?? ""}`;
     const buildWord = (s: StructureSpec, id: string) => ({
@@ -29486,7 +29570,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (idle && hadCivic) clearBoard();
       return;
     }
-    const locale = session.game.meta.locale ?? "en";
+    const locale = session.meta.locale ?? "en";
     presenter.board({
       kind: "choice",
       nodeId: "__civic__",
@@ -30130,7 +30214,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const play = buildTownPlay(s.town.config);
         start(play.bundle.game, play);
       } else {
-        start(s.game);
+        // Non-town: rebuild from the SESSION BOOT RECORD (Shape B ruling 4) —
+        // `(game, bootOpts)` reproduces the session, questless (game null,
+        // wilderness/pad opts) included.
+        start(s.game, undefined, s.bootOpts);
       }
     },
     select(id, opts = {}) {
@@ -30847,7 +30934,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // one standing in the district.
         const law = governingLaw(lawsInForce(s), frame.verb, lawAreaTest(s, target ?? null));
         if (law) {
-          const line = tabooRefusalLine(frame.verb)[s.game.meta.syntax ?? "b"];
+          const line = tabooRefusalLine(frame.verb)[s.meta.syntax];
           if (target && s.creatures?.nodeByCreature.has(target)) {
             npcChatBubble(s, target, line);
           } else {

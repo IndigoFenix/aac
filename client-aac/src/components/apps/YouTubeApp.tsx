@@ -7,7 +7,11 @@
 // so the student can return to browse mode and pick a different video.
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { X, Play, Pause, RotateCcw, Rewind, FastForward, ChevronLeft, ChevronRight, Video, ListVideo } from "lucide-react";
+import { X, Play, Pause, RotateCcw, Rewind, FastForward, Video, ListVideo } from "lucide-react";
+// Back / page-nav chevrons are LOGICAL (they follow the reading direction).
+// The transport row keeps lucide's Rewind / FastForward / Play as-is: those
+// map to tape motion, not to reading order, and stay LTR in RTL locales.
+import { ChevronBack, ChevronForward } from "@/components/ui/directional-icons";
 import { apiRequest } from "@/lib/queryClient";
 import type { PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -349,7 +353,7 @@ function SectionGrid<T>({
               className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-30 disabled:bg-gray-700"
               aria-label={t("youtubeApp.prevPage")}
             >
-              <ChevronLeft size={20} />
+              <ChevronBack size={20} />
             </button>
             <button type="button"
               data-dwell
@@ -358,7 +362,7 @@ function SectionGrid<T>({
               className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-30 disabled:bg-gray-700"
               aria-label={t("youtubeApp.nextPage")}
             >
-              <ChevronRight size={20} />
+              <ChevronForward size={20} />
             </button>
           </>
         )}
@@ -533,7 +537,7 @@ function PaginatedGrid<T>({
             className="w-12 h-12 rounded-xl bg-gray-800 text-white flex items-center justify-center active:scale-95 transition-transform"
             aria-label={t("youtubeApp.backToChannels")}
           >
-            <ChevronLeft size={28} />
+            <ChevronBack size={28} />
           </button>
         )}
         <h2 className="text-white text-lg font-semibold truncate flex-1">{title}</h2>
@@ -581,7 +585,7 @@ function PaginatedGrid<T>({
             className="w-20 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-30 disabled:bg-gray-700"
             aria-label={t("youtubeApp.prevPage")}
           >
-            <ChevronLeft size={36} />
+            <ChevronBack size={36} />
           </button>
           <button type="button"
             data-dwell
@@ -590,7 +594,7 @@ function PaginatedGrid<T>({
             className="w-20 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-30 disabled:bg-gray-700"
             aria-label={t("youtubeApp.nextPage")}
           >
-            <ChevronRight size={36} />
+            <ChevronForward size={36} />
           </button>
         </div>
       )}
@@ -621,7 +625,7 @@ function StatusView({
             className="w-12 h-12 rounded-xl bg-gray-800 text-white flex items-center justify-center active:scale-95 transition-transform"
             aria-label={t("youtubeApp.backToChannels")}
           >
-            <ChevronLeft size={28} />
+            <ChevronBack size={28} />
           </button>
         )}
         <h2 className="text-white text-lg font-semibold truncate flex-1">{title}</h2>
@@ -679,7 +683,7 @@ function PlayerView({
             className="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center active:scale-95 transition-transform shrink-0"
             aria-label={t("youtubeApp.backToChannels")}
           >
-            <ChevronLeft size={26} className="text-white" />
+            <ChevronBack size={26} className="text-white" />
           </button>
         )}
         <span className="text-white text-lg font-semibold truncate flex-1">{title}</span>

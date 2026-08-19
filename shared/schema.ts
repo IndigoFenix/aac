@@ -1209,7 +1209,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'locations' | 'userchat' | 'call' | 'deepAnalysis' | 'shares' | 'insuranceBridge' | 'videoCaption' | 'downloads' | 'packages';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'studentInfo' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'photos' | 'calendar' | 'locations' | 'userchat' | 'call' | 'deepAnalysis' | 'shares' | 'insuranceBridge' | 'videoCaption' | 'downloads' | 'packages';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 
@@ -1389,6 +1389,15 @@ export interface BoardButtonAction {
   /** For "open_app" actions: the app id (built-in or custom game) to launch. Must be an enabled app. */
   appId?: string;
   /**
+   * For "open_app" actions: the free-text argument to open the app WITH — the
+   * same string the AI's own `open_app(appId, data)` carries (a picture-search
+   * subject, a media query). The client forwards it on the request_app_open
+   * round-trip so the server resolves the app's payload before it renders.
+   * Without it a Board-Manager launch button can only ever open an app empty,
+   * which for a search app means the student's request is silently dropped.
+   */
+  appData?: string;
+  /**
    * For "open_board" actions: the KEY of a pre-built board to load on press
    * (the same snake_case key the Board Manager passes to set_board). Distinct
    * from `toBoardId`, which is a stored board ID used for board-to-board links
@@ -1567,6 +1576,24 @@ export interface BoardButton {
    * since the fallback exists precisely for when generation isn't ready.
    */
   glyphFallback?: string;
+  /**
+   * When true, the client replaces this button's label AND its spoken text
+   * with the translation of its single-key `glyph` (`aac.glyph.<key>`).
+   *
+   * Set by SERVER-BUILT boards whose buttons literally ARE registry words —
+   * the restaurant floor board is the first. The server has no `t()`, so it
+   * bakes English and the client localizes, the same trade guessing-mode
+   * suggestion buttons already make.
+   *
+   * Deliberately opt-IN. Board Manager output must never set it: the BM
+   * authors a sentence per utterance ("I want some water" on a `water` glyph),
+   * and localizing from the glyph would flatten that to the bare word.
+   *
+   * Only meaningful when `glyph` is a SINGLE key. A composed fragment
+   * (`like.not`) or a multi-slot string (`i_me+want+water`) has no single
+   * tKey, and stitching translated parts together produces broken grammar.
+   */
+  localizeFromGlyph?: boolean;
   selfClosing?: boolean;
   /** When true, pressing this button automatically unloads the prebuilt board, giving the AI the full 12-button board */
   exitBoard?: boolean;
@@ -2398,6 +2425,102 @@ export const locations = pgTable("locations", {
   index("idx_locations_lat_lng").on(table.latitude, table.longitude),
 ]);
 
+// =============================================================================
+// LOCATION MENUS — venues and their menus
+// See planning-docs/aac-restaurant-menus.md §4.4.
+//
+// These two tables are deliberately NON-PHI and live here rather than in
+// schema-private: a restaurant and its menu are public facts about the world,
+// shared by every student who walks into the place. WHICH student eats where is
+// PHI and lives in `student_venues` (schema-private.ts).
+//
+// The cache is global on purpose — the first person to open a venue's menu pays
+// the ~25s extraction, everyone after them gets it instantly.
+// =============================================================================
+
+// A real-world place, cached from a POI provider. NOT `locations`: that table is
+// institute-scoped (instituteId NOT NULL) and pairs with calendar events, and a
+// family's restaurant is neither an institute's nor an event's.
+export const venues = pgTable("venues", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Where this record came from, and its id THERE. Together unique, so two
+  // students near the same restaurant converge on one row.
+  source: text("source").notNull(), // 'osm' | 'brightdata' | 'manual'
+  sourceId: text("source_id").notNull(),
+  name: text("name").notNull(),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  address: text("address"),
+  // 'restaurant' | 'cafe' | 'fast_food' now; museum/cinema/clinic in phase 2.
+  venueType: text("venue_type"),
+  cuisine: text("cuisine"),
+  // The place's OWN website, per-place rather than per-brand. Load-bearing for
+  // the §3.1a binding check — it is what ties a scraped menu to THIS place.
+  websiteUri: text("website_uri"),
+  // ISO-3166-1 alpha-2. The other half of the binding check: a `.ca` menu
+  // against an `IL` venue is the Aroma defect, and is refused.
+  countryCode: text("country_code"),
+  // Brand key for chain detection (`tommy-roll`). When several venues share
+  // one, a menu bound only by brand is a `chain_fallback` and earns the §4.9
+  // disclaimer rather than silent confidence.
+  brandKey: text("brand_key"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_venues_source_source_id").on(table.source, table.sourceId),
+  // Mirrors idx_locations_lat_lng — the nearby sweep is the hot query.
+  index("idx_venues_lat_lng").on(table.latitude, table.longitude),
+  index("idx_venues_brand_key").on(table.brandKey),
+]);
+
+// A venue's extracted menu. Non-PHI: no student reference of any kind, and
+// deliberately NOT MenuSpark's `viewers` array — who read a menu is our
+// business to keep out of a shared cache.
+export const venueMenus = pgTable("venue_menus", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  venueId: varchar("venue_id").references(() => venues.id, { onDelete: "cascade" }).notNull(),
+  // The language the items are actually IN, so an RTL board lays out correctly.
+  language: text("language").default("en").notNull(),
+  currency: text("currency"),
+  // Refined items: [{ name, description?, price?, priceText?, category?, kind,
+  // imageKey?, translatedName? }] — post-applyMenuRefinement (§4.2a), so the
+  // factual fields here are always the raw extraction's.
+  items: jsonb("items").default([]).notNull(),
+  provenance: text("provenance").notNull(), // 'camera' | 'web' | 'manual'
+  sourceUrl: text("source_url"),
+
+  // ── Binding (§3.1a) ──
+  // WHY we believe this menu belongs to this venue. NOT NULL by design: a menu
+  // row cannot exist without recording its justification, which is what makes
+  // the wrong-restaurant defect unrepresentable rather than merely unlikely.
+  // 'gps_place_match' | 'place_website' | 'caretaker_confirmed' | 'camera'
+  //                   | 'chain_fallback'
+  bindingBasis: text("binding_basis").notNull(),
+  // The country the check compared against, stored so a later audit can re-run
+  // the check over historical rows rather than trusting they were checked.
+  bindingCountry: text("binding_country"),
+  // 'exact'   — the source names THIS branch
+  // 'chain'   — right brand, different/unknown branch (the טומי רול defect)
+  // 'unknown' — no branch signal in the source at all
+  bindingBranchMatch: text("binding_branch_match").default("unknown").notNull(),
+
+  // ── Review (§4.8) ──
+  status: text("status").default("pending_review").notNull(), // 'pending_review' | 'approved' | 'rejected'
+  extractedAt: timestamp("extracted_at", { withTimezone: true }).defaultNow().notNull(),
+  // Cross-schema FK: users.id lives in schema-private.ts.
+  reviewedByUserId: varchar("reviewed_by_user_id"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_venue_menus_venue_id").on(table.venueId),
+  // "Newest approved menu for this venue" is the read every session makes.
+  index("idx_venue_menus_venue_status").on(table.venueId, table.status),
+  // A camera menu is the trust anchor; being able to find one cheaply matters.
+  index("idx_venue_menus_provenance").on(table.provenance),
+]);
+
 // Join table: a calendar event ⇄ one or more locations.
 export const calendarEventLocations = pgTable("calendar_event_locations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2409,6 +2532,28 @@ export const calendarEventLocations = pgTable("calendar_event_locations", {
   index("idx_event_locations_event_id").on(table.eventId),
   index("idx_event_locations_location_id").on(table.locationId),
 ]);
+
+// Venue / venue-menu schemas and types (Location Menus — §4.4)
+export const insertVenueSchema = createInsertSchema(venues).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastSeenAt: true,
+});
+
+export const insertVenueMenuSchema = createInsertSchema(venueMenus).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  extractedAt: true,
+  reviewedByUserId: true, // set by the server on review, never by a caller
+  reviewedAt: true,
+});
+
+export type Venue = typeof venues.$inferSelect;
+export type InsertVenue = z.infer<typeof insertVenueSchema>;
+export type VenueMenu = typeof venueMenus.$inferSelect;
+export type InsertVenueMenu = z.infer<typeof insertVenueMenuSchema>;
 
 // Location insert/update schemas
 export const insertLocationSchema = createInsertSchema(locations).omit({
@@ -2484,6 +2629,17 @@ export const calendarEventAttendeesRelations = relations(calendarEventAttendees,
     fields: [calendarEventAttendees.eventId],
     references: [calendarEvents.id],
   }),
+}));
+
+export const venueMenusRelations = relations(venueMenus, ({ one }) => ({
+  venue: one(venues, {
+    fields: [venueMenus.venueId],
+    references: [venues.id],
+  }),
+}));
+
+export const venuesRelations = relations(venues, ({ many }) => ({
+  menus: many(venueMenus),
 }));
 
 export const locationsRelations = relations(locations, ({ one, many }) => ({

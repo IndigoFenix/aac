@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Home, Volume2 } from "lucide-react";
+import { Home, Volume2 } from "lucide-react";
+import { ChevronBack, forwardTriangle, backTriangle } from "@/components/ui/directional-icons";
 import type { ParsedBoardData, BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
@@ -139,7 +140,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
               onClick={handleBack}
               className="p-2 rounded-lg bg-white dark:bg-gray-700 shadow-sm hover:shadow-md transition-shadow"
             >
-              {isRTL ? <ChevronRight className="w-6 h-6" /> : <ChevronLeft className="w-6 h-6" />}
+              <ChevronBack className="w-6 h-6" />
             </motion.button>
           )}
           <motion.button
@@ -284,11 +285,18 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                   </span>
 
                   {/* Action type indicators */}
+                  {/* Both the mark's SIDE and the triangle's direction are
+                      logical: a "goes deeper" arrow that points against the
+                      reading direction reads as "goes back". */}
                   {button.action?.type === "link" && (
-                    <span className="absolute top-1 right-1 text-blue-600 opacity-70 text-[0.6rem]">▶</span>
+                    <span className="absolute text-blue-600 opacity-70 text-[0.6rem]" style={{ top: 4, insetInlineEnd: 4 }}>
+                      {forwardTriangle(isRTL)}
+                    </span>
                   )}
                   {(button.action?.type === "back" || button.action?.type === "home") && (
-                    <span className="absolute top-1 left-1 text-amber-600 opacity-70 text-[0.6rem]">◀</span>
+                    <span className="absolute text-amber-600 opacity-70 text-[0.6rem]" style={{ top: 4, insetInlineStart: 4 }}>
+                      {backTriangle(isRTL)}
+                    </span>
                   )}
                 </motion.button>
               );

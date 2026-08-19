@@ -20,6 +20,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { AACSettingsPackages } from '@/components/AACSettingsPackages';
 import { CollapsibleSection, CollapsibleSubSection } from '@/components/ui/collapsible-section';
+import { MenuReviewCard } from '@/components/venue-menus/MenuReviewCard';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
@@ -52,6 +53,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { DEFAULT_MAX_RESULTS, MAX_RESULTS_CEILING, MIN_RESULTS } from '@shared/picture-search';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
@@ -90,6 +92,7 @@ import {
   Sparkles,
   ChevronDown,
   Activity,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ratioLevel, labelFontSize, labelLines } from '@shared/button-sizing';
@@ -194,6 +197,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [thoroughStartup, setThoroughStartup] = useState(false);
   const [singleGlyphButtons, setSingleGlyphButtons] = useState(false);
   const [glyphInputTranslation, setGlyphInputTranslation] = useState(false);
+  // Press pacing — how long the AI waits before answering a press (0 = at once,
+  // above zero lets the student chain buttons into one thought) and whether a
+  // different button pressed over an in-flight answer abandons it.
+  const [pressResponseDelay, setPressResponseDelay] = useState(0);
+  const [interruptOnNewPress, setInterruptOnNewPress] = useState(false);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<string>('mouse');
@@ -524,6 +532,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setThoroughStartup((aac?.startupMode ?? 0) === 1);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
+      setPressResponseDelay(aac?.pressResponseDelay ?? 0);
+      setInterruptOnNewPress(aac?.interruptOnNewPress ?? false);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
@@ -580,6 +590,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalThoroughStartup = (aac?.startupMode ?? 0) === 1;
       const originalSingleGlyphButtons = aac?.singleGlyphButtons ?? false;
       const originalGlyphInputTranslation = aac?.glyphInputTranslation ?? false;
+      const originalPressResponseDelay = aac?.pressResponseDelay ?? 0;
+      const originalInterruptOnNewPress = aac?.interruptOnNewPress ?? false;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       const originalEyegazeProvider = aac?.eyegazeProvider ?? 'mouse';
@@ -631,6 +643,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         thoroughStartup !== originalThoroughStartup ||
         singleGlyphButtons !== originalSingleGlyphButtons ||
         glyphInputTranslation !== originalGlyphInputTranslation ||
+        pressResponseDelay !== originalPressResponseDelay ||
+        interruptOnNewPress !== originalInterruptOnNewPress ||
         eyegazeEnabled !== originalEyegazeEnabled ||
         eyegazeTimeout !== originalEyegazeTimeout ||
         eyegazeProvider !== originalEyegazeProvider ||
@@ -657,7 +671,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -683,6 +697,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       startupMode: number;
       singleGlyphButtons: boolean;
       glyphInputTranslation: boolean;
+      pressResponseDelay: number;
+      interruptOnNewPress: boolean;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
       eyegazeProvider: string;
@@ -786,6 +802,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       startupMode: thoroughStartup ? 1 : 0,
       singleGlyphButtons,
       glyphInputTranslation,
+      pressResponseDelay,
+      interruptOnNewPress,
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
@@ -843,6 +861,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setThoroughStartup((aac?.startupMode ?? 0) === 1);
       setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
       setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
+      setPressResponseDelay(aac?.pressResponseDelay ?? 0);
+      setInterruptOnNewPress(aac?.interruptOnNewPress ?? false);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
@@ -1121,6 +1141,54 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <p className="text-xs text-muted-foreground mt-2">
                   {t(`aacSettings.languageLevel_${LANGUAGE_LEVELS[languageLevel - 1] ?? 'full_sentences'}_desc`)}
                 </p>
+              </div>
+
+              {/* Response timing — how long the AI waits before answering a
+                  press (so the student can chain buttons into one thought),
+                  and whether a new press abandons an answer already underway. */}
+              <div className="space-y-4 border-t pt-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-base font-medium">{t('aacSettings.pressResponseDelay')}</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {pressResponseDelay === 0
+                        ? t('aacSettings.pressResponseDelayOff')
+                        : `${(pressResponseDelay / 1000).toFixed(1)}s`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('aacSettings.pressResponseDelayDesc')}</p>
+                  <Slider
+                    min={0}
+                    max={8000}
+                    step={500}
+                    value={[pressResponseDelay]}
+                    onValueChange={(v) => setPressResponseDelay(v[0])}
+                    data-testid="slider-press-response-delay"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{t('aacSettings.pressResponseDelayOff')}</span>
+                    <span>2s</span>
+                    <span>4s</span>
+                    <span>8s</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 pe-4">
+                    <Label htmlFor="interrupt-on-new-press" className="text-sm font-medium">
+                      {t('aacSettings.interruptOnNewPress')}
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('aacSettings.interruptOnNewPressDesc')}
+                    </p>
+                  </div>
+                  <Switch
+                    id="interrupt-on-new-press"
+                    checked={interruptOnNewPress}
+                    onCheckedChange={setInterruptOnNewPress}
+                    data-testid="switch-interrupt-on-new-press"
+                  />
+                </div>
               </div>
 
               {/* Chat behavior — custom prompt rules + AI-owned auto notes */}
@@ -2554,6 +2622,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   the action runs, and the server refuses a flagged press that
                   arrives without that answer. Deliberately not AI-editable —
                   see shared/home-actions.ts. */}
+              {/* Captured restaurant menus awaiting a caretaker's confirmation.
+                  Self-contained component — see
+                  client/src/components/venue-menus/MenuReviewCard.tsx. */}
+              {student?.id && <MenuReviewCard studentId={student.id} />}
+
               <CollapsibleSubSection
                 icon={<Home className="w-5 h-5" />}
                 title={t('aacSettings.homeActionsTitle')}
@@ -2930,6 +3003,104 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   }
                 />
               </div>
+
+              {/* Family Photos — the student's OWN album.
+                  It had no toggle at all until now, which meant `photos`
+                  (enabledByDefault: false) could never be turned on by anyone:
+                  the app, its server resolution and its prompt block all worked
+                  and none of it was reachable. Sits directly above Find a
+                  Picture on purpose — "their own people" vs "the open web" is
+                  the distinction a clinician most needs to see side by side. */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🖼️</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appPhotos')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appPhotosDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.photos?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, photos: { ...prev.photos, enabled: checked } }))
+                  }
+                />
+              </div>
+
+              {/* Find a Picture — web image search.
+                  Off unless deliberately turned on: unlike every other app in
+                  this list, its content is not ours and nobody has reviewed it.
+                  The sub-panel only appears once it is on, so the extra
+                  controls do not imply the feature is running. */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🔍</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appPictureSearch')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appPictureSearchDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.picture_search?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, picture_search: { ...prev.picture_search, enabled: checked } }))
+                  }
+                />
+              </div>
+
+              {appConfig.picture_search?.enabled && (
+                <div className={cn("ms-10 p-3 rounded-lg border space-y-3", isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200")}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appPictureSearchWarning')}</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">{t('aacSettings.pictureSearchBlocked')}</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder={t('aacSettings.pictureSearchBlockedPlaceholder')}
+                      value={(appConfig.picture_search?.blockedTerms ?? []).join('\n')}
+                      onChange={(e) =>
+                        setAppConfig(prev => ({
+                          ...prev,
+                          picture_search: {
+                            ...prev.picture_search,
+                            // Split on save, not on keystroke shape: a clinician
+                            // mid-word must not have their blank line eaten.
+                            blockedTerms: e.target.value.split('\n').map(term => term.trim()).filter(Boolean),
+                          },
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.pictureSearchBlockedDesc')}</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">{t('aacSettings.pictureSearchMaxResults')}</Label>
+                    <Input
+                      type="number"
+                      min={MIN_RESULTS}
+                      max={MAX_RESULTS_CEILING}
+                      className="w-24"
+                      value={appConfig.picture_search?.maxResults ?? DEFAULT_MAX_RESULTS}
+                      onChange={(e) =>
+                        setAppConfig(prev => ({
+                          ...prev,
+                          picture_search: {
+                            ...prev.picture_search,
+                            maxResults: Math.min(
+                              MAX_RESULTS_CEILING,
+                              Math.max(MIN_RESULTS, Number(e.target.value) || DEFAULT_MAX_RESULTS),
+                            ),
+                          },
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.pictureSearchMaxResultsDesc')}</p>
+                  </div>
+                </div>
+              )}
 
               {/* Game options — how world-engine games (Dollhouse, …) use the
                   live AI and the student's voice. Stored in appConfig.gameOptions. */}

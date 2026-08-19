@@ -183,10 +183,48 @@ describe("open (launch-button) field gating", () => {
     expect(getButtonProps(decls, "add_board_button").open.properties).toHaveProperty("board");
   });
 
-  test("open never appears on the sidebar or binary-choice buttons", () => {
+  test("open never appears on the sidebar", () => {
     const decls = buildBoardManagerToolDeclarations(withSites);
     expect(getButtonProps(decls, "add_context_button")).not.toHaveProperty("open");
-    expect(getButtonProps(decls, "show_binary_choice")).not.toHaveProperty("open");
+  });
+
+  test("open_app is NOT declared — it moved to the live Speaker", () => {
+    // 2026-08-19 (Daniel): the agent that hears the consent opens the app.
+    // Two agents both instructed to open on consent means double-opens, so the
+    // BM keeps only the OFFER half (launch buttons). The parse case remains as
+    // gated tolerance, but the tool must not be on the surface.
+    const decls = buildBoardManagerToolDeclarations({
+      ...baseConfig,
+      enabledApps: [
+        { id: "drawing", name: "Drawing" },
+        { id: "picture_search", name: "Find a Picture", queryHint: "what to find — REQUIRED" },
+      ],
+    });
+    expect(decls[0].functionDeclarations!.find(d => d.name === "open_app")).toBeUndefined();
+  });
+
+  test("call_monitor is no longer on the Board Manager surface", () => {
+    // Removed 2026-08-19: the BM never had anything useful to escalate, and
+    // every tool costs schema budget on a saturated flash model.
+    const decls = buildBoardManagerToolDeclarations({ ...baseConfig, guessingActive: true });
+    expect(decls[0].functionDeclarations!.find(d => d.name === "call_monitor")).toBeUndefined();
+  });
+
+  test("binary-choice options carry a BRIEF open — offers are phrased as yes/no", () => {
+    // Reversal of the original "never on binary" rule (2026-08-19): the Speaker
+    // phrases app offers as yes/no questions, the routing rule sends those to
+    // show_binary_choice, and an agreeing option that can only speak is a dead
+    // press. Brief on purpose: it must not re-enumerate the allowlists that
+    // rebuild_board's schema and <apps_context> already carry once.
+    const decls = buildBoardManagerToolDeclarations(withSites);
+    const open = getButtonProps(decls, "show_binary_choice").open;
+    expect(open).toBeDefined();
+    expect(open.properties).toHaveProperty("website");
+    // No re-enumeration of the permitted list in the brief variant.
+    expect(open.description).toContain("same permitted targets and rules as rebuild_board");
+    // Smart-home slots stay OFF the overlay — firing one from a yes/no bypasses
+    // the confirm flow home actions are built around.
+    expect(open.properties).not.toHaveProperty("home");
   });
 });
 

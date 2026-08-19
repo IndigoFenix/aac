@@ -443,9 +443,10 @@ export interface InterpretIntentEvent extends BaseEvent {
  *  so it can produce app-relevant buttons. */
 export interface AppOpenRequestedEvent extends BaseEvent {
   type: "app_open_requested";
-  /** "speaker" when the AI calls open_app; "client" when the student presses an
-   *  app tile and the client asks the server to open it (request_app_open). */
-  source: "speaker" | "client";
+  /** "speaker" / "board-manager" when that agent calls open_app; "client" when
+   *  the student presses an app tile and the client asks the server to open it
+   *  (request_app_open). Everything non-"client" routes as an AI open. */
+  source: "speaker" | "board-manager" | "client";
   appId: string;
   /** Optional search query / payload (e.g. YouTube videoId). */
   data?: string;
@@ -501,6 +502,15 @@ export interface BoardButtonOpen {
   website?: string;
   /** An enabled app id (built-in or custom game) to launch. */
   app?: string;
+  /**
+   * Free-text argument for `app` — the same string the Speaker would pass as
+   * `open_app(appId, data)`. Exists because in the DEFAULT live-audio session
+   * the Speaker has no tools at all: the Board Manager is the only thing that
+   * can open an app, so without this a launch button could only ever open an
+   * app EMPTY. "Let's find a picture of an owl" → a button that opens the
+   * picture search on nothing is a broken promise with extra steps.
+   */
+  appQuery?: string;
   /** A pre-built board KEY (as passed to set_board) to load. Lets the Board
    *  Manager OFFER a board instead of loading it outright — the user decides by
    *  pressing. Normalized to the canonical key by the coordinator's gate. */

@@ -44,12 +44,13 @@ import {
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
-import { applyExclusiveModifier, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
+import { applyExclusiveModifier, applyModifierPress, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
 import { placeArt } from "@shared/glyph-place-art";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveEmoji, rtlMirrorStyle } from "@shared/emoji-registry";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { forwardTriangle } from "@/components/ui/directional-icons";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import type {
   ConstructionStateClient,
@@ -59,6 +60,8 @@ import type {
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import type { BuilderRecency, BuilderSurface, BuilderWord } from "@shared/games-bridge";
 import { BUILDER_SURFACE_CAPACITY, type EngineBuilderBackend } from "@/lib/engine-builder";
+// ONE paging rule for both word sources (engine surface + registry fallback).
+import { BUILDER_GRID_CELLS, BUILDER_ITEMS_WITH_MORE, pageBuilderGrid } from "@shared/aac-builder-paging";
 // THE LEARNED LAYER, one call (the in-game SpeakMenu's own move —
 // board-island.tsx:416). ⚠ `parseSentence` is imported from `intent/parse-intent`
 // (sentence → IntentFrame) and aliased, because `lang/core.ts` exports an
@@ -425,8 +428,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // onto an implicit 3rd row and the browser compresses the declared
   // rows to make space.
   const [gridPage, setGridPage] = useState(0);
-  const GRID_CELLS = 18;
-  const GRID_ITEMS_WITH_MORE = GRID_CELLS - 1;
+  const GRID_CELLS = BUILDER_GRID_CELLS;
+  const GRID_ITEMS_WITH_MORE = BUILDER_ITEMS_WITH_MORE;
 
   // Merge tone toggle state into the glyph as tone tags. The compositor and
   // the play action both read from the displayed glyph.
@@ -449,16 +452,12 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     () => listByModeChip(activeTab, modeChip),
     [activeTab, modeChip]
   );
-  const gridNeedsMore = allGridItems.length > GRID_CELLS;
-  const gridItemsPerPage = gridNeedsMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
-  const gridItems = useMemo(() => {
-    if (!gridNeedsMore) return allGridItems.slice(0, GRID_CELLS);
-    // Wrap-around slice so each page shows a full set; if the user keeps
-    // tapping More we cycle through everything and eventually loop.
-    const start = (gridPage * gridItemsPerPage) % allGridItems.length;
-    const wrapped = [...allGridItems.slice(start), ...allGridItems.slice(0, start)];
-    return wrapped.slice(0, gridItemsPerPage);
-  }, [allGridItems, gridPage, gridNeedsMore, gridItemsPerPage]);
+  // Registry (fallback) paging — same rule as the engine grid below, from the
+  // one module that owns it.
+  const registryPage = useMemo(() => pageBuilderGrid(allGridItems, gridPage), [allGridItems, gridPage]);
+  const gridNeedsMore = registryPage.needsMore;
+  const gridItemsPerPage = registryPage.perPage;
+  const gridItems = registryPage.items;
 
   // ── Engine mode (stage-3 builder merge, reworked) ─────────────────────────
   // When an engine backend is wired AND answering, the ENGINE's taxonomy is
@@ -596,15 +595,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     () => (engineGridActive && engineSurface ? engineSurface.buttons : []),
     [engineGridActive, engineSurface]
   );
-  const engineNeedsMore = engineWords.length > GRID_CELLS;
-  const engineItemsPerPage = engineNeedsMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
-  const engineGridWords = useMemo(() => {
-    if (engineWords.length === 0) return engineWords;
-    if (!engineNeedsMore) return engineWords.slice(0, GRID_CELLS);
-    const start = (gridPage * engineItemsPerPage) % engineWords.length;
-    const wrapped = [...engineWords.slice(start), ...engineWords.slice(0, start)];
-    return wrapped.slice(0, engineItemsPerPage);
-  }, [engineWords, gridPage, engineNeedsMore, engineItemsPerPage]);
+  const enginePage = useMemo(() => pageBuilderGrid(engineWords, gridPage), [engineWords, gridPage]);
+  const engineNeedsMore = enginePage.needsMore;
+  const engineItemsPerPage = enginePage.perPage;
+  const engineGridWords = enginePage.items;
 
   // A new surface is a new ranked list — restart its paging. Engine mode only
   // (setGridPage(0) is a no-op-ish reset, but skip it entirely otherwise so
@@ -1001,6 +995,13 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     setActiveSlot(null);
   }, [activeSlot]);
 
+  // Backspace — removes the LAST slot. Only relevant with no explicit
+  // selection (a selected slot shows the delete button instead, in the same
+  // spot): the two never coexist.
+  const handleBackspace = useCallback(() => {
+    setGlyph((g) => (g.slots.length === 0 ? g : clearSlot(g, g.slots.length - 1)));
+  }, []);
+
   const handlePlay = useCallback(() => {
     if (displayedGlyph.slots.length === 0) return;
     if (awaitingInterpret) return;  // already interpreting — ignore repeat presses
@@ -1219,22 +1220,28 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         setGlyph((g) => applyRelationalModifier(g, effectiveActiveSlot, mod.key));
         return;
       }
-      setGlyph((g) =>
-        activeModifierKeys.has(mod.key)
-          ? removeModifier(g, effectiveActiveSlot, mod.key)
-          : addModifier(g, effectiveActiveSlot, mod.key)
-      );
+      // Toggle, but never leave two members of one axis on the same head — a
+      // thing cannot be hot AND cold, or one AND three. The conflict rules are
+      // registry-declared (`pairKey` / exclusive transforms) and owned by
+      // applyModifierPress, so this rail and the ENGINE's rail below it agree.
+      setGlyph((g) => applyModifierPress(g, effectiveActiveSlot, mod.key));
     },
-    [effectiveActiveSlot, activeModifierKeys]
+    [effectiveActiveSlot]
   );
 
-  // AI-modifier press: same toggle add/remove flow as the static carousel.
-  // For canonical registry modifiers, we route through handleModifierPress
-  // so the existing color-mutex / dimension-mutex semantics still hold.
-  // For AI-only / generated modifier symbols (rare), we fall back to the
-  // raw key path since there's no VocabularyItem to consult — `addModifier`
-  // operates by key, so the GLYPH stores the SUGGESTION verbatim and the
-  // compositor's registered symbol path renders it.
+  // AI- and ENGINE-modifier press. Canonical registry modifiers route through
+  // handleModifierPress, so they get the same axis-exclusivity every other rail
+  // has — which is what stops the engine rail composing "a hot cold apple".
+  // Every descriptor the engine surfaces that the student can reach today
+  // (hot/cold, the counts, the state pairs) is a registry item, so that covers
+  // the rail in practice.
+  //
+  // KNOWN GAP: an AI-only or engine-only modifier SYMBOL with no VocabularyItem
+  // falls back to the raw toggle below, which cannot know what it conflicts
+  // with — `addModifier` operates by key, so the GLYPH stores the suggestion
+  // verbatim and the compositor's registered symbol path renders it. The wire
+  // now carries `BuilderWord.axis` for exactly this case; wiring it needs the
+  // axis of ALREADY-APPLIED keys too, which the rail does not report.
   const handleAiModifierPress = useCallback(
     (candidate: { key: string }) => {
       if (effectiveActiveSlot == null) return;
@@ -1663,15 +1670,25 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             testId="construction-help"
           />
 
-          {/* Clear-selected button — only when a slot is selected */}
-          {activeSlot != null && (
+          {/* Clear-selected button — only when a slot is selected. With no
+              selection, the same spot shows Backspace (removes the last
+              slot) whenever there's something to remove. */}
+          {activeSlot != null ? (
             <ActionButton
               label={t("common.delete")}
               icon="✕"
               onPress={handleClearSelected}
               testId="construction-clear"
             />
-          )}
+          ) : displayedGlyph.slots.length > 0 ? (
+            <ActionButton
+              label={t("construction.backspace")}
+              icon="⌫"
+              mirrorIcon={isRTL}
+              onPress={handleBackspace}
+              testId="construction-backspace"
+            />
+          ) : null}
 
           {/* Play button — disabled when no slots filled. Arrow points
               along the reading direction so it reads as "forward / go". While
@@ -1686,7 +1703,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               a whole one withheld. */}
           <ActionButton
             label={awaitingInterpret ? t("processing.interpreting") : t("construction.play")}
-            icon={isRTL ? "◀" : "▶"}
+            icon={forwardTriangle(isRTL)}
             primary
             ready={engineSurface?.complete === true && displayedGlyph.slots.length > 0}
             busy={awaitingInterpret}
@@ -2268,6 +2285,12 @@ function ActionButton(props: {
   /** READY: the composition is already sayable. A quiet halo — an invitation,
    *  not a gate; the button is pressable with or without it. */
   ready?: boolean;
+  /** Flip the icon horizontally. For DIRECTIONAL chrome only — Backspace's ⌫
+   *  erases toward the start of the line, which is the RIGHT in RTL, so the
+   *  glyph has to turn around with the text. (⌦ U+2326 is the nominal
+   *  right-erasing character, but it is missing from enough of the fonts the
+   *  iPad shell falls back to that a mirrored ⌫ is the safer draw.) */
+  mirrorIcon?: boolean;
   testId?: string;
 }) {
   return (
@@ -2294,7 +2317,11 @@ function ActionButton(props: {
       ].join(" ")}
       style={props.color ? { backgroundColor: props.active && props.color === "#EDE9FE" ? "#C4B5FD" : props.color, borderColor: props.borderColor ?? props.color } : undefined}
     >
-      <span className="text-2xl" aria-hidden>
+      <span
+        className="text-2xl"
+        aria-hidden
+        style={props.mirrorIcon && !props.busy ? { transform: "scaleX(-1)" } : undefined}
+      >
         {props.busy
           ? <span className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
           : props.icon}

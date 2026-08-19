@@ -222,6 +222,17 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
     void this.fireCompletion();
   }
 
+  /** Barge-in: the student pressed a different button over this answer, so
+   *  abandon it. Aborting the stream stops the sentence-streamer mid-reply, so
+   *  nothing further reaches TTS. No replacement completion is fired — the
+   *  press that caused this supplies the next turn (possibly after a chain
+   *  hold), and firing one here would race it. */
+  cancelTurn(reason: string): void {
+    if (!this.inFlight) return;
+    flowNote("SPEAKER", `Turn cancelled (${reason}) — in-flight completion aborted.`);
+    this.abortInFlight();
+  }
+
   sendContextInjection(text: string): void {
     if (!this.opened) return;
     flowInput("SPEAKER", "context", text);

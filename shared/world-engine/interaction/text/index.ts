@@ -77,10 +77,13 @@ export {
 } from "./summarize.js";
 export {
   createTextBuilder,
+  slicePager,
   BUILDER_DEFAULT_GRID,
   type TextBuilder,
   type TextBuilderDeps,
   type BuilderTap,
+  type BuilderPager,
+  type BuilderScreen,
 } from "./builder.js";
 export {
   createWatchBook,

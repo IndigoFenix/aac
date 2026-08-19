@@ -7,9 +7,16 @@
 //      speech_end event
 //   4. Re-prompt cap is honored
 
+import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import type { ChatProvider, ChatRequest, StreamChunk, ChatCompletionResult } from "../services/providers/streaming-provider";
 
-// ---- Mock the provider factory before requiring the agent --------------
+// ---- Mock the provider factory before importing the agent --------------
+//
+// MUST be `jest.unstable_mockModule` + dynamic `import()` below, NOT the
+// classic `jest.mock` + static import: this suite runs under jest's native-ESM
+// mode (see jest.config.js), where static imports bind before any module-body
+// statement runs, so `jest.mock` never intercepts them and the agent would
+// take the REAL Gemini provider.
 const providerStub: { streamChat: (req: ChatRequest) => AsyncGenerator<StreamChunk> } = {
   streamChat: async function* () {
     // Overridden per-test.
@@ -17,21 +24,22 @@ const providerStub: { streamChat: (req: ChatRequest) => AsyncGenerator<StreamChu
   },
 };
 
-jest.mock("../services/providers/provider-factory", () => ({
+jest.unstable_mockModule("../services/providers/provider-factory", () => ({
   getChatProvider: () => providerStub as unknown as ChatProvider,
 }));
 
 // Suppress the agent-flow debug log to stdout during tests.
-jest.mock("../services/dual-agent/agent-flow-logger", () => ({
+jest.unstable_mockModule("../services/dual-agent/agent-flow-logger", () => ({
   flowInput: () => {},
   flowOutput: () => {},
   flowTool: () => {},
   flowNote: () => {},
 }));
 
-// Required after the mocks are in place.
-import { HttpSpeakerAgent } from "../services/dual-agent/http-speaker-agent";
-import type { SpeakerCallbacks, SpeakerOutputEvent } from "../services/dual-agent/speaker-agent";
+// ---- Dynamic imports (after the mocks are registered) ------------------
+const { HttpSpeakerAgent } = await import("../services/dual-agent/http-speaker-agent.js");
+type SpeakerCallbacks = import("../services/dual-agent/speaker-agent.js").SpeakerCallbacks;
+type SpeakerOutputEvent = import("../services/dual-agent/speaker-agent.js").SpeakerOutputEvent;
 
 // ---- Helpers -----------------------------------------------------------
 

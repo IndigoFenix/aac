@@ -33,20 +33,17 @@ function fail(path: string, msg: string): never {
 
 export interface GalaxyWorldSpec {
   seed: number;
-  /** Quest-giving residents per founded town (0..3; default 0). */
-  questCount?: number;
 }
 
-/** The galaxy scope's `world` descriptor — one source for validation + form. */
+/** The galaxy scope's `world` descriptor — one source for validation + form.
+ *  `questCount` DELETED (Shape B ruling 3): quests are only declarable on the
+ *  town|structure scopes; the strict gate rejects it here as unknown. */
 export const GALAXY_WORLD_FIELDS: GroupSpec = {
   objectMessage: "expected an object (the galaxy definition)",
   fields: [
     { key: "seed", kind: "number", min: 0, max: Number.MAX_SAFE_INTEGER, default: 1,
       facet: "boundary", ui: "seed", label: "Seed",
       description: "One seed reproduces the whole galaxy." },
-    { key: "questCount", kind: "int", min: 0, max: 3, facet: "interior",
-      label: "Quests per town",
-      description: "Quest-giving residents per founded town (0..3; default 0)." },
   ],
 };
 
@@ -133,8 +130,6 @@ export interface SolarWorldSpec {
   /** Pin the star (descending from a galaxy passes its record) — absent,
    *  the seed samples one. */
   star?: { massInit: number; age: number; feh: number };
-  /** Quest-giving residents per founded town (0..3; default 0). */
-  questCount?: number;
 }
 
 /** A pinned star's fields — the boundary a galaxy descent injects; absent, the
@@ -158,9 +153,8 @@ export const SOLAR_WORLD_FIELDS: GroupSpec = {
     { key: "star", kind: "object", fields: SOLAR_STAR_FIELDS, facet: "boundary",
       label: "Star",
       description: "Pin the star (a galaxy descent passes its record); absent, the seed samples one." },
-    { key: "questCount", kind: "int", min: 0, max: 3, facet: "interior",
-      label: "Quests per town",
-      description: "Quest-giving residents per founded town (0..3; default 0)." },
+    // `questCount` DELETED (Shape B ruling 3): quests live on town|structure
+    // scopes only; the strict gate rejects it here as an unknown field.
   ],
 };
 

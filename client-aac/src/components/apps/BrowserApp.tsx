@@ -10,7 +10,8 @@
 // - TODO: build dedicated apps for popular blocked sites. YouTube already has one.
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, RefreshCw, ChevronLeft, Globe } from "lucide-react";
+import { X, RefreshCw, Globe } from "lucide-react";
+import { ChevronBack } from "@/components/ui/directional-icons";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { isUrlPermitted } from "@shared/permitted-websites";
 import type { PermittedWebsite } from "@shared/schema";
@@ -205,7 +206,7 @@ function IframeBrowserApp({
           className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
           aria-label={t("browserApp.back")}
         >
-          <ChevronLeft size={28} className="text-gray-700" />
+          <ChevronBack size={28} className="text-gray-700" />
         </button>
         <button type="button"
           data-dwell

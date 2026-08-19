@@ -1062,6 +1062,11 @@ function buildWorld(): void {
           }
         : undefined,
       worldVoice,
+      // THE PLATFORM'S LOCALE (init.locale) — session state that must never
+      // ride in game.world (loadSpec's manifest gate); lowered into the
+      // host's SessionMeta instead. boot() waits up to 1.5s for init, so a
+      // late init boots without it; any reboot re-reads the live value.
+      initLocale,
     );
     bootedMp = snapshot;
     bootedSession = sessionSnap;

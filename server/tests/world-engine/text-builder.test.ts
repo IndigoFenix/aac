@@ -20,7 +20,16 @@ import {
   type TextSessionDeps,
   type TextViewProbe,
 } from "@shared/world-engine/interaction/text/index.js";
-import { defaultBuilderNouns } from "@shared/world-engine/interaction/intent/builder-surface.js";
+import {
+  builderSurfaceFor,
+  defaultBuilderNouns,
+} from "@shared/world-engine/interaction/intent/builder-surface.js";
+import type { BuilderPager } from "@shared/world-engine/interaction/text/builder.js";
+import {
+  BUILDER_GRID_CELLS,
+  BUILDER_ITEMS_WITH_MORE,
+  pageBuilderGrid,
+} from "@shared/aac-builder-paging.js";
 import type { QuestPresenter } from "@shared/world-engine/interaction/quest/quest-host.js";
 import {
   addLocalAvatar,
@@ -331,5 +340,109 @@ describe("text session — press/screen accounting (law ④'s metric)", () => {
     r.session.command("board"); // drains the push, which closed the builder
     const out = r.session.command("more");
     expect(out.events[0]).toEqual({ tag: "ERR", text: `this board has no "more" button.` });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// THE MODIFIER RAIL IS AXIS-EXCLUSIVE
+//
+// A thing cannot be hot AND cold, or one AND three. The rail already hides a
+// word once it is applied, so only the SAME-AXIS case ever got through — and it
+// did: `apple.hot.cold` composed happily and the lang layer read it out as "a
+// hot cold apple", a sentence the student never meant and could not undo in one
+// press. The same hole exists on the AAC's own rail (`handleModifierPress` uses
+// a plain `addModifier`; only the colour/emotion/gauge pickers go through
+// `applyExclusiveModifier`) — same builder, same bug.
+// ───────────────────────────────────────────────────────────────────────────
+describe("the modifier rail keeps a descriptor axis exclusive", () => {
+  /** Compose a head that takes a descriptor rail. */
+  function withHead() {
+    const b = builder();
+    for (const w of ["i_me", "want", "apple"]) b.tap(w);
+    return b;
+  }
+
+  it("REPLACES the applied member of the same axis rather than stacking", () => {
+    const b = withHead();
+    expect(b.tap(".hot").ok).toBe(true);
+    expect(b.partial()).toBe("i_me + want + apple.hot");
+    expect(b.tap(".cold").ok).toBe(true);
+    expect(b.partial()).toBe("i_me + want + apple.cold");
+  });
+
+  it("does the same for counts — one then three is three, not both", () => {
+    const b = withHead();
+    b.tap(".one");
+    b.tap(".three");
+    expect(b.partial()).toBe("i_me + want + apple.three");
+  });
+
+  it("keeps modifiers from DIFFERENT axes side by side", () => {
+    const b = withHead();
+    b.tap(".hot");
+    b.tap(".three"); // quantity, not temperature
+    const [, , head] = b.partial().split(" + ");
+    expect(head.split(".").slice(1).sort()).toEqual(["hot", "three"]);
+  });
+
+  it("offers the replaced word again — the axis is a choice, not a one-shot", () => {
+    const b = withHead();
+    b.tap(".hot");
+    b.tap(".cold");
+    const rail = (b.block() as { options: { id: string; modifier?: boolean }[] }).options
+      .filter((o) => o.modifier)
+      .map((o) => o.id);
+    expect(rail).toContain("hot");
+    expect(rail).not.toContain("cold"); // the applied one stays hidden
+  });
+
+  it("tags each rail word with its axis, so a client can do the same", () => {
+    const s = builderSurfaceFor("i_me + want + apple", { nouns: NOUNS });
+    const hot = s.modifiers?.find((m) => m.key === "hot");
+    const three = s.modifiers?.find((m) => m.key === "three");
+    expect(hot?.axis).toBe("temperature");
+    expect(three?.axis).toBe("quantity");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// AN INJECTED PAGER — so a driver can page the way a REAL board pages
+// ───────────────────────────────────────────────────────────────────────────
+describe("the pager is injectable", () => {
+  /** The AAC's own rule: 18 cells, 17 when More takes one, wrapping forever. */
+  const aacPager: BuilderPager = (words, page) => {
+    const p = pageBuilderGrid(words, page);
+    return { items: p.items, pages: null, page };
+  };
+
+  it("defaults to the clean slice, unchanged", () => {
+    const b = builder(8);
+    const blk = b.block() as { pages?: number; page: number };
+    expect(blk.page).toBe(1);
+    expect(typeof blk.pages).toBe("number");
+  });
+
+  it("drives the REAL surfacer at the AAC's grid and paging", () => {
+    const b = createTextBuilder({ locale: "en", grid: 54, nouns: NOUNS, pager: aacPager });
+    const blk = b.block() as { options: unknown[]; pages?: number };
+    // Words only (the empty board has no modifier rail), capped at the AAC's
+    // grid — 18 when they exactly fit it, 17 once a More button takes a cell.
+    expect(blk.options.length).toBeLessThanOrEqual(BUILDER_GRID_CELLS);
+    expect(blk.options.length).toBeGreaterThanOrEqual(BUILDER_ITEMS_WITH_MORE);
+    // A cycling pager has no total to report, so the field is omitted entirely
+    // rather than inventing one.
+    expect(blk.pages).toBeUndefined();
+  });
+
+  it("never refuses More when the pager cycles — the control cannot go dead", () => {
+    const b = createTextBuilder({ locale: "en", grid: 54, nouns: NOUNS, pager: aacPager });
+    for (let i = 0; i < 12; i++) {
+      expect(b.page("more").ok).toBe(true);
+    }
+  });
+
+  it("still refuses More at the end under the default slice pager", () => {
+    const b = builder(54); // one screen holds everything the surfacer ranked
+    expect(b.page("more")).toEqual({ ok: false, error: "this is the last page of the list." });
   });
 });

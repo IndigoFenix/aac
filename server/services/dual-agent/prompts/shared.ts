@@ -87,22 +87,37 @@ export function genderWord(gender?: string, age?: string): string {
  * addresses a female student (or voices HER own utterances) in the masculine.
  * This states the requirement explicitly, naming the active language.
  *
- * Emitted ONLY when (a) the gender is known AND (b) the session language
- * actually marks the addressee's gender (`languageMarksGender`). For English,
- * Mandarin, Korean, etc. it returns "" — the directive would be pure noise.
- * `language` may be a code ("he") or a display name ("Hebrew"). Used by the
- * Speaker (addressing) and the Board Manager (which also AUTHORS the student's
- * own first-person speech).
+ * Emitted ONLY when (a) at least one gender is known AND (b) the session
+ * language actually marks the addressee's gender (`languageMarksGender`). For
+ * English, Mandarin, Korean, etc. it returns "" — the directive would be pure
+ * noise. `language` may be a code ("he") or a display name ("Hebrew"). Used by
+ * the Speaker (addressing) and the Board Manager (which also AUTHORS the
+ * student's own first-person speech).
+ *
+ * `aiGender` is the AI's OWN grammatical gender, derived from the voice it
+ * speaks with — without it the model genders ITS OWN first-person forms
+ * ("אני חושב/חושבת") arbitrarily, mismatching the voice being heard. Only the
+ * Speaker passes it; the Board Manager authors the student's words, never the
+ * AI's, so it stays student-only.
  */
-export function genderedAddressDirective(name: string, gender?: string, language?: string): string {
-  if (gender !== "male" && gender !== "female") return "";
+export function genderedAddressDirective(name: string, gender?: string, language?: string, aiGender?: string): string {
+  const studentG = gender === "male" || gender === "female" ? gender : undefined;
+  const aiG = aiGender === "male" || aiGender === "female" ? aiGender : undefined;
+  if (!studentG && !aiG) return "";
   if (!languageMarksGender(language)) return "";
-  const forms = gender === "female" ? "feminine" : "masculine";
-  const poss = gender === "female" ? "her" : "his";
   const langName = getLanguageName(language);
-  return `<grammatical_gender>
-[${name}] is ${gender}. ${langName} marks grammatical gender, so ALWAYS use ${forms} verb, pronoun, and adjective forms — both when you address [${name}] and when you write ${poss} OWN first-person words (the SENTENCEs they speak). If any worked example shows a different gender, follow [${name}]'s actual gender, not the example.
-</grammatical_gender>`;
+  const lines: string[] = [];
+  if (studentG) {
+    const forms = studentG === "female" ? "feminine" : "masculine";
+    const poss = studentG === "female" ? "her" : "his";
+    lines.push(`[${name}] is ${studentG}. ${langName} marks grammatical gender, so ALWAYS use ${forms} verb, pronoun, and adjective forms — both when you address [${name}] and when you write ${poss} OWN first-person words (the SENTENCEs they speak). If any worked example shows a different gender, follow [${name}]'s actual gender, not the example.`);
+  }
+  if (aiG) {
+    const aiForms = aiG === "female" ? "feminine" : "masculine";
+    const voiceDesc = aiG === "female" ? "a woman's" : "a man's";
+    lines.push(`Your own voice is ${voiceDesc}${studentG ? "" : `, and ${langName} marks grammatical gender`} — when YOU refer to yourself in the first person, ALWAYS use ${aiForms} verb and adjective forms, so your grammar matches the voice being heard.`);
+  }
+  return `<grammatical_gender>\n${lines.join("\n")}\n</grammatical_gender>`;
 }
 
 /** "a 12 year old girl with X" / "a user" — student descriptor. */

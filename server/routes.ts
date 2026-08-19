@@ -91,11 +91,14 @@ import { dualAgentController } from "./controllers/dualAgentController";
 import { spotifyController } from "./controllers/spotifyController";
 import { biometricController } from "./controllers/biometricController";
 import { customSymbolController } from "./controllers/customSymbolController";
+import { photoController, MAX_PHOTOS_PER_REQUEST } from "./controllers/photoController";
+import { pictureSearchController } from "./controllers/pictureSearchController";
 import { contactController } from "./controllers/contactController";
 import { licenseController } from "./controllers/licenseController";
 import { studentDeviceController } from "./controllers/studentDeviceController";
 import { calendarController } from "./controllers/calendarController";
 import { locationController } from "./controllers/locationController";
+import { venueMenuController } from "./controllers/venueMenuController";
 import { incidentController } from "./controllers/incidentController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
 import { accountLinkRouter } from "./controllers/accountLinkController";
@@ -1828,6 +1831,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     dualAgentController.getSession(req, res)
   );
 
+  // ============= FAMILY PHOTO ROUTES =============
+  // The clinician Photo Manager (planning-docs/aac-photos-plan.md §5).
+  // Authorization lives INSIDE photoController — every route resolves the
+  // caller's rights to the named student/institute before touching the data
+  // layer, which makes no access decision of its own. Named routes come before
+  // parameterized ones, matching the custom-symbol block below.
+  // The AAC device's read-only view. optionalAuth matches the other
+  // /api/aac/* endpoints — see the note on listForStudent.
+  app.get("/api/aac/photos", optionalAuth, (req, res) =>
+    photoController.listForStudent(req, res)
+  );
+  app.post("/api/photos/reorder", requireAuth, (req, res) =>
+    photoController.reorder(req, res)
+  );
+  app.get("/api/photos/student/:studentId", requireAuth, (req, res) =>
+    photoController.listScope(req, res)
+  );
+  app.get("/api/photos/institute/:instituteId", requireAuth, (req, res) =>
+    photoController.listScope(req, res)
+  );
+  app.post(
+    "/api/photos/student/:studentId",
+    requireAuth,
+    upload.array("photos", MAX_PHOTOS_PER_REQUEST),
+    (req, res) => photoController.upload(req, res)
+  );
+  app.post(
+    "/api/photos/institute/:instituteId",
+    requireAuth,
+    upload.array("photos", MAX_PHOTOS_PER_REQUEST),
+    (req, res) => photoController.upload(req, res)
+  );
+  app.patch("/api/photos/assignments/:assignmentId", requireAuth, (req, res) =>
+    photoController.updateAssignment(req, res)
+  );
+  app.delete("/api/photos/assignments/:assignmentId", requireAuth, (req, res) =>
+    photoController.deleteAssignment(req, res)
+  );
+
+  // ============= PICTURE SEARCH ROUTES =============
+  // The AAC's web picture search has no search endpoint on purpose — searching
+  // happens inside the coordinator so the Speaker learns what is on screen
+  // before it speaks. This is only the image proxy, which keeps the student's
+  // device from fetching bytes off third-party hosts. Its auth is the signed,
+  // expiring token in the query string; see the note on proxyImage.
+  app.get("/api/aac/picture-search/img", (req, res) =>
+    pictureSearchController.proxyImage(req, res)
+  );
+
   // ============= CUSTOM SYMBOL ROUTES =============
   // Named routes first (before parameterized /:id routes)
   app.post("/api/custom-symbols/generate", requireAuth, (req, res) =>
@@ -2077,6 +2129,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/locations/:id", requireAuth, (req, res) =>
     locationController.remove(req, res)
+  );
+
+  // ============= VENUE MENU ROUTES =============
+  // Location Menus (planning-docs/aac-restaurant-menus.md). Capture and review
+  // are student-scoped and check verifyStudentAccess inside the controller;
+  // reading a menu needs only auth, since a menu is a public fact.
+  app.post("/api/venue-menus/capture", requireAuth, (req, res) =>
+    venueMenuController.capture(req, res)
+  );
+  app.get("/api/students/:studentId/venue-menus/pending", requireAuth, (req, res) =>
+    venueMenuController.listPending(req, res)
+  );
+  app.get("/api/venues/:venueId/menus", requireAuth, (req, res) =>
+    venueMenuController.listForVenue(req, res)
+  );
+  app.get("/api/venue-menus/:id", requireAuth, (req, res) =>
+    venueMenuController.get(req, res)
+  );
+  app.patch("/api/venue-menus/:id/items", requireAuth, (req, res) =>
+    venueMenuController.editItems(req, res)
+  );
+  app.post("/api/venue-menus/:id/review", requireAuth, (req, res) =>
+    venueMenuController.review(req, res)
   );
 
   // ============= INCIDENT ROUTES =============

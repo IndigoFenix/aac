@@ -37,6 +37,7 @@ import {
   type QuestBoardView,
   type QuestHost3D,
   type QuestSession,
+  type SessionMeta,
 } from "@shared/world-engine/interaction/quest/quest-host";
 import type { WildernessParams, WildMixEntry } from "@shared/world-engine/interaction/quest/wilderness";
 import { PLAYER_ID } from "@shared/world-engine/solver/space3d";
@@ -137,6 +138,12 @@ interface QuestStartOpts {
   /** CULTURAL LAW (`game.culture` — nations P2): the world's universal
    *  absolute taboos found the session's law ring. */
   culture?: import("@shared/world-engine/culture").WorldCultureSpec | null;
+  /** QUESTLESS PAD (game null, no wilderness): the flat pad's side in sim
+   *  metres — the structure scope's `world.side` (default 240). */
+  side?: number;
+  /** Per-boot SessionMeta overrides — a QUESTLESS boot (game null) passes the
+   *  seed/title its old shell game carried here. */
+  meta?: Partial<SessionMeta>;
   /** Status-line detail (build stats). */
   detail: string;
   /** THE SPIRIT LADDER over this standalone world (the unified spirit —
@@ -157,7 +164,7 @@ interface QuestStartOpts {
  *  Shared by the living-town and structure boots. */
 function bootQuestGame(
   container: HTMLElement,
-  game: GoalTreeGame,
+  game: GoalTreeGame | null,
   setStatus: (text: string) => void,
   opts: QuestStartOpts,
   sharedBoard: SharedBoard,
@@ -219,7 +226,7 @@ function bootQuestGame(
       objectivesEl.textContent = "";
       for (const o of objectives) {
         const chip = el("span", `quest-chip${o.locked ? " locked" : ""}`, objectivesEl);
-        const node = session?.ctx.nodeById.get(o.nodeId);
+        const node = session?.ctx?.nodeById.get(o.nodeId);
         chip.textContent = `${objectiveEmoji(node, iconOf)}${o.locked ? "🔒" : ""}`;
       }
     },
@@ -236,7 +243,7 @@ function bootQuestGame(
       const burst = el("div", "quest-win-burst", winEl);
       burst.textContent = "🎉";
       const title = el("div", "quest-win-title", winEl);
-      title.textContent = session?.game.root.outro ?? session?.game.meta.title ?? "You did it!";
+      title.textContent = session?.game?.root.outro ?? session?.meta.title ?? "You did it!";
       const replay = el("button", "quest-replay", winEl);
       replay.textContent = "🔁 Play again";
       replay.addEventListener("click", () => host?.replay());
@@ -341,6 +348,8 @@ function bootQuestGame(
     ...(opts.wilderness ? { wilderness: opts.wilderness } : {}),
     ...(opts.scale ? { scale: opts.scale } : {}),
     ...(opts.culture ? { culture: opts.culture } : {}),
+    ...(opts.side !== undefined ? { side: opts.side } : {}),
+    ...(opts.meta ? { meta: opts.meta } : {}),
   });
   (window as unknown as Record<string, unknown>).__questLab = host;
   // FURNITURE USE-POINT eyeball check: one console call dumps every creature in
@@ -417,7 +426,7 @@ function bootQuestGame(
       (h.world?.state.spec.buildings ?? []).map((b) => b.footprint);
     const provider = createFlatSpiritProvider({
       scopeLevel: opts.ladder!.scopeLevel,
-      label: game.meta.title,
+      label: game?.meta.title ?? opts.meta?.title ?? "world",
       host: h,
       placeGazeAvatar: (x, y) => {
         const p = h.world?.state.avatars[PLAYER_ID];
@@ -504,7 +513,7 @@ function bootQuestGame(
           : opts.dollhouse
             ? "DOLLHOUSE — you're home with the family: watch them live, talk, gift, command (they obey)"
             : "walk with the mouse, dwell on a resident to talk";
-  setStatus(`${game.meta.title} · ${opts.detail} · ${hint}`);
+  setStatus(`${game?.meta.title ?? opts.meta?.title ?? "world"} · ${opts.detail} · ${hint}`);
 
   return {
     dispose() {
@@ -854,7 +863,7 @@ export function bootTownEmbedded(
       winEl.textContent = "";
       winEl.hidden = false;
       const title = el("div", "quest-win-title", winEl);
-      title.textContent = session?.game.root.outro ?? session?.game.meta.title ?? "You did it!";
+      title.textContent = session?.game?.root.outro ?? session?.meta.title ?? "You did it!";
       const replay = el("button", "quest-replay", winEl);
       replay.textContent = "🔁 Play again";
       replay.addEventListener("click", () => host?.replay());
@@ -998,15 +1007,11 @@ export function bootWildernessQuest(
     onSiteAbandoned?: (key: string) => void;
   },
 ): EmbeddedWildQuest {
-  // The questless bundle the standalone wilderness scope already plays
-  // (bootStructure with `world.wilderness: true`): a certified creature world
-  // with zero quests — content and minds come from the session's wilderness
-  // scatter, not the goal tree.
-  const game = buildCreatureQuestWorld({ seed: opts.seed, questCount: 0 });
-  const cert = certifyCreatureQuestWorld(game);
-  if (!cert.ok) {
-    throw new Error(`wilderness world failed ${cert.stage} certification: ${cert.errors.join("; ")}`);
-  }
+  // QUESTLESS SESSION (Shape B): no goal-tree shell at all — `host.start(null)`
+  // builds the session directly from the wilderness opts below. The meta the
+  // old `buildCreatureQuestWorld({ questCount: 0 })` shell carried travels as
+  // the boot's SessionMeta override instead (the SEED especially — convo/chat
+  // RNG reads `session.meta.seed`, so dropping it would shift transcripts).
 
   // Overlay DOM: ONLY the in-world HUD (toast/win) — the 3D is the flight
   // canvas itself; the button board is the lab's persistent top-level chrome.
@@ -1060,7 +1065,7 @@ export function bootWildernessQuest(
       winEl.textContent = "";
       winEl.hidden = false;
       const title = el("div", "quest-win-title", winEl);
-      title.textContent = session?.game.root.outro ?? session?.game.meta.title ?? "You did it!";
+      title.textContent = session?.game?.root.outro ?? session?.meta.title ?? "You did it!";
       const replay = el("button", "quest-replay", winEl);
       replay.textContent = "🔁 Play again";
       replay.addEventListener("click", () => host?.replay());
@@ -1078,7 +1083,7 @@ export function bootWildernessQuest(
     ...(opts.onSiteFounded ? { onSiteFounded: opts.onSiteFounded } : {}),
     ...(opts.onSiteAbandoned ? { onSiteAbandoned: opts.onSiteAbandoned } : {}),
   });
-  host.start(game, null, {
+  host.start(null, null, {
     // The chunk stands on a real planet: side matches the coordinator's
     // WILD_SIDE math and the rect is content extent, never a wall.
     wilderness: {
@@ -1092,6 +1097,8 @@ export function bootWildernessQuest(
     // avatarMode "creature" and CREATES this player a body — of THIS species.
     ...(opts.avatarSpecies ? { avatarSpecies: opts.avatarSpecies } : {}),
     scale: opts.scale ?? DOLLHOUSE_SCALE,
+    // What the old shell's game.meta carried — same seed, same title.
+    meta: { seed: opts.seed, title: "Creature Quest Village" },
   });
   (window as unknown as Record<string, unknown>).__questWild = host;
   setStatus("wilderness — walk with the mouse · dwell on a creature to talk");
@@ -1203,15 +1210,25 @@ export function bootStructure(
   const t0 = performance.now();
   const w = (loaded.game!.world ?? {}) as Record<string, unknown>;
   const numOf = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
-  const params: CreatureWorldParams = {
-    seed: numOf(w.seed, 1),
-    questCount: numOf(w.questCount, 0),
-    ...(w.layout === "house" || w.layout === "village" ? { layout: w.layout } : {}),
-  };
-  const game = buildCreatureQuestWorld(params);
-  const cert = certifyCreatureQuestWorld(game);
-  if (!cert.ok) {
-    throw new Error(`structure world failed ${cert.stage} certification: ${cert.errors.join("; ")}`);
+  const seed = numOf(w.seed, 1);
+  const questCount = numOf(w.questCount, 0);
+  // QUESTLESS (Shape B): zero quests ⇒ NO goal-tree game at all — the session
+  // is built directly from world inputs (`host.start(null, …)`): a flat pad
+  // sized from `world.side`, or the wilderness scatter. No generateHouse, no
+  // village, no certification. The old shell's meta rides as the boot's
+  // SessionMeta override (seed keeps convo/chat RNG identical).
+  let game: GoalTreeGame | null = null;
+  if (questCount > 0) {
+    const params: CreatureWorldParams = {
+      seed,
+      questCount,
+      ...(w.layout === "house" || w.layout === "village" ? { layout: w.layout } : {}),
+    };
+    game = buildCreatureQuestWorld(params);
+    const cert = certifyCreatureQuestWorld(game);
+    if (!cert.ok) {
+      throw new Error(`structure world failed ${cert.stage} certification: ${cert.errors.join("; ")}`);
+    }
   }
   const spirit = avatarKind(loaded.game) === "spirit";
   // WILDERNESS (`world.wilderness: true`, founding flow): the questless world
@@ -1219,16 +1236,22 @@ export function bootStructure(
   // spirit ladder at the TOWN scope level so the GROUND glide (and the
   // town-rung orbit over a founded site) is reachable.
   const wilderness = w.wilderness === true
-    ? { seed: numOf(w.seed, 1), side: numOf(w.side, 240) }
+    ? { seed, side: numOf(w.side, 240) }
     : undefined;
   const detail = wilderness
-    ? `wilderness · seed ${params.seed} · ${Math.round(performance.now() - t0)}ms`
-    : `structure · seed ${params.seed} · ${game.entities.length} entities · certified · ${Math.round(performance.now() - t0)}ms`;
+    ? `wilderness · seed ${seed} · ${Math.round(performance.now() - t0)}ms`
+    : game
+      ? `structure · seed ${seed} · ${game.entities.length} entities · certified · ${Math.round(performance.now() - t0)}ms`
+      : `structure · seed ${seed} · questless · ${Math.round(performance.now() - t0)}ms`;
   return bootQuestGame(container, game, setStatus, {
     spirit, detail,
     scale: labSessionScale(loaded.game!.scale),
     culture: loaded.game!.culture,
     ...(wilderness ? { wilderness } : {}),
+    ...(game ? {} : {
+      side: numOf(w.side, 240),
+      meta: { seed, title: "Creature Quest Village" },
+    }),
     // The UNIFIED SPIRIT: a spirit structure is the same dollhouse rung the
     // planet ladder descends to — one code path, standalone or nested. A
     // wilderness spans the whole ladder below town instead.

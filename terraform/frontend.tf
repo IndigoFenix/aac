@@ -29,6 +29,39 @@ resource "aws_s3_bucket_versioning" "frontend" {
   }
 }
 
+# Every frontend deploy re-uploads the whole bundle, so each release turns the
+# previous copy of every asset into a noncurrent version. Without this they
+# accumulate for the life of the bucket. 30 days is well past the point where
+# rolling back to a build means re-running the deploy anyway.
+resource "aws_s3_bucket_lifecycle_configuration" "frontend" {
+  count  = var.use_lambda ? 1 : 0
+  bucket = aws_s3_bucket.frontend[0].id
+
+  rule {
+    id     = "prune-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 # =============================================================================
 # CloudFront Origin Access Control (created in Phase 1)
 # =============================================================================

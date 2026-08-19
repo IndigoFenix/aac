@@ -33,6 +33,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     name: "YouTube",
     description: "Opens an interactive YouTube video player on the user's screen. When permitted channels are configured (the channel list appears in the system prompt with their recent video titles), prefer calling open_app(youtube) WITHOUT `data` — this opens a channel browser where the student picks a video themselves. Only pass a `data` string when the student's request clearly matches one of the actual video titles shown; the search uses title matching, so a generic topic like 'animals' will miss and fall back to the browser anyway. When NO permitted channels are configured (unrestricted search via API key), always pass a descriptive query in `data`.",
     icon: "▶️",
+    queryHint: "a video title (or search phrase when unrestricted)",
     enabledByDefault: false,
   },
   {
@@ -40,6 +41,43 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     name: "Spotify",
     description: "Opens an interactive Spotify music player on the user's screen. Use open_app to launch it when the user wants to listen to music. Pass a search query in the data parameter (e.g. 'happy kids songs').",
     icon: "🎧",
+    queryHint: "what music to play",
+    enabledByDefault: false,
+  },
+  {
+    id: "photos",
+    name: "Photos",
+    description:
+      "Opens the student's own family photos — the faces and places their caretakers chose for " +
+      "them: family members, pets, trips. The student browses thumbnails and opens one large. " +
+      "Use open_app(\"photos\") when the student asks about a person or place they know, wants to " +
+      "see someone, seems to be missing somebody, or asks for photos or pictures of their family. " +
+      "Pass a `data` string ONLY when the student clearly means a specific photo you have been " +
+      "told about; otherwise open it without `data` so they choose themselves. While a photo is " +
+      "open you are told its caption — talk warmly about THAT photo. NEVER guess who is in an " +
+      "uncaptioned photo: naming the wrong person to a student who cannot correct you is worse " +
+      "than saying nothing.",
+    icon: "🖼️",
+    queryHint: "caption words (optional — omit to browse)",
+    // Off by default: a student with no photos loaded should not see an empty app.
+    enabledByDefault: false,
+  },
+  {
+    id: "picture_search",
+    name: "Find a Picture",
+    description:
+      "Searches the WEB for pictures of a thing and puts them on the student's screen — a giraffe, " +
+      "a fire engine, the beach. This is the ONLY way you can find a picture of something; it is " +
+      "separate from \"photos\", which is the student's own family album and contains nothing else. " +
+      "Call open_app(\"picture_search\", \"<what to find>\") whenever the student asks to see what " +
+      "something looks like, names something they may not know the look of, or asks for a picture of " +
+      "anything that is not a person they know. ALWAYS pass `data` — the app has nothing to show " +
+      "without a search. You will be told afterwards exactly what was found (or that nothing was); " +
+      "describe only what you were told, never what you assume a search for that word would return.",
+    icon: "🔍",
+    queryHint: "what to find a picture of, IN ENGLISH regardless of the conversation language (e.g. 'an owl') — REQUIRED",
+    // Off by default: this puts unvetted web imagery on a child's screen, so it
+    // is a deliberate clinician decision, never an inherited one.
     enabledByDefault: false,
   },
   {

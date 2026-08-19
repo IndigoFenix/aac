@@ -77,6 +77,15 @@ export interface BuilderWordJson {
   kind?: string;
   /** For persons/creatures: present in the current scene (prioritize + badge). */
   present?: boolean;
+  /**
+   * MODIFIER RAIL ONLY: the descriptor axis this word belongs to (temperature,
+   * quantity, …). Present so a client can keep the axis mutually exclusive —
+   * replacing the applied member rather than stacking a second one, since a
+   * thing cannot be both hot and cold. Carried on the wire because the in-game
+   * rail is computed by the GAME's vendored engine, so the platform has no
+   * other route to it.
+   */
+  axis?: string;
 }
 
 /** A sub-category chip within the active view (wire shape — structurally the
@@ -555,6 +564,9 @@ function modifierRail(
         label: baseWord(lang, w),
         glyph: w,
         category: LEXICON[w]?.cat ?? "modifier",
+        // The axis this word came from — the rail already knows it, and a
+        // client needs it to keep the axis exclusive.
+        axis,
       });
       if (out.length >= MODIFIER_RAIL_CAP) return out;
     }

@@ -27,6 +27,8 @@ import {
   studentContacts,
   aacSettings,
   aacSessionPlans,
+  photos,
+  photoAssignments,
   biometricData,
   medicalRecords,
   functionalReports,
@@ -448,6 +450,48 @@ export class StudentErasureService {
       await tx.delete(userStudents).where(eq(userStudents.studentId, studentId));
       await tx.delete(aacSettings).where(eq(aacSettings.studentId, studentId));
       await tx.delete(aacSessionPlans).where(eq(aacSessionPlans.studentId, studentId));
+
+      // -------- Family photos --------
+      // Assignments cascade off students.id, but the ASSETS do not: dedup means
+      // one image can back several scopes, so we may only delete bytes nothing
+      // else points at. Resolve that here, while the student's rows still exist.
+      //
+      // Deleting the S3 object is only half of an erasure on a VERSIONED bucket
+      // — the prior version survives until a lifecycle rule expires it. That
+      // rule was added in the photo plan's Phase 0; without it this delete
+      // leaves the photo retrievable indefinitely.
+      const studentPhotoIds = (
+        await tx
+          .select({ photoId: photoAssignments.photoId })
+          .from(photoAssignments)
+          .where(eq(photoAssignments.studentId, studentId))
+      ).map((r) => r.photoId);
+
+      if (studentPhotoIds.length > 0) {
+        await tx.delete(photoAssignments).where(eq(photoAssignments.studentId, studentId));
+
+        // Anything still referenced by another scope stays.
+        const stillReferenced = new Set(
+          (
+            await tx
+              .select({ photoId: photoAssignments.photoId })
+              .from(photoAssignments)
+              .where(inArray(photoAssignments.photoId, studentPhotoIds))
+          ).map((r) => r.photoId),
+        );
+        const orphanIds = studentPhotoIds.filter((id) => !stillReferenced.has(id));
+
+        if (orphanIds.length > 0) {
+          const orphanRows = await tx
+            .select({ s3Key: photos.s3Key, thumbS3Key: photos.thumbS3Key })
+            .from(photos)
+            .where(inArray(photos.id, orphanIds));
+          for (const row of orphanRows) {
+            s3KeysToDelete.push(row.s3Key, row.thumbS3Key);
+          }
+          await tx.delete(photos).where(inArray(photos.id, orphanIds));
+        }
+      }
 
       // -------- Person facet (person-chat + calls) --------
       // createStudent auto-provisions a persons row for every student (the

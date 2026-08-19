@@ -47,6 +47,7 @@ import type {
   BoardLoadRequestedEvent,
   InterpretIntentEvent,
   GuessingExitRequestedEvent,
+  AppOpenRequestedEvent,
 } from "./agent-events";
 import {
   buildBoardManagerToolDeclarations,
@@ -90,14 +91,31 @@ type SpecialButtonType = (typeof SPECIAL_BUTTON_TYPES)[number];
 
 function extractSpecialButtonType(input: unknown): SpecialButtonType | null {
   if (!input || typeof input !== "object") return null;
-  const o = input as { buttonType?: unknown; button_type?: unknown };
+  const o = input as {
+    buttonType?: unknown;
+    button_type?: unknown;
+    kind?: unknown;
+    dimension?: unknown;
+    value?: unknown;
+    label?: unknown;
+  };
   // Accept either spelling — Gemini's tool-arg keys are snake_case by
   // convention, but the model occasionally emits camelCase.
   const raw = o.button_type ?? o.buttonType;
   if (typeof raw !== "string") return null;
-  return (SPECIAL_BUTTON_TYPES as readonly string[]).includes(raw)
-    ? (raw as SpecialButtonType)
-    : null;
+  if (!(SPECIAL_BUTTON_TYPES as readonly string[]).includes(raw)) return null;
+  // A stray `button_type` on a button that ALSO carries real content — a
+  // word-finder kind/dimension/value or a registry `suggestion:` key — is
+  // model noise, not a meta button. Honoring it would discard the actual
+  // button: in guessing mode Flash stamped button_type:"wordfinder" onto
+  // every narrowing button, each collapsed to a bare magnifier, and the
+  // coordinator (rightly) dropped them all → an empty word-finder board.
+  // Ignore the marker and let the content parse normally.
+  if (typeof o.kind === "string" && o.kind.trim()) return null;
+  if (typeof o.dimension === "string" && o.dimension.trim()) return null;
+  if (typeof o.value === "string" && o.value.trim()) return null;
+  if (typeof o.label === "string" && o.label.trim().startsWith("suggestion:")) return null;
+  return raw as SpecialButtonType;
 }
 
 /** Build the canonical shape for a special button. Server-side fields are
@@ -169,7 +187,16 @@ function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
   const website = (o as { website?: unknown }).website;
   if (typeof website === "string" && website.trim()) return { website: website.trim() };
   const app = (o as { app?: unknown }).app;
-  if (typeof app === "string" && app.trim()) return { app: app.trim() };
+  if (typeof app === "string" && app.trim()) {
+    // The query rides along ONLY with an app target — it is meaningless on the
+    // others, and accepting it there would let a stray field survive into the
+    // client action.
+    const query = (o as { appQuery?: unknown }).appQuery;
+    return {
+      app: app.trim(),
+      ...(typeof query === "string" && query.trim() ? { appQuery: query.trim().slice(0, 120) } : {}),
+    };
+  }
   const board = (o as { board?: unknown }).board;
   // Same normalization set_board applies, so the coordinator's key resolution
   // sees one shape whether the board was loaded by the AI or offered as a button.
@@ -189,7 +216,8 @@ function extractButtonOpen(input: unknown): BoardButtonOpen | undefined {
 export type BoardManagerOutputEvent =
   | BoardManagerEvent
   | MonitorCallRequestedEvent
-  | PrivateNoteEvent;
+  | PrivateNoteEvent
+  | AppOpenRequestedEvent;
 
 /** Snapshot the Coordinator hands Board Manager per invocation. Stateless
  *  agent ⇒ everything it needs flows in here. */
@@ -727,6 +755,23 @@ function parseToolCall(
       return event;
     }
 
+    case "open_app": {
+      // The direct half of <apps_context> — the BM opens the app itself when
+      // the user already consented. Routed through the exact same coordinator
+      // path as the Speaker's open_app; the coordinator re-gates the id.
+      const appId = typeof args.app_id === "string" ? args.app_id.trim() : "";
+      if (!appId) return null;
+      const data = typeof args.data === "string" && args.data.trim() ? args.data.trim().slice(0, 120) : undefined;
+      const event: AppOpenRequestedEvent = {
+        type: "app_open_requested",
+        source: "board-manager",
+        timestamp: now,
+        appId,
+        ...(data ? { data } : {}),
+      };
+      return event;
+    }
+
     case "press_button": {
       const reason = args.label ? `press_button(${args.label})` : "press_button";
       const event: BoardNoChangeEvent = {
@@ -746,16 +791,27 @@ function parseToolCall(
       const o1 = parseStructuredButton(args.option1);
       const o2 = parseStructuredButton(args.option2);
       if (!o1 || !o2) return null;
-      const toEventButton = (b: NonNullable<ReturnType<typeof parseStructuredButton>>) => ({
-        label: b.label,
-        speech: b.sentence,
-        sentence: b.sentence,
-        iconRef: b.iconRef,
-        symbolPath: b.symbolPath,
-        imageKey: b.imageKey,
-        glyph: b.glyph,
-        glyphFallback: b.glyphFallback,
-      });
+      // `open` is read off the RAW arg, not the parsed button: parseStructuredButton
+      // only understands the visual/speech fields, so a launch target would be
+      // silently dropped here — which is exactly how a yes-option ended up
+      // agreeing to open something and then opening nothing.
+      const toEventButton = (
+        b: NonNullable<ReturnType<typeof parseStructuredButton>>,
+        raw: unknown,
+      ) => {
+        const open = extractButtonOpen(raw);
+        return {
+          label: b.label,
+          speech: b.sentence,
+          sentence: b.sentence,
+          iconRef: b.iconRef,
+          symbolPath: b.symbolPath,
+          imageKey: b.imageKey,
+          glyph: b.glyph,
+          glyphFallback: b.glyphFallback,
+          ...(open ? { open } : {}),
+        };
+      };
       // Experiment (glyphInputTranslation): serialize the optional
       // `input_glyphs` (array of SENTENCES) into one glyph string per sentence
       // for display above the two overlay buttons. Same handling as
@@ -765,8 +821,8 @@ function parseToolCall(
         type: "binary_choice_shown",
         source: "board-manager",
         timestamp: now,
-        option1: toEventButton(o1),
-        option2: toEventButton(o2),
+        option1: toEventButton(o1, args.option1),
+        option2: toEventButton(o2, args.option2),
         target: typeof args.target === "string" ? args.target : undefined,
         ...(inputGlyphs.length ? { inputGlyphs } : {}),
       };

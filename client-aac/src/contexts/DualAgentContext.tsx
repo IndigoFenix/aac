@@ -17,6 +17,9 @@ import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
 import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
+// The context-strip queue rules, in one place — this provider owns the live
+// list, home.tsx mirrors it, and both now apply the same matching.
+import { addContextButton, applyContextSymbolUpdate, removeContextButton } from "@/lib/context-sidebar";
 
 /** Delay before firing the one-shot startup detection trigger. This is now a
  *  BACKUP first frame — the server already forwards the client's initialFrame
@@ -571,11 +574,7 @@ function DualAgentProviderInner({
   const handleSymbolUpdate = useCallback((data: { buttonLabel: string; symbolPath: string }) => {
     setSymbolUpdate(data);
     // Also apply to context sidebar buttons — they share the same labels/symbols pipeline
-    setContextButtons(prev => prev.map(b =>
-      b.label.toLowerCase() === data.buttonLabel.toLowerCase()
-        ? { ...b, symbolPath: data.symbolPath }
-        : b
-    ));
+    setContextButtons(prev => applyContextSymbolUpdate(prev, data));
   }, []);
 
   // Stable refs so the callback identity passed to useLiveSession doesn't change
@@ -632,16 +631,10 @@ function DualAgentProviderInner({
     onBoardUpdate: handleBoardUpdate,
     onInputGlyphs: handleInputGlyphs,
     onContextBoardUpdate: useCallback((buttonData: any) => {
-      setContextButtons(prev => {
-        const next = [...prev, buttonData];
-        // Keep last 4 visible (but store all for potential scroll-back)
-        return next.slice(-4);
-      });
+      setContextButtons(prev => addContextButton(prev, buttonData));
     }, []),
     onContextBoardRemove: useCallback((label: string) => {
-      if (!label) return;
-      const lower = label.toLowerCase();
-      setContextButtons(prev => prev.filter(b => b.label.toLowerCase() !== lower));
+      setContextButtons(prev => removeContextButton(prev, label));
     }, []),
     onBoardPatch: handleBoardPatch,
     onSetBoard: handleSetBoard,

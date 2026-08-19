@@ -50,9 +50,6 @@ import {
 import { buildPlanetWorld, type BuiltPlanet } from "@shared/world-engine/planet/planet-game";
 import { createPlanetObject } from "@shared/world-engine/planet/three";
 import type { PlanetSurface } from "@shared/world-engine/planet/surface";
-import {
-  buildCreatureQuestWorld, certifyCreatureQuestWorld,
-} from "@shared/world-engine/interaction/quest/creature-quests";
 import * as THREE from "three";
 import {
   createQuestHost3D,
@@ -566,6 +563,13 @@ export function bootPlanetHike(
    *  speechSynthesis voice. main.ts passes one that ANNOUNCES its speech to
    *  the platform (games-bridge `game_speech`) so the AAC can gate its mic. */
   voice?: NpcVoice | null,
+  /** The AAC platform's session locale (main.ts `initLocale`), lowered into
+   *  the host's SessionMeta snapshot — the bundled spec cannot know it, and
+   *  it must never be smuggled into `game.world` (see main.ts loadSpec).
+   *  Omitted (standalone play / init never arrived) ⇒ the spec's own
+   *  `game.meta.locale` stands. Snapshotted at boot: a locale that changes
+   *  mid-session takes effect on the next reboot, not live. */
+  locale?: string,
 ): QuestBoot {
   const t0 = performance.now();
   const settings = loaded.game!;
@@ -786,14 +790,11 @@ export function bootPlanetHike(
   const renderHost: RenderHost = { scene, camera, anchor: wildAnchor, castGroundRay };
 
   // ── ③ THE SESSION: open country as a real quest host ──────────────────────
-  // The questless bundle the standalone wilderness scope plays: a certified
-  // creature world with ZERO quests — content and minds come from the session's
-  // wilderness scatter, not the goal tree.
-  const game = buildCreatureQuestWorld({ seed: wildSeed, questCount: 0 });
-  const cert = certifyCreatureQuestWorld(game);
-  if (!cert.ok) {
-    throw new Error(`wilderness world failed ${cert.stage} certification: ${cert.errors.join("; ")}`);
-  }
+  // QUESTLESS (Shape B): no goal-tree shell at all — `host.start(null)` builds
+  // the session directly from the wilderness opts below; content and minds come
+  // from the scatter. The meta the old `buildCreatureQuestWorld({ questCount:
+  // 0 })` shell carried rides as the boot's SessionMeta override instead (the
+  // SEED especially — convo/chat RNG reads `session.meta.seed`).
 
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let session: QuestSession | null = null;
@@ -848,7 +849,7 @@ export function bootPlanetHike(
       winEl.textContent = "";
       winEl.hidden = false;
       const title = el("div", "quest-win-title", winEl);
-      title.textContent = session?.game.root.outro ?? session?.game.meta.title ?? "You did it!";
+      title.textContent = session?.game?.root.outro ?? session?.meta.title ?? "You did it!";
       const replay = el("button", "quest-replay", winEl);
       replay.textContent = "🔁 Play again";
       replay.addEventListener("click", () => host?.replay());
@@ -879,7 +880,7 @@ export function bootPlanetHike(
     // Absent ⇒ the host builds its own voice (standalone play, unchanged).
     ...(voice !== undefined ? { voice } : {}),
   });
-  host.start(game, null, {
+  host.start(null, null, {
     // The chunk stands on a real planet: the side matches the re-anchor math
     // and the rect is CONTENT extent, never a wall.
     wilderness: {
@@ -898,6 +899,10 @@ export function bootPlanetHike(
     // defaults it to "human_cute"), so the host's settler-chain fallback is
     // simply never reached from this game.
     avatarSpecies: settings.avatarSpecies,
+    // THE SESSION'S META: what the old shell's game.meta carried (same seed,
+    // same title — the seed drives convo/chat RNG), plus THE SESSION'S LOCALE:
+    // the platform's, when it stated one (session.meta.locale).
+    meta: { seed: wildSeed, title: "Creature Quest Village", ...(locale ? { locale } : {}) },
   });
   (window as unknown as Record<string, unknown>).__questHike = host;
   (window as unknown as Record<string, unknown>).__hikePeers = (): Array<{ id: string; name?: string }> => peers;

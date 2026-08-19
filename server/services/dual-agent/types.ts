@@ -4,6 +4,7 @@
 import type { ChatMessage, HomeAction, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel, PermittedYoutubeItem, PermittedYoutubeVideo } from "@shared/schema";
 import type { LLMProviderKey } from "@shared/llm-options";
 import type { AppStartupSpec } from "@shared/app-startup";
+import type { PictureSearchConfig } from "@shared/picture-search";
 
 /**
  * User-controlled mute state for the AAC system. Toggled only by the user
@@ -36,6 +37,15 @@ export interface AACAppDefinition {
   enabledByDefault: boolean;
   /** If true, the app's canvas is captured and sent with detection requests */
   supportsDetectionCapture?: boolean;
+  /**
+   * What this app's free-text launch argument means, phrased for the model
+   * ("what to search the web for"). Present only on apps that actually consume
+   * one. Surfaced to the Speaker (via `open_app`'s `data`) AND to the Board
+   * Manager (via a launch button's `open.appQuery`) — the Board Manager needs
+   * it most, because in a live-audio session it is the ONLY agent that can open
+   * anything, and a search app opened with no query drops the request.
+   */
+  queryHint?: string;
   /**
    * Optional startup definition. When present, opening this app triggers a
    * resolver LLM call that fills `startup.paramsSchema`; the resolved params are
@@ -259,6 +269,11 @@ export interface DualAgentSessionState {
   // Used by the open_website tool and server-side URL gating.
   permittedWebsites: PermittedWebsite[];
 
+  // Web picture search settings (clinician-configured, `app_config.picture_search`).
+  // Normalized at session start rather than read from the raw jsonb on each
+  // search, so a hand-edited blob cannot widen the policy mid-session.
+  pictureSearch: PictureSearchConfig;
+
   // Permitted YouTube channels (clinician-configured). When empty, YouTube searches
   // fall back to unrestricted mode (requires YOUTUBE_API_KEY to return anything).
   permittedYoutubeChannels: PermittedYoutubeChannel[];
@@ -291,6 +306,10 @@ export interface DualAgentSessionState {
 
   // Cached custom symbols for prompt building
   cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>;
+  /** Compact digest of the student's family photos, built once at session start
+   *  (server/services/photos/photo-context.ts). Undefined when they have none —
+   *  which is also how the prompt block stays absent for most students. */
+  photoLibrary?: import("../photos/photo-context").PhotoLibrarySummary;
 
   // Custom apps (clinician-authored games) assigned to this student. Cached so
   // the client-side Apps board picker can render them without an extra fetch

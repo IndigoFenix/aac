@@ -181,7 +181,7 @@ import {
 import { windowsForTier, tierByKey, type BudgetTier } from "@shared/aac/budget-tiers";
 import { resolveObserverPolicy, type ObserverEconomyPolicy } from "@shared/aac/observer-policy";
 import { studentRepository } from "../../repositories/studentRepository";
-import { onLedgerCharge } from "../credit-ledger";
+import { onLedgerCharge, chargeCreditsToLedger } from "../credit-ledger";
 import type { ClientConfig } from "./client-config";
 import { OBSERVER_SCENE_UPDATE_PROMPT, OBSERVER_STARTUP_PROMPT } from "./prompts/observer";
 import { findMatchingFace, recordContactSighting, growFaceGalleryForEntity, penalizeFaceMatch, findMatchingVoice, growVoiceGalleryForEntity, penalizeVoiceMatch, getKnownPeopleForStudent, getVoicePitchProfiles, type FaceMatchResult, type VoiceMatchResult, type KnownPerson, type EntityType, type VoicePitchProfile } from "../biometric/recognition-service";
@@ -193,6 +193,18 @@ import {
 } from "./startup-mode";
 import type { AACMuteState, DualAgentSessionState } from "./types";
 import { T } from "../memory-schema/canonical-terms";
+import { resolvePhotoRequest } from "../photos/photo-context";
+import { pictureSearchFailureNote, runPictureSearch } from "../picture-search/picture-search-service";
+import {
+  creditsForPictureSearchOpen,
+  PICTURE_SEARCH_COST_CATEGORY,
+} from "../picture-search/picture-search-cost";
+import {
+  normalizePictureSearchConfig,
+  PICTURE_SEARCH_APP_ID,
+  type PictureSearchPayload,
+} from "@shared/picture-search";
+import { wrapUntrusted } from "./prompts/shared";
 import { getLanguageName } from "@shared/language-names";
 import { languageLevelFromInt, type LanguageLevel } from "@shared/aac-language-level";
 import type { InterlocutorRegister } from "@shared/interlocutor-register";
@@ -201,7 +213,7 @@ import { generatePersona, describePersona, buildSlpConfig, type GeneratedPersona
 import { COMPETENCIES, type Archetype, type Competency, type SlpConfig } from "../social-bot/personality-and-challenge";
 import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
 import { resolveAppStartupParams, type StartupResolveContext } from "./startup-resolver";
-import { pickVoice as pickSocialPeerVoice, peerVoicePitchSemitones, peerVoiceFormantSemitones } from "../social-bot/voice-pick";
+import { pickVoice as pickSocialPeerVoice, geminiVoiceGender, peerVoicePitchSemitones, peerVoiceFormantSemitones } from "../social-bot/voice-pick";
 import {
   buildSocialDebriefDirective,
   runSocialSkillAnalysis,
@@ -252,6 +264,14 @@ import { userSpeechDrivesBoard, speakerReplyTriggers } from "./speech-board-trig
 import { assessStudentTranscript, isVerbalAbility, type VerbalAbility } from "@shared/aac/verbal-ability";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
+import {
+  resolvePressPacing,
+  shouldBargeIn,
+  joinPressSentences,
+  joinChainedPresses,
+  joinPressLabels,
+  type PressPacing,
+} from "./press-pacing";
 import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog";
 import {
   resolveSlpMode,
@@ -977,6 +997,33 @@ export class AgentCoordinator {
   // count. Only a settled-repeat burst nudges the Speaker (see flushRepeatBurst).
   private pressSettledRepeatCount = 0;
   private pressBurstFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Press chaining (aac_settings.pressResponseDelay) ──────────────────
+  // With a hold configured, a press is voiced immediately but its TURN waits,
+  // so a student who builds a thought one button at a time ("I" → "want" →
+  // "juice") is answered once, to the whole thought, instead of after the
+  // first word. Each further press re-arms the hold and joins the chain; the
+  // committed event carries the LAST press's routing fields (target, role,
+  // addressee) because that is the button the student finished on. Decision
+  // logic — including the clamp on the configured delay — is in
+  // press-pacing.ts.
+  private pressChain: {
+    labels: string[];
+    sentences: string[];
+    /** The most recent press in the chain; supplies the routing fields. */
+    last: ButtonPressedEvent;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null = null;
+  /** Set while the chain's own committed event travels through emitClientEvent,
+   *  so the flush-on-other-input guard doesn't recurse into itself. */
+  private pressChainCommitting = false;
+  /** A Speaker turn that barge-in abandoned mid-generation. The Live backend
+   *  has no cancel — it finishes the turn and delivers the transcript anyway —
+   *  and that transcript would otherwise drive a REPLIES board rebuild for a
+   *  reply the student never heard, painting stale buttons over the board they
+   *  are pressing. Set only when a turn was actually generating; consumed by
+   *  the first speech_text_finalized / speech_end that follows. */
+  private abandonedSpeakerTurn = false;
 
   /** Deferred-rest mechanism. Observer's `rest()` is a REQUEST, not an
    *  immediate command — we only honor it when the user has been
@@ -1860,6 +1907,10 @@ export class AgentCoordinator {
     // cancels the timers).
     this.clearAllProcessing();
     this.clearStartupTimers();
+    // Commit any press chain still on hold before the agents are torn down —
+    // the student pressed those buttons, and they belong in the session record
+    // even if nothing is left alive to answer them.
+    this.flushPressChain("session closing", { route: false });
     // Record any still-open repeat-press burst before the final Monitor pass
     // (runFinalMonitorPass below) so end-of-session perseveration isn't lost.
     this.flushRepeatBurst();
@@ -3050,7 +3101,9 @@ export class AgentCoordinator {
       glyphInputTranslation: promptInputs.boardManager.glyphInputTranslation,
       permittedWebsites: promptInputs.boardManager.permittedWebsites,
       enabledApps: [
-        ...(promptInputs.boardManager.enabledApps ?? []).map(a => ({ id: a.id, name: a.name })),
+        // queryHint rides along so the button schema can tell the model which
+        // apps must be opened ON something (see `open.appQuery`).
+        ...(promptInputs.boardManager.enabledApps ?? []).map(a => ({ id: a.id, name: a.name, queryHint: a.queryHint })),
         ...(promptInputs.boardManager.availableCustomApps ?? []).map(a => ({ id: a.id, name: a.name })),
       ],
       homeActions: (promptInputs.boardManager.homeActions ?? []).map(a => ({ id: a.id, label: a.label })),
@@ -3408,6 +3461,20 @@ export class AgentCoordinator {
     };
   }
 
+  /** The AI's OWN grammatical gender, read from the voice that will actually
+   *  speak — so the Speaker prompt can gender the AI's first-person forms in
+   *  gendered languages. Native audio and the Google/Gemini TTS path both
+   *  speak a named Gemini voice we can classify (the default, Zephyr, is the
+   *  platform's "woman" voice). An ElevenLabs/custom voice — only in play on
+   *  the server-TTS path — carries no gender metadata, so return undefined
+   *  rather than guess; the prompt then says nothing about self-reference. */
+  private aiVoiceGender(): "male" | "female" | undefined {
+    const v = this.aiVoice;
+    const elevenActive = !this.useDirectAudio && !!(v?.customVoice || v?.elevenlabsVoiceId);
+    if (elevenActive) return undefined;
+    return geminiVoiceGender(v?.geminiVoiceName || "Zephyr") ?? undefined;
+  }
+
   // -------------------------------------------------------------------------
   // Prompt input assembly
   // -------------------------------------------------------------------------
@@ -3507,6 +3574,9 @@ export class AgentCoordinator {
       speaker: {
         ...base,
         persona: sections?.persona || composeAacPersona({ custom: student?.aacSettings?.chatAgentPrompt, auto: student?.aacSettings?.autoAacPrompt }),
+        // The AI's own grammatical gender, from its voice (resolveVoices ran
+        // in init step 2, before any prompt build).
+        aiGender: this.aiVoiceGender(),
         memoryContext: state.memoryContext,
         muteState: state.muteState,
         // In HTTP mode the assistant text content IS the spoken reply —
@@ -3543,6 +3613,7 @@ export class AgentCoordinator {
           description: a.description,
         })),
         permittedWebsites: state.permittedWebsites,
+        photoLibrary: state.photoLibrary,
       },
       boardManager: {
         ...base,
@@ -3561,7 +3632,11 @@ export class AgentCoordinator {
         // (`open.app` / `open.website`). These drive both the prompt's
         // apps_context/websites_context blocks and the `open` field on the
         // button schema; the coordinator re-gates targets on press-through.
-        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
+        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description, queryHint: a.queryHint })),
+        // The Board Manager needs the CAPTIONS, not just the app id — it is the
+        // only agent that can open the album in a live-audio session, and
+        // without them its button can only ever open the grid.
+        photoLibrary: state.photoLibrary,
         availableCustomApps: (state.availableCustomApps || []).map(a => ({
           id: a.id,
           name: a.name,
@@ -3595,6 +3670,9 @@ export class AgentCoordinator {
   private async handleButtonPress(msg: Extract<ClientMessage, { type: "button_press" }>): Promise<void> {
     const label = msg.buttons[0] || "";
     const sentence = msg.sentences?.[label] || label;
+    // Per-student press pacing (chain hold + barge-in). Resolved once per
+    // press and consulted at both decision points below.
+    const pacing = this.pressPacing();
 
     // 0. Stamp engagement activity IMMEDIATELY on arrival. The press is
     //    real user activity the moment it lands on the server. Without
@@ -3702,7 +3780,24 @@ export class AgentCoordinator {
     //     director docks turnTaking + loses rapport on the next turn.
     const pressRole = this.pressedButtonRole(label);
     const wasAiSpeaking = this.isAiSpeaking();
+    const wasBoardBuilding = this.isBoardBuilding();
     this.interruptAiSpeech();
+    // BARGE-IN (opt-in, aac_settings.interruptOnNewPress). Cutting the AUDIO
+    // above is unconditional — the student is never talked over — but by
+    // default the AI's turn and its board rebuild still run to completion.
+    // With the option on, a different button pressed over an in-flight
+    // response abandons that response entirely: no late reply arriving after
+    // the student has moved on, and no board swapping itself out underneath
+    // the buttons they are pressing. (Repeat presses are excluded — they
+    // returned above, at the repeated-press guard.)
+    if (shouldBargeIn({
+      enabled: pacing.bargeIn,
+      isRepeat: false,
+      aiSpeaking: wasAiSpeaking,
+      boardBuilding: wasBoardBuilding,
+    })) {
+      this.bargeInOnPress(label);
+    }
     if (this.socialPeer && (wasAiSpeaking || this.lastPressRole === "bid")) {
       this.socialPeer.agent.noteUserInterruption();
       flowNote(
@@ -3724,6 +3819,25 @@ export class AgentCoordinator {
       this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
     }
 
+    const pressed: ButtonPressedEvent = {
+      type: "button_pressed",
+      source: "client",
+      timestamp: Date.now(),
+      label,
+      sentence,
+      role: this.pressedButtonRole(label),
+      addressee: this.pressedButtonAddressee(label),
+    };
+
+    // 1b. CHAINED PRESSES (opt-in, aac_settings.pressResponseDelay). Join the
+    //     open chain NOW, before the TTS await below — presses are dispatched
+    //     concurrently, so ordering the chain by "whose audio finished first"
+    //     would scramble the sentence. Nothing downstream runs while a chain is
+    //     open: Speaker isn't woken and the board isn't rebuilt, so the buttons
+    //     stay put while the student builds the thought.
+    const chaining = pacing.chainDelayMs > 0;
+    if (chaining) this.bufferChainedPress(pressed);
+
     // 2. Stream the student-voice TTS AND WAIT for it to finish before
     //    delivering the press to Speaker. Without the await, the AI's
     //    response audio sometimes lands before the student voice has
@@ -3735,16 +3849,15 @@ export class AgentCoordinator {
       try { await this.streamStudentTts(sentence, "button_press", { bid: pressRole === "bid", addressee: this.pressedButtonAddressee(label) }); } catch { /* logged inside */ }
     }
 
-    // 3. Route the event so Observer / Speaker / Board Manager all see it.
-    this.emitClientEvent({
-      type: "button_pressed",
-      source: "client",
-      timestamp: Date.now(),
-      label,
-      sentence,
-      role: this.pressedButtonRole(label),
-      addressee: this.pressedButtonAddressee(label),
-    });
+    // 3. Route the event so Observer / Speaker / Board Manager all see it —
+    //    or, when chaining, start the clock on the hold instead. The chain's
+    //    own flush routes the combined press.
+    if (chaining) {
+      this.armPressChainTimer(pacing.chainDelayMs);
+      return;
+    }
+
+    this.emitClientEvent(pressed);
   }
 
   /** Resolve the per-student game options from the session's cached student
@@ -3813,15 +3926,145 @@ export class AgentCoordinator {
     return b?.addressee;
   }
 
-  /** Join composed press sentences into one natural turn (each ends with
-   *  punctuation so the peer reads "Me too. What about you?"). */
-  private static joinPressSentences(sentences: string[]): string {
-    return sentences
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`))
-      .join(" ")
-      .trim();
+  // ── Press pacing (chained presses + barge-in) ─────────────────────────────
+
+  /** The student's press-pacing options. Read per press so a settings change
+   *  mid-session takes effect on the next one; falls back to today's behavior
+   *  when the session cache isn't up yet. */
+  private pressPacing(): PressPacing {
+    const student = this.sessionId
+      ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent.getStudent?.()
+      : undefined;
+    return resolvePressPacing((student as { aacSettings?: unknown } | undefined)?.aacSettings as any);
+  }
+
+  /** A board rebuild is in flight or armed — the buttons on screen are about
+   *  to be replaced. Half of the barge-in predicate (the other half is
+   *  `isAiSpeaking`). */
+  private isBoardBuilding(): boolean {
+    return this.boardMgrInFlight || this.deferredBoardMgrTimer !== null;
+  }
+
+  /**
+   * BARGE-IN (aac_settings.interruptOnNewPress). The student pressed a
+   * DIFFERENT button while the AI was still answering the last one — they have
+   * moved on, so the answer in progress is dead weight. Abandon all of it:
+   *
+   *   - the Speaker's turn (the HTTP completion is aborted outright; the Live
+   *     path's audio is already dropped by interruptAiSpeech and its
+   *     generation is cut when the replacement user turn lands),
+   *   - the deferred board rebuild armed by the previous press,
+   *   - the BoardManager call in flight, INCLUDING anything queued behind it —
+   *     a board built for the superseded press would paint stale buttons over
+   *     the board the student is still pressing.
+   *
+   * The press that triggered this schedules its own rebuild through the normal
+   * routing, so nothing is stranded. Audio was already cut by the caller's
+   * `interruptAiSpeech()`.
+   */
+  private bargeInOnPress(label: string): void {
+    flowNote("COORDINATOR", `Barge-in: "${label}" pressed over the in-flight response — cutting the reply and its board build.`);
+    // Was a turn actually generating? Read it before the reset below — it's
+    // what tells the Live backend's late transcript apart from a legitimate
+    // later reply (see abandonedSpeakerTurn).
+    if (this.speakerSpeaking) this.abandonedSpeakerTurn = true;
+    // Speaker: kill the turn now. Without this the HTTP completion keeps
+    // streaming sentences into TTS, and with a chain delay configured the
+    // replacement user turn (which would abort it) is seconds away.
+    this.speaker?.cancelTurn?.("barge-in: newer press");
+    this.speakerSpeaking = false;
+    this.clearSpeakerBusy();
+    // Board: drop the deferred trigger and abort the in-flight build.
+    this.clearDeferredBoardMgr("barge-in: newer press supersedes");
+    if (this.boardMgrInFlight && this.boardMgrAbortController) {
+      this.boardMgrAbortController.abort();
+    }
+    // Queued triggers belong to the abandoned beat. Clearing them stops the
+    // in-flight call's `finally` from immediately re-entering with stale
+    // context; the new press supplies the trigger that matters.
+    this.boardMgrPendingTriggers = [];
+  }
+
+  /**
+   * PRESS CHAINING (aac_settings.pressResponseDelay), step 1 of 2: record the
+   * press in ARRIVAL order and disarm the hold.
+   *
+   * Called before the caller awaits the press's TTS, deliberately. Client
+   * messages are dispatched without awaiting the previous one, so two presses
+   * a few hundred ms apart run concurrently — and if the chain were assembled
+   * after the TTS await, a short second utterance finishing first would put
+   * "want juice" on the wire as "juice want". Recording here fixes the order to
+   * the order the student actually pressed.
+   */
+  private bufferChainedPress(event: ButtonPressedEvent): void {
+    if (!this.pressChain) {
+      this.pressChain = { labels: [], sentences: [], last: event, timer: null };
+    }
+    const chain = this.pressChain;
+    chain.labels.push(event.label);
+    if (event.sentence) chain.sentences.push(event.sentence);
+    chain.last = event;
+    // Disarm while the press is still being voiced — the hold is time to add
+    // ANOTHER button, and it only starts once this one has been said.
+    if (chain.timer) { clearTimeout(chain.timer); chain.timer = null; }
+  }
+
+  /**
+   * PRESS CHAINING, step 2 of 2: (re)arm the hold once the press has finished
+   * voicing. Measuring from the END of the utterance rather than its start is
+   * what makes the configured delay mean what the clinician set it to — the
+   * student gets that many seconds of silence to add to the thought, not that
+   * many seconds minus however long their own voice took.
+   */
+  private armPressChainTimer(delayMs: number): void {
+    const chain = this.pressChain;
+    if (!chain) return; // flushed while the utterance was playing
+    if (chain.timer) clearTimeout(chain.timer);
+    chain.timer = setTimeout(
+      () => this.withSessionContext(() => this.flushPressChain("hold elapsed")),
+      delayMs,
+    );
+    flowNote(
+      "COORDINATOR",
+      `Press chain held ${delayMs}ms (${chain.labels.length} button(s) so far) — board and Speaker untouched until it settles.`,
+    );
+  }
+
+  /**
+   * Commit the open chain as ONE button_pressed event. The combined sentence
+   * is what the agents see and reply to; the routing fields come from the last
+   * press because that is the button the student finished on (and the one
+   * whose board target / bid-or-reply role describes the moment).
+   *
+   * Safe to call when no chain is open — every "something else took the floor"
+   * site calls it unconditionally.
+   */
+  private flushPressChain(reason: string, opts?: { route?: boolean }): void {
+    const chain = this.pressChain;
+    if (!chain) return;
+    if (chain.timer) clearTimeout(chain.timer);
+    this.pressChain = null;
+    const sentence = joinChainedPresses(chain.sentences);
+    const label = joinPressLabels(chain.labels);
+    if (!sentence && !label) return;
+    const route = opts?.route !== false;
+    flowNote(
+      "COORDINATOR",
+      `Chained press ${route ? "committed" : "recorded (session closing)"} (${chain.labels.length} button(s), ${reason}): "${sentence || label}"`,
+    );
+    if (!route) {
+      // Teardown: the agents are going away, so routing would only wake
+      // machinery that is being dismantled. The student DID say it, though —
+      // keep it in the conversation log the final Monitor pass summarizes.
+      this.appendToConversationLog("user", `[USER] "${sentence || label}"`);
+      return;
+    }
+    this.pressChainCommitting = true;
+    try {
+      this.emitClientEvent({ ...chain.last, label, sentence, timestamp: Date.now() });
+    } finally {
+      this.pressChainCommitting = false;
+    }
   }
 
   /** SOCIAL TRAINER press (Phase B). A BID fires the peer's turn immediately,
@@ -3852,7 +4095,7 @@ export class AgentCoordinator {
     const lastEvent = extraEvent ?? buf?.lastEvent ?? null;
     this.socialReplyBuffer = null;
     if (!this.socialPeer) return; // session ended during the hold
-    const combined = AgentCoordinator.joinPressSentences(sentences);
+    const combined = joinPressSentences(sentences);
     if (!combined) return;
     flowNote("COORDINATOR", `Social peer turn: "${combined}"`);
     this.speakerRespond(`[USER to YOU] "${combined}"`);
@@ -4743,6 +4986,13 @@ export class AgentCoordinator {
     | GuessingEnteredEvent
     | GuessingExitedEvent,
   ): void {
+    // Something other than a chained press is claiming the floor (a composed
+    // sentence, a navigation press, a mute toggle). Commit the open chain
+    // FIRST so the buttons the student already pressed are answered in the
+    // order they happened, instead of arriving after the event that
+    // superseded them.
+    if (!this.pressChainCommitting) this.flushPressChain(`superseded by ${event.type}`);
+
     this.recordEvent(event);
 
     // A real user action (button press, composed sentence, builder open)
@@ -4958,6 +5208,9 @@ export class AgentCoordinator {
         // A worthwhile transcript resets the low-band sleep timer (the Observer
         // is actively working an in-person exchange — don't sleep out from under it).
         this.noteObservationActivity();
+        // Someone spoke — a chain still being held is finished by definition;
+        // commit it so the agents see the presses before the speech.
+        this.flushPressChain("speech took the floor");
         this.routeTranscribed(event);
         return;
       case "context_update":
@@ -7175,6 +7428,16 @@ export class AgentCoordinator {
       flowNote("BOARD_MGR", "Speaker turn was mute-suppressed — no reply rebuild.");
       return;
     }
+    // Same shape for a turn BARGE-IN abandoned: the student pressed over it and
+    // its audio was cut, so this transcript is a reply they never heard. The
+    // Live backend delivers it anyway (it has no cancel); building REPLIES from
+    // it would paint buttons for a conversation that didn't happen. The press
+    // that caused the barge-in drives its own rebuild.
+    if (this.abandonedSpeakerTurn) {
+      this.abandonedSpeakerTurn = false;
+      flowNote("BOARD_MGR", "Speaker turn was abandoned by barge-in — no reply rebuild.");
+      return;
+    }
     // Speaker replied — supersede any deferred press-triggered BM
     // invocation. REPLIES (built from this event) is more current than
     // FOLLOW-UPS (built from the press) for an AI-targeted press.
@@ -7203,6 +7466,9 @@ export class AgentCoordinator {
 
   private onSpeakerSpeechEnd(event: SpeechEndEvent): void {
     this.speakerSpeaking = false;
+    // The abandoned-turn marker is single-shot: whichever of finalize/end
+    // arrives first consumes it, so a LATER, legitimate turn is never dropped.
+    this.abandonedSpeakerTurn = false;
     // Speaker turn resolved — drop the ambient "thinking" indicator.
     this.clearSpeakerBusy();
     // Flush any remaining buffered PCM chunks so the tail of the
@@ -7800,8 +8066,12 @@ export class AgentCoordinator {
         //  - youtube → server attaches the permitted channels/playlists/videos
         //    (routeAppOpen). Without the round-trip the client launches with no
         //    payload and always shows the "unavailable" screen.
+        //  - picture_search → the server runs the search; a locally-launched
+        //    tile would open an app with no pictures in it.
         needsStartupResolution:
-          a.id === "youtube" || (!!a.startup && a.id !== "social_trainer"),
+          a.id === "youtube" ||
+          a.id === PICTURE_SEARCH_APP_ID ||
+          (!!a.startup && a.id !== "social_trainer"),
       }));
 
     const snapshot: import("@shared/aac-local-storage").AacSessionSnapshot = {
@@ -7989,6 +8259,18 @@ export class AgentCoordinator {
   private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
     const appId = event.appId;
     const triggerSource: "ai" | "student" = event.source === "client" ? "student" : "ai";
+    // The Word Finder owns the screen while it is open. Prompt guidance alone
+    // did not hold (observed 2026-08-19: [GUESSING ENTERED] → the Speaker
+    // opened picture_search on a topic from three turns earlier), so this is a
+    // hard gate: an AI-initiated open during guessing is refused. A STUDENT
+    // press still opens — their press is them leaving the Word Finder.
+    if (triggerSource === "ai" && this.guessingState) {
+      flowNote("COORDINATOR", `Blocked AI open_app("${appId}") — Word Finder active.`);
+      this.speaker?.sendContextInjection(
+        `[APP OPEN BLOCKED] The Word Finder is open — help the user find their word first. Open apps only after it closes.`,
+      );
+      return;
+    }
     if (appId === "social_trainer") {
       // Not a client-rendered app: the social trainer replaces the
       // Speaker with a peer persona server-side. The client only renders
@@ -8025,6 +8307,122 @@ export class AgentCoordinator {
           );
           return;
         }
+      } else if (appId === "photos") {
+        // Resolve the request SERVER-side before opening, so the Speaker learns
+        // whether the photo it named exists. The alternative — open the app and
+        // let it match client-side — leaves the Speaker free to narrate a photo
+        // that never appeared. Same shape as the youtube branch above.
+        const resolution = await resolvePhotoRequest(this.studentId ?? "", event.data);
+
+        if (resolution.kind === "empty") {
+          this.speaker?.sendContextInjection(
+            `[APP OPEN FAILED] There are no photos loaded for this user yet — say so warmly and suggest something else. Do NOT promise to add photos yourself.`,
+          );
+          return;
+        }
+
+        if (resolution.kind === "match") {
+          // Open straight to the resolved photo; the app does not re-match.
+          this.send({
+            type: "app_open",
+            data: { appId: "photos", appData: { photoId: resolution.photoId } },
+          });
+          this.speaker?.sendContextInjection(
+            resolution.caption
+              ? `[PHOTO] Now showing the photo captioned ${wrapUntrusted(resolution.caption)}. Talk about THAT photo warmly.`
+              : `[PHOTO] Now showing a photo with NO caption. Do NOT guess who or what is in it — invite them to tell you about it.`,
+          );
+        } else if (resolution.kind === "no_match") {
+          // Opened, but NOT on the photo that was asked for.
+          this.send({ type: "app_open", data: { appId: "photos" } });
+          this.speaker?.sendContextInjection(
+            `[PHOTO] No photo matches "${event.data}". The user is browsing all ${resolution.libraryCount} photos instead. ` +
+              `Do NOT claim you found it or describe it — say you could not find that one and invite them to pick.`,
+          );
+        } else {
+          this.send({ type: "app_open", data: { appId: "photos" } });
+          this.speaker?.sendContextInjection(
+            `[PHOTO] Browsing ${resolution.libraryCount} photos. Wait for them to choose before commenting on any one.`,
+          );
+        }
+      } else if (appId === PICTURE_SEARCH_APP_ID) {
+        // Search SERVER-side before opening, same contract as the photos branch
+        // above: the Speaker is told what actually came back, so it cannot
+        // narrate a giraffe while six cranes are on the screen. Every non-`ok`
+        // outcome is a sentence the Speaker says plainly rather than an error
+        // the student never hears about.
+        const cache = dualAgentService.getSessionCache(this.sessionId!);
+        const config = cache?.state.pictureSearch ?? normalizePictureSearchConfig(undefined);
+        const language = cache?.monitorAgent.getStudent?.()?.primaryLanguage || undefined;
+        const outcome = await runPictureSearch({ query: event.data, config, language });
+
+        if (outcome.kind === "bad_query" && triggerSource === "student") {
+          // The student TAPPED the tile, so there is no query yet. Opening the
+          // app empty is not a failure state — it is the ask: a dead press is
+          // the one thing an eyegaze user cannot recover from, so the screen
+          // must change even though there is nothing to show yet.
+          const empty: PictureSearchPayload = { query: null, results: [] };
+          this.send({ type: "app_open", data: { appId, appData: empty } });
+          this.speaker?.sendContextInjection(pictureSearchFailureNote(outcome, event.data));
+          this.invokeBoardManager([event]);
+          return;
+        }
+
+        if (outcome.kind !== "ok") {
+          // The blocked TERM is recorded here and nowhere else — a clinician
+          // asking "why did 'rocket shot' stop working" needs the answer, and
+          // the Speaker deliberately never learns it.
+          flowNote(
+            "COORDINATOR",
+            `picture_search refused (${outcome.kind}${outcome.kind === "blocked" ? `: "${outcome.term}"` : ""}) for "${event.data ?? ""}".`,
+          );
+          this.speaker?.sendContextInjection(pictureSearchFailureNote(outcome, event.data));
+          // A student PRESS must still change the screen: without this, the
+          // refusal sends no app_open, the client's 6s backstop times out and
+          // opens the app with NO payload — a blank shell after a silent wait
+          // (observed 2026-08-19). Open the honest empty state instead; the
+          // Speaker's note explains it aloud.
+          if (triggerSource === "student") {
+            const empty: PictureSearchPayload = { query: event.data?.trim() || null, results: [] };
+            this.send({ type: "app_open", data: { appId, appData: empty } });
+          }
+          return;
+        }
+
+        const payload: PictureSearchPayload = { query: outcome.query, results: outcome.results };
+        this.send({ type: "app_open", data: { appId, appData: payload } });
+
+        // Picture search is the first AAC feature whose cost is bandwidth
+        // rather than tokens: every image the student sees is fetched by us and
+        // re-served from our origin (the privacy trade the proxy exists to
+        // make). This is the ONE place that knows both that a search succeeded
+        // and who to bill, so the whole open is charged here as a modeled
+        // estimate — see picture-search-cost.ts for why not per image.
+        // Fire-and-forget, like every other ledger write: a billing failure
+        // must never cost the student their pictures.
+        void chargeCreditsToLedger({
+          sessionId: this.sessionId,
+          studentId: this.studentId,
+          userId: this.userId,
+          credits: creditsForPictureSearchOpen(outcome.results.length),
+          category: PICTURE_SEARCH_COST_CATEGORY,
+          label: `picture-search (modeled: ${outcome.results.length} images)`,
+        });
+        // Titles are third-party page text, so each is wrapped as data — the
+        // assistant reads them, it does not take instructions from them.
+        const titles = outcome.results
+          .map((r) => r.title)
+          .filter((title) => !!title)
+          .slice(0, 5)
+          .map(wrapUntrusted)
+          .join(", ");
+        this.speaker?.sendContextInjection(
+          `[PICTURES] Now showing ${outcome.results.length} picture${outcome.results.length === 1 ? "" : "s"} ` +
+            `found on the web for "${outcome.query}". ` +
+            (titles ? `They are captioned: ${titles}. ` : "") +
+            `These came from a web search — nobody has checked them. Talk about what was SEARCHED FOR, ` +
+            `not about details you cannot see, and never claim a specific picture shows something in particular.`,
+        );
       } else {
         // Apps with a startup definition get intelligently-chosen params
         // (e.g. space_trader's startLevel) resolved before launch. Apps
@@ -9551,6 +9949,17 @@ export class AgentCoordinator {
       case "binary_choice_shown":
         this.applyBinaryChoiceShown(event);
         return;
+      case "app_open_requested":
+        // The BM's direct open_app. Same gate as its launch buttons — enabled
+        // apps only — then the exact routeAppOpen path the Speaker's open_app
+        // uses. Fire-and-forget like board_load_requested: the open must not
+        // block the rest of the event batch.
+        if (!this.launchableAppIds.has(event.appId)) {
+          flowNote("COORDINATOR", `Dropped Board Manager open_app("${event.appId}") — not an enabled app.`);
+          return;
+        }
+        void this.routeAppOpen(event);
+        return;
       case "builder_suggested":
         this.applyBuilderSuggested(event);
         return;
@@ -9603,7 +10012,16 @@ export class AgentCoordinator {
       return undefined;
     }
     if (open.app) {
-      if (this.launchableAppIds.has(open.app)) return { app: open.app };
+      // The query is carried through with the id, NOT rebuilt from it: this
+      // gate re-whitelists the TARGET, and dropping the argument here would
+      // turn "show me an owl" into an empty picture search with no error
+      // anywhere. It is free text, so it is length-capped, never interpreted.
+      if (this.launchableAppIds.has(open.app)) {
+        return {
+          app: open.app,
+          ...(open.appQuery?.trim() ? { appQuery: open.appQuery.trim().slice(0, 120) } : {}),
+        };
+      }
       flowNote("COORDINATOR", `Dropped open.app "${open.app}" — not an enabled app.`);
       return undefined;
     }
@@ -9717,6 +10135,7 @@ export class AgentCoordinator {
     const suggestionExpanded: any[] = [];
     const specialButtons: Btn[] = [];     // wordfinder / more — bypass validator
     const regular: Btn[] = [];
+    let droppedWordfinderEntries = 0;     // wordfinder entries dropped while guessing
     const offeredKeys = this.guessingState?.offeredKeys ?? [];
     for (const b of event.buttons) {
       // A registry suggestion key may arrive in `glyph` (legacy) OR `label`
@@ -9780,6 +10199,7 @@ export class AgentCoordinator {
         // Drop the wordfinder entry while already guessing — the entry
         // is a no-op in that state and the gate keeps it off-screen.
         if (this.guessingState !== null) {
+          droppedWordfinderEntries++;
           flowNote("COORDINATOR", "rebuild_board: dropping wordfinder button — already in guessing mode.");
           continue;
         }
@@ -9799,6 +10219,19 @@ export class AgentCoordinator {
     // A launch button the validator stripped is now visual-less — dress it in
     // the target's own icon so it renders as something the student can aim at.
     for (const b of kept) this.fillLaunchButtonVisual(b);
+    // Backstop for the wordfinder-annihilation shape: while guessing, if the
+    // drops above gutted the rebuild (no registry suggestions and at most one
+    // surviving regular button — typically a lone exit), the board is
+    // malformed, not shippable. The merged.length===0 check below can't catch
+    // it because an exit/More button keeps the count non-zero — this exact
+    // shape shipped a two-button word-finder three times on 2026-08-19.
+    // Feed the error back and retry instead.
+    if (this.guessingState && droppedWordfinderEntries > 0 && suggestionExpanded.length === 0 && kept.length <= 1) {
+      this.queueBoardMgrFeedback("rebuild_board", [
+        `${droppedWordfinderEntries} button(s) carried button_type:"wordfinder" and were DROPPED — the Word Finder is already open, so that meta button is invalid here, and setting it erases the button's own content. Rebuild WITHOUT button_type: use registry \`suggestion:\` keys in \`label\`, kind:"narrow" with dimension+value+label, or kind:"guess" candidates.`,
+      ]);
+      return;
+    }
     // When in guessing mode, tag every non-suggestion button as a
     // "guess" so the word-finder UI on the client renders it alongside
     // the system suggestion buttons. The AI's prompt asks it to prefix
@@ -10185,10 +10618,23 @@ export class AgentCoordinator {
     // becomes a yellow "maybe"; otherwise a red "neither of these"
     // (using the `no` symbol). Client renders by the kind only.
     const escapeKind = detectBinaryChoiceEscapeKind(event.option1?.glyph, event.option2?.glyph);
+    // An option may LAUNCH as well as speak — "yes, let's look at an owl" both
+    // answers the question and opens the app. Re-gate the target through the
+    // same allowlist board buttons go through, then hand the client a normal
+    // BoardButtonAction so the overlay press reuses the board's launch path
+    // instead of growing one of its own.
+    const withAction = (button: BinaryChoiceShownEvent["option1"]) => {
+      const open = this.resolveButtonOpen(button.open);
+      if (!open) return button;
+      return {
+        ...button,
+        action: buttonActionFromOpen(open, button.sentence || button.speech || button.label, []),
+      };
+    };
     this.send({
       type: "binary_choice",
       data: {
-        options: [event.option1, event.option2],
+        options: [withAction(event.option1), withAction(event.option2)],
         escapeKind,
         // Experiment (glyphInputTranslation): glyph translation of the
         // incoming speech (one entry per sentence), shown above the overlay

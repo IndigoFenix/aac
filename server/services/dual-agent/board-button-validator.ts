@@ -171,7 +171,7 @@ interface ValidatableButton {
   imageKey?: string;
   iconRef?: string;
   symbolPath?: string;
-  open?: { app?: string; board?: string; website?: string; home?: string };
+  open?: { app?: string; appQuery?: string; board?: string; website?: string; home?: string };
 }
 
 /** True when pressing this button OPENS something — an app, a board, a site,

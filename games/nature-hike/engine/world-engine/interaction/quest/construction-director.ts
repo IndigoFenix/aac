@@ -1309,7 +1309,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     shown: boolean,
   ): void {
     if (!shown || !session.creatures?.nodeByCreature.has(cid)) return;
-    npcChatBubble(session, cid, line[session.game.meta.syntax ?? "b"]);
+    npcChatBubble(session, cid, line[session.meta.syntax]);
   }
 
   /** Units of `glyph` PUT AWAY in a house's containers — the narrow reading, and
@@ -2271,7 +2271,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const at = playerWorldPos(session);
     if (!at) return false;
     const day = Math.floor(session.townClock / FOOD_DAY_SEC);
-    const seed = (fnv1a(`${session.game.meta.seed ?? 0}|${Math.round(at.x)}|${Math.round(at.y)}`) % 100000) + 1;
+    const seed = (fnv1a(`${session.meta.seed}|${Math.round(at.x)}|${Math.round(at.y)}`) % 100000) + 1;
     // THE ACCESS LANE (growth phase C §3.2): a homestead is a door and the
     // track that reaches it. The SESSION cannot know what circulation stands
     // out there — the wilderness has no roads and no memory of the last
@@ -6830,7 +6830,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   ): boolean {
     const ctx = buildContext(session);
     if (!ctx) return false;
-    const syntax = session.game.meta.syntax ?? "b";
+    const syntax = session.meta.syntax;
     const speakerFor =
       explicitBuilder && session.creatures?.nodeByCreature.has(explicitBuilder)
         ? explicitBuilder
@@ -7415,7 +7415,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       ? [...acts.annex, ...acts.interior.map(clusterOfKind).filter((c): c is AnnexCluster => !!c)]
       : [];
     const workKinds = house ? [] : acts.interior;
-    const locale = session.game.meta.locale ?? "en";
+    const locale = session.meta.locale ?? "en";
     return {
       sig: `${houseClusters.join("|")}//${workKinds.join("|")}//${acts.demolish.map((r) => r.id).join("|")}`,
       options: [
@@ -7448,7 +7448,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     focus: StructureFocus,
     acts: ReturnType<typeof structureActsOf>,
   ): { options: QuestBoardView["options"]; sig: string } {
-    const locale = session.game.meta.locale ?? "en";
+    const locale = session.meta.locale ?? "en";
     return {
       sig: acts.furnish.join("|"),
       options: acts.furnish.map((k) => ({

@@ -46,6 +46,8 @@ import { DeviceManagerModal } from "@/components/DeviceManager";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
 import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
+import { PhotosApp } from "@/components/apps/PhotosApp";
+import { PictureSearchApp } from "@/components/apps/PictureSearchApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import GameEmbed from "@/components/games/GameEmbed";
@@ -207,6 +209,7 @@ import {
   canGoForward as historyCanGoForward,
   type BoardHistory,
 } from "@/lib/board-history";
+import { applyContextSymbolUpdate } from "@/lib/context-sidebar";
 
 interface HomeProps {
   studentId: string;
@@ -525,6 +528,28 @@ function renderAppContent(
       />
     );
   }
+  if (activeApp.appId === "photos") {
+    return (
+      <PhotosApp
+        studentId={studentId}
+        photoId={activeApp.appData?.photoId}
+        query={activeApp.data}
+        onClose={dismissApp}
+        sendContextOnly={sendContextOnlyToAi}
+      />
+    );
+  }
+  if (activeApp.appId === "picture_search") {
+    // The server ran the search and shipped the whole result set in appData —
+    // this app never fetches. See PictureSearchApp's header for why.
+    return (
+      <PictureSearchApp
+        payload={activeApp.appData as import("@shared/picture-search").PictureSearchPayload | undefined}
+        onClose={dismissApp}
+        sendContextOnly={sendContextOnlyToAi}
+      />
+    );
+  }
   if (activeApp.appId === "drawing") {
     return <DrawingApp onClose={dismissApp} onRegisterCapture={registerCapture} />;
   }
@@ -753,14 +778,12 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Context sidebar buttons (from AI's add_context_button tool)
   const [contextButtons, setContextButtons] = useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string; glyph?: string; glyphFallback?: string }>>([]);
 
-  // Apply symbol updates to context buttons (async image generation)
+  // Apply symbol updates to context buttons (async image generation).
+  // Matched case-insensitively, same as the provider's own copy of the strip —
+  // these two used to disagree, so a symbol could land on one and not the other.
   useEffect(() => {
     if (!symbolUpdateData) return;
-    setContextButtons(prev => prev.map(b =>
-      b.label === symbolUpdateData.buttonLabel
-        ? { ...b, symbolPath: symbolUpdateData.symbolPath }
-        : b
-    ));
+    setContextButtons(prev => applyContextSymbolUpdate(prev, symbolUpdateData));
   }, [symbolUpdateData]);
 
   // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
@@ -936,6 +959,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const worldEngineGameActive = isWorldEngineApp(activeApp?.appId);
   const worldEngineGameActiveRef = useRef(worldEngineGameActive);
   worldEngineGameActiveRef.current = worldEngineGameActive;
+  // ANY full-screen app claims the game-style viewport (2026-08-19, Daniel):
+  // header hidden, main padding collapsed, and the LLM board rides the sidebar
+  // at 2 columns — the layout world-engine games proved out. A superset of
+  // worldEngineGameActive (those ids are activeApp too); the world-engine flag
+  // keeps gating only the GAME machinery (press wiring, builder bridge, HUD).
+  // social_trainer renders in the header and phone_call is an overlay — both
+  // keep the normal layout, same exclusions as the app-content branch.
+  const appViewportActive =
+    !!activeApp && activeApp.appId !== "social_trainer" && activeApp.appId !== "phone_call";
   // In-game Exit is a guarded affordance: pressing it (with the sentence
   // builder closed) opens a glyph yes/no confirmation instead of dismissing
   // the app outright. Cleared whenever the active app changes.
@@ -1889,6 +1921,29 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       return;
     }
 
+    // AI-driven NARROWING button (buttonType: "narrow") — same pairing as a
+    // suggestion press: voice the answer through the server student-voice TTS,
+    // then send the `guessing_narrow` intent so the engine records the fact.
+    // Without this the conversation board routed narrow presses as plain
+    // utterances — the narrowing answer was silently lost and the AI re-asked
+    // the same question (2026-08-19 session: habitat=land never registered).
+    // Only the sentence builder had this wiring (via onNarrowPress).
+    {
+      const nd = (button as any).narrowDimension as string | undefined;
+      const nv = (button as any).narrowValue as string | undefined;
+      if ((button as any).buttonType === "narrow" && nd && nv) {
+        console.debug("[guessing] → pressNarrow", { nd, nv });
+        // Voice the authored speech (button.sentence); the label is display-only.
+        if (voiceFnRef.current) {
+          voiceFnRef.current([spokenText], { [spokenText]: button.sentence || spokenText });
+        } else {
+          speak(button.sentence || spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+        }
+        pressNarrowRef.current?.(nd, nv, button.sentence || spokenText);
+        return;
+      }
+    }
+
     // Exit/exitBoard buttons: send directly as board_exit (no speech, no voicing)
     if (button.action?.type === "exit" || (button as any).exitBoard) {
       const instruction = button.action?.text || "";
@@ -2498,9 +2553,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       {/* Main 3-Section Board Layout */}
       <main
         className={`flex-1 flex flex-col relative ${
-          gameActive || worldEngineGameActive ? 'pt-0' : showConversation ? 'pt-24' : 'pt-4'
+          gameActive || appViewportActive ? 'pt-0' : showConversation ? 'pt-24' : 'pt-4'
         }`}
-        style={!gameActive && !worldEngineGameActive && glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
+        style={!gameActive && !appViewportActive && glyphStripActive ? { paddingTop: `calc(6rem + ${GLYPH_STRIP_REM}rem)` } : undefined}
       >
         {/* Audio Feedback Indicator */}
         <AnimatePresence>
@@ -2539,7 +2594,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           style={{
             // During a world-engine game the bar renders INSIDE the sidebar
             // column instead (this full-width copy would cut across the game).
-            opacity: serverProcessing.board && !worldEngineGameActive ? 1 : 0,
+            opacity: serverProcessing.board && !appViewportActive ? 1 : 0,
             top: gameActive
               ? 0
               : glyphStripActive
@@ -2604,11 +2659,27 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               setBinaryChoiceInputGlyphs(null);
               // Prefer the AI-supplied sentence; fall back to label.
               const spoken = (option.sentence?.trim() || option.label).trim();
-              if (!spoken) return;
-              if (voiceFnRef.current) {
-                voiceFnRef.current([spoken], { [spoken]: spoken });
-              } else {
-                speak(spoken, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              if (spoken) {
+                if (voiceFnRef.current) {
+                  voiceFnRef.current([spoken], { [spoken]: spoken });
+                } else {
+                  speak(spoken, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+                }
+              }
+              // …and OPEN, when the option carries a launch target. Unlike a
+              // board launch button this also speaks: the option is an ANSWER
+              // ("yes, let's look") and swallowing it would drop the student's
+              // side of the exchange. Same actions, same handlers as a board
+              // press — see pressIntentFor.
+              const action = option.action;
+              if (action?.type === "open_app" && action.appId) {
+                // Always round-trip, like DynamicBoard's open-app press: the
+                // server assembles the payload (photo match, picture search).
+                requestAppOpenFnRef.current?.(action.appId, action.appData);
+              } else if (action?.type === "open_website" && action.url) {
+                launchAppFnRef.current?.("browser", { url: action.url, label: option.label });
+              } else if (action?.type === "open_board" && action.boardKey) {
+                requestBoardOpenFnRef.current?.(action.boardKey);
               }
             }}
             onCancel={() => {
@@ -2881,7 +2952,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                     the sidebar column (the full-width copy across the board
                     region is hidden then). Same always-rendered/opacity-only
                     pattern so the pulse never remounts mid-animation. */}
-                {worldEngineGameActive && (
+                {appViewportActive && (
                   <div
                     role="status"
                     aria-label={t("processing.updatingBoard")}
@@ -2903,13 +2974,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                       ? sidebarBoardFocus === "social"
                         ? prebuiltBoardData || boardData
                         : gameLockedBoard
-                      : sidebarBoard
+                      : appViewportActive
+                        // Generic app: the full LLM board rides the sidebar so
+                        // the student keeps their voice while the app fills
+                        // the viewport — same contract as the game panel.
+                        ? prebuiltBoardData || boardData
+                        : sidebarBoard
                   }
                   // During a world-engine game the sidebar is ALWAYS the 2-col
                   // game panel — even with no options yet (an empty grid keeps
                   // its width). A width flap here resizes the game iframe and
                   // shifts every gaze coordinate mid-fixation.
-                  columns={worldEngineGameActive || gameLockedBoard ? 2 : 1}
+                  columns={worldEngineGameActive || gameLockedBoard || appViewportActive ? 2 : 1}
                   onButtonClick={handleBoardButtonClick}
                   language={currentLanguage}
                   voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
@@ -2980,7 +3056,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 socialPeerPreview={socialFace.preview}
                 socialSession={socialFace.session}
                 onLaunchApp={(appId, appData) => launchAppFnRef.current?.(appId, appData)}
-                onRequestAppOpen={(appId) => requestAppOpenFnRef.current?.(appId)}
+                onRequestAppOpen={(appId, appData) => requestAppOpenFnRef.current?.(appId, appData)}
                 onRequestBoardOpen={(boardKey) => requestBoardOpenFnRef.current?.(boardKey)}
                 onRunHomeAction={(actionId, confirmed) => requestHomeActionFnRef.current?.(actionId, confirmed)}
                 onNoteAppSpeech={(speaking, ms) => noteAppSpeechFnRef.current?.(speaking, ms)}
@@ -3358,7 +3434,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSocialFaceChange={setSocialFace}
           />
           <DualAgentConversationBox
-            isVisible={showConversation && !gameActive && !worldEngineGameActive}
+            isVisible={showConversation && !gameActive && !appViewportActive}
             glyphStripActive={glyphStripActive}
             onToggle={() => setShowConversation(!showConversation)}
             selectedSymbols={selectedSymbols}

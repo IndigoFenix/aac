@@ -58,6 +58,28 @@ describe("buttonActionFromOpen", () => {
     expect(buttonActionFromOpen({ app: "drawing", board: "snack" }, "x"))
       .toEqual({ type: "open_app", appId: "drawing" });
   });
+
+  it("carries appQuery through as the action's appData", () => {
+    // In a live-audio session the Board Manager is the ONLY agent that can open
+    // an app — the Speaker has no tools. So a launch button that cannot carry
+    // what the user asked for can only ever open a search app EMPTY, silently
+    // dropping the request. See BoardButtonOpen.appQuery.
+    expect(buttonActionFromOpen({ app: "picture_search", appQuery: "an owl" }, "Yes, show me"))
+      .toEqual({ type: "open_app", appId: "picture_search", appData: "an owl" });
+  });
+
+  it("omits appData entirely when there is no query", () => {
+    const action = buttonActionFromOpen({ app: "drawing" }, "x");
+    expect(action).toEqual({ type: "open_app", appId: "drawing" });
+    expect("appData" in action).toBe(false);
+  });
+
+  it("ignores a query on a non-app target", () => {
+    // appQuery is meaningless on a website/board/home button; letting it ride
+    // along would put a stray field on the client action.
+    expect(buttonActionFromOpen({ board: "snack", appQuery: "an owl" } as any, "x"))
+      .toEqual({ type: "open_board", boardKey: "snack" });
+  });
 });
 
 // ---------------------------------------------------------------------------

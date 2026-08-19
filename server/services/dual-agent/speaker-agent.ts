@@ -29,7 +29,7 @@ import {
   type SpeakerToolConfig,
   SPEAKER_TOOL_ACK,
 } from "./prompts/speaker";
-import { flowInput, flowTool, flowOutput } from "./agent-flow-logger";
+import { flowInput, flowTool, flowOutput, flowNote } from "./agent-flow-logger";
 import {
   LeadingTagStripper,
   stripLeadingTags,
@@ -290,6 +290,17 @@ export class SpeakerAgent implements ISpeakerAgent {
   sendUserTurn(text: string): void {
     flowInput("SPEAKER", "user_turn", text);
     this.provider?.sendMessage(text, "user", /* turnComplete */ true);
+  }
+
+  /** Barge-in: abandon the turn being generated. The Live API has no
+   *  standalone cancel — generation is cut only when the next client content
+   *  lands — so there is nothing to send here. The Coordinator has already
+   *  dropped the buffered PCM and cleared the client's avatar queue, so the
+   *  child hears nothing more; the model finishes into the void and the next
+   *  user turn supersedes it. Kept as an explicit no-op so the barge-in path
+   *  reads the same for both backends. */
+  cancelTurn(reason: string): void {
+    flowNote("SPEAKER", `Turn cancelled (${reason}) — Live generation runs out silently; audio already dropped.`);
   }
 
   /** Inject context without provoking a response. Used for downward
