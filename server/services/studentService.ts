@@ -51,8 +51,12 @@ import { summarizeChanges, mergeChanges, type ChangeMap } from "./activityChange
 import { findAccountLink } from "./smart-home/account-link-service";
 import { homeGraphClient } from "./smart-home/google/homegraph-client";
 
-/** Fields that belong to the aac_settings table (sent without the 'aac' prefix from clients) */
-const AAC_SETTINGS_FIELDS = new Set([
+/** Fields that belong to the aac_settings table (sent without the 'aac' prefix from clients).
+ *  Exported so a suite can assert a given setting is actually routed here — a
+ *  field missing from this set is dropped SILENTLY by splitUpdateBody below,
+ *  which is the recurring footgun the header comment in AACSettingsPanel.tsx
+ *  warns about. */
+export const AAC_SETTINGS_FIELDS = new Set([
   "enabled", "demoMode", "demoScenario", "chatAgentPrompt", "autoAacPrompt", "modelOverride",
   "startupMode", "voiceType", "studentVoiceType",
   "customVoiceId", "customStudentVoiceId", "liveAudioSpeaker",
@@ -69,6 +73,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "autoAddContacts",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "homeActions", "venueMenus",
+  "sessionRecording",
   "permittedYoutubeItems", "permittedYoutubeChannels", "permittedYoutubeVideos",
   "accessibility", "definedGestures", "seizureDetection",
   "allowFacilitatorControl",

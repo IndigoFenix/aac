@@ -68,6 +68,16 @@ export interface VenueMenuBoardSettings {
 export interface VenueMenuBoardInput {
   /** Shown as the board name. A venue name is a proper noun — never translated. */
   venueName: string;
+  /**
+   * Where the menu came from. Governs PRICES, and only prices.
+   *
+   * The טומי רול page carried the restaurant's own notice that delivery and
+   * takeaway prices differ from in-restaurant ones — on a page whose 59 rows
+   * were all priced. Our student is sitting at a table, so a scraped price is
+   * wrong in the way that looks most like being right. Only a photograph of the
+   * menu in front of the student prices a dine-in meal.
+   */
+  provenance?: "camera" | "web" | "manual";
   /** Items as stored on the `venue_menus` row (post-refinement, post-review). */
   items: readonly RefinedMenuItem[];
   settings: VenueMenuBoardSettings;
@@ -98,6 +108,8 @@ export interface VenueMenuBoardResult {
     unreadableCount: number;
     categories: string[];
     pageCount: number;
+    /** Prices were asked for but withheld because the source was the web. */
+    pricesSuppressed: boolean;
   };
 }
 
@@ -303,7 +315,12 @@ function layoutPages(content: readonly PlacedButton[], opts: LayoutOptions): Boa
 export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardResult {
   const cols = Math.max(2, input.grid?.cols ?? DEFAULT_COLS);
   const itemRows = Math.max(1, input.grid?.itemRows ?? DEFAULT_ITEM_ROWS);
-  const { showPrices, categoryPages, readingModeDefault } = input.settings;
+  const { categoryPages, readingModeDefault } = input.settings;
+
+  // Web prices are suppressed regardless of the setting — see `provenance`.
+  // A manual menu is a caretaker typing what they read at the table, so it
+  // prices like the camera does.
+  const showPrices = input.settings.showPrices && input.provenance !== "web";
 
   const total = input.items.length;
 
@@ -324,6 +341,7 @@ export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardR
     unreadableCount: filtered.unreadableCount,
     categories: [],
     pageCount: 0,
+    pricesSuppressed: input.settings.showPrices && !showPrices,
   };
 
   if (!filtered.items.length) return { board: null, stats };

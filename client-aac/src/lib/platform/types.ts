@@ -53,6 +53,18 @@ export interface PlatformCapabilities {
   selfUpdate: boolean;
 
   /**
+   * Host can record a session to the device: capture its own window without a
+   * per-session picker, and stream multi-gigabyte files to a real filesystem.
+   *
+   * Electron only. WKWebView has no `getDisplayMedia` at all, so the iPad shell
+   * could record the camera but never the screen — half the feature, and the
+   * half that carries the privacy weight. A browser tab has neither a picker-free
+   * capture nor durable storage: OPFS is quota-capped and evictable, which is
+   * the opposite of what "keep this footage" means.
+   */
+  sessionRecording: boolean;
+
+  /**
    * Host may reach eye-tracker companion software over `ws://localhost`.
    * Native shells can (Electron via `allowRunningInsecureContent`; iOS via an
    * ATS exception + local-network permission), so they get a longer probe

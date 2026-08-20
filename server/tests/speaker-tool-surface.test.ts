@@ -67,12 +67,41 @@ describe("buildSpeakerToolDeclarations", () => {
     expect(names(decls)).not.toContain("speak");
   });
 
-  test("Live native-audio (useDirectAudio=true, no httpMode) still returns empty (MALFORMED diagnostic)", () => {
+  test("Live native-audio with NO apps returns an empty surface (MALFORMED diagnostic)", () => {
+    // baseConfig has enabledApps: [] — with nothing to open, the suppression is
+    // total, which is the original diagnostic behaviour.
     const decls = buildSpeakerToolDeclarations({
       ...baseConfig,
       useDirectAudio: true,
     });
     expect(names(decls)).toEqual([]);
+  });
+
+  test("Live native-audio WITH apps declares exactly open_app + close_app", () => {
+    // The two screen tools are the whole exception to the suppression: opening
+    // silently beats promising an app that never appears, and close_app takes
+    // no arguments, so there is nothing in it for the model to malform.
+    // Everything conversational (speak, emote, private_thought, call_monitor,
+    // call_person) stays suppressed — that is where dropping the spoken reply
+    // is fatal rather than merely untidy.
+    const decls = buildSpeakerToolDeclarations({
+      ...baseConfig,
+      useDirectAudio: true,
+      enabledApps: [{ id: "drawing", name: "Drawing", description: "A canvas." }] as any,
+    });
+    expect(names(decls)).toEqual(["open_app", "close_app"]);
+  });
+
+  test("Live native-audio does NOT give the Speaker call_person", () => {
+    // Documented gap, not an oversight to fix silently: in the DEFAULT session
+    // shape the Speaker is injected [CALLABLE CONTACTS] but cannot dial. It can
+    // only open the phone_call app and let the student choose.
+    const decls = buildSpeakerToolDeclarations({
+      ...baseConfig,
+      useDirectAudio: true,
+      enabledApps: [{ id: "phone_call", name: "Phone Call", description: "Contacts." }] as any,
+    });
+    expect(names(decls)).not.toContain("call_person");
   });
 
   test("Live TEXT modality (useDirectAudio=false) declares speak + private_thought", () => {

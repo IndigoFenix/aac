@@ -1,0 +1,77 @@
+name: Publish AAC Backend Manifest
+
+# Re-points every INSTALLED AAC desktop/iPad client at a backend without
+# shipping a new build. Writes
+#   https://updates.aivota.ai/<aac|aac-staging>/latest-backend.json
+# which each packaged app reads on launch (client-aac/src/lib/api-base.ts) and
+# stores as its last-known-good backend. Use it for the Render → ECS cutover
+# and for rolling back: publish the old URL again and clients follow.
+#
+# `npm run release:aac:<env>` publishes the same manifest automatically, so
+# this workflow is only needed to move the fleet WITHOUT a release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Release environment whose manifest to publish'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - staging
+      backend_url:
+        description: 'Backend URL to publish. Leave empty for the env default from scripts/aac-release-config.mjs (prod → https://api.aivota.ai).'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Print the manifest without uploading'
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: release-aac
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish latest-backend.json
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-actions-aac-backend-manifest
+          aws-region: il-central-1
+
+      - name: Resolve update bucket
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "AAC_UPDATE_BUCKET=aivota-prod-aac-updates-${ACCOUNT}" >> "$GITHUB_ENV"
+
+      - name: Publish manifest
+        env:
+          AAC_UPDATE_REGION: il-central-1
+        run: |
+          ARGS="${{ inputs.environment }}"
+          if [ -n "${{ inputs.backend_url }}" ]; then ARGS="$ARGS --backend ${{ inputs.backend_url }}"; fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          node scripts/publish-aac-backend.mjs $ARGS

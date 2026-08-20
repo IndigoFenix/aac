@@ -2,13 +2,14 @@
 // Single draggable, resizable debug panel with collapsible sections
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity, Play, Pause, User, Gauge } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity, Play, Pause, User, Gauge, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
+import { getRecordingBridge } from "@/lib/platform";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { useDebugSession, type DebugSessionMessage } from "@/hooks/useDebugSession";
 import type { LastCapturedFaceImage } from "@/hooks/usePersonIdentification";
@@ -260,6 +261,63 @@ function SectionHeader({ title, icon, isOpen, onClick, badge }: {
   );
 }
 
+// ---- Session recordings ----
+// The ONE place on the device that answers "where did the recordings go, and
+// how much room are they taking". The clinician panel configures the feature
+// but runs on a different machine and cannot see this disk. Deliberately
+// read-only: the folder and the budget are the student's settings, so changing
+// them here would put the same decision in two places, and the one that loses
+// would be whichever the app read last.
+function RecordingsSection() {
+  const bridge = getRecordingBridge();
+  const [data, setData] = useState<{
+    folder: string;
+    totalBytes: number;
+    clips: Array<{ id: string; startedAtMs: number; bytes: number }>;
+  } | null>(null);
+
+  const refresh = useCallback(() => {
+    bridge?.list().then(setData).catch(() => setData(null));
+  }, [bridge]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  if (!bridge) {
+    return <div className="p-2 text-[10px] italic text-gray-400">not available on this device</div>;
+  }
+
+  const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+  return (
+    <div className="p-2 space-y-2 text-xs">
+      <div className="flex items-center gap-2">
+        <button type="button"
+          onClick={() => bridge.reveal()}
+          className="px-2 py-1 rounded bg-purple-600 text-white text-[10px] hover:bg-purple-700"
+        >
+          Open folder
+        </button>
+        <button type="button"
+          onClick={refresh}
+          className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-[10px]"
+        >
+          Refresh
+        </button>
+      </div>
+      <div className="text-[10px] text-gray-500 break-all">{data?.folder ?? "—"}</div>
+      <div className="text-[11px]">
+        {data ? `${data.clips.length} clip(s) · ${mb(data.totalBytes)}` : "reading…"}
+      </div>
+      {data?.clips.slice(0, 8).map((clip) => (
+        <div key={clip.id} className="flex justify-between text-[10px] text-gray-500">
+          <span>{clip.id}</span>
+          <span>{mb(clip.bytes)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---- Endpoint color ----
 const ENDPOINT_COLORS: Record<string, string> = {
   "/detect": "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
@@ -332,6 +390,7 @@ export default function UnifiedDebugPanel({
       dwell: stored.dwell ?? false,
       seizure: stored.seizure ?? true,
       budget: stored.budget ?? true,
+      recordings: stored.recordings ?? false,
     };
   });
 
@@ -557,6 +616,17 @@ export default function UnifiedDebugPanel({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ===== Session recordings (where the clips are on THIS disk) ===== */}
+          <div>
+            <SectionHeader
+              title="Recordings"
+              icon={<Video className="w-3.5 h-3.5" />}
+              isOpen={sections.recordings}
+              onClick={() => toggleSection("recordings")}
+            />
+            {sections.recordings && <RecordingsSection />}
           </div>
 
           {/* ===== Token Budget (throttle testing) ===== */}

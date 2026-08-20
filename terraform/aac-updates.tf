@@ -190,6 +190,34 @@ resource "aws_cloudfront_origin_access_control" "aac_updates" {
   signing_protocol                  = "sigv4"
 }
 
+# CORS for the JSON manifests. `latest-backend.json` is fetched by the packaged
+# apps from their app://aac and capacitor://localhost origins, which browsers
+# treat as cross-origin — without Access-Control-Allow-Origin the fetch is
+# blocked and the fleet can never be re-pointed. Read-only public data, so a
+# wildcard origin with no credentials is the correct policy.
+resource "aws_cloudfront_response_headers_policy" "aac_updates_cors" {
+  count = var.enable_aac_auto_update ? 1 : 0
+
+  name    = "${local.name_prefix}-aac-updates-cors"
+  comment = "Allow any origin to read the AAC update/backend manifests"
+
+  cors_config {
+    access_control_allow_credentials = false
+    origin_override                  = true
+    access_control_max_age_sec       = 600
+
+    access_control_allow_origins {
+      items = ["*"]
+    }
+    access_control_allow_methods {
+      items = ["GET", "HEAD"]
+    }
+    access_control_allow_headers {
+      items = ["*"]
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "aac_updates" {
   count = var.enable_aac_auto_update ? 1 : 0
 
@@ -244,19 +272,22 @@ resource "aws_cloudfront_distribution" "aac_updates" {
     cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
   }
 
-  # Same rule for the iPad feed's `latest.json` (aac/ios/). Nothing polls it
-  # automatically — the .ipa has no auto-updater — but the clinician
-  # dashboard's Downloads panel reads it server-side to resolve the current
-  # build, and a cached manifest would keep handing out the previous .ipa.
+  # Same rule for the JSON manifests: the iPad feed's `latest.json` (aac/ios/),
+  # read server-side by the clinician Downloads panel, and `latest-backend.json`
+  # (aac/, aac-staging/) — the RUNTIME BACKEND MANIFEST every packaged app
+  # fetches on launch from its app:// / capacitor:// origin (so it needs CORS;
+  # see the response headers policy below). A cached copy of either would keep
+  # handing out the previous build / backend.
   ordered_cache_behavior {
-    path_pattern           = "*latest*.json"
-    target_origin_id       = "aac-updates-s3"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
+    path_pattern               = "*latest*.json"
+    target_origin_id           = "aac-updates-s3"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
     # AWS-managed "CachingDisabled" policy.
-    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+    cache_policy_id            = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.aac_updates_cors[0].id
   }
 
   restrictions {

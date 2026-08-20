@@ -130,6 +130,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // (the intent construction "voy a comer" needs the infinitive).
   eat: { w: "como", v2: "comes", v3: "come", v3p: "comen", v1p: "comemos", inf: "comer" },
   drink: { w: "bebo", v2: "bebes", v3: "bebe", v3p: "beben", v1p: "bebemos", inf: "beber" },
+  see: { w: "veo", v2: "ves", v3: "ve", v3p: "ven", v1p: "vemos", inf: "ver" },
   sleep: { w: "duermo", v2: "duermes", v3: "duerme", v3p: "duermen", v1p: "dormimos", inf: "dormir" },
   // THE POSTURE PAIR (build order L15) — live glyphs with no lexeme here, so
   // the open-ground dwell said "Rest." and the bare self-need "Sit.": the raw
@@ -182,6 +183,144 @@ const CENTRAL: Record<string, Lexeme> = {
   cut: { w: "corto", v2: "cortas", v3: "corta", v3p: "cortan", v1p: "cortamos", inf: "cortar" },
   // The completion state ("la casa está terminada").
   finished: { w: "terminado", f: "terminada" },
+
+  // ── BUILDER-REACHABLE VOCABULARY (validate-builder-lexicon) ──────────────
+  // 85 words the sentence builder can put in front of a child — a category tab
+  // lists its whole lexical category, the modifier rail draws AXIS_WORDS, a
+  // group chip wears its cluster id — every one of which rendered as an ENGLISH
+  // word on the Spanish board, because `baseWord` falls back to the glyph id
+  // and a glyph id is English. The same failure the construction trade had;
+  // `npm run validate-builder-lexicon` now pins it.
+
+  // Question words.
+  what: { w: "qué" },
+  where: { w: "dónde" },
+  who: { w: "quién" },
+  how: { w: "cómo" },
+  why: { w: "por qué" },
+
+  // Connectives. Where ES_CONN (below) carries a distinct sentence-joining
+  // form, these are the BUTTON words — `connective()` now falls back to the
+  // lexicon, so the two can no longer drift apart silently.
+  and: { w: "y" },
+  but: { w: "pero" },
+  or: { w: "o" },
+  if: { w: "si" },
+  so: { w: "por eso" },
+  then: { w: "luego" },
+  because: { w: "porque" },
+  therefore: { w: "por eso" },
+  in_order_to: { w: "para que" },
+  when: { w: "cuando" },
+  until: { w: "hasta que" },
+
+  // Relations. `above` is "arriba de", NOT "encima de": `over` already owns
+  // that phrase, and two placement buttons reading identically would be two
+  // buttons a child cannot tell apart. `front` is the LEXICON key for the same
+  // relation `in_front_of` spells out.
+  above: { w: "arriba de" },
+  from: { w: "de" },
+  front: { w: "delante de" },
+  to: { w: "a" },
+  in: { w: "en" },
+  with: { w: "con" },
+  for: { w: "para" },
+
+  // Descriptors — the modifier rail's axes. The -o words need no `f`: the
+  // ruleset's own -o→-a rule handles them.
+  bad: { w: "malo" },
+  broken: { w: "roto" },
+  full: { w: "lleno" },
+  long: { w: "largo" },
+  short: { w: "corto" },
+  tall: { w: "alto" },
+  wide: { w: "ancho" },
+  thin: { w: "delgado" },
+  new: { w: "nuevo" },
+  old: { w: "viejo" },
+  sick: { w: "enfermo" },
+  warm: { w: "tibio" },
+  // The possession axis — rendered as a construction by `cfg.my` and filtered
+  // out of the adjective walk; these are what the BUTTON and the gloss say.
+  my: { w: "mi" },
+  your: { w: "tu" },
+
+  // Quantities (the fill + quantity axes, and the quantity tab).
+  all: { w: "todo" },
+  many: { w: "muchos" },
+  some: { w: "un poco" },
+  none: { w: "nada" },
+  one: { w: "uno" },
+  two: { w: "dos" },
+  three: { w: "tres" },
+
+  // Verbs — 1sg in `w`, plus the infinitive the intent periphrasis reads.
+  come: { w: "vengo", v2: "vienes", v3: "viene", v3p: "vienen", v1p: "venimos", inf: "venir" },
+  wait: { w: "espero", v2: "esperas", v3: "espera", v3p: "esperan", v1p: "esperamos", inf: "esperar" },
+  stay: { w: "me quedo", v2: "te quedas", v3: "se queda", v3p: "se quedan", v1p: "nos quedamos", inf: "quedarse" },
+  turn: { w: "giro", v2: "giras", v3: "gira", v3p: "giran", v1p: "giramos", inf: "girar" },
+  push: { w: "empujo", v2: "empujas", v3: "empuja", v3p: "empujan", v1p: "empujamos", inf: "empujar" },
+  // "jalar", NOT "tirar": `throw` above already owns "tiro"/"tirar", and pull
+  // and throw are opposite acts that must never share a button word.
+  pull: { w: "jalo", v2: "jalas", v3: "jala", v3p: "jalan", v1p: "jalamos", inf: "jalar" },
+  drop: { w: "suelto", v2: "sueltas", v3: "suelta", v3p: "sueltan", v1p: "soltamos", inf: "soltar" },
+  pick_up: { w: "recojo", v2: "recoges", v3: "recoge", v3p: "recogen", v1p: "recogemos", inf: "recoger" },
+  // Shares a word with the adjective `full` — as Spanish itself does.
+  fill: { w: "lleno", v2: "llenas", v3: "llena", v3p: "llenan", v1p: "llenamos", inf: "llenar" },
+  fix: { w: "arreglo", v2: "arreglas", v3: "arregla", v3p: "arreglan", v1p: "arreglamos", inf: "arreglar" },
+  dig: { w: "cavo", v2: "cavas", v3: "cava", v3p: "cavan", v1p: "cavamos", inf: "cavar" },
+  plant: { w: "planto", v2: "plantas", v3: "planta", v3p: "plantan", v1p: "plantamos", inf: "plantar" },
+  shut: { w: "cierro", v2: "cierras", v3: "cierra", v3p: "cierran", v1p: "cerramos", inf: "cerrar" },
+  hug: { w: "abrazo", v2: "abrazas", v3: "abraza", v3p: "abrazan", v1p: "abrazamos", inf: "abrazar" },
+  share: { w: "comparto", v2: "compartes", v3: "comparte", v3p: "comparten", v1p: "compartimos", inf: "compartir" },
+  teach: { w: "enseño", v2: "enseñas", v3: "enseña", v3p: "enseñan", v1p: "enseñamos", inf: "enseñar" },
+  feel: { w: "siento", v2: "sientes", v3: "siente", v3p: "sienten", v1p: "sentimos", inf: "sentir" },
+  wake_up: { w: "me despierto", v2: "te despiertas", v3: "se despierta", v3p: "se despiertan", v1p: "nos despertamos", inf: "despertarse" },
+  brush_teeth: {
+    w: "me cepillo los dientes", v2: "te cepillas los dientes", v3: "se cepilla los dientes",
+    v3p: "se cepillan los dientes", v1p: "nos cepillamos los dientes", inf: "cepillarse los dientes",
+  },
+  // `gustar` inverts its subject, so only the 1sg form is meaningful as a
+  // button; the SENTENCE goes through the `like` template in `fixed` below.
+  like: { w: "me gusta", inf: "gustar" },
+
+  // Social acts — each the alias of a word that already had a lexeme
+  // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
+  // are listed on the social tab, so both need words.
+  hello: { w: "hola" },
+  bye: { w: "adiós" },
+  okay: { w: "vale" },
+  thanks: { w: "gracias" },
+  sorry: { w: "perdón" },
+  mine: { w: "mío" },
+  again: { w: "otra vez" },
+  dont_understand: { w: "no entiendo" },
+
+  // Deixis the person tab lists beside i_me/you/we.
+  this: { w: "esto" },
+  that: { w: "eso" },
+  us: { w: "nosotros", g: "m", pl: true },
+
+  // A CORE ENGINE CONCEPT that never got a Spanish word (`fire` had one, water
+  // did not). ⚠ Known limitation: "agua" is feminine but takes the masculine
+  // article ("el agua") — the stressed-á exception, which `art` does not model.
+  // Marked `f` anyway, because the gender is what every ADJECTIVE agreeing with
+  // it reads ("el agua fría"); faking `m` to fix one article would break all of
+  // those instead.
+  water: { w: "agua", g: "f", mass: true },
+
+  // GROUP-CHIP LABELS — the object-property cluster ids. A chip wears
+  // `baseWord(lang, id)`, so an untranslated id is an English chip on a Spanish
+  // board. food/toy/clothing/book already had words; these are the nine that did not.
+  container: { w: "recipiente", g: "m" },
+  openable: { w: "se abre" },
+  device: { w: "aparato", g: "m" },
+  appliance: { w: "electrodoméstico", g: "m" },
+  tableware: { w: "vajilla", g: "f" },
+  furniture: { w: "mueble", g: "m" },
+  instrument: { w: "instrumento", g: "m" },
+  material: { w: "material", g: "m" },
+  structure: { w: "estructura", g: "f" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec
@@ -293,7 +432,12 @@ export const es = makeRomance({
     return `${np} ${be} ${tail}.`;
   },
   smell: { v3: "huele", v3p: "huelen" },
-  connective: (head) => ES_CONN[head] ?? head,
+  // ES_CONN is the OVERRIDE — the form a connective takes when it joins two
+  // clauses and that differs from the word on its button ("para" vs "para
+  // que"). Everything else falls through to the lexicon, so a connective with
+  // one form is authored once. The raw head stays as the last resort, but
+  // `validate-builder-lexicon` now fails before a head can reach it.
+  connective: (head) => ES_CONN[head] ?? L[head]?.w ?? head,
   why: "¿Por qué?",
   whyWant: (obj) => `¿Por qué quieres ${obj}?`,
   q: (s) => `¿${s}?`,

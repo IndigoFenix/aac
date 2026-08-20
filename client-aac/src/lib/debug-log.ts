@@ -25,9 +25,50 @@ const MAX_ENTRIES = 600;
 const MAX_TEXT = 4000;
 
 let buffer: LogEntry[] = [];
+/** Entries logged since the last flush. See `commit()`. */
+let pending: LogEntry[] = [];
+let flushScheduled = false;
 let seq = 0;
 const listeners = new Set<() => void>();
 let installed = false;
+
+/**
+ * Publish pending entries and wake subscribers — on a MICROTASK, never inline.
+ *
+ * `install()` monkey-patches `console.*`, so any component that logs during
+ * RENDER used to swap `buffer` and call listeners mid-render. Two things went
+ * wrong at once (observed 2026-08-20, from CameraAttentivenessProvider and
+ * AppsBoard):
+ *
+ *   1. React warned "Cannot update a component (DebugConsole) while rendering a
+ *      different component" on every such log.
+ *   2. Worse, and silent: DebugConsole reads this store through
+ *      `useSyncExternalStore`, which REQUIRES `getSnapshot()` to return the same
+ *      reference throughout one render. A log emitted mid-render changed it, so
+ *      React saw the store mutate under it and re-rendered — and if that render
+ *      logged again, the loop fed itself.
+ *
+ * Deferring BOTH the buffer swap and the notify to a microtask means a render
+ * pass always sees one stable snapshot, whatever it logs. It also coalesces
+ * bursts into a single re-render, which the boot-time log flood wants anyway.
+ *
+ * The real console still receives every call synchronously and in order — only
+ * the in-app mirror is batched — so nothing a tester reads is delayed.
+ */
+function commit(): void {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  queueMicrotask(() => {
+    flushScheduled = false;
+    if (pending.length > 0) {
+      // New array (not push) so useSyncExternalStore sees a changed reference.
+      buffer = buffer.concat(pending);
+      pending = [];
+      if (buffer.length > MAX_ENTRIES) buffer = buffer.slice(buffer.length - MAX_ENTRIES);
+    }
+    notify();
+  });
+}
 
 function notify(): void {
   for (const fn of listeners) {
@@ -48,6 +89,7 @@ export function getEntries(): LogEntry[] {
 
 export function clearLog(): void {
   buffer = [];
+  pending = [];
   notify();
 }
 
@@ -81,10 +123,11 @@ function stringifyArg(arg: unknown): string {
 export function pushLog(level: LogLevel, parts: unknown[]): void {
   let text = parts.map(stringifyArg).join(" ");
   if (text.length > MAX_TEXT) text = `${text.slice(0, MAX_TEXT)}… [truncated]`;
-  // New array (not push) so useSyncExternalStore sees a changed reference.
-  buffer = buffer.concat({ id: ++seq, time: Date.now(), level, text });
-  if (buffer.length > MAX_ENTRIES) buffer = buffer.slice(buffer.length - MAX_ENTRIES);
-  notify();
+  // Queued rather than published: `buffer` must not change while React is
+  // rendering. See commit().
+  pending.push({ id: ++seq, time: Date.now(), level, text });
+  if (pending.length > MAX_ENTRIES) pending = pending.slice(pending.length - MAX_ENTRIES);
+  commit();
 }
 
 /**

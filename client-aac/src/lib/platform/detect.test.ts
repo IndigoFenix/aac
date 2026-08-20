@@ -97,8 +97,17 @@ describe("capabilitiesFor", () => {
       drivableWebview: false,
       nativeVersion: false,
       selfUpdate: false,
+      sessionRecording: false,
       localhostBridge: false,
     });
+  });
+
+  it("grants session recording only to Electron", () => {
+    // The screen half needs getDisplayMedia without a per-session picker and
+    // the files need durable disk — only the desktop shell has both.
+    expect(capabilitiesFor("electron").sessionRecording).toBe(true);
+    expect(capabilitiesFor("capacitor").sessionRecording).toBe(false);
+    expect(capabilitiesFor("web").sessionRecording).toBe(false);
   });
 
   it("returns a fresh object each call so callers cannot mutate the matrix", () => {

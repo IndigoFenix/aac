@@ -225,11 +225,17 @@ const LEX_KEYS = Object.keys(LEXICON);
 // would be empty. This is the curated stand-in: the standard objects a student
 // composes sentences about, every head/glyph one the engine GENUINELY knows —
 // the goods kinds (apple/banana/grape/cookie, shirt/dress), the authored toys
-// (ball/blocks/puzzle) plus the teddy as the DOLL FACET it actually is
-// (`bear.toy` — "teddy" is retired as a word), the common stations
-// (bed/table/chair/box/refrigerator/oven), book/bowl/lamp, and water (a core
-// engine concept, the one entry with legitimately no spec properties). So an
-// out-of-game composition round-trips into any game unchanged.
+// (ball/blocks/puzzle), the common stations (bed/table/chair/box/
+// refrigerator/oven), book/bowl/lamp, and water (a core engine concept, the
+// one entry with legitimately no spec properties). So an out-of-game
+// composition round-trips into any game unchanged.
+//
+// `bear.toy` (the teddy, as the DOLL FACET — "teddy" is retired as a word)
+// was here too but was pulled (user request): a composed two-word glyph is
+// not a SENTENCE STARTER — it reads to a new user as one word, not a
+// head-plus-modifier the board taught them to build. The plain doll/ball/
+// blocks/puzzle entries stay as the starter set; `bear.toy` is still
+// reachable the normal way — press `bear`, then the toy modifier.
 //
 // PROPERTIES COME FROM THE SPEC SIDE (user law): each entry's properties are
 // read through `propertiesOf` at call time, never authored here — this list
@@ -243,11 +249,10 @@ const DEFAULT_NOUNS: readonly { symbol: string; acts?: readonly string[] }[] = [
   { symbol: "grape" },
   { symbol: "cookie" },
   { symbol: "water", acts: ["drink", "fill"] },
-  // Toys (the authored set + the teddy, as the doll facet)
+  // Toys (the authored set)
   { symbol: "ball" },
   { symbol: "blocks" },
   { symbol: "puzzle" },
-  { symbol: "bear.toy" },
   // Clothing
   { symbol: "shirt" },
   { symbol: "dress" },
@@ -505,8 +510,13 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
 }
 
 /** Lang-layer head that LABELS a kind-cluster chip (the property clusters are
- *  their own heads — "food", "toy" — already words in every ruleset). */
-const GROUP_LABEL_HEAD: Record<string, string> = {
+ *  their own heads — "food", "toy" — already words in every ruleset).
+ *
+ *  Exported because `builder-coverage.ts` has to know which heads a chip can
+ *  wear in order to check they are sayable; a mirrored copy over there would be
+ *  free to drift from this one, which is the whole failure mode that module
+ *  exists to catch. */
+export const GROUP_LABEL_HEAD: Record<string, string> = {
   creatures: "person",
   places: "place",
   things: "thing",

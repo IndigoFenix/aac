@@ -63,7 +63,7 @@ describe("Speaker <apps> — the album in the shape that was blind", () => {
     // 2026-08-20: <activities> and <apps> merged into ONE catalogue — the
     // live shape stopped being mention-only the day it got open_app.
     expect(prompt).toContain("<apps>");
-    expect(prompt).toContain("4 family photos");
+    expect(prompt).toContain("4 photos");
     // Verbatim — these are what the query is matched against.
     expect(prompt).toContain("Grandma at my birthday");
     expect(prompt).toContain("Rex the dog");
@@ -83,7 +83,7 @@ describe("Speaker <apps> — the album in the shape that was blind", () => {
       ...liveAudio,
       photoLibrary: { ...LIBRARY, uncaptionedCount: 0 },
     });
-    expect(prompt).toContain("4 family photos");
+    expect(prompt).toContain("4 photos");
     // The registry blurb states the rule unconditionally; what drops is the
     // per-student prompt to ASK Alex, which only makes sense if one is unlabelled.
     expect(prompt).not.toContain("uncaptioned photo — ask Alex");

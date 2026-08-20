@@ -905,7 +905,7 @@ function runTurn(
 
   const leaver = c.convo.members.find((m) => g.leaving.has(m.id));
   if (leaver) {
-    const bye: DialogueAct = { kind: "bye", glyph: "bye" };
+    const bye: DialogueAct = { kind: "bye", glyph: "goodbye" };
     speakInConversation(w, c.convo, leaver.id, bye, undefined, opts, {
       tick: h.taskClock,
       rng,
@@ -914,7 +914,7 @@ function runTurn(
     g.leaving.delete(leaver.id);
     h.departGroup(c, leaver.id);
     g.nextTurnAt = h.taskClock + GROUP_TURN_GAP_S;
-    return { speaker: leaver.id, glyph: "bye" };
+    return { speaker: leaver.id, glyph: "goodbye" };
   }
 
   const movers = c.convo.members.map((m) => m.id).filter((id) => !isPlayerCid(id));
@@ -1123,7 +1123,7 @@ describe("end conditions — boredom, drift, and being needed elsewhere", () => 
     // …and its next turn is an ordinary one, not a bye.
     const w = createCreatureWorld([{ id: ADA }, { id: BEN }, { id: CAL }], []);
     const said = runTurn(h, w, c, { symbolOf: (id: string) => id });
-    expect(said?.glyph).not.toBe("bye");
+    expect(said?.glyph).not.toBe("goodbye");
     expect(c.convo.members.map((m) => m.id)).toContain(CAL);
   });
 
@@ -1196,7 +1196,7 @@ describe("end conditions — boredom, drift, and being needed elsewhere", () => 
     c.group!.leaving.add(CAL);
     const w = createCreatureWorld([{ id: ADA }, { id: BEN }, { id: CAL }], []);
     const said = runTurn(h, w, c, { symbolOf: (id: string) => id });
-    expect(said).toEqual({ speaker: CAL, glyph: "bye" });
+    expect(said).toEqual({ speaker: CAL, glyph: "goodbye" });
     expect(c.convo.members.map((m) => m.id)).toEqual([ADA, BEN]);
   });
 
@@ -1209,7 +1209,7 @@ describe("end conditions — boredom, drift, and being needed elsewhere", () => 
     // an idle speaker's own board would have offered.
     c.group!.leaving.add(CAL);
     const said = runTurn(h, w, c, { symbolOf: (id: string) => id });
-    expect(said).toEqual({ speaker: CAL, glyph: "bye" });
+    expect(said).toEqual({ speaker: CAL, glyph: "goodbye" });
     expect(c.convo.members.map((m) => m.id)).not.toContain(CAL);
     expect(h.convoOfCreature.has(CAL)).toBe(false);
   });

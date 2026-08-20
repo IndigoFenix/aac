@@ -1,8 +1,22 @@
 # =============================================================================
-# S3 Bucket for Static Frontend (created in Phase 1)
+# Static frontend: S3 + CloudFront
 # =============================================================================
+# Independent of the compute path. On Lambda this stack is mandatory (two
+# phases: bucket/cert first, distributions once the API exists). On ECS it is
+# governed by `frontend_via_cloudfront` and the API origin is the ALB reached
+# through api.<domain> (see ecs.tf / dns.tf).
+locals {
+  # ECS + CloudFront needs a hostname CloudFront can reach the ALB on with a
+  # matching certificate; without domain/api_subdomain there is none.
+  ecs_cdn    = !var.use_lambda && var.frontend_via_cloudfront && local.api_host != ""
+  cdn_phase1 = var.use_lambda || local.ecs_cdn
+  cdn_phase2 = var.use_lambda ? var.lambda_image_exists : local.ecs_cdn
+
+  api_origin_host = var.use_lambda ? local.api_endpoint : local.api_host
+}
+
 resource "aws_s3_bucket" "frontend" {
-  count  = var.use_lambda ? 1 : 0
+  count  = local.cdn_phase1 ? 1 : 0
   bucket = "${local.name_prefix}-frontend"
 
   tags = {
@@ -11,7 +25,7 @@ resource "aws_s3_bucket" "frontend" {
 }
 
 resource "aws_s3_bucket_public_access_block" "frontend" {
-  count  = var.use_lambda ? 1 : 0
+  count  = local.cdn_phase1 ? 1 : 0
   bucket = aws_s3_bucket.frontend[0].id
 
   block_public_acls       = true
@@ -21,7 +35,7 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
 }
 
 resource "aws_s3_bucket_versioning" "frontend" {
-  count  = var.use_lambda ? 1 : 0
+  count  = local.cdn_phase1 ? 1 : 0
   bucket = aws_s3_bucket.frontend[0].id
 
   versioning_configuration {
@@ -34,7 +48,7 @@ resource "aws_s3_bucket_versioning" "frontend" {
 # accumulate for the life of the bucket. 30 days is well past the point where
 # rolling back to a build means re-running the deploy anyway.
 resource "aws_s3_bucket_lifecycle_configuration" "frontend" {
-  count  = var.use_lambda ? 1 : 0
+  count  = local.cdn_phase1 ? 1 : 0
   bucket = aws_s3_bucket.frontend[0].id
 
   rule {
@@ -66,7 +80,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "frontend" {
 # CloudFront Origin Access Control (created in Phase 1)
 # =============================================================================
 resource "aws_cloudfront_origin_access_control" "frontend" {
-  count = var.use_lambda ? 1 : 0
+  count = local.cdn_phase1 ? 1 : 0
 
   name                              = "${local.name_prefix}-frontend-oac"
   description                       = "OAC for frontend S3 bucket"
@@ -84,7 +98,7 @@ provider "aws" {
 }
 
 resource "aws_acm_certificate" "cloudfront" {
-  count    = var.use_lambda && var.domain_name != "" ? 1 : 0
+  count    = local.cdn_phase1 && var.domain_name != "" ? 1 : 0
   provider = aws.us_east_1
 
   domain_name               = var.domain_name
@@ -101,7 +115,7 @@ resource "aws_acm_certificate" "cloudfront" {
 }
 
 resource "aws_route53_record" "cloudfront_cert_validation" {
-  for_each = var.use_lambda && var.domain_name != "" ? {
+  for_each = local.cdn_phase1 && var.domain_name != "" ? {
     main = var.domain_name
     www  = "www.${var.domain_name}"
     app  = "app.${var.domain_name}"
@@ -116,7 +130,7 @@ resource "aws_route53_record" "cloudfront_cert_validation" {
 }
 
 resource "aws_acm_certificate_validation" "cloudfront" {
-  count    = var.use_lambda && var.domain_name != "" ? 1 : 0
+  count    = local.cdn_phase1 && var.domain_name != "" ? 1 : 0
   provider = aws.us_east_1
 
   certificate_arn         = aws_acm_certificate.cloudfront[0].arn
@@ -127,7 +141,7 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 # S3 Bucket for CloudFront Access Logs
 # =============================================================================
 resource "aws_s3_bucket" "cloudfront_logs" {
-  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  count    = local.cdn_phase1 && var.enable_cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
   bucket   = "${local.name_prefix}-cf-access-logs"
 
@@ -137,7 +151,7 @@ resource "aws_s3_bucket" "cloudfront_logs" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
-  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  count    = local.cdn_phase1 && var.enable_cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
   bucket   = aws_s3_bucket.cloudfront_logs[0].id
 
@@ -148,7 +162,7 @@ resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
 }
 
 resource "aws_s3_bucket_acl" "cloudfront_logs" {
-  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  count    = local.cdn_phase1 && var.enable_cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
   bucket   = aws_s3_bucket.cloudfront_logs[0].id
   acl      = "private"
@@ -157,7 +171,7 @@ resource "aws_s3_bucket_acl" "cloudfront_logs" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
-  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  count    = local.cdn_phase1 && var.enable_cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
   bucket   = aws_s3_bucket.cloudfront_logs[0].id
 
@@ -196,7 +210,7 @@ locals {
   # CloudFront Function for AAC SPA fallback
 # Rewrites /aac/... requests (without file extensions) to /aac/index.html
 resource "aws_cloudfront_function" "aac_spa_rewrite" {
-  count   = var.use_lambda && var.lambda_image_exists ? 1 : 0
+  count   = local.cdn_phase2 ? 1 : 0
   name    = "${local.name_prefix}-aac-spa-rewrite"
   runtime = "cloudfront-js-2.0"
   comment = "Rewrite AAC SPA routes to /aac/index.html"
@@ -222,7 +236,7 @@ resource "aws_cloudfront_function" "aac_spa_rewrite" {
 # - Allows the legal/policy pages.
 # - Redirects everything else to app.${var.domain_name} (the SPA).
 resource "aws_cloudfront_function" "landing_redirect" {
-  count   = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+  count   = local.cdn_phase2 && var.domain_name != "" ? 1 : 0
   name    = "${local.name_prefix}-landing-redirect"
   runtime = "cloudfront-js-2.0"
   comment = "Route landing/locale paths to S3, redirect SPA paths to app subdomain"
@@ -264,7 +278,7 @@ resource "aws_cloudfront_function" "landing_redirect" {
 }
 
 resource "aws_cloudfront_distribution" "frontend" {
-  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
+  count = local.cdn_phase2 ? 1 : 0
 
   enabled             = true
   is_ipv6_enabled     = true
@@ -289,10 +303,10 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend[0].id
   }
 
-  # Lambda/API Gateway Origin for API
+  # Backend origin: API Gateway (Lambda path) or the ALB via api.<domain> (ECS)
   origin {
-    domain_name = local.api_endpoint
-    origin_id   = "Lambda-api"
+    domain_name = local.api_origin_host
+    origin_id   = "Lambda-api" # historical id; renaming forces a behaviour rewrite
 
     custom_origin_config {
       http_port                = 80
@@ -353,9 +367,33 @@ resource "aws_cloudfront_distribution" "frontend" {
     max_ttl                = 0
   }
 
-  # API behavior - forward to Lambda
+  # API behavior - forward to the backend
   ordered_cache_behavior {
     path_pattern     = "/api/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Authorization", "Origin", "Accept", "Content-Type"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
+  # WebSockets (/ws/live, /ws/call, /ws/person-chat, ...). CloudFront proxies
+  # the Upgrade handshake natively; the behaviour only has to exist and be
+  # uncached. API Gateway (Lambda path) never honoured upgrades, so this is
+  # live only once the origin is the ALB.
+  ordered_cache_behavior {
+    path_pattern     = "/ws/*"
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "Lambda-api"
@@ -430,7 +468,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 # Full platform: API, AAC client, auth, SPA routing
 # =============================================================================
 resource "aws_cloudfront_distribution" "app" {
-  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+  count = local.cdn_phase2 && var.domain_name != "" ? 1 : 0
 
   enabled             = true
   is_ipv6_enabled     = true
@@ -455,10 +493,10 @@ resource "aws_cloudfront_distribution" "app" {
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend[0].id
   }
 
-  # Lambda/API Gateway Origin for API
+  # Backend origin: API Gateway (Lambda path) or the ALB via api.<domain> (ECS)
   origin {
-    domain_name = local.api_endpoint
-    origin_id   = "Lambda-api"
+    domain_name = local.api_origin_host
+    origin_id   = "Lambda-api" # historical id; renaming forces a behaviour rewrite
 
     custom_origin_config {
       http_port                = 80
@@ -563,9 +601,33 @@ resource "aws_cloudfront_distribution" "app" {
     max_ttl                = 0
   }
 
-  # API behavior - forward to Lambda
+  # API behavior - forward to the backend
   ordered_cache_behavior {
     path_pattern     = "/api/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Authorization", "Origin", "Accept", "Content-Type"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
+  # WebSockets (/ws/live, /ws/call, /ws/person-chat, ...). CloudFront proxies
+  # the Upgrade handshake natively; the behaviour only has to exist and be
+  # uncached. API Gateway (Lambda path) never honoured upgrades, so this is
+  # live only once the origin is the ALB.
+  ordered_cache_behavior {
+    path_pattern     = "/ws/*"
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "Lambda-api"
@@ -638,7 +700,7 @@ resource "aws_cloudfront_distribution" "app" {
 # S3 Bucket Policy for CloudFront (created in Phase 2)
 # =============================================================================
 resource "aws_s3_bucket_policy" "frontend" {
-  count  = var.use_lambda && var.lambda_image_exists ? 1 : 0
+  count  = local.cdn_phase2 ? 1 : 0
   bucket = aws_s3_bucket.frontend[0].id
 
   policy = jsonencode({
@@ -669,7 +731,7 @@ resource "aws_s3_bucket_policy" "frontend" {
 # Route 53 Records for CloudFront (created in Phase 2)
 # =============================================================================
 resource "aws_route53_record" "cloudfront_app" {
-  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+  count = local.cdn_phase2 && var.domain_name != "" ? 1 : 0
 
   zone_id         = data.aws_route53_zone.main[0].zone_id
   name            = var.domain_name
@@ -684,7 +746,7 @@ resource "aws_route53_record" "cloudfront_app" {
 }
 
 resource "aws_route53_record" "cloudfront_www" {
-  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+  count = local.cdn_phase2 && var.domain_name != "" ? 1 : 0
 
   zone_id         = data.aws_route53_zone.main[0].zone_id
   name            = "www.${var.domain_name}"
@@ -699,7 +761,7 @@ resource "aws_route53_record" "cloudfront_www" {
 }
 
 resource "aws_route53_record" "cloudfront_app_subdomain" {
-  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+  count = local.cdn_phase2 && var.domain_name != "" ? 1 : 0
 
   zone_id         = data.aws_route53_zone.main[0].zone_id
   name            = "app.${var.domain_name}"

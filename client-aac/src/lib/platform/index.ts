@@ -22,6 +22,9 @@ export {
   getGazeBridge,
   getInstancesBridge,
   getNativeVersion,
+  getRecordingBridge,
 } from "./bridge";
-export type { DeviceIdStore, GazeBridge, GazeSidecarStatus, InstancesBridge } from "./bridge";
+export type {
+  DeviceIdStore, GazeBridge, GazeSidecarStatus, InstancesBridge, RecordingBridge,
+} from "./bridge";
 export type { AppInstance, AppInstanceReport } from "@shared/app-instances.js";

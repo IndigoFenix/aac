@@ -39,6 +39,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
     clearDll: (device: string) => ipcRenderer.invoke("gaze:clearDll", device),
     openLog: () => ipcRenderer.invoke("gaze:openLog"),
   },
+  // Session recording. The renderer runs the encoders and streams their chunks
+  // through `append`; the main process owns every disk operation, including the
+  // storage-budget sweep that runs on each `finish`. See
+  // electron/hardware/recording-store.ts and shared/aac/session-recording.ts.
+  // Nothing here uploads: the files never leave the device by this path.
+  recording: {
+    /** Create/validate the folder, recover interrupted clips, sweep the budget. */
+    prepare: (opts: { folder: string | null; maxStorageMb: number }) =>
+      ipcRenderer.invoke("recording:prepare", opts),
+    begin: (opts: { clipId: string }) => ipcRenderer.invoke("recording:begin", opts),
+    append: (opts: { clipId: string; track: "camera" | "screen"; data: Uint8Array }) =>
+      ipcRenderer.invoke("recording:append", opts),
+    finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number }) =>
+      ipcRenderer.invoke("recording:finish", opts),
+    abort: (opts: { clipId: string }) => ipcRenderer.invoke("recording:abort", opts),
+    list: () => ipcRenderer.invoke("recording:list"),
+    /** Open the recordings folder in the OS file manager. */
+    reveal: () => ipcRenderer.invoke("recording:reveal"),
+  },
   // Auto-update channel. The renderer subscribes via `update.onStatus(cb)`
   // to react to download progress / "restart to apply" prompts, calls
   // `update.check()` for a manual refresh, and `update.installNow()` when

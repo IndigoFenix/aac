@@ -7,10 +7,20 @@
 // and the CORE ENGINE CONCEPTS (object-properties.ts CORE_CONCEPTS).
 //
 // Three laws pinned here:
-//   1. THE MOVE IS A MOVE. The assembled lexicons are byte-identical to the
-//      pre-move snapshot (fixtures/lexicon-premove-snapshot.json) — no word
-//      changed, appeared, or vanished in any locale. This is the whole
-//      migration's oracle: any slip in any registry shows up as a diff.
+//   1. THE MOVE IS A MOVE. Every word in the pre-move snapshot
+//      (fixtures/lexicon-premove-snapshot.json) is still present, unchanged,
+//      in the assembled lexicon of its locale — no word CHANGED or VANISHED.
+//      This is the migration's oracle: any slip in any registry shows up here.
+//
+//      It was once an exact deep-equal, which also forbade words APPEARING.
+//      That third clause was dropped deliberately (2026-08-20) when the
+//      builder-lexicon coverage round added ~85 central words per ruleset:
+//      the migration's real guarantee is that the move moved things rather
+//      than rewriting them, and "nothing may ever be added" is a freeze, not
+//      an oracle. Growth of the CENTRAL vocabulary stays free; growth of the
+//      SPEC-side vocabulary does not — law 3's last case still pins spec-head
+//      coverage against this same snapshot exactly, so a spec row still
+//      cannot invent a word for a locale that never had one.
 //   2. ONE DEFINITION PER HEAD. No head is defined by two spec sources, and
 //      no spec head remains in a central lexicon — precedence exists to be
 //      deterministic, never to hide a duplicate.
@@ -42,13 +52,15 @@ const LANGS = { en, he, es, pt } as const;
 const CENTRALS = { en: EN_CENTRAL, he: HE_CENTRAL, es: ES_CENTRAL, pt: PT_CENTRAL } as const;
 const LOCALES = ["en", "he", "es", "pt"] as const;
 
-const sorted = (lex: Record<string, unknown>) =>
-  Object.fromEntries(Object.keys(lex).sort().map((k) => [k, lex[k]]));
-
-describe("law 1 — the move is a move (byte-identical lexicons)", () => {
+describe("law 1 — the move is a move (no word changed or vanished)", () => {
   for (const loc of LOCALES) {
-    it(`${loc}: assembled lexicon deep-equals the pre-move snapshot`, () => {
-      expect(sorted(LANGS[loc].lexicon)).toEqual(SNAPSHOT[loc]);
+    it(`${loc}: every pre-move word survives the move unchanged`, () => {
+      const live = LANGS[loc].lexicon;
+      // Compared as one object rather than in a loop so a failure names EVERY
+      // drifted word at once instead of stopping at the first.
+      const before = Object.keys(SNAPSHOT[loc]).sort();
+      const after = Object.fromEntries(before.map((k) => [k, live[k]]));
+      expect(after).toEqual(SNAPSHOT[loc]);
     });
   }
 });

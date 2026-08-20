@@ -65,10 +65,11 @@ describe("Speaker <apps> — the shape that was broken", () => {
     expect(prompt).toContain("do not describe one until you are told");
   });
 
-  test("live native-audio declares EXACTLY open_app — nothing else", () => {
-    // The tool surface is suppressed in live audio to dodge MALFORMED bursts;
-    // open_app is the single exception because a silent open is tolerable and
-    // a promised-but-never-opened app is not.
+  test("live native-audio declares open_app + close_app — nothing else", () => {
+    // The tool surface is suppressed in live audio to dodge MALFORMED bursts.
+    // Two exceptions, both about the SCREEN rather than the conversation: a
+    // silent open beats a promised-but-never-opened app, and close_app takes no
+    // arguments at all, so there is nothing in it to malform.
     const tools = buildSpeakerToolDeclarations({
       useDirectAudio: true,
       isMutedMode: false,
@@ -77,7 +78,7 @@ describe("Speaker <apps> — the shape that was broken", () => {
       ],
     } as any);
     const decls = (tools[0]?.functionDeclarations ?? []).map((d: any) => d.name);
-    expect(decls).toEqual(["open_app"]);
+    expect(decls).toEqual(["open_app", "close_app"]);
     // ...and with no apps at all, the surface stays empty.
     expect(
       buildSpeakerToolDeclarations({ useDirectAudio: true, isMutedMode: false, enabledApps: [] } as any),

@@ -234,11 +234,11 @@ const V = (verb: string, directive = false, transfer = false, implied?: ImpliedR
 /** Speaker-oriented STATE verbs: their subject is the speaker by default and any
  *  entity is the OBJECT, so "apple want" reads "[I] want apple", never "apple wants".
  *  (Semantic override of pure position — matches "apple me eat" = I eat the apple.) */
-export const STATE_VERBS = new Set(["want", "need", "have", "like", "feel"]);
+export const STATE_VERBS = new Set(["want", "need", "have", "like", "feel", "see"]);
 
 /** GOAL-directed movement verbs: a person/place after them is the DESTINATION, not
  *  the subject — "come i_me" = "[you] come to me", "follow i_me" = "follow me". */
-const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "walk", "follow", "run", "chase"]);
+const MOVEMENT_GOAL_VERBS = new Set(["go", "come", "follow", "run", "chase"]);
 
 /** Verb COMPOSITION classes (semantic-tests.md §Commands): several verb tokens
  *  in one clause COMPOSE — they never silently last-win. A MODAL wraps the
@@ -267,7 +267,12 @@ const ADDRESSING_ACTS = new Set<IntentKind>(["greet", "farewell"]);
 export const VERB_FAMILY: Record<string, string> = {
   take: "get", pick_up: "get",
   bring: "give",
-  come: "go", walk: "go", run: "go",
+  // `walk` is GONE (user decision 2026-08-20): it drew the same picture as `go`,
+  // compiled to the same goTo (see intent-compile's movement case — "the gait is
+  // presentation, not semantics"), and is one word with `go` in Hebrew, so it was
+  // a second button meaning the first one. `run` stays: distinct art, distinct
+  // gait. See the NO SYNONYMS note by the social acts.
+  come: "go", run: "go",
   chase: "follow",
   wait: "stay",
 };
@@ -279,8 +284,9 @@ export const LEXICON: Record<string, Lex> = {
   // People / deixis
   i_me: { cat: "person", deixis: "player" },
   you: { cat: "person", deixis: "listener" },
+  // `us` was an exact duplicate of this entry — one meaning, two buttons. See
+  // the NO SYNONYMS note by the social acts below.
   we: { cat: "person", deixis: "companions" },
-  us: { cat: "person", deixis: "companions" },
   they: { cat: "person", deixis: "group" },
   this: { cat: "person", deixis: "gazeEntity" },
   that: { cat: "person", deixis: "gazeEntity" },
@@ -289,7 +295,7 @@ export const LEXICON: Record<string, Lex> = {
 
   // Verbs — movement (directive)
   go: V("go", true), come: V("come", true), stop: V("stop", true), follow: V("follow", true),
-  wait: V("wait", true), stay: V("stay", true), run: V("run", true), walk: V("walk", true),
+  wait: V("wait", true), stay: V("stay", true), run: V("run", true),
   turn: V("turn", true),
   // RETURN — going BACK: bare it compiles to goHome; with a named place it is
   // an ordinary go ("return + home", "return + school").
@@ -333,7 +339,7 @@ export const LEXICON: Record<string, Lex> = {
   trade: V("trade", true, true, "to"), show: V("show", true, true, "to"), teach: V("teach", true),
   share: V("share", true, true, "to"), fight: V("fight", true), chase: V("chase", true), hug: V("hug", true),
   // Verbs — state (NOT directive)
-  want: V("want"), need: V("need"), have: V("have"), like: V("like"), feel: V("feel"),
+  want: V("want"), need: V("need"), have: V("have"), like: V("like"), feel: V("feel"), see: V("see"),
   // The BROAD activity verb ("what + you + do" — what are you doing?): a
   // question focus, not an orderable action, so not directive.
   do: V("do"),
@@ -355,8 +361,9 @@ export const LEXICON: Record<string, Lex> = {
   but: { cat: "connective", conn: "but", role: "sequence" },
   or: { cat: "connective", conn: "or", role: "sequence" },
   because: { cat: "connective", conn: "because", role: "causal" },
+  // `so` is the surviving spelling of this connective (it is the one the
+  // core-40 ranking carries); `therefore` was its exact duplicate.
   so: { cat: "connective", conn: "therefore", role: "causal" },
-  therefore: { cat: "connective", conn: "therefore", role: "causal" },
   in_order_to: { cat: "connective", conn: "in_order_to", role: "causal" },
   if: { cat: "connective", conn: "if", role: "condition" },
   // "when" is also interrogative — resolved by context (a standalone question vs a rule trigger).
@@ -369,7 +376,6 @@ export const LEXICON: Record<string, Lex> = {
   in: { cat: "relation", rel: "in" }, on: { cat: "relation", rel: "on" },
   under: { cat: "relation", rel: "under" }, over: { cat: "relation", rel: "over" },
   near: { cat: "relation", rel: "near" }, behind: { cat: "relation", rel: "behind" },
-  front: { cat: "relation", rel: "front" },
   // THE PROXIMITY PAIR, and they are NOT synonyms — the distinction the culture
   // spec already draws for furniture (`besideAnchor`) now exists in language
   // too. `next_to` names the ADJACENT spot: right against the anchor, touching
@@ -384,15 +390,23 @@ export const LEXICON: Record<string, Lex> = {
 
   // THE FACING PAIR (board keys): `in_front_of` is the board word for the
   // `front` relation — same seam as next_to → beside. `behind` already reads
-  // as itself above. `above` is accepted as a spoken synonym of `over`.
+  // as itself above.
+  //
+  // ⚠️ NO SYNONYMS (user law, 2026-08-20). A tab lists its WHOLE lexical
+  // category, so a second key for one meaning is a second BUTTON reading the
+  // same word — indistinguishable to a child, and pure bloat in the vocabulary
+  // the LLM reads. `above` (a spoken synonym of `over`) and `front` (the engine
+  // name for the relation `in_front_of` spells out) both went for that reason;
+  // `rel: "front"` still reaches every consumer through `in_front_of`, which is
+  // the key that carries the board art. Same law that keeps `shut` without a
+  // `close`. Enforced by `npm run validate-builder-lexicon` (twin-button).
   in_front_of: { cat: "relation", rel: "front" },
-  above: { cat: "relation", rel: "over" },
 
-  // Social acts
-  hi: { cat: "social", act: "greet" }, hello: { cat: "social", act: "greet" },
-  bye: { cat: "social", act: "farewell" }, goodbye: { cat: "social", act: "farewell" },
+  // Social acts — ONE key per act, for the same reason.
+  hi: { cat: "social", act: "greet" },
+  goodbye: { cat: "social", act: "farewell" },
   yes: { cat: "social", act: "affirm" }, no: { cat: "social", act: "decline" },
-  ok: { cat: "social", act: "acknowledge" }, okay: { cat: "social", act: "acknowledge" },
+  ok: { cat: "social", act: "acknowledge" },
   thanks: { cat: "social", act: "thank" }, sorry: { cat: "social", act: "apologize" },
   mine: { cat: "social", act: "claim" }, again: { cat: "social", act: "again" },
   dont_understand: { cat: "social", act: "unclear" }, confused: { cat: "social", act: "unclear" },
@@ -841,8 +855,8 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     persons.some((p) => p.deixis === "companions") ||
     bound.some((b) => b.relation === "with" && animate(b.ref));
 
-  // The ADDRESSING act actually spoken ("hi" / "bye"), kept so that naming a
-  // creature can't silently turn "bye + mara" into a greeting.
+  // The ADDRESSING act actually spoken ("hi" / "goodbye"), kept so that naming
+  // a creature can't silently turn "goodbye + mara" into a greeting.
   const addressingAct = socials.find((s) => ADDRESSING_ACTS.has(s));
 
   // Stage 3.5 — classify the move.

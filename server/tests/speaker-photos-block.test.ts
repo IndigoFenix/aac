@@ -50,7 +50,7 @@ describe("Speaker photos row", () => {
     });
 
     expect(prompt).toContain("<apps>");
-    expect(prompt).toContain("3 family photos");
+    expect(prompt).toContain("3 photos");
     // Verbatim: the server matches the AI's query against these exact strings.
     expect(prompt).toContain("Grandma at my birthday");
     expect(prompt).toContain("Rex the dog");
@@ -143,6 +143,6 @@ describe("Speaker photos row", () => {
       ...toolMode,
       photoLibrary: { count: 1, captions: ["Dad"], truncated: false, uncaptionedCount: 0 },
     });
-    expect(prompt).toContain("1 family photo on this device");
+    expect(prompt).toContain("1 photo on this device");
   });
 });

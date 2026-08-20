@@ -1,19 +1,19 @@
-name: Deploy to AWS Lambda
+name: Deploy to AWS Lambda (LEGACY — rollback only)
 
+# Superseded by deploy.yml (ECS) on 2026-08-20. Manual-only. Running it
+# re-applies the Lambda profile against the SAME Terraform state: the ECS
+# service scales to 0, Lambda + API Gateway are recreated and CloudFront is
+# re-pointed at them. Use it to roll production back if the ECS path
+# misbehaves; re-run deploy.yml to move forward again.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       deploy_profile:
-        description: 'Deployment profile (full = all security/monitoring, lean = minimal cost)'
+        description: 'Deployment profile (lean = Lambda, minimal cost — the only supported rollback target)'
         required: true
         default: 'lean'
         type: choice
         options:
-          - full
           - lean
 
 env:
@@ -84,7 +84,7 @@ jobs:
     name: Infrastructure
     runs-on: ubuntu-latest
     needs: [security-scan, lint]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    if: github.ref == 'refs/heads/main'
     outputs:
       frontend_bucket: ${{ steps.tf-outputs.outputs.frontend_bucket }}
       lambda_function: ${{ steps.tf-outputs.outputs.lambda_function }}

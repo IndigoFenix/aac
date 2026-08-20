@@ -15,9 +15,9 @@ ai-docs/main.md - The Clinician and AAC systems
 We are also making games, which are largely separate from the main part of the system, though they are designed to interact with the AI. Before working on a game, check that game's instructions folder.
 
 ## AWS Strategy
-We have 2 separate AWS systems which are served from github actions. Currently we are using the Lambda system to save costs. Later we will begin using the ecs system. Updates made to the Lambda system should be made to the ecs system as well, apart from using Lambda vs ECS.
+Production (`main`) deploys to AWS ECS Fargate via `.github/workflows/deploy.yml` (since 2026-08-20). `staging` is NOT on AWS — it runs on Render. The old Lambda path (`deploy-lambda.yml`, `terraform/lean.tfvars`, `server/app.lambda.ts`) is kept as a manual rollback only; don't add features to it.
 
-There are 2 different deployment paths in Terraform. The lightweight one we are using now is to save costs. There is also a path with higher security (HIPAA compliance) that we will enable once we are ready to move to production. Keep both in mind when handling AWS systems.
+Terraform has three profiles layered on `terraform/terraform.tfvars`: `ecs-lean.tfvars` (current: lean security, 1 task), `hipaa.tfvars` (full compliance: WAF, CloudTrail, VPC endpoints, Redis, multi-task — switch by changing `DEFAULT_PROFILE` in deploy.yml) and the legacy `lean.tfvars` (Lambda). Any new toggle must work under all three, and anything that must be compliant later should be gated by an existing flag rather than hardcoded. The ECS task loads the entire `app-secrets` JSON at boot, so a new secret key needs no Terraform change. See docs/INFRASTRUCTURE.md.
 
 ## Translations
 All parts of the system use i18n translations with a t() function for multilingual support.
@@ -53,6 +53,28 @@ To add glyph keys, use `npx tsx scripts/i18n-insert-keys.ts <input.json>` — it
 locale files in one deterministic pass so the identical-line invariant survives. Supply each
 locale's value in the spec (anything omitted is seeded with English and marked `// TODO-i18n`),
 and use `"after": "<siblingKey>"` to keep the `aac.glyph` block in registry order.
+
+The builder has a SECOND vocabulary none of the above touches: the world-engine's own grammar
+layer (`shared/world-engine/interaction/lang/{en,he,es,pt}.ts`). It fails SILENTLY — `baseWord()`
+returns the raw head when a word has no lexeme, and a head IS an English word, so English looks
+perfect while Hebrew/Spanish/Portuguese put an English word on the child's board. (`validate-i18n`
+compares locale files to each other and `scan:i18n` compares them to `t()` call sites; this path
+has neither a locale file nor a `t()` call.) That bug was hand-patched at least three times before
+anyone saw the pattern. `npm run validate-builder-lexicon`
+(scripts/validate-builder-lexicon.ts) now derives every head the builder can surface — category
+tabs, the `defaultBuilderNouns` things tab, the `AXIS_WORDS` modifier rail, and the group chips —
+and checks all four SHIPPED rulesets can say it. `:report` shows everything without failing.
+The reachable set lives in `interaction/intent/builder-coverage.ts` and is shared with the jest
+gate (`server/tests/world-engine/builder-lexicon.test.ts`), so report and gate cannot disagree.
+Only en/he/es/pt are checked: the other seven app locales have no ruleset and fall back to
+English wholesale by design (lang/index.ts).
+
+⚠️ A GAME-SPEC OBJECT'S TRANSLATIONS LIVE ONLY ON ITS SPEC ROW (`words: ItemWords` — stations,
+programs, species, pools; `content/words.ts` joins them). Never add an item word to a central
+lang file — the no-overlap pin in `server/tests/world-engine/lexicon-spec-words.test.ts` fails,
+and that test also pins spec-head locale coverage so a spec row cannot invent a word for a locale
+that never had one. The central files keep only grammar, verbs, adjectives, function words and
+the CORE_CONCEPTS.
 
 ## Testing
 At the end of each minor task, check to see if we have a testing suite set up for that part of the system. If not, create one. If so, test it.

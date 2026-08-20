@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { DualAgentMessage } from "./dual-agent-types";
+import { noteSessionActivity, type SessionActivityKind } from "@/lib/session-activity";
 
 /**
  * The AAC text box — the one strip of words the student actually reads.
@@ -137,6 +138,19 @@ export interface AacCaption extends CaptionState {
   showCaption: (update: CaptionUpdate) => void;
 }
 
+/**
+ * Which caption sources count as an interaction for session recording.
+ * `ai-restart` and `clear` are bookkeeping, not speech; `hearing` is interim
+ * STT, which is exactly the "someone is mid-sentence" signal that should hold
+ * a clip open through a long spoken turn.
+ */
+const CAPTION_ACTIVITY: Partial<Record<CaptionUpdate["source"], SessionActivityKind>> = {
+  ai: "ai-speech",
+  student: "student-speech",
+  heard: "heard-speech",
+  hearing: "heard-speech",
+};
+
 export function useAacCaption(): AacCaption {
   const [state, dispatch] = useReducer(
     (s: CaptionState, u: CaptionUpdate) => applyCaption(s, u),
@@ -166,6 +180,15 @@ export function useAacCaption(): AacCaption {
           dispatch({ source: "hearing", text: null });
         }, INTERIM_STALE_MS);
       }
+      // Session recording listens here because this is already the ONE place
+      // that knows a real utterance happened — the AI's words, the student's
+      // words, or someone speaking to them. Anything the box refuses to show
+      // (machine context, board navigation notes) is likewise not an
+      // interaction, so the two questions have exactly the same answer and
+      // there is no second filter to keep in step. See lib/session-activity.ts.
+      const activity = CAPTION_ACTIVITY[update.source];
+      if (activity) noteSessionActivity(activity);
+
       dispatch(update);
     },
     [clearInterimTimer],

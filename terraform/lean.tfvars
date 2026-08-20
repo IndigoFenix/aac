@@ -1,8 +1,11 @@
 # =============================================================================
-# AiVota - LEAN Mode Configuration
+# AiVota - LEAN Mode Configuration (LEGACY — Lambda path, rollback only)
 # =============================================================================
-# Minimal-cost deployment for early-stage development.
-# Disables security/compliance features and downsizes infrastructure.
+# Minimal-cost serverless deployment. Superseded by ecs-lean.tfvars (ECS) on
+# 2026-08-20; kept so `deploy-lambda.yml` (workflow_dispatch) can roll
+# production back to Lambda if the ECS cutover misbehaves. Applying this after
+# an ECS apply scales the ECS service to 0 and re-points CloudFront at API
+# Gateway — it does NOT destroy the ECS resources.
 #
 # Usage:
 #   terraform plan  -var-file=lean.tfvars

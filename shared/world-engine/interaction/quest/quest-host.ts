@@ -5938,7 +5938,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (act) verbs.push(act.verb);
     const going = creatureGoing(session, cid);
     if (going) {
-      verbs.push("go", "come", "walk", "run");
+      verbs.push("go", "come", "run");
       if (going.kind === "fetch") verbs.push("get");
     }
     return verbs.length ? verbs : undefined;
@@ -21589,7 +21589,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // to say goodbye, which is the whole of this turn.
     const leaver = c.convo.members.find((m) => g.leaving.has(m.id));
     if (leaver) {
-      speakGroupMove(session, state, c, leaver.id, { act: { kind: "bye", glyph: "bye" } }, opts, rng);
+      speakGroupMove(session, state, c, leaver.id, { act: { kind: "bye", glyph: "goodbye" } }, opts, rng);
       g.leaving.delete(leaver.id);
       departGroup(c, leaver.id, { spoken: true });
       g.nextTurnAt = session.taskClock + GROUP_TURN_GAP_S;
@@ -21652,7 +21652,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const w = creatureMood(m.id).warmth;
       if (w > best) { best = w; closer = m.id; }
     }
-    if (closer) speakGroupMove(session, state, c, closer, { act: { kind: "bye", glyph: "bye" } }, opts, rng);
+    if (closer) speakGroupMove(session, state, c, closer, { act: { kind: "bye", glyph: "goodbye" } }, opts, rng);
     disperseGroup(c);
   }
 

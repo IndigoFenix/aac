@@ -23,9 +23,10 @@ import type { ResolvedVenueMenuSettings } from "@shared/venue-menus";
 import { resolveVenue, type ConfirmationReason } from "@shared/venue-matching";
 import { venueRepository } from "../../repositories/venueRepository";
 import { searchNearbyVenues } from "./osm-venue-provider.js";
+import { isBrightDataConfigured, searchNearbyPlaces } from "./brightdata-client.js";
 
 /** Which tier produced the candidate list. Shown to the caretaker as context. */
-export type ResolutionTier = "saved" | "cache" | "osm" | "none";
+export type ResolutionTier = "saved" | "cache" | "osm" | "brightdata" | "none";
 
 export interface VenueCandidateView {
   venue: Venue;
@@ -96,13 +97,36 @@ export class VenueResolutionService {
     }
 
     // ── Tier 3: outbound, and only on request ──
-    if (!resolution.candidates.length && input.allowOutboundSearch && settings.providers.osm) {
-      tier = "osm";
-      const found = await searchNearbyVenues(input.gps, settings.searchRadiusM);
-      // Upserting on (source, sourceId) means two students near one restaurant
-      // converge on ONE row rather than fragmenting the cache.
-      pool = await Promise.all(found.map((venue) => venueRepository.upsert(venue)));
-      resolution = this.rank(pool, input);
+    // Free before paid, mirroring locationService's geocode ladder. OSM can
+    // seed the nearby list but rarely carries a `website`, and that field is
+    // what makes the §3.1a binding check enforceable — so when Bright Data is
+    // configured we ask it too, and its richer records win the upsert.
+    if (!resolution.candidates.length && input.allowOutboundSearch) {
+      if (settings.providers.osm) {
+        tier = "osm";
+        const found = await searchNearbyVenues(input.gps, settings.searchRadiusM);
+        // Upserting on (source, sourceId) means two students near one restaurant
+        // converge on ONE row rather than fragmenting the cache.
+        pool = await Promise.all(found.map((venue) => venueRepository.upsert(venue)));
+        resolution = this.rank(pool, input);
+      }
+
+      const needsWebsites = !pool.some((venue) => !!venue.websiteUri);
+      if (
+        settings.providers.brightData &&
+        isBrightDataConfigured() &&
+        (!resolution.candidates.length || needsWebsites)
+      ) {
+        const found = await searchNearbyPlaces(input.gps, settings.searchRadiusM);
+        if (found.length) {
+          tier = "brightdata";
+          const upserted = await Promise.all(found.map((venue) => venueRepository.upsert(venue)));
+          // Keep the OSM finds too: a venue one provider knows and the other
+          // does not is still a venue the student might be standing in.
+          pool = [...pool, ...upserted];
+          resolution = this.rank(pool, input);
+        }
+      }
     }
 
     if (!resolution.candidates.length) return { ...empty, tier };

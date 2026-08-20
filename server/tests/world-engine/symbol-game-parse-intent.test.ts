@@ -13,7 +13,9 @@ describe("social acts — self-contained moves", () => {
     expect(p("no").kind).toBe("decline");
     expect(p("thanks").kind).toBe("thank");
     expect(p("mine").kind).toBe("claim");
-    expect(p("bye").kind).toBe("farewell");
+    // `goodbye`, not `bye`: the duplicate alias was deleted under the NO
+    // SYNONYMS law (2026-08-20) — one key per social act.
+    expect(p("goodbye").kind).toBe("farewell");
   });
 });
 
@@ -40,7 +42,7 @@ describe("vocatives — a social act that NAMES someone addresses them", () => {
   });
 
   it("bye + mara → FAREWELL (not a greeting) addressed to mara", () => {
-    const f = p("bye + mara");
+    const f = p("goodbye + mara");
     expect(f.kind).toBe("farewell");
     expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
   });

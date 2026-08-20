@@ -18,10 +18,12 @@ import { useCall } from "@/contexts/CallContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { glyphBubbleImageUrl } from "@/lib/glyphRaster";
+import { API_BASE_URL } from "@/lib/api-base";
 
-/** Resolve a backend ws:// URL, honoring VITE_API_URL (baked for the Electron AAC). */
+/** Resolve a backend ws:// URL from the same resolver every other call uses
+ *  (baked VITE_API_URL or the runtime-manifest override for packaged apps). */
 function resolveAacWsUrl(path: string): string {
-  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+  const base = API_BASE_URL;
   if (base) {
     const url = new URL(base);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

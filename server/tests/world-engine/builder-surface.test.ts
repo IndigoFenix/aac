@@ -315,9 +315,13 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
       ...DEFAULT_STRUCTURE_PROGRAMS.map((d) => d.word ?? d.type),
     ]);
     for (const n of places) expect(declared.has(n.symbol)).toBe(true);
-    // The staples the dollhouse teaches (teddy = the doll facet, `bear.toy`).
+    // The staples the dollhouse teaches.
     const syms = nouns.map((n) => n.symbol);
-    for (const s of ["apple", "ball", "bear.toy", "shirt"]) expect(syms).toContain(s);
+    for (const s of ["apple", "ball", "shirt"]) expect(syms).toContain(s);
+    // `bear.toy` (a composed two-word glyph) was deliberately pulled from the
+    // starter set — it isn't a SENTENCE STARTER; a new user reads it as one
+    // word rather than a head-plus-modifier the board taught them to build.
+    expect(syms).not.toContain("bear.toy");
     expect(new Set(syms).size).toBe(syms.length); // no duplicates
   });
 

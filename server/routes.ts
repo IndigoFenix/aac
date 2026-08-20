@@ -2149,6 +2149,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/venue-menus/capture", requireAuth, (req, res) =>
     venueMenuController.capture(req, res)
   );
+  app.post("/api/venue-menus/fetch-web", requireAuth, (req, res) =>
+    venueMenuController.fetchWebMenu(req, res)
+  );
   app.get("/api/students/:studentId/venue-menus/pending", requireAuth, (req, res) =>
     venueMenuController.listPending(req, res)
   );

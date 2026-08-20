@@ -7,30 +7,62 @@ CliniAACian uses GitHub Actions workflows for CI/CD and Terraform for AWS infras
 1. **ECS Mode** - Container-based deployment using AWS ECS Fargate
 2. **Lambda Mode** - Serverless deployment using AWS Lambda + S3/CloudFront
 
-Currently we are using Lambda Mode. We will move to ECS Mode once we have a consistent user base.
+**Production (`main`) runs in ECS Mode as of 2026-08-20.** Lambda Mode is kept as a
+manual rollback path. `staging` is not deployed to AWS at all — it runs on Render.
+
+### Profiles
+
+The compute path and the security posture are chosen by a Terraform var-file
+layered on the auto-loaded base `terraform/terraform.tfvars`:
+
+| Profile | File | Workflow | Compute | Security |
+|---|---|---|---|---|
+| `ecs-lean` (**default**) | `terraform/ecs-lean.tfvars` | `deploy.yml` | ECS Fargate, 1 task, no Redis | WAF/CloudTrail/flow logs/endpoints **off** |
+| `hipaa` | `terraform/hipaa.tfvars` | `deploy.yml` (dispatch, or change `DEFAULT_PROFILE`) | ECS Fargate, 2+ tasks + Redis | everything **on**, multi-AZ `db.t3.medium` |
+| `lean` (legacy) | `terraform/lean.tfvars` | `deploy-lambda.yml` (dispatch only) | Lambda + API Gateway | off |
+
+Switching `ecs-lean → hipaa` recreates nothing: flags flip and sizes grow in
+place against the same state. Keep the email-authentication block identical in
+all three files.
 
 ---
 
 ## Two Build Architectures
 
-### 1. ECS Deployment (`deploy-ecs.yml`)
+### 1. ECS Deployment (`deploy.yml`) — ACTIVE
 
 **Architecture:**
 ```
-Internet → ALB (Load Balancer) → ECS Fargate Tasks → RDS PostgreSQL
-                                        ↓
-                                   ElastiCache (Redis)
+Internet → CloudFront → S3 (landing, clinician SPA, /aac web build)
+              ↓ /api/* /auth/* /ws/* /health
+           api.aivota.ai → ALB → ECS Fargate → RDS PostgreSQL
+           ↑                                 ↓
+   packaged AAC clients (direct)        ElastiCache (hipaa profile)
 ```
 
 **Components:**
-- Docker containers running on ECS Fargate
-- Application Load Balancer (public-facing)
-- Auto-scaling (2-10 tasks based on CPU/memory)
-- VPC with private subnets for data tier
+- Server-only Docker image (`Dockerfile`, `server/index.prod.ts` → `app.prod.ts`) on ECS Fargate
+- ALB with HTTPS (regional ACM cert: apex, `www`, `app`, `api`), 300s idle timeout
+  so WebSockets/SSE survive, sticky cookies
+- `api.<domain>` → ALB: CloudFront's origin **and** the host the packaged AAC
+  clients bake in (their WebSockets never traverse the CDN)
+- Static frontends stay on S3 + CloudFront (`frontend_via_cloudfront = true`);
+  set it to `false` to have Express serve them from the image instead
+- Secrets: the task loads the whole `app-secrets` JSON at boot
+  (`server/config/aws-secrets.ts`) — add a key to the secret, redeploy, done.
+  Values set in the task definition (`EMAIL_FROM`, `APP_URL`, `REALTIME_BUS`,
+  `ALLOWED_ORIGINS`, …) win over keys in the secret.
+- Migrations run in the new task at boot under a Postgres advisory lock; the ECS
+  circuit breaker rolls back if the task never passes `/health`
+- Interval crons (session sweeper, activity-log retention, erasure) run natively —
+  the EventBridge `/internal/run-crons` workaround is Lambda-only
+- Auto-scaling `ecs_desired_count … ecs_autoscaling_max` on CPU/memory
 
-**Best for:** Production workloads requiring consistent performance and long-running processes.
+**Deploy flow:** Terraform apply (profile) → build frontends → build/push image →
+S3 sync + CloudFront invalidation → render new image onto the latest task-definition
+revision → `wait-for-service-stability` → `GET api.<domain>/health`.
 
-### 2. Lambda Deployment (`deploy-lambda.yml`)
+### 2. Lambda Deployment (`deploy-lambda.yml`) — LEGACY / ROLLBACK
 
 **Architecture:**
 ```
@@ -294,10 +326,34 @@ Enabled for ECS mode (ALB). Lambda mode uses CloudFront's built-in protections.
 
 ## Switching Between Modes
 
-To switch from ECS to Lambda mode:
-1. Set `use_lambda = true` in `terraform.tfvars`
-2. Run Phase 1 (builds Lambda image)
-3. Set `lambda_image_exists = true`
-4. Run Phase 2 (deploys Lambda + frontend)
+### ECS lean → HIPAA
+Dispatch `deploy.yml` with `deploy_profile = hipaa`, or change `DEFAULT_PROFILE`
+in the workflow so every push uses it. Redis, WAF, CloudTrail, flow logs, VPC
+endpoints and the second NAT come up; the RDS class change restarts the DB in
+the maintenance window style. Nothing is destroyed.
 
-The workflows handle the two-phase deployment automatically.
+### Rolling back to Lambda
+Dispatch `deploy-lambda.yml` (profile `lean`). It applies the Lambda profile to
+the same state: the ECS service scales to 0 (resources stay), Lambda + API
+Gateway are recreated, CloudFront's origin swaps back. Because `use_lambda =
+false` destroys the Lambda function and its ECR repo, a rollback rebuilds the
+image (~15 min). Packaged AAC clients pointed at `api.<domain>` lose their
+backend on rollback — that host only exists on the ECS path — so a rollback
+also means re-pointing the client release.
+
+### Re-pointing installed AAC clients (desktop + iPad)
+Packaged builds bake `VITE_API_URL` (prod → `https://api.aivota.ai`) **and**
+`VITE_BACKEND_MANIFEST_URL` → `https://updates.aivota.ai/aac/latest-backend.json`.
+On every launch the app fetches that manifest and stores its `backendUrl` as the
+last-known-good backend (applied next launch, or immediately if the current
+backend is down; dropped again if it dies and the manifest can't correct it).
+So a backend move is one upload, no forced update:
+`npm run publish:aac:backend prod` or the **Publish AAC Backend Manifest**
+workflow (`publish-aac-backend.yml`, which also accepts an explicit URL for
+rollback drills). `npm run release:aac:<env>` publishes the same manifest
+automatically. Builds made before this mechanism (≤ the Render era) only move
+via auto-update / TestFlight.
+
+### Moving back to ECS
+Push to `main` (or dispatch `deploy.yml`). The first apply after a rollback
+recreates the HTTPS listener/cert and destroys Lambda again.

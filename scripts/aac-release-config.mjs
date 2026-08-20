@@ -4,6 +4,10 @@
 // environment produces the SAME app, differing only in:
 //   - backendUrl  : which server the packaged app talks to (baked as
 //                   VITE_API_URL — see client-aac/src/lib/api-base.ts)
+//   - backendManifestUrl : the runtime manifest the packaged app polls on
+//                   launch (baked as VITE_BACKEND_MANIFEST_URL). Publishing a
+//                   new `backendUrl` there re-points EXISTING installs without
+//                   a new build — see publish-aac-backend.mjs.
 //   - app identity: appId + productName, so dev/staging/prod install
 //                   SIDE-BY-SIDE with isolated settings/login (Electron keys
 //                   userData off the product name) and separate installers
@@ -13,13 +17,18 @@
 // prod mirrors electron-builder.yml's defaults (isDefaultIdentity), so the
 // orchestrator applies NO overrides for it and the yml stays authoritative.
 
+const UPDATES_HOST = "https://updates.aivota.ai";
+
 export const AAC_ENVIRONMENTS = {
   dev: {
     // Talks to the developer's own local server. Only meaningful on that
     // machine, so a dev build is never published to a CDN. The "-dev" pkgName
     // suffix also disables auto-update (see electron/auto-update.ts) so a dev
-    // build never polls a feed.
+    // build never polls a feed. No manifest either: a dev build must never be
+    // re-pointed remotely.
     backendUrl: "http://localhost:5000",
+    backendManifestUrl: null,
+    backendManifestKey: null,
     appId: "com.aivota.aac.dev",
     productName: "Aivota AAC Dev",
     // Electron keys userData / logs / the updater-cache dir off the package
@@ -27,32 +36,38 @@ export const AAC_ENVIRONMENTS = {
     // name to isolate its settings/login/update-cache from the others.
     pkgName: "aivota-aac-dev",
     updatePrefix: "aac-dev/win/",
-    updateUrl: "https://updates.aivota.ai/aac-dev/win/",
+    updateUrl: `${UPDATES_HOST}/aac-dev/win/`,
     publishable: false,
     isDefaultIdentity: false,
   },
   staging: {
-    // Staging server (Render). Same host pattern as demo, "staging" for "demo".
+    // Staging server stays on Render (only `main` moved to AWS ECS).
     backendUrl: "https://aivota-staging-us.onrender.com",
+    backendManifestUrl: `${UPDATES_HOST}/aac-staging/latest-backend.json`,
+    backendManifestKey: "aac-staging/latest-backend.json",
     appId: "com.aivota.aac.staging",
     productName: "Aivota AAC Staging",
     pkgName: "aivota-aac-staging",
     updatePrefix: "aac-staging/win/",
-    updateUrl: "https://updates.aivota.ai/aac-staging/win/",
+    updateUrl: `${UPDATES_HOST}/aac-staging/win/`,
     publishable: true,
     isDefaultIdentity: false,
   },
   prod: {
-    // Production feed. Backend is the demo server today (see api-base.ts).
+    // Production backend: the ECS ALB reached directly (not through
+    // CloudFront) so the app's WebSockets never traverse the CDN. See
+    // terraform/ecs.tf (api_subdomain) and docs/INFRASTRUCTURE.md.
     // Identity + update feed come from electron-builder.yml — do not override.
     // pkgName stays the default "aivota-aac" so existing prod installs keep
     // their userData (never migrate the production name).
-    backendUrl: "https://aivota-demo-us.onrender.com",
+    backendUrl: "https://api.aivota.ai",
+    backendManifestUrl: `${UPDATES_HOST}/aac/latest-backend.json`,
+    backendManifestKey: "aac/latest-backend.json",
     appId: "com.aivota.aac",
     productName: "Aivota AAC",
     pkgName: "aivota-aac",
     updatePrefix: "aac/win/",
-    updateUrl: "https://updates.aivota.ai/aac/win/",
+    updateUrl: `${UPDATES_HOST}/aac/win/`,
     publishable: true,
     isDefaultIdentity: true,
   },
@@ -68,4 +83,12 @@ export function resolveAacEnv(name) {
     );
   }
   return { name: key, ...cfg };
+}
+
+/** Vite env vars to bake into a client build for this environment. */
+export function aacBuildEnv(cfg) {
+  return {
+    VITE_API_URL: cfg.backendUrl,
+    ...(cfg.backendManifestUrl ? { VITE_BACKEND_MANIFEST_URL: cfg.backendManifestUrl } : {}),
+  };
 }

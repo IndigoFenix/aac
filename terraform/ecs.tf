@@ -111,6 +111,10 @@ resource "aws_ecs_task_definition" "main" {
             value = var.environment == "prod" ? "production" : var.environment
           },
           {
+            name  = "ENVIRONMENT"
+            value = var.environment
+          },
+          {
             name  = "PORT"
             value = tostring(var.container_port)
           },
@@ -119,8 +123,34 @@ resource "aws_ecs_task_definition" "main" {
             value = var.aws_region
           },
           {
+            name  = "AWS_SECRETS_REGION"
+            value = var.aws_region
+          },
+          # The container loads the WHOLE app-secrets JSON into process.env at
+          # boot (server/config/aws-secrets.ts) — same as Lambda, so adding a
+          # key to the secret needs no Terraform change. Unlike Lambda, values
+          # set here WIN over keys in the secret.
+          {
+            name  = "DATABASE_SECRET_ARN"
+            value = aws_secretsmanager_secret.database.arn
+          },
+          {
+            name  = "APP_SECRETS_ARN"
+            value = aws_secretsmanager_secret.app_secrets.arn
+          },
+          {
+            name  = "S3_UPLOADS_BUCKET"
+            value = aws_s3_bucket.uploads.bucket
+          },
+          {
             name  = "APP_URL"
             value = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
+          },
+          {
+            # Browser origins allowed by CORS/CSRF. The native app origins
+            # (app://aac, capacitor://localhost) are always added by the server.
+            name  = "ALLOWED_ORIGINS"
+            value = var.domain_name != "" ? "https://${var.domain_name},https://app.${var.domain_name}" : ""
           },
           {
             # Transactional email via SES (docs/EMAIL.md). Sender identity is
@@ -168,60 +198,15 @@ resource "aws_ecs_task_definition" "main" {
           }
         ] : [],
         [
-        # Database
+        # Database. Everything in app-secrets is loaded at boot by the app
+        # itself (see APP_SECRETS_ARN above) rather than enumerated here — a
+        # hand-maintained list silently dropped every key added after it was
+        # written. Email needs NO secret: SES authenticates via the task role
+        # (ses:SendEmail in ses.tf); EMAIL_FROM above wins over any stale
+        # SMTP_*/EMAIL_* key still sitting in the secret.
         {
           name      = "DATABASE_URL"
           valueFrom = "${aws_secretsmanager_secret.database.arn}:DATABASE_URL::"
-        },
-        # App secrets
-        {
-          name      = "SESSION_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SESSION_SECRET::"
-        },
-        {
-          name      = "OPENAI_API_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:OPENAI_API_KEY::"
-        },
-        {
-          name      = "JWT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:JWT_SECRET::"
-        },
-        {
-          name      = "ENCRYPTION_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:ENCRYPTION_KEY::"
-        },
-        # Stripe
-        {
-          name      = "STRIPE_SECRET_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_SECRET_KEY::"
-        },
-        {
-          name      = "VITE_STRIPE_PUBLIC_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:VITE_STRIPE_PUBLIC_KEY::"
-        },
-        # Google OAuth (if used)
-        {
-          name      = "GOOGLE_CLIENT_ID"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_ID::"
-        },
-        {
-          name      = "GOOGLE_CLIENT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_SECRET::"
-        },
-        # Email needs NO secret: SES authenticates via the task role
-        # (ses:SendEmail in ses.tf). The old SMTP_*/RESEND_* keys are
-        # deliberately not injected — the app once fell back to
-        # SMTP_FROM/SMTP_USER for its sender identity, so a leftover Gmail
-        # credential silently became the From address on every email. Delete
-        # those keys from the app-secrets JSON too; on Lambda every key in it
-        # becomes an env var.
-        {
-          name      = "DROPBOX_CLIENT_ID"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_ID::"
-        },
-        {
-          name      = "DROPBOX_CLIENT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_SECRET::"
         }
         ]
       )
@@ -286,6 +271,15 @@ resource "aws_ecs_service" "main" {
   # Enable ECS Exec for debugging (uses IAM for auth)
   enable_execute_command = true
 
+  # The deploy workflow registers a new revision per image (sha-tagged) and
+  # points the service at it. Terraform still owns the task definition
+  # template — a change here creates a new revision, and the next deploy
+  # renders its image onto that revision — it just must not flip the service
+  # back to its own :latest revision on every apply.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   depends_on = [
     aws_lb_listener.http
   ]
@@ -299,8 +293,8 @@ resource "aws_ecs_service" "main" {
 # Auto Scaling
 # =============================================================================
 resource "aws_appautoscaling_target" "ecs" {
-  max_capacity       = var.use_lambda ? 0 : 10
-  min_capacity       = var.use_lambda ? 0 : (var.environment == "prod" ? 2 : 1)
+  max_capacity       = var.use_lambda ? 0 : var.ecs_autoscaling_max
+  min_capacity       = var.use_lambda ? 0 : min(var.ecs_desired_count, var.ecs_autoscaling_max)
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.main.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
@@ -351,6 +345,7 @@ resource "aws_lb" "main" {
   subnets            = aws_subnet.public[*].id
 
   enable_deletion_protection = var.environment == "prod" && !var.use_lambda
+  idle_timeout               = var.alb_idle_timeout_seconds
 
   access_logs {
     bucket  = aws_s3_bucket.logs.bucket
@@ -384,6 +379,16 @@ resource "aws_lb_target_group" "main" {
 
   # Give containers time to drain connections before deregistration
   deregistration_delay = 30
+
+  # Sessions live in Postgres and realtime fanout crosses the bus, so
+  # stickiness is not a correctness requirement — it just keeps a client's
+  # HTTP + WebSocket traffic on one task, which keeps per-session in-memory
+  # caches warm when running more than one.
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
+  }
 
   tags = {
     Name = "${local.name_prefix}-tg"
@@ -446,11 +451,24 @@ resource "aws_lb_listener" "https" {
 # ACM Certificate (for HTTPS - only when domain is provided AND NOT using Lambda)
 # When using Lambda, CloudFront uses a separate certificate in us-east-1
 # =============================================================================
+locals {
+  # Direct-to-ALB hostname (api.<domain>): CloudFront's origin and the packaged
+  # AAC clients' API base. Empty when there is no domain or the subdomain is
+  # disabled.
+  api_host = var.domain_name != "" && var.api_subdomain != "" ? "${var.api_subdomain}.${var.domain_name}" : ""
+
+  alb_cert_sans = {
+    www = "www.${var.domain_name}"
+    app = "app.${var.domain_name}"
+    api = local.api_host
+  }
+}
+
 resource "aws_acm_certificate" "main" {
   count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   domain_name               = var.domain_name
-  subject_alternative_names = ["www.${var.domain_name}", "app.${var.domain_name}"]
+  subject_alternative_names = compact(values(local.alb_cert_sans))
   validation_method         = "DNS"
 
   lifecycle {

@@ -579,9 +579,6 @@
   "there": {
    "w": "there"
   },
-  "therefore": {
-   "w": "so"
-  },
   "they": {
    "w": "they",
    "pl": true
@@ -640,9 +637,6 @@
   },
   "until": {
    "w": "until"
-  },
-  "walk": {
-   "w": "walk"
   },
   "want": {
    "w": "want"
@@ -1157,7 +1151,7 @@
    "w": "כאן"
   },
   "hi": {
-   "w": "שלום"
+   "w": "היי"
   },
   "home": {
    "w": "בית",
@@ -1510,9 +1504,6 @@
   "there": {
    "w": "שם"
   },
-  "therefore": {
-   "w": "לכן"
-  },
   "they": {
    "w": "הם"
   },
@@ -1587,13 +1578,6 @@
   },
   "until": {
    "w": "עד ש"
-  },
-  "walk": {
-   "w": "הולך",
-   "f": "הולכת",
-   "vmpl": "הולכים",
-   "vfpl": "הולכות",
-   "inf": "ללכת"
   },
   "want": {
    "w": "רוצה",
@@ -2557,13 +2541,6 @@
    "v3p": "entienden",
    "inf": "entender"
   },
-  "walk": {
-   "w": "camino",
-   "v2": "caminas",
-   "v3": "camina",
-   "v3p": "caminan",
-   "inf": "caminar"
-  },
   "want": {
    "w": "quiero",
    "v2": "quieres",
@@ -3480,12 +3457,6 @@
    "v3": "entende",
    "v3p": "entendem",
    "inf": "entender"
-  },
-  "walk": {
-   "w": "caminho",
-   "v3": "caminha",
-   "v3p": "caminham",
-   "inf": "caminhar"
   },
   "want": {
    "w": "quero",

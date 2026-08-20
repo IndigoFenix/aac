@@ -20,6 +20,7 @@ import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
 // The context-strip queue rules, in one place — this provider owns the live
 // list, home.tsx mirrors it, and both now apply the same matching.
 import { addContextButton, applyContextSymbolUpdate, removeContextButton } from "@shared/aac/context-sidebar";
+import { noteSessionActivity } from "@/lib/session-activity";
 
 /** Delay before firing the one-shot startup detection trigger. This is now a
  *  BACKUP first frame — the server already forwards the client's initialFrame
@@ -1438,6 +1439,10 @@ function DualAgentProviderInner({
   const voiceButtons = useCallback(
     async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
       attentiveness?.triggerAlwaysWake("aacButtonPress");
+      // A press is the one interaction that never passes through the caption
+      // writer, so session recording is told about it here — the same
+      // chokepoint the wake trigger already uses. See lib/session-activity.ts.
+      noteSessionActivity("press");
       await liveAgentVoiceRef.current(recentButtons, sentences, board);
     },
     [attentiveness],

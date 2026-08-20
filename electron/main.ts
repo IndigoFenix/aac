@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, ipcMain, session, dialog, shell } from "electron";
+import { app, BrowserWindow, desktopCapturer, protocol, ipcMain, session, dialog, shell } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -6,6 +6,7 @@ import log from "electron-log";
 import { GazeSidecarSupervisor, GazeSupervisorPaths } from "./hardware/gaze-sidecar-supervisor";
 import { setupAutoUpdater, stopAutoUpdater } from "./auto-update";
 import { acquireSingleInstanceLock, setupInstanceGuard } from "./instance-guard";
+import { setupRecordingStore, stopRecordingStore } from "./hardware/recording-store";
 import { isUrlPermitted } from "../shared/permitted-websites";
 import type { PermittedWebsite } from "../shared/schema";
 
@@ -193,7 +194,11 @@ app.on("ready", async () => {
 
   // Auto-grant camera, mic, HID — but ONLY to the app's own origin. Embedded
   // third-party sites (the in-app browser) must not auto-acquire these.
-  const allowedPermissions = ["media", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write"];
+  // "display-capture" is the gate in FRONT of the display-media handler below:
+  // without it the getDisplayMedia() call is denied before that handler is ever
+  // consulted, and session recording / call screen-share silently produce
+  // nothing. It stays scoped to the app's own origin like everything else here.
+  const allowedPermissions = ["media", "display-capture", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write"];
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, permission, callback, details) => {
       callback(allowedPermissions.includes(permission) && isAppOrigin(details?.requestingUrl));
@@ -204,6 +209,53 @@ app.on("ready", async () => {
     (_webContents, permission, requestingOrigin) => {
       return allowedPermissions.includes(permission) && isAppOrigin(requestingOrigin);
     },
+  );
+
+  // ── Screen capture source ──
+  // Since Electron 20 a `getDisplayMedia()` call is REFUSED outright unless the
+  // session has a display-media handler, so this is what makes screen capture
+  // possible at all here — both for session recording and for the clinician's
+  // call screen-share, which had no handler and could therefore never succeed.
+  //
+  // The answer is always the app's OWN window, with no picker. A picker in
+  // front of a student is unusable, and every other answer is worse for
+  // privacy: whole-screen capture would sweep up notifications, a caretaker's
+  // email, or another student's board. The window source (rather than
+  // `mainFrame`) is deliberate — it captures the composited window, so a
+  // <webview> playing a video appears in the recording as it does on screen.
+  session.defaultSession.setDisplayMediaRequestHandler(
+    (request, callback) => {
+      if (!isAppOrigin(request.frame?.url)) {
+        // Only the app's own page may capture. A <webview> guest asking to
+        // record the screen gets nothing.
+        callback({});
+        return;
+      }
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) { callback({}); return; }
+      const wantedId = win.getMediaSourceId();
+      desktopCapturer
+        .getSources({ types: ["window", "screen"], thumbnailSize: { width: 0, height: 0 } })
+        .then((sources) => {
+          const own = sources.find((s) => s.id === wantedId);
+          // Fall back to the primary display only if the window source has
+          // gone missing (it can, briefly, mid-restore) — never silently to a
+          // different window.
+          const screen = sources.find((s) => s.id.startsWith("screen:"));
+          const chosen = own ?? screen;
+          if (!chosen) { callback({}); return; }
+          if (!own) log.warn("[recording] own window source not found — using primary display");
+          callback({ video: chosen });
+        })
+        .catch((err) => {
+          log.error(`[recording] desktopCapturer failed: ${String(err)}`);
+          callback({});
+        });
+    },
+    // macOS-only option, and false is already the default — stated explicitly
+    // because "which window gets captured" must be this handler's decision and
+    // never a dialog put in front of a student.
+    { useSystemPicker: false },
   );
 
   // In-app browser partition: deny ALL permission requests (camera, mic, geo,
@@ -284,6 +336,10 @@ app.on("ready", async () => {
   // Create the gaze sidecar supervisor. It stays idle until the renderer calls
   // gaze:ensure (when a student's settings select an eye tracker).
   gazeSupervisor = new GazeSidecarSupervisor(gazeSupervisorPaths());
+
+  // Session-recording file store. Idle until a student whose settings enable
+  // recording starts a session; see shared/aac/session-recording.ts.
+  setupRecordingStore();
 
   createWindow();
 
@@ -414,11 +470,14 @@ ipcMain.handle("gaze:locateDll", async (_e, device: string) => {
 app.on("before-quit", () => {
   gazeSupervisor?.stop();
   stopAutoUpdater();
+  // Flush any clip still being written so the file on disk stays playable.
+  void stopRecordingStore();
 });
 
 app.on("window-all-closed", () => {
   gazeSupervisor?.stop();
   stopAutoUpdater();
+  void stopRecordingStore();
   if (process.platform !== "darwin") {
     app.quit();
   }

@@ -16,8 +16,8 @@ import { POOLS } from "@shared/world-engine/interaction/content/pools.js";
  *  or queued art). Additions here should be deliberate. Snapshot 2026-07-17 —
  *  the §6.5 art worklist; shrink as symbols ship. */
 const GAME_ONLY = new Set<string>([
-  // people / deixis
-  "us",
+  // people / deixis — `us` left: it was an exact duplicate of `we` and was
+  // deleted under the NO SYNONYMS law (2026-08-20). See parse-intent.ts.
   // verbs
   // `drop`/`carry` left: they now ship as physical-carry verbs with body art.
   // `come`/`follow` left: bundled body art shipped, and both are directional —
@@ -32,14 +32,14 @@ const GAME_ONLY = new Set<string>([
   // `heat` left: it now borrows the `hot` descriptor art — the act and the state
   // it produces are deliberately the same picture.
   "cook", "fill", "empty", "show", "teach", "fight", "feel", "rest",
-  // connectives
-  "then", "so", "therefore", "in_order_to", "until",
-  // relations — `behind` left: it shipped with the places/relational art. The
-  // board words are `behind`/`in_front_of`; `front` stays the ENGINE name for
-  // the relation and `above` a spoken alias of `over` — neither is a button.
-  "front", "above",
-  // social
-  "bye", "okay", "thanks", "mine", "dont_understand",
+  // connectives — `therefore` left: exact duplicate of `so`, deleted.
+  "then", "so", "in_order_to", "until",
+  // relations — `behind` left: it shipped with the places/relational art.
+  // `front` and `above` are GONE: the old note here said "neither is a button",
+  // but a category tab lists its WHOLE category, so both WERE buttons —
+  // duplicates of `in_front_of` and `over`. Deleting them made the comment true.
+  // social — `bye` and `okay` left: exact duplicates of `goodbye` and `ok`.
+  "thanks", "mine", "dont_understand",
   // quantity
   "three", "less",
   // attributes (`dirty` left — it now ships as a state adjective)

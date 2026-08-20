@@ -71,6 +71,7 @@
     "release:aac:dev": "node scripts/release-aac.mjs dev",
     "release:aac:staging": "node scripts/release-aac.mjs staging --publish",
     "release:aac:prod": "node scripts/release-aac.mjs prod --publish",
+    "publish:aac:backend": "node scripts/publish-aac-backend.mjs",
     "publish:main": "git push origin HEAD:main",
     "audit": "npm audit",
     "audit:fix": "npm audit fix",
@@ -84,7 +85,9 @@
     "scan:i18n:keys": "tsx scripts/scan-i18n-coverage.ts --only=keys,errors",
     "scan:i18n:report": "tsx scripts/scan-i18n-coverage.ts --unused --report --no-fail",
     "validate-glyphs": "tsx scripts/validate-glyph-registry.ts",
-    "validate-glyphs:art": "tsx scripts/validate-glyph-registry.ts --icons --verbose --no-fail"
+    "validate-glyphs:art": "tsx scripts/validate-glyph-registry.ts --icons --verbose --no-fail",
+    "validate-builder-lexicon": "tsx scripts/validate-builder-lexicon.ts",
+    "validate-builder-lexicon:report": "tsx scripts/validate-builder-lexicon.ts --verbose --same-as-english --no-fail"
   },
   "overrides": {
     "shell-quote": "^1.8.4"

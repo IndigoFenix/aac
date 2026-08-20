@@ -45,6 +45,29 @@ variable "use_api_gateway" {
   default     = false
 }
 
+# Frontend hosting is independent of the backend compute choice. With this on,
+# the landing page, clinician SPA and AAC web build are served from S3 behind
+# CloudFront, and CloudFront proxies /api/*, /auth/*, /ws/* and /health to the
+# backend origin — API Gateway on the Lambda path, the ALB (via api.<domain>)
+# on the ECS path. On the Lambda path it is effectively always on (Lambda has
+# no other way to serve static files). On the ECS path, turning it off makes
+# Express serve the bundled static files straight from the ALB instead.
+variable "frontend_via_cloudfront" {
+  description = "Serve the static frontends from S3 + CloudFront and proxy API/WS paths to the backend. Requires domain_name on the ECS path."
+  type        = bool
+  default     = true
+}
+
+# Hostname the backend is reachable on directly, bypassing CloudFront. The
+# packaged AAC clients (Electron / iPad) bake this in as their API base so
+# their WebSockets never traverse the CDN, and CloudFront uses it as its
+# origin (the ALB cert must therefore cover it — see ecs.tf).
+variable "api_subdomain" {
+  description = "Subdomain under domain_name for direct ALB access (ECS path only). Empty disables the record."
+  type        = string
+  default     = "api"
+}
+
 # =============================================================================
 # VPC Variables
 # =============================================================================
@@ -79,6 +102,21 @@ variable "container_port" {
   description = "Port the container listens on"
   type        = number
   default     = 5000
+}
+
+# The ALB drops a connection that carries no bytes for this long. The app
+# holds idle WebSockets (/ws/live, /ws/call) and SSE streams open well past
+# the 60s AWS default, so keep this comfortably above the client heartbeat.
+variable "alb_idle_timeout_seconds" {
+  description = "ALB connection idle timeout in seconds (WebSocket / SSE friendly)."
+  type        = number
+  default     = 300
+}
+
+variable "ecs_autoscaling_max" {
+  description = "Upper bound for ECS service auto-scaling (ignored on the Lambda path)."
+  type        = number
+  default     = 10
 }
 
 # =============================================================================

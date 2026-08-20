@@ -380,10 +380,11 @@ ${sites.map(site => `  - ${site.label}: ${site.url}${site.description ? ` — ${
     }
   }
 
-  // close_app is declared in tool mode but was never mentioned in the prompt,
-  // so the Speaker could open an app and had no idea it could put it away.
-  if (!toolsSuppressed && appRows.length > 0) {
-    prompt += `\n\nclose_app() puts away whatever is open and gives their board back.`;
+  // close_app was declared but never MENTIONED in the prompt, so the Speaker
+  // could open an app and had no idea it could put it away. Both shapes carry
+  // the tool now, so both shapes say so.
+  if (appRows.length > 0) {
+    prompt += `\n\nclose_app() puts away whatever is open and gives their board back — call it when they say they are done, ask for their board, or turn to something else.`;
   }
 
   // The capability this model invents most often. When picture search IS
@@ -708,7 +709,18 @@ export function buildSpeakerToolDeclarations(config: SpeakerToolConfig): Tool[] 
   if (!config.httpMode && config.useDirectAudio && !config.isMutedMode) {
     const hasApps = config.enabledApps.length > 0 || (config.availableCustomApps?.length ?? 0) > 0;
     if (!hasApps) return [];
-    return [{ functionDeclarations: [buildOpenAppTool(config.enabledApps, config.availableCustomApps ?? [])] }];
+    // close_app rides along (2026-08-20, Daniel). It takes NO arguments, so
+    // there is nothing in it for the model to malform — the diagnostic above is
+    // about argument bursts. The asymmetry it removes is worse than the risk:
+    // the Speaker could take over the student's screen and then had no way to
+    // give it back, and a student who cannot reach the app's own close target
+    // was stuck with it until someone else noticed.
+    return [{
+      functionDeclarations: [
+        buildOpenAppTool(config.enabledApps, config.availableCustomApps ?? []),
+        CLOSE_APP,
+      ],
+    }];
   }
 
   const declarations: FunctionDeclaration[] = [];

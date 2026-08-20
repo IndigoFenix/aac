@@ -751,6 +751,17 @@ export const aacSettings = pgTable("aac_settings", {
   // See planning-docs/aac-restaurant-menus.md §4.7.
   venueMenus: jsonb("venue_menus").default({}),
 
+  // Session recording — one settings OBJECT (not N booleans), read through
+  // normalizeSessionRecordingSettings in shared/aac/session-recording.ts and
+  // never raw. Off by default. Records the student on camera and the app's own
+  // screen to two synchronized files on the DEVICE'S OWN DISK, for cutting
+  // promotional material out of real sessions; nothing is ever uploaded, and no
+  // server route reads these files. Desktop (Electron) only — the iPad shell
+  // has no screen-capture path. Deliberately excluded from the AI-editable
+  // whitelists: the AI must never be able to start a camera recording of a
+  // student. See shared/aac/session-recording.ts.
+  sessionRecording: jsonb("session_recording").default({}),
+
   // Unified permitted YouTube content — array of { type: 'channel'|'playlist'|'video', id, label, description? }.
   // Supersedes permittedYoutubeChannels/permittedYoutubeVideos below. The two
   // legacy columns are retained (and backfilled into this one by migration

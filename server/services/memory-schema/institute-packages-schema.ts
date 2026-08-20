@@ -24,6 +24,7 @@ import {
   resolvePackagePermission,
 } from "../packages/packageAccess";
 import { addPackageGrant, deletePackage, removePackageGrant } from "../packages/packageLinks";
+import { resolveInstituteRefOrThrow } from "./institute-ref";
 import { validateBoardForPackage, describePackageFindings } from "@shared/package-validation";
 import {
   checkPackageForVisibility,
@@ -279,7 +280,11 @@ const packageOps: MemoryDBOperations<any> = {
 
   add: async (ctx, value) => {
     const userId = getUserId(ctx);
-    const instituteId = value.instituteId ?? (ctx.all.instituteId as string | undefined);
+    // An explicit instituteId may be a display name — Context_Institutes labels entries by
+    // name and never renders their uuid — so resolve it before the membership check below.
+    const instituteId = value.instituteId
+      ? await resolveInstituteRefOrThrow(value.instituteId, userId)
+      : (ctx.all.instituteId as string | undefined);
     if (!instituteId) {
       throw new Error(
         "instituteId is required — use the currently selected organization or pick one from Context_Institutes.",
@@ -365,7 +370,7 @@ const packageSchema: AgentMemoryFieldObjectWithDB = {
       id: "instituteId",
       type: "string",
       title: "Owning organization",
-      description: "Set on creation only; ownership cannot be transferred here.",
+      description: "Set on creation only; ownership cannot be transferred here. Omit it to use the currently selected organization.",
     },
     defaultMemberPermission: {
       id: "defaultMemberPermission",

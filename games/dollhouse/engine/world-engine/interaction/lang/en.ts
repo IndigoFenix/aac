@@ -129,6 +129,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // Motive batch: verbs, conditions, categories, new pool items.
   stay: { w: "stay" },
   like: { w: "like" },
+  see: { w: "see" },
   play: { w: "play" },
   read: { w: "read" },
   // Transitive "wear the shirt"; the bare want-to keeps the idiom via inf
@@ -245,6 +246,128 @@ const CENTRAL: Record<string, Lexeme> = {
   cut: { w: "cut", inf: "cut" },
   // The completion state ("the house is finished").
   finished: { w: "finished" },
+
+  // ── BUILDER-REACHABLE VOCABULARY (validate-builder-lexicon) ──────────────
+  // Every word below is one press away on the sentence builder — a category
+  // tab lists its whole lexical category, the modifier rail draws AXIS_WORDS,
+  // and a group chip wears its cluster id — yet none of them had a lexeme.
+  //
+  // In ENGLISH that was invisible, and the reason is worth stating once more
+  // (the furniture kinds and the construction trade each taught it already):
+  // `baseWord` falls back to the raw glyph id, and a glyph id IS an English
+  // word, so English looked perfect while he/es/pt put an English word on the
+  // child's board. `npm run validate-builder-lexicon` is what now catches it.
+  //
+  // Authored here rather than on a spec row because none of these is a spec
+  // OBJECT: they are function words, verbs, descriptors and category labels —
+  // the ruleset's own vocabulary. (A game-spec object's words live ONLY on its
+  // spec row; the no-overlap pin in lexicon-spec-words.test.ts holds that line.)
+
+  // Question words. The builder spells the where-ask "where" while the glyph
+  // registry spells it `place#question`; `classify` aliases them, and these are
+  // the words the BUTTONS wear either way.
+  what: { w: "what" },
+  where: { w: "where" },
+  who: { w: "who" },
+  how: { w: "how" },
+
+  // Connectives. `so` and `therefore` are separate LEXICON keys for one
+  // relation, as are `then`/`and` for sequence — both spellings surface as
+  // buttons, so both need words.
+  and: { w: "and" },
+  but: { w: "but" },
+  or: { w: "or" },
+  if: { w: "if" },
+  so: { w: "so" },
+  then: { w: "then" },
+
+  // Relations. `front` is the LEXICON key; `in_front_of` above is the same
+  // relation under the spelling the placement grammar uses.
+  above: { w: "above" },
+  from: { w: "from" },
+  front: { w: "in front of" },
+
+  // Descriptors — the modifier rail's axes (object-properties AXIS_WORDS).
+  // `good` shipped long ago and `bad` never did, which is exactly the kind of
+  // half-covered pair a validator catches and a reader doesn't.
+  bad: { w: "bad" },
+  broken: { w: "broken" },
+  full: { w: "full" },
+  long: { w: "long" },
+  short: { w: "short" },
+  tall: { w: "tall" },
+  wide: { w: "wide" },
+  thin: { w: "thin" },
+  new: { w: "new" },
+  old: { w: "old" },
+  sick: { w: "sick" },
+  warm: { w: "warm" },
+  // The possession axis. Both are rendered as CONSTRUCTIONS in the agreement
+  // rulesets (`cfg.my`, Hebrew's של) and filtered out of the adjective list —
+  // these lexemes are what the BUTTON and the gloss fallback say.
+  my: { w: "my" },
+  your: { w: "your" },
+
+  // Quantities (the fill + quantity axes, and the quantity tab).
+  all: { w: "all" },
+  many: { w: "many" },
+  some: { w: "some" },
+  none: { w: "none" },
+  one: { w: "one" },
+  two: { w: "two" },
+  three: { w: "three" },
+
+  // Verbs the parser has always understood and no ruleset could say. `v3` is
+  // authored wherever the bare `${w}s` rule is wrong — a sibilant stem, or a
+  // particle verb where the -s belongs on the FIRST word ("picks up").
+  come: { w: "come", inf: "come" },
+  wait: { w: "wait", inf: "wait" },
+  turn: { w: "turn", inf: "turn" },
+  push: { w: "push", v3: "pushes", inf: "push" },
+  pull: { w: "pull", inf: "pull" },
+  drop: { w: "drop", inf: "drop" },
+  pick_up: { w: "pick up", v3: "picks up", inf: "pick up" },
+  fill: { w: "fill", inf: "fill" },
+  fix: { w: "fix", v3: "fixes", inf: "fix" },
+  dig: { w: "dig", inf: "dig" },
+  plant: { w: "plant", inf: "plant" },
+  shut: { w: "shut", inf: "shut" },
+  hug: { w: "hug", inf: "hug" },
+  share: { w: "share", inf: "share" },
+  teach: { w: "teach", v3: "teaches", inf: "teach" },
+  feel: { w: "feel", inf: "feel" },
+  wake_up: { w: "wake up", v3: "wakes up", inf: "wake up" },
+  brush_teeth: { w: "brush teeth", v3: "brushes teeth", inf: "brush teeth" },
+
+  // Social acts. Each is an alias of a word that already had a lexeme
+  // (`hi`/`hello`, `goodbye`/`bye`, `ok`/`okay`, `confused`/`dont_understand`)
+  // — and BOTH spellings are listed on the social tab, so both need words.
+  hello: { w: "hello" },
+  bye: { w: "bye" },
+  okay: { w: "okay" },
+  thanks: { w: "thanks" },
+  sorry: { w: "sorry" },
+  mine: { w: "mine" },
+  again: { w: "again" },
+  dont_understand: { w: "I don't understand" },
+
+  // Deixis the person tab lists beside i_me/you/we.
+  that: { w: "that" },
+  us: { w: "us", pl: true },
+
+  // GROUP-CHIP LABELS — the object-property cluster ids (object-properties.ts
+  // OBJECT_PROPERTIES). A chip wears `baseWord(lang, id)`, so an untranslated
+  // property id is an English chip on a Hebrew board. `food`, `toy`, `clothing`
+  // and `book` already had words; these are the nine that did not.
+  container: { w: "container" },
+  openable: { w: "opens" },
+  device: { w: "device" },
+  appliance: { w: "appliance" },
+  tableware: { w: "dishes", pl: true },
+  furniture: { w: "furniture", mass: true },
+  instrument: { w: "instrument" },
+  material: { w: "material" },
+  structure: { w: "structure" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec

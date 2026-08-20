@@ -52,32 +52,68 @@ output "lambda_function_url" {
   ) : null
 }
 
-# Frontend bucket (only when using Lambda)
+# Frontend bucket (whenever the S3 + CloudFront stack is provisioned)
 output "frontend_bucket_name" {
   description = "S3 bucket for frontend static files"
-  value       = var.use_lambda ? aws_s3_bucket.frontend[0].bucket : null
+  value       = local.cdn_phase1 ? aws_s3_bucket.frontend[0].bucket : null
 }
 
-# CloudFront distribution (only when Lambda exists)
+# CloudFront distribution (once the backend origin exists)
 output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID (for cache invalidation)"
-  value       = var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].id : null
+  value       = local.cdn_phase2 ? aws_cloudfront_distribution.frontend[0].id : null
 }
 
 output "cloudfront_domain_name" {
   description = "CloudFront distribution domain name (landing page)"
-  value       = var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].domain_name : null
+  value       = local.cdn_phase2 ? aws_cloudfront_distribution.frontend[0].domain_name : null
 }
 
-# App subdomain CloudFront (only when Lambda exists and domain is set)
+# App subdomain CloudFront
 output "app_cloudfront_distribution_id" {
   description = "CloudFront distribution ID for app subdomain"
-  value       = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? aws_cloudfront_distribution.app[0].id : null
+  value       = local.cdn_phase2 && var.domain_name != "" ? aws_cloudfront_distribution.app[0].id : null
 }
 
 output "app_cloudfront_domain_name" {
   description = "CloudFront distribution domain name for app subdomain"
-  value       = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? aws_cloudfront_distribution.app[0].domain_name : null
+  value       = local.cdn_phase2 && var.domain_name != "" ? aws_cloudfront_distribution.app[0].domain_name : null
+}
+
+# =============================================================================
+# ECS path — consumed by .github/workflows/deploy.yml
+# =============================================================================
+output "ecs_cluster_name" {
+  description = "ECS cluster name"
+  value       = aws_ecs_cluster.main.name
+}
+
+output "ecs_service_name" {
+  description = "ECS service name"
+  value       = aws_ecs_service.main.name
+}
+
+output "ecs_task_family" {
+  description = "ECS task definition family (the deploy step renders the new image onto its latest revision)"
+  value       = aws_ecs_task_definition.main.family
+}
+
+output "ecs_container_name" {
+  description = "Container name inside the task definition"
+  value       = "aivota-app"
+}
+
+output "ecs_active" {
+  description = "true when the ECS service is the live backend (use_lambda = false)"
+  value       = !var.use_lambda
+}
+
+# Direct backend URL (bypasses CloudFront). Bake into the packaged AAC clients.
+output "api_url" {
+  description = "Direct HTTPS URL of the backend: api.<domain> on the ECS path, the API Gateway endpoint on Lambda"
+  value = var.use_lambda ? local.api_url_output : (
+    local.api_host != "" ? "https://${local.api_host}" : "http://${aws_lb.main.dns_name}"
+  )
 }
 
 # S3 Buckets
@@ -180,10 +216,14 @@ output "deployment_summary" {
   ) : join("\n", [
     "",
     "========================================",
-    "Deployment: ECS (Containers)",
+    "Deployment: ECS Fargate (${var.ecs_desired_count} task(s))",
     "========================================",
     "",
-    "URL: https://${var.domain_name}",
+    "Landing Page: https://${var.domain_name}",
+    "App URL: https://app.${var.domain_name}",
+    "API URL: ${local.api_host != "" ? "https://${local.api_host}" : "http://${aws_lb.main.dns_name}"}",
+    "Frontend: ${local.ecs_cdn ? "S3 + CloudFront" : "served by the ECS tasks"}",
+    "Redis bus: ${var.enable_redis ? "on" : "off (Postgres LISTEN/NOTIFY)"}",
     "ALB: ${aws_lb.main.dns_name}",
     ""
   ])

@@ -29,6 +29,8 @@ import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
+import { useSessionRecording } from "@/hooks/useSessionRecording";
+import { RecordingIndicator } from "@/components/RecordingIndicator";
 import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { useVoiceIdentification } from "@/hooks/useVoiceIdentification";
@@ -226,7 +228,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for voicing/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onAutoAudioScanChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onRequestBoardOpenReady, onRequestHomeActionReady, onNoteAppSpeechReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
+function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onSessionIdChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onAutoAudioScanChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onRequestBoardOpenReady, onRequestHomeActionReady, onNoteAppSpeechReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
@@ -240,6 +242,9 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   onSendMessageReady?: (fn: ((msg: string, opts?: { caption?: "student" }) => Promise<void>) | null) => void;
   onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
+  /** The live session id, lifted for the recording manifest so a clip on disk
+   *  can be tied back to the session that produced it. */
+  onSessionIdChange?: (sessionId: string | null) => void;
   onBinaryChoiceChange?: (options: import("@/hooks/dual-agent-types").BinaryChoiceOption[] | null, escapeKind: "maybe" | "neither" | null, inputGlyphs: Array<{ glyph: string; fallback?: string }> | null, dismiss: () => void) => void;
   onAlarmChange?: (alarm: { level: "alert" | "emergency"; reason: string } | null, cancel: () => void) => void;
   onSeizureConfigChange?: (cfg: import("@shared/aac/seizure-config").ClientSeizureConfig | null) => void;
@@ -286,7 +291,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
    *  close exactly when the interpreted sentence starts. */
   onVoicingStudentChange?: (voicing: boolean) => void;
 }) {
-  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, requestBoardOpen, requestHomeAction, noteAppSpeech, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, autoAudioScan, processing, voicingStudent } = useDualAgentContext();
+  const { muteState, voiceButtons, playGlyph, sendGamePress, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice, activeAlarm, cancelAlarm, clearSession, initialize, paused, setPaused, activeApp, dismissApp, launchApp, requestAppOpen, requestBoardOpen, requestHomeAction, noteAppSpeech, appOpenPending, registerAppCanvasCapture, enabledApps, availableCustomApps, permittedWebsites: permittedWebsitesFromCtx, studentId, guessingMode, pressSuggestion, pressNarrow, enterGuessing, enterGuessingFromBuilder, exitGuessing, setBuilderVisible, contextButtons: contextButtonsFromCtx, sendConstructionState, constructionSuggestions, constructionMemoryChips, socialPeerPreview, socialSession, seizureConfig, autoAudioScan, processing, voicingStudent, sessionId } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(muteState);
@@ -413,6 +418,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   useEffect(() => {
     onInitializedChange?.(isInitialized);
   }, [isInitialized, onInitializedChange]);
+
+  useEffect(() => {
+    onSessionIdChange?.(sessionId ?? null);
+  }, [sessionId, onSessionIdChange]);
 
   useEffect(() => {
     onBinaryChoiceChange?.(binaryChoiceOptions, binaryChoiceEscapeKind, binaryChoiceInputGlyphs, dismissBinaryChoice);
@@ -686,6 +695,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [currentSpeech, setCurrentSpeech] = useState<string>("");
   const [showGestureHints, setShowGestureHints] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  // Lifted from DualAgentBridge — used only to stamp recording manifests.
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
   const [currentVisualContext, setCurrentVisualContext] = useState<string>("");
   const [isMainUserPresent, setIsMainUserPresent] = useState<boolean>(true);
   const [anyPersonPresent, setAnyPersonPresent] = useState<boolean>(true);
@@ -1150,12 +1161,25 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     captureFrameFromCamera,
     captureUserFrame,
     userVideoEl,
+    userStream,
     autoAssignCameras,
     globalError
   } = useMultiCamera({ autoStart: true });
 
   // Get shared camera stream from CameraProvider context
   const { stream: sharedCameraStream, startCamera: startSharedCamera } = useCamera();
+
+  // Optional on-device session recording (desktop only). Reads the SHARED
+  // camera stream — never its own capture — and writes to the device's disk
+  // through the Electron shell; nothing here uploads. Inert unless the
+  // student's settings enable it, and a no-op entirely on iPad/web.
+  // See shared/aac/session-recording.ts.
+  const { status: recordingStatus } = useSessionRecording({
+    raw: userProfile?.aacSettings?.sessionRecording,
+    cameraStream: userStream,
+    studentId: studentId ?? null,
+    sessionId: liveSessionId,
+  });
 
   // Capture a user-camera frame WITHOUT spinning up a transient <video> element.
   // Prefers the single shared user-camera <video> (captureUserFrame); only falls
@@ -2443,6 +2467,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       boardRebuilding={serverProcessing.board}
     >
     <div className="h-dvh flex flex-col relative overflow-hidden bg-bg-soft pb-safe pt-safe">
+    {/* A camera pointed at a child is never allowed to be recording invisibly. */}
+    <RecordingIndicator active={recordingStatus.clipOpen} />
       {/* Eyegaze Provider Detection Notification */}
       <AnimatePresence>
         {eyegazeNotification && (
@@ -3411,6 +3437,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onSetBuilderVisibleReady={(fn) => { setBuilderVisibleRef.current = fn; }}
             onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
+            onSessionIdChange={setLiveSessionId}
             onBinaryChoiceChange={(options, escapeKind, inputGlyphs, dismiss) => { setBinaryChoiceOptions(options); setBinaryChoiceEscapeKind(escapeKind); setBinaryChoiceInputGlyphs(inputGlyphs); dismissBinaryChoiceRef.current = dismiss; }}
             onAlarmChange={(alarm, cancel) => { setAlarmInfo(alarm); cancelAlarmRef.current = cancel; }}
             onSeizureConfigChange={setServerSeizure}

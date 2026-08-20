@@ -132,6 +132,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // (the intent construction "vou comer" needs the infinitive).
   eat: { w: "como", v2: "comes", v3: "come", v3p: "comem", v1p: "comemos", inf: "comer" },
   drink: { w: "bebo", v2: "bebes", v3: "bebe", v3p: "bebem", v1p: "bebemos", inf: "beber" },
+  see: { w: "vejo", v2: "vês", v3: "vê", v3p: "veem", v1p: "vemos", inf: "ver" },
   sleep: { w: "durmo", v2: "dormes", v3: "dorme", v3p: "dormem", v1p: "dormimos", inf: "dormir" },
   // THE POSTURE PAIR (build order L15) — live glyphs with no lexeme here, so
   // the open-ground dwell said "Eu rest." and the bare self-need "Eu sit."
@@ -182,6 +183,136 @@ const CENTRAL: Record<string, Lexeme> = {
   cut: { w: "corto", v2: "cortas", v3: "corta", v3p: "cortam", v1p: "cortamos", inf: "cortar" },
   // The completion state ("a casa está pronta").
   finished: { w: "pronto", f: "pronta" },
+
+  // ── BUILDER-REACHABLE VOCABULARY (validate-builder-lexicon) ──────────────
+  // 84 words the sentence builder can put in front of a child — a category tab
+  // lists its whole lexical category, the modifier rail draws AXIS_WORDS, a
+  // group chip wears its cluster id — every one of which rendered as an ENGLISH
+  // word on the Portuguese board, because `baseWord` falls back to the glyph id
+  // and a glyph id is English. The same failure the construction trade had;
+  // `npm run validate-builder-lexicon` now pins it.
+
+  // Question words.
+  what: { w: "o que" },
+  where: { w: "onde" },
+  who: { w: "quem" },
+  how: { w: "como" },
+  why: { w: "por que" },
+
+  // Connectives. Where PT_CONN (below) carries a distinct sentence-joining
+  // form, these are the BUTTON words — `connective()` now falls back to the
+  // lexicon, so the two can no longer drift apart silently.
+  and: { w: "e" },
+  but: { w: "mas" },
+  or: { w: "ou" },
+  if: { w: "se" },
+  so: { w: "então" },
+  then: { w: "depois" },
+  because: { w: "porque" },
+  therefore: { w: "então" },
+  in_order_to: { w: "para que" },
+  when: { w: "quando" },
+  until: { w: "até que" },
+
+  // Relations. `above` is "acima de", NOT "em cima de": `over` already owns
+  // that phrase, and two placement buttons reading identically would be two
+  // buttons a child cannot tell apart. `front` is the LEXICON key for the same
+  // relation `in_front_of` spells out.
+  above: { w: "acima de" },
+  from: { w: "de" },
+  front: { w: "na frente de" },
+  to: { w: "a" },
+  in: { w: "em" },
+  with: { w: "com" },
+  for: { w: "para" },
+
+  // Descriptors — the modifier rail's axes. The -o words need no `f`: the
+  // ruleset's own -o→-a rule handles them. `bad` is the exception (mau/má).
+  bad: { w: "mau", f: "má" },
+  broken: { w: "quebrado" },
+  full: { w: "cheio" },
+  long: { w: "comprido" },
+  short: { w: "curto" },
+  tall: { w: "alto" },
+  wide: { w: "largo" },
+  thin: { w: "fino" },
+  new: { w: "novo" },
+  old: { w: "velho" },
+  sick: { w: "doente" },
+  warm: { w: "morno" },
+  // The possession axis — rendered as a construction by `cfg.my` and filtered
+  // out of the adjective walk; these are what the BUTTON and the gloss say.
+  my: { w: "meu" },
+  your: { w: "seu" },
+
+  // Quantities (the fill + quantity axes, and the quantity tab).
+  all: { w: "tudo" },
+  many: { w: "muitos" },
+  some: { w: "um pouco" },
+  none: { w: "nada" },
+  one: { w: "um" },
+  two: { w: "dois" },
+  three: { w: "três" },
+
+  // Verbs — 1sg in `w`, plus the infinitive the intent periphrasis reads.
+  // Brazilian forms throughout, matching this ruleset's `você` (youIsThird).
+  come: { w: "venho", v2: "vens", v3: "vem", v3p: "vêm", v1p: "vimos", inf: "vir" },
+  wait: { w: "espero", v2: "esperas", v3: "espera", v3p: "esperam", v1p: "esperamos", inf: "esperar" },
+  stay: { w: "fico", v2: "ficas", v3: "fica", v3p: "ficam", v1p: "ficamos", inf: "ficar" },
+  turn: { w: "viro", v2: "viras", v3: "vira", v3p: "viram", v1p: "viramos", inf: "virar" },
+  push: { w: "empurro", v2: "empurras", v3: "empurra", v3p: "empurram", v1p: "empurramos", inf: "empurrar" },
+  pull: { w: "puxo", v2: "puxas", v3: "puxa", v3p: "puxam", v1p: "puxamos", inf: "puxar" },
+  drop: { w: "solto", v2: "soltas", v3: "solta", v3p: "soltam", v1p: "soltamos", inf: "soltar" },
+  // "levantar" (lift into the hands), NOT "pegar": `take` above already owns
+  // "pego"/"pegar". The two are different acts — take ACQUIRES, pick_up LIFTS —
+  // and one word on both buttons would collapse that distinction on the board.
+  pick_up: { w: "levanto", v2: "levantas", v3: "levanta", v3p: "levantam", v1p: "levantamos", inf: "levantar" },
+  fill: { w: "encho", v2: "enches", v3: "enche", v3p: "enchem", v1p: "enchemos", inf: "encher" },
+  fix: { w: "conserto", v2: "consertas", v3: "conserta", v3p: "consertam", v1p: "consertamos", inf: "consertar" },
+  dig: { w: "cavo", v2: "cavas", v3: "cava", v3p: "cavam", v1p: "cavamos", inf: "cavar" },
+  plant: { w: "planto", v2: "plantas", v3: "planta", v3p: "plantam", v1p: "plantamos", inf: "plantar" },
+  shut: { w: "fecho", v2: "fechas", v3: "fecha", v3p: "fecham", v1p: "fechamos", inf: "fechar" },
+  hug: { w: "abraço", v2: "abraças", v3: "abraça", v3p: "abraçam", v1p: "abraçamos", inf: "abraçar" },
+  share: { w: "compartilho", v2: "compartilhas", v3: "compartilha", v3p: "compartilham", v1p: "compartilhamos", inf: "compartilhar" },
+  teach: { w: "ensino", v2: "ensinas", v3: "ensina", v3p: "ensinam", v1p: "ensinamos", inf: "ensinar" },
+  feel: { w: "sinto", v2: "sentes", v3: "sente", v3p: "sentem", v1p: "sentimos", inf: "sentir" },
+  wake_up: { w: "acordo", v2: "acordas", v3: "acorda", v3p: "acordam", v1p: "acordamos", inf: "acordar" },
+  brush_teeth: {
+    w: "escovo os dentes", v2: "escovas os dentes", v3: "escova os dentes",
+    v3p: "escovam os dentes", v1p: "escovamos os dentes", inf: "escovar os dentes",
+  },
+  like: { w: "gosto", v2: "gostas", v3: "gosta", v3p: "gostam", v1p: "gostamos", inf: "gostar" },
+
+  // Social acts — each the alias of a word that already had a lexeme
+  // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
+  // are listed on the social tab, so both need words.
+  hello: { w: "olá" },
+  bye: { w: "tchau" },
+  okay: { w: "tá bom" },
+  thanks: { w: "obrigado" },
+  sorry: { w: "desculpa" },
+  mine: { w: "meu" },
+  again: { w: "outra vez" },
+  dont_understand: { w: "não entendo" },
+
+  // Deixis the person tab lists beside i_me/you/we.
+  this: { w: "isto" },
+  that: { w: "isso" },
+  us: { w: "nós", g: "m", pl: true },
+
+  // GROUP-CHIP LABELS — the object-property cluster ids. A chip wears
+  // `baseWord(lang, id)`, so an untranslated id is an English chip on a
+  // Portuguese board. food/toy/clothing/book already had words; these are the
+  // nine that did not.
+  container: { w: "recipiente", g: "m" },
+  openable: { w: "abre" },
+  device: { w: "aparelho", g: "m" },
+  appliance: { w: "eletrodoméstico", g: "m" },
+  tableware: { w: "louça", g: "f" },
+  furniture: { w: "móvel", g: "m", plw: "móveis" },
+  instrument: { w: "instrumento", g: "m" },
+  material: { w: "material", g: "m", plw: "materiais" },
+  structure: { w: "estrutura", g: "f" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec
@@ -333,7 +464,12 @@ export const pt = makeRomance({
     return `${np} ${be} ${tail}.`;
   },
   smell: { v3: "cheira", v3p: "cheiram" },
-  connective: (head) => PT_CONN[head] ?? head,
+  // PT_CONN is the OVERRIDE — the form a connective takes when it joins two
+  // clauses and that differs from the word on its button ("para" vs "para
+  // que"). Everything else falls through to the lexicon, so a connective with
+  // one form is authored once. The raw head stays as the last resort, but
+  // `validate-builder-lexicon` now fails before a head can reach it.
+  connective: (head) => PT_CONN[head] ?? L[head]?.w ?? head,
   why: "Por quê?",
   whyWant: (obj) => `Por que você quer ${obj}?`,
   q: (s) => `${s}?`,

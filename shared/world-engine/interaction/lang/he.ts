@@ -62,10 +62,11 @@ const CENTRAL: Record<string, Lexeme> = {
   know: { w: "יודע", f: "יודעת" },
   understand: { w: "מבין", f: "מבינה" },
   go: { w: "הולך", f: "הולכת", vmpl: "הולכים", vfpl: "הולכות", inf: "ללכת" },
-  // The movement gaits + pursuit family (semantic-gaps batch). NOTE walk IS
-  // go in Hebrew (ללכת covers both) — the cross-language signal that the
-  // pair is one primitive wearing two English words.
-  walk: { w: "הולך", f: "הולכת", vmpl: "הולכים", vfpl: "הולכות", inf: "ללכת" },
+  // The movement gaits + pursuit family (semantic-gaps batch). Hebrew is what
+  // proved `walk` redundant: ללכת covers both go and walk, so this ruleset had
+  // to give the two English words ONE Hebrew word — two identical buttons on a
+  // Hebrew board. That, plus the shared artwork and the shared goTo, is why
+  // `walk` was deleted (2026-08-20); `run` is a real gait and stays.
   run: { w: "רץ", f: "רצה", vmpl: "רצים", vfpl: "רצות", inf: "לרוץ" },
   chase: { w: "רודף", f: "רודפת", vmpl: "רודפים", vfpl: "רודפות", inf: "לרדוף" },
   follow: { w: "עוקב", f: "עוקבת", vmpl: "עוקבים", vfpl: "עוקבות", inf: "לעקוב" },
@@ -99,7 +100,6 @@ const CENTRAL: Record<string, Lexeme> = {
   hard: { w: "קשה" },
   why: { w: "למה" },
   because: { w: "כי" },
-  therefore: { w: "לכן" },
   in_order_to: { w: "כדי ש" },
   when: { w: "כש" },
   until: { w: "עד ש" },
@@ -107,7 +107,11 @@ const CENTRAL: Record<string, Lexeme> = {
   yes: { w: "כן" },
   no: { w: "לא" },
   ok: { w: "בסדר", f: "בסדר" },
-  hi: { w: "שלום" },
+  // "היי", NOT "שלום": Hebrew שלום is BOTH the greeting and the farewell, so a
+  // hello button reading שלום beside a goodbye button is a distinction the
+  // child cannot see. היי is unambiguously the greeting (and is already what
+  // the client's own `aac.glyph.hi` says).
+  hi: { w: "היי" },
   goodbye: { w: "להתראות" },
   thank_you: { w: "תודה" },
   confused: { w: "מבולבל", f: "מבולבלת" },
@@ -163,6 +167,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // Motive batch: verbs (present + infinitive), conditions, categories, items.
   stay: { w: "נשאר", f: "נשארת", inf: "להישאר" },
   like: { w: "אוהב", f: "אוהבת" },
+  see: { w: "רואה", f: "רואה", vmpl: "רואים", vfpl: "רואות", inf: "לראות" },
   play: { w: "משחק", f: "משחקת", inf: "לשחק" },
   read: { w: "קורא", f: "קוראת", inf: "לקרוא" },
   wear: { w: "מתלבש", f: "מתלבשת", inf: "להתלבש" },
@@ -248,6 +253,123 @@ const CENTRAL: Record<string, Lexeme> = {
   cut: { w: "כורת", f: "כורתת", vmpl: "כורתים", vfpl: "כורתות", inf: "לכרות" },
   // The completion state ("הבית מוכן").
   finished: { w: "מוכן", f: "מוכנה", mpl: "מוכנים", fpl: "מוכנות" },
+
+  // ── BUILDER-REACHABLE VOCABULARY (validate-builder-lexicon) ──────────────
+  // 71 words the sentence builder can put in front of a child — a category tab
+  // lists its whole lexical category, the modifier rail draws AXIS_WORDS, a
+  // group chip wears its cluster id — every one of which rendered as an ENGLISH
+  // word on the Hebrew board, because `baseWord` falls back to the glyph id and
+  // a glyph id is English. The same failure the furniture kinds and the
+  // construction trade each had; `npm run validate-builder-lexicon` now pins it.
+
+  // Question words. The builder spells the where-ask "where" while the registry
+  // spells it `place#question` — `classify` aliases them; these are the words
+  // the BUTTONS wear either way.
+  what: { w: "מה" },
+  where: { w: "איפה" },
+  who: { w: "מי" },
+  how: { w: "איך" },
+
+  // Connectives. וגם rather than the bare ו־: a button has to stand on its own,
+  // and a bound prefix cannot (ו alone reads as a letter, not a word).
+  and: { w: "וגם" },
+  but: { w: "אבל" },
+  or: { w: "או" },
+  if: { w: "אם" },
+  so: { w: "אז" },
+  then: { w: "אחר כך" },
+
+  // Relations. `from` is the ONE-LETTER preposition מ־, which `prepNp` fuses to
+  // the following definite noun (מ + הקופסה → מהקופסה) — exactly why it is
+  // spelled as the bare letter here rather than as מן.
+  from: { w: "מ" },
+
+  // Descriptors — the modifier rail's axes. Each carries its feminine, because
+  // the regular ה suffix is wrong often enough to matter (חולה, not חולהת).
+  bad: { w: "רע", f: "רעה" },
+  broken: { w: "שבור", f: "שבורה" },
+  full: { w: "מלא", f: "מלאה" },
+  long: { w: "ארוך", f: "ארוכה" },
+  short: { w: "קצר", f: "קצרה" },
+  tall: { w: "גבוה", f: "גבוהה" },
+  wide: { w: "רחב", f: "רחבה" },
+  thin: { w: "דק", f: "דקה" },
+  new: { w: "חדש", f: "חדשה" },
+  old: { w: "ישן", f: "ישנה" },
+  sick: { w: "חולה", f: "חולה", mpl: "חולים", fpl: "חולות" },
+  warm: { w: "חמים", f: "חמימה" },
+  // The possession axis. Hebrew says possession with של, and the renderers
+  // already build that construction and filter these out of the adjective walk
+  // — so the forms are INVARIANT on purpose: if any path did agree them, the
+  // regular suffix would synthesise שליה, a word that does not exist.
+  my: { w: "שלי", f: "שלי", mpl: "שלי", fpl: "שלי" },
+  your: { w: "שלך", f: "שלך", mpl: "שלך", fpl: "שלך" },
+
+  // Quantities (the fill + quantity axes, and the quantity tab). `many` already
+  // had a word and is deliberately absent here.
+  all: { w: "הכל" },
+  some: { w: "קצת" },
+  none: { w: "כלום" },
+  one: { w: "אחד" },
+  two: { w: "שניים" },
+  three: { w: "שלושה" },
+
+  // Verbs — present tense in four agreement forms + the infinitive the intent
+  // periphrasis reads ("אני הולך לחכות").
+  come: { w: "בא", f: "באה", vmpl: "באים", vfpl: "באות", inf: "לבוא" },
+  wait: { w: "מחכה", f: "מחכה", vmpl: "מחכים", vfpl: "מחכות", inf: "לחכות" },
+  turn: { w: "מסתובב", f: "מסתובבת", vmpl: "מסתובבים", vfpl: "מסתובבות", inf: "להסתובב" },
+  push: { w: "דוחף", f: "דוחפת", vmpl: "דוחפים", vfpl: "דוחפות", inf: "לדחוף" },
+  pull: { w: "מושך", f: "מושכת", vmpl: "מושכים", vfpl: "מושכות", inf: "למשוך" },
+  // DROP is the setting-down (מוריד), deliberately not שם — `put` already owns
+  // the placement verb, and a board that spelled both the same would collapse
+  // two different acts into one button.
+  drop: { w: "מוריד", f: "מורידה", vmpl: "מורידים", vfpl: "מורידות", inf: "להוריד" },
+  pick_up: { w: "מרים", f: "מרימה", vmpl: "מרימים", vfpl: "מרימות", inf: "להרים" },
+  fill: { w: "ממלא", f: "ממלאת", vmpl: "ממלאים", vfpl: "ממלאות", inf: "למלא" },
+  fix: { w: "מתקן", f: "מתקנת", vmpl: "מתקנים", vfpl: "מתקנות", inf: "לתקן" },
+  dig: { w: "חופר", f: "חופרת", vmpl: "חופרים", vfpl: "חופרות", inf: "לחפור" },
+  plant: { w: "שותל", f: "שותלת", vmpl: "שותלים", vfpl: "שותלות", inf: "לשתול" },
+  shut: { w: "סוגר", f: "סוגרת", vmpl: "סוגרים", vfpl: "סוגרות", inf: "לסגור" },
+  hug: { w: "מחבק", f: "מחבקת", vmpl: "מחבקים", vfpl: "מחבקות", inf: "לחבק" },
+  share: { w: "משתף", f: "משתפת", vmpl: "משתפים", vfpl: "משתפות", inf: "לשתף" },
+  teach: { w: "מלמד", f: "מלמדת", vmpl: "מלמדים", vfpl: "מלמדות", inf: "ללמד" },
+  feel: { w: "מרגיש", f: "מרגישה", vmpl: "מרגישים", vfpl: "מרגישות", inf: "להרגיש" },
+  wake_up: { w: "מתעורר", f: "מתעוררת", vmpl: "מתעוררים", vfpl: "מתעוררות", inf: "להתעורר" },
+  brush_teeth: {
+    w: "מצחצח שיניים", f: "מצחצחת שיניים",
+    vmpl: "מצחצחים שיניים", vfpl: "מצחצחות שיניים", inf: "לצחצח שיניים",
+  },
+
+  // Social acts — each the alias of a word that already had a lexeme
+  // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
+  // are listed on the social tab, so both need words.
+  thanks: { w: "תודה" },
+  sorry: { w: "סליחה" },
+  mine: { w: "שלי" },
+  again: { w: "עוד פעם" },
+  dont_understand: { w: "לא מבין" },
+
+  // Deixis the person tab lists beside i_me/you/we.
+  this: { w: "זה" },
+  that: { w: "ההוא" },
+
+  // GROUP-CHIP LABELS — the object-property cluster ids. A chip wears
+  // `baseWord(lang, id)`, so an untranslated id is an English chip on a Hebrew
+  // board. food/toy/clothing/book already had words; these are the nine that
+  // did not. `structure` is בניין and `building` stays מבנה — two chips that
+  // shared a label would be two buttons a child cannot tell apart.
+  container: { w: "מיכל", g: "m" },
+  openable: { w: "נפתח", f: "נפתחת" },
+  device: { w: "מכשיר", g: "m" },
+  appliance: { w: "מכשיר חשמלי", g: "m" },
+  tableware: { w: "כלים", g: "m", pl: true },
+  furniture: { w: "רהיט", g: "m" },
+  // A CONSTRUCT PAIR: the definite ה lands inside the compound (כלי הנגינה),
+  // never on the first word — which is exactly what `defw` exists for.
+  instrument: { w: "כלי נגינה", g: "m", defw: "כלי הנגינה" },
+  material: { w: "חומר", g: "m" },
+  structure: { w: "בניין", g: "m", plw: "בניינים" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec

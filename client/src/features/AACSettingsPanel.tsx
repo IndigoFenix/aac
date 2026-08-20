@@ -27,6 +27,20 @@ import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
 import type { DefinedGesture, HomeAction, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { normalizeHomeActions } from '@shared/home-actions';
+import {
+  DEFAULT_SESSION_RECORDING,
+  IDLE_TAIL_SECONDS_MAX,
+  IDLE_TAIL_SECONDS_MIN,
+  MAX_CLIP_MINUTES_MAX,
+  MAX_CLIP_MINUTES_MIN,
+  MAX_STORAGE_MB_MAX,
+  MAX_STORAGE_MB_MIN,
+  PRE_ROLL_SECONDS_MAX,
+  PRE_ROLL_SECONDS_MIN,
+  normalizeSessionRecordingSettings,
+  type RecordingQuality,
+  type SessionRecordingSettings,
+} from '@shared/aac/session-recording';
 import { LANGUAGE_LEVELS, DEFAULT_LANGUAGE_LEVEL_INT } from '@shared/aac-language-level';
 import { tierByKey } from '@shared/aac/budget-tiers';
 import { processVoice } from '@shared/aac/pitch-shifter';
@@ -221,6 +235,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
   const [homeActions, setHomeActions] = useState<HomeAction[]>([]);
+  // One settings OBJECT, held whole and edited through setSessionRecording —
+  // mirroring how it is stored. See shared/aac/session-recording.ts.
+  const [sessionRecording, setSessionRecording] =
+    useState<SessionRecordingSettings>(DEFAULT_SESSION_RECORDING);
   const [definedGestures, setDefinedGestures] = useState<DefinedGesture[]>([]);
   const [permittedYoutubeItems, setPermittedYoutubeItems] = useState<PermittedYoutubeItem[]>([]);
   const [youtubeInput, setYoutubeInput] = useState('');
@@ -552,6 +570,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
+      setSessionRecording(normalizeSessionRecordingSettings(aac?.sessionRecording));
       setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const acc = aac?.accessibility || {};
@@ -612,6 +631,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       // Normalized on BOTH sides of this comparison (state is seeded from the same
       // helper), so an untouched list compares equal instead of showing dirty.
       const originalHomeActions = normalizeHomeActions(aac?.homeActions);
+      const originalSessionRecording = normalizeSessionRecordingSettings(aac?.sessionRecording);
       const originalDefinedGestures = Array.isArray(aac?.definedGestures) ? aac.definedGestures : [];
       const originalPermittedYoutubeItems = resolvePermittedYoutubeItems(aac);
       const origAcc = aac?.accessibility || {};
@@ -663,6 +683,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
         JSON.stringify(homeActions) !== JSON.stringify(originalHomeActions) ||
+        JSON.stringify(sessionRecording) !== JSON.stringify(originalSessionRecording) ||
         JSON.stringify(definedGestures) !== JSON.stringify(originalDefinedGestures) ||
         JSON.stringify(permittedYoutubeItems) !== JSON.stringify(originalPermittedYoutubeItems) ||
         accessFontSize !== origAccessFontSize ||
@@ -671,7 +692,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -717,6 +738,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
       homeActions?: HomeAction[];
+      sessionRecording?: SessionRecordingSettings;
       definedGestures?: DefinedGesture[];
       permittedYoutubeItems?: PermittedYoutubeItem[];
       accessibility?: Record<string, any>;
@@ -824,6 +846,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       // Sanitized through the shared chokepoint so half-filled rows (a slot the
       // clinician added but never named) never reach the stored blob.
       homeActions: normalizeHomeActions(homeActions),
+      // Clamped through the shared chokepoint on the way out too, so a value
+      // typed into a number field can never be stored outside its range.
+      sessionRecording: normalizeSessionRecordingSettings(sessionRecording),
       definedGestures,
       permittedYoutubeItems,
       accessibility: {
@@ -881,6 +906,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
+      setSessionRecording(normalizeSessionRecordingSettings(aac?.sessionRecording));
       setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
       const accR = aac?.accessibility || {};
@@ -3222,6 +3248,165 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setShareMonitorNotesWithInstitute}
                 />
               </div>
+
+              {/* Session recording. It sits under Privacy because that is what
+                  it is: a camera pointed at a child, writing to a disk. What it
+                  produces never leaves the device — no route uploads it. See
+                  shared/aac/session-recording.ts. */}
+              <CollapsibleSubSection
+                icon={<Video className="w-4 h-4" />}
+                title={t('aacSettings.sessionRecordingTitle')}
+                description={t('aacSettings.sessionRecordingDesc')}
+              >
+                <CardContent className="space-y-4">
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    {t('aacSettings.sessionRecordingConsentNotice')}
+                  </div>
+
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">
+                        {t('aacSettings.sessionRecordingEnable')}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t('aacSettings.sessionRecordingEnableDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={sessionRecording.enabled}
+                      onCheckedChange={(enabled) =>
+                        setSessionRecording((prev) => ({ ...prev, enabled }))}
+                      data-testid="switch-session-recording"
+                    />
+                  </div>
+
+                  {sessionRecording.enabled && (
+                    <div className="space-y-4 border-s-2 border-muted ps-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-sm font-medium">
+                          {t('aacSettings.sessionRecordingQuality')}
+                        </Label>
+                        <Select
+                          value={sessionRecording.quality}
+                          onValueChange={(quality) =>
+                            setSessionRecording((prev) => ({
+                              ...prev, quality: quality as RecordingQuality,
+                            }))}
+                        >
+                          <SelectTrigger data-testid="select-session-recording-quality">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="720p">{t('aacSettings.sessionRecordingQuality720')}</SelectItem>
+                            <SelectItem value="1080p">{t('aacSettings.sessionRecordingQuality1080')}</SelectItem>
+                            <SelectItem value="max">{t('aacSettings.sessionRecordingQualityMax')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {t('aacSettings.sessionRecordingQualityDesc')}
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingPreRoll')}
+                          </Label>
+                          <Input
+                            type="number"
+                            min={PRE_ROLL_SECONDS_MIN}
+                            max={PRE_ROLL_SECONDS_MAX}
+                            value={sessionRecording.preRollSeconds}
+                            onChange={(e) => setSessionRecording((prev) => ({
+                              ...prev, preRollSeconds: Number(e.target.value),
+                            }))}
+                            data-testid="input-session-recording-preroll"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingPreRollDesc')}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingIdleTail')}
+                          </Label>
+                          <Input
+                            type="number"
+                            min={IDLE_TAIL_SECONDS_MIN}
+                            max={IDLE_TAIL_SECONDS_MAX}
+                            value={sessionRecording.idleTailSeconds}
+                            onChange={(e) => setSessionRecording((prev) => ({
+                              ...prev, idleTailSeconds: Number(e.target.value),
+                            }))}
+                            data-testid="input-session-recording-idle-tail"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingIdleTailDesc')}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingMaxClip')}
+                          </Label>
+                          <Input
+                            type="number"
+                            min={MAX_CLIP_MINUTES_MIN}
+                            max={MAX_CLIP_MINUTES_MAX}
+                            value={sessionRecording.maxClipMinutes}
+                            onChange={(e) => setSessionRecording((prev) => ({
+                              ...prev, maxClipMinutes: Number(e.target.value),
+                            }))}
+                            data-testid="input-session-recording-max-clip"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingMaxClipDesc')}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingStorage')}
+                          </Label>
+                          <Input
+                            type="number"
+                            min={MAX_STORAGE_MB_MIN}
+                            max={MAX_STORAGE_MB_MAX}
+                            step={1024}
+                            value={sessionRecording.maxStorageMb}
+                            onChange={(e) => setSessionRecording((prev) => ({
+                              ...prev, maxStorageMb: Number(e.target.value),
+                            }))}
+                            data-testid="input-session-recording-storage"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingStorageDesc')
+                              .replace('{gb}', String(Math.round(sessionRecording.maxStorageMb / 1024)))}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-sm font-medium">
+                          {t('aacSettings.sessionRecordingFolder')}
+                        </Label>
+                        <Input
+                          value={sessionRecording.folder ?? ''}
+                          onChange={(e) => setSessionRecording((prev) => ({
+                            ...prev, folder: e.target.value,
+                          }))}
+                          placeholder={t('aacSettings.sessionRecordingFolderPlaceholder')}
+                          data-testid="input-session-recording-folder"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {t('aacSettings.sessionRecordingFolderDesc')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </CollapsibleSubSection>
 
               {/* AI Learning — what the AI is allowed to record about the
                   people and world around the student, on its own initiative. */}

@@ -57,6 +57,7 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
     drivableWebview: true,
     nativeVersion: true,
     selfUpdate: true,
+    sessionRecording: true,
     localhostBridge: true,
   },
   capacitor: {
@@ -69,6 +70,9 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
     drivableWebview: false,
     nativeVersion: true,
     selfUpdate: true,
+    // No getDisplayMedia in WKWebView — the screen half of a recording is
+    // simply unreachable, and a camera-only clip is not what this feature is.
+    sessionRecording: false,
     localhostBridge: true,
   },
   web: {
@@ -76,6 +80,9 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
     drivableWebview: false,
     nativeVersion: false,
     selfUpdate: false,
+    // Capture needs a user-gesture picker every session and OPFS storage is
+    // quota-capped and evictable by the browser.
+    sessionRecording: false,
     localhostBridge: false,
   },
 };

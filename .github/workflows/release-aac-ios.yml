@@ -46,7 +46,7 @@ on:
       backend_url:
         description: 'Backend the build talks to (baked as VITE_API_URL)'
         required: false
-        default: 'https://aivota-demo-us.onrender.com'
+        default: 'https://api.aivota.ai'
       upload:
         description: 'Upload to TestFlight (uncheck to just get a signed .ipa artifact)'
         type: boolean
@@ -104,6 +104,9 @@ jobs:
       - name: Build web bundle
         env:
           VITE_API_URL: ${{ inputs.backend_url }}
+          # Runtime backend manifest (client-aac/src/lib/api-base.ts): lets an
+          # installed build be re-pointed without a new TestFlight release.
+          VITE_BACKEND_MANIFEST_URL: https://updates.aivota.ai/aac/latest-backend.json
         run: npm run ios:build
 
       # `ios/` is gitignored; generate it fresh from the Capacitor template.

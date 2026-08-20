@@ -63,6 +63,40 @@ export interface InstancesBridge {
   onReport: (cb: (report: AppInstanceReport) => void) => () => void;
 }
 
+/**
+ * Session recording — the disk side of the feature. The renderer owns the
+ * encoders; every file operation happens in the main process behind this.
+ * Electron only (capabilities.sessionRecording).
+ */
+export interface RecordingBridge {
+  prepare: (opts: { folder: string | null; maxStorageMb: number }) => Promise<{
+    folder: string;
+    isDefault: boolean;
+    totalBytes: number;
+    clipCount: number;
+    deletedIds: string[];
+    shortfallBytes: number;
+  }>;
+  begin: (opts: { clipId: string }) => Promise<
+    { ok: true; clipId: string; folder: string } | { ok: false; error: string }
+  >;
+  append: (opts: { clipId: string; track: "camera" | "screen"; data: Uint8Array }) => Promise<
+    { ok: true; bytes: number } | { ok: false; error: string; bytes?: number }
+  >;
+  finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number }) => Promise<
+    | { ok: true; clipId: string; folder: string; totalBytes: number; clipCount: number;
+        deletedIds: string[]; shortfallBytes: number }
+    | { ok: false; error: string }
+  >;
+  abort: (opts: { clipId: string }) => Promise<{ ok: boolean; error?: string }>;
+  list: () => Promise<{
+    folder: string;
+    totalBytes: number;
+    clips: Array<{ id: string; startedAtMs: number; bytes: number }>;
+  }>;
+  reveal: () => Promise<{ folder: string; opened: boolean; error: string | null }>;
+}
+
 export interface ElectronBridge {
   isElectron?: boolean;
   getVersion?: () => Promise<string>;
@@ -71,6 +105,7 @@ export interface ElectronBridge {
   gaze?: GazeBridge;
   update?: UpdateBridge;
   instances?: InstancesBridge;
+  recording?: RecordingBridge;
   deviceId?: { get: () => Promise<string | null>; set: (id: string) => Promise<boolean> };
 }
 
@@ -89,6 +124,11 @@ export function getBrowserBridge(): BrowserBridge | null {
 
 export function getInstancesBridge(): InstancesBridge | null {
   return getElectronBridge()?.instances ?? null;
+}
+
+/** Session-recording file store, or null on a host that cannot record. */
+export function getRecordingBridge(): RecordingBridge | null {
+  return getElectronBridge()?.recording ?? null;
 }
 
 /**

@@ -20,7 +20,7 @@
 // AAC_UPDATE_PREFIX from the env config so the caller doesn't have to.
 
 import { spawnSync } from "node:child_process";
-import { resolveAacEnv } from "./aac-release-config.mjs";
+import { resolveAacEnv, aacBuildEnv } from "./aac-release-config.mjs";
 
 const argv = process.argv.slice(2);
 const envName = argv.find((a) => !a.startsWith("-"));
@@ -66,8 +66,9 @@ function run(commandString, extraEnv = {}) {
   }
 }
 
-// 1. Build client bundle + electron main with this env's backend baked in.
-run("npm run electron:build", { VITE_API_URL: cfg.backendUrl });
+// 1. Build client bundle + electron main with this env's backend (and the
+//    runtime backend-manifest URL) baked in.
+run("npm run electron:build", aacBuildEnv(cfg));
 
 // 2. Assemble the gaze sidecar (32-bit node + koffi win32 prebuilds).
 run("npm run build:sidecar");
@@ -95,6 +96,11 @@ if (doPublish) {
     AAC_UPDATE_PREFIX: cfg.updatePrefix,
     ...(dryRun ? { AAC_UPDATE_DRY_RUN: "1" } : {}),
   });
+  // Keep the runtime manifest in step with what this build bakes, so a fresh
+  // install and an already-installed client agree on the backend.
+  if (cfg.backendManifestKey) {
+    run(`node scripts/publish-aac-backend.mjs ${cfg.name}${dryRun ? " --dry-run" : ""}`);
+  }
 } else {
   console.log(`\n[release-aac] build complete — installer is in release/ (not published).`);
 }

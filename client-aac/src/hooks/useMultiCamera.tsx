@@ -434,6 +434,15 @@ type MultiCameraImplValue = ReturnType<typeof useMultiCameraImpl>;
 export interface MultiCameraValue extends MultiCameraImplValue {
   /** The single shared hidden <video> playing the user camera, or null until created. */
   userVideoEl: HTMLVideoElement | null;
+  /**
+   * The ONE user-camera MediaStream, whichever path produced it (multi-camera
+   * assignment or the legacy shared-camera fallback). Exposed so a consumer
+   * that genuinely needs the stream — the session recorder hands it to a
+   * MediaRecorder — reads the existing one instead of calling getUserMedia
+   * again, which is the whole point of this provider. Adding a track consumer
+   * is fine; attaching it to a second <video> is what freezes iOS, so don't.
+   */
+  userStream: MediaStream | null;
   /** True once the shared user video has decodable frames (readyState >= 2). */
   userVideoReady: boolean;
   /** Capture a JPEG frame from the shared user video element (no transient <video>). */
@@ -631,6 +640,7 @@ export function MultiCameraProvider({ children }: { children: ReactNode }) {
   const value: MultiCameraValue = {
     ...base,
     userVideoEl: elReady ? userVideoRef.current : null,
+    userStream,
     userVideoReady,
     captureUserFrame,
     cameraDiag,

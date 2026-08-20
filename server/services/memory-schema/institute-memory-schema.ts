@@ -53,6 +53,7 @@ import {
   import { calendarService } from "../calendarService";
   import { locationService } from "../locationService";
   import { INSTITUTE_PACKAGES_FIELD } from "./institute-packages-schema";
+  import { resolveInstituteRefs, resolveInstituteRefOrThrow, instituteRefError } from "./institute-ref";
   import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
@@ -1017,10 +1018,19 @@ import {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId as string | undefined;
 
-      // Resolve institute IDs: prefer explicit list, fall back to selected, then user's only one
+      // Resolve institute IDs: prefer explicit list, fall back to selected, then user's only one.
+      // The explicit list arrives NAME-addressed at least as often as id-addressed — the AI reads
+      // institutes from Context_Institutes, which labels entries by name and never renders their
+      // uuid — so map whatever it sent onto real ids before validating. (Incident: creating a
+      // student was refused with "not a member of institute קלינקה רז טננבאום", the AI having been
+      // denied for using the only institute token its context ever showed it.)
       let enrollInstituteIds: string[] = [];
       if (value.instituteIds && Array.isArray(value.instituteIds) && value.instituteIds.length > 0) {
-        enrollInstituteIds = value.instituteIds;
+        const { ids, unresolved, available } = await resolveInstituteRefs(value.instituteIds, userId);
+        if (unresolved.length > 0) {
+          throw new Error(instituteRefError(unresolved, available));
+        }
+        enrollInstituteIds = ids;
       } else if (instituteId) {
         enrollInstituteIds = [instituteId];
       } else {
@@ -1746,7 +1756,10 @@ import {
     id: "institute",
     type: "object",
     properties: {
-      id: { id: "id", type: "string" },
+      // opened so the uuid is actually visible: the map labels each entry by name
+      // (displayKey), which replaces the raw key, so without this the AI can name an
+      // institute but never cite its id.
+      id: { id: "id", type: "string", opened: true },
       name: { id: "name", type: "string" },
       type: {
         id: "type",
@@ -2035,7 +2048,10 @@ import {
   const studentSchema: AgentMemoryFieldObjectWithDB = {
     id: "student",
     type: "object",
-    required: ["firstName", "instituteIds", "name"],
+    // instituteIds is deliberately NOT required: the server falls back to the currently
+    // selected institute, and forcing the field made the AI invent a value it could not
+    // see (institutes render by name, never by uuid) — which the membership check refused.
+    required: ["firstName", "name"],
     properties: {
       id: { id: "id", type: "string" },
       name: { id: "name", type: "string" },
@@ -2061,7 +2077,7 @@ import {
         id: "instituteIds",
         type: "array",
         items: { id: "instituteId", type: "string" },
-        description: "Institute IDs to enroll this student in (from Context_Institutes). Required — use the currently selected institute if only one.",
+        description: "Organizations to enroll this student in. Omit to use the currently selected one; set it only to enroll elsewhere, or in several at once.",
       },
       isActive: { id: "isActive", type: "boolean" },
       link: {
@@ -2181,7 +2197,11 @@ import {
 
     add: async (ctx, value) => {
       const userId = getUserId(ctx);
-      const instituteId = value.instituteId ?? (ctx.all.instituteId as string | undefined);
+      // An explicit instituteId may be a display name — Context_Institutes labels entries by
+      // name and never renders their uuid — so resolve it before locationService's member check.
+      const instituteId = value.instituteId
+        ? await resolveInstituteRefOrThrow(value.instituteId, userId)
+        : (ctx.all.instituteId as string | undefined);
       if (!instituteId) {
         throw new Error("instituteId is required — use the currently selected organization or specify one from Context_Institutes.");
       }
@@ -2256,7 +2276,7 @@ import {
       address: { id: "address", type: "string", description: "Street address. When you set or change this, the server AUTOMATICALLY looks up the GPS coordinates — you do NOT need to provide latitude/longitude yourself." },
       latitude: { id: "latitude", type: "number", description: "GPS latitude. Normally filled in automatically from the address; only set it manually to override the lookup." },
       longitude: { id: "longitude", type: "number", description: "GPS longitude. Normally filled in automatically from the address; only set it manually to override the lookup." },
-      instituteId: { id: "instituteId", type: "string", description: "The organization this place belongs to (from Context_Institutes). Defaults to the currently selected organization." },
+      instituteId: { id: "instituteId", type: "string", description: "The organization this place belongs to. Defaults to the currently selected one; omit it unless the place belongs elsewhere." },
     },
     required: ["title"],
   };
@@ -2346,7 +2366,12 @@ import {
       // Resolve the event's association FK: the AI can target an institute,
       // classroom, or service event. A plain (no association) event is
       // permitted. Per plan, only institute admins can create institute events.
-      const instituteId = value.instituteId ?? undefined;
+      // Same display-name caveat as everywhere else the AI names an organization:
+      // resolve before the admin check, which would otherwise report a name as
+      // "not an admin" when the real problem is that it never looked up an institute.
+      const instituteId = value.instituteId
+        ? await resolveInstituteRefOrThrow(value.instituteId, userId)
+        : undefined;
       const classroomId = value.classroomId ?? undefined;
       const serviceId = value.serviceId ?? undefined;
 
@@ -2500,6 +2525,11 @@ import {
   - Link users (caregivers, therapists, teachers) to students
   - View student enrollments across institutes and classrooms
   
+  **Naming an organization**
+  - Fields that take an organization (instituteIds, instituteId) accept its NAME as shown in Context_Institutes
+  - Omit them to use the currently selected organization — that is almost always the right one
+  - Only name an organization explicitly to target a different one, or several at once
+
   **Important Rules**
   - Students can only be enrolled in ONE active school at a time
   - When enrolling a student in a new school, they are automatically transferred from their previous school

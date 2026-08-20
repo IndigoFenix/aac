@@ -13,7 +13,16 @@
 // element, same classes, no SVG, no measurement. Surfaces that don't opt in
 // are untouched.
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { motion } from "framer-motion";
 import { cornerCutPath, cornerInset } from "@shared/button-shape";
 
@@ -77,7 +86,30 @@ function useBorderBox(active: boolean) {
   return { ref, box, stroke };
 }
 
-export function ShapedButton({
+/**
+ * Ref-forwarding is NOT decoration here.
+ *
+ * Every board cell is rendered inside `<AnimatePresence mode="popLayout">`
+ * (DynamicBoard). popLayout works by cloning each child with a ref, measuring
+ * it, and popping an EXITING child out of flow so the survivors reflow at once.
+ * A plain function component cannot take that ref, so React warned on every
+ * render ("Function components cannot be given refs… Check the render method of
+ * PopChild") and framer-motion silently lost its measurement.
+ *
+ * Two refs therefore have to land on the same node: ours, for the corner-cut
+ * measurement, and the caller's. `mergeRefs` does that.
+ */
+function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
+  return (node: T | null) => {
+    for (const r of refs) {
+      if (!r) continue;
+      if (typeof r === "function") r(node);
+      else (r as { current: T | null }).current = node;
+    }
+  };
+}
+
+export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton({
   cornerSpace,
   background,
   dashed = false,
@@ -89,9 +121,13 @@ export function ShapedButton({
   ariaLabel,
   motionProps,
   domProps,
-}: Props) {
+}: Props, forwardedRef) {
   const wants = !!cornerSpace && cornerSpace.ratio > 0;
   const { ref, box, stroke } = useBorderBox(wants);
+  // Recreated only when the caller's ref identity changes, so the merged
+  // callback does not detach and reattach on every render (which would make
+  // the ResizeObserver in useBorderBox churn).
+  const setRefs = useCallback(mergeRefs<HTMLElement>(ref, forwardedRef), [ref, forwardedRef]);
   const shaped = wants && !!box && box.w > 0 && box.h > 0;
 
   const radius = shaped ? Math.min(box!.w, box!.h) * cornerSpace!.ratio : 0;
@@ -186,16 +222,16 @@ export function ShapedButton({
   // to notice, because it looks like the feature simply isn't switched on.
   if (as === "div") {
     return (
-      <motion.div ref={ref as never} {...common}>
+      <motion.div ref={setRefs as never} {...common}>
         {surface}
         {children}
       </motion.div>
     );
   }
   return (
-    <motion.button ref={ref as never} {...common} onClick={onClick} aria-label={ariaLabel}>
+    <motion.button ref={setRefs as never} {...common} onClick={onClick} aria-label={ariaLabel}>
       {surface}
       {children}
     </motion.button>
   );
-}
+});

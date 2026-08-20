@@ -19,8 +19,9 @@ import { venueRepository } from "../repositories/venueRepository";
 import { menuCaptureService } from "../services/venue-menus/menu-capture-service";
 import { venueResolutionService } from "../services/venue-menus/venue-resolution-service";
 import { getStudentAllergies } from "../services/venue-menus/student-allergies";
+import { webMenuService } from "../services/venue-menus/web-menu-service";
 import { MAX_FRAMES } from "../services/venue-menus/camera-extraction";
-import { resolveVenueMenuSettings, needsReview } from "@shared/venue-menus";
+import { resolveVenueMenuSettings, needsReview, isSourceEnabled } from "@shared/venue-menus";
 
 /** A base64 JPEG, with or without its data-URL prefix. */
 const frameSchema = z.string().min(1);
@@ -42,6 +43,11 @@ const nearbySchema = z.object({
   longitude: z.number().min(-180).max(180),
   /** True only when a caretaker pressed "search near me" (§3, requirement 5). */
   allowOutboundSearch: z.boolean().optional(),
+});
+
+const fetchWebSchema = z.object({
+  studentId: z.string().min(1),
+  venueId: z.string().min(1),
 });
 
 const confirmVenueSchema = z.object({
@@ -276,6 +282,98 @@ class VenueMenuController {
     } catch (error) {
       console.error("Error listing student venues:", error);
       res.status(500).json({ success: false, message: "error:VENUE_LIST_FAILED" });
+    }
+  }
+
+  /**
+   * POST /api/venue-menus/fetch-web — try to find this venue's menu online.
+   *
+   * A caretaker action, never automatic: it costs money, it leaves the
+   * building, and §4.2a puts the camera above it for trust anyway. The whole
+   * point of offering it is the first visit, where there is no photograph yet.
+   *
+   * Every failure mode returns the same message to a caretaker, because they
+   * all mean the same thing at the table: photograph the menu instead.
+   */
+  async fetchWebMenu(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const parsed = fetchWebSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ success: false, message: "error:INVALID_CAPTURE_REQUEST" });
+        return;
+      }
+      const { studentId, venueId } = parsed.data;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, user.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "error:NO_STUDENT_ACCESS" });
+        return;
+      }
+
+      const student = await studentService.getStudentById(studentId);
+      if (!student) {
+        res.status(404).json({ success: false, message: "error:STUDENT_NOT_FOUND" });
+        return;
+      }
+
+      const settings = resolveVenueMenuSettings(
+        student.aacSettings?.venueMenus,
+        {
+          birthDate: student.birthDate,
+          languageLevel: student.aacSettings?.languageLevel ?? null,
+        },
+        new Date(),
+      );
+
+      // The web source is OFF by default (§4.7) and the master switch outranks
+      // the per-source toggle — both folded into isSourceEnabled.
+      if (!isSourceEnabled(settings, "web")) {
+        res.status(403).json({ success: false, message: "error:VENUE_MENUS_DISABLED" });
+        return;
+      }
+
+      const allergies = await getStudentAllergies(studentId);
+
+      const result = await webMenuService.fetchForVenue({
+        venueId,
+        requireReview: needsReview(settings.requireReview, "web", {
+          hasAllergies: allergies.length > 0,
+          requireReviewWithAllergies: settings.requireReviewWithAllergies,
+        }),
+        ...(student.primaryLanguage ? { targetLanguage: student.primaryLanguage } : {}),
+      });
+
+      if (!result.ok) {
+        // A binding refusal is the system working. It is reported distinctly
+        // from a plain miss so a caretaker learns the menu we found was for a
+        // different branch, rather than assuming the restaurant has no site.
+        const message =
+          result.reason === "binding_refused"
+            ? "error:MENU_BINDING_REFUSED"
+            : result.reason === "unknown_venue"
+              ? "error:VENUE_NOT_FOUND"
+              : "error:WEB_MENU_UNAVAILABLE";
+        res.status(result.reason === "unknown_venue" ? 404 : 422).json({
+          success: false,
+          message,
+          reason: result.reason,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        menuId: result.menu.id,
+        status: result.status,
+        reviewReasons: result.reviewReasons,
+        itemCount: result.items.length,
+        sourceUrl: result.sourceUrl,
+        droppedByRefinement: result.droppedByRefinement,
+      });
+    } catch (error) {
+      console.error("Error fetching web menu:", error);
+      res.status(500).json({ success: false, message: "error:WEB_MENU_UNAVAILABLE" });
     }
   }
 

@@ -1,40 +1,32 @@
 # =============================================================================
-# CliniAACian Production Dockerfile
+# Aivota API image — ECS Fargate (long-lived container)
 # =============================================================================
+# Server only. The clinician SPA, the AAC web build and the landing pages are
+# built by the deploy workflow and published to S3 + CloudFront; this image
+# never serves them (app.prod.ts runs API-only when dist/public is absent).
+# Mirrors Dockerfile.lambda minus the Web Adapter.
 
-# Build stage
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies (needed for some npm packages)
+# Install build dependencies (native modules)
 RUN apk add --no-cache python3 make g++
 
-# Copy package files
 COPY package*.json ./
-
-# Install ALL dependencies (including devDependencies for build)
 RUN npm ci
 
-# Copy source code
-COPY client/ ./client/
-COPY client-aac/ ./client-aac/
+# Server sources + what the bundle reaches at build time
 COPY server/ ./server/
 COPY shared/ ./shared/
-COPY attached_assets/ ./attached_assets/
 COPY drizzle/ ./drizzle/
-COPY vite.config.ts ./
-COPY vite.config.aac.ts ./
 COPY tsconfig.json ./
-COPY tailwind.config.* ./
-COPY postcss.config.* ./
 COPY drizzle.config.ts ./
+COPY rds-ca-bundle.pem ./
 
-# Build the application
-# 1. Vite builds client to dist/public
-# 2. Vite builds client-aac to dist/public-aac
-# 3. esbuild bundles server/index.prod.ts to dist/index.prod.js
-RUN npm run build
+# esbuild bundles server/index.prod.ts (+ the dynamically imported app.prod.ts)
+# into dist/index.prod.js. Same flags as `npm run build`, minus the clients.
+RUN npx esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist
 
 # =============================================================================
 # Production stage
@@ -43,44 +35,31 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Copy package files and install production dependencies only
+# wget is used by the ECS container health check
+RUN apk add --no-cache wget
+
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built artifacts from builder
 COPY --from=builder /app/dist ./dist
-
-# Copy shared schema (may be needed at runtime for Drizzle)
 COPY --from=builder /app/shared ./shared
-
-# Copy attached assets (in case server references them)
-COPY --from=builder /app/attached_assets ./attached_assets
-
-# Copy drizzle migrations
 COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/rds-ca-bundle.pem ./rds-ca-bundle.pem
+COPY --from=builder /app/rds-ca-bundle.pem ./dist/rds-ca-bundle.pem
 
-# Download AWS RDS CA certificate bundle for SSL connections
-RUN apk add --no-cache wget && \
-    wget -O rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
-
-# Create non-root user for security
+# Non-root runtime user
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
-
-# Change ownership of app files
-RUN chown -R nodejs:nodejs /app
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
 
 USER nodejs
 
-# Environment
 ENV NODE_ENV=production
 ENV PORT=5000
 
 EXPOSE 5000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
-# Start the server
 CMD ["node", "dist/index.prod.js"]

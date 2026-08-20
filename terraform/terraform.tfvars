@@ -20,12 +20,18 @@ domain_name = "aivota.ai"
 enable_aac_auto_update = true
 
 # =============================================================================
-# Architecture Variables (Use lambda mode for cost saving)
+# Architecture Variables
 # =============================================================================
+# This file is Terraform's auto-loaded BASE. The deploy workflows always layer
+# a profile on top of it, and the profile decides the compute path:
+#   ecs-lean.tfvars  — ECS Fargate, lean security   (deploy.yml default)
+#   hipaa.tfvars     — ECS Fargate, full compliance (deploy.yml, opt-in)
+#   lean.tfvars      — Lambda, lean security        (deploy-lambda.yml, legacy rollback)
+# The values below only matter when someone runs terraform with no -var-file.
 
-use_lambda = true
-lambda_image_exists = true   # ← Change this from false to true for phase 2
-use_api_gateway = true   # Might be needed for newer regions
+use_lambda = false
+lambda_image_exists = false
+use_api_gateway = true   # Lambda path only; Function URLs unsupported in il-central-1
 
 # =============================================================================
 # ECS Configuration
@@ -39,9 +45,8 @@ ecs_task_cpu = 512
 # Must be compatible with CPU: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html
 ecs_task_memory = 1024
 
-# Number of containers to run
-# Production should have at least 2 for high availability
-ecs_desired_count = 0  # Deactivate ECS for current phase
+# Number of containers to run (profiles override: ecs-lean = 1, hipaa = 2)
+ecs_desired_count = 1
 
 # Port your application listens on
 container_port = 5000

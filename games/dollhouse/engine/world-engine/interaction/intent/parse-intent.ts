@@ -234,7 +234,7 @@ const V = (verb: string, directive = false, transfer = false, implied?: ImpliedR
 /** Speaker-oriented STATE verbs: their subject is the speaker by default and any
  *  entity is the OBJECT, so "apple want" reads "[I] want apple", never "apple wants".
  *  (Semantic override of pure position — matches "apple me eat" = I eat the apple.) */
-export const STATE_VERBS = new Set(["want", "need", "have", "like", "feel"]);
+export const STATE_VERBS = new Set(["want", "need", "have", "like", "feel", "see"]);
 
 /** GOAL-directed movement verbs: a person/place after them is the DESTINATION, not
  *  the subject — "come i_me" = "[you] come to me", "follow i_me" = "follow me". */
@@ -333,7 +333,7 @@ export const LEXICON: Record<string, Lex> = {
   trade: V("trade", true, true, "to"), show: V("show", true, true, "to"), teach: V("teach", true),
   share: V("share", true, true, "to"), fight: V("fight", true), chase: V("chase", true), hug: V("hug", true),
   // Verbs — state (NOT directive)
-  want: V("want"), need: V("need"), have: V("have"), like: V("like"), feel: V("feel"),
+  want: V("want"), need: V("need"), have: V("have"), like: V("like"), feel: V("feel"), see: V("see"),
   // The BROAD activity verb ("what + you + do" — what are you doing?): a
   // question focus, not an orderable action, so not directive.
   do: V("do"),

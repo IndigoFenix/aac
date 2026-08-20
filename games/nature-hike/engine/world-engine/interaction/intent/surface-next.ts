@@ -260,7 +260,7 @@ const OBJECT_OPTIONAL = new Set([
   "sit", "wake_up", "wear", "stop", "stay", "wait", "run", "walk", "turn", "come", "go", "build", "help", "hug",
 ]);
 /** High-frequency opener verbs (concept-parser.md "core 40"). */
-const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play"];
+const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play", "see"];
 
 /**
  * THE ACTION CATEGORIES a modal desire opens ("i_me + want + ___" — user
@@ -285,7 +285,7 @@ const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play"
  */
 const ACTION_CATEGORIES: readonly { id: string; verbs: readonly string[] }[] = [
   // Everyday activities of one's own body — the self-care set plus movement.
-  { id: "do", verbs: ["eat", "drink", "sleep", "rest", "sit", "wake_up", "brush_teeth", "wear", "wash", "tidy", "go", "stay", "turn", "return"] },
+  { id: "do", verbs: ["eat", "drink", "sleep", "rest", "sit", "wake_up", "brush_teeth", "wear", "wash", "tidy", "go", "stay", "turn", "return", "see"] },
   // Doing things WITH people.
   { id: "play", verbs: ["play", "talk", "help", "hug", "show", "share", "teach", "follow", "fight"] },
   // Making and working.

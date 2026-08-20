@@ -126,7 +126,7 @@ describe("intentToAct — a sentence → a dialogue act (speaker me, listener be
     expect(intentToAct(parseSentence("hi"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("how-are-you");
     expect(intentToAct(parseSentence("yes"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("agree");
     expect(intentToAct(parseSentence("no"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("refuse");
-    expect(intentToAct(parseSentence("bye"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("bye");
+    expect(intentToAct(parseSentence("goodbye"), world, { speakerId: "me", addresseeId: "bear" }, o)?.kind).toBe("bye");
   });
 
   it("a command is NOT a dialogue move (handled by the party layer)", () => {
@@ -699,7 +699,7 @@ describe("question fallbacks — no question is a dead end", () => {
   it("why + verb checks the PREMISE: not doing it → 'I don't build'", () => {
     const w = household();
     // The host says bob is verifiably walking (doingOf) — a "why build" denies.
-    const o = { ...factOpts(w), doingOf: () => ["go", "come", "walk", "run"] };
+    const o = { ...factOpts(w), doingOf: () => ["go", "come", "run"] };
     const deny = intentToAct(parseSentence("why + you + build"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(deny).toMatchObject({ kind: "deny-doing", verb: "build" });
     expect(selectAct(w, "bob", "me", deny, "c", o).responseGlyph).toBe("i_me + build.not");
@@ -707,7 +707,7 @@ describe("question fallbacks — no question is a dead end", () => {
 
   it("why + verb it IS doing → the motive answer; unverifiable → don't-understand", () => {
     const w = household();
-    const walking = { ...factOpts(w), doingOf: () => ["go", "come", "walk", "run"] };
+    const walking = { ...factOpts(w), doingOf: () => ["go", "come", "run"] };
     // Movement verbs skip the premise check — walking is need-driven.
     expect(intentToAct(parseSentence("why + you + go"), w, { speakerId: "me", addresseeId: "bob" }, walking)?.kind).toBe("why");
     // No doingOf hook (or undefined) — the honest can't-interpret floor.

@@ -11,20 +11,7 @@ resource "aws_iam_role_policy" "github_actions_lambda_phase1" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # S3 frontend deployment
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.frontend[0].arn,
-          "${aws_s3_bucket.frontend[0].arn}/*"
-        ]
-      },
+      # (S3 frontend + CloudFront grants live in iam.tf — shared with ECS.)
       # ECR for Lambda images (include * for GetAuthorizationToken)
       {
         Effect = "Allow"
@@ -75,24 +62,6 @@ resource "aws_iam_role_policy" "github_actions_lambda_phase1" {
           "arn:aws:apigateway:${var.aws_region}::/apis",
           "arn:aws:apigateway:${var.aws_region}::/apis/*"
         ]
-      },
-      # CloudFront management
-      {
-        Effect = "Allow"
-        Action = [
-          "cloudfront:CreateDistribution",
-          "cloudfront:UpdateDistribution",
-          "cloudfront:DeleteDistribution",
-          "cloudfront:GetDistribution",
-          "cloudfront:CreateInvalidation",
-          "cloudfront:GetInvalidation",
-          "cloudfront:TagResource",
-          "cloudfront:CreateOriginAccessControl",
-          "cloudfront:DeleteOriginAccessControl",
-          "cloudfront:GetOriginAccessControl",
-          "cloudfront:UpdateOriginAccessControl"
-        ]
-        Resource = "*"
       },
       # IAM PassRole for Lambda execution role
       {

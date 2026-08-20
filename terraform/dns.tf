@@ -8,10 +8,11 @@ data "aws_route53_zone" "main" {
   name  = var.domain_name
 }
 
-# A record pointing to ALB (only when NOT using Lambda)
-# When using Lambda, CloudFront records are created in frontend.tf
+# Public hostnames → ALB directly. Only when the ECS path serves its own
+# static files; with frontend_via_cloudfront these three point at CloudFront
+# instead (frontend.tf) and CloudFront reaches the ALB through api.<domain>.
 resource "aws_route53_record" "app" {
-  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda && !local.ecs_cdn ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = var.domain_name
@@ -24,9 +25,9 @@ resource "aws_route53_record" "app" {
   }
 }
 
-# WWW subdomain pointing to ALB (only when NOT using Lambda)
+# WWW subdomain pointing to ALB (ECS without CloudFront only)
 resource "aws_route53_record" "www" {
-  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda && !local.ecs_cdn ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "www.${var.domain_name}"
@@ -39,12 +40,28 @@ resource "aws_route53_record" "www" {
   }
 }
 
-# App subdomain pointing to ALB (only when NOT using Lambda)
+# App subdomain pointing to ALB (ECS without CloudFront only)
 resource "aws_route53_record" "app_alb" {
-  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda && !local.ecs_cdn ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "app.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
+# api.<domain> → ALB. Always present on the ECS path: CloudFront's origin and
+# the packaged AAC clients' direct API/WebSocket host.
+resource "aws_route53_record" "api_alb" {
+  count = local.api_host != "" && !var.use_lambda ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = local.api_host
   type    = "A"
 
   alias {
@@ -146,11 +163,10 @@ resource "aws_route53_record" "dmarc" {
 # ACM Certificate DNS Validation (for ALB - only when NOT using Lambda)
 # =============================================================================
 resource "aws_route53_record" "cert_validation" {
-  for_each = var.domain_name != "" && !var.use_lambda ? {
-    main = var.domain_name
-    www  = "www.${var.domain_name}"
-    app  = "app.${var.domain_name}"
-  } : {}
+  for_each = var.domain_name != "" && !var.use_lambda ? merge(
+    { main = var.domain_name },
+    { for k, v in local.alb_cert_sans : k => v if v != "" }
+  ) : {}
 
   allow_overwrite = true
   name            = one([for dvo in aws_acm_certificate.main[0].domain_validation_options : dvo.resource_record_name if dvo.domain_name == each.value])

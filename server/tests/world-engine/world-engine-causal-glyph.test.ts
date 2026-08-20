@@ -32,7 +32,9 @@ describe("splitCausalGlyph — split + size-driven orientation", () => {
   });
 
   it("handles every connective, and 'in_order_to' as one token", () => {
-    for (const conn of ["because", "therefore", "in_order_to", "when", "until"]) {
+    // `so`, not `therefore`: duplicate LEXICON entries for one connective, and
+    // `therefore` was the one deleted (2026-08-20, NO SYNONYMS).
+    for (const conn of ["because", "so", "in_order_to", "when", "until"]) {
       const split = splitCausalGlyph(`a + b + ${conn} + c + d`);
       expect(split).not.toBeNull();
       expect(split!.connective).toBe(conn);

@@ -120,6 +120,39 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
         Resource = "*"
       },
+      # Static frontend publish (S3 sync + CloudFront invalidation). Bucket ARN
+      # is constructed so the grant exists on both compute paths regardless of
+      # whether the CloudFront stack is provisioned yet.
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${local.name_prefix}-frontend",
+          "arn:aws:s3:::${local.name_prefix}-frontend/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateDistribution",
+          "cloudfront:UpdateDistribution",
+          "cloudfront:DeleteDistribution",
+          "cloudfront:GetDistribution",
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetInvalidation",
+          "cloudfront:TagResource",
+          "cloudfront:CreateOriginAccessControl",
+          "cloudfront:DeleteOriginAccessControl",
+          "cloudfront:GetOriginAccessControl",
+          "cloudfront:UpdateOriginAccessControl"
+        ]
+        Resource = "*"
+      },
       # Terraform state (S3)
       {
         Effect = "Allow"
@@ -283,14 +316,15 @@ resource "aws_iam_role_policy" "ecs_task" {
           "${aws_s3_bucket.uploads.arn}/*"
         ]
       },
-      # Secrets Manager (runtime access)
+      # Secrets Manager (runtime access — the app loads both at boot)
       {
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
-          aws_secretsmanager_secret.app_secrets.arn
+          aws_secretsmanager_secret.app_secrets.arn,
+          aws_secretsmanager_secret.database.arn
         ]
       },
       # CloudWatch Logs
