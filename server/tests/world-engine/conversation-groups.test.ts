@@ -1120,11 +1120,20 @@ describe("end conditions — boredom, drift, and being needed elsewhere", () => 
     expect(c.group!.leaving.has(CAL)).toBe(false);
     expect(c.convo.members.map((m) => m.id)).toContain(CAL);
 
-    // …and its next turn is an ordinary one, not a bye.
+    // …and it is still not marked leaving after taking a turn: the SWEEP never
+    // evicts it, which is the whole of ⑫.
+    //
+    // This used to also assert the turn itself was "not a bye" — against the
+    // string "bye", which `creature-dialogue`'s BYE table never emits (it is
+    // "goodbye" at every level), so the assertion could not fail and never
+    // tested anything. Restated rather than repaired, because the claim was
+    // wrong as well as vacuous: `BUSY_BYE_WEIGHT` (creature-converse ⑫⑧)
+    // deliberately makes a busy speaker LIKELIER to close — "a real contender",
+    // says the comment on it. ⑫ is that being needed elsewhere does not EVICT
+    // you; it never promised a busy creature won't choose to say goodbye.
     const w = createCreatureWorld([{ id: ADA }, { id: BEN }, { id: CAL }], []);
-    const said = runTurn(h, w, c, { symbolOf: (id: string) => id });
-    expect(said?.glyph).not.toBe("goodbye");
-    expect(c.convo.members.map((m) => m.id)).toContain(CAL);
+    runTurn(h, w, c, { symbolOf: (id: string) => id });
+    expect(c.group!.leaving.has(CAL)).toBe(false);
   });
 
   it("⑫ — THE CIRCLE FOLLOWS ITS PEOPLE: the anchor eases toward the centroid", () => {

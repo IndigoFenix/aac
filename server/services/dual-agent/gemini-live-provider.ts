@@ -3,6 +3,7 @@
 // Uses native-audio model with function calling. Audio output is discarded (ElevenLabs TTS used).
 
 import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { vertexClientOptions } from "../providers/vertex-config";
 import type { Session, LiveServerMessage, FunctionCall, Tool } from "@google/genai";
 import type {
   LiveProvider,
@@ -154,24 +155,14 @@ export class GeminiLiveProvider implements LiveProvider {
   }
 
   constructor(callbacks: LiveProviderCallbacks, useVertexAI = false) {
-    if (useVertexAI) {
-      const project = process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
-      const location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
-      console.log(`[GeminiLiveProvider] Using Vertex AI (project=${project}, location=${location})`);
+    // The Vertex decision lives in providers/vertex-config.ts so the HTTP chat
+    // provider cannot drift onto a different billing path — which is exactly
+    // what happened while this branch existed here and nowhere else.
+    const vertex = useVertexAI ? vertexClientOptions() : null;
+    if (vertex) {
+      console.log(`[GeminiLiveProvider] Using Vertex AI (project=${vertex.project}, location=${vertex.location})`);
       this.useVertexAI = true;
-
-      // Parse inline service account credentials if available
-      const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-      const googleAuthOptions = credentialsJson
-        ? { credentials: JSON.parse(credentialsJson) }
-        : undefined; // Falls back to ADC (GOOGLE_APPLICATION_CREDENTIALS file or gcloud auth)
-
-      this.client = new GoogleGenAI({
-        vertexai: true,
-        project,
-        location,
-        ...(googleAuthOptions ? { googleAuthOptions } : {}),
-      });
+      this.client = new GoogleGenAI(vertex);
     } else {
       this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
     }

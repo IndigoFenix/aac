@@ -39,7 +39,6 @@ const CENTRAL: Record<string, Lexeme> = {
   understand: { w: "entendo", v3: "entende", v3p: "entendem", inf: "entender" },
   go: { w: "vou", v3: "vai", v3p: "vão", v1p: "vamos", inf: "ir" },
   // The movement gaits + pursuit family (semantic-gaps batch).
-  walk: { w: "caminho", v3: "caminha", v3p: "caminham", inf: "caminhar" },
   run: { w: "corro", v3: "corre", v3p: "correm", inf: "correr" },
   chase: { w: "persigo", v3: "persegue", v3p: "perseguem", inf: "perseguir" },
   follow: { w: "sigo", v3: "segue", v3p: "seguem", inf: "seguir" },
@@ -209,7 +208,6 @@ const CENTRAL: Record<string, Lexeme> = {
   so: { w: "então" },
   then: { w: "depois" },
   because: { w: "porque" },
-  therefore: { w: "então" },
   in_order_to: { w: "para que" },
   when: { w: "quando" },
   until: { w: "até que" },
@@ -218,9 +216,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // that phrase, and two placement buttons reading identically would be two
   // buttons a child cannot tell apart. `front` is the LEXICON key for the same
   // relation `in_front_of` spells out.
-  above: { w: "acima de" },
   from: { w: "de" },
-  front: { w: "na frente de" },
   to: { w: "a" },
   in: { w: "em" },
   with: { w: "com" },
@@ -286,9 +282,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts — each the alias of a word that already had a lexeme
   // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
   // are listed on the social tab, so both need words.
-  hello: { w: "olá" },
-  bye: { w: "tchau" },
-  okay: { w: "tá bom" },
   thanks: { w: "obrigado" },
   sorry: { w: "desculpa" },
   mine: { w: "meu" },
@@ -298,7 +291,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Deixis the person tab lists beside i_me/you/we.
   this: { w: "isto" },
   that: { w: "isso" },
-  us: { w: "nós", g: "m", pl: true },
 
   // GROUP-CHIP LABELS — the object-property cluster ids. A chip wears
   // `baseWord(lang, id)`, so an untranslated id is an English chip on a
@@ -327,7 +319,7 @@ const L: Record<string, Lexeme> = { ...CENTRAL, ...specWords("pt") };
 
 const PT_CONN: Record<string, string> = {
   because: "porque",
-  therefore: "então",
+  so: "então",
   in_order_to: "para",
   when: "quando",
   until: "até",

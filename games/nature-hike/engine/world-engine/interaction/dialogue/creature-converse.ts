@@ -70,7 +70,7 @@ import { headOf } from "../../variations.js";
 
 /** Movement verbs that turn a "where" question into a DESTINATION query ("where are
  *  you going?") rather than an item where-is (parse-intent's MOVEMENT_GOAL_VERBS). */
-const GOING_VERBS = new Set(["go", "come", "run", "walk", "chase"]);
+const GOING_VERBS = new Set(["go", "come", "run", "chase"]);
 /** Verbs of POSSESSION. Negated, they answer "I don't have one" (`cant`)
  *  rather than "I won't" (`refuse`) — a different thing to be told. */
 const HAVE_VERBS = new Set(["have", "hold", "carry"]);

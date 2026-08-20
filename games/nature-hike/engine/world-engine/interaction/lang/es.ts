@@ -38,7 +38,6 @@ const CENTRAL: Record<string, Lexeme> = {
   understand: { w: "entiendo", v2: "entiendes", v3: "entiende", v3p: "entienden", inf: "entender" },
   go: { w: "voy", v2: "vas", v3: "va", v3p: "van", v1p: "vamos", inf: "ir" },
   // The movement gaits + pursuit family (semantic-gaps batch).
-  walk: { w: "camino", v2: "caminas", v3: "camina", v3p: "caminan", inf: "caminar" },
   run: { w: "corro", v2: "corres", v3: "corre", v3p: "corren", inf: "correr" },
   chase: { w: "persigo", v2: "persigues", v3: "persigue", v3p: "persiguen", inf: "perseguir" },
   follow: { w: "sigo", v2: "sigues", v3: "sigue", v3p: "siguen", inf: "seguir" },
@@ -209,7 +208,6 @@ const CENTRAL: Record<string, Lexeme> = {
   so: { w: "por eso" },
   then: { w: "luego" },
   because: { w: "porque" },
-  therefore: { w: "por eso" },
   in_order_to: { w: "para que" },
   when: { w: "cuando" },
   until: { w: "hasta que" },
@@ -218,9 +216,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // that phrase, and two placement buttons reading identically would be two
   // buttons a child cannot tell apart. `front` is the LEXICON key for the same
   // relation `in_front_of` spells out.
-  above: { w: "arriba de" },
   from: { w: "de" },
-  front: { w: "delante de" },
   to: { w: "a" },
   in: { w: "en" },
   with: { w: "con" },
@@ -287,9 +283,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts — each the alias of a word that already had a lexeme
   // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
   // are listed on the social tab, so both need words.
-  hello: { w: "hola" },
-  bye: { w: "adiós" },
-  okay: { w: "vale" },
   thanks: { w: "gracias" },
   sorry: { w: "perdón" },
   mine: { w: "mío" },
@@ -299,7 +292,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Deixis the person tab lists beside i_me/you/we.
   this: { w: "esto" },
   that: { w: "eso" },
-  us: { w: "nosotros", g: "m", pl: true },
 
   // A CORE ENGINE CONCEPT that never got a Spanish word (`fire` had one, water
   // did not). ⚠ Known limitation: "agua" is feminine but takes the masculine
@@ -335,7 +327,7 @@ const L: Record<string, Lexeme> = { ...CENTRAL, ...specWords("es") };
 
 const ES_CONN: Record<string, string> = {
   because: "porque",
-  therefore: "por eso",
+  so: "por eso",
   in_order_to: "para",
   when: "cuando",
   until: "hasta que",

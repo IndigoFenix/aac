@@ -631,14 +631,19 @@ const VOCAB: VocabularyItem[] = [
                   suggestCategories: ["what", "who"], position: "upper" } },
   { key: "stop", tKey: "aac.glyph.stop", pos: "verb", categories: ["do", "chat"],
     modeChips: { do: ["body"], chat: ["all", "turn"] }, tone: "request", emoji: "🛑", exposeToAi: true },
-  // walk + run keep exposeToAi off: the AI emits them by emoji (🚶 / 🏃)
-  // and the renderer reverse-maps the emoji to this registry entry's
-  // imagePath so the bundled artwork shows instead of the raw emoji.
-  // The bundled icons are directional, which is the main reason these
-  // upgrade from emoji to bundled art — emojis can't flip in RTL.
-  { key: "walk", tKey: "aac.glyph.walk", pos: "verb", categories: ["do"],
-    modeChips: { do: ["common", "body"] }, tone: "comment", emoji: "🚶", directional: true,
-    imagePath: "actions/body/walk" },
+  // `walk` is GONE (user decision 2026-08-20). It drew THIS EXACT PICTURE —
+  // 🚶 over actions/body/walk, the same emoji and the same file `go` uses — and
+  // compiled to the same goTo ("the gait is presentation, not semantics", see
+  // intent-compile's movement case), so it was a second button meaning the
+  // first one. Hebrew settles it: go and walk are one word there (הולך), so the
+  // Hebrew board showed two identical buttons with identical labels. The ART
+  // stays: `go` still renders actions/body/walk.
+  //
+  // `run` keeps exposeToAi off: the AI emits it by emoji (🏃) and the renderer
+  // reverse-maps the emoji to this entry's imagePath so the bundled artwork
+  // shows instead. The bundled icon is directional, which is the main reason it
+  // upgrades from emoji to bundled art — emojis can't flip in RTL. `run` STAYS
+  // a word of its own: distinct art, distinct gait, distinct in every locale.
   { key: "run", tKey: "aac.glyph.run", pos: "verb", categories: ["do"],
     modeChips: { do: ["body"] }, tone: "comment", emoji: "🏃", directional: true,
     imagePath: "actions/body/run" },
@@ -1222,8 +1227,12 @@ const VOCAB: VocabularyItem[] = [
     animatedSprite: { sheet: "yes-no-sprites", cols: 3, rows: 2, row: 1, frames: [0, 1, 0, 2] } },
   { key: "maybe", tKey: "aac.glyph.maybe", pos: "noun", categories: ["what", "chat"],
     modeChips: { what: ["all", "social"], chat: ["all", "reply"] }, tone: "social", emoji: "🤷" },
-  { key: "hello", tKey: "aac.glyph.hello", pos: "noun", categories: ["what", "chat"],
-    modeChips: { what: ["all", "social"], chat: ["all", "greet"] }, tone: "social", emoji: "👋" },
+  // ONE GREETING, ONE FAREWELL (user decision 2026-08-20). `hello` sat here
+  // wearing 👋 — the SAME emoji as `goodbye` right below it — so the greet chip
+  // offered two buttons a child could not tell apart, and a third (`hi`) that
+  // meant the same thing. `hello` is gone; the greeting is `hi`, which wears the
+  // PERSON waving (🙋), and the farewell keeps the HAND alone (👋). The picture
+  // is now what distinguishes them, not the word underneath.
   { key: "goodbye", tKey: "aac.glyph.goodbye", pos: "noun", categories: ["what", "chat"],
     modeChips: { what: ["all", "social"], chat: ["all", "greet"] }, tone: "social", emoji: "👋" },
   { key: "thank_you", tKey: "aac.glyph.thank_you", pos: "noun", categories: ["what", "chat"],

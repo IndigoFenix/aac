@@ -57,12 +57,20 @@ export async function loadAwsSecrets(opts: LoadAwsSecretsOptions): Promise<boole
   let applied = 0;
   let kept = 0;
   const apply = (key: string, value: unknown) => {
-    if (!value || typeof value !== 'string') return;
+    if (value === null || value === undefined || value === '') return;
+    // A secret value can legitimately be an OBJECT. GOOGLE_APPLICATION_CREDENTIALS_JSON
+    // is a service-account key, and the natural way to paste one into the AWS
+    // console is as nested JSON — at which point `typeof value === "string"` is
+    // false and the key was silently DROPPED. Vertex then fell back to ADC, which
+    // does not exist in Lambda or ECS, so Gemini quietly downgraded to the AI
+    // Studio API key. That downgrade is precisely the failure this whole change
+    // exists to remove, so serialize rather than skip.
+    const str = typeof value === 'string' ? value : JSON.stringify(value);
     if (process.env[key] !== undefined && !opts.override) {
       kept++;
       return;
     }
-    process.env[key] = value;
+    process.env[key] = str;
     applied++;
   };
 

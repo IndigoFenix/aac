@@ -251,13 +251,13 @@ const CANONICAL_SOCIALS = (() => {
   return out;
 })();
 
-const MOVEMENT = new Set(["go", "come", "walk", "follow", "run", "chase"]);
+const MOVEMENT = new Set(["go", "come", "follow", "run", "chase"]);
 /** Verbs whose object is optional (self-care / intransitives) — a bare verb
  *  command is already meaningful ("you sleep", "you stop"). Doubles as the
  *  SELF-ACTIVITY band a speaker subject boosts ("i_me + eat/sleep/play"). */
 const OBJECT_OPTIONAL = new Set([
   "eat", "drink", "sleep", "rest", "play", "talk", "wash", "tidy", "brush_teeth",
-  "sit", "wake_up", "wear", "stop", "stay", "wait", "run", "walk", "turn", "come", "go", "build", "help", "hug",
+  "sit", "wake_up", "wear", "stop", "stay", "wait", "run", "turn", "come", "go", "build", "help", "hug",
 ]);
 /** High-frequency opener verbs (concept-parser.md "core 40"). */
 const OPENER_VERBS = ["want", "go", "give", "get", "help", "make", "eat", "play", "see"];
@@ -385,7 +385,7 @@ const CORE_RANK: readonly string[] = [
   "want", "go", "more", "eat", "no", "yes", "help", "play", "stop", "drink",
   "get", "give", "open", "put", "make", "i_me", "you", "this", "that", "here", "there",
   "need", "like", "have", "feel", "do", "sleep", "wash", "sit", "hug", "talk",
-  "hi", "bye", "thanks", "again", "mine", "ok", "sorry",
+  "hi", "goodbye", "thanks", "again", "mine", "ok", "sorry",
   "where", "what", "who", "why", "how",
   "and", "then", "because", "but", "when", "if", "or", "so", "until",
   "to", "in", "on", "with", "for", "from", "under", "near", "next_to",

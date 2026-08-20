@@ -952,6 +952,45 @@ export const BOARD_MANAGER_DEFAULT_PROVIDER = "gemini" as const;
 export const BOARD_MANAGER_DEFAULT_MODEL = "gemini-2.5-flash";
 
 /**
+ * A provider throw, classified.
+ *
+ * RATE_LIMITED is split out from ERROR because the caller's response to the two
+ * must differ. An empty or malformed model response is worth retrying at once —
+ * the model simply fumbled, and a second attempt usually lands. A 429 is not a
+ * fumble: the API refused, and no amount of asking again changes that. The
+ * retry we used to fire immediately just doubled the request rate against a
+ * quota that was already gone (2026-08-20 — the AI Studio key's daily cap took
+ * every board rebuild down; see providers/vertex-config.ts).
+ *
+ * The message also goes to the FLOW log. It used to reach only the server
+ * console, so agent-flow-debug.log showed a bare "finish: ERROR" with no cause
+ * and the actual reason was invisible to anyone reading the log afterwards.
+ */
+/**
+ * Is this provider failure a refusal (rate limit / quota) or a fumble?
+ *
+ * Exported pure so the distinction is testable — getting it wrong in either
+ * direction is costly: a missed rate limit resumes the retry storm, and a false
+ * positive silently disables a retry that would have recovered the board.
+ * `quota` is word-bounded so "bad quotation marks" is not a rate limit.
+ */
+export function classifyProviderFailure(message: string): "RATE_LIMITED" | "ERROR" {
+  return /RESOURCE_EXHAUSTED|\b429\b|rate.?limit|\bquotas?\b/i.test(message)
+    ? "RATE_LIMITED"
+    : "ERROR";
+}
+
+function failureResult(err: Error, where?: string): BoardManagerInvocationResult {
+  const msg = err.message ?? String(err);
+  const rateLimited = classifyProviderFailure(msg) === "RATE_LIMITED";
+  flowNote(
+    "BOARD_MGR",
+    `completion failed${where ? ` (${where})` : ""}${rateLimited ? " — RATE LIMITED, backing off" : ""}: ${msg}`,
+  );
+  return { events: [], rawToolCalls: [], finishReason: rateLimited ? "RATE_LIMITED" : "ERROR" };
+}
+
+/**
  * Per-session Board Manager handle. Holds the ChatProvider reference but
  * carries no per-invocation state — every `invoke()` call is independent.
  *
@@ -971,8 +1010,24 @@ export class BoardManagerAgent {
    *  promptTokens so the ledger bills cache writes at the normal input rate. */
   private pendingCacheCreateTokens = 0;
 
-  constructor(provider: LLMProviderKey, defaultModel: string = BOARD_MANAGER_DEFAULT_MODEL) {
-    this.defaultProvider = getChatProvider(provider);
+  /** The session's Vertex signal, kept so a per-invocation provider override
+   *  authenticates the same way the constructor default does. */
+  private readonly useVertex: boolean;
+
+  /**
+   * @param useVertex bill through the paid GCP project rather than the AI
+   *   Studio key. THE SAME signal the live agents get (AgentCoordinator
+   *   .useVertex). Before this existed the Board Manager was the one agent
+   *   still on the free key, and its daily cap took board rebuilds down while
+   *   the Speaker carried on — see providers/vertex-config.ts.
+   */
+  constructor(
+    provider: LLMProviderKey,
+    defaultModel: string = BOARD_MANAGER_DEFAULT_MODEL,
+    useVertex = false,
+  ) {
+    this.useVertex = useVertex;
+    this.defaultProvider = getChatProvider(provider, { useVertex });
     this.defaultModel = defaultModel;
   }
 
@@ -999,7 +1054,7 @@ export class BoardManagerAgent {
 
   async invoke(input: BoardManagerInvocationInput): Promise<BoardManagerInvocationResult> {
     const provider = input.provider !== undefined
-      ? getChatProvider(input.provider)
+      ? getChatProvider(input.provider, { useVertex: this.useVertex })
       : this.defaultProvider;
 
     // Build tool list from the per-invocation config.
@@ -1104,11 +1159,11 @@ export class BoardManagerAgent {
           result = await provider.completeChat(inlineRequest);
         } catch (retryErr) {
           console.error("[BoardManagerAgent] completion failed:", (retryErr as Error).message);
-          return { events: [], rawToolCalls: [], finishReason: "ERROR" };
+          return failureResult(retryErr as Error, "inline retry");
         }
       } else {
         console.error("[BoardManagerAgent] completion failed:", (err as Error).message);
-        return { events: [], rawToolCalls: [], finishReason: "ERROR" };
+        return failureResult(err as Error);
       }
     }
 

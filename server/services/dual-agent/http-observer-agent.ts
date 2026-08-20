@@ -41,6 +41,8 @@ import { buildObserverToolDeclarations } from "./prompts/observer";
 import { isHeardSpeechTurn } from "./speech-text";
 import type { IObserverAgent } from "./observer-interface";
 import { flowInput, flowTool, flowNote, type FlowAgent } from "./agent-flow-logger";
+// One owner for "is this a refusal or a fumble" — see board-manager-agent.
+import { classifyProviderFailure } from "./board-manager-agent";
 import { runInSessionContext } from "./dual-agent-logger";
 
 /** Convert one Gemini-format FunctionDeclaration into the provider-agnostic
@@ -104,8 +106,14 @@ export class HttpObserverAgent implements IObserverAgent {
   /** Max buffered context lines awaiting the next turn (calm-room backstop). */
   private static readonly PENDING_CONTEXT_CAP = 12;
 
-  constructor(providerKey: LLMProviderKey, callbacks: ObserverCallbacks) {
-    this.provider = getChatProvider(providerKey);
+  /**
+   * @param useVertex bill through the paid GCP project rather than the free AI
+   *   Studio key — the SAME signal the live Observer gets. Economy mode is the
+   *   Observer's HTTP path, so without this it sat on exactly the quota that
+   *   took the Board Manager down on 2026-08-20. See providers/vertex-config.ts.
+   */
+  constructor(providerKey: LLMProviderKey, callbacks: ObserverCallbacks, useVertex = false) {
+    this.provider = getChatProvider(providerKey, { useVertex });
     this.callbacks = callbacks;
   }
 
@@ -362,7 +370,15 @@ export class HttpObserverAgent implements IObserverAgent {
       });
     } catch (err) {
       if (abort.signal.aborted) return; // superseded / closed — not an error
-      console.error("[HttpObserverAgent] completion failed:", (err as Error).message);
+      const msg = (err as Error).message ?? String(err);
+      console.error("[HttpObserverAgent] completion failed:", msg);
+      // Into the FLOW log too. A provider refusal used to reach only the server
+      // console, so agent-flow-debug.log showed the turn simply stopping — the
+      // Board Manager's version of that cost a day of guessing on 2026-08-20.
+      flowNote(
+        "OBSERVER",
+        `completion failed${classifyProviderFailure(msg) === "RATE_LIMITED" ? " — RATE LIMITED" : ""}: ${msg}`,
+      );
       throw err;
     } finally {
       if (this.inFlight === abort) this.inFlight = null;

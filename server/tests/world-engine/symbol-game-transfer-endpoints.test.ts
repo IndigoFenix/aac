@@ -132,8 +132,12 @@ describe("give with no recipient defaults to the speaker", () => {
 });
 
 describe("movement gaits are one primitive", () => {
-  it("'walk + home' and 'run + home' both go home", () => {
-    expect(goalOf("walk + home")).toEqual({ kind: "goHome" });
+  // `walk` was deleted (2026-08-20, NO SYNONYMS): it drew the same picture as
+  // `go`, compiled to this same goHome, and is one word with `go` in Hebrew.
+  // `run` is the gait that survives, and this still pins what the describe says
+  // — a gait and a plain go are ONE primitive.
+  it("'go + home' and 'run + home' both go home", () => {
+    expect(goalOf("go + home")).toEqual({ kind: "goHome" });
     expect(goalOf("run + home")).toEqual({ kind: "goHome" });
   });
 
@@ -150,7 +154,6 @@ describe("movement gaits are one primitive", () => {
   });
 
   it("the canonical verb family collapses the synonyms", () => {
-    expect(canonicalVerb("walk")).toBe("go");
     expect(canonicalVerb("run")).toBe("go");
     expect(canonicalVerb("take")).toBe("get");
     expect(canonicalVerb("bring")).toBe("give");

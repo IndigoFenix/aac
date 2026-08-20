@@ -16,6 +16,8 @@ let _openaiStructured: StructuredLLMProvider | null = null;
 let _openaiChat: ChatProvider | null = null;
 let _geminiStructured: StructuredLLMProvider | null = null;
 let _geminiChat: ChatProvider | null = null;
+/** Vertex-authenticated twin of `_geminiChat`. See getChatProvider. */
+let _geminiChatVertex: ChatProvider | null = null;
 let _claudeStructured: StructuredLLMProvider | null = null;
 let _claudeChat: ChatProvider | null = null;
 
@@ -71,9 +73,24 @@ export function getStructuredProvider(provider: LLMProviderKey): StructuredLLMPr
   }
 }
 
-export function getChatProvider(provider: LLMProviderKey): ChatProvider {
+/**
+ * @param opts.useVertex for `gemini` only — route through the paid GCP project
+ *   instead of the AI Studio API key. Cached as a SEPARATE singleton: the two
+ *   authenticate differently and hold different prompt-cache handles, so they
+ *   must not share an instance. Callers that omit it are unchanged.
+ */
+export function getChatProvider(
+  provider: LLMProviderKey,
+  opts?: { useVertex?: boolean },
+): ChatProvider {
   const override = _chatOverrides.get(provider);
   if (override) return override;
+  if (provider === "gemini" && opts?.useVertex) {
+    if (!_geminiChatVertex) {
+      _geminiChatVertex = new GeminiChatProvider(true);
+    }
+    return _geminiChatVertex;
+  }
   switch (provider) {
     case "openai":
       if (!_openaiChat) {

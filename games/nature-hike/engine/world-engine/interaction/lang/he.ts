@@ -62,10 +62,11 @@ const CENTRAL: Record<string, Lexeme> = {
   know: { w: "יודע", f: "יודעת" },
   understand: { w: "מבין", f: "מבינה" },
   go: { w: "הולך", f: "הולכת", vmpl: "הולכים", vfpl: "הולכות", inf: "ללכת" },
-  // The movement gaits + pursuit family (semantic-gaps batch). NOTE walk IS
-  // go in Hebrew (ללכת covers both) — the cross-language signal that the
-  // pair is one primitive wearing two English words.
-  walk: { w: "הולך", f: "הולכת", vmpl: "הולכים", vfpl: "הולכות", inf: "ללכת" },
+  // The movement gaits + pursuit family (semantic-gaps batch). Hebrew is what
+  // proved `walk` redundant: ללכת covers both go and walk, so this ruleset had
+  // to give the two English words ONE Hebrew word — two identical buttons on a
+  // Hebrew board. That, plus the shared artwork and the shared goTo, is why
+  // `walk` was deleted (2026-08-20); `run` is a real gait and stays.
   run: { w: "רץ", f: "רצה", vmpl: "רצים", vfpl: "רצות", inf: "לרוץ" },
   chase: { w: "רודף", f: "רודפת", vmpl: "רודפים", vfpl: "רודפות", inf: "לרדוף" },
   follow: { w: "עוקב", f: "עוקבת", vmpl: "עוקבים", vfpl: "עוקבות", inf: "לעקוב" },
@@ -99,7 +100,6 @@ const CENTRAL: Record<string, Lexeme> = {
   hard: { w: "קשה" },
   why: { w: "למה" },
   because: { w: "כי" },
-  therefore: { w: "לכן" },
   in_order_to: { w: "כדי ש" },
   when: { w: "כש" },
   until: { w: "עד ש" },
@@ -107,7 +107,11 @@ const CENTRAL: Record<string, Lexeme> = {
   yes: { w: "כן" },
   no: { w: "לא" },
   ok: { w: "בסדר", f: "בסדר" },
-  hi: { w: "שלום" },
+  // "היי", NOT "שלום": Hebrew שלום is BOTH the greeting and the farewell, so a
+  // hello button reading שלום beside a goodbye button is a distinction the
+  // child cannot see. היי is unambiguously the greeting (and is already what
+  // the client's own `aac.glyph.hi` says).
+  hi: { w: "היי" },
   goodbye: { w: "להתראות" },
   thank_you: { w: "תודה" },
   confused: { w: "מבולבל", f: "מבולבלת" },
@@ -278,9 +282,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // Relations. `from` is the ONE-LETTER preposition מ־, which `prepNp` fuses to
   // the following definite noun (מ + הקופסה → מהקופסה) — exactly why it is
   // spelled as the bare letter here rather than as מן.
-  above: { w: "מעל" },
   from: { w: "מ" },
-  front: { w: "מול" },
 
   // Descriptors — the modifier rail's axes. Each carries its feminine, because
   // the regular ה suffix is wrong often enough to matter (חולה, not חולהת).
@@ -342,9 +344,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts — each the alias of a word that already had a lexeme
   // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
   // are listed on the social tab, so both need words.
-  hello: { w: "שלום" },
-  bye: { w: "להתראות" },
-  okay: { w: "בסדר" },
   thanks: { w: "תודה" },
   sorry: { w: "סליחה" },
   mine: { w: "שלי" },
@@ -354,7 +353,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Deixis the person tab lists beside i_me/you/we.
   this: { w: "זה" },
   that: { w: "ההוא" },
-  us: { w: "אנחנו", g: "m", pl: true },
 
   // GROUP-CHIP LABELS — the object-property cluster ids. A chip wears
   // `baseWord(lang, id)`, so an untranslated id is an English chip on a Hebrew

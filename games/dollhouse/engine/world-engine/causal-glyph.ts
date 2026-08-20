@@ -22,7 +22,11 @@
  *  `Connective` union — kept local so this render layer owns no game import). */
 export const CAUSAL_CONNECTIVES: ReadonlySet<string> = new Set([
   "because",
-  "therefore",
+  // `so`, not `therefore`: they were duplicate LEXICON entries for one
+  // connective and `therefore` was deleted (2026-08-20, NO SYNONYMS). A stale
+  // spelling here would not throw — the clause simply would not split, and the
+  // causal glyph would render as one run-on picture.
+  "so",
   "in_order_to",
   "when",
   "until",

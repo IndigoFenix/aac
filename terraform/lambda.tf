@@ -164,6 +164,15 @@ resource "aws_security_group" "lambda" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # A VPC-attached Lambda leaves service-owned Hyperplane ENIs bound to this
+  # group, and AWS releases them asynchronously — documented as "up to 20
+  # minutes", observed 20-40 — so the group can't be deleted until they are
+  # gone. The provider's 15m default fails the whole apply (the 2026-08-20
+  # ECS cutover hit exactly this); 45m rides it out in one pass.
+  timeouts {
+    delete = "45m"
+  }
+
   tags = {
     Name = "${local.name_prefix}-lambda-sg"
   }

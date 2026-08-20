@@ -159,13 +159,18 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
 
   private opened = false;
 
-  constructor(providerKey: LLMProviderKey, callbacks: SpeakerCallbacks) {
+  /**
+   * @param useVertex bill through the paid GCP project — the SAME signal the
+   *   live Speaker gets. The fallback path must not quietly drop onto the free
+   *   AI Studio key. See providers/vertex-config.ts.
+   */
+  constructor(providerKey: LLMProviderKey, callbacks: SpeakerCallbacks, useVertex = false) {
     this.providerKey = providerKey;
     this.callbacks = callbacks;
     if (providerKey !== "gemini") {
       throw new Error(`[HttpSpeakerAgent] Unsupported provider: ${providerKey}`);
     }
-    this.provider = getChatProvider(providerKey);
+    this.provider = getChatProvider(providerKey, { useVertex });
   }
 
   get isConnected(): boolean {

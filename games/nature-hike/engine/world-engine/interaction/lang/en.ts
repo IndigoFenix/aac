@@ -68,7 +68,6 @@ const CENTRAL: Record<string, Lexeme> = {
   hard: { w: "hard" },
   why: { w: "why" },
   because: { w: "because" },
-  therefore: { w: "so" },
   in_order_to: { w: "so that" },
   when: { w: "when" },
   until: { w: "until" },
@@ -157,7 +156,6 @@ const CENTRAL: Record<string, Lexeme> = {
   go: { w: "go", v3: "goes" },
   // The movement gaits + pursuit family (semantic-gaps batch): commandable
   // verbs render conjugated, never as raw symbols.
-  walk: { w: "walk" },
   run: { w: "run" },
   chase: { w: "chase" },
   follow: { w: "follow" },
@@ -283,9 +281,7 @@ const CENTRAL: Record<string, Lexeme> = {
 
   // Relations. `front` is the LEXICON key; `in_front_of` above is the same
   // relation under the spelling the placement grammar uses.
-  above: { w: "above" },
   from: { w: "from" },
-  front: { w: "in front of" },
 
   // Descriptors — the modifier rail's axes (object-properties AXIS_WORDS).
   // `good` shipped long ago and `bad` never did, which is exactly the kind of
@@ -342,9 +338,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts. Each is an alias of a word that already had a lexeme
   // (`hi`/`hello`, `goodbye`/`bye`, `ok`/`okay`, `confused`/`dont_understand`)
   // — and BOTH spellings are listed on the social tab, so both need words.
-  hello: { w: "hello" },
-  bye: { w: "bye" },
-  okay: { w: "okay" },
   thanks: { w: "thanks" },
   sorry: { w: "sorry" },
   mine: { w: "mine" },
@@ -353,7 +346,6 @@ const CENTRAL: Record<string, Lexeme> = {
 
   // Deixis the person tab lists beside i_me/you/we.
   that: { w: "that" },
-  us: { w: "us", pl: true },
 
   // GROUP-CHIP LABELS — the object-property cluster ids (object-properties.ts
   // OBJECT_PROPERTIES). A chip wears `baseWord(lang, id)`, so an untranslated
@@ -469,7 +461,7 @@ const lcClause = (s: string) => (/^I(\b|')/.test(s) ? s : s.charAt(0).toLowerCas
 
 const EN_CONN: Record<string, string> = {
   because: "because",
-  therefore: "so",
+  so: "so",
   in_order_to: "so that",
   when: "when",
   until: "until",

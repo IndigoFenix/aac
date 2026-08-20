@@ -3,6 +3,7 @@
 
 import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
+import { vertexClientOptions } from "./vertex-config";
 import type {
   ChatProvider,
   ChatRequest,
@@ -38,8 +39,31 @@ export class GeminiChatProvider implements ChatProvider {
   private promptCaches = new Map<string, PromptCacheEntry>();
   private promptCacheFailedUntil = 0;
 
-  constructor() {
-    this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  /** True when this instance is talking to Vertex rather than AI Studio. */
+  private readonly usingVertex: boolean;
+
+  /**
+   * @param useVertex route through the paid GCP project instead of the AI
+   *   Studio `GEMINI_API_KEY`. Carries the SAME signal the Live provider takes
+   *   (AgentCoordinator.useVertex), so the HTTP agents of a session bill the
+   *   same way its live agents do. Falls back to the API key when Vertex is not
+   *   configured, so a developer machine without a service account still works.
+   */
+  constructor(useVertex = false) {
+    const vertex = useVertex ? vertexClientOptions() : null;
+    this.usingVertex = !!vertex;
+    if (vertex) {
+      console.log(`[GeminiChat] Using Vertex AI (project=${vertex.project}, location=${vertex.location})`);
+      this.client = new GoogleGenAI(vertex);
+    } else {
+      if (useVertex) {
+        // Asked for Vertex, no project configured. Worth saying out loud: this
+        // is the silent downgrade onto the free key that cost a day of the
+        // Board Manager returning RESOURCE_EXHAUSTED.
+        console.warn("[GeminiChat] useVertex requested but no GOOGLE_CLOUD_PROJECT_ID — falling back to GEMINI_API_KEY.");
+      }
+      this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    }
   }
 
   // Safety settings to prevent Gemini from blocking legitimate AAC content

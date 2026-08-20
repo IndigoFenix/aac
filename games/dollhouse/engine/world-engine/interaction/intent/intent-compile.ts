@@ -355,7 +355,6 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
   switch (v) {
     case "go":
     case "come":
-    case "walk":
     case "run":
     case "return": {
       // walk/run are gaits of the same movement primitive ("run home", "walk

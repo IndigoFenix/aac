@@ -7018,7 +7018,7 @@ export class AgentCoordinator {
     };
     if (isEconomy) {
       flowNote("COORDINATOR", `Observer mode=economy (HTTP ${this.observerHttpModel})`);
-      return new HttpObserverAgent(BOARD_MANAGER_DEFAULT_PROVIDER, callbacks);
+      return new HttpObserverAgent(BOARD_MANAGER_DEFAULT_PROVIDER, callbacks, this.useVertex);
     }
     flowNote("COORDINATOR", `Observer mode=live (Gemini Live ${this.observerModel})`);
     return new ObserverAgent("gemini", callbacks);
@@ -7165,7 +7165,7 @@ export class AgentCoordinator {
     };
     if (this.speakerMode === "http") {
       flowNote("COORDINATOR", `Speaker mode=http (Gemini chat completion + streaming TTS)`);
-      return new HttpSpeakerAgent(provider, callbacks);
+      return new HttpSpeakerAgent(provider, callbacks, this.useVertex);
     }
     flowNote("COORDINATOR", `Speaker mode=live (Gemini Live, useDirectAudio=${this.useDirectAudio})`);
     return new SpeakerAgent(provider, {
@@ -7212,7 +7212,14 @@ export class AgentCoordinator {
       });
     }
     flowNote("COORDINATOR", `Board Manager mode=http (${BOARD_MANAGER_DEFAULT_PROVIDER}/${this.boardManagerHttpModel})`);
-    return new BoardManagerAgent(BOARD_MANAGER_DEFAULT_PROVIDER, this.boardManagerHttpModel);
+    // Same Vertex signal the live agents get. Without it the Board Manager was
+    // the one agent left on the AI Studio key, and its daily cap took every
+    // board rebuild down while the Speaker kept talking (2026-08-20).
+    return new BoardManagerAgent(
+      BOARD_MANAGER_DEFAULT_PROVIDER,
+      this.boardManagerHttpModel,
+      this.useVertex,
+    );
   }
 
   private routeFocusRequest(event: FocusRequestEvent): void {
@@ -9873,7 +9880,21 @@ export class AgentCoordinator {
         && onlyNoChange
         && !isMalformedOrEmpty;
 
-      if ((isMalformedOrEmpty && !hadFusion) || beatGotNoChange || stateRequiresOutput || directiveGotNoChange) {
+      // A 429 is not a fumbled response — it is the API refusing, and the
+      // immediate retry below is the one action guaranteed to earn another one.
+      // Observed 2026-08-20: the AI Studio key hit its DAILY cap, so every
+      // rebuild returned RESOURCE_EXHAUSTED and each failure instantly fired a
+      // second request, roughly doubling the load against a quota that was
+      // already gone. Retrying cannot help — a rate limit is not something the
+      // model can get right on the second try. Skip it and let the next real
+      // event drive the board.
+      const rateLimited = result.finishReason === "RATE_LIMITED";
+      if (rateLimited) {
+        flowNote("BOARD_MGR", "Rate limited — NOT retrying; the next event will rebuild.");
+      }
+
+      if (!rateLimited
+        && ((isMalformedOrEmpty && !hadFusion) || beatGotNoChange || stateRequiresOutput || directiveGotNoChange)) {
         const why = isMalformedOrEmpty
           ? `malformed/empty (finish: ${result.finishReason ?? "unknown"})`
           : beatGotNoChange

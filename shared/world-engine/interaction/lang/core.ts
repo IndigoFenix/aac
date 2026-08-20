@@ -209,8 +209,15 @@ export function posOf(head: string): SymPos {
 }
 
 /** Clause connectives (motive-driven-needs.md): a glyph string may join two
- *  clauses with one of these — the causal frame splits on it. */
-export const CONNECTIVES = new Set(["because", "therefore", "in_order_to", "when", "until"]);
+ *  clauses with one of these — the causal frame splits on it.
+ *
+ *  ⚠️ `so`, not `therefore`: they were duplicate LEXICON entries for one
+ *  connective and `therefore` was the one deleted (2026-08-20, NO SYNONYMS).
+ *  A stale spelling here does not throw — the sentence simply stops splitting
+ *  and falls through to the GLOSS ("I cold so window open" instead of "I'm cold
+ *  so the window is open"), which is why this list has to move with the
+ *  vocabulary. Same fix as `causal-glyph.ts`'s CAUSAL_CONNECTIVES. */
+export const CONNECTIVES = new Set(["because", "so", "in_order_to", "when", "until"]);
 
 /** THE INTENT MARKER — a `.will` modifier on the verb turns a clause into a
  *  STATEMENT OF INTENT ("i_me + eat.will + apple" → "I will eat the apple").

@@ -154,6 +154,23 @@ Secrets are stored in AWS Secrets Manager, not in environment variables or code.
 - Google OAuth credentials
 - Dropbox credentials
 
+**Gemini — required for the AAC.** All Gemini agents (Speaker, Observer AND the
+Board Manager) authenticate through **Vertex AI**, so these three must be in the
+secret:
+- `GOOGLE_CLOUD_PROJECT_ID`
+- `GOOGLE_CLOUD_LOCATION` (defaults to `us-central1` if absent)
+- `GOOGLE_APPLICATION_CREDENTIALS_JSON` — the service-account key
+
+`GEMINI_API_KEY` (an AI Studio key) is the FALLBACK used only when no project is
+configured. It is free-tier and will hit a daily cap under real session load: on
+2026-08-20 the Board Manager was the last agent still on it, and when the cap hit
+every board rebuild returned RESOURCE_EXHAUSTED while the Speaker — already on
+Vertex — carried on as if nothing were wrong. Treat a deployment that falls back
+to the API key as broken, not degraded; both runtimes log a warning when it does.
+
+The credentials key may be stored as a JSON string OR as a nested JSON object —
+`loadAwsSecrets` serializes non-string values, which Lambda and ECS share.
+
 Transactional email needs **no secret**: SES authenticates via the Lambda/ECS
 role (see [EMAIL.md](EMAIL.md)). The old SMTP_*/RESEND_*/EMAIL_* keys are
 obsolete and should be deleted from the app-secrets JSON — on Lambda every key
