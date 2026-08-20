@@ -399,6 +399,10 @@ export const ar: Translations = {
   aac: {
     energyBar: "طاقة الذكاء الاصطناعي",
     voiceLive: "يستمع",
+    readingMode: {
+      hint: "القراءة — اضغط للطلب",
+      start: "ابدأ الطلب",
+    },
     glyph: {
       person: "\u0634\u062e\u0635",
       thing: "\u0634\u064a\u0621",

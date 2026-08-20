@@ -1,3 +1,4 @@
+import { describe, it, expect } from "@jest/globals";
 /**
  * The quick-action row's composition. These assert the rules the student's
  * screen and the clinician's mirror BOTH now read from — before this module
@@ -5,7 +6,7 @@
  * offered board Back + Pause while an app was open; the real row did not).
  */
 
-import { quickActionSlots, quickActionsMirror, type QuickActionsState } from "./quick-actions";
+import { quickActionSlots, quickActionsMirror, type QuickActionsState } from "@shared/aac/quick-actions";
 
 const base: QuickActionsState = { boardMode: "ai" };
 const ids = (s: Partial<QuickActionsState>, rtl = false) =>

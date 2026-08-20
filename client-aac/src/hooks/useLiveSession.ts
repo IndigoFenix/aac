@@ -51,6 +51,7 @@ import type {
   UseDualAgentReturn,
 } from "./dual-agent-types";
 import { CLIENT_CAPABILITIES } from "./dual-agent-types";
+import { applyAiTextChunk } from "@shared/aac/ai-caption";
 import { classifyScene, sceneSignature } from "@shared/aac/scene-state";
 import {
   saveSessionSnapshot,
@@ -613,62 +614,39 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "text": {
-          // Accumulate streamed text — keep the same message ID to avoid re-triggering animations
-          // Skip empty/whitespace-only text to avoid clearing the display
-          if (!msg.data || !msg.data.trim()) break;
+          // WHAT THE MODEL ACTUALLY SAID. The decision — scaffold restarts, tag
+          // artifacts, private-note turns — lives in @shared/aac/ai-caption so
+          // this hook and the simulated-child harness cannot disagree about what
+          // a student is allowed to see. Logging stays here, because auditing
+          // which leak patterns arrive is a CLIENT concern.
+          const chunk = applyAiTextChunk(textAccumRef.current, msg.data ?? "");
 
-          let textData = msg.data;
+          if (chunk.kind === "ignore") {
+            if (chunk.reason === "private-note") {
+              console.warn("[LEAK] private-note prefix dropped:", JSON.stringify(msg.data));
+            } else if (chunk.reason === "artifact-only") {
+              console.warn("[LEAK] tag-artifact-only chunk dropped:", JSON.stringify(msg.data));
+            }
+            break;
+          }
 
-          // Detect `<ctrl##>` control tokens. On the upgraded
-          // gemini-live-2.5-flash-native-audio model these tokens occasionally
-          // leak through the output transcription, separating Google's
-          // internal recovery scaffolding (e.g. "If you were doing both, try
-          // just one first. If you were silent, say something.<ctrl95>") from
-          // the model's actual response. The audio output is correct — only
-          // the transcription leaks. When we see a ctrl token, treat
-          // everything up to and including it as scaffold, discard whatever
-          // text was accumulated so far (it was all scaffold), and keep only
-          // what comes after the last ctrl token in this chunk.
-          const ctrlMatches = [...textData.matchAll(/<ctrl\d+>/g)];
-          if (ctrlMatches.length > 0) {
-            const last = ctrlMatches[ctrlMatches.length - 1];
-            const afterCtrl = textData.slice(last.index! + last[0].length);
-            // Logged loudly so we can audit what scaffolding patterns leak
-            // — the full original text (scaffold + tokens) is preserved here
-            // even though the user-facing display drops it.
+          if (chunk.kind === "restart") {
+            // Everything accumulated so far was scaffold too — see the module.
             console.warn(
               "[LEAK] ctrl-token scaffold detected → discarded prefix + accumulated.",
-              "Tokens:", ctrlMatches.map(m => m[0]).join(", "),
-              "| Full original:", JSON.stringify(textData),
+              "Tokens:", chunk.tokens.join(", "),
+              "| Full original:", JSON.stringify(msg.data),
               "| Accumulated so far (also discarded):", JSON.stringify(textAccumRef.current),
-              "| Kept (after last ctrl):", JSON.stringify(afterCtrl),
+              "| Kept (after last ctrl):", JSON.stringify(chunk.text),
             );
             textAccumRef.current = "";
             showCaption({ source: "ai-restart" });
-            textData = afterCtrl;
-            if (!textData.trim()) break;
+            if (!chunk.text) break;
+            textAccumRef.current = chunk.text;
+          } else {
+            textAccumRef.current += chunk.text;
           }
 
-          // Strip any other tag-like artifacts that occasionally leak from
-          // Gemini's output transcription (e.g. "<end_of_turn>", "<unk>").
-          const tagMatches = textData.match(/<[^<>]+>/g);
-          if (tagMatches) {
-            console.warn("[LEAK] non-ctrl tag artifacts stripped:", tagMatches.join(", "), "| original:", JSON.stringify(textData));
-          }
-          const cleaned = textData.replace(/<[^<>]+>/g, "");
-          if (!cleaned.trim()) break;
-          // Drop the entire turn if the model leaks a private-reasoning prefix —
-          // those are the model's own notes (it should be using stay_silent())
-          // and must not be shown to the user. Match only at the start of a
-          // fresh accumulation so we don't truncate legitimate speech.
-          if (
-            !textAccumRef.current &&
-            /^\s*\[(private\s*note|note|thinking|internal|reasoning|self[\s-]*note)\b/i.test(cleaned)
-          ) {
-            console.warn("[LEAK] private-note prefix dropped:", JSON.stringify(cleaned));
-            break;
-          }
-          textAccumRef.current += cleaned;
           showCaption({ source: "ai", text: textAccumRef.current });
           break;
         }

@@ -73,6 +73,17 @@ export function hitIsUsable(hit: RawImageHit): boolean {
 
 /** Pixabay requires 3 ≤ per_page ≤ 200. */
 const PROVIDER_MIN_PER_REQUEST = 3;
+const PROVIDER_MAX_PER_REQUEST = 200;
+
+/**
+ * Ask for several times what we intend to show.
+ *
+ * The result-side tag screen (`blockedTagFor`) runs AFTER the provider call, so
+ * a search whose popular results are mostly cocktails would otherwise return a
+ * grid of two. One request either way — Pixabay bills nothing and `per_page` is
+ * free — so the only cost is a slightly larger JSON body.
+ */
+const OVERFETCH_FACTOR = 4;
 
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -128,7 +139,12 @@ export async function searchImages(
     key: process.env.PIXABAY_API_KEY!,
     q: query,
     safesearch: "true",
-    per_page: String(Math.max(PROVIDER_MIN_PER_REQUEST, config.maxResults)),
+    per_page: String(
+      Math.min(
+        PROVIDER_MAX_PER_REQUEST,
+        Math.max(PROVIDER_MIN_PER_REQUEST, config.maxResults * OVERFETCH_FACTOR),
+      ),
+    ),
     // Photos AND illustrations/vectors: clip-art answers "what does an owl
     // look like" just as well for this audience, and doubles the recall.
     image_type: "all",

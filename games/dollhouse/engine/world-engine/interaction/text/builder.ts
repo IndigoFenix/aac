@@ -41,6 +41,7 @@ import {
   type BuilderSurfaceOpts,
   type BuilderWordJson,
 } from "../intent/builder-surface.js";
+import { axisOf } from "../../object-properties.js";
 import { translateGlyph } from "../lang/index.js";
 import type { TextBoardOption, TextBuilderGroup, TextEvent } from "./types.js";
 
@@ -50,6 +51,40 @@ export const BUILDER_DEFAULT_GRID = 8;
 /** What the driver may type instead of a tab name to get back to the ranked
  *  grid. Not a category — the ranked view is the ABSENCE of one. */
 const RANKED_WORDS: ReadonlySet<string> = new Set(["none", "ranked", "grid", "clear", "off"]);
+
+/**
+ * ONE SCREEN of a ranked word list.
+ *
+ * `pages` is null when the pager CYCLES — a cycling pager has no last page, so
+ * `more` never refuses and a caller measuring cost must count PRESSES, not
+ * pages. That is not a detail: the AAC's own builder cycles (its More button
+ * must never go dead under a child who keeps pressing it), while text mode's
+ * default pager stops at the end. A harness that reports "reached in N presses
+ * across M screens" is only describing the child's board if it pages the way
+ * the child's board pages.
+ */
+export interface BuilderScreen {
+  items: BuilderWordJson[];
+  /** Total screens, or null when paging cycles. */
+  pages: number | null;
+  /** The page actually shown — a clamping pager may move an out-of-range one. */
+  page: number;
+}
+
+/** How a ranked word list is cut into screens. */
+export type BuilderPager = (words: BuilderWordJson[], page: number) => BuilderScreen;
+
+/**
+ * The default: a clean slice at `grid`, clamped to the last page. What text
+ * mode has always done, kept exactly so existing transcripts still diff.
+ */
+export function slicePager(grid: number): BuilderPager {
+  return (words, page) => {
+    const pages = Math.max(1, Math.ceil(words.length / grid));
+    const p = page >= pages ? pages - 1 : page;
+    return { items: words.slice(p * grid, p * grid + grid), pages, page: p };
+  };
+}
 
 export interface TextBuilderDeps {
   locale?: string;
@@ -61,6 +96,16 @@ export interface TextBuilderDeps {
   /** THE SURFACER. Defaults to the real `builderSurfaceFor`; injectable so a
    *  test can pin an exact screen without pinning the whole lexicon's ranking. */
   surface?: (partial: string, opts: BuilderSurfaceOpts) => BuilderSurfaceJson;
+  /**
+   * THE PAGER. Defaults to `slicePager(grid)`. Injectable so a driver can page
+   * the way a REAL board pages instead of the way this harness does — see
+   * `BuilderScreen`. The engine never imports a platform pager; the caller
+   * hands one in (the AAC's lives in `shared/aac-builder-paging.ts`).
+   *
+   * `capacity` is still asked of the surfacer at `grid`, so a pager with a
+   * larger page than the grid will simply see everything the surfacer ranked.
+   */
+  pager?: BuilderPager;
 }
 
 /** What a tap did, or why it did nothing. `applied` is the key that landed. */
@@ -96,9 +141,26 @@ export interface TextBuilder {
 /** Normalized for matching: a driver types captions, not keys. */
 const norm = (s: string): string => s.trim().toLowerCase();
 
+/**
+ * Compose `mod` onto `token`, dropping any modifier already on it that shares
+ * `mod`'s descriptor axis. Tone tags (`#question`) are left where they are —
+ * they belong to the sentence, not the head.
+ *
+ * Non-descriptor modifiers (no axis) simply append, as before.
+ */
+function replaceOnAxis(token: string, mod: string): string {
+  const axis = axisOf(mod);
+  const tags = token.match(/#\w+/g)?.join("") ?? "";
+  const bare = token.replace(/#\w+/g, "");
+  const [head, ...applied] = bare.split(".");
+  const kept = axis === null ? applied : applied.filter((m) => axisOf(m) !== axis);
+  return `${[head, ...kept, mod].join(".")}${tags}`;
+}
+
 export function createTextBuilder(deps: TextBuilderDeps = {}): TextBuilder {
   const grid = Math.max(1, deps.grid ?? BUILDER_DEFAULT_GRID);
   const surface = deps.surface ?? builderSurfaceFor;
+  const pager = deps.pager ?? slicePager(grid);
 
   let tokens: string[] = [];
   let tab: string | null = null;
@@ -136,15 +198,19 @@ export function createTextBuilder(deps: TextBuilderDeps = {}): TextBuilder {
     all: TextBoardOption[];
     groups: TextBuilderGroup[];
     page: number;
-    pages: number;
+    /** Null when the pager cycles — there is no last page to stop at. */
+    pages: number | null;
   }
 
   function view(): View {
     const s = ask();
     const buttons = s.buttons ?? [];
-    const pages = Math.max(1, Math.ceil(buttons.length / grid));
-    if (page >= pages) page = pages - 1;
-    const words = buttons.slice(page * grid, page * grid + grid).map((w, i) => row(w, i + 1));
+    const screen = pager(buttons, page);
+    // The pager decides what an out-of-range page means (clamp, or wrap); this
+    // is where its verdict becomes the stored page.
+    page = screen.page;
+    const pages = screen.pages;
+    const words = screen.items.map((w, i) => row(w, i + 1));
     const modifiers = (s.modifiers ?? []).map((w, i) => row(w, words.length + i + 1, true));
     const groups: TextBuilderGroup[] = (s.groups ?? []).map((g) => ({
       id: g.id,
@@ -172,7 +238,11 @@ export function createTextBuilder(deps: TextBuilderDeps = {}): TextBuilder {
       ...(tab ? { tab } : {}),
       ...(group ? { group } : {}),
       page: v.page + 1,
-      pages: v.pages,
+      // Omitted entirely when the pager cycles: there is no total to report, and
+      // the renderer's "page N/M" line would be inventing one. With the default
+      // slice pager this is always present, so existing transcripts are
+      // byte-identical.
+      ...(v.pages !== null ? { pages: v.pages } : {}),
     };
   }
 
@@ -200,7 +270,14 @@ export function createTextBuilder(deps: TextBuilderDeps = {}): TextBuilder {
       if (!tokens.length) {
         return { ok: false, error: `nothing to describe yet — press a word first, then ${o.label}.` };
       }
-      tokens[tokens.length - 1] = `${tokens[tokens.length - 1]}.${o.id}`;
+      // AN AXIS IS MUTUALLY EXCLUSIVE. A thing cannot be hot AND cold, or one
+      // AND three — so a descriptor REPLACES the applied member of its own axis
+      // instead of stacking beside it. Without this the rail happily composed
+      // "apple.hot.cold", which the lang layer duly read out as "a hot cold
+      // apple": a sentence the student never meant and cannot undo in one press.
+      // (The rail already hides the EXACT word once applied, which is why only
+      // the same-axis case ever got through.)
+      tokens[tokens.length - 1] = replaceOnAxis(tokens[tokens.length - 1], o.id);
       page = 0;
       return { ok: true, applied: o.id, modifier: true };
     }
@@ -294,7 +371,11 @@ export function createTextBuilder(deps: TextBuilderDeps = {}): TextBuilder {
     page(dir) {
       const v = view();
       if (dir === "more") {
-        if (v.page + 1 >= v.pages) return { ok: false, error: "this is the last page of the list." };
+        // A CYCLING pager has no last page — More must never refuse, because on
+        // the board this models it must never become a dead control.
+        if (v.pages !== null && v.page + 1 >= v.pages) {
+          return { ok: false, error: "this is the last page of the list." };
+        }
         page = v.page + 1;
       } else {
         if (v.page === 0) return { ok: false, error: "this is the first page of the list." };

@@ -19,7 +19,7 @@ import type { BufferedFrame } from "@/lib/frameRingBuffer";
 import type { ParsedBoardData, PermittedWebsite } from "@shared/schema";
 // The context-strip queue rules, in one place — this provider owns the live
 // list, home.tsx mirrors it, and both now apply the same matching.
-import { addContextButton, applyContextSymbolUpdate, removeContextButton } from "@/lib/context-sidebar";
+import { addContextButton, applyContextSymbolUpdate, removeContextButton } from "@shared/aac/context-sidebar";
 
 /** Delay before firing the one-shot startup detection trigger. This is now a
  *  BACKUP first frame — the server already forwards the client's initialFrame

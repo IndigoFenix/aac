@@ -1594,6 +1594,16 @@ export interface BoardButton {
    * tKey, and stitching translated parts together produces broken grammar.
    */
   localizeFromGlyph?: boolean;
+  /**
+   * Survives reading mode. When a board opens with `openInReadingMode`, every
+   * button EXCEPT these is inert, so a student can look over a menu without a
+   * dwell landing on the first dish they read.
+   *
+   * Set on the essentials a student must never be locked out of — more,
+   * finished, bathroom, and page navigation. Needing the toilet does not wait
+   * for a mode to be switched off.
+   */
+  readingModeSafe?: boolean;
   selfClosing?: boolean;
   /** When true, pressing this button automatically unloads the prebuilt board, giving the AI the full 12-button board */
   exitBoard?: boolean;
@@ -1659,6 +1669,15 @@ export interface ParsedBoardData {
   grid: BoardGrid;
   pages: BoardPage[];
   currentPageId?: string;
+  /**
+   * Open with activation suppressed on everything except `readingModeSafe`
+   * buttons, until the student or caretaker leaves the mode.
+   *
+   * A dense menu is the case this exists for: opening one with dwell live means
+   * the first dish the student's eyes land on gets ordered. Set by the venue
+   * menu builder from `VenueMenuSettings.readingModeDefault` (default true).
+   */
+  openInReadingMode?: boolean;
   /** Board cover/thumbnail image */
   coverImage?: {
     iconRef?: string;      // Emoji or icon reference (e.g. "🏠")

@@ -1,0 +1,127 @@
+{
+  "transcript": {
+    "scenario": "ask-for-a-drink",
+    "profile": "prereader-eyegaze",
+    "studentId": "db6fa1dc-e6bd-49c7-94ee-283a8be61726",
+    "sessionId": "bf46c4a3-f41a-4185-a0db-526a52b0c1ae",
+    "intent": "You are thirsty and want a drink of water.",
+    "turns": [
+      {
+        "n": 1,
+        "screen": [
+          "SURF   board · board \"Home\" · page \"Main\" · grid 2x4",
+          "CELL    1  —  pic 🗣️",
+          "CELL    2  —  pic 💬",
+          "CELL    3  —  pic 📅",
+          "CELL    4  —  pic ⭐",
+          "CELL    5  —  pic 😊",
+          "CELL    6  —  pic ⚠️",
+          "CELL    7  —  pic 📱",
+          "CELL    8  —  pic 🧑‍🤝‍🧑",
+          "QUICK   9  \"Back\"  pic ◀  colour #E5E7EB",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Home\"  pic 🏠  colour #DBEAFE",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I want to talk and this looks like talking.",
+          "n": 2
+        },
+        "outcome": "exited the board via \"Talk\"",
+        "local": false,
+        "aimed": 2,
+        "landed": 2,
+        "latencyMs": 10189
+      },
+      {
+        "n": 2,
+        "screen": [
+          "SURF   board · board \"Home\" · page \"Main\" · grid 2x4",
+          "CELL    1  —  pic 🗣️",
+          "CELL    2  —  pic 💬",
+          "CELL    3  —  pic 📅",
+          "CELL    4  —  pic ⭐",
+          "CELL    5  —  pic 😊",
+          "CELL    6  —  pic ⚠️",
+          "CELL    7  —  pic 📱",
+          "CELL    8  —  pic 🧑‍🤝‍🧑",
+          "QUICK   9  \"Back\"  pic ◀  colour #E5E7EB",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Home\"  pic 🏠  colour #DBEAFE",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "HEARD  \"I'm here, what do you want to talk about?\"  (+13001ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "stuck",
+          "why": "The child model returned nothing usable."
+        },
+        "outcome": "gave up",
+        "local": true,
+        "latencyMs": 4396
+      }
+    ],
+    "heard": [
+      {
+        "source": "ai",
+        "text": "I'm here, what do you want to talk about?",
+        "at": 13001
+      }
+    ],
+    "counters": {
+      "presses": 1,
+      "localPresses": 0,
+      "misselects": 0,
+      "deadEnds": 0,
+      "stuckTurns": 1
+    },
+    "outcome": "stuck",
+    "childUsage": {
+      "promptTokens": 1181,
+      "completionTokens": 930
+    },
+    "wallMs": 26575
+  },
+  "predicateMet": false,
+  "report": {
+    "reachability": {
+      "score": 0,
+      "turn": 2,
+      "why": "The child became stuck after the system's response and could not proceed. They never reached the vocabulary needed to express 'I want water,' making the intended message completely unreachable."
+    },
+    "boardRelevance": {
+      "score": 1,
+      "turn": 1,
+      "why": "The home board offers generic category buttons (talk, calendar, star, emoji, warning, phone, people) with no food/drink vocabulary visible. For a child wanting water, there is no relevant button path available."
+    },
+    "comprehensibility": {
+      "score": 2,
+      "turn": 1,
+      "why": "The emoji icons are clear and visually distinct for a prereader using eyegaze. The child correctly identified the speech bubble (💬) as 'talking,' showing the pictures were understandable, though they led to a dead end."
+    },
+    "fidelity": {
+      "score": 0,
+      "turn": 2,
+      "why": "The child wanted to say 'I'm thirsty and want water' but the system never allowed them to express this. The AI's generic prompt 'what do you want to talk about?' did not lead to any usable vocabulary for the child's actual need."
+    },
+    "responsiveness": {
+      "score": 1,
+      "turn": 2,
+      "why": "After the child's first press, the system took 10+ seconds to respond, then presented the same generic board with no new options. The child was left waiting with no clear path forward."
+    },
+    "repair": {
+      "score": 0,
+      "turn": 2,
+      "why": "When the child got stuck, there was no recovery mechanism. The system returned to the same generic home board with no scaffolding, vocabulary suggestions, or alternative navigation to help the child express their need."
+    },
+    "findings": [
+      "Turn 1: Child pressed 'Talk' (💬) expecting to access communication vocabulary, but this exited the board rather than opening a relevant vocabulary page for expressing needs.",
+      "Turn 2: System returned to generic home board after AI response, offering no food/drink vocabulary or contextual buttons to help child express thirst/water request.",
+      "Turn 2: Child became stuck with no usable vocabulary path to reach their intended message about wanting water."
+    ],
+    "summary": "This device session failed completely. The child wanted to request water but the system offered only generic category buttons with no food/drink vocabulary. After pressing 'Talk,' the system returned to the same unhelpful home board, leaving the child stuck with no way to express their need. The device did not support the child in reaching their intended message, and offered no repair mechanism when they became stranded. For a prereader using eyegaze, the emoji icons were clear, but they led nowhere useful for this communicative need.\""
+  }
+}

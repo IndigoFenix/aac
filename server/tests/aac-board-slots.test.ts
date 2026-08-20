@@ -1,3 +1,4 @@
+import { describe, it, expect } from "@jest/globals";
 /**
  * Slot placement and patching. The behaviour under test is positional: an
  * eye-gaze student aims at a CELL, so what matters is that arriving and
@@ -12,7 +13,7 @@ import {
   layoutSlots,
   resolveFades,
   type SlotState,
-} from "./board-slots";
+} from "@shared/aac/board-slots";
 
 const stableIds = (i: number) => `patch-${i}`;
 

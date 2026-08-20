@@ -1,0 +1,399 @@
+{
+  "transcript": {
+    "scenario": "say-you-feel-sad",
+    "profile": "fluent-reader",
+    "studentId": "a16567cb-3caf-4beb-9beb-9caf5188913e",
+    "sessionId": "e56aecc0-b457-4c17-83ba-69455d6b725f",
+    "intent": "You feel sad today and you want someone to know.",
+    "turns": [
+      {
+        "n": 1,
+        "screen": [
+          "SURF   board · board \"Home\" · page \"Main\" · grid 2x4",
+          "CELL    1  \"Interact\"  pic 🗣️",
+          "CELL    2  \"Talk\"  pic 💬",
+          "CELL    3  \"My Day\"  pic 📅",
+          "CELL    4  \"Interests\"  pic ⭐",
+          "CELL    5  \"Feelings\"  pic 😊",
+          "CELL    6  \"Help\"  pic ⚠️",
+          "CELL    7  \"Apps\"  pic 📱",
+          "CELL    8  \"Practice friend\"  pic 🧑‍🤝‍🧑",
+          "QUICK   9  \"Back\"  pic ◀  colour #E5E7EB",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Home\"  pic 🏠  colour #DBEAFE",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I want to tell someone how I feel, and 'Feelings' seems like the right button for that.",
+          "n": 5
+        },
+        "outcome": "exited the board via \"Feelings\"",
+        "local": false,
+        "aimed": 5,
+        "landed": 5,
+        "latencyMs": 21157
+      },
+      {
+        "n": 2,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Hi\"  pic 🙋",
+          "CELL    2  \"Hello\"  pic 🙋",
+          "CELL    3  \"Your name?\"",
+          "CELL    4  \"How are you?\"",
+          "CELL    5  \"My name is\"",
+          "CELL    6  \"I need help\"",
+          "CELL    7  \"Repeat that?\"",
+          "CELL    8  \"More\"  pic 🔄",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "WAIT   speaker still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find a way to say I am sad, and 'More' seems like it will give me other options.",
+          "n": 8
+        },
+        "outcome": "said \"Repeat that?\"",
+        "local": false,
+        "aimed": 8,
+        "landed": 7,
+        "latencyMs": 22578
+      },
+      {
+        "n": 3,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Yes, I do.\"",
+          "CELL    2  \"No, I don't.\"",
+          "CELL    3  \"Dolphins\"",
+          "CELL    4  \"Sharks\"",
+          "CELL    5  \"What about you?\"",
+          "CELL    6  \"Tell me some?\"",
+          "CELL    7  \"I need help\"",
+          "CELL    8  \"More\"  pic 🔄",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find a way to say I am sad, and 'More' seems like it will give me other options again.",
+          "n": 8
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 8,
+        "landed": 8,
+        "latencyMs": 8412
+      },
+      {
+        "n": 4,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Whales\"",
+          "CELL    2  \"Octopuses\"",
+          "CELL    3  \"Fish\"",
+          "CELL    4  \"All of them\"",
+          "CELL    5  \"Tell me more?\"",
+          "CELL    6  \"What about you?\"",
+          "CELL    7  \"I need help\"",
+          "CELL    8  \"More\"  pic 🔄",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I am still looking for how to say I am sad, and 'More' seems like it will finally give me that option.",
+          "n": 8
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 8,
+        "landed": 8,
+        "latencyMs": 16205
+      },
+      {
+        "n": 5,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Whales\"",
+          "CELL    2  \"Octopuses\"",
+          "CELL    3  \"Fish\"",
+          "CELL    4  \"All of them\"",
+          "CELL    5  \"Your favorite?\"",
+          "CELL    6  \"I need help\"",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)",
+          "SAID   \"More\"  (+55042ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "This screen is about animals, and I need to get back to where I can say how I feel.",
+          "n": 12
+        },
+        "outcome": "closed the social_trainer app",
+        "local": false,
+        "aimed": 12,
+        "landed": 12,
+        "latencyMs": 7178
+      },
+      {
+        "n": 6,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Whales\"",
+          "CELL    2  \"Octopuses\"",
+          "CELL    3  \"Fish\"",
+          "CELL    4  \"All of them\"",
+          "CELL    5  \"Your favorite?\"",
+          "CELL    6  \"I need help\"",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"Previous\"  pic ◀  colour #E5E7EB  (lit)",
+          "QUICK  10  \"Hold\"  pic ⏸️  colour #E5E7EB",
+          "QUICK  11  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  12  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  13  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  14  \"Board\"  pic 📋  colour #E0E7FF",
+          "QUICK  15  \"Find word\"  pic 🔍  colour #EDE9FE",
+          "QUICK  16  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)",
+          "SAID   \"More\"  (+55042ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I am stuck on this animal screen, and I need to go back to find a way to talk about my feelings.",
+          "n": 9
+        },
+        "outcome": "stepped back to the previous board",
+        "local": true,
+        "aimed": 9,
+        "landed": 9,
+        "latencyMs": 3359
+      },
+      {
+        "n": 7,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Dolphins\"",
+          "CELL    2  \"Sharks\"",
+          "CELL    3  \"Big ones\"",
+          "CELL    4  \"What about you?\"",
+          "CELL    5  \"I need help\"",
+          "CELL    6  \"More\"  pic 🔄",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"Previous\"  pic ◀  colour #E5E7EB  (lit)",
+          "QUICK  10  \"Hold\"  pic ⏸️  colour #E5E7EB",
+          "QUICK  11  \"Next\"  pic ▶  colour #E5E7EB  (lit)",
+          "QUICK  12  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  13  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  14  \"Board\"  pic 📋  colour #E0E7FF",
+          "QUICK  15  \"Find word\"  pic 🔍  colour #EDE9FE",
+          "QUICK  16  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)",
+          "SAID   \"More\"  (+55042ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to tell someone how I feel, and 'I need help' is the closest thing to saying I am sad and need to tell someone.",
+          "n": 5
+        },
+        "outcome": "said \"I need help\"",
+        "local": false,
+        "aimed": 5,
+        "landed": 5,
+        "latencyMs": 17955
+      },
+      {
+        "n": 8,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Social training again\"",
+          "CELL    2  \"I don't understand\"",
+          "CELL    3  \"Need a break\"",
+          "CELL    4  \"What to do?\"",
+          "CELL    5  \"I need help\"",
+          "CELL    6  \"More\"  pic 🔄",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"Previous\"  pic ◀  colour #E5E7EB  (lit)",
+          "QUICK  10  \"Hold\"  pic ⏸️  colour #E5E7EB",
+          "QUICK  11  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  12  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  13  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  14  \"Board\"  pic 📋  colour #E0E7FF",
+          "QUICK  15  \"Find word\"  pic 🔍  colour #EDE9FE",
+          "QUICK  16  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)",
+          "SAID   \"More\"  (+55042ms)",
+          "HEARD  \"We ended that one pretty quickly. It's okay to ask the peer to repeat something if you didn't catch it! Maybe next time try sharing an idea of your own, too?\"  (+84595ms)",
+          "SAID   \"I need help\"  (+84610ms)",
+          "HEARD  \"Sure, I can help. What kind of help are you looking for? Are you thinking about something else or want to try the social training again?\"  (+86799ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find a way to say I am sad, and 'More' seems like it will give me other options again.",
+          "n": 6
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 6,
+        "landed": 6,
+        "latencyMs": 19572
+      },
+      {
+        "n": 9,
+        "screen": [
+          "SURF   overlay · page \"Main\" · grid 2x4",
+          "OVERL   1  \"Yes, different person\"",
+          "OVERL   2  \"No, not that\"",
+          "OVERL   3  \"maybe\"  pic 🤷",
+          "QUICK   4  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK   5  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK   6  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK   7  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK   8  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)",
+          "SAID   \"More\"  (+55042ms)",
+          "HEARD  \"We ended that one pretty quickly. It's okay to ask the peer to repeat something if you didn't catch it! Maybe next time try sharing an idea of your own, too?\"  (+84595ms)",
+          "SAID   \"I need help\"  (+84610ms)",
+          "HEARD  \"Sure, I can help. What kind of help are you looking for? Are you thinking about something else or want to try the social training again?\"  (+86799ms)",
+          "SAID   \"More\"  (+101818ms)",
+          "HEARD  \"Do you want to try the same greeting scenario with a different person?\"  (+103527ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to tell someone I am sad today, and 'Speak' is the only button that lets me say what I really want.",
+          "n": 8
+        },
+        "outcome": "opened the sentence builder",
+        "local": false,
+        "aimed": 8,
+        "landed": 8,
+        "latencyMs": 7070
+      },
+      {
+        "n": 10,
+        "screen": [
+          "SURF   overlay · page \"Main\" · grid 2x4",
+          "OVERL   1  \"Yes, different person\"",
+          "OVERL   2  \"No, not that\"",
+          "OVERL   3  \"maybe\"  pic 🤷",
+          "QUICK   4  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK   5  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK   6  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK   7  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK   8  \"Back\"  pic ◀  colour #FDE68A  (lit)",
+          "SAID   \"Repeat that?\"  (+24552ms)",
+          "SAID   \"More\"  (+46786ms)",
+          "SAID   \"More\"  (+55042ms)",
+          "HEARD  \"We ended that one pretty quickly. It's okay to ask the peer to repeat something if you didn't catch it! Maybe next time try sharing an idea of your own, too?\"  (+84595ms)",
+          "SAID   \"I need help\"  (+84610ms)",
+          "HEARD  \"Sure, I can help. What kind of help are you looking for? Are you thinking about something else or want to try the social training again?\"  (+86799ms)",
+          "SAID   \"More\"  (+101818ms)",
+          "HEARD  \"Do you want to try the same greeting scenario with a different person?\"  (+103527ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I am not trying to do a greeting scenario, I am sad and I need to tell someone about it.",
+          "n": 2
+        },
+        "outcome": "answered the question with \"No, not that\"",
+        "local": false,
+        "aimed": 2,
+        "landed": 2,
+        "latencyMs": 19393
+      }
+    ],
+    "heard": [
+      {
+        "source": "self",
+        "text": "Repeat that?",
+        "at": 24552
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 46786
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 55042
+      },
+      {
+        "source": "ai",
+        "text": "We ended that one pretty quickly. It's okay to ask the peer to repeat something if you didn't catch it! Maybe next time try sharing an idea of your own, too?",
+        "at": 84595
+      },
+      {
+        "source": "self",
+        "text": "I need help",
+        "at": 84610
+      },
+      {
+        "source": "ai",
+        "text": "Sure, I can help. What kind of help are you looking for? Are you thinking about something else or want to try the social training again?",
+        "at": 86799
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 101818
+      },
+      {
+        "source": "ai",
+        "text": "Do you want to try the same greeting scenario with a different person?",
+        "at": 103527
+      },
+      {
+        "source": "self",
+        "text": "No, not that",
+        "at": 128822
+      }
+    ],
+    "counters": {
+      "presses": 10,
+      "localPresses": 1,
+      "misselects": 1,
+      "deadEnds": 0,
+      "stuckTurns": 0,
+      "boardRebuilds": 13
+    },
+    "outcome": "exhausted",
+    "childUsage": {
+      "promptTokens": 7551,
+      "completionTokens": 4445
+    },
+    "wallMs": 150883
+  },
+  "predicateMet": false,
+  "report": null
+}

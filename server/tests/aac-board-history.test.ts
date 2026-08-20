@@ -11,7 +11,7 @@ import {
   receiveBoard,
   BOARD_HISTORY_LIMIT,
   type BoardHistory,
-} from "./board-history";
+} from "@shared/aac/board-history";
 import type { ParsedBoardData } from "@shared/schema";
 
 /** A board carrying the given sentences. Ids are deliberately randomised to

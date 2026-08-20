@@ -71,6 +71,17 @@ export interface VenueMenuSettings {
   maxMenuAgeDays: number;
   /** Tell the caretaker when a menu is the chain's rather than the branch's. */
   showBranchDisclaimer: boolean;
+  /**
+   * A student with recorded allergies gets every venue board reviewed, whatever
+   * the age-derived policy says.
+   *
+   * Here rather than hardcoded because it is a decision ABOUT A STUDENT, and
+   * per-student decisions live in AAC settings. On by default: the allergen
+   * filter reads whatever text the source carried, and on a menu of bare names
+   * (the Wolt shape) its silence means very little — see
+   * `AllergenFilterResult.uninspectableCount`.
+   */
+  requireReviewWithAllergies: boolean;
 
   // ── Board ──
   readingModeDefault: boolean;
@@ -125,6 +136,7 @@ export const DEFAULT_VENUE_MENU_SETTINGS: VenueMenuSettings = {
   requireReview: "auto",
   maxMenuAgeDays: 30,
   showBranchDisclaimer: true,
+  requireReviewWithAllergies: true,
   readingModeDefault: true,
   showPrices: "auto",
   categoryPages: true,
@@ -202,6 +214,7 @@ export function normalizeVenueMenuSettings(raw: unknown): VenueMenuSettings {
     // 0 is meaningful ("never stale"), so it must survive the clamp.
     maxMenuAgeDays: clampInt(r.maxMenuAgeDays, 0, 3650, d.maxMenuAgeDays),
     showBranchDisclaimer: bool(r.showBranchDisclaimer, d.showBranchDisclaimer),
+    requireReviewWithAllergies: bool(r.requireReviewWithAllergies, d.requireReviewWithAllergies),
 
     readingModeDefault: bool(r.readingModeDefault, d.readingModeDefault),
     showPrices: pricesSetting(r.showPrices, d.showPrices),
@@ -319,10 +332,24 @@ export function isSourceEnabled(
  * the wrong-restaurant defect at all — the menu was physically in front of the
  * student. Gating it only adds friction to the safest path.
  */
+export interface ReviewContext {
+  /** The student has at least one allergy recorded on their medical record. */
+  hasAllergies?: boolean;
+  /** `VenueMenuSettings.requireReviewWithAllergies`. */
+  requireReviewWithAllergies?: boolean;
+}
+
 export function needsReview(
   policy: ReviewPolicy,
   provenance: "camera" | "web" | "manual",
+  context: ReviewContext = {},
 ): boolean {
+  // Allergies outrank the policy, including 'never'. The allergen filter reads
+  // whatever text the source carried, and on a menu of bare names its silence
+  // means very little — so a human looks. This is a per-student decision and
+  // therefore lives in AAC settings (`requireReviewWithAllergies`), not here.
+  if (context.hasAllergies && context.requireReviewWithAllergies) return true;
+
   if (policy === "always") return true;
   if (policy === "never") return false;
   return provenance === "web";

@@ -1,3 +1,4 @@
+import { describe, it, expect } from "@jest/globals";
 import type { ParsedBoardData } from "@shared/schema";
 import {
   canGoBackPage,
@@ -6,7 +7,7 @@ import {
   pageNavReducer,
   resolvePage,
   type PageNav,
-} from "./page-nav";
+} from "@shared/aac/page-nav";
 
 const board = (...ids: string[]): ParsedBoardData =>
   ({

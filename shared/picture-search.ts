@@ -58,6 +58,104 @@ export const BASELINE_BLOCKED_TERMS: readonly string[] = [
   "swastika", "nazi",
 ];
 
+// ---------------------------------------------------------------------------
+// RESULT-side screening
+// ---------------------------------------------------------------------------
+//
+// A clean query can return dirty results, and that is the gap the lists above
+// cannot close. Pixabay's `safesearch` is defined as "only images suitable for
+// all ages" — an ADULT-content filter. A photograph of a cocktail bar is
+// genuinely suitable for all ages by that standard, so "drink" comes back full
+// of them (reported 2026-08-20): stock libraries are shot for advertising, and
+// `order=popular` ranks what sells.
+//
+// Pixabay has no child-appropriateness parameter — confirmed against the API
+// docs; `safesearch` is the only content flag it offers. So we screen the hits
+// ourselves, using the `tags` string every hit carries.
+//
+// The lists are split by AMBIGUITY, which is the whole difficulty:
+//   - TOKENS are words that mean one thing. Blocked wherever they appear inside
+//     a tag phrase, so "alcoholic drink" and "beer bottle" both go.
+//   - PHRASES are words that mean several things. Blocked ONLY as a complete
+//     tag, so the tag "bar" (a drinking establishment) goes while "chocolate
+//     bar" and "monkey bars" stay.
+//
+// Kept deliberately short and biased toward false NEGATIVES. Over-blocking here
+// is invisible and permanent: the student asks for a picture, gets an empty
+// grid, and cannot ask why. Words left out on purpose, because they earn their
+// place on a child's screen far more often than not: sword and knight (fantasy
+// art), knife and fork (cutlery), party and cake, weed (the garden kind),
+// needle (sewing), smoke (campfires), war and soldier (history lessons).
+
+/** Unambiguous words. Any tag CONTAINING one of these is rejected. */
+export const UNSAFE_TAG_TOKENS: readonly string[] = [
+  // Alcohol — the reported case.
+  "alcohol", "alcoholic", "beer", "beers", "wine", "wines", "cocktail", "cocktails",
+  "whisky", "whiskey", "vodka", "rum", "gin", "tequila", "brandy", "bourbon", "absinthe",
+  "liquor", "liqueur", "champagne", "prosecco", "martini", "booze", "brewery", "distillery",
+  "drunk", "drunken", "hangover", "bartender", "keg", "tavern", "saloon", "pint",
+  // Smoking and vaping.
+  "cigarette", "cigarettes", "cigar", "smoking", "smoker", "tobacco", "nicotine",
+  "vape", "vaping", "hookah", "shisha", "ashtray",
+  // Gambling.
+  "casino", "gambling", "roulette", "poker", "betting",
+  // Weapons and injury.
+  "weapon", "weapons", "gun", "guns", "rifle", "pistol", "shotgun", "revolver",
+  "firearm", "ammunition", "grenade", "blood", "bloody", "corpse", "autopsy", "wound",
+  // Drugs.
+  "cocaine", "heroin", "cannabis", "marijuana", "syringe",
+  // Adult framing that SafeSearch lets through.
+  "lingerie", "bikini", "topless", "cleavage", "seductive", "sensual", "erotic",
+  // Death.
+  "coffin", "funeral",
+];
+
+/** Ambiguous words. Rejected ONLY when they are the ENTIRE tag. */
+export const UNSAFE_TAG_PHRASES: readonly string[] = [
+  "bar", "bars", "pub", "pubs", "nightlife", "nightclub",
+  "cemetery", "graveyard", "grave",
+];
+
+/**
+ * The tag that disqualifies a search hit, or null when it is clean.
+ *
+ * `tags` is Pixabay's comma-separated string ("cocktail, bar, alcohol, glass").
+ * Clinician-authored `extraTerms` screen results too, not just queries — a
+ * clinician who blocked a word meant they did not want to see it, and a search
+ * for something else that happens to return it is the same outcome.
+ *
+ * Returns the offending TAG rather than a boolean so the drop can be logged;
+ * an over-eager entry here is otherwise invisible.
+ */
+export function blockedTagFor(
+  tags: string,
+  extraTerms: readonly string[] = [],
+): string | null {
+  const phrases = tags
+    .toLowerCase()
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (phrases.length === 0) return null;
+
+  const extras = extraTerms.map((t) => t.trim().toLowerCase()).filter(Boolean);
+
+  for (const phrase of phrases) {
+    if (UNSAFE_TAG_PHRASES.includes(phrase)) return phrase;
+    const words = phrase.split(/[\s/-]+/);
+    for (const word of words) {
+      if (UNSAFE_TAG_TOKENS.includes(word)) return phrase;
+    }
+    // A clinician's term matches as a whole word inside the tag, or as a
+    // substring for phrases and for scripts that do not space their words —
+    // the same rule `blockedTermFor` applies to queries.
+    for (const t of extras) {
+      if (/^[a-z0-9]+$/.test(t) ? words.includes(t) : phrase.includes(t)) return phrase;
+    }
+  }
+  return null;
+}
+
 /** Read the per-student config out of the raw `appConfig` jsonb blob.
  *  Defensive: the blob is client-writable, so nothing in it can be trusted to
  *  have the shape it claims. A malformed value degrades to "off". */

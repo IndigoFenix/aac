@@ -399,6 +399,10 @@ export const fr: Translations = {
   aac: {
     energyBar: "Énergie de l'IA",
     voiceLive: "À l'écoute",
+    readingMode: {
+      hint: "Lecture — appuyez pour commander",
+      start: "Commencer à commander",
+    },
     glyph: {
       person: "Personne",
       thing: "Chose",

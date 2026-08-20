@@ -399,6 +399,10 @@ export const en = {
   aac: {
     energyBar: "AI energy",
     voiceLive: "Listening",
+    readingMode: {
+      hint: "Reading — press Start to order",
+      start: "Start ordering",
+    },
     glyph: {
       person: "Person",
       thing: "Thing",

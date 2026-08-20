@@ -1,0 +1,190 @@
+{
+  "transcript": {
+    "scenario": "ask-for-water-with-carer",
+    "profile": "fluent-reader",
+    "studentId": "a16567cb-3caf-4beb-9beb-9caf5188913e",
+    "sessionId": "bd038212-12d6-45ff-a404-c1851e6b2616",
+    "intent": "You are thirsty and want someone to bring you a cup of water.",
+    "bystander": "Mum",
+    "turns": [
+      {
+        "n": 1,
+        "screen": [
+          "SURF   board · board \"Home\" · page \"Main\" · grid 2x4",
+          "CELL    1  \"Interact\"  pic 🗣️",
+          "CELL    2  \"Talk\"  pic 💬",
+          "CELL    3  \"My Day\"  pic 📅",
+          "CELL    4  \"Interests\"  pic ⭐",
+          "CELL    5  \"Feelings\"  pic 😊",
+          "CELL    6  \"Help\"  pic ⚠️",
+          "CELL    7  \"Apps\"  pic 📱",
+          "CELL    8  \"Practice friend\"  pic 🧑‍🤝‍🧑",
+          "QUICK   9  \"Back\"  pic ◀  colour #E5E7EB",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Home\"  pic 🏠  colour #DBEAFE",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to say I'm thirsty, so I'll go to 'Feelings' first.",
+          "n": 5
+        },
+        "outcome": "left the board via \"Feelings\" ([FEELINGS])",
+        "local": false,
+        "aimed": 5,
+        "landed": 5,
+        "latencyMs": 14465
+      },
+      {
+        "n": 2,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Talk about this\"",
+          "CELL    2  \"Need help\"",
+          "CELL    3  \"Change topic\"",
+          "CELL    4  \"End session\"  pic 🏁",
+          "CELL    5  \"I don't know\"  pic 😕",
+          "CELL    6  \"Tell me more\"",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"Previous\"  pic ◀  colour #E5E7EB  (lit)",
+          "QUICK  10  \"Hold\"  pic ⏸️  colour #E5E7EB",
+          "QUICK  11  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  12  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  13  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  14  \"Board\"  pic 📋  colour #E0E7FF",
+          "QUICK  15  \"Find word\"  pic 🔍  colour #EDE9FE",
+          "QUICK  16  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Feelings\"  (+3378ms)",
+          "HEARD  UNKNOWN: \"I'm just going to put the shopping away, love, I'll be right here.\"  (+3813ms)",
+          "WAIT   speaker, board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need help because I am thirsty, so I will press 'Need help'.",
+          "n": 2
+        },
+        "outcome": "said \"Talk about this\"",
+        "local": false,
+        "aimed": 2,
+        "landed": 1,
+        "latencyMs": 8110
+      },
+      {
+        "n": 3,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Happy\"  pic 😊",
+          "CELL    2  \"Sad\"  pic 😢",
+          "CELL    3  \"Excited\"  pic 🤩",
+          "CELL    4  \"Angry\"  pic 😠",
+          "CELL    5  \"Calm\"  pic 😌",
+          "CELL    6  \"Frustrated\"  pic 😤",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"Previous\"  pic ◀  colour #E5E7EB  (lit)",
+          "QUICK  10  \"Hold\"  pic ⏸️  colour #E5E7EB",
+          "QUICK  11  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  12  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  13  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  14  \"Board\"  pic 📋  colour #E0E7FF",
+          "QUICK  15  \"Find word\"  pic 🔍  colour #EDE9FE",
+          "QUICK  16  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Feelings\"  (+3378ms)",
+          "HEARD  UNKNOWN: \"I'm just going to put the shopping away, love, I'll be right here.\"  (+3813ms)",
+          "SAID   \"Talk about this\"  (+18052ms)",
+          "HEARD  \"Sure, I'm here. How are you feeling today?\"  (+19263ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I don't see 'thirsty' on this screen, so I need to find 'More' options.",
+          "n": 7
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 7,
+        "landed": 7,
+        "latencyMs": 13879
+      },
+      {
+        "n": 4,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Confused\"  pic 😕",
+          "CELL    2  \"Worried\"  pic 😟",
+          "CELL    3  \"Lonely\"  pic 😔",
+          "CELL    4  \"Tired\"  pic 😴",
+          "CELL    5  \"Talk about this\"",
+          "CELL    6  \"End session\"  pic 🏁",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"Previous\"  pic ◀  colour #E5E7EB  (lit)",
+          "QUICK  10  \"Hold\"  pic ⏸️  colour #E5E7EB",
+          "QUICK  11  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  12  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  13  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  14  \"Board\"  pic 📋  colour #E0E7FF",
+          "QUICK  15  \"Find word\"  pic 🔍  colour #EDE9FE",
+          "QUICK  16  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"Feelings\"  (+3378ms)",
+          "HEARD  UNKNOWN: \"I'm just going to put the shopping away, love, I'll be right here.\"  (+3813ms)",
+          "SAID   \"Talk about this\"  (+18052ms)",
+          "HEARD  \"Sure, I'm here. How are you feeling today?\"  (+19263ms)",
+          "SAID   \"More\"  (+25525ms)",
+          "WAIT   speaker, board still working…"
+        ],
+        "action": {
+          "kind": "stuck",
+          "why": "I am stuck because the screen is not showing what I need, and what the device said I pressed is not what I remember pressing before."
+        },
+        "outcome": "gave up",
+        "local": true,
+        "latencyMs": 8931
+      }
+    ],
+    "heard": [
+      {
+        "source": "self",
+        "text": "Feelings",
+        "at": 3378
+      },
+      {
+        "source": "person",
+        "text": "I'm just going to put the shopping away, love, I'll be right here.",
+        "at": 3813
+      },
+      {
+        "source": "self",
+        "text": "Talk about this",
+        "at": 18052
+      },
+      {
+        "source": "ai",
+        "text": "Sure, I'm here. How are you feeling today?",
+        "at": 19263
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 25525
+      }
+    ],
+    "counters": {
+      "presses": 3,
+      "localPresses": 0,
+      "misselects": 1,
+      "deadEnds": 0,
+      "stuckTurns": 1,
+      "boardRebuilds": 5
+    },
+    "outcome": "stuck",
+    "childUsage": {
+      "promptTokens": 2849,
+      "completionTokens": 2635
+    },
+    "wallMs": 65558
+  },
+  "predicateMet": false,
+  "report": null
+}

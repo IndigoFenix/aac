@@ -17,6 +17,8 @@ import { z } from "zod";
 import { studentService } from "../services/studentService";
 import { venueRepository } from "../repositories/venueRepository";
 import { menuCaptureService } from "../services/venue-menus/menu-capture-service";
+import { venueResolutionService } from "../services/venue-menus/venue-resolution-service";
+import { getStudentAllergies } from "../services/venue-menus/student-allergies";
 import { MAX_FRAMES } from "../services/venue-menus/camera-extraction";
 import { resolveVenueMenuSettings, needsReview } from "@shared/venue-menus";
 
@@ -28,6 +30,23 @@ const captureSchema = z.object({
   venueId: z.string().min(1),
   frames: z.array(frameSchema).min(1).max(MAX_FRAMES),
   expectedLanguage: z.string().max(16).optional(),
+});
+
+/**
+ * A GPS fix. In the BODY, never the query string — a coordinate is personal
+ * data and must not land in a URL, a log line, or a referrer header.
+ */
+const nearbySchema = z.object({
+  studentId: z.string().min(1),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  /** True only when a caretaker pressed "search near me" (§3, requirement 5). */
+  allowOutboundSearch: z.boolean().optional(),
+});
+
+const confirmVenueSchema = z.object({
+  venueId: z.string().min(1),
+  label: z.string().max(120).optional(),
 });
 
 const reviewSchema = z.object({
@@ -101,10 +120,18 @@ class VenueMenuController {
         return;
       }
 
+      // A student with recorded allergies gets every menu reviewed when the
+      // setting says so (§4.7) — a per-student decision, so it lives in AAC
+      // settings rather than in the capture path.
+      const allergies = await getStudentAllergies(studentId);
+
       const result = await menuCaptureService.captureFromCamera({
         venueId,
         frames,
-        requireReview: needsReview(settings.requireReview, "camera"),
+        requireReview: needsReview(settings.requireReview, "camera", {
+          hasAllergies: allergies.length > 0,
+          requireReviewWithAllergies: settings.requireReviewWithAllergies,
+        }),
         ...(student.primaryLanguage ? { targetLanguage: student.primaryLanguage } : {}),
         ...(expectedLanguage ? { expectedLanguage } : {}),
       });
@@ -126,6 +153,129 @@ class VenueMenuController {
     } catch (error) {
       console.error("Error capturing venue menu:", error);
       res.status(500).json({ success: false, message: "error:MENU_CAPTURE_FAILED" });
+    }
+  }
+
+  /**
+   * POST /api/venue-menus/nearby — which restaurant is the student at?
+   *
+   * POST rather than GET because the body carries a coordinate. The outbound
+   * tier runs only when `allowOutboundSearch` says a caretaker asked for it,
+   * and it carries the position and NOTHING ELSE — no student id ever leaves
+   * this server.
+   */
+  async resolveNearby(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const parsed = nearbySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ success: false, message: "error:INVALID_LOCATION" });
+        return;
+      }
+      const { studentId, latitude, longitude, allowOutboundSearch } = parsed.data;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, user.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "error:NO_STUDENT_ACCESS" });
+        return;
+      }
+
+      const student = await studentService.getStudentById(studentId);
+      if (!student) {
+        res.status(404).json({ success: false, message: "error:STUDENT_NOT_FOUND" });
+        return;
+      }
+
+      const settings = resolveVenueMenuSettings(
+        student.aacSettings?.venueMenus,
+        {
+          birthDate: student.birthDate,
+          languageLevel: student.aacSettings?.languageLevel ?? null,
+        },
+        new Date(),
+      );
+
+      if (!settings.enabled) {
+        res.status(403).json({ success: false, message: "error:VENUE_MENUS_DISABLED" });
+        return;
+      }
+
+      const result = await venueResolutionService.resolveNearby({
+        studentId,
+        gps: { latitude, longitude },
+        settings,
+        allowOutboundSearch: !!allowOutboundSearch,
+      });
+
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Error resolving nearby venues:", error);
+      res.status(500).json({ success: false, message: "error:VENUE_SEARCH_FAILED" });
+    }
+  }
+
+  /**
+   * POST /api/students/:studentId/venues — the caretaker's choice.
+   *
+   * This tap is what collapses the food-court case, and recording it means a
+   * later visit resolves from tier 1 without asking again.
+   */
+  async confirmVenue(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const { studentId } = req.params;
+      const parsed = confirmVenueSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ success: false, message: "error:INVALID_VENUE_SELECTION" });
+        return;
+      }
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, user.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "error:NO_STUDENT_ACCESS" });
+        return;
+      }
+
+      const venue = await venueRepository.getById(parsed.data.venueId);
+      if (!venue) {
+        res.status(404).json({ success: false, message: "error:VENUE_NOT_FOUND" });
+        return;
+      }
+
+      const link = await venueResolutionService.confirmVenue(
+        studentId,
+        parsed.data.venueId,
+        parsed.data.label,
+      );
+      res.json({ success: true, link, venue });
+    } catch (error) {
+      console.error("Error confirming venue:", error);
+      res.status(500).json({ success: false, message: "error:VENUE_CONFIRM_FAILED" });
+    }
+  }
+
+  /** GET /api/students/:studentId/venues — the places this student eats. */
+  async listStudentVenues(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const { studentId } = req.params;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, user.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "error:NO_STUDENT_ACCESS" });
+        return;
+      }
+
+      const links = await venueRepository.listForStudent(studentId);
+      const venues = await Promise.all(links.map((link) => venueRepository.getById(link.venueId)));
+
+      res.json({
+        success: true,
+        venues: links.map((link, i) => ({ link, venue: venues[i] ?? null })),
+      });
+    } catch (error) {
+      console.error("Error listing student venues:", error);
+      res.status(500).json({ success: false, message: "error:VENUE_LIST_FAILED" });
     }
   }
 

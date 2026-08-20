@@ -54,13 +54,15 @@ const base = {
 
 // ── Speaker, live native audio (the DEFAULT — tools suppressed) ─────────────
 
-describe("Speaker <activities> — the album in the shape that was blind", () => {
+describe("Speaker <apps> — the album in the shape that was blind", () => {
   const liveAudio = { ...base, liveAudio: true, enabledApps: [PHOTOS_APP] };
 
   test("carries the captions, not just the word 'Photos'", () => {
     const prompt = buildSpeakerPrompt({ ...liveAudio, photoLibrary: LIBRARY });
 
-    expect(prompt).toContain("<activities>");
+    // 2026-08-20: <activities> and <apps> merged into ONE catalogue — the
+    // live shape stopped being mention-only the day it got open_app.
+    expect(prompt).toContain("<apps>");
     expect(prompt).toContain("4 family photos");
     // Verbatim — these are what the query is matched against.
     expect(prompt).toContain("Grandma at my birthday");
@@ -71,7 +73,9 @@ describe("Speaker <activities> — the album in the shape that was blind", () =>
 
   test("keeps the uncaptioned safety rule in this shape too", () => {
     const prompt = buildSpeakerPrompt({ ...liveAudio, photoLibrary: LIBRARY });
-    expect(prompt).toContain("NEVER guess who is in an uncaptioned one");
+    // One phrasing, both shapes: this rule used to read "…uncaptioned one"
+    // here and "…uncaptioned photo" in tool mode — the same rule, drifted.
+    expect(prompt).toContain("NEVER guess who is in an uncaptioned photo");
   });
 
   test("drops the uncaptioned warning when every photo has a caption", () => {
@@ -80,12 +84,16 @@ describe("Speaker <activities> — the album in the shape that was blind", () =>
       photoLibrary: { ...LIBRARY, uncaptionedCount: 0 },
     });
     expect(prompt).toContain("4 family photos");
-    expect(prompt).not.toContain("NEVER guess who is in an uncaptioned one");
+    // The registry blurb states the rule unconditionally; what drops is the
+    // per-student prompt to ASK Alex, which only makes sense if one is unlabelled.
+    expect(prompt).not.toContain("uncaptioned photo — ask Alex");
   });
 
   test("says nothing about photos for a student with none", () => {
     const prompt = buildSpeakerPrompt({ ...liveAudio, photoLibrary: undefined });
-    expect(prompt).not.toContain("family photo");
+    // "family photos" also appears in the photos app's own registry blurb, so
+    // assert on the per-student note's wording.
+    expect(prompt).not.toContain("on this device");
   });
 
   test("never claims the Speaker can see the pictures", () => {

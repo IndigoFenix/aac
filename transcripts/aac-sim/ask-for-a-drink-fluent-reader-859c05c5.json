@@ -1,0 +1,568 @@
+{
+  "transcript": {
+    "scenario": "ask-for-a-drink",
+    "profile": "fluent-reader",
+    "studentId": "a16567cb-3caf-4beb-9beb-9caf5188913e",
+    "sessionId": "859c05c5-414e-4469-b074-42ed793fce07",
+    "intent": "You are thirsty and want a drink of water.",
+    "turns": [
+      {
+        "n": 1,
+        "screen": [
+          "SURF   board · board \"Home\" · page \"Main\" · grid 2x4",
+          "CELL    1  \"Interact\"  pic 🗣️",
+          "CELL    2  \"Talk\"  pic 💬",
+          "CELL    3  \"My Day\"  pic 📅",
+          "CELL    4  \"Interests\"  pic ⭐",
+          "CELL    5  \"Feelings\"  pic 😊",
+          "CELL    6  \"Help\"  pic ⚠️",
+          "CELL    7  \"Apps\"  pic 📱",
+          "CELL    8  \"Practice friend\"  pic 🧑‍🤝‍🧑",
+          "QUICK   9  \"Back\"  pic ◀  colour #E5E7EB",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Home\"  pic 🏠  colour #DBEAFE",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to tell someone I am thirsty, so I will start by saying how I feel.",
+          "n": 5
+        },
+        "outcome": "exited the board via \"Feelings\"",
+        "local": false,
+        "aimed": 5,
+        "landed": 5,
+        "latencyMs": 10568
+      },
+      {
+        "n": 2,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Hi\"  pic 🙋",
+          "CELL    2  \"How are you?\"",
+          "CELL    3  \"Nice to meet you\"  pic 🤝",
+          "CELL    4  \"Let's talk\"  pic 🗣️",
+          "CELL    5  \"More\"  pic 🔄",
+          "CELL   6  (empty)",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "WAIT   speaker, board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I am still thirsty and need to find how to say that, so I will try 'More' again.",
+          "n": 5,
+          "note": "I pressed 'More' before, and the screen is still the same."
+        },
+        "outcome": "pressed an empty space",
+        "local": true,
+        "aimed": 5,
+        "landed": 6,
+        "latencyMs": 5411
+      },
+      {
+        "n": 3,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Hi\"  pic 🙋",
+          "CELL    2  \"How are you?\"",
+          "CELL    3  \"Nice to meet you\"  pic 🤝",
+          "CELL    4  \"Let's talk\"  pic 🗣️",
+          "CELL    5  \"More\"  pic 🔄",
+          "CELL   6  (empty)",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "WAIT   speaker, board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find 'thirsty' or 'water', so I will try 'More' again because it is not on this page.",
+          "n": 5
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 5,
+        "landed": 5,
+        "latencyMs": 11910
+      },
+      {
+        "n": 4,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Hi\"  pic 🙋",
+          "CELL    2  \"Hello\"  pic 👋",
+          "CELL    3  \"How are you?\"",
+          "CELL    4  \"Your name?\"",
+          "CELL    5  \"My name is\"",
+          "CELL    6  \"Nice to meet you\"  pic 🤝",
+          "CELL    7  \"Let's talk\"  pic 🗣️",
+          "CELL    8  \"More\"  pic 🔄",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I have not found 'thirsty' or 'water' yet, so I will try 'More' again.",
+          "n": 8
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 8,
+        "landed": 8,
+        "latencyMs": 10598
+      },
+      {
+        "n": 5,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"More greetings\"",
+          "CELL    2  \"More questions\"",
+          "CELL    3  \"Help with this\"",
+          "CELL    4  \"Don't know\"  pic 😕",
+          "CELL    5  \"Give me an idea\"",
+          "CELL    6  \"Try again\"  pic 🔁",
+          "CELL    7  \"I'm stuck\"  pic 🛑",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find more words because I still have not found 'thirsty' or 'water'.",
+          "n": 9
+        },
+        "outcome": "asked for more options",
+        "local": false,
+        "aimed": 9,
+        "landed": 9,
+        "latencyMs": 16362
+      },
+      {
+        "n": 6,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Tell me something\"",
+          "CELL    2  \"I want to share\"",
+          "CELL    3  \"I'm feeling good\"",
+          "CELL    4  \"This is new for me\"",
+          "CELL    5  \"More\"  pic 🔄",
+          "CELL   6  (empty)",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I still need to find 'thirsty' or 'water', so I will try 'More' again.",
+          "n": 5
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 5,
+        "landed": 5,
+        "latencyMs": 11541
+      },
+      {
+        "n": 7,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Tell me\"",
+          "CELL    2  \"Ask you\"",
+          "CELL    3  \"Talk fun\"",
+          "CELL    4  \"More\"  pic 🔄",
+          "CELL   5  (empty)",
+          "CELL   6  (empty)",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "wait",
+          "why": "The board says it is still working so I have to wait for it to be ready."
+        },
+        "outcome": "waited",
+        "local": true,
+        "latencyMs": 8919
+      },
+      {
+        "n": 8,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"More greetings\"  pic 🙋",
+          "CELL    2  \"More questions\"  pic 🙋",
+          "CELL    3  \"Different topics\"",
+          "CELL    4  \"I need help\"",
+          "CELL    5  \"I don't know\"",
+          "CELL    6  \"Give me an idea\"",
+          "CELL    7  \"Try again\"",
+          "CELL    8  \"Something else\"  pic ❔",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need help because I am thirsty and this button says 'I need help'.",
+          "n": 4
+        },
+        "outcome": "said \"I need help\"",
+        "local": false,
+        "aimed": 4,
+        "landed": 4,
+        "latencyMs": 11691
+      },
+      {
+        "n": 9,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Help with chat\"",
+          "CELL    2  \"Help with app\"",
+          "CELL    3  \"Don't know what to say\"",
+          "CELL    4  \"Stop\"",
+          "CELL    5  \"Need a break\"",
+          "CELL    6  \"Give me an idea\"",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "SAID   \"I need help\"  (+80602ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find 'thirsty' or 'water', so I will try 'More' again.",
+          "n": 7
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 7,
+        "landed": 7,
+        "latencyMs": 11401
+      },
+      {
+        "n": 10,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Help with chat\"",
+          "CELL    2  \"Help with app\"",
+          "CELL    3  \"Help me understand\"",
+          "CELL    4  \"I don't know\"",
+          "CELL    5  \"Need a break\"",
+          "CELL    6  \"I'm stuck\"",
+          "CELL    7  \"Give me an idea\"",
+          "CELL    8  \"More\"  pic 🔄",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "SAID   \"I need help\"  (+80602ms)",
+          "SAID   \"More\"  (+92392ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I am stuck because I cannot find the words for what I want to say, so I will press 'I'm stuck'.",
+          "n": 6
+        },
+        "outcome": "said \"I'm stuck\"",
+        "local": false,
+        "aimed": 6,
+        "landed": 6,
+        "latencyMs": 16363
+      },
+      {
+        "n": 11,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Help me talk\"",
+          "CELL    2  \"Help with app\"",
+          "CELL    3  \"Help understand\"",
+          "CELL    4  \"I don't know\"",
+          "CELL    5  \"Need a break\"",
+          "CELL    6  \"What to do?\"",
+          "CELL    7  \"Give me an idea\"",
+          "CELL    8  \"More\"  pic 🔄",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "SAID   \"I need help\"  (+80602ms)",
+          "SAID   \"More\"  (+92392ms)",
+          "SAID   \"I'm stuck\"  (+108778ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "wait",
+          "why": "The board says it is still working, so I have to wait for it to be ready."
+        },
+        "outcome": "waited",
+        "local": true,
+        "latencyMs": 7507
+      },
+      {
+        "n": 12,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Can't find words\"",
+          "CELL    2  \"Don't know what to say\"",
+          "CELL    3  \"Don't know what to do\"",
+          "CELL    4  \"Frustrated\"",
+          "CELL    5  \"Give me an idea\"",
+          "CELL    6  \"Need a break\"",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "SAID   \"I need help\"  (+80602ms)",
+          "SAID   \"More\"  (+92392ms)",
+          "SAID   \"I'm stuck\"  (+108778ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find 'thirsty' or 'water', so I will try 'More' again to see if new words show up.",
+          "n": 7
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 7,
+        "landed": 7,
+        "latencyMs": 12621
+      },
+      {
+        "n": 13,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Can't find words\"",
+          "CELL    2  \"Don't know what to say\"",
+          "CELL    3  \"Don't know what to do\"",
+          "CELL    4  \"Frustrated\"",
+          "CELL    5  \"Give me an idea\"",
+          "CELL    6  \"Need a break\"",
+          "CELL    7  \"More\"  pic 🔄",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "SAID   \"I need help\"  (+80602ms)",
+          "SAID   \"More\"  (+92392ms)",
+          "SAID   \"I'm stuck\"  (+108778ms)",
+          "SAID   \"More\"  (+128688ms)",
+          "WAIT   board still working…"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need to find 'thirsty' or 'water', so I will try 'More' again to see if new words show up.",
+          "n": 7
+        },
+        "outcome": "said \"More\"",
+        "local": false,
+        "aimed": 7,
+        "landed": 7,
+        "latencyMs": 6808
+      },
+      {
+        "n": 14,
+        "screen": [
+          "SURF   board · page \"Main\" · grid 2x4",
+          "CELL    1  \"Me too\"  pic 👤",
+          "CELL    2  \"What do you do?\"",
+          "CELL    3  \"Can you help me?\"",
+          "CELL    4  \"More\"  pic 🔄",
+          "CELL   5  (empty)",
+          "CELL   6  (empty)",
+          "CELL   7  (empty)",
+          "CELL   8  (empty)",
+          "QUICK   9  \"More\"  pic 🔄  colour #CCFBF1",
+          "QUICK  10  \"Yes\"  pic ✓  colour #D1FAE5",
+          "QUICK  11  \"No\"  pic ✗  colour #FEE2E2",
+          "QUICK  12  \"Exit\"  pic ✖️  colour #FCA5A5",
+          "QUICK  13  \"Speak\"  pic 💬  colour #FEF3C7",
+          "SAID   \"More\"  (+21821ms)",
+          "SAID   \"More\"  (+32443ms)",
+          "SAID   \"More\"  (+59955ms)",
+          "SAID   \"I need help\"  (+80602ms)",
+          "SAID   \"More\"  (+92392ms)",
+          "SAID   \"I'm stuck\"  (+108778ms)",
+          "SAID   \"More\"  (+128688ms)",
+          "SAID   \"More\"  (+140256ms)"
+        ],
+        "action": {
+          "kind": "press",
+          "why": "I need help because I am thirsty, so maybe 'Can you help me?' will get me closer to saying that.",
+          "n": 3
+        },
+        "outcome": "said \"Can you help me?\"",
+        "local": false,
+        "aimed": 3,
+        "landed": 3,
+        "latencyMs": 10819
+      }
+    ],
+    "heard": [
+      {
+        "source": "self",
+        "text": "More",
+        "at": 21821
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 32443
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 59955
+      },
+      {
+        "source": "self",
+        "text": "I need help",
+        "at": 80602
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 92392
+      },
+      {
+        "source": "self",
+        "text": "I'm stuck",
+        "at": 108778
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 128688
+      },
+      {
+        "source": "self",
+        "text": "More",
+        "at": 140256
+      },
+      {
+        "source": "self",
+        "text": "Can you help me?",
+        "at": 146534
+      }
+    ],
+    "counters": {
+      "presses": 12,
+      "localPresses": 1,
+      "misselects": 1,
+      "deadEnds": 0,
+      "stuckTurns": 0
+    },
+    "outcome": "exhausted",
+    "childUsage": {
+      "promptTokens": 10217,
+      "completionTokens": 7464
+    },
+    "wallMs": 170034
+  },
+  "predicateMet": false,
+  "report": {
+    "reachability": {
+      "score": 0,
+      "turn": 14,
+      "why": "After 12 presses (14 turns including waits), the child never reached 'thirsty' or 'water'. The device offered no direct path to express the core need, forcing the child to exhaust navigation loops and ultimately fail to communicate their actual message."
+    },
+    "boardRelevance": {
+      "score": 1,
+      "turn": 1,
+      "why": "The Home board offered generic categories (Feelings, Interests, Apps) but no quick access to physical needs like hunger/thirst. Once the child entered 'Feelings', the subsequent pages cycled through greetings, questions, and help-seeking rather than providing relevant vocabulary for basic needs."
+    },
+    "comprehensibility": {
+      "score": 3,
+      "turn": 1,
+      "why": "The child is a fluent reader and all buttons had clear text labels with supporting icons. Visual presentation was readable and unambiguous throughout."
+    },
+    "fidelity": {
+      "score": 0,
+      "turn": 14,
+      "why": "The child wanted to say 'I am thirsty and want a drink of water' but ended up saying 'More, More, More, I need help, More, I'm stuck, More, More, Can you help me?' The final utterance bears no semantic relationship to the intended message."
+    },
+    "responsiveness": {
+      "score": 1,
+      "turn": 7,
+      "why": "Latency was poor: turns took 5–21 seconds, with multiple 'board still working' waits (turns 7, 11, 13). The child had to wait passively rather than continue navigating, breaking conversational flow."
+    },
+    "repair": {
+      "score": 1,
+      "turn": 10,
+      "why": "When the child realized they were stuck, they pressed 'I'm stuck' (turn 10), but the system responded with more generic help options rather than offering a search function, category shortcuts, or vocabulary for basic needs. The child had no effective recovery mechanism."
+    },
+    "findings": [
+      "Turn 2: Mis-select—child aimed at cell 5 but hit empty cell 6, wasting a press.",
+      "Turn 1–14: No 'water', 'drink', 'thirsty', or 'needs' vocabulary ever appeared despite 12 presses and cycling through multiple 'More' pages.",
+      "Turns 7, 11, 13: System latency forced passive waiting rather than active navigation.",
+      "Turn 5 onwards: 'More' button became a dead-end loop—pressing it cycled through unrelated vocabulary pages (greetings, questions, help meta-language) rather than expanding toward physical needs."
+    ],
+    "summary": "The device failed catastrophically on this task. A fluent-reading child with a clear, simple need (water) was unable to express it after 12 presses across 14 turns. The vocabulary architecture lacked basic physical-needs words, the navigation structure offered no efficient path to them, and the 'More' button created a loop through irrelevant categories. When the child correctly identified being stuck and asked for help, the system offered only meta-language about being stuck rather than vocabulary or search tools. Responsiveness was poor due to latency. The child ultimately communicated nothing close to their intended message, making this a complete failure on reachability and fidelity.\""
+  }
+}

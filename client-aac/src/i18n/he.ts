@@ -399,6 +399,10 @@ export const he: Translations = {
   aac: {
     energyBar: "אנרגיית ה-AI",
     voiceLive: "מקשיב",
+    readingMode: {
+      hint: "קריאה — לחצו כדי להזמין",
+      start: "להתחיל להזמין",
+    },
     glyph: {
       person: "אדם",
       thing: "דבר",

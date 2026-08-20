@@ -25,8 +25,16 @@ export type PressIntent =
   | { kind: "navigate-page"; pageId: string }
   | { kind: "page-back" }
   | { kind: "page-home" }
-  /** Leave a loaded board — the server unloads it. */
-  | { kind: "exit" }
+  /**
+   * Leave a loaded board.
+   *
+   * `instruction` is the button's `action.text`, and it is NOT decoration: on
+   * the home board every button carries a DIRECTIVE tag there (`[FEELINGS]`,
+   * `[HELP]`, `[APPS BOARD]`, `[CONSTRUCTION BOARD]`, …) and that tag is the
+   * only thing telling the AI what the press meant. `board_exit` sent without
+   * it gives the agents a bare "they left the board" and they improvise.
+   */
+  | { kind: "exit"; instruction: string }
   | { kind: "open-website"; url: string; label: string }
   | { kind: "open-app"; appId: string; appData?: string }
   | { kind: "open-board"; boardKey: string }
@@ -92,7 +100,7 @@ export function pressIntentFor(button: BoardButton, opts: PressIntentOptions = {
   // `exitBoard` is the flag form of the same intent, set on buttons that leave
   // a loaded board without carrying an explicit exit action.
   if (action?.type === "exit" || (button as { exitBoard?: boolean }).exitBoard) {
-    return { kind: "exit" };
+    return { kind: "exit", instruction: action?.text ?? "" };
   }
 
   if (action?.type === "open_website" && action.url) {

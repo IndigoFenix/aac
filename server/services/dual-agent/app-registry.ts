@@ -71,11 +71,17 @@ export const APP_REGISTRY: AACAppDefinition[] = [
       "separate from \"photos\", which is the student's own family album and contains nothing else. " +
       "Call open_app(\"picture_search\", \"<what to find>\") whenever the student asks to see what " +
       "something looks like, names something they may not know the look of, or asks for a picture of " +
-      "anything that is not a person they know. ALWAYS pass `data` — the app has nothing to show " +
-      "without a search. You will be told afterwards exactly what was found (or that nothing was); " +
+      "anything that is not a person they know. Use this ONLY when the student specifically requests " +
+      "a picture or to see something - DO NOT respond to a request for an item with pictures of that item. " +
+      "ALWAYS pass `data` — the app has nothing to show without a search. " +
+      "You will be told afterwards exactly what was found (or that nothing was); " +
       "describe only what you were told, never what you assume a search for that word would return.",
     icon: "🔍",
-    queryHint: "what to find a picture of, IN ENGLISH regardless of the conversation language (e.g. 'an owl') — REQUIRED",
+    // CONCRETE is not a style note. A bare abstract noun retrieves what stock
+    // libraries are shot to sell: "drink" comes back as cocktail bars, "night"
+    // as nightlife. Naming the actual object is the single biggest lever we
+    // have on what lands on a child's screen (2026-08-20).
+    queryHint: "what to find a picture of, IN ENGLISH regardless of the conversation language — REQUIRED. Name a SPECIFIC, everyday object as a child would meet it.",
     // Off by default: this puts unvetted web imagery on a child's screen, so it
     // is a deliberate clinician decision, never an inherited one.
     enabledByDefault: false,
@@ -83,7 +89,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
   {
     id: "drawing",
     name: "Drawing",
-    description: "Opens an interactive drawing canvas on the user's screen where they can draw with colors. ALWAYS use open_app to launch this when the user mentions drawing, coloring, or pictures. As the user draws, add context buttons related to what they seem to be drawing.",
+    description: "Opens an interactive drawing canvas on the user's screen where they can draw with colors. Use open_app to launch this when the user wants to DRAW or colour something themselves. It is a blank canvas, not a picture viewer — a student asking to SEE a picture wants the photos or picture_search app, never this. As the user draws, add context buttons related to what they seem to be drawing.",
     icon: "🎨",
     enabledByDefault: true,
     supportsDetectionCapture: true,

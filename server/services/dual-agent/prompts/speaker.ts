@@ -80,8 +80,13 @@ export interface SpeakerPromptConfig extends BaseStudentContext {
    *  (SPEAKER doesn't load them — but knowing they exist informs
    *  SPEAKER's conversational choices). */
   availableBoards?: Array<{ key: string; name: string; hint?: string }>;
-  /** Built-in apps and custom games (SPEAKER can request open_app). */
-  enabledApps?: Array<{ id: string; name: string; description: string }>;
+  /** Built-in apps and custom games (SPEAKER can request open_app).
+   *  `queryHint` says what this app's `data` argument means; it is printed into
+   *  the app's row so the call form in the prompt is the complete call. The
+   *  Board Manager has always received it — the Speaker did not, so its rows
+   *  could only ever show `open_app("youtube")` for an app that is useless
+   *  without a query. */
+  enabledApps?: Array<{ id: string; name: string; description: string; queryHint?: string }>;
   availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
   /** Pre-fetched permitted-website list for the open_website tool. */
   permittedWebsites?: PermittedWebsite[];
@@ -262,113 +267,137 @@ EXAMPLE narrowing flow:
   YOU: "A whale! Got it." — Word Finder closes; back to normal chat about whales.
 </guessing_mode>`;
 
-  // Apps + websites. Two cases:
-  //  1. Tool surface present (HTTP / text Speaker, or muted): the Speaker opens
-  //     these itself via open_app / open_website — the tool-oriented blocks below.
-  //  2. Tool surface stripped (live native audio, non-muted — the default): the
-  //     Speaker can't open anything and must not narrate a tool call. But it
-  //     should still be AWARE of what's available so it can SUGGEST an activity
-  //     in speech ("want to read your book?"); the Board Manager then places the
-  //     launch button. Without this the Speaker never mentions apps/sites it
-  //     can't see. Mention-only, mirrors <available_surfaces> for boards.
+  // ── Apps ────────────────────────────────────────────────────────────────
+  //
+  // ONE catalogue, both shapes. This block used to be two: a tool-oriented
+  // <apps> list and a mention-only <activities> list for live native audio.
+  // That split was correct only until 2026-08-19, when the live Speaker gained
+  // open_app as its single tool — after which the live branch was telling the
+  // model to "call open_app(app_id)" while listing apps by NAME ONLY. The ids
+  // reached it in one place and one place only: the comma-separated
+  // `Built-in IDs: …` tail of the tool description, with nothing anywhere
+  // mapping a name to an id. For built-ins the model could sometimes guess it
+  // ("YouTube" → youtube); for a clinician's custom game called "Ocean
+  // Adventure" with id `cust_a7f3`, guessing is all it could ever do. That is
+  // the "opens apps at random" report, and it was in the prompt, not the model.
+  //
+  // So: the catalogue is identical in both shapes, and every row IS the call to
+  // make. The branches now differ only in the MECHANISM sentence and in whether
+  // websites are openable — which is the only thing that actually differs.
   const pictureSearchEnabled = (enabledApps ?? []).some(a => a.id === PICTURE_SEARCH_APP_ID);
 
-  if (toolsSuppressed) {
-    const appNames = [
-      ...(enabledApps ?? []).map(a => a.name),
-      ...(availableCustomApps ?? []).map(a => a.name),
-    ];
-    const sites = (permittedWebsites ?? []).map(s => (s.description ? `${s.label} (${s.description})` : s.label));
-    if (appNames.length > 0 || sites.length > 0) {
-      prompt += `\n\n<activities>
-Suggest one of these when it fits the moment ("want to read your book?", "play Bubbles?"). Never speak an id or url aloud; use the name.`;
-      if (appNames.length > 0) {
-        prompt += `\nApps & games: ${appNames.join(", ")}. You OPEN these YOURSELF: call open_app(app_id[, data]) when the user asks for one or agrees to your offer — never promise an app without calling it. Keep talking normally around the call (say what you're opening); opening silently is still better than promising and not opening.
-open_app requires the user's OWN request or agreement from THIS turn — never open one because a topic came up, and NEVER while the Word Finder is open (they are finding a word; taking over the screen loses it).`;
-      }
-      // The SAME trap the picture search fell into, and it caught the family
-      // album first: <photos> — the block that carries the captions — lives in
-      // the TOOL branch below, so a live native-audio Speaker saw the bare word
-      // "Photos" in the list above and had no idea whose faces were in there.
-      // It could never offer "want to see Grandma?", which is the entire point
-      // of the feature. The captions belong in BOTH shapes; since 2026-08-19
-      // the live Speaker also OPENS apps itself (open_app is its one tool).
-      if (photoLibrary && photoLibrary.count > 0) {
-        const captionList = photoLibrary.captions.length > 0
-          ? `: ${photoLibrary.captions.map(wrapUntrusted).join(", ")}${photoLibrary.truncated ? ", and more" : ""}`
-          : "";
-        prompt += `\n${studentName} has ${photoLibrary.count} family photo${photoLibrary.count === 1 ? "" : "s"} on this device${captionList}.${photoLibrary.captions.length > 0 ? ` open_app("photos", "<caption words>") opens the album on THAT photo — use the caption words verbatim.` : ` They have no captions, so a specific one cannot be asked for — open_app("photos") with no data and let ${studentName} choose.`} You never see the photos yourself, so never describe one you were not told is on screen${photoLibrary.uncaptionedCount > 0 ? ", and NEVER guess who is in an uncaptioned one" : ""}.`;
-      }
-      // Picture search is the one activity a user asks for by naming a THING
-      // rather than the app ("an owl"), so the Speaker has to know it is real
-      // and how its offer lands. Without this it saw only the words "Find a
-      // Picture" in a list and could not connect them to "let's look at an owl"
-      // — which is exactly how it ended up promising pictures it could not
-      // produce.
-      if (pictureSearchEnabled) {
-        prompt += `\nYou CAN show real pictures of things from the web: open_app("picture_search", "<what to find>") — e.g. the user asks to see pictures of owls → open_app("picture_search", "an owl"). You never see the pictures, so do not describe one until you are told what is on screen.`;
-      }
-      if (sites.length > 0) prompt += `\nWebsites: ${sites.join(", ")}.`;
-      prompt += `\n</activities>`;
-    }
-  } else {
-    const hasBuiltInApps = !!(enabledApps && enabledApps.length > 0);
-    const hasCustomApps = !!(availableCustomApps && availableCustomApps.length > 0);
-    if (hasBuiltInApps || hasCustomApps) {
-      prompt += `\n\n<apps>
-Launch apps via open_app(app_id, [data]) when the conversation calls for it.
-
-  - The user has a dedicated "Apps" page they can open themselves.
-  - DO NOT push them toward open_app — only call it when the user asks, or when it clearly fits the moment.`;
-      if (hasBuiltInApps) {
-        prompt += `\n\nAvailable apps:\n${enabledApps!.map(a => `  - ${a.name} (id: "${a.id}") — ${a.description}`).join("\n")}`;
-      }
-      if (hasCustomApps) {
-        prompt += `\n\nCustom games (same open_app tool, pass the id):\n${availableCustomApps!.map(a => `  - ${a.name} (id: "${a.id}")${a.description ? ` — ${a.description}` : ""}`).join("\n")}`;
-      }
-      prompt += `\n</apps>`;
-    }
-
-    // Family photos. The captions are listed because the assistant can only ask
-    // for a photo it knows exists: open_app("photos", "<caption words>") is
-    // matched against exactly these strings server-side. Captions are
-    // caretaker-authored free text, so each is wrapped as data.
-    if (photoLibrary && photoLibrary.count > 0) {
+  /** Photos and picture search need per-STUDENT facts the registry cannot
+   *  know — which captions exist, whether the album is worth offering. They
+   *  ride the app's own row as an indented note rather than a block of their
+   *  own, so every app reads the same way. (Daniel, 2026-08-19: "keep the
+   *  patterns as similar as possible" — the same call that folded photos into
+   *  the Board Manager's <apps_context>.) */
+  const appRowNote = (appId: string): string | null => {
+    if (appId === "photos" && photoLibrary && photoLibrary.count > 0) {
       const plural = photoLibrary.count === 1 ? "" : "s";
-      prompt += `\n\n<photos>`;
-      prompt += `\n${studentName} has ${photoLibrary.count} family photo${plural} on this device.`;
+      const parts = [`${studentName} has ${photoLibrary.count} photo${plural} on this device.`];
       if (photoLibrary.captions.length > 0) {
-        prompt += `\nCaptions: ${photoLibrary.captions.map(wrapUntrusted).join(", ")}${photoLibrary.truncated ? ", and more" : ""}.`;
-        prompt += `\nTo show one, call open_app("photos", "<words from a caption>"). If nothing matches you will be told so plainly — never describe a photo you were not told is on screen.`;
+        parts.push(
+          `Captions, to pass VERBATIM: ${photoLibrary.captions.map(wrapUntrusted).join(", ")}${photoLibrary.truncated ? ", and more" : ""}.`,
+        );
       } else {
-        prompt += `\nNone of them have captions, so you cannot ask for a specific one — call open_app("photos") and let them choose.`;
+        parts.push(`None of them have captions — open it with no data and let them choose.`);
       }
       if (photoLibrary.uncaptionedCount > 0) {
-        prompt += `\n${photoLibrary.uncaptionedCount} of them have no caption. NEVER guess who is in an uncaptioned photo — ask ${studentName} to tell you about it instead.`;
+        // The COUNT only when some photos are captioned — with none captioned
+        // the line above already said so, and repeating it reads as two
+        // different facts about the same album.
+        if (photoLibrary.captions.length > 0) {
+          parts.push(`${photoLibrary.uncaptionedCount} of them ${photoLibrary.uncaptionedCount === 1 ? "has" : "have"} no caption.`);
+        }
+        parts.push(`NEVER guess who is in an uncaptioned photo — ask ${studentName}.`);
       }
-      prompt += `\n</photos>`;
+      parts.push(`You never see the photos, so never describe one you were not told is on screen.`);
+      return parts.join(" ");
     }
+    if (appId === PICTURE_SEARCH_APP_ID) {
+      // The capability itself is stated by the registry description above
+      // ("the ONLY way you can find a picture of something") — this note is the
+      // BRAKE on it (Daniel, 2026-08-20): the model was answering a request for
+      // a THING with an image search for that thing. Wanting a drink is not
+      // asking for a picture of one.
+      return `Searches for pictures. Use this ONLY if the user requests pictures specifically - do not respond to a request for an item with an image search for that item. You never see them, so do not describe one until you are told what is on screen.`;
+    }
+    return null;
+  };
 
-    if (permittedWebsites && permittedWebsites.length > 0) {
+  /** One app per row, in the shape of the call that opens it. The call form is
+   *  the row rather than a syntax rule stated once elsewhere, so the model
+   *  copies rather than assembles — assembling is where the id got invented. */
+  const appRow = (a: { id: string; name: string; description?: string | null; queryHint?: string }): string => {
+    const call = a.queryHint
+      ? `open_app("${a.id}", "<${a.queryHint}>")`
+      : `open_app("${a.id}")`;
+    const lines = [`  • ${a.name} — ${call}`];
+    if (a.description) lines.push(`      ${a.description}`);
+    const note = appRowNote(a.id);
+    if (note) lines.push(`      ${note}`);
+    return lines.join("\n");
+  };
+
+  const appRows = [
+    ...(enabledApps ?? []).map(appRow),
+    ...(availableCustomApps ?? []).map(a => appRow({ ...a, description: a.description ?? null })),
+  ];
+
+  if (appRows.length > 0) {
+    prompt += `\n\n<apps>
+Every app that exists. Each line IS the call that opens it — copy the id exactly; a display name is never an id.
+
+${appRows.join("\n")}
+
+OPEN ONLY WHEN they asked for that app, or agreed to one you just offered, THIS turn. A topic coming up is not a request.
+NEVER OPEN during the Word Finder, while they are talking to someone else, or to fill a silence.
+NOTHING FITS? Say you can't, then talk about the thing itself. Never open the nearest-sounding app instead — it takes over their screen and costs them the thread.
+SAY what you are opening as you open it. Never promise an app without calling open_app.
+</apps>`;
+  }
+
+  // ── Websites ────────────────────────────────────────────────────────────
+  //
+  // The one place the two shapes genuinely diverge: open_website exists only
+  // where the full tool surface does. In live native audio the Speaker can
+  // MENTION a site and the Board Manager puts the button on screen — so it is
+  // told exactly that, rather than being handed a list with no verb (which is
+  // what it had, directly under a line saying "you open these yourself").
+  const sites = permittedWebsites ?? [];
+  if (sites.length > 0) {
+    if (toolsSuppressed) {
       prompt += `\n\n<websites>
-Call open_website(url, label) to open a permitted site in the in-frame browser. Only URLs in the list below (and their subpages) are permitted.
-
-Sites:`;
-      for (const site of permittedWebsites) {
-        prompt += `\n  - ${site.label}: ${site.url}${site.description ? ` — ${site.description}` : ""}`;
-      }
-      prompt += `\n</websites>`;
+Allowed sites: ${sites.map(w => (w.description ? `${w.label} (${w.description})` : w.label)).join(", ")}.
+You cannot open these yourself — offer one by name and a button appears on their board. Never speak a URL aloud.
+</websites>`;
+    } else {
+      prompt += `\n\n<websites>
+open_website(url, label) opens one in the in-frame browser. Only these URLs and their subpages work. Never speak a URL aloud.
+${sites.map(site => `  - ${site.label}: ${site.url}${site.description ? ` — ${site.description}` : ""}`).join("\n")}
+</websites>`;
     }
   }
 
+  // close_app is declared in tool mode but was never mentioned in the prompt,
+  // so the Speaker could open an app and had no idea it could put it away.
+  if (!toolsSuppressed && appRows.length > 0) {
+    prompt += `\n\nclose_app() puts away whatever is open and gives their board back.`;
+  }
+
   // The capability this model invents most often. When picture search IS
-  // enabled, its registry description above already covers how to use it; when
-  // it is NOT, the absence of a tool has never been enough — the Speaker
-  // cheerfully promises to "find a picture of a giraffe" and then produces
-  // nothing, which to a student who cannot re-ask reads as being ignored. So
-  // say it once, plainly, in both the tool and the tool-suppressed shapes.
+  // enabled its row above says so; when it is NOT, the absence of a tool has
+  // never been enough — the Speaker cheerfully promises to "find a picture of a
+  // giraffe" and then produces nothing, which to a student who cannot re-ask
+  // reads as being ignored. So say it once, plainly, in both shapes.
   if (!pictureSearchEnabled) {
-    prompt += `\n\nYou CANNOT search the internet for pictures. There is no way for you to find, look up, fetch or show an image of anything${photoLibrary && photoLibrary.count > 0 ? " beyond the family photos listed above" : ""}. Never offer to — say plainly that you cannot show them one, then talk about the thing itself instead.`;
+    // The "beyond the family photos" carve-out holds only when the album is
+    // actually on the list above. Gated on enablement, not merely on the
+    // library existing — otherwise the denial points at a row that isn't there.
+    const albumListed =
+      !!photoLibrary && photoLibrary.count > 0 && (enabledApps ?? []).some(a => a.id === "photos");
+    prompt += `\n\nYou CANNOT search the internet for pictures. There is no way for you to find, look up, fetch or show an image of anything${albumListed ? " beyond the family photos listed above" : ""}. Never offer to — say plainly that you cannot show them one, then talk about the thing itself instead.`;
   }
 
   // Mention pre-built boards conversationally — SPEAKER may say "let's
@@ -592,15 +621,22 @@ function buildOpenAppTool(
   enabledApps: AACAppDefinition[],
   customApps: NonNullable<SpeakerToolConfig["availableCustomApps"]> = [],
 ): FunctionDeclaration {
-  const builtInIds = enabledApps.map(a => a.id).join(", ");
-  const customIds = customApps.map(a => a.id).join(", ");
-  const sections = [builtInIds ? `Built-in IDs: ${builtInIds}.` : ""];
-  if (customIds) sections.push(`Custom game IDs: ${customIds}.`);
+  // Ids are listed WITH their display names. They used to be a bare
+  // comma-separated id list, which left the model to pair "Ocean Adventure"
+  // with `cust_a7f3` by guesswork — the id is the only thing the call can
+  // carry, and the name is the only thing the user ever says.
+  const named = (a: { id: string; name: string }) => `"${a.id}" (${a.name})`;
+  const builtInIds = enabledApps.map(named).join(", ");
+  const customIds = customApps.map(named).join(", ");
+  const sections = [builtInIds ? `Apps: ${builtInIds}.` : ""];
+  if (customIds) sections.push(`Games: ${customIds}.`);
   // Self-contained on purpose: in live native-audio mode this is the ONLY
-  // tool, and the <apps> prompt block it used to lean on is not rendered.
+  // tool, and it must carry its own guard rails — a tool description is read
+  // at the moment of the call, which is exactly when a prompt block far above
+  // is least likely to be weighed.
   return {
     name: "open_app",
-    description: `Open an app or game on the user's screen NOW. Call it when the user asks for one or agrees to one you offered — then keep talking normally. ${sections.filter(Boolean).join(" ")}`,
+    description: `Open an app or game on the user's screen NOW. Call it ONLY when the user asked for that app, or agreed to one you just offered, in this turn — then keep talking normally. ${sections.filter(Boolean).join(" ")} Pass an id from that list EXACTLY as written. If none of them does what the user asked, do not call this at all: say you cannot, rather than opening the nearest-sounding one.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",

@@ -399,6 +399,10 @@ export const ko: Translations = {
   aac: {
     energyBar: "AI 에너지",
     voiceLive: "듣는 중",
+    readingMode: {
+      hint: "읽기 모드 — 주문하려면 시작",
+      start: "주문 시작",
+    },
     glyph: {
       person: "사람",
       thing: "물건",

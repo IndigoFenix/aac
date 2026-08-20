@@ -43,20 +43,24 @@ const base = {
 
 // ── Speaker, live native audio (the DEFAULT — tools suppressed) ─────────────
 
-describe("Speaker <activities> — the shape that was broken", () => {
+describe("Speaker <apps> — the shape that was broken", () => {
   const liveAudio = { ...base, liveAudio: true };
 
   test("says picture search is REAL and that the Speaker opens it ITSELF", () => {
     const prompt = buildSpeakerPrompt({ ...liveAudio, enabledApps: [DRAWING, PICTURE_SEARCH] });
 
-    expect(prompt).toContain("<activities>");
+    expect(prompt).toContain("<apps>");
     // The bare name was all it used to get, and a name is not a capability.
     expect(prompt).toContain("Find a Picture");
-    expect(prompt).toContain("You CAN show real pictures");
+    // The capability is stated by the registry description; the row note is
+    // the brake on it (Daniel hand-tuned that wording 2026-08-20 — do not
+    // re-assert my phrasing over it).
+    expect(prompt).toContain("the ONLY way you can find a picture of something");
+    expect(prompt).toContain("Use this ONLY if the user requests pictures specifically");
     // 2026-08-19 (Daniel): the live Speaker carries open_app as its ONE tool —
     // it opens the app itself instead of relaying through the Board Manager.
     expect(prompt).toContain('open_app("picture_search"');
-    expect(prompt).toContain("never promise an app without calling it");
+    expect(prompt).toContain("Never promise an app without calling open_app");
     // And it must not describe pictures it cannot see.
     expect(prompt).toContain("do not describe one until you are told");
   });

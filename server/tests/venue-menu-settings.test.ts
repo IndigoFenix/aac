@@ -111,6 +111,24 @@ describe("normalizeVenueMenuSettings", () => {
   });
 });
 
+describe("normalizeVenueMenuSettings — requireReviewWithAllergies", () => {
+  it("defaults ON", () => {
+    expect(normalizeVenueMenuSettings({}).requireReviewWithAllergies).toBe(true);
+  });
+
+  it("can be switched off explicitly", () => {
+    expect(
+      normalizeVenueMenuSettings({ requireReviewWithAllergies: false }).requireReviewWithAllergies,
+    ).toBe(false);
+  });
+
+  it("ignores a non-boolean rather than treating it as off", () => {
+    expect(
+      normalizeVenueMenuSettings({ requireReviewWithAllergies: "no" }).requireReviewWithAllergies,
+    ).toBe(true);
+  });
+});
+
 describe("ageInYears", () => {
   it("returns null for a missing or unparseable birth date", () => {
     expect(ageInYears(null, NOW)).toBeNull();
@@ -248,6 +266,33 @@ describe("isSourceEnabled", () => {
     const s = normalizeVenueMenuSettings({ enabled: true, sources: { camera: true, web: false } });
     expect(isSourceEnabled(s, "camera")).toBe(true);
     expect(isSourceEnabled(s, "web")).toBe(false);
+  });
+});
+
+describe("needsReview — allergies outrank the policy", () => {
+  // Per-student decisions live in AAC settings, so this is a SETTING
+  // (`requireReviewWithAllergies`, default true) rather than hardcoded logic.
+  const withAllergies = { hasAllergies: true, requireReviewWithAllergies: true };
+
+  it("forces review for an allergic student even under 'never'", () => {
+    // The allergen filter reads whatever text the source carried, and on a menu
+    // of bare names its silence means very little. A human looks.
+    expect(needsReview("never", "camera", withAllergies)).toBe(true);
+    expect(needsReview("web_only", "camera", withAllergies)).toBe(true);
+  });
+
+  it("does nothing when the student has no recorded allergies", () => {
+    expect(needsReview("never", "camera", { ...withAllergies, hasAllergies: false })).toBe(false);
+  });
+
+  it("respects a clinician who switched the setting off", () => {
+    expect(
+      needsReview("never", "camera", { hasAllergies: true, requireReviewWithAllergies: false }),
+    ).toBe(false);
+  });
+
+  it("defaults to the plain policy when no context is passed at all", () => {
+    expect(needsReview("never", "camera")).toBe(false);
   });
 });
 

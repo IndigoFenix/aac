@@ -399,6 +399,10 @@ export const de: Translations = {
   aac: {
     energyBar: "KI-Energie",
     voiceLive: "Hört zu",
+    readingMode: {
+      hint: "Lesen – zum Bestellen starten",
+      start: "Bestellen starten",
+    },
     glyph: {
       person: "Person",
       thing: "Ding",

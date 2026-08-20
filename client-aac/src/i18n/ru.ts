@@ -399,6 +399,10 @@ export const ru: Translations = {
   aac: {
     energyBar: "Энергия ИИ",
     voiceLive: "Слушает",
+    readingMode: {
+      hint: "Чтение — нажмите, чтобы заказать",
+      start: "Начать заказ",
+    },
     glyph: {
       person: "\u0427\u0435\u043b\u043e\u0432\u0435\u043a",
       thing: "\u0412\u0435\u0449\u044c",

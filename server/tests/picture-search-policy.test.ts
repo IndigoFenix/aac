@@ -10,6 +10,7 @@
 import { describe, test, expect } from "@jest/globals";
 import {
   BASELINE_BLOCKED_TERMS,
+  blockedTagFor,
   blockedTermFor,
   DEFAULT_MAX_RESULTS,
   MAX_QUERY_CHARS,
@@ -160,6 +161,74 @@ function hit(over: Partial<RawImageHit> = {}): RawImageHit {
     ...over,
   };
 }
+
+describe("blockedTagFor — screening what the picture DEPICTS", () => {
+  // Pixabay's safesearch means "suitable for all ages" in the ADULT-content
+  // sense, so a cocktail bar sails through it. Reported 2026-08-20: searching
+  // "drink" returned bars.
+
+  test("drops the bar photos that a search for 'drink' actually returned", () => {
+    expect(blockedTagFor("cocktail, drink, alcohol, glass")).toBe("cocktail");
+    expect(blockedTagFor("bar, restaurant, interior, counter")).toBe("bar");
+    expect(blockedTagFor("beer bottle, table")).toBe("beer bottle");
+  });
+
+  test("passes the picture a child asking for a drink actually wants", () => {
+    expect(blockedTagFor("water, glass, drink, fresh")).toBeNull();
+    expect(blockedTagFor("juice, orange, breakfast")).toBeNull();
+    expect(blockedTagFor("milk, cup, kitchen")).toBeNull();
+  });
+
+  test("an ambiguous word is blocked only as a WHOLE tag", () => {
+    // The reason the list is split in two. Over-blocking is invisible to a
+    // student — they just get an empty grid and cannot ask why.
+    expect(blockedTagFor("bar")).toBe("bar");
+    expect(blockedTagFor("chocolate bar, sweet, snack")).toBeNull();
+    expect(blockedTagFor("monkey bars, playground")).toBeNull();
+    expect(blockedTagFor("grave")).toBe("grave");
+    expect(blockedTagFor("gravel, path, stones")).toBeNull();
+  });
+
+  test("an unambiguous word is blocked anywhere inside a tag", () => {
+    expect(blockedTagFor("alcoholic drink, party")).toBe("alcoholic drink");
+    expect(blockedTagFor("cigarette smoke")).toBe("cigarette smoke");
+    expect(blockedTagFor("hunting rifle, forest")).toBe("hunting rifle");
+  });
+
+  test("leaves the words that earn their place on a child's screen", () => {
+    // Each of these was considered for the list and deliberately left off.
+    for (const tags of [
+      "sword, knight, castle",
+      "knife, fork, spoon, cutlery",
+      "birthday party, cake, candles",
+      "weed, garden, dandelion",
+      "needle, thread, sewing",
+      "campfire, smoke, forest",
+      "soldier, history, memorial",
+    ]) {
+      expect(blockedTagFor(tags)).toBeNull();
+    }
+  });
+
+  test("a clinician's own blocked terms screen results, not just queries", () => {
+    // They said they did not want to see it. A search for something else that
+    // happens to return it is the same outcome for the student.
+    expect(blockedTagFor("dog, puppy, pet", ["dog"])).toBe("dog");
+    expect(blockedTagFor("cat, kitten", ["dog"])).toBeNull();
+    // Word-boundary, same rule queries get: "dog" must not fire on "dogwood".
+    expect(blockedTagFor("dogwood, tree, blossom", ["dog"])).toBeNull();
+  });
+
+  test("survives junk: empty tags, stray commas, odd spacing", () => {
+    expect(blockedTagFor("")).toBeNull();
+    expect(blockedTagFor(",,,")).toBeNull();
+    expect(blockedTagFor("  BEER  ,  glass ")).toBe("beer");
+  });
+
+  test("is case-insensitive, because Pixabay's tags are not normalized", () => {
+    expect(blockedTagFor("Cocktail, Bar")).toBe("cocktail");
+  });
+});
 
 describe("hitIsUsable", () => {
   test("accepts an ordinary https photo", () => {

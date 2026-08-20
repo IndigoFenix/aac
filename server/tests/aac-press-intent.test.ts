@@ -1,5 +1,6 @@
+import { describe, it, expect } from "@jest/globals";
 import type { BoardButton } from "@shared/schema";
-import { isMetaButton, pressIntentFor, shouldSpeakLocally } from "./press-intent";
+import { isMetaButton, pressIntentFor, shouldSpeakLocally } from "@shared/aac/press-intent";
 
 const btn = (extra: Partial<BoardButton> = {}): BoardButton =>
   ({ id: "b", label: "hello", spokenText: "hello there", ...extra }) as BoardButton;
@@ -33,8 +34,16 @@ describe("pressIntentFor", () => {
   });
 
   it("treats the exitBoard FLAG as an exit, like the action", () => {
-    expect(pressIntentFor(btn({ action: { type: "exit" } as any }))).toEqual({ kind: "exit" });
-    expect(pressIntentFor(btn({ exitBoard: true } as any))).toEqual({ kind: "exit" });
+    expect(pressIntentFor(btn({ action: { type: "exit" } as any }))).toEqual({ kind: "exit", instruction: "" });
+    expect(pressIntentFor(btn({ exitBoard: true } as any))).toEqual({ kind: "exit", instruction: "" });
+  });
+
+  it("carries the exit button's DIRECTIVE, which is the only thing saying what the press meant", () => {
+    // Home-board buttons put a tag in action.text ([FEELINGS], [HELP], …).
+    // Dropping it leaves the agents a bare "they left the board" to guess from.
+    expect(
+      pressIntentFor(btn({ exitBoard: true, action: { type: "exit", text: "[FEELINGS]" } } as any)),
+    ).toEqual({ kind: "exit", instruction: "[FEELINGS]" });
   });
 
   it("classifies the launchers, and needs their payload to do it", () => {

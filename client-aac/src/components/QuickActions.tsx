@@ -5,10 +5,10 @@ import { YesNoSprite } from "@/components/YesNoSprite";
 // WHICH slots the row has, and in what order, is decided in one place — this
 // component only draws them. The clinician's mirror projects the same slots,
 // so the two can no longer disagree about what is on the child's screen.
-import { quickActionSlots, type QuickActionSlot } from "@/lib/quick-actions";
+import { quickActionSlots, type QuickActionSlot } from "@shared/aac/quick-actions";
 
 // Re-exported so existing importers (home.tsx → the call mirror) keep working.
-export { quickActionsMirror } from "@/lib/quick-actions";
+export { quickActionsMirror } from "@shared/aac/quick-actions";
 
 interface QuickActionsProps {
   onAction: (action: string, text: string) => void;

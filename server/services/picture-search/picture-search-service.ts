@@ -14,6 +14,7 @@
 // that never loaded is not.
 
 import {
+  blockedTagFor,
   blockedTermFor,
   normalizeSearchQuery,
   type PictureSearchConfig,
@@ -92,9 +93,30 @@ export async function runPictureSearch(input: {
   const blocked = blockedTermFor(query, config.blockedTerms);
   if (blocked) return { kind: "blocked", term: blocked };
 
-  const hits = (await searchImages(query, config, language))
-    .filter(hitIsUsable)
-    .slice(0, config.maxResults);
+  // Three screens, in order: is it a real usable image, is what it DEPICTS fit
+  // for this student, and only then take the first maxResults. The middle one
+  // is the reason the provider is over-fetched — see OVERFETCH_FACTOR.
+  //
+  // Provider SafeSearch means "suitable for all ages" in the adult-content
+  // sense, which a cocktail bar passes. `hit.title` carries Pixabay's `tags`
+  // string, and that is what actually says what is in the picture.
+  const raw = (await searchImages(query, config, language)).filter(hitIsUsable);
+  const hits: RawImageHit[] = [];
+  let screened = 0;
+  for (const hit of raw) {
+    const tag = blockedTagFor(hit.title, config.blockedTerms);
+    if (tag) {
+      screened++;
+      continue;
+    }
+    hits.push(hit);
+    if (hits.length >= config.maxResults) break;
+  }
+  if (screened > 0) {
+    // Logged, never surfaced: the student is not told their picture of a drink
+    // was mostly bars, and the assistant must not learn the words either.
+    console.log(`[picture-search] "${query}": screened ${screened}/${raw.length} hits on tags`);
+  }
 
   const results = toResults(hits);
   if (results.length === 0) return { kind: "no_results", query };

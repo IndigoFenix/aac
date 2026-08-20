@@ -399,6 +399,10 @@ export const yue: Translations = {
   aac: {
     energyBar: "AI 能量",
     voiceLive: "聆聽緊",
+    readingMode: {
+      hint: "閱讀模式 — 揳開始落單",
+      start: "開始落單",
+    },
     glyph: {
       person: "人",
       thing: "嘢",

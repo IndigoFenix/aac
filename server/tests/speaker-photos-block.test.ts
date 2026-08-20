@@ -1,19 +1,32 @@
 // The Speaker's awareness of the student's family photos.
 //
-// The block exists so the assistant can ask for a SPECIFIC photo:
-// `open_app("photos", "<words from a caption>")` is matched server-side against
-// exactly the caption strings listed here, so they must appear verbatim. It also
-// carries the one hard safety rule of this feature — never name who is in an
+// The captions exist in the prompt so the assistant can ask for a SPECIFIC
+// photo: `open_app("photos", "<caption words>")` is matched server-side against
+// exactly these strings, so they must appear verbatim. The block also carries
+// the one hard safety rule of this feature — never name who is in an
 // uncaptioned photo.
 //
-// It lives in the tool-mode <apps> branch, not the native-audio <activities>
-// branch, because it is instructions for a tool the Speaker only has in tool
-// mode. In native-audio mode "Photos" still shows up as a mentionable activity
-// via enabledApps; it just cannot be opened by the Speaker directly.
+// 2026-08-20: this used to be a `<photos>` block of its own, rendered whether
+// or not the photos app was even enabled, and only in tool mode. It is now a
+// NOTE ON THE PHOTOS ROW inside the single <apps> catalogue, in both prompt
+// shapes — the same "photos is an app like any other" call that folded it into
+// the Board Manager's <apps_context>. Two consequences these tests pin:
+//   - the note requires the photos app to be ENABLED (matching the Board
+//     Manager, which has always gated on it). A clinician who turned the album
+//     off should not have the Speaker offering to open it.
+//   - there is no `<photos>` tag any more.
 //
 // See planning-docs/aac-photos-plan.md §8.
 
 import { buildSpeakerPrompt } from "../services/dual-agent/prompts/speaker.js";
+import { getAppDefinition } from "../services/dual-agent/app-registry.js";
+
+const PHOTOS_APP = {
+  id: "photos",
+  name: "Photos",
+  description: getAppDefinition("photos")!.description,
+  queryHint: getAppDefinition("photos")!.queryHint,
+};
 
 const toolMode = {
   studentName: "Alex",
@@ -21,9 +34,10 @@ const toolMode = {
   muteState: "unmuted" as const,
   liveAudio: false,
   useDirectAudio: false,
+  enabledApps: [PHOTOS_APP],
 };
 
-describe("Speaker <photos> block", () => {
+describe("Speaker photos row", () => {
   test("lists captions verbatim so the query can match them", () => {
     const prompt = buildSpeakerPrompt({
       ...toolMode,
@@ -35,7 +49,7 @@ describe("Speaker <photos> block", () => {
       },
     });
 
-    expect(prompt).toContain("<photos>");
+    expect(prompt).toContain("<apps>");
     expect(prompt).toContain("3 family photos");
     // Verbatim: the server matches the AI's query against these exact strings.
     expect(prompt).toContain("Grandma at my birthday");
@@ -74,7 +88,10 @@ describe("Speaker <photos> block", () => {
       photoLibrary: { count: 4, captions: [], truncated: false, uncaptionedCount: 4 },
     });
     expect(prompt).toContain("None of them have captions");
-    expect(prompt).not.toContain("words from a caption");
+    expect(prompt).toContain("NEVER guess who is in an uncaptioned photo");
+    // …and the count is NOT repeated: "none captioned" already said it, and
+    // saying both reads as two different facts about one album.
+    expect(prompt).not.toContain("4 of them have no caption");
   });
 
   test("signals that the caption list is partial", () => {
@@ -91,15 +108,34 @@ describe("Speaker <photos> block", () => {
   });
 
   test("omitted entirely for a student with no photos", () => {
-    // The common case — the block must not cost tokens for students who have
+    // The common case — the note must not cost tokens for students who have
     // never had a photo uploaded.
-    expect(buildSpeakerPrompt({ ...toolMode })).not.toContain("<photos>");
+    expect(buildSpeakerPrompt({ ...toolMode })).not.toContain("on this device");
     expect(
       buildSpeakerPrompt({
         ...toolMode,
         photoLibrary: { count: 0, captions: [], truncated: false, uncaptionedCount: 0 },
       }),
-    ).not.toContain("<photos>");
+    ).not.toContain("on this device");
+  });
+
+  test("omitted when the album exists but the app is switched off", () => {
+    // Matches the Board Manager, which has always gated its photos data line on
+    // enablement. Captions for an app nobody can open are a standing invitation
+    // to promise something that cannot happen.
+    const prompt = buildSpeakerPrompt({
+      studentName: "Alex",
+      persona: "",
+      muteState: "unmuted",
+      liveAudio: false,
+      enabledApps: [{ id: "drawing", name: "Drawing", description: "A canvas." }],
+      photoLibrary: { count: 3, captions: ["Mum"], truncated: false, uncaptionedCount: 0 },
+    });
+    expect(prompt).not.toContain("on this device");
+    expect(prompt).not.toContain("Mum");
+    // …and the picture-search denial must not point at an album that is not
+    // on the list.
+    expect(prompt).not.toContain("beyond the family photos listed above");
   });
 
   test("uses the singular for a single photo", () => {

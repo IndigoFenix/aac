@@ -3604,9 +3604,12 @@ export class AgentCoordinator {
         sessionSummary: state.sessionSummary,
         availableBoards: state.availableBoards?.map(b => ({ key: b.key, name: b.name, hint: b.hint })),
         // Apps the Speaker may launch via open_app. enabledApps drives both the
-        // prompt's "Available apps" block and the open_app tool declaration
-        // (rebuilt from these ids at coordinator line ~1422).
-        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
+        // prompt's <apps> catalogue and the open_app tool declaration (rebuilt
+        // from these ids at coordinator line ~1422). `queryHint` rides along so
+        // each row can print the COMPLETE call — without it the Speaker's rows
+        // showed `open_app("youtube")` for apps that do nothing without a query,
+        // while only the Board Manager's copy carried the hint.
+        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description, queryHint: a.queryHint })),
         availableCustomApps: (state.availableCustomApps || []).map(a => ({
           id: a.id,
           name: a.name,

@@ -208,8 +208,8 @@ import {
   canGoBack as historyCanGoBack,
   canGoForward as historyCanGoForward,
   type BoardHistory,
-} from "@/lib/board-history";
-import { applyContextSymbolUpdate } from "@/lib/context-sidebar";
+} from "@shared/aac/board-history";
+import { applyContextSymbolUpdate } from "@shared/aac/context-sidebar";
 
 interface HomeProps {
   studentId: string;

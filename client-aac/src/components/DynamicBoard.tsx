@@ -28,7 +28,7 @@ import {
   layoutSlots,
   resolveFades,
   type SlotState,
-} from "@/lib/board-slots";
+} from "@shared/aac/board-slots";
 // Page navigation WITHIN this board (the link buttons, Back, Home). Distinct
 // from lib/board-history, which steps across whole AI boards.
 import {
@@ -39,10 +39,10 @@ import {
   resolvePage,
   type PageNav,
   type PageNavAction,
-} from "@/lib/page-nav";
+} from "@shared/aac/page-nav";
 // WHAT a press means (navigate / launch / actuate / speak), as a priority-
 // ordered classification. The effects stay here; only the decision moves.
-import { pressIntentFor, shouldSpeakLocally } from "@/lib/press-intent";
+import { pressIntentFor, shouldSpeakLocally } from "@shared/aac/press-intent";
 import { ShapedButton } from "@client-shared/board/ShapedButton";
 import type { SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import { ProceduralFace, NEUTRAL_FACE } from "@shared/social-bot/ProceduralFace";
@@ -368,6 +368,37 @@ export default function DynamicBoard({
   // A flagged smart-home press waiting on the student's Yes/No. Held here, not
   // in the parent, because this is where a home press is resolved.
   const [pendingHomeAction, setPendingHomeAction] = useState<PendingHomeAction | null>(null);
+
+  /**
+   * READING MODE — a board can ask to open inert (§4.5 of the venue-menus plan).
+   *
+   * A dense menu is the case this exists for: with dwell live, the first dish
+   * the student's eyes settle on gets ordered before they have read the page.
+   * While it is on, every button EXCEPT `readingModeSafe` ones is unpressable
+   * and carries no `data-dwell`, so the gaze engine does not even offer it —
+   * showing dwell progress on a button that then does nothing would read as a
+   * fault. Navigation and the essentials (more / finished / bathroom) stay live:
+   * needing the toilet does not wait for a mode to be switched off.
+   */
+  const [readingMode, setReadingMode] = useState(false);
+
+  useEffect(() => {
+    // Re-arms per board, not per page — turning it off is a decision about this
+    // menu, and having it snap back on at every page turn would be unusable.
+    setReadingMode(!!board?.openInReadingMode);
+  }, [board?.openInReadingMode, board?.name]);
+
+  /** Is this button held by reading mode right now? */
+  const isHeld = useCallback(
+    (button: BoardButton) => readingMode && !button.readingModeSafe,
+    [readingMode],
+  );
+
+  /** Dwell attributes for a button — absent while reading mode holds it. */
+  const dwellAttrs = useCallback(
+    (button: BoardButton) => (isHeld(button) ? {} : { "data-dwell": "" }),
+    [isHeld],
+  );
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPatchRef = useRef<BoardPatch | null>(null);
   const prevBoardRef = useRef<ParsedBoardData | null>(null);
@@ -546,6 +577,12 @@ export default function DynamicBoard({
   const handleButtonClick = useCallback(
     (button: BoardButton, index?: number) => {
       console.log("[DynamicBoard] click:", button.label, "| buttonType:", (button as any).buttonType, "| action:", button.action?.type ?? "(none)");
+
+      // Reading mode holds this button. Gated HERE as well as by the missing
+      // data-dwell so a touch press is refused too — the mode is about not
+      // ordering by accident, and a finger is as accidental as a gaze.
+      if (readingMode && !button.readingModeSafe) return;
+
       const action = button.action;
 
       // WHAT the press means is decided in lib/press-intent (pure, priority
@@ -632,7 +669,7 @@ export default function DynamicBoard({
           return;
       }
     },
-    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen, onRequestBoardOpen, actuateHomeAction, confirmPlacement]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent, onNavigateToBoard, onLaunchApp, onRequestAppOpen, onRequestBoardOpen, actuateHomeAction, confirmPlacement, readingMode]
   );
 
   // Render nothing if completely empty
@@ -872,7 +909,7 @@ export default function DynamicBoard({
           style={{ padding: 5 }}
           onClick={() => handleButtonClick(button)}
           domProps={{
-            "data-dwell": "",
+            ...dwellAttrs(button),
             "data-speech": labelText,
             "data-mirror-id": button.id,
             "data-testid": `board-${kind}`,
@@ -909,7 +946,7 @@ export default function DynamicBoard({
           style={{ padding: 5 }}
           onClick={() => handleButtonClick(button)}
           domProps={{
-            "data-dwell": "",
+            ...dwellAttrs(button),
             "data-speech": button.label,
             "data-mirror-id": button.id,
           }}
@@ -1082,6 +1119,26 @@ export default function DynamicBoard({
           {currentPage?.name && (
             <span className="text-xs text-gray-500 truncate">{currentPage.name}</span>
           )}
+        </div>
+      )}
+
+      {/* Reading-mode strip. Deliberately ABOVE the grid rather than over it:
+          a scrim would be a dwell trap and would hide the very menu the mode
+          exists to let the student read. The exit control is dwellable, so a
+          gaze user can leave the mode the same way they use everything else. */}
+      {readingMode && (
+        <div className="flex items-center gap-2 mb-1 px-1 flex-shrink-0">
+          <span className="text-xs text-gray-600 truncate">{t("aac.readingMode.hint")}</span>
+          <button
+            type="button"
+            onClick={() => setReadingMode(false)}
+            data-dwell=""
+            data-speech={t("aac.readingMode.start")}
+            data-testid="reading-mode-start"
+            className="ms-auto flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+          >
+            {t("aac.readingMode.start")}
+          </button>
         </div>
       )}
 

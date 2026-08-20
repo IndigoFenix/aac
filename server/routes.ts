@@ -2135,6 +2135,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Location Menus (planning-docs/aac-restaurant-menus.md). Capture and review
   // are student-scoped and check verifyStudentAccess inside the controller;
   // reading a menu needs only auth, since a menu is a public fact.
+  // Resolution is a POST because its body carries a GPS coordinate — personal
+  // data must never travel in a query string, a log line, or a referrer.
+  app.post("/api/venue-menus/nearby", requireAuth, (req, res) =>
+    venueMenuController.resolveNearby(req, res)
+  );
+  app.get("/api/students/:studentId/venues", requireAuth, (req, res) =>
+    venueMenuController.listStudentVenues(req, res)
+  );
+  app.post("/api/students/:studentId/venues", requireAuth, (req, res) =>
+    venueMenuController.confirmVenue(req, res)
+  );
   app.post("/api/venue-menus/capture", requireAuth, (req, res) =>
     venueMenuController.capture(req, res)
   );

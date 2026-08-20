@@ -399,6 +399,10 @@ export const zh: Translations = {
   aac: {
     energyBar: "AI 能量",
     voiceLive: "正在聆听",
+    readingMode: {
+      hint: "阅读模式 — 点击开始点餐",
+      start: "开始点餐",
+    },
     glyph: {
       person: "人",
       thing: "东西",

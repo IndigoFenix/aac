@@ -1,10 +1,11 @@
+import { describe, it, expect } from "@jest/globals";
 import {
   addContextButton,
   applyContextSymbolUpdate,
   CONTEXT_BUTTON_LIMIT,
   removeContextButton,
   type ContextButton,
-} from "./context-sidebar";
+} from "@shared/aac/context-sidebar";
 
 const b = (label: string, extra: Partial<ContextButton> = {}): ContextButton => ({
   label,
