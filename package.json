@@ -1,6 +1,6 @@
 {
   "name": "aivota-aac",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "type": "module",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -88,7 +88,8 @@
     "validate-glyphs": "tsx scripts/validate-glyph-registry.ts",
     "validate-glyphs:art": "tsx scripts/validate-glyph-registry.ts --icons --verbose --no-fail",
     "validate-builder-lexicon": "tsx scripts/validate-builder-lexicon.ts",
-    "validate-builder-lexicon:report": "tsx scripts/validate-builder-lexicon.ts --verbose --same-as-english --no-fail"
+    "validate-builder-lexicon:report": "tsx scripts/validate-builder-lexicon.ts --verbose --same-as-english --no-fail",
+    "db:migrate-staging-to-prod": "tsx scripts/migrate-staging-to-prod.ts"
   },
   "overrides": {
     "shell-quote": "^1.8.4"
