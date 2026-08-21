@@ -82,8 +82,12 @@ jobs:
           echo "AAC_UPDATE_BUCKET=aivota-prod-aac-updates-${ACCOUNT}" >> "$GITHUB_ENV"
           echo "Resolved bucket: aivota-prod-aac-updates-${ACCOUNT}"
 
-      # release:aac = release:aac:build (electron-build + sidecar + electron-builder)
-      #             + release:aac:publish (upload .exe + .blockmap + latest.yml to S3)
+      # release:aac = scripts/release-aac.mjs prod --publish: bakes the PROD
+      # backend (https://api.aivota.ai) and the runtime backend-manifest URL
+      # into the client, then electron-build + sidecar + electron-builder and
+      # upload (.exe + .blockmap + latest.yml) to S3. It must NOT be the bare
+      # electron:build — that loads client-aac/.env.electron, which points at
+      # the DEMO server and bakes no manifest URL (1.0.35 shipped that way).
       # The build self-fetches the voice model and 32-bit sidecar runtime.
       - name: Build installer + publish to S3
         env:
