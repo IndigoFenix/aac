@@ -40,6 +40,32 @@ export const AAC_ENVIRONMENTS = {
     publishable: false,
     isDefaultIdentity: false,
   },
+  "ecs-test": {
+    // THE ECS CUTOVER REHEARSAL. Same app as prod and pointed at the same ECS
+    // backend, but with its own install identity and NO update feed or runtime
+    // manifest — so it installs beside a real prod app instead of taking over
+    // its userData, can never be re-pointed remotely, and never auto-updates
+    // out from under the test.
+    //
+    // It exists so that testing ECS costs the dev/staging/demo path nothing:
+    // `staging` keeps pointing at Render, and no manifest publish is needed to
+    // try ECS, so nothing about the Render fleet has to move first.
+    //
+    // NOTE: this backend uses the PRODUCTION database, not Render's. An account
+    // that works in the staging app does not exist here.
+    backendUrl: "https://api.aivota.ai",
+    backendManifestUrl: null,
+    backendManifestKey: null,
+    appId: "com.aivota.aac.ecstest",
+    productName: "Aivota AAC (ECS Test)",
+    // Distinct pkgName ⇒ its own userData/logs/update-cache, so its login and
+    // device id never mix with the prod app on the same machine.
+    pkgName: "aivota-aac-ecstest",
+    updatePrefix: "aac-ecstest/win/",
+    updateUrl: `${UPDATES_HOST}/aac-ecstest/win/`,
+    publishable: false,
+    isDefaultIdentity: false,
+  },
   staging: {
     // Staging server stays on Render (only `main` moved to AWS ECS).
     backendUrl: "https://aivota-staging-us.onrender.com",

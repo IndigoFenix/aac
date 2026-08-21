@@ -1,6 +1,6 @@
 {
   "name": "aivota-aac",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "type": "module",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -69,6 +69,7 @@
     "release:aac:publish": "node scripts/publish-aac-release.mjs",
     "release:aac": "npm run release:aac:build && npm run release:aac:publish",
     "release:aac:dev": "node scripts/release-aac.mjs dev",
+    "release:aac:ecstest": "node scripts/release-aac.mjs ecs-test",
     "release:aac:staging": "node scripts/release-aac.mjs staging --publish",
     "release:aac:prod": "node scripts/release-aac.mjs prod --publish",
     "publish:aac:backend": "node scripts/publish-aac-backend.mjs",

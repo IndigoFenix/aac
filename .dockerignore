@@ -6,6 +6,12 @@ npm-debug.log
 dist
 build
 
+# ...except the game bundles, which the CI runner builds and the image only
+# COPYs (see Dockerfile). Building 16 games inside the image would add minutes
+# to every deploy. This exception must stay BELOW the `dist` rule — in a
+# .dockerignore the last matching pattern wins.
+!dist/public-games
+
 # Development files
 .git
 .gitignore

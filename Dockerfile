@@ -41,6 +41,23 @@ RUN apk add --no-cache wget
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
+# Game bundles (~94 MB), built by the CI runner — NOT in the builder stage
+# above, which would put the whole game toolchain and a 16-game vite build into
+# every image build, including deploys that never touch a game.
+#
+# Deliberately copied BEFORE the server bundle: a COPY invalidates every layer
+# below it, and the server bundle changes on every single deploy. Ordered the
+# other way round, a routine server-only deploy would re-push ~94 MB it did not
+# change. Here that layer stays cached until the games themselves change.
+#
+# The bracketed source is Docker's optional-COPY idiom: `public-game[s]` is a
+# glob, and a glob matching nothing is not an error, so an image built without
+# running `npm run build:games` still succeeds. `app.prod.ts` already guards on
+# the directory existing and simply leaves /games unmounted — which is exactly
+# today's behavior. Requires a `!dist/public-games` exception in .dockerignore,
+# since `dist` is otherwise excluded wholesale.
+COPY dist/public-game[s] ./dist/public-games
+
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/drizzle ./drizzle
