@@ -17,6 +17,7 @@ resource "aws_route53_record" "app" {
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = var.domain_name
   type    = "A"
+  allow_overwrite = true
 
   alias {
     name                   = aws_lb.main.dns_name
@@ -32,6 +33,7 @@ resource "aws_route53_record" "www" {
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "www.${var.domain_name}"
   type    = "A"
+  allow_overwrite = true
 
   alias {
     name                   = aws_lb.main.dns_name
@@ -47,6 +49,7 @@ resource "aws_route53_record" "app_alb" {
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "app.${var.domain_name}"
   type    = "A"
+  allow_overwrite = true
 
   alias {
     name                   = aws_lb.main.dns_name
@@ -60,9 +63,10 @@ resource "aws_route53_record" "app_alb" {
 resource "aws_route53_record" "api_alb" {
   count = local.api_host != "" && !var.use_lambda ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = local.api_host
-  type    = "A"
+  zone_id         = data.aws_route53_zone.main[0].zone_id
+  name            = local.api_host
+  type            = "A"
+  allow_overwrite = true # survives a record left behind by an interrupted apply
 
   alias {
     name                   = aws_lb.main.dns_name
