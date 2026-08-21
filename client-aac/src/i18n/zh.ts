@@ -17,7 +17,8 @@ export const zh: Translations = {
     updateDownloading: "正在下载更新…",
     updateKeepOpen: "请保持应用打开直到完成",
     updateReady: "更新已就绪",
-    updateRestart: "立即重启",
+    updateRestart: "安装并重启",
+    updateRestartHint: "应用会自动关闭、更新并重新打开",
   },
 
   common: {

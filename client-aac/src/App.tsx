@@ -158,7 +158,28 @@ function MainApp() {
     setSelectedClassroomId(null);
   }, [deviceReg.status]);
 
+  // React Query keys every user-scoped list by RESOURCE, never by account
+  // (["/api/institutes"], ["/api/students", …], the classroom lists), and this
+  // client's default staleTime is Infinity. So without an explicit purge the
+  // institute/classroom/student lists a previous account loaded stayed in the
+  // cache across a sign-out and were served — and never refetched — to whoever
+  // signed in next on the same device.
+  //
+  // The purge that does the real work is the one on LOGIN: at that moment the
+  // login screen is the only thing mounted, so nothing re-fetches the lists
+  // before the new account's identity is known. The logout-side purge is a
+  // backstop only — AAC sign-out is local (the server session deliberately
+  // stays alive for the clinician client), so a still-mounted selector can
+  // briefly re-fetch the outgoing account's lists on its way out.
+  //
+  // The auth query itself is left alone: it is the source of `authedUser`, and
+  // removing it would bounce the app back through its loading screen.
+  const clearUserScopedCache = () => {
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "/auth/user" });
+  };
+
   const handleLoginSuccess = () => {
+    clearUserScopedCache();
     refetch();
   };
 
@@ -175,6 +196,7 @@ function MainApp() {
     // Mark as signed out locally — do NOT call server /auth/logout
     // so the admin client's session stays alive
     localStorage.setItem('aac_signed_out', 'true');
+    clearUserScopedCache();
     queryClient.setQueryData(["/auth/user"], null);
   };
 

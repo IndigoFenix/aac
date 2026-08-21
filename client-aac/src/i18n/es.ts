@@ -17,7 +17,8 @@ export const es: Translations = {
     updateDownloading: "Descargando actualización…",
     updateKeepOpen: "Mantén la aplicación abierta hasta que termine",
     updateReady: "Actualización lista",
-    updateRestart: "Reiniciar ahora",
+    updateRestart: "Instalar y reiniciar",
+    updateRestartHint: "La aplicación se cerrará, se actualizará y se volverá a abrir sola",
   },
 
   common: {

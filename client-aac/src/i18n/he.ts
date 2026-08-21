@@ -17,7 +17,8 @@ export const he: Translations = {
     updateDownloading: "מוריד עדכון…",
     updateKeepOpen: "השאירו את האפליקציה פתוחה עד לסיום",
     updateReady: "העדכון מוכן",
-    updateRestart: "הפעל מחדש עכשיו",
+    updateRestart: "התקן והפעל מחדש",
+    updateRestartHint: "האפליקציה תיסגר, תתעדכן ותיפתח מחדש בעצמה",
   },
 
   common: {

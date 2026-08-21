@@ -23,7 +23,7 @@ export default function AppVersionBadge() {
   if (!version) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-1 z-50 pointer-events-none select-none text-center text-[11px] leading-none text-gray-400 dark:text-gray-600">
+    <div className="fixed inset-x-0 bottom-1 z-[60] pointer-events-none select-none text-center text-[11px] leading-none text-gray-400 dark:text-gray-600">
       v{version}
     </div>
   );

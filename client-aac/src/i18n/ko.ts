@@ -17,7 +17,8 @@ export const ko: Translations = {
     updateDownloading: "업데이트 다운로드 중…",
     updateKeepOpen: "완료될 때까지 앱을 열어 두세요",
     updateReady: "업데이트 준비됨",
-    updateRestart: "지금 다시 시작",
+    updateRestart: "설치 후 다시 시작",
+    updateRestartHint: "앱이 종료되고 업데이트된 뒤 자동으로 다시 열립니다",
   },
 
   common: {

@@ -17,7 +17,8 @@ export const en = {
     updateDownloading: "Downloading update…",
     updateKeepOpen: "Keep the app open until it finishes",
     updateReady: "Update ready",
-    updateRestart: "Restart now",
+    updateRestart: "Install and restart",
+    updateRestartHint: "The app will close, update and reopen by itself",
   },
 
   common: {

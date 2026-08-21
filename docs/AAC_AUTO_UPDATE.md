@@ -87,7 +87,7 @@ window.electronAPI?.update?.onStatus((status) => {
 });
 
 await window.electronAPI?.update?.check();        // manual recheck
-await window.electronAPI?.update?.installNow();   // "Restart now" button
+await window.electronAPI?.update?.installNow();   // "Install and restart" button
 ```
 
 Status events:
@@ -102,10 +102,18 @@ Status events:
 | `error` | Network / checksum / disk failure | diagnostics surface |
 
 The client UI is `UpdateStatusIndicator` (via `useAppUpdate`): a progress
-pill while downloading and a "Restart now" button once ready. It renders
-on the startup/selection screens and the initialization screen — not
-mid-session, so a student is never shown a restart prompt in the middle
-of communicating.
+pill while downloading and an "Install and restart" button once ready,
+with a line under it saying the app closes and reopens on its own —
+`quitAndInstall(isSilent, isForceRunAfter)` is called with both flags set,
+so the installer relaunches the new build, and the single-instance lock
+retries briefly (electron/instance-guard.ts) so that relaunch can overlap
+the outgoing process. It renders on the startup/selection screens and the
+initialization screen — not mid-session, so a student is never shown a
+restart prompt in the middle of communicating.
+
+The pill sits at `z-[60]`, above the login dialog's Radix overlay (`z-50`,
+portaled to `<body>` and therefore later in the DOM), so it is not hidden
+behind the scrim on the sign-in screen.
 
 ## Publishing a new release
 

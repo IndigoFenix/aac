@@ -17,7 +17,8 @@ export const yue: Translations = {
     updateDownloading: "正在下載更新…",
     updateKeepOpen: "請保持應用程式開啟直到完成",
     updateReady: "更新已就緒",
-    updateRestart: "立即重新啟動",
+    updateRestart: "安裝並重新啟動",
+    updateRestartHint: "應用程式會自動關閉、更新，然後重新開啟",
   },
 
   common: {

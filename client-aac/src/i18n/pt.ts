@@ -17,7 +17,8 @@ export const pt: Translations = {
     updateDownloading: "Baixando atualização…",
     updateKeepOpen: "Mantenha o aplicativo aberto até terminar",
     updateReady: "Atualização pronta",
-    updateRestart: "Reiniciar agora",
+    updateRestart: "Instalar e reiniciar",
+    updateRestartHint: "O aplicativo vai fechar, atualizar e reabrir sozinho",
   },
 
   common: {

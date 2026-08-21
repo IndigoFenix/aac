@@ -17,7 +17,8 @@ export const fr: Translations = {
     updateDownloading: "Téléchargement de la mise à jour…",
     updateKeepOpen: "Gardez l'application ouverte jusqu'à la fin",
     updateReady: "Mise à jour prête",
-    updateRestart: "Redémarrer maintenant",
+    updateRestart: "Installer et redémarrer",
+    updateRestartHint: "L'application va se fermer, se mettre à jour et se rouvrir toute seule",
   },
 
   common: {
