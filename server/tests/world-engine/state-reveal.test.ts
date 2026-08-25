@@ -232,4 +232,47 @@ describe("the reveal over a real state-books trajectory", () => {
     const implied = Math.floor(econ.booksAt(400)[0]!.pop / TIER_POP_CAP.town);
     expect(r.towns.filter((t) => !t.abandonedYear).length).toBe(Math.min(implied, 4));
   });
+
+  it("S4 — THE PAST STANDS under intervention: destiny recomputes forward only, at the FABRIC level", () => {
+    const opts = {
+      seats: [{ startPop: 500 }, { startPop: 1500 }],
+      states: {
+        stateOf: Int32Array.of(0, 1),
+        adjacency: [{ a: 0, b: 1, costM: 1000 }] as StateAdjacency[],
+      },
+      sites: [
+        { cell: 0, density: 300 }, { cell: 0, density: 300 }, { cell: 0, density: 300 },
+        { cell: 1, density: 40 },
+      ],
+      years: 400,
+    };
+    const base = simulateStateBooks(opts);
+    const bumped = simulateStateBooks({
+      ...opts,
+      interventions: [{ year: 250, state: 0, popDelta: 3000 }],
+    });
+    const candidates = [cand(11, 10, 60), cand(12, 20, 55), cand(13, 30, 50), cand(14, 40, 45), cand(15, 50, 40)];
+    const revealOf = (economy: typeof base, year: number) => revealState({
+      candidates, economy, stateIdx: 0, year,
+      seatCell: 0, seatAt: { x: 0, y: 0 }, nameSeed: SEED,
+    });
+    // Before the intervention year, the two worlds are ONE world — the whole
+    // map, byte-equal.
+    expect(revealOf(bumped, 249)).toEqual(revealOf(base, 249));
+    // After it, every town founded BEFORE the intervention stands untouched
+    // (site, name, year — the past is not renegotiated)…
+    const after = revealOf(bumped, 400);
+    const control = revealOf(base, 400);
+    for (const t of control.towns.filter((x) => x.foundedYear < 250)) {
+      const same = after.towns.find((x) => x.rank === t.rank)!;
+      expect(same.site.cell).toBe(t.site.cell);
+      expect(same.name).toBe(t.name);
+      expect(same.foundedYear).toBe(t.foundedYear);
+    }
+    // …and the bump's own history is NEW towns, founded at or after year 250.
+    expect(after.towns.length).toBeGreaterThan(control.towns.length);
+    for (const t of after.towns.filter((x) => !control.towns.some((c) => c.rank === x.rank))) {
+      expect(t.foundedYear).toBeGreaterThanOrEqual(250);
+    }
+  });
 });
