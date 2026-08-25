@@ -1,0 +1,47 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=02a520cc+dirty
+# started=2026-08-24T13:02:04.625Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /stock
+CHEAT  /stock
+> say mara eat apple
+OK     said: mara + eat + apple
+TOAST  ▶ party (1): mara + eat + apple (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 3.0s.
+> say mara eat apple
+OK     said: mara + eat + apple
+TOAST  ▶ party (1): mara + eat + apple (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+EXIT   orrin left view here west.
+ENTER  orrin came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view here south.
+TICK   waited 3.0s.
+> say mara eat apple
+OK     said: mara + eat + apple
+SAY    mara: "I will eat the apple."  [eat.will + apple]
+TOAST  ▶ party (1): mara + eat + apple (feedback)
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+EXIT   mara left view there east.
+TICK   quiet after 1.2s.
+> wait 3
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 3.0s.
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=9  presses=0  screens=1  sim=16.9s
+# events: TICK 7  EXIT 7  OK 3  TOAST 3  ENTER 3  CHEAT 2  SAY 2  BOARD 1  NOTE 1

@@ -175,7 +175,9 @@ describe("session-plan — authority-figure deference default", () => {
 
     const open = forChild.indexOf(`[persona-${NONCES.outputNonce}]`);
     const close = forChild.indexOf(`[/persona-${NONCES.outputNonce}]`);
-    const block = forChild.indexOf("AUTHORITY DEFERENCE — REQUIRED");
+    // "— DEFAULT", not "— REQUIRED": the ladder in userPromptBlock ranks this
+    // block LOWEST, below any caretaker request that speaks to who decides.
+    const block = forChild.indexOf("AUTHORITY DEFERENCE — DEFAULT");
     expect(block).toBeGreaterThan(open);
     expect(block).toBeLessThan(close);
   });

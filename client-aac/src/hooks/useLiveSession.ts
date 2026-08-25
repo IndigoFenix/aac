@@ -364,7 +364,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Backend-busy flags from the server `processing` message (Speaker turn /
   // Board Manager rebuild / sentence interpret). Drive the subtle ambient
   // processing indicators.
-  const [processing, setProcessing] = useState<ProcessingState>({ speaker: false, board: false, interpret: false });
+  const [processing, setProcessing] = useState<ProcessingState>({ speaker: false, board: false, interpret: false, app: false });
 
   // Binary-choice overlay state — non-null array of two options shows the
   // overlay. Yes/No questions go through this same path now (the canonical
@@ -854,7 +854,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // Backend-busy envelope: an agent started/finished work the child
           // is waiting on. Update just that flag; the UI shows a subtle
           // ambient cue per activity.
-          if (msg.activity === "speaker" || msg.activity === "board" || msg.activity === "interpret") {
+          // 🚨 The whitelist must list EVERY activity. An unlisted one is
+          // dropped silently — the server emits, the client ignores, and the cue
+          // simply never appears with nothing anywhere saying why.
+          if (
+            msg.activity === "speaker" ||
+            msg.activity === "board" ||
+            msg.activity === "interpret" ||
+            msg.activity === "app"
+          ) {
             setProcessing((prev) =>
               prev[msg.activity as keyof ProcessingState] === !!msg.active
                 ? prev
@@ -1101,7 +1109,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // Any in-flight backend work is interrupted by the reconnect — drop
           // the ambient processing cues so they don't stick (the server can't
           // send a clearing `processing:false` across a dropped connection).
-          setProcessing({ speaker: false, board: false, interpret: false });
+          setProcessing({ speaker: false, board: false, interpret: false, app: false });
           break;
 
         case "reconnected":
@@ -1123,13 +1131,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           resumeSessionStudentRef.current = studentIdRef.current;
           setReconnecting(false);
           setError(null);
-          setProcessing({ speaker: false, board: false, interpret: false });
+          setProcessing({ speaker: false, board: false, interpret: false, app: false });
           break;
 
         case "error":
           setError(msg.data);
           setIsLoading(false);
-          setProcessing({ speaker: false, board: false, interpret: false });
+          setProcessing({ speaker: false, board: false, interpret: false, app: false });
           break;
 
         case "rate_limited":

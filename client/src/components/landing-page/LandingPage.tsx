@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { School, Stethoscope, Hospital, Microscope, Home } from "lucide-react";
 import { useLanguage, SUPPORTED_LANGUAGES, type LanguageCode } from "@/contexts/LanguageContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,7 +8,6 @@ import logo from "@assets/aivota_icon.png";
 import raz from "@assets/landing-page/raz.png";
 import opher from "@assets/landing-page/opher.png";
 import screenshot from "@assets/landing-page/screenshot.png";
-import boardMakerDemo from "@assets/landing-page/demo-screens/board-maker-demo.png";
 import { CrmChatWidget } from "./CrmChatWidget";
 import "./landing-page.css";
 
@@ -33,17 +32,33 @@ const ROLE_OPTIONS = [
   "other",
 ] as const;
 
+/** The landing endpoint that serves a given locale. English lives at the root. */
+function localePath(code: LanguageCode): string {
+  return code === "en" ? "/" : `/${code}`;
+}
+
 export default function LandingPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const { t, isRTL, language, setLanguage } = useLanguage();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const handleLanguageChange = (code: LanguageCode) => {
     setLanguage(code);
     // Keep URL in sync with locale so canonical/SEO state matches what's visible
     // and a refresh lands on the prerendered HTML for that language.
-    setLocation(code === "en" ? "/" : `/${code}`);
+    setLocation(localePath(code));
   };
+
+  // One language per endpoint: a visitor whose remembered language differs from
+  // the one this URL serves (e.g. a returning Spanish reader opening "/") gets
+  // moved to that language's own path, so the address bar never disagrees with
+  // the content or with the canonical tag in the prerendered HTML. replace:true
+  // keeps the mismatched URL out of history. Crawlers have no stored language,
+  // so they always see the page the URL promised.
+  useEffect(() => {
+    const expected = localePath(language);
+    if (location !== expected) setLocation(expected, { replace: true });
+  }, [language, location, setLocation]);
 
   const [form, setForm] = useState({
     firstName: "",
@@ -134,10 +149,17 @@ export default function LandingPage() {
               </a>
             </div>
             <div className="landing-screenshot">
+              {/* LCP element: load it eagerly and at high priority. Intrinsic
+                  dimensions are declared so the slot reserves its space and the
+                  hero doesn't shift once the image arrives. */}
               <img
                 src={screenshot}
                 alt={t("landing.hero.screenshotAlt")}
-                loading="lazy"
+                width={1472}
+                height={704}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
               />
             </div>
           </div>
@@ -322,6 +344,23 @@ export default function LandingPage() {
       </section>
 
       <footer className="landing-footer">
+        {/* Real anchors, not just the header's <select>: a crawler cannot operate
+            a dropdown, so this is what actually links the per-locale endpoints
+            together and gets the alternates discovered and indexed. */}
+        <nav className="landing-lang-links" aria-label={t("landing.nav.languageLabel")}>
+          {SUPPORTED_LANGUAGES.map((lang) => (
+            <a
+              key={lang.code}
+              href={localePath(lang.code)}
+              hrefLang={lang.code}
+              lang={lang.code}
+              dir={lang.direction}
+              aria-current={lang.code === language ? "page" : undefined}
+            >
+              {lang.nativeName}
+            </a>
+          ))}
+        </nav>
         <p>{t("landing.footer.text")}</p>
         <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', fontSize: '0.8rem' }}>
           <a href="/terms-of-service" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">

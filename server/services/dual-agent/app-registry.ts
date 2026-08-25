@@ -57,6 +57,16 @@ export const APP_REGISTRY: AACAppDefinition[] = [
       "open you are told its caption — talk warmly about THAT photo. NEVER guess who is in an " +
       "uncaptioned photo: naming the wrong person to a student who cannot correct you is worse " +
       "than saying nothing.",
+    aiOpenPolicy: {
+      guidance: [
+        "OPEN when they ask about a person or place they know, ask to see family photos, seem",
+        "to be missing somebody, or agree to an offer to look at photos together.",
+        "",
+        "DO NOT OPEN merely because a family member was MENTIONED. Talking about mum is not the",
+        "same as asking to see her, and pulling up an album mid-sentence takes the conversation",
+        "away from a child who was in the middle of it.",
+      ].join("\n"),
+    },
     icon: "🖼️",
     queryHint: "caption words (optional — omit to browse)",
     // Off by default: a student with no photos loaded should not see an empty app.
@@ -76,6 +86,20 @@ export const APP_REGISTRY: AACAppDefinition[] = [
       "ALWAYS pass `data` — the app has nothing to show without a search. " +
       "You will be told afterwards exactly what was found (or that nothing was); " +
       "describe only what you were told, never what you assume a search for that word would return.",
+    aiOpenPolicy: {
+      guidance: [
+        "OPEN when they asked to SEE something, asked what something looks like, or agreed to",
+        "an offer to show them a picture.",
+        "",
+        "DO NOT OPEN when they named a thing they WANT. Asking for a drink is not asking for a",
+        "picture of a drink; asking for pizza is not asking for a photograph of pizza. Answering",
+        "a request with pictures of the thing requested is the classic failure here, and to a",
+        "child who cannot correct you, it reads as being ignored.",
+        "",
+        "DO NOT OPEN for a person the child knows — that is the family photo album, a different",
+        "app. This one searches the open web.",
+      ].join("\n"),
+    },
     icon: "🔍",
     // CONCRETE is not a style note. A bare abstract noun retrieves what stock
     // libraries are shot to sell: "drink" comes back as cocktail bars, "night"
@@ -84,6 +108,43 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     queryHint: "what to find a picture of, IN ENGLISH regardless of the conversation language — REQUIRED. Name a SPECIFIC, everyday object as a child would meet it.",
     // Off by default: this puts unvetted web imagery on a child's screen, so it
     // is a deliberate clinician decision, never an inherited one.
+    enabledByDefault: false,
+  },
+  {
+    id: "restaurant",
+    name: "Restaurant",
+    description:
+      "EATING OUT — being at, or going to, a place that serves food. " +
+      "Wanting FOOD is not wanting a RESTAURANT. A student who says they are hungry, or " +
+      "names a food, is telling you they want to eat — answer them. Do NOT open this app for " +
+      "that. Open it only when the RESTAURANT is the point: they are seated somewhere that " +
+      "serves food, a menu is in view, someone is talking about ordering or going out to eat, " +
+      "or they ask to GO somewhere for a meal. If you are unsure, do not open it. " +
+      "Pass `data` = the food they named, verbatim (\"pizza\", \"ice cream\"), when they named one " +
+      "while asking to go out; omit it otherwise, because the grid IS the ask and guessing " +
+      "opens the wrong page. " +
+      "You are told afterwards which screen actually appeared — describe only that. In menu " +
+      "mode NEVER name a specific dish: you cannot see which ones are on their board, and some " +
+      "are removed for allergies, so naming one that is not there asks a child to press a " +
+      "button that does not exist. Choosing a place is a WISH, not a booking — nobody has " +
+      "taken them anywhere.",
+    icon: "🍽️",
+    queryHint: "the kind of food they named, ONLY when they are asking to go out to eat",
+    aiOpenPolicy: {
+      guidance: [
+        "OPEN when the RESTAURANT is the point: they are seated somewhere that serves food,",
+        "a menu is in front of them, someone is talking about ordering or going out to eat,",
+        "or they ask to GO somewhere for a meal.",
+        "",
+        "DO NOT OPEN when they are simply hungry or have named a food. Wanting pizza is not",
+        "wanting a restaurant — a child at home who presses a pizza button is asking for pizza,",
+        "and the answer to that is to talk with them about pizza, not to put a restaurant finder",
+        "on their screen. This is the single most common mistake with this app.",
+        "",
+        "Being at home, in a bedroom, at school, or in a therapy session is strong evidence",
+        "AGAINST opening it, whatever food was mentioned.",
+      ].join("\n"),
+    },
     enabledByDefault: false,
   },
   {
@@ -285,11 +346,37 @@ export function getDefaultEnabledApps(): string[] {
  * - Apps with enabledByDefault=true are enabled unless explicitly disabled in appConfig.
  * - Apps with enabledByDefault=false are enabled only if explicitly enabled in appConfig.
  */
-export function getEnabledAppsFromConfig(appConfig: AppConfig | null | undefined): string[] {
+/** Feature switches that change an app's DEFAULT (never an explicit choice). */
+export interface AppEnablementContext {
+  /** `aac_settings.venue_menus.enabled` — the Location Menus master switch. */
+  venueMenusEnabled?: boolean;
+}
+
+/**
+ * Which apps this student may launch.
+ *
+ * An explicit `appConfig[id].enabled` always wins, in both directions. Feature
+ * switches only move the DEFAULT for apps that are the front door to a feature
+ * the clinician has already turned on.
+ *
+ * 🚨 `restaurant` is defaulted from `venueMenus.enabled` because the two
+ * switches were one switch too many, and the failure was silent and confusing:
+ * turning on Location Menus registered the restaurant FLOOR BOARD (the agents
+ * saw it in <prebuilt_boards>) while leaving the app that actually acquires
+ * menus out of <apps_context>. Observed live 2026-08-23 — the student asked for
+ * pizza, the Speaker had no restaurant app in its tool list, and it opened
+ * `picture_search("pizza")` instead. The child got PHOTOGRAPHS of pizza when
+ * they were trying to order lunch.
+ */
+export function getEnabledAppsFromConfig(
+  appConfig: AppConfig | null | undefined,
+  context: AppEnablementContext = {},
+): string[] {
   return APP_REGISTRY
     .filter(app => {
       const cfg = appConfig?.[app.id];
       if (cfg?.enabled !== undefined) return cfg.enabled;
+      if (app.id === "restaurant" && context.venueMenusEnabled) return true;
       return app.enabledByDefault;
     })
     .map(app => app.id);

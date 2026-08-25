@@ -96,6 +96,58 @@ export const ITEM_WORDS: Readonly<Record<string, ItemWords>> = {
     es: { w: "roca", g: "f" },
     pt: { w: "rocha", g: "f" },
   },
+  // The worked materials beside the raw ones. `cloth` and `wool` are what the
+  // loom eats and makes; `paper` is the school-side material with no craft row
+  // yet. All three are mass, like wood and stone.
+  cloth: {
+    en: { w: "cloth", mass: true },
+    he: { w: "בד", g: "m", mass: true },
+    es: { w: "tela", g: "f", mass: true },
+    pt: { w: "tecido", g: "m", mass: true },
+  },
+  wool: {
+    en: { w: "wool", mass: true },
+    he: { w: "צמר", g: "m", mass: true },
+    es: { w: "lana", g: "f", mass: true },
+    pt: { w: "lã", g: "f", mass: true },
+  },
+  paper: {
+    en: { w: "paper", mass: true },
+    he: { w: "נייר", g: "m", mass: true },
+    es: { w: "papel", g: "m", mass: true },
+    pt: { w: "papel", g: "m", mass: true },
+  },
+  // ── AAC PLACE STUBS (2026-08-24) ─────────────────────────────────────────
+  // The places a child's week actually contains, which the town has no PROGRAM
+  // for yet (a program derives a building from the rooms in it, and none of
+  // these derive from anything the generator builds today). They live here for
+  // the same reason the town-play structures above do: the word is real and
+  // needed now, the spec row lands when the workstream that owns those places
+  // gets to them (planning-docs/sentence-builder-default-vocabulary.md §9 W3).
+  school: {
+    en: { w: "school" },
+    he: { w: "בית ספר", g: "m", plw: "בתי ספר" },
+    es: { w: "escuela", g: "f" },
+    pt: { w: "escola", g: "f" },
+  },
+  park: {
+    en: { w: "park" },
+    he: { w: "פארק", g: "m" },
+    es: { w: "parque", g: "m" },
+    pt: { w: "parque", g: "m" },
+  },
+  playground: {
+    en: { w: "playground" },
+    he: { w: "גן משחקים", g: "m", plw: "גני משחקים" },
+    es: { w: "parque infantil", g: "m", plw: "parques infantiles" },
+    pt: { w: "parquinho", g: "m" },
+  },
+  garden: {
+    en: { w: "garden" },
+    he: { w: "גינה", g: "f" },
+    es: { w: "jardín", g: "m", plw: "jardines" },
+    pt: { w: "jardim", g: "m", plw: "jardins" },
+  },
   // Town-play structures (town-play.ts TOWN_PLAY_STRUCTURES).
   farm: {
     en: { w: "farm" },
@@ -136,6 +188,24 @@ export const ITEM_WORDS: Readonly<Record<string, ItemWords>> = {
     pt: { w: "loja", g: "f" },
   },
 };
+
+/**
+ * THE PLACE WORDS WITH NO PROGRAM YET (2026-08-24) — heads defined in
+ * `ITEM_WORDS` above that name a PLACE rather than a thing, so the sentence
+ * board offers them as places (`affords: ["go"]`, drawn as themselves) instead
+ * of as objects.
+ *
+ * They are a stub in exactly one respect: the TOWN cannot build them, because a
+ * structure program derives a building from the rooms inside it and none of
+ * these derive from anything the generator raises. The word, the icon and the
+ * four translations are real. Each row graduates to a `StructureProgramDef` (and
+ * leaves this list) when the town workstream models the place — at which point
+ * its words move onto the program row, since a head is defined once.
+ */
+export const PLACE_STUBS: readonly string[] = ["school", "park", "playground"];
+// `garden` is authored above and deliberately NOT here: it has no bundled
+// artwork yet, and a place button with no picture is a blank one. It joins the
+// list when the art queue reaches it (`npm run validate-glyphs:art`).
 
 // ---------------------------------------------------------------------------
 // The joiner

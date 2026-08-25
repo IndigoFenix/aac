@@ -12,9 +12,28 @@
 // falls back to `spec.defaults`. The defaults path is unbilled — only a real
 // model call is charged to the credit ledger.
 
-import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
-import { validateAndMergeParams } from "@shared/app-startup";
+import type {
+  AppStartupSpec,
+  StartupParams,
+  AiOpenPolicy,
+  AiOpenDecision,
+} from "@shared/app-startup";
+import { validateAndMergeParams, AI_OPEN_DECISION_SCHEMA } from "@shared/app-startup";
 import { GPT, type GPTInputItem } from "../chat/gpt";
+import { vertexConfigured } from "../providers/vertex-config";
+
+/**
+ * Can we reach Gemini at all?
+ *
+ * NOT "is there an API key". The structured provider prefers Vertex, so a
+ * deployment with a GCP project configured and no `GEMINI_API_KEY` is fully
+ * working — and checking only the key would silently disable both resolvers
+ * there, which is the exact class of quiet downgrade `vertex-config` exists to
+ * stop.
+ */
+function geminiReachable(): boolean {
+  return vertexConfigured() || !!process.env.GEMINI_API_KEY;
+}
 
 const MAX_SECTION_CHARS = 1500;
 
@@ -102,7 +121,9 @@ function buildInstructions(spec: AppStartupSpec): string {
   ].join("\n");
 }
 
-function buildUserMessage(ctx: StartupResolveContext): string {
+// Takes the context WITHOUT the spec: it reads only student/session material
+// and the trigger, so the open decision (which has no spec) reuses it as-is.
+function buildUserMessage(ctx: Omit<StartupResolveContext, "spec">): string {
   const parts = [
     section(
       "STUDENT",
@@ -139,21 +160,140 @@ function summarizeParams(params: StartupParams): string {
     .join(", ");
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+/**
+ * Run a model call under a deadline. `ms <= 0` means the resolver is switched
+ * off and the call is declined outright.
+ *
+ * 🚨 TAKES A THUNK, NOT A PROMISE, AND MUST KEEP DOING SO. This used to accept
+ * the promise — `withTimeout(gpt.getStructuredResponse(...), resolverTimeoutMs())`
+ * — and a guard inside a function cannot stop a call that was passed to it as
+ * an argument, because arguments are evaluated before the callee runs. So the
+ * "off" switch dutifully declined to AWAIT a request it had already SENT:
+ * `AAC_STARTUP_RESOLVER_TIMEOUT_MS=0` billed a full Gemini call on every app
+ * open and every AI-open decision, then dropped the answer on the floor.
+ * Turning the feature off cost exactly what leaving it on cost. It also
+ * orphaned the request — nothing awaited it — which is how the unit suite
+ * ended up with a live Vertex call outliving its worker and crashing it with
+ * ERR_VM_MODULE_NOT_MODULE after the tests had already reported PASS.
+ *
+ * Note what this does NOT do: when a real timeout fires the request is still
+ * in flight and still billed, it is merely no longer waited on. Cancelling it
+ * needs an AbortController threaded through GPT, which nothing does yet.
+ */
+function withTimeout<T>(start: () => Promise<T>, ms: number): Promise<T> {
   if (!ms || ms <= 0) return Promise.reject(new Error("resolver-disabled"));
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("resolver-timeout")), ms);
-    p.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
+    const settle = (fn: (v: any) => void) => (v: any) => {
+      clearTimeout(timer);
+      fn(v);
+    };
+    try {
+      start().then(settle(resolve), settle(reject));
+    } catch (err) {
+      // A synchronous throw out of `start` would otherwise leave the timer
+      // armed and the promise pending until it fired.
+      clearTimeout(timer);
+      reject(err);
+    }
   });
+}
+
+/** Context for the open decision — the same session material the params
+ *  resolver gets, minus the spec, plus which app is being asked about. */
+export interface AiOpenDecisionContext extends Omit<StartupResolveContext, "spec"> {
+  appId: string;
+  appName: string;
+  policy: AiOpenPolicy;
+}
+
+function buildDecisionInstructions(ctx: AiOpenDecisionContext): string {
+  return [
+    "An AI assistant talking with a child who uses an AAC (assistive",
+    "communication) device has just decided to open an app on the child's",
+    "screen. Your only job is to say whether that is what the child actually",
+    "wants right now.",
+    "",
+    `App: ${ctx.appName} (${ctx.appId})`,
+    "When this app is the right thing to open, and when it is not:",
+    ctx.policy.guidance.trim(),
+    "",
+    "The assistant reaches for whichever app matches a word it just heard, so",
+    "the common mistake is opening on a NOUN rather than on a request. Read",
+    "what the child actually asked for.",
+    "",
+    "Say open=false when the app is not what they meant, and put what they DID",
+    "mean in `reason` so the assistant can answer that instead. Say open=true",
+    "when they asked for it, agreed to it, or it plainly fits what is",
+    "happening. If it is genuinely a close call, allow it: a wrong app costs",
+    "one press to leave, and a child who asked for something and got nothing",
+    "cannot ask again a different way.",
+  ].join("\n");
+}
+
+/**
+ * Should this AI-initiated app open happen?
+ *
+ * FAILS OPEN, always. No key, a timeout, a malformed answer, an exception —
+ * every one of them returns `open: true`, because a resolver outage that
+ * silently stopped apps from opening would be a worse and much less legible
+ * failure than the mis-opens this exists to catch.
+ *
+ * Never called for a student press. Pressing the tile, or a launch button the
+ * Board Manager offered, IS the ask.
+ */
+export async function decideAiOpen(ctx: AiOpenDecisionContext): Promise<AiOpenDecision> {
+  const allow: AiOpenDecision = { open: true, failedOpen: true };
+  if (!geminiReachable()) return allow;
+
+  try {
+    const gpt = new GPT({ provider: "gemini", model: resolverModel() });
+    const response = await withTimeout(
+      () => gpt.getStructuredResponse(
+        [{ type: "message", role: "user", content: buildUserMessage(ctx) }],
+        `${ctx.appId}_open_decision`,
+        AI_OPEN_DECISION_SCHEMA,
+        [],
+        128,
+        1,
+        { temperature: 0 },
+        false,
+        1,
+        buildDecisionInstructions(ctx),
+      ),
+      resolverTimeoutMs(),
+    );
+
+    if (response.promptTokens || response.completionTokens) {
+      ctx.trackUsage?.(
+        response.promptTokens,
+        response.completionTokens,
+        response.cachedTokens ?? 0,
+        resolverModel(),
+      );
+    }
+
+    let raw: unknown;
+    try {
+      raw = typeof response.content === "string" ? JSON.parse(response.content) : response.content;
+    } catch {
+      return allow;
+    }
+
+    const parsed = raw as { open?: unknown; reason?: unknown } | undefined;
+    // Only an explicit `false` blocks. Anything else — missing, null, a string,
+    // a model that answered the wrong question — is not a refusal.
+    if (parsed && parsed.open === false) {
+      return {
+        open: false,
+        reason: typeof parsed.reason === "string" ? parsed.reason.trim() : undefined,
+      };
+    }
+    return { open: true };
+  } catch (err) {
+    console.warn(`[startup-resolver] ${ctx.appId}: open decision failed open (${String(err)})`);
+    return allow;
+  }
 }
 
 /**
@@ -165,8 +305,8 @@ export async function resolveAppStartupParams(
   const { spec } = ctx;
   const defaults: StartupParams = { ...spec.defaults };
 
-  // No API key → don't even try.
-  if (!process.env.GEMINI_API_KEY) {
+  // No way to reach Gemini → don't even try.
+  if (!geminiReachable()) {
     return { params: defaults, usedDefaults: true };
   }
 
@@ -177,7 +317,7 @@ export async function resolveAppStartupParams(
     ];
 
     const response = await withTimeout(
-      gpt.getStructuredResponse(
+      () => gpt.getStructuredResponse(
         input,
         `${spec.appId}_startup`,
         spec.paramsSchema,

@@ -23,7 +23,7 @@ import { findFoundingSites, type FoundingOpts } from "../kernel/cells/index.js";
 import { foundingScan } from "../kernel/civ/bands.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
 import { foundCitiesFromSites, REGION_FOUND_POP, type PlanetCity } from "./cities.js";
-import { REAL_SCALE, townSpacingM, type WorldScale } from "../scale.js";
+import { REAL_SCALE, TIER_POP_CAP, type WorldScale } from "../scale.js";
 
 export interface BorderTown extends PlanetCity {
   /** The tier-0 cell that OWNS this town: the cell containing its dir
@@ -223,6 +223,11 @@ export function borderTowns(
   const derivedScan = foundingScan({
     scale: opts.scale ?? REAL_SCALE, foundPop: REGION_FOUND_POP,
     cellSizeM, minSpacingFloorCells: 4, minSpacingCapCells: cols,
+    // THE TIER CAPACITY (food-scale-round ⑩): a border town is the same
+    // kind of village as the interior's, so its catchment prices the same 140
+    // souls — inert at the shipped dials (catchment 1 527 m < declared 2 500 m),
+    // and the SAME derivation as refine.ts's so both tiers keep agreeing.
+    popCap: TIER_POP_CAP.village,
   });
   const minSpacing = derivedScan.minSpacing;
   const setback = Math.ceil(minSpacing / 2);
@@ -372,5 +377,7 @@ export function borderTowns(
     dirOf: cell => dirs[cell]!,
     cellKey: cell => borderTownKey(pairIndex, cell),
   });
-  return towns.map(t => ({ ...t, owner: cellAt(t.dir) }));
+  // A border town IS a village (it folds into the region's `villages`
+  // output), so it carries the village tier the same as the interior rows.
+  return towns.map(t => ({ ...t, tier: "village" as const, owner: cellAt(t.dir) }));
 }

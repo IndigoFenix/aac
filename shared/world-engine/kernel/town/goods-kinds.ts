@@ -15,6 +15,7 @@ import { RARE_IMPORT_KIND } from "./trade.js";
 import { GARMENT_WEARABLE_HEADS, GARMENT_COLORS } from "../../creatures/clothing.js";
 import { headOf, variantKindsOf } from "../../variations.js";
 import { foodGlyphs } from "../../products.js";
+import { NEED_FILL_DAYS } from "../../scale.js";
 
 /** WHICH GOOD VARIES IN WHICH variation dimension(s) — the generic replacement
  *  for hand-writing each good's `head × values` product. Clothing varies in
@@ -116,11 +117,11 @@ export const goodKeyOfGlyph = (glyph: string): string => {
 // construction: a unit removed is a subtraction, never a division of a stack
 // (`feedback_item_conservation_law`).
 //
-// 🔴 DATA ONLY, THIS ROUND. Nothing reads this yet: the ingest effect still
-// zeroes the meter from one unit (`interaction/quest/quest-host.ts`
-// `applyIngestEffect`), and wiring it is Phase B of the food-scale round. The
-// DEFAULT is 1, so every glyph the table does not name behaves exactly as it
-// does today.
+// 🟢 LIVE SINCE PHASE B (steps ⑦/⑧): `applyIngestEffect` subtracts by it, the
+// NPC consume draws a MEAL's worth through `mealDrawPlan`, and the container
+// boundary converts through `rationsOf`/`unitsForRations` below. The DEFAULT
+// is 1, so every glyph the table does not name behaves exactly as it always
+// did.
 
 /** Person-days one unit clears when nothing more specific is declared — 1, the
  *  old welded behavior, so an unlisted glyph is byte-identical. */
@@ -164,6 +165,132 @@ export const satiationDaysOf = (glyph: string): number => {
   if (FOOD_KINDS.includes(head)) return SATIATION_DAYS.food!;
   return DEFAULT_SATIATION_DAYS;
 };
+
+// ── THE CONTAINER BOUNDARY: rations ⇄ items (food-scale-round Q2, step ⑧) ──
+//
+// The economy counts RATIONS (person-days: the goods clock, `boxCap`, the
+// pantry sawtooth, surplus buffers, the books). Physical stacks count ITEMS.
+// These converters are the ONE seam between the two — a container's ration
+// worth is read through `rationsOf`/`rationTotalOf`, and a ration level is
+// dealt into items through `unitsForRations` — so no call site ever hand-rolls
+// the multiplication.
+//
+// ⚖️ TWO AXES, DO NOT CONFLATE: this is the SATIATION axis (person-days of
+// eating per unit). `kernel/civ/bands.ts settledTownStack` is a VALUE-axis
+// converter (trade worth per unit) — orthogonal, and deliberately untouched by
+// the ration split.
+
+/** Person-day RATIONS a whole stack map is worth: Σ units × satiationDays of
+ *  each row's glyph, over EVERY row (raw sum, unclamped — `totalStackUnits`'s
+ *  sibling on the ration axis). */
+export const rationsOf = (stock: Readonly<Record<string, number>>): number => {
+  let r = 0;
+  for (const [g, n] of Object.entries(stock)) r += n * satiationDaysOf(g);
+  return r;
+};
+
+/** RATIONS of one GOOD in a stack — `stackTotalOf`'s sibling on the ration
+ *  axis (the same strict kind-list selector: treats and foreign glyphs a
+ *  player stashed in the chest do not count toward the good's clock). */
+export const rationTotalOf = (stock: Record<string, number> | undefined, goodKey: string): number => {
+  if (!stock) return 0;
+  const kinds = kindsOf(goodKey);
+  let r = 0;
+  for (const [g, n] of Object.entries(stock)) {
+    if (kinds.includes(g)) r += n * satiationDaysOf(g);
+  }
+  return r;
+};
+
+/** RATIONS of one good ON A BODY — `carryTotalOf`'s sibling on the ration axis
+ *  (the CARRY projection: a food count includes a gifted treat at its own 0.1,
+ *  so the hand a decision reads and the hand the effect empties agree). */
+export const carryRationTotalOf = (stock: Record<string, number> | undefined, goodKey: string): number => {
+  if (!stock) return 0;
+  const kinds = carryKindsOf(goodKey);
+  let r = 0;
+  for (const [g, n] of Object.entries(stock)) {
+    if (kinds.includes(g)) r += n * satiationDaysOf(g);
+  }
+  return r;
+};
+
+/**
+ * The INVERSE seam: how many ITEMS of `glyph` stand for `rations` person-days.
+ * Round-to-nearest, floored at 0 — so a deal-then-read-back round trip can
+ * never drift by more than HALF of one glyph's own satiation (the conservation
+ * bound: |rationsOf(dealt) − asked| ≤ satiationDaysOf(glyph) / 2, i.e. dealing
+ * never mints or loses beyond one glyph's rounding).
+ */
+export const unitsForRations = (rations: number, glyph: string): number =>
+  Math.max(0, Math.round(rations / satiationDaysOf(glyph)));
+
+/** The DEAL GRAIN of a good: the satiation of its first kind — the value every
+ *  kind a single `splitStock`/deal produces shares (all raw fruit are 0.2, all
+ *  garments 1; pinned by the uniform-grain test in satiation.test.ts), so a
+ *  ration level can be converted to a deal-sized item count at the good grain. */
+export const grainSatiationDaysOf = (goodKey: string): number =>
+  satiationDaysOf(kindsOf(goodKey)[0] ?? goodKey);
+
+/**
+ * THE MEAL ARITHMETIC (food-scale-round Q2, step ⑦) — pure, so the ceil/min/
+ * stop-early logic is pinnable without the quest host. Given the APPETITE (the
+ * meter capped at its one-ration threshold, in rations) and the units on offer
+ * in priority order (the eater's hand first, then the station's stock, each
+ * already sorted by the eat order), decide how many units of each entry one
+ * MEAL draws:
+ *
+ *   · AT LEAST ONE unit whenever anything is on offer — a commanded bite (a
+ *     row with no live meter) still eats exactly one unit, as it always did;
+ *   · then keep drawing while the satiation total is below the appetite
+ *     (n = ceil(appetite / satiationDays) for uniform stock), pricing each
+ *     unit at its OWN glyph (a mixed meal of 1 stew + 2 apples is 1.4);
+ *   · stop early when the appetite is covered or nothing edible remains.
+ *
+ * Returns per-entry draw counts (index-aligned with `entries`) plus the total
+ * satiation drawn. The caller moves the physical units and must account only
+ * what actually moved (item conservation — R2).
+ */
+export function mealDrawPlan(
+  appetite: number,
+  entries: ReadonlyArray<{ glyph: string; units: number }>,
+): { draws: number[]; satiationDays: number } {
+  const EPS = 1e-9;
+  const draws = entries.map(() => 0);
+  let sat = 0;
+  let any = false;
+  for (let i = 0; i < entries.length; i++) {
+    const { glyph, units } = entries[i]!;
+    const w = satiationDaysOf(glyph);
+    while (draws[i]! < units && (!any || sat < appetite - EPS)) {
+      draws[i]! += 1;
+      sat += w;
+      any = true;
+    }
+  }
+  return { draws, satiationDays: sat };
+}
+
+/**
+ * THE HUNGER METER AFTER INGESTING `satiationDays` of food (step ⑦) — the ONE
+ * owner of the subtraction, called by quest-host's `applyIngestEffect` for
+ * hunger rows (thirst full-clears there: satiation is a FOOD axis).
+ *
+ *   · a COVERING amount (≥ one ration) clears the appetite outright, OVERSHOOT
+ *     INCLUDED — which keeps satiation-1 content byte-identical to the old
+ *     unconditional zero (one unit, meter 0, same interval);
+ *   · anything less subtracts its ration fraction, clamped at 0 — five
+ *     hand-fed apples each visibly move the meter by 0.2.
+ *
+ * ⚖️ THE DIVISOR IS `NEED_FILL_DAYS.hunger` — THE RATION ANCHOR (one meter
+ * threshold = one ration = NEED_FILL_DAYS.hunger person-days at metabolism 1).
+ * NEVER `needFillDays(scale, "hunger")`: metabolism must not enter — a 3×
+ * metabolism world eats 3 rations a day, not ⅓-ration meals.
+ */
+export function ingestMeterAfter(meter: number, satiationDays: number): number {
+  if (satiationDays >= NEED_FILL_DAYS.hunger - 1e-9) return 0;
+  return Math.max(0, meter - satiationDays / NEED_FILL_DAYS.hunger);
+}
 
 // ── ONE stack-counting core (unification pass) ─────────────────────────────
 //

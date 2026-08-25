@@ -74,6 +74,12 @@ interface UnifiedDebugPanelProps {
     thresholds: import("@shared/aac/seizure-config").SeizureThresholds | null;
     hasSeedBaseline: boolean;
     poseDetected: boolean;
+    faceDetected: boolean;
+    subjectPresent: boolean;
+    /** MediaPipe's handedness call per visible hand — the sided per-student
+     *  markers depend on it being the STUDENT's own left/right. */
+    handSides: Array<"Left" | "Right">;
+    markerCount: number;
     baselineSamples: number;
     signature: import("@shared/aac/seizure-signature").SeizureSignature | null;
     willEscalate: boolean;
@@ -700,41 +706,52 @@ export default function UnifiedDebugPanel({
               <div className="p-2 space-y-1 text-xs">
                 {!seizure ? (
                   <div className="text-[10px] italic text-gray-400">no data</div>
-                ) : !seizure.poseTrackingOn ? (
-                  <div className="text-amber-600 text-[11px]">Pose tracking is OFF (poseSafety capability) — the detector can't run.</div>
                 ) : !seizure.configured ? (
                   <div className="text-amber-600 text-[11px]">No server config for this session. Enable Seizure Detection in this student's AAC settings, <b>Save</b>, then <b>restart the AAC session</b> — clientConfig is sent once at session start.</div>
                 ) : !seizure.enabled ? (
                   <div className="text-amber-600 text-[11px]">Configured but disabled (master switch off, or both detectors set to Off).</div>
                 ) : (
                   <>
-                    <KV label="Pose detected" value={seizure.poseDetected ? "yes" : "NO — get in view"} bad={!seizure.poseDetected} />
+                    {/* Face is the PRIMARY sensor and the DSP's clock — no face,
+                        no windows at all. Pose is additive; its absence is fine. */}
+                    <KV label="Face detected" value={seizure.faceDetected ? "yes" : "NO — nothing can run"} bad={!seizure.faceDetected} />
+                    <KV label="Subject in view" value={seizure.subjectPresent ? "yes" : "no"} bad={!seizure.subjectPresent} />
+                    <KV label="Hands seen" value={seizure.handSides.length ? seizure.handSides.join(", ") + " (student's own sides)" : "none"} />
+                    <KV label="Pose (additive)" value={seizure.poseDetected ? "yes" : seizure.poseTrackingOn ? "no — arms/torso unavailable" : "tracker off"} />
                     <KV label="Baseline" value={seizure.baselineSamples > 0 ? `ready (${seizure.baselineSamples})${seizure.hasSeedBaseline ? " seeded" : ""}` : "cold — warming (inert)"} bad={seizure.baselineSamples === 0} />
                     <KV label="Rhythmic detector" value={seizure.thresholds?.rhythmic.enabled ? `on · ≥${seizure.thresholds.rhythmic.involvementMult}× · conf≥${seizure.thresholds.rhythmic.escalateConfidence}` : "off"} />
-                    <KV label="Atonic detector" value={seizure.thresholds?.atonic.enabled ? `on · drop≥${seizure.thresholds.atonic.dropFrac}` : "off"} />
+                    <KV label="Atonic detector" value={seizure.thresholds?.atonic.enabled ? `on · drop≥${seizure.thresholds.atonic.dropFrac} face-widths` : "off"} />
                     <KV label="Audio corroboration" value={seizure.thresholds?.audioCorroboration ? "on" : "off"} />
-                    <KV label="Pose rate" value={seizure.watchActive ? "BUMPED ~15fps (watch)" : "cheap ~2.5fps"} good={seizure.watchActive} />
+                    <KV label="Student markers" value={seizure.markerCount > 0 ? `${seizure.markerCount} configured` : "none configured"} />
+                    <KV label="Tracker rate" value={seizure.watchActive ? "BUMPED ~15fps (watch)" : "cheap ~3fps"} good={seizure.watchActive} />
 
                     <div className="mt-1 p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-0.5">
                       <div className="text-[10px] text-gray-500">Live motion signature</div>
                       {seizure.signature ? (
                         <>
-                          <KV label="phase" value={seizure.signature.phase} good={seizure.signature.phase !== "none"} />
+                          <KV label="phase" value={seizure.signature.markerOnly ? "marker (no generic pattern)" : seizure.signature.phase} good={seizure.signature.phase !== "none" || seizure.signature.markerOnly} />
                           <KV label="dominant Hz" value={seizure.signature.dominantHz.toFixed(2)} />
                           <KV label="rhythmicity" value={seizure.signature.rhythmicity.toFixed(2)} />
-                          <KV label="bilateral sym" value={seizure.signature.bilateralSymmetry.toFixed(2)} />
+                          {/* "n/a" and 0.00 mean opposite things: the gate is
+                              SKIPPED when symmetry can't be measured, and the old
+                              code conflating the two is what kept this detector
+                              from ever firing at a close camera distance. */}
+                          <KV label="bilateral sym" value={seizure.signature.symmetryEvaluable ? seizure.signature.bilateralSymmetry.toFixed(2) : "n/a — one side only (gate skipped)"} />
+                          <KV label="observed regions" value={seizure.signature.observedRegions.join(", ") || "none"} />
                           <KV label="involved regions" value={seizure.signature.involvedRegions.join(", ") || "none"} />
+                          <KV label="facial signs" value={seizure.signature.facialSigns.join(", ") || "none"} />
+                          <KV label="matched markers" value={seizure.signature.matchedMarkers.map(m => `${m.label} (${m.weight}, ${(m.strength * 100).toFixed(0)}%)`).join("; ") || "none"} good={seizure.signature.matchedMarkers.length > 0} />
                           <KV label="energy vs baseline" value={`${seizure.signature.energyVsBaseline.toFixed(1)}×`} />
                           <KV label="confidence" value={seizure.signature.confidence.toFixed(2)} />
                         </>
                       ) : (
-                        <div className="text-[10px] italic text-gray-400">no window analyzed yet (need ~2.5s of pose)</div>
+                        <div className="text-[10px] italic text-gray-400">no window analyzed yet (need ~2.5s of a tracked face)</div>
                       )}
                     </div>
 
                     <KV label="Signature ready" value={seizure.willEscalate ? "YES → [MOTION SIGNATURE]" : "no"} good={seizure.willEscalate} />
                     <div className="text-[9px] text-gray-400 mt-1 leading-snug">
-                      To trip the rhythmic detector by hand: shake BOTH arms + torso together, sustained, ~2–4×/sec — a one-handed wave won't qualify (needs bilateral + axial). Atonic = a sudden seated slump that stays down. Note: the [MOTION SIGNATURE] only reaches the Observer in economize mode (Full Attention OFF).
+                      To trip the rhythmic detector by hand: shake your HEAD and hands together, sustained, ~2–4×/sec — head (axial) involvement is required, so hands alone won't qualify. Atonic = a sudden slump that stays down. A per-student marker (e.g. "left arm raised") fires on its own if the clinician marked it <b>strong</b> — hold the posture ~3s. Verify "Hands seen" matches the student's real sides before trusting a sided marker. Note: the [MOTION SIGNATURE] only reaches the Observer in economize mode (Full Attention OFF).
                     </div>
                   </>
                 )}

@@ -35,6 +35,23 @@ const DIST = path.join(ROOT, "dist", "public");
 // to match the deployed domain (e.g. https://aivota.ai).
 const SITE_ORIGIN = process.env.PRERENDER_ORIGIN ?? "https://aivota.ai";
 
+// Social-share card, committed at client/public/og-image.png so it keeps a
+// stable URL — the hero screenshot the page imports gets a content hash at
+// build time and so can never be named in a meta tag. Regenerate with
+// `npm run og:image`.
+const OG_IMAGE_PATH = "/og-image.png";
+
+// Public, indexable pages that aren't the landing page. They're single-URL
+// (no per-locale variants), so they get plain sitemap entries with no
+// alternates.
+const STANDALONE_PATHS = [
+  "/terms-of-service",
+  "/privacy-policy",
+  "/cookie-policy",
+  "/accessibility",
+  "/ai-policy",
+] as const;
+
 function startStaticServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const app = express();
   // Stub the API endpoints the SPA hits during initial render so the page can
@@ -108,25 +125,80 @@ function buildHreflangLinks(): string {
   return links.join("\n");
 }
 
+/**
+ * Structured data. The landing page describes two things a search engine models
+ * separately — the organisation behind the product and the product itself — so
+ * both are emitted and joined by `publisher`. This is what lets a result carry a
+ * name and a logo instead of just a blue link.
+ */
+function buildJsonLd(code: LanguageCode): string {
+  const description = tString(code, "landing.hero.subtitle");
+  const canonical = canonicalUrl(code);
+  const graph = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": `${SITE_ORIGIN}/#organization`,
+        name: "Aivota",
+        url: SITE_ORIGIN,
+        logo: `${SITE_ORIGIN}/favicon.png`,
+        description,
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${SITE_ORIGIN}/#website`,
+        url: SITE_ORIGIN,
+        name: "Aivota",
+        inLanguage: code,
+        publisher: { "@id": `${SITE_ORIGIN}/#organization` },
+      },
+      {
+        "@type": "SoftwareApplication",
+        name: "Aivota",
+        applicationCategory: "HealthApplication",
+        operatingSystem: "Web, Windows, iPadOS",
+        url: canonical,
+        inLanguage: code,
+        description,
+        publisher: { "@id": `${SITE_ORIGIN}/#organization` },
+      },
+    ],
+  };
+  // A "</script>" inside any of these strings would close the block early.
+  // Nothing in the translations should contain one, but escaping "<" is cheap.
+  const json = JSON.stringify(graph).replace(/</g, "\\u003c");
+  return `    <script type="application/ld+json">${json}</script>`;
+}
+
 function buildSeoHead(code: LanguageCode): string {
   const title = tString(code, "landing.hero.title");
   const description = tString(code, "landing.hero.subtitle");
   const tagline = tString(code, "landing.hero.tagline");
   const ogTitle = `${tagline} — ${title}`;
   const canonical = canonicalUrl(code);
+  const ogImage = `${SITE_ORIGIN}${OG_IMAGE_PATH}`;
   return [
     `    <title>${escapeHtml(title)}</title>`,
     `    <meta name="description" content="${escapeHtml(description)}" />`,
     `    <link rel="canonical" href="${canonical}" />`,
     `    <meta property="og:type" content="website" />`,
+    `    <meta property="og:site_name" content="Aivota" />`,
     `    <meta property="og:title" content="${escapeHtml(ogTitle)}" />`,
     `    <meta property="og:description" content="${escapeHtml(description)}" />`,
     `    <meta property="og:url" content="${canonical}" />`,
     `    <meta property="og:locale" content="${code}" />`,
+    // Absolute URL — relative og:image paths are ignored by most unfurlers.
+    `    <meta property="og:image" content="${ogImage}" />`,
+    `    <meta property="og:image:width" content="1200" />`,
+    `    <meta property="og:image:height" content="630" />`,
+    `    <meta property="og:image:alt" content="${escapeHtml(tString(code, "landing.hero.screenshotAlt"))}" />`,
     `    <meta name="twitter:card" content="summary_large_image" />`,
     `    <meta name="twitter:title" content="${escapeHtml(ogTitle)}" />`,
     `    <meta name="twitter:description" content="${escapeHtml(description)}" />`,
+    `    <meta name="twitter:image" content="${ogImage}" />`,
     buildHreflangLinks(),
+    buildJsonLd(code),
   ].join("\n");
 }
 
@@ -145,6 +217,10 @@ function injectSeoTags(html: string, code: LanguageCode): string {
   out = out.replace(/\s*<meta\s+(?:name|property)=["'](?:og|twitter):[^"']+["'][^>]*>/gi, "");
   out = out.replace(/\s*<link\s+rel=["']canonical["'][^>]*>/gi, "");
   out = out.replace(/\s*<link\s+rel=["']alternate["'][^>]*hreflang=[^>]*>/gi, "");
+  out = out.replace(
+    /\s*<script\s+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi,
+    "",
+  );
 
   const seoHead = buildSeoHead(code);
   out = out.replace(/<\/head>/i, `\n${seoHead}\n  </head>`);
@@ -210,9 +286,16 @@ async function snapshotLocale(
     // Cache-bust + signal the prerender state so the app can opt out of
     // anything wasteful (analytics, etc.) if it ever wants to.
     const url = `${baseUrl}${localePathSegment(code)}?prerender=1`;
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 30_000 });
+    // `domcontentloaded`, not `networkidle0`: the page pulls a multi-megabyte
+    // bundle plus two third-party stylesheets, so "500ms with no requests in
+    // flight" is a race the slower locales lose — and a single navigation
+    // timeout aborts the whole run (and, in CI, the deploy). The `.landing`
+    // selector below is the real readiness signal anyway: it only appears once
+    // React has replaced the splash with the rendered landing page, which is
+    // exactly the DOM we are about to serialise.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
     // Wait until React has replaced the splash with the real landing root.
-    await page.waitForSelector(".landing", { timeout: 15_000 });
+    await page.waitForSelector(".landing", { timeout: 60_000 });
     const dir = SUPPORTED_LANGUAGES.find((l) => l.code === code)!.direction;
     await page.evaluate(
       ({ code, dir }) => {
@@ -244,10 +327,19 @@ function writeSitemap(): void {
       `  </url>`,
     ].join("\n");
   }).join("\n");
+  const standalone = STANDALONE_PATHS.map((p) =>
+    [
+      `  <url>`,
+      `    <loc>${SITE_ORIGIN}${p}</loc>`,
+      `    <lastmod>${today}</lastmod>`,
+      `  </url>`,
+    ].join("\n"),
+  ).join("\n");
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${urls}
+${standalone}
 </urlset>
 `;
   fs.writeFileSync(path.join(DIST, "sitemap.xml"), xml, "utf-8");
@@ -289,7 +381,15 @@ async function main(): Promise<void> {
     const snapshots = new Map<string, { outFile: string; html: string }>();
     for (const lang of SUPPORTED_LANGUAGES) {
       const startedAt = Date.now();
-      const html = await snapshotLocale(browser, server.url, lang.code);
+      // One retry: a locale that loses a timing race would otherwise take the
+      // whole run — and the deploy that calls it — down with it.
+      let html: string;
+      try {
+        html = await snapshotLocale(browser, server.url, lang.code);
+      } catch (err) {
+        console.warn(`  ${lang.code} failed (${(err as Error).message}) — retrying once`);
+        html = await snapshotLocale(browser, server.url, lang.code);
+      }
       const outFile =
         lang.code === "en"
           ? path.join(DIST, "index.html")

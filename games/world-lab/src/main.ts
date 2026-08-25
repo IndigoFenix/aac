@@ -60,6 +60,7 @@ import {
   siteTownConfig, clusterSites, clusterRadiusM, mergeSites, CLUSTER_MIN_SITES,
   type FoundedSite,
 } from "@shared/world-engine/interaction/town/founding";
+import { bankOwnedHerd } from "@shared/world-engine/interaction/quest/herd";
 import type { PlanetCity } from "@shared/world-engine/planet/cities";
 import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
 import { mountBoardIsland } from "./board-island";
@@ -73,7 +74,9 @@ import { mountSpecForm } from "./spec-form";
 import { LAB_LOCALES, LOCALE_STORAGE_KEY, applyLabLocale, normalizeLabLocale } from "./lab-locale";
 import { createFlashWatch } from "./flash-watch";
 import { HdrProbePass } from "./hdr-probe";
-import type { CreatureTier, QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
+import type { QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
+// The tier ladder from its own pure module, not through the host.
+import { steppedTier, type CreatureTier } from "@shared/world-engine/creatures/view-tiers";
 
 // LAG HUNT (perf-probes.ts): the dollhouse still stutters with the attention
 // system ruled out — the lab boots with every dormant probe LIVE by default
@@ -746,10 +749,17 @@ function unregisterFoundedPlanetSite(key: string): void {
  *  the wilderness chunk lets go, so the approach loader rebuilds tomorrow's
  *  town from today's site (buildings, stock, ledger — all serialized). */
 function snapshotLiveFoundedSite(): void {
-  const live: FoundedSite | null | undefined = wildQuestSession()?.foundedSite;
+  const session = wildQuestSession();
+  const live: FoundedSite | null | undefined = session?.foundedSite;
   if (!live) return;
   const rec = foundedPlanetSites.get(live.key);
   if (!rec) return;
+  // ⚖️ B-⑥ (band-settlement-round): the OWNED animals convert to the
+  // site's domestic-herd rows BEFORE the config is cut — the promotion
+  // seam of the taming handoff law. No removeBody callback: the whole
+  // world dies two lines down in disposeWilderness, and the session-side
+  // retire (records + scatter entries) is the half the law needs.
+  if (session) bankOwnedHerd(session, live);
   cityTowns?.registerFounded(rec.cell, siteTownConfig(live, { scale: docSessionScale() }));
   // The record travels with the config — the site's own overlay is what a
   // later cluster merges (§3.3), and this is the moment it stops being live.
@@ -1440,8 +1450,16 @@ function hystereticCrowdBudget(distM: number): number | null {
 // a tier only flips after the distance crosses its boundary by TIER_HYST_M,
 // and a flip rebuilds bodies a few per frame (quest-host's re-tier stream),
 // never all at once.
-const TIER_SIMPLE_M = 180;  // full ↔ simple boundary
-const TIER_CAPSULE_M = 450; // simple ↔ capsule boundary
+// The COARSE town clamp (camera → town CENTRE), one rung per band. It is the
+// orbit/approach clamp only: the effective tier is the coarser of this and the
+// per-body band quest-host runs from the local camera focus, which is what
+// actually tiers a crowd the camera is standing inside.
+const TOWN_TIER_BANDS: ReadonlyArray<{ tier: CreatureTier; from: number }> = [
+  { tier: "full", from: 0 },
+  { tier: "simple", from: 180 },
+  { tier: "stick", from: 320 },
+  { tier: "capsule", from: 450 },
+];
 const TIER_HYST_M = 40;
 let appliedTier: CreatureTier = "full";
 // DEBOUNCE on the PUSHED values (dollhouse crawl-cycle fix, 2026-07-23): the
@@ -1478,20 +1496,7 @@ function debouncedBudget(b: number | null, now: number): number | null {
   return pushedBudget;
 }
 function hystereticCreatureTier(distM: number): CreatureTier {
-  switch (appliedTier) {
-    case "full":
-      if (distM > TIER_SIMPLE_M + TIER_HYST_M)
-        appliedTier = distM > TIER_CAPSULE_M + TIER_HYST_M ? "capsule" : "simple";
-      break;
-    case "simple":
-      if (distM > TIER_CAPSULE_M + TIER_HYST_M) appliedTier = "capsule";
-      else if (distM < TIER_SIMPLE_M - TIER_HYST_M) appliedTier = "full";
-      break;
-    case "capsule":
-      if (distM < TIER_CAPSULE_M - TIER_HYST_M)
-        appliedTier = distM < TIER_SIMPLE_M - TIER_HYST_M ? "full" : "simple";
-      break;
-  }
+  appliedTier = steppedTier(TOWN_TIER_BANDS, appliedTier, distM, TIER_HYST_M);
   return appliedTier;
 }
 // SINGLE GROUND HOST (PLANET_ENTITY_PLAN step 3, slice 1): true boots the
@@ -3025,7 +3030,15 @@ function streamGround(
     // Phase 3 creature tier rides the same push: full whenever walking (bodies
     // at arm's length), else the hysteretic distance band. Per-CAMERA, render-
     // only — see hystereticCreatureTier.
-    embedTown.host.setCreatureTier(debouncedTier(walking ? "full" : hystereticCreatureTier(townDistM), now));
+    // LAB OVERRIDE: `__creatureTierOverride = "stick"` in the console pins the
+    // town clamp so a tier can be INSPECTED from a walking camera — otherwise
+    // `walking` forces "full" every frame and a console `setCreatureTier` is
+    // overwritten before it renders. Unset (or "auto") = normal behaviour.
+    const forced = (globalThis as { __creatureTierOverride?: string }).__creatureTierOverride;
+    const wanted: CreatureTier = forced && forced !== "auto"
+      ? forced as CreatureTier
+      : walking ? "full" : hystereticCreatureTier(townDistM);
+    embedTown.host.setCreatureTier(debouncedTier(wanted, now));
   }
   // The layer that OWNS the walker is stepped at full frame rate by the
   // grounded loop; every other mounted ground layer keeps living at the

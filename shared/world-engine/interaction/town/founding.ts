@@ -29,6 +29,8 @@
 import {
   createTownDeltas,
   deltaIsEmpty,
+  mergeHerd,
+  type HerdRow,
   type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import type { TownPlayConfig } from "./town-play.js";
@@ -85,6 +87,16 @@ export interface FoundedSite {
   buildings: number;
   /** Creature ids homed to the site (none at founding). */
   residents: string[];
+  /** ⚖️ THE DOMESTIC HERD (band-settlement-round B-⑥), species → {n,
+   *  stock}: the site's owned animals, CONVERTED from their individual
+   *  containers at the session boundary (the decided handoff law —
+   *  city-founding.md: individual owned-animal containers are physics
+   *  only at homestead scale; never both accounts at once). `n` is the
+   *  counts half of a collective record; `stock` is the animals' own
+   *  pooled live produce, so the cycle conserves goods exactly. The
+   *  fourth sibling beside stock, buildings and residents. Absent =
+   *  none. */
+  herd?: Record<string, HerdRow>;
 }
 
 export interface FoundSiteOpts {
@@ -428,6 +440,7 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
   const seeds = [...(json.seeds ?? [])];
   const stock: Record<string, number> = { ...(json.stock ?? {}) };
   for (const [g, n] of Object.entries(head.stock)) stock[g] = (stock[g] ?? 0) + n;
+  const herd = mergeHerd(mergeHerd({}, json.herd), head.herd);
   let nextOrd = Math.max(json.ordSeq ?? 0, orders.reduce((m, o) => Math.max(m, o.ord + 1), 0));
   let nextSeedOrd = seeds.reduce((m, s) => Math.max(m, s.ord + 1), 0);
   /** Ground already joined to the spine, in the town frame — what a laneless
@@ -451,6 +464,12 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
     // Stock — the conservation half.
     for (const [g, n] of Object.entries(sj.stock ?? {})) stock[g] = (stock[g] ?? 0) + n;
     for (const [g, n] of Object.entries(site.stock)) stock[g] = (stock[g] ?? 0) + n;
+
+    // The herd — the counts half, summed exactly as the stock is (B-⑥).
+    // 🚨 mergeSites returns a WHITELIST literal, so a field not summed
+    // here dies in every multi-site merge while surviving the 1-site
+    // early return — the asymmetry is pinned.
+    mergeHerd(mergeHerd(herd, sj.herd), site.herd);
 
     // Standing buildings — annexed, translated, re-keyed onto the ground.
     const remap = new Map<number, number>();
@@ -503,7 +522,11 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
     at: { x: head.at.x, y: head.at.y },
     foundedDay: head.foundedDay,
     stock: {},                       // folded into the overlay's yard above
-    deltas: createTownDeltas({ ...json, orders, buildings, seeds, stock, ordSeq: nextOrd }),
+    deltas: createTownDeltas({
+      ...json, orders, buildings, seeds, stock, ordSeq: nextOrd,
+      // The herd rides the overlay too (B-⑥) — omitted when nobody owns one.
+      ...(Object.keys(herd).length ? { herd } : {}),
+    }),
     buildings: buildingsCount,
     residents,
   };
@@ -535,6 +558,11 @@ export function siteTownConfig(
     stock[glyph] = (stock[glyph] ?? 0) + n;
   }
   deltas.stock = stock;
+  // The site's herd becomes the town's domestic-herd count (B-⑥) — the
+  // exact fold `stock` takes one line up, on the counts half.
+  if (site.herd && Object.keys(site.herd).length) {
+    deltas.herd = mergeHerd(mergeHerd({}, deltas.herd), site.herd);
+  }
   return {
     seed: site.seed,
     key: site.key,

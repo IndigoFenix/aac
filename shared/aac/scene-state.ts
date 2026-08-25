@@ -59,7 +59,11 @@ export interface SceneSnapshot {
  *  the [MOTION SIGNATURE] line (rendered client-side by summarizeSignature) so
  *  the server forwards it verbatim to the Observer with the escalated frame. */
 export interface SeizureSceneInfo {
-  phase: "clonic" | "atonic" | "postictal";
+  /** "marker" = no generic convulsive/atonic pattern, but the motion matched a
+   *  presentation this student's clinician recorded (see seizure-markers.ts).
+   *  It is its own phase because the generic detector genuinely found nothing —
+   *  labelling it "clonic" would misreport to the Observer what was seen. */
+  phase: "clonic" | "atonic" | "postictal" | "marker";
   confidence: number;
   summary: string;
 }

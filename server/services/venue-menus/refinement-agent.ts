@@ -117,6 +117,8 @@ export async function requestMenuRefinement(
 
   try {
     const response = await getStructuredProvider(PROVIDER).structuredComplete({
+      // Background: refinement runs once per venue, behind the cache write.
+      background: true,
       model: options.model ?? MODEL,
       instructions: REFINEMENT_PROMPT + target,
       schemaName: "menu_refinement",

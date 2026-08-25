@@ -33,7 +33,7 @@ import {
 } from "./prompts/speaker";
 import type { FunctionDeclaration } from "@google/genai";
 import { SentenceStreamer } from "./sentence-streamer";
-import { LeadingTagStripper } from "./leading-tag-stripper";
+import { SpokenTurnGate } from "./spoken-turn-gate";
 import { flowInput, flowTool, flowOutput, flowNote } from "./agent-flow-logger";
 import type { LiveUsage } from "./live-provider";
 import type { SpeakerCallbacks, SpeakerStartConfig, SpeakerOutputEvent } from "./speaker-agent";
@@ -55,6 +55,7 @@ import type {
   PrivateNoteEvent,
   RemainSilentEvent,
   ThoughtLeakEvent,
+  ContextLeakEvent,
 } from "./agent-events";
 
 // ---------------------------------------------------------------------------
@@ -303,7 +304,7 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
     // Strips a leaked leading meta-tag ("[USER to YOU] …") off the front of
     // the reply BEFORE it reaches the sentence splitter (so TTS never voices
     // it), the client subtitle, or the persisted transcript.
-    const tagStripper = new LeadingTagStripper();
+    const turnGate = new SpokenTurnGate();
     let speechStartEmitted = false;
     let fullText = "";
     // Set once the streamed text reveals the model voicing its private
@@ -344,10 +345,13 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         if (controller.signal.aborted) break;
         switch (chunk.type) {
           case "text_delta": {
-            // Run the delta through the leading-tag stripper first. It
-            // withholds text while a leading "[" is still open, then emits
-            // cleaned text for the rest of the turn.
-            const cleaned = tagStripper.push(chunk.text);
+            // Run the delta through THE gate first (spoken-turn-gate.ts).
+            // It withholds text while a bracket / paren group is still open,
+            // removes machine wire format wherever it appears, and flips
+            // `severe` when the turn stops being a reply and becomes the
+            // model reciting its own input.
+            const cleaned = turnGate.push(chunk.text);
+            if (turnGate.severe) break; // disqualified — forward nothing
             if (!cleaned) break;
             fullText += cleaned;
             // Thought-leak guard (mirrors SpeakerAgent.handleOutputTranscription).
@@ -408,10 +412,32 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
       // skip the orphan re-prompt loop below (which would otherwise fire on
       // the empty reply). The Coordinator records the note on supervisor
       // channels, resets the client text accumulator, and injects a corrective.
+      // ----- Recited context: terminal, no speech ----------------------
+      // The model echoed its own input ("[CONTEXT] …", a leading stage
+      // direction) instead of replying. Nothing was forwarded to the client
+      // or TTS; emit a ContextLeakEvent so the Coordinator suppresses the
+      // turn and injects a corrective, exactly as for a thought leak. Placed
+      // BEFORE the thought-leak branch only in the sense that both are
+      // terminal — a turn can trip either, and thought-leak wins since the
+      // reasoning is the more useful supervisor record.
+      if (!leakedThought && turnGate.severe) {
+        const gated = turnGate.result();
+        flowOutput("SPEAKER", "context_leak", gated.leaked);
+        const ev: ContextLeakEvent = {
+          type: "context_leak",
+          source: "speaker",
+          timestamp: Date.now(),
+          recited: gated.leaked,
+          speech: gated.speech,
+        };
+        this.callbacks.onEvent(ev);
+        return;
+      }
+
       if (leakedThought) {
-        // Fold in any text the tag-stripper withheld (unclosed bracket) so
-        // the captured note is complete — but never forward it.
-        const note = stripThoughtLeakMarker((fullText + tagStripper.flush()).trim());
+        // Fold in any text the gate withheld (unclosed bracket) so the
+        // captured note is complete — but never forward it.
+        const note = stripThoughtLeakMarker((fullText + turnGate.flush()).trim());
         flowOutput("SPEAKER", "thought_leak", note);
         const ev: ThoughtLeakEvent = {
           type: "thought_leak",
@@ -423,9 +449,9 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
         return;
       }
 
-      // Flush the tag stripper first — if it withheld an unclosed "[" run
+      // Flush the gate first — if it withheld an unclosed "[" run
       // (degenerate utterance), release it as ordinary text now.
-      const heldLead = tagStripper.flush();
+      const heldLead = turnGate.flush();
       if (heldLead) {
         fullText += heldLead;
         this.callbacks.onTranscriptionDelta?.(heldLead);
@@ -437,8 +463,9 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
       if (tail) onSentenceReady(tail);
 
       const transcript = fullText.trim();
-      if (tagStripper.stripped) {
-        flowOutput("SPEAKER", "leading_tag_stripped", tagStripper.strippedTag);
+      const gatedTurn = turnGate.result();
+      if (gatedTurn.verdict === "mild") {
+        flowOutput("SPEAKER", "leading_tag_stripped", gatedTurn.leaked);
       }
 
       // ----- Partition tool calls --------------------------------------
@@ -637,7 +664,7 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
           timestamp: Date.now(),
           transcript,
           target: this.pendingSpeechTarget ?? "USER",
-          strippedLeadingTag: tagStripper.stripped ? tagStripper.strippedTag : undefined,
+          strippedLeadingTag: gatedTurn.verdict === "mild" ? gatedTurn.leaked : undefined,
         };
         this.callbacks.onEvent(se);
       } else if (!hasRemainSilent && noteCalls.length > 0) {

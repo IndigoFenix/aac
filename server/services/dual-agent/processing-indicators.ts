@@ -34,23 +34,32 @@ export interface ProcessingIndicatorsOptions {
   speakerTimeoutMs?: number;
   /** Backstop after which a stuck interpret cue auto-clears. Default 15s. */
   interpretTimeoutMs?: number;
+  /** Backstop after which a stuck app-open cue auto-clears. Default 10s. */
+  appTimeoutMs?: number;
 }
 
 const DEFAULT_SPEAKER_TIMEOUT_MS = 25_000;
 const DEFAULT_INTERPRET_TIMEOUT_MS = 15_000;
+// Shorter than the others on purpose: the app cue brackets ONE routeAppOpen,
+// whose slowest leg is a single startup-resolver call. If it has not settled by
+// now the open is not coming, and a cue that outlives its work reads as a hang.
+const DEFAULT_APP_TIMEOUT_MS = 10_000;
 
 export class ProcessingIndicators {
-  private state: Record<ProcessingActivity, boolean> = { speaker: false, board: false, interpret: false };
+  private state: Record<ProcessingActivity, boolean> = { speaker: false, board: false, interpret: false, app: false };
   private speakerTimer: ReturnType<typeof setTimeout> | null = null;
   private interpretTimer: ReturnType<typeof setTimeout> | null = null;
+  private appTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly emit: (msg: ProcessingMessage) => void;
   private readonly speakerTimeoutMs: number;
   private readonly interpretTimeoutMs: number;
+  private readonly appTimeoutMs: number;
 
   constructor(opts: ProcessingIndicatorsOptions) {
     this.emit = opts.emit;
     this.speakerTimeoutMs = opts.speakerTimeoutMs ?? DEFAULT_SPEAKER_TIMEOUT_MS;
     this.interpretTimeoutMs = opts.interpretTimeoutMs ?? DEFAULT_INTERPRET_TIMEOUT_MS;
+    this.appTimeoutMs = opts.appTimeoutMs ?? DEFAULT_APP_TIMEOUT_MS;
   }
 
   /** Current busy flag for an activity (for callers that gate on it). */
@@ -97,12 +106,33 @@ export class ProcessingIndicators {
     this.set("interpret", false);
   }
 
+  /** An app open started resolving server-side — light + arm backstop.
+   *  Unlike the other three this cue covers a KNOWN silence: the Speaker
+   *  cannot talk until the open settles, so this is the only thing telling the
+   *  child their press was heard. */
+  markAppBusy(): void {
+    this.set("app", true);
+    if (this.appTimer) clearTimeout(this.appTimer);
+    this.appTimer = setTimeout(() => {
+      this.appTimer = null;
+      this.set("app", false);
+    }, this.appTimeoutMs);
+  }
+
+  /** The open settled — opened, refused, or failed. */
+  clearAppBusy(): void {
+    if (this.appTimer) { clearTimeout(this.appTimer); this.appTimer = null; }
+    this.set("app", false);
+  }
+
   /** Clear every cue + cancel timers (session reset / teardown / fatal error). */
   clearAll(): void {
     if (this.speakerTimer) { clearTimeout(this.speakerTimer); this.speakerTimer = null; }
     if (this.interpretTimer) { clearTimeout(this.interpretTimer); this.interpretTimer = null; }
+    if (this.appTimer) { clearTimeout(this.appTimer); this.appTimer = null; }
     this.set("speaker", false);
     this.set("board", false);
     this.set("interpret", false);
+    this.set("app", false);
   }
 }

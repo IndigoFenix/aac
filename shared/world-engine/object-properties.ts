@@ -38,6 +38,10 @@ export type ObjectProperty =
   | "furniture"
   /** Edible (goods FOOD/TREAT/MEAL kinds, the `food` category). */
   | "food"
+  /** Drinkable (the `drink` category — water, milk, juice). A CATEGORY OF ITS
+   *  OWN rather than a kind of food: `eat` and `drink` are different requests
+   *  and must open different boards. */
+  | "drink"
   /** Wearable/washable (goods CLOTHING kinds, the `clothing` category). */
   | "clothing"
   /** Affords `play` — the fun need's target ([[feedback_needs_bind_to_affordances]]). */
@@ -55,6 +59,7 @@ export type ObjectProperty =
  *  container family adjacent so their shared art motif reads as a group. */
 export const OBJECT_PROPERTIES: readonly ObjectProperty[] = [
   "food",
+  "drink",
   "toy",
   "clothing",
   "container",
@@ -67,6 +72,28 @@ export const OBJECT_PROPERTIES: readonly ObjectProperty[] = [
   "book",
   "material",
   "structure",
+];
+
+/**
+ * THE CATEGORIES A CHILD ASKS FOR BY NAME (user decision 2026-08-24). "I want
+ * food", "I want a toy" are first-page sentences — often the RIGHT sentence,
+ * because a child who cannot yet find the apple can still say what kind of
+ * thing they mean and let the adult narrow it.
+ *
+ * So a desire board offers these as WORDS, and leaves the specific items to the
+ * group chips and to the child's own habit. The rest of the property vocabulary
+ * is not wantable in this way: nobody asks for "an openable", and `furniture`
+ * or `appliance` name what a room contains rather than what a person wants.
+ *
+ * Every one is already a lang-layer word (the group chips wear them), so this
+ * costs no new vocabulary.
+ */
+export const WANTABLE_PROPERTIES: readonly ObjectProperty[] = [
+  "food",
+  "drink",
+  "toy",
+  "clothing",
+  "book",
 ];
 
 const PROPERTY_SET: ReadonlySet<string> = new Set(OBJECT_PROPERTIES);
@@ -85,7 +112,9 @@ export const isObjectProperty = (s: string): s is ObjectProperty => PROPERTY_SET
  */
 export const PROPERTY_FOR_VERB: Readonly<Record<string, ObjectProperty>> = {
   eat: "food",
-  drink: "food",
+  // DRINK OPENS DRINKS, not the fruit bowl (2026-08-24). The two verbs used to
+  // share one property, so "I want to drink" answered with apples and bananas.
+  drink: "drink",
   cook: "food",
   heat: "food",
   wear: "clothing",
@@ -108,6 +137,77 @@ export const PROPERTY_FOR_VERB: Readonly<Record<string, ObjectProperty>> = {
   sit: "furniture",
   sleep: "furniture",
   rest: "furniture",
+};
+
+/**
+ * A CLASS OF NOUN, named from either side of the one vocabulary: an object
+ * PROPERTY (what a thing is for), a noun KIND (what sort of thing it is), or the
+ * one DERIVED class the property vocabulary cannot express —
+ *
+ *   `ownable` — anything a hand can hold and a person can own: an item that is
+ *   neither the furniture of a room nor a raised structure. Derived rather than
+ *   authored, because ownership is not a property a spec declares; it is what is
+ *   left when the fixtures are taken out.
+ */
+export type NounClass = ObjectProperty | "creature" | "place" | "item" | "ownable";
+
+/**
+ * WHAT A VERB'S OBJECT CAN BE, best class first (user table, 2026-08-24).
+ *
+ * `PROPERTY_FOR_VERB` above answers a narrower question — which single group
+ * CHIP a verb pre-opens — and answers it well; this answers the one the board
+ * actually asks: given this verb, which nouns should the grid offer and in what
+ * order. A verb with no row here falls back to its `PROPERTY_FOR_VERB` property,
+ * so the two tables never state the same fact twice.
+ *
+ * Tiers RANK, they never filter: the universal band still offers every noun
+ * underneath, so no composition is ever blocked by a classification the library
+ * happened not to carry. Keyed by the CANONICAL verb, so a family shares a row.
+ *
+ * A tier that would mean "everything else" is NEVER written: that is the
+ * universal band's job, and writing it out crowds the tiers BELOW it off the
+ * board — with a wide library, an `item` tier is fifty-odd nouns and nothing
+ * under it is ever reached.
+ *
+ * Two rows in the user's table are missing on purpose. `use` is not in the
+ * LEXICON at all, and `toilet` is a noun; both need vocabulary work before a
+ * board may offer them (planning-docs §7.2, W5). `help` is here, but only with
+ * its creature half — see the note on that row.
+ */
+export const VERB_OBJECT_CLASSES: Readonly<Record<string, readonly (readonly NounClass[])[]>> = {
+  // Things changing hands: what moves is what a hand can hold, never the room.
+  get: [["ownable"]],
+  give: [["ownable"]],
+  trade: [["ownable"]],
+  carry: [["ownable"]],
+  bring: [["ownable"]],
+  // THE PUT FAMILY's object is the thing being placed — a ball, not a box. The
+  // box is its DESTINATION, and `PROPERTY_FOR_VERB` still says so for that slot.
+  put: [["ownable"]],
+  drop: [["ownable"]],
+  throw: [["ownable"]],
+  // Making and unmaking: both verbs offer both lists, differing in which leads
+  // (the make-vs-build law) — and what you break is as often a thing as a wall.
+  make: [["ownable"], ["structure"]],
+  build: [["structure"], ["ownable"]],
+  break: [["structure"], ["ownable"]],
+  fix: [["structure"], ["ownable"]],
+  // Looking takes anything there is: a person, a thing, or a place.
+  see: [["creature"], ["place"]],
+  // Doing things WITH people.
+  help: [["creature"]],
+  hug: [["creature"]],
+  talk: [["creature"]],
+  show: [["creature"]],
+  teach: [["creature"]],
+  share: [["creature"]],
+  follow: [["creature"]],
+  fight: [["creature"]],
+  // Playing is with a toy, or with somebody.
+  play: [["toy"], ["creature"]],
+  // Filling and emptying want something that holds.
+  fill: [["container", "tableware"]],
+  empty: [["container", "tableware"]],
 };
 
 // ---------------------------------------------------------------------------
@@ -200,6 +300,9 @@ export const DESCRIPTOR_AXES_FOR_VERB: Readonly<Record<string, readonly Descript
  *  temperature and amount, clothing about cleanliness, containers about fill. */
 export const AXES_FOR_PROPERTY: Readonly<Record<ObjectProperty, readonly DescriptorAxis[]>> = {
   food: ["temperature", "quantity", "quality", "size"],
+  // A drink is hot or cold before it is anything else, and the cup it comes in
+  // is full or empty — the fill axis belongs to the drink, not just the vessel.
+  drink: ["temperature", "quantity", "fill", "quality"],
   toy: ["possession", "quality", "integrity", "age"],
   clothing: ["cleanliness", "possession", "age", "quality"],
   container: ["fill", "possession", "size"],
@@ -263,13 +366,33 @@ export function descriptorsFor(
  * object properties. Everything else that reaches the board is a concrete
  * noun and must derive its properties from the spec side.
  */
+/**
+ * THE PEOPLE A CHILD NAMES (2026-08-24) — the kinship and role frame words.
+ *
+ * Core concepts like the rest of that set: a mother is not an object with a
+ * spec row, and no registry will ever define one. Named as their own group
+ * because the sentence board needs to know WHICH core concepts are people —
+ * they are the only nouns its spec walk cannot find, and a board with no word
+ * for a mother is not a board a child can talk to.
+ *
+ * The student's OWN people arrive separately, as named creatures from the
+ * people directory; these are the generic words that stand when it is empty and
+ * beside it when it is not.
+ */
+export const CORE_PEOPLE: readonly string[] = [
+  // In priority order, which is the order they surface in (L1): the people a
+  // child asks for first, then the ones they describe.
+  "mom", "dad", "teacher", "friend", "baby", "girl", "boy",
+];
+
 export const CORE_CONCEPTS: ReadonlySet<string> = new Set([
   // Places / territory (the named STRUCTURES — market, farm — are spec'd, and
   // carry `structure`; these are the frame words the engine itself owns).
   "place", "area", "room", "building", "house", "home", "yard", "town", "city",
   "street", "bathroom", "outside", "world",
   // Living-thing frame words (specific creatures come from the species specs)
-  "animal", "person", "people", "family", "baby", "child", "friend",
+  "animal", "person", "people", "family", "child",
+  ...CORE_PEOPLE,
   // Substances the simulation models directly rather than as stack goods
   "water", "fire",
 ]);

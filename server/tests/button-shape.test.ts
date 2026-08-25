@@ -126,3 +126,76 @@ describe("rest space levels", () => {
     expect(restSpaceRatio("large")).toBe(REST_SPACE.large);
   });
 });
+
+/**
+ * Per-corner SKIP — a corner carrying a GLYPH MARK badge keeps its right angle
+ * so the badge can sit at the button's true corner.
+ *
+ * This deliberately breaks the shared-circle property at that vertex (user
+ * call, 2026-08-24): the interior is too cramped to inset the badge past the
+ * bite, so the badge takes the corner. What must NOT break is the hit-test
+ * agreeing with the drawing — a corner that looks solid has to BE solid, or
+ * the shape is lying about what it does, and the reclaimed corner would become
+ * a dead zone for a gaze.
+ */
+describe("corner-cut skip (badge corners)", () => {
+  const RADIUS = Math.min(W, H) * 0.24;
+
+  it("no skip flags reproduce the untouched path exactly", () => {
+    const plain = cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET });
+    const empty = cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET, skip: {} });
+    const allFalse = cornerCutPath({
+      w: W, h: H, radius: RADIUS, offset: OFFSET,
+      skip: { topLeft: false, topRight: false, bottomLeft: false, bottomRight: false },
+    });
+    expect(empty).toBe(plain);
+    expect(allFalse).toBe(plain);
+  });
+
+  it("each skipped corner drops exactly one arc from the path", () => {
+    const arcs = (d: string) => (d.match(/A /g) ?? []).length;
+    const base = cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET });
+    expect(arcs(base)).toBe(4);
+    expect(arcs(cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET, skip: { topRight: true } }))).toBe(3);
+    expect(arcs(cornerCutPath({
+      w: W, h: H, radius: RADIUS, offset: OFFSET, skip: { topLeft: true, topRight: true },
+    }))).toBe(2);
+  });
+
+  it("a skipped corner puts the path through the corner POINT itself", () => {
+    // Top-right skipped → the path must reach (W, 0). With the bite it never
+    // does; it turns at (W - inset, 0) and arcs away to (W, inset).
+    const skipped = cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET, skip: { topRight: true } });
+    expect(skipped).toContain(`L ${W} 0`);
+    const bitten = cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET });
+    expect(bitten).not.toContain(`L ${W} 0`);
+  });
+
+  it("badges only ever take TOP corners, so the bottom pair still bites", () => {
+    const d = cornerCutPath({ w: W, h: H, radius: RADIUS, offset: OFFSET, skip: { topLeft: true, topRight: true } });
+    // Both bottom arcs survive — a vertex loses at most half its circle.
+    expect((d.match(/A /g) ?? []).length).toBe(2);
+  });
+
+  it("the HIT-TEST agrees: a skipped corner is solid, not void", () => {
+    const rect = { left: 0, top: 0, right: W, bottom: H };
+    // A point just inside the top-right corner, well within the bite.
+    const x = W - 2;
+    const y = 2;
+    expect(pointInCornerCut(rect, RADIUS, OFFSET, x, y)).toBe(true);
+    expect(pointInCornerCut(rect, RADIUS, OFFSET, x, y, { topRight: true })).toBe(false);
+    // The other three corners are untouched by that flag.
+    expect(pointInCornerCut(rect, RADIUS, OFFSET, 2, 2, { topRight: true })).toBe(true);
+    expect(pointInCornerCut(rect, RADIUS, OFFSET, 2, H - 2, { topRight: true })).toBe(true);
+    expect(pointInCornerCut(rect, RADIUS, OFFSET, W - 2, H - 2, { topRight: true })).toBe(true);
+  });
+
+  it("omitting skip keeps the old four-corner hit-test", () => {
+    const rect = { left: 0, top: 0, right: W, bottom: H };
+    for (const [x, y] of [[2, 2], [W - 2, 2], [2, H - 2], [W - 2, H - 2]]) {
+      expect(pointInCornerCut(rect, RADIUS, OFFSET, x, y)).toBe(true);
+    }
+    // Dead centre is never in a cut.
+    expect(pointInCornerCut(rect, RADIUS, OFFSET, W / 2, H / 2)).toBe(false);
+  });
+});

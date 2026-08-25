@@ -41,14 +41,16 @@ import {
 import { findFoundingSites, type FoundingOpts } from "../kernel/cells/index.js";
 import { foundingScan } from "../kernel/civ/bands.js";
 import { SEA_HEIGHT } from "../kernel/geology/tectonics.js";
-import { foundCitiesFromSites, REGION_FOUND_POP, type PlanetCity } from "./cities.js";
+import {
+  foundCitiesFromSites, REGION_FOUND_POP, spillBudget, spillFoundingSites, type PlanetCity,
+} from "./cities.js";
 import { RIVER_MIN_ACCUM, traceRiverPolylines, type RiverPolyline } from "./rivers.js";
 import {
   chaikinSphere, portTerminateRoute, routeFromDirs, routePointAt,
   type PlanetRoute, type RouteTerminal,
 } from "./routes.js";
 import { borderTowns, chebyshevDistance, type BorderTown } from "./border.js";
-import { REAL_SCALE, townExtentM, townSpacingM, type WorldScale } from "../scale.js";
+import { REAL_SCALE, TIER_POP_CAP, tierExtentM, townExtentM, type WorldScale } from "../scale.js";
 
 export interface RegionFrame {
   regionCell: number;
@@ -72,20 +74,23 @@ export interface RefineOpts {
   /** Villages' farmland floor (foundCitiesFromSites). */
   minFarmland?: number;
   /** The world's space-time compression — sets village spacing
-   *  (`townSpacingM`) and, through the clip law, the extent their lanes port
-   *  at (`townExtentM`). Absent = realism, which reproduces the historical
-   *  day's-walk spacing exactly. */
+   *  (`townSpacingM`, catchment-priced at the village popCap) and, through the
+   *  clip law, the extent their lanes port at (`tierExtentM("village", …)`).
+   *  Absent = realism, which reproduces the historical day's-walk spacing
+   *  exactly. */
   scale?: WorldScale;
 }
 
 export interface RefinedRegion {
   frame: RegionFrame;
-  /** THE DERIVED EXTENT this region's towns build out to, and therefore the
-   *  radius its lanes PORT at (scale.ts `townExtentM`, growth phase C §1.2).
-   *  Carried on the region rather than re-derived per consumer so the
-   *  village lanes, the cross-border stitches and anything that later reads
-   *  a village's edge all name the same circle. */
-  townExtentM: number;
+  /** THE DERIVED VILLAGE EXTENT this region's villages build out to, and
+   *  therefore the radius its lanes PORT at (scale.ts
+   *  `tierExtentM("village", …)`, growth phase C §1.2 + food-scale-round ⑩:
+   *  this tier founds VILLAGES, so it speaks the village body — 120 m —
+   *  capped by the clip law). Carried on the region rather than re-derived
+   *  per consumer so the village lanes, the cross-border stitches and
+   *  anything that later reads a village's edge all name the same circle. */
+  villageExtentM: number;
   /** The child substrate (rivers, fertility, crowds — the region's truth). */
   prep: TriPrep;
   /** The villages, in the demo pipeline's city shape. `cell` is the
@@ -123,6 +128,20 @@ export interface RefinedRegion {
    *  seam anchors stream stitching joins on (stitchRegionStreams). Worker-
    *  side data; never crosses the wire itself. */
   riverCrossings: RiverCrossing[];
+  /** SPILL-FOUNDING diagnostics (food-scale-round.md "# STAGE β" β3) — the
+   *  ledger's measurement seam: the first-pass crowd the village tier
+   *  turned away (`budget`, cities.ts spillBudget), how much marginal land
+   *  the relaxed pass offered, how many spill SITES the budget took, and
+   *  how many spill VILLAGES actually founded (minFarmland still gates a
+   *  taken site, so `spillVillages ≤ spillSites`). Data only — nothing
+   *  downstream consumes it. */
+  spill: {
+    budget: number;
+    firstPassSites: number;
+    relaxedCandidates: number;
+    spillSites: number;
+    spillVillages: number;
+  };
 }
 
 /** A stream crossing the region's ownership line, as THIS region's solve saw
@@ -310,9 +329,20 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   const derivedScan = foundingScan({
     scale, foundPop: REGION_FOUND_POP, cellSizeM,
     minSpacingFloorCells: 4, minSpacingCapCells: Math.min(cols, rows),
+    // THE TIER CAPACITY (food-scale-round ⑩): this scan founds VILLAGES, so
+    // the staple catchment prices a village's 140 souls — at the shipped dials
+    // the catchment (1 527 m) sits under the declared lattice (2 500 m) and this is
+    // byte-identical; a tier big enough to out-eat its lattice would be
+    // pushed apart until it can eat.
+    popCap: TIER_POP_CAP.village,
   });
   const villageSpacingCells = derivedScan.minSpacing;
-  const villageExtentM = townExtentM(scale, villageSpacingCells * cellSizeM);
+  // THE VILLAGE BODY, named (food-scale-round ⑩): this tier founds villages,
+  // and a village declares 120 m of built radius (`REAL_TIER_EXTENT_M`), not
+  // the market town's 450 — the same clip law then caps it by the gap the
+  // chart actually imposed. This is the edit that delivers the user's 240 m
+  // village in play.
+  const villageExtentM = tierExtentM("village", scale, villageSpacingCells * cellSizeM);
   const foundingBase: FoundingOpts = {
     ...derivedScan,
     ...opts.founding,
@@ -537,15 +567,46 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
     score: [{ field: "traffic", weight: 3 }, ...(founding.score ?? [])],
   }).filter(s => !childIce || childIce[s.cell] < 1);
 
+  // ── SPILL FOUNDING: the crowd the villages turn away founds MORE villages
+  // (food-scale-round.md "# STAGE β" survey correction 8 + β3 — the user's
+  // law: "the region answers with more towns, never overstuffed ones"). The
+  // budget is the FIRST-PASS truth, computed BEFORE any spill site exists
+  // (single discharge — a spill site's own potential never re-enters; see
+  // cities.ts spillBudget). The second pass re-scans the SAME spacing
+  // lattice at the relaxed threshold with the first-pass sites as occupied
+  // fixed points, mirrors the first pass's traffic ranking and ice veto,
+  // and its taken sites are APPENDED so the first-pass prefix — order AND
+  // names (foundCitiesFromSites's collision fallback and `taken` set are
+  // order-dependent) — stays byte-stable. This seam sits BEFORE the
+  // founding/hub/road passes below, so spill villages get roads, ports and
+  // stitches like any village.
+  const budget = spillBudget(prep.sites);
+  const firstPassSiteCount = prep.sites.length;
+  const spill = spillFoundingSites(
+    prep.grid,
+    { ...founding, score: [{ field: "traffic", weight: 3 }, ...(founding.score ?? [])] },
+    prep.sites,
+    budget,
+    s => !childIce || childIce[s.cell] < 1, // the first pass's own ice veto
+  );
+  const spillCells = new Set(spill.taken.map(s => villageKey(regionCell, s.cell)));
+  prep.sites = [...prep.sites, ...spill.taken]; // APPEND-ONLY (the determinism law)
+
   // ── Villages through the same founding helper the capitals use ──────────
-  const villages = foundCitiesFromSites({
+  // THE TIER, named on the row (food-scale-round ⑩): this scan founds
+  // VILLAGES, and the town a visit builds from the row reads the tier back
+  // (`TownPlayConfig.tier` → plan.ts `tierExtentM`), so the 120 m body laid
+  // in play is the same one the lanes above ported at. ONE COMBINED ordered
+  // call — first-pass sites first, spill sites appended — so first-pass
+  // names stay byte-identical whether or not the region spilled.
+  const villages: PlanetCity[] = foundCitiesFromSites({
     sites: prep.sites,
     grid: prep.grid,
     seedBase: (built.spec.geology.seed ^ Math.imul(regionCell, 0x85ebca6b)) >>> 0,
     dirOf: cell => dirs[cell],
     cellKey: cell => villageKey(regionCell, cell),
     minFarmland: opts.minFarmland ?? 25,
-  });
+  }).map(v => ({ ...v, tier: "village" as const }));
   // The border towns THIS region owns join the output — downstream
   // consumers (geo-bake, town instantiation, stitching) see them as
   // villages with an opaque (negative) key, zero changes required. The
@@ -649,8 +710,15 @@ export function refineRegion(built: BuiltPlanet, regionCell: number, opts: Refin
   }
 
   return {
-    frame, townExtentM: villageExtentM, prep, villages, borderTowns: edgeTowns,
+    frame, villageExtentM, prep, villages, borderTowns: edgeTowns,
     capitalCells, roads, roadRoutes, rivers, riverCrossings,
+    spill: {
+      budget,
+      firstPassSites: firstPassSiteCount,
+      relaxedCandidates: spill.candidates.length,
+      spillSites: spill.taken.length,
+      spillVillages: villages.filter(v => spillCells.has(v.cell)).length,
+    },
   };
 }
 
@@ -722,7 +790,7 @@ export function refineHighways(
   //
   // So each span ports at the VILLAGE extent the same way `planetRoutes`
   // ports at the city one — the extent `refineRegion` already derived and
-  // handed us (`refined.townExtentM`), the same circle this region's own
+  // handed us (`refined.villageExtentM`), the same circle this region's own
   // lanes stop at, so highway and lane meet on one boundary.
   //
   // `s0`/`s1` DELIBERATELY DO NOT MOVE. They name the PARENT arc this span
@@ -737,7 +805,7 @@ export function refineHighways(
   // ENDS ONLY, and honestly so: a span that merely GRAZES a village
   // mid-course (measured: one at 81 m against a 91 m extent) would have to be
   // SPLIT to be cut, and a split span cannot be one parent override.
-  const villageExtentM = refined.townExtentM;
+  const villageExtentM = refined.villageExtentM;
   const villages = refined.villages;
   const villageTerminal = (
     id: number, at: readonly [number, number, number],
@@ -953,8 +1021,8 @@ export function stitchRegions(
     // ends at their extents like every other one.
     out.push(portTerminateRoute(
       route, R,
-      { id: va.cell, dir: va.dir, extentM: a.townExtentM },
-      { id: vb.cell, dir: vb.dir, extentM: b.townExtentM },
+      { id: va.cell, dir: va.dir, extentM: a.villageExtentM },
+      { id: vb.cell, dir: vb.dir, extentM: b.villageExtentM },
     ));
   }
   return out;

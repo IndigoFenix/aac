@@ -20,6 +20,13 @@ import { resolveButtonBackground, MORE_OPTIONS_ICON } from "@shared/button-color
 import { rtlMirrorStyle } from "@shared/emoji-registry";
 import { labelFontSize, labelLines, type RatioLevel } from "@shared/button-sizing";
 import { ShapedButton, type CornerSpace } from "./ShapedButton";
+import { parseGlyph } from "@shared/glyph-compositor";
+import {
+  hasProsodyMark,
+  hasTenseMark,
+  ProsodyMarkBadge,
+  TenseMarkBadge,
+} from "@shared/glyph-compositor.tsx";
 import type { BoardButtonInput, BoardRenderDeps, IconVisual } from "./types";
 
 // One-shot keyframe injection for the legacy imageKey loading spinner. Guarded
@@ -132,7 +139,7 @@ function renderIcon(visual: IconVisual, button: BoardButtonInput, deps: BoardRen
       const Glyph = deps.GlyphComponent;
       return (
         <div style={{ width: "100%", height: "100%" }}>
-          <Glyph glyph={visual.glyph} fallback={visual.fallback} noBackground ariaLabel={button.label} />
+          <Glyph glyph={visual.glyph} fallback={visual.fallback} noBackground badges="none" ariaLabel={button.label} />
         </div>
       );
     }
@@ -232,7 +239,7 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
     () =>
       backgroundColor ??
       deps.resolveColor?.(button) ??
-      resolveButtonBackground(button.color, button.glyph, button.buttonType),
+      resolveButtonBackground(button.color, button.glyph, button.buttonType, button.role),
     [backgroundColor, deps, button],
   );
 
@@ -338,6 +345,30 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
     "flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative " +
     (borderClassName ?? "border-gray-200");
 
+  // GLYPH MARK badges at the BUTTON's corners.
+  //
+  // The compositor suppresses its own inline badges above (`badges="none"`),
+  // because its SVG letterboxes inside this cell — a 3-slot sentence in a
+  // squarish button left deep empty bands and the badge drew a third of the way
+  // DOWN rather than at a corner. Drawn here instead, against the button box,
+  // they land where a corner mark belongs whatever the sentence's width.
+  //
+  // ShapedButton suppresses the corner bite under each badge and picks the px
+  // size from its measured box; sides below are PHYSICAL, RTL already resolved.
+  const markTags = button.glyph ? parseGlyph(button.glyph).toneTags : [];
+  const prosody = hasProsodyMark(markTags)
+    ? (size: number) => <ProsodyMarkBadge tags={markTags} size={size} />
+    : undefined;
+  const tense = hasTenseMark(markTags)
+    ? (size: number) => <TenseMarkBadge tags={markTags} size={size} rtl={deps.rtl} />
+    : undefined;
+  const cornerBadges =
+    prosody || tense
+      ? deps.rtl
+        ? { topLeft: prosody, topRight: tense }
+        : { topRight: prosody, topLeft: tense }
+      : null;
+
   if (!interactive) {
     // Clinician editor: the outer element owns selection/click; render a plain
     // div (filling that wrapper) so this inner visual never intercepts pointer
@@ -356,6 +387,7 @@ export function BoardButtonVisual(props: BoardButtonVisualProps) {
   return (
     <ShapedButton
       cornerSpace={cornerSpace}
+      cornerBadges={cornerBadges}
       background={background}
       className={className}
       style={{ padding: 5 }}

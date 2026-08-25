@@ -42,6 +42,8 @@ export interface GlyphProps {
   fallback?: string;
   /** Suppress the colored tone background — for use inside an outer button shell. */
   noBackground?: boolean;
+  /** "none" suppresses the inline corner marks; the BUTTON draws them itself. */
+  badges?: "inline" | "none";
   /** Optional explicit pixel/percent size; otherwise fills container. */
   width?: number | string;
   height?: number | string;
@@ -84,6 +86,7 @@ export function Glyph(props: GlyphProps) {
       rtl={rtl}
       resolveImage={defaultImageResolver}
       noBackground={props.noBackground}
+      badges={props.badges}
       width={props.width}
       height={props.height}
       ariaLabel={props.ariaLabel}

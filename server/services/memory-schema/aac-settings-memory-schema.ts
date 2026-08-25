@@ -45,6 +45,7 @@ import type { AccessCtx } from "../sharing/visibility";
 import { normalizeAacPromptList } from "./aac-memory-schema";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
 import { coerceSeizureConfig, type SeizureConfig } from "@shared/aac/seizure-config";
+import { coerceSeizureMarkers, kindTakesSide } from "@shared/aac/seizure-markers";
 
 // ============================================================================
 // DB HELPERS
@@ -167,7 +168,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
     "aiVoicePitch", "studentVoicePitch", "useLocalTts",
     "elevenlabsEnabled", "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId",
     "iconTextRatio", "languageLevel", "usePcsSymbols", "singleGlyphButtons",
-    "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols", "dynamicBoardsEnabled",
+    "dynamicBoardsEnabled",
     "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "selectionMethod", "restSpace",
     "pressResponseDelay", "interruptOnNewPress",
     "signLanguage", "multiCameraMode",
@@ -204,7 +205,18 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
       .where(eq(aacSettings.studentId, studentId));
     const existing = (row?.sd as any) ?? {};
     const incoming = filtered.seizureDetection as any;
-    filtered.seizureDetection = { ...existing, config: coerceSeizureConfig(incoming?.config ?? incoming) };
+    const incomingConfig = incoming?.config ?? incoming;
+    const merged = coerceSeizureConfig(incomingConfig);
+    // Markers are clinician-authored in the settings panel and are NOT part of
+    // what the assistant edits here. coerceSeizureConfig would turn their
+    // absence into an empty list, so an assistant nudging a sensitivity dial
+    // would silently delete the per-student seizure signs — the one setting in
+    // this column that a person wrote by hand about a specific child. Carry
+    // them forward unless the caller explicitly supplied a replacement array.
+    if (!Array.isArray(incomingConfig?.markers)) {
+      merged.markers = coerceSeizureMarkers(existing?.config?.markers);
+    }
+    filtered.seizureDetection = { ...existing, config: merged };
   }
 
   if (Object.keys(filtered).length === 0) return updates;
@@ -322,6 +334,34 @@ async function writeSocialTrainerConfig(ctx: DBOperationContext, incoming: any):
  *  coerced to a complete shape for display/edit by the assistant. */
 export function readSeizureConfig(settings: Record<string, any> | null): SeizureConfig {
   return coerceSeizureConfig((settings?.seizureDetection as any)?.config);
+}
+
+/**
+ * The seizure config as the ASSISTANT sees it: the dials as-is, plus the
+ * per-student markers flattened to a readable sentence each.
+ *
+ * Markers are shown but not writable here. They are the one thing in this
+ * column that a clinician wrote by hand about one specific child ("she holds
+ * her left arm up"), and getting the side wrong points the detector at the
+ * wrong arm — so they are authored in the AAC settings panel, where the person
+ * who knows the student is looking at a side picker rather than dictating.
+ */
+export function readSeizureConfigForAgent(settings: Record<string, any> | null): Record<string, any> {
+  const cfg = readSeizureConfig(settings);
+  return {
+    enabled: cfg.enabled,
+    rhythmic: cfg.rhythmic,
+    atonic: cfg.atonic,
+    audioCorroboration: cfg.audioCorroboration,
+    markers: cfg.markers.length
+      ? cfg.markers
+          .map(m => {
+            const side = kindTakesSide(m.cue.kind) ? ` (${(m.cue as { side?: string }).side ?? "either"} side)` : "";
+            return `"${m.label}" — ${m.cue.kind}${side}, ${m.weight}`;
+          })
+          .join("; ")
+      : "none configured",
+  };
 }
 
 // ============================================================================
@@ -544,24 +584,6 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       title: "Single-Glyph Buttons",
       description: "Constrain AI-generated buttons to a single GLYPH each (modifiers still allowed). Sentence builder and interpret() path are unaffected. (true/false)",
     },
-    generateSymbols: {
-      id: "generateSymbols",
-      type: "string",
-      title: "Generate Symbols",
-      description: "Auto-generate symbol images via Gemini (true/false)",
-    },
-    useApprovedSymbols: {
-      id: "useApprovedSymbols",
-      type: "string",
-      title: "Use Approved Symbols",
-      description: "Show clinician-approved generated symbols on buttons (true/false)",
-    },
-    useUnapprovedSymbols: {
-      id: "useUnapprovedSymbols",
-      type: "string",
-      title: "Use Unapproved Symbols",
-      description: "Also show newly generated (unapproved) symbols (true/false)",
-    },
     dynamicBoardsEnabled: {
       id: "dynamicBoardsEnabled",
       type: "string",
@@ -753,6 +775,14 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
           title: "Audio corroboration",
           description: "Let a concurrent vocalization/sound raise concern for a motion the detector already flagged (true/false). Never alarms on its own.",
         },
+        markers: {
+          id: "markers",
+          type: "string",
+          title: "This student's own seizure signs (read-only here)",
+          description:
+            "READ-ONLY summary of the per-student motor markers a clinician recorded — the specific things THIS student does when they seize (e.g. \"holds her left arm up\"). They exist because the generic detector needs both sides of the body to move together, so a one-sided or held-posture presentation can never trip it at any sensitivity. " +
+            "You cannot edit these here: getting the side wrong aims the detector at the wrong arm, so they are set in the AAC settings panel by the person who knows the student. If a caretaker describes a new sign, tell them where to add it rather than trying to write it.",
+        },
       },
     },
   },
@@ -783,7 +813,7 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       exposed.socialTrainer = readSocialTrainerConfig(settings);
       // Replace the raw seizureDetection column ({config, baseline}) with just the
       // clinician-editable config — the machine baseline is never shown/edited.
-      exposed.seizureDetection = readSeizureConfig(settings);
+      exposed.seizureDetection = readSeizureConfigForAgent(settings);
       return exposed;
     },
     write: async (ctx, value) => {

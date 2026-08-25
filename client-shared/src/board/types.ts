@@ -41,6 +41,10 @@ export interface BoardButtonInput {
   symbolPath?: string;
   imageKey?: string;
   buttonType?: string;
+  /** Conversational role. "bid" (a question or request that hands the turn
+   *  back) is the third and last fill a board carries, after yes-green and
+   *  no-red — see `resolveButtonColorToken`. */
+  role?: string;
   action?: {
     type?: string;
     toPageId?: string;
@@ -55,6 +59,9 @@ export interface GlyphRenderProps {
   glyph?: string;
   fallback?: string;
   noBackground?: boolean;
+  /** "none" suppresses the compositor's inline corner marks — a BUTTON draws
+   *  them at its own corners instead (see BoardButtonVisual). */
+  badges?: "inline" | "none";
   ariaLabel?: string;
 }
 
@@ -70,7 +77,7 @@ export interface BoardRenderDeps {
   GlyphComponent: ComponentType<GlyphRenderProps>;
   /**
    * Override how a button's background hex is computed. Defaults to
-   * `resolveButtonBackground(color, glyph, buttonType)` from @shared/button-color
+   * `resolveButtonBackground(color, glyph, buttonType, role)` from @shared/button-color
    * (which doubles as the pre-server-fill fallback). Most clients can omit this.
    */
   resolveColor?: (button: BoardButtonInput) => string;

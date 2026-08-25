@@ -259,9 +259,13 @@ function getEmojiForLabel(label: string): string {
 }
 
 // Background-color resolver — defers to the shared SentenceButton helper
-// so the yes/no auto-coloring applies uniformly across surfaces.
-function getButtonColor(color?: string, glyph?: string): string {
-  return resolveButtonBackground(color, glyph);
+// so the auto-coloring applies uniformly across surfaces.
+//
+// `role` is normally already baked into `color` by the server, so this is the
+// fallback path for stored / pre-fill boards. Passing it anyway keeps the
+// client from silently disagreeing with the server about a button's fill.
+function getButtonColor(color?: string, glyph?: string, role?: string): string {
+  return resolveButtonBackground(color, glyph, undefined, role);
 }
 
 export default function DynamicBoard({
@@ -753,7 +757,7 @@ export default function DynamicBoard({
           as="div"
           key={`fading-${button.label}-${index}`}
           cornerSpace={cornerSpace}
-          background={getButtonColor(button.color, button.glyph)}
+          background={getButtonColor(button.color, button.glyph, (button as any).role)}
           className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden relative"
           style={{ padding: 5 }}
           motionProps={{
@@ -814,7 +818,7 @@ export default function DynamicBoard({
         <ShapedButton
           key={`btn-practice-${index}`}
           cornerSpace={cornerSpace}
-          background={getButtonColor(button.color, button.glyph)}
+          background={getButtonColor(button.color, button.glyph, (button as any).role)}
           className="flex flex-col items-center justify-center rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 min-h-0 min-w-0 overflow-hidden relative"
           style={{ padding: 5 }}
           onClick={() => { if (!disabled) handleButtonClick(button); }}
@@ -941,7 +945,7 @@ export default function DynamicBoard({
         <ShapedButton
           key={`btn-${button.label}-${index}`}
           cornerSpace={cornerSpace}
-          background={getButtonColor(button.color, button.glyph)}
+          background={getButtonColor(button.color, button.glyph, (button as any).role)}
           className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
           style={{ padding: 5 }}
           onClick={() => handleButtonClick(button)}

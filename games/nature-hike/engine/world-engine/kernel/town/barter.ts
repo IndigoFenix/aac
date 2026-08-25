@@ -1006,7 +1006,7 @@ export function condenseTown(input: CondenseTownInput): TownRecord {
  *
  * ONE PREDICATE, TWO CODECS. The town's is the case the finding named, but the
  * fact is about the LEG and the SCOPE it is booked against, not about towns:
- * the region shed's own draw legs (wild-area.ts, F5's other half) are serviced
+ * the region source's own draw legs (wild-area.ts, F5's other half) are serviced
  * by exactly the same arm on exactly the same terms, so `WILD_AREA_CODEC`
  * shares this predicate rather than growing a second copy of it.
  */

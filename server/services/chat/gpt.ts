@@ -181,9 +181,11 @@ export class GPT {
   promptTokens: number;
   completionTokens: number;
   model: string;
-  providerConfig?: { provider: LLMProviderKey; model: string };
+  providerConfig?: { provider: LLMProviderKey; model: string; background?: boolean };
 
-  constructor(providerConfig?: { provider: LLMProviderKey; model: string }) {
+  /** `background: true` marks every call from this instance as work nobody is
+   *  waiting on a screen for — see `StructuredRequest.background`. */
+  constructor(providerConfig?: { provider: LLMProviderKey; model: string; background?: boolean }) {
     this.lastPrompt = "";
     this.promptTokens = 0;
     this.completionTokens = 0;
@@ -239,6 +241,7 @@ export class GPT {
       useSearch,
       searchContextSize,
       vectorStoreId,
+      ...(this.providerConfig?.background ? { background: true } : {}),
     });
   }
 

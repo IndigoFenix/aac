@@ -249,6 +249,8 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     }
     if (!response) {
       response = await provider.structuredComplete({
+        // Background: a summary written after the session; nobody is on a screen.
+        background: true,
         model: cfg.model,
         input: [{ type: "message", role: "user", content: userContent }],
         instructions: baseInstructions.join("\n"),

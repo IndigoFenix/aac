@@ -23,12 +23,18 @@ const PRERENDERED_LOCALES = new Set([
  *
  *  - GET /{locale} or /{locale}/ serves the prerendered landing HTML for that
  *    locale (when it exists). Everything else falls through to the SPA.
+ *  - GET /en 301s to /, which is where English is served. Answering both would
+ *    put the same page on two indexable URLs.
  *  - Static assets (JS/CSS/images, sitemap.xml, robots.txt) are served as
  *    normal files via express.static.
  *  - All other paths fall through to the SPA's root index.html for client-side
  *    routing.
  */
 export function serveStaticWithLocaleLanding(app: Express, distPath: string): void {
+  app.get(/^\/en\/?$/, (_req, res) => {
+    res.redirect(301, "/");
+  });
+
   app.get(/^\/([a-z]{2,3})\/?$/, (req, res, next) => {
     const code = req.params[0];
     if (!PRERENDERED_LOCALES.has(code)) return next();

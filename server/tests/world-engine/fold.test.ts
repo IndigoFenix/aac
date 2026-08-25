@@ -1124,7 +1124,7 @@ describe("F5 — F-④'s serviceability split: promises the closed form CAN keep
     const refused = condense<WildAreaRecord>(area, ctx([area, "wild:oak_3"]));
     if (!isFoldRefusal(refused)) throw new Error("expected a refusal");
     expect(refused.blockers).toEqual([tree.id]);
-    // The AREA's own draw leg survives: the shed goes on yielding into it.
+    // The AREA's own draw leg survives: the source goes on yielding into it.
     const rec = condense<WildAreaRecord>(area, ctx([area]));
     if (isFoldRefusal(rec)) throw rec;
     expect(rec.serviced?.map((c) => c.id)).toEqual([draw.id]);

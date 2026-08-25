@@ -63,6 +63,23 @@ export interface GlyphCompositorProps {
   activeSlot?: number | null;
   /** Suppress the colored tone background (for use inside an outer button shell). */
   noBackground?: boolean;
+  /**
+   * Where the GLYPH MARK badges (`?`, `!`, the request arc, the tense arrow)
+   * are drawn.
+   *
+   * "inline" (default) puts them in this SVG's own corners — right for a
+   * STANDALONE glyph, where the SVG is the whole thing (the world-engine's
+   * baked symbols, a bare glyph in a bubble).
+   *
+   * "none" suppresses them, for a glyph living inside a BUTTON. The SVG
+   * letterboxes inside its container (`preserveAspectRatio="xMidYMid meet"`),
+   * so a 3-slot sentence in a squarish cell leaves deep empty bands and an
+   * inline badge drew a third of the way down the button rather than at its
+   * corner — badges "always looked like they were in the wrong place", worse
+   * the longer the sentence. A button therefore suppresses these and draws the
+   * badges itself, at its OWN corners, via ShapedButton's `cornerBadges`.
+   */
+  badges?: "inline" | "none";
   /** Optional accessible label override; otherwise built from slot keys. */
   ariaLabel?: string;
   /** Click handler that fires with the slot index that was tapped (or null for outside-any-slot). */
@@ -114,6 +131,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     resolveImage,
     activeSlot = null,
     noBackground = false,
+    badges = "inline",
     ariaLabel,
     onSlotPress,
     onImageError,
@@ -229,8 +247,8 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
         );
       })}
 
-      {/* Prosody corner badge (? / ! / both) — top-right in LTR. */}
-      {parsed.toneTags.some((t) => t === "question" || t === "exclamation") && (
+      {/* Prosody corner badge (? / ! / arc) — top-right in LTR. */}
+      {badges === "inline" && hasProsodyMark(parsed.toneTags) && (
         <ToneCornerBadge
           tags={parsed.toneTags}
           x={layout.cornerBadge.x}
@@ -239,7 +257,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
         />
       )}
       {/* Tense corner badge (past / future) — top-left in LTR. */}
-      {parsed.toneTags.some((t) => t === "past" || t === "future") && (
+      {badges === "inline" && hasTenseMark(parsed.toneTags) && (
         <TenseCornerBadge
           tags={parsed.toneTags}
           x={layout.tenseBadge.x}
@@ -1504,6 +1522,55 @@ function PolarityMark(props: PolarityMarkProps): React.ReactElement {
 // Tone corner badge
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Does this tag set draw a prosody mark (`?` / `!` / the request arc)?
+ * Exported so a BUTTON can ask before reserving a corner for one.
+ */
+export function hasProsodyMark(tags: ToneTag[]): boolean {
+  return tags.some((t) => t === "question" || t === "exclamation" || t === "request");
+}
+
+/** Does this tag set draw a tense mark (the past / future arrow)? */
+export function hasTenseMark(tags: ToneTag[]): boolean {
+  return tags.some((t) => t === "past" || t === "future");
+}
+
+/**
+ * The prosody mark as a STANDALONE element, sized in px — the form a button
+ * uses to draw the badge at its own corner (see `badges: "none"`). Same
+ * drawing as the inline badge, so the two can never diverge.
+ */
+export function ProsodyMarkBadge(props: { tags: ToneTag[]; size: number }): React.ReactElement {
+  const { tags, size } = props;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      aria-hidden="true"
+      style={{ display: "block", overflow: "visible" }}
+    >
+      <ToneCornerBadge tags={tags} x={0} y={0} size={size} />
+    </svg>
+  );
+}
+
+/** The tense mark as a standalone element. Counterpart to {@link ProsodyMarkBadge}. */
+export function TenseMarkBadge(props: { tags: ToneTag[]; size: number; rtl?: boolean }): React.ReactElement {
+  const { tags, size, rtl = false } = props;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      aria-hidden="true"
+      style={{ display: "block", overflow: "visible" }}
+    >
+      <TenseCornerBadge tags={tags} x={0} y={0} size={size} rtl={rtl} />
+    </svg>
+  );
+}
+
 interface ToneCornerBadgeProps {
   tags: ToneTag[];
   x: number;
@@ -1511,12 +1578,69 @@ interface ToneCornerBadgeProps {
   size: number;
 }
 
+/** Ink for the request ARC MARK — the Word Finder / meta violet, one step
+ *  darker so a stroke-only badge still carries against a pale button face. */
+const REQUEST_MARK_INK = "#6D28D9";
+
 function ToneCornerBadge(props: ToneCornerBadgeProps): React.ReactElement {
   const { tags, x, y, size } = props;
   const hasQuestion = tags.includes("question");
   const hasExclamation = tags.includes("exclamation");
-  const label = hasQuestion && hasExclamation ? "?!" : hasQuestion ? "?" : "!";
-  const fill = hasQuestion ? "#7C3AED" : "#DC2626";
+  const hasRequest = tags.includes("request");
+
+  // A question or an exclamation OUTRANKS the request mark. Both are rarer and
+  // both are already learned, and "can I have water?" is legitimately drawn as
+  // a question — the arc is the mark for a directive that has no other mark,
+  // not a second badge to stack on one that does.
+  if (hasQuestion || hasExclamation) {
+    const label = hasQuestion && hasExclamation ? "?!" : hasQuestion ? "?" : "!";
+    const fill = hasQuestion ? "#7C3AED" : "#DC2626";
+    return (
+      <g>
+        <rect
+          x={x}
+          y={y}
+          width={size}
+          height={size}
+          rx={4}
+          ry={4}
+          fill={fill}
+        />
+        <text
+          x={x + size / 2}
+          y={y + size / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={size * 0.7}
+          fontWeight={700}
+          fill="white"
+        >
+          {label}
+        </text>
+      </g>
+    );
+  }
+
+  // THE ARC MARK (request / direct).
+  //
+  // Drawn as a path, not the `‿` character: at 24px a text arc is too short
+  // and too font-dependent to identify, which is the whole difficulty with the
+  // mark. The path spans 68% of the badge width with round caps, so the arc is
+  // as wide as the badge can carry and reads as a deliberate bowl rather than
+  // a stray dot. Mirror-invariant by construction — the control point sits on
+  // the badge's vertical centreline, so an RTL flip leaves it identical.
+  //
+  // The plate is PALE rather than saturated: requests are the default mode of
+  // an AAC board, so this mark rides most buttons and must stay quiet where `?`
+  // can afford to shout. It is not dropped entirely, though — a bare stroke
+  // over arbitrary symbol artwork has no contrast guarantee, and a mark that
+  // disappears against half the vocabulary teaches nothing.
+  // See the ToneTag doc in glyph-compositor.ts.
+  const inset = size * 0.13;
+  const left = x + inset;
+  const right = x + size - inset;
+  const top = y + size * 0.32;
+  const bottom = y + size * 0.72;
   return (
     <g>
       <rect
@@ -1526,19 +1650,19 @@ function ToneCornerBadge(props: ToneCornerBadgeProps): React.ReactElement {
         height={size}
         rx={4}
         ry={4}
-        fill={fill}
+        fill="#FFFFFF"
+        fillOpacity={0.85}
+        stroke={REQUEST_MARK_INK}
+        strokeOpacity={0.35}
+        strokeWidth={1}
       />
-      <text
-        x={x + size / 2}
-        y={y + size / 2}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={size * 0.7}
-        fontWeight={700}
-        fill="white"
-      >
-        {label}
-      </text>
+      <path
+        d={`M ${left} ${top} Q ${x + size / 2} ${bottom + (bottom - top) * 0.7} ${right} ${top}`}
+        fill="none"
+        stroke={REQUEST_MARK_INK}
+        strokeWidth={Math.max(2, size * 0.15)}
+        strokeLinecap="round"
+      />
     </g>
   );
 }

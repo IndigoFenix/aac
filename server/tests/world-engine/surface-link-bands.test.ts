@@ -288,7 +288,12 @@ describe("company and beneficiary — the readings the trade rule must not break
     const k = syms(["you", "eat", "with"]);
     expect(k[0]).toBe("mara");
     expect(k.indexOf("mara")).toBeLessThan(k.indexOf("bread"));
-    expect(k.indexOf("ball")).toBeLessThan(k.indexOf("bread")); // plain rank order — no food boost
+    // No food boost — asserted on the WEIGHTS, since the vocabulary's own order
+    // (2026-08-24) legitimately ranks bread over ball and a position test can no
+    // longer tell "not boosted" from "ordinary rank".
+    const b = board(["you", "eat", "with"]).buttons;
+    const w = (sym: string) => b.find((x) => x.symbol === sym)!.weight;
+    expect(w("bread")).toBe(w("ball"));
   });
 
   it("`get + apple + for` is a BENEFICIARY: the person still leads", () => {
@@ -327,7 +332,11 @@ describe("sit / sleep / rest — the station is the argument", () => {
     for (const verb of ["sit", "sleep", "rest"]) {
       const s = surfaceNext(["you", verb], ctx());
       expect({ verb, subTab: s.subTab }).toEqual({ verb, subTab: "furniture" });
-      expect({ verb, first: s.buttons[0]?.symbol }).toEqual({ verb, first: "bed" });
+      // WHICH station is the verb's own business (CONTEXT_PRIORITY, 2026-08-24):
+      // you sit on a chair and sleep in a bed. The vocabulary's global order
+      // ranks the chair first and would otherwise answer "sleep" with it.
+      const want = verb === "sit" ? "chair" : "bed";
+      expect({ verb, first: s.buttons[0]?.symbol }).toEqual({ verb, first: want });
     }
   });
 

@@ -188,6 +188,13 @@ export interface ContainerRecord {
   at?: number;
   /** mount:"worn" — the creature wearing it (mirrors `wornBagIndex`). */
   wearer?: string;
+  /** mount:"loose", containedIn set — the prop is a MIRROR: a visible shell
+   *  of ONE unit that is banked on the CONTAINING box's stack (a table
+   *  rendering its contents). The loose census must skip it or that unit
+   *  counts twice; a prop stowed as a WHOLE object (a full basket in a
+   *  crate) carries no flag and counts as itself. `setLooseProp` clears it —
+   *  re-registering IS the conversion back into a real thing. */
+  mirror?: boolean;
 }
 
 /** The narrow structural slice of `QuestSession` these helpers need — a
@@ -352,6 +359,7 @@ export function setLooseProp(
   rec.glyph = fields.glyph;
   if (fields.at !== undefined) rec.at = fields.at;
   else delete rec.at;
+  delete rec.mirror; // a fresh loose registration is a REAL prop, not a shell
   return rec;
 }
 
@@ -369,6 +377,7 @@ export function clearLooseProp(registry: ContainerRegistry, id: string): void {
     rec.mount = "standing";
     delete rec.entityId;
     delete rec.at;
+    delete rec.mirror; // the shell aspect dies with the loose aspect
   }
 }
 

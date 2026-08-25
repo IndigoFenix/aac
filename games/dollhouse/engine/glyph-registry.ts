@@ -891,6 +891,25 @@ const VOCAB: VocabularyItem[] = [
   { key: "meat", tKey: "aac.glyph.meat", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🥩" },
 
+  // Restaurant food TYPES, for the venue browse grid (shared/venue-cuisine.ts).
+  // `categories: []` on purpose: these are art + a translated label, NOT
+  // sentence-builder vocabulary. Putting them in the `what` food tab would add
+  // five buttons to a tab whose contents are a curated set, and that is a
+  // separate call from "a child should be able to ask for a burger place".
+  // Registered here rather than carried as loose strings in the browse table so
+  // the word for "burger" is defined once, with one picture, like every other
+  // word the student meets.
+  { key: "burger", tKey: "aac.glyph.burger", pos: "noun", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🍔" },
+  { key: "chicken", tKey: "aac.glyph.chicken", pos: "noun", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🍗" },
+  { key: "falafel", tKey: "aac.glyph.falafel", pos: "noun", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🧆" },
+  { key: "noodles", tKey: "aac.glyph.noodles", pos: "noun", categories: [],
+    modeChips: {}, tone: "comment", emoji: "🍜" },
+  { key: "coffee", tKey: "aac.glyph.coffee", pos: "noun", categories: [],
+    modeChips: {}, tone: "comment", emoji: "☕" },
+
   // ── Drink ────────────────────────────────────────────────────────────────
   { key: "milk", tKey: "aac.glyph.milk", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "drink"] }, tone: "comment", emoji: "🥛" },

@@ -24,7 +24,7 @@ import {
   type Ref,
 } from "react";
 import { motion } from "framer-motion";
-import { cornerCutPath, cornerInset } from "@shared/button-shape";
+import { cornerCutPath, cornerInset, type CornerSkip } from "@shared/button-shape";
 
 /** How much of the button's smaller side to bite out, and the grid gap to
  *  centre the cut circles in. `ratio` 0 disables shaping entirely. */
@@ -51,6 +51,21 @@ interface Props {
   ariaLabel?: string;
   motionProps?: Record<string, unknown>;
   domProps?: Record<string, unknown>;
+  /**
+   * GLYPH MARK badges drawn at the button's OWN top corners, each suppressing
+   * that corner's bite.
+   *
+   * A badge has to sit at the true corner to read as a corner mark, and the
+   * interior of a board button is already cramped — squeezing the badge inboard
+   * of the cut just crowds the artwork. So the badge takes the corner and the
+   * bite gives way. The vertex disc loses a quadrant where this happens (user
+   * call, 2026-08-24); badges only ever take TOP corners, so enough of the
+   * circle survives to rest a gaze on.
+   *
+   * Sides are PHYSICAL, not logical — the caller has already resolved RTL when
+   * deciding which mark goes where.
+   */
+  cornerBadges?: { topLeft?: (size: number) => ReactNode; topRight?: (size: number) => ReactNode } | null;
 }
 
 /**
@@ -121,6 +136,7 @@ export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton
   ariaLabel,
   motionProps,
   domProps,
+  cornerBadges,
 }: Props, forwardedRef) {
   const wants = !!cornerSpace && cornerSpace.ratio > 0;
   const { ref, box, stroke } = useBorderBox(wants);
@@ -134,8 +150,19 @@ export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton
   const offset = shaped ? cornerSpace!.gapPx / 2 : 0;
   // The outline in the element's own border-box coordinates. Used BOTH to clip
   // the element and to draw it, so what you can hit is exactly what you see.
-  const outline = shaped ? cornerCutPath({ w: box!.w, h: box!.h, radius, offset }) : "";
+  // A badge takes its corner whole, so that corner keeps its right angle.
+  const skip: CornerSkip = {
+    topLeft: !!cornerBadges?.topLeft,
+    topRight: !!cornerBadges?.topRight,
+  };
+  const anySkip = !!(skip.topLeft || skip.topRight);
+  const outline = shaped ? cornerCutPath({ w: box!.w, h: box!.h, radius, offset, skip }) : "";
   const inset = shaped ? cornerInset(radius, offset) : 0;
+  // The badge is sized off the cut it replaces, so it reads as filling the
+  // space the bite would have taken rather than as an arbitrary sticker. Held
+  // to a legible floor for small buttons and a ceiling so it can never
+  // dominate a large one.
+  const badgePx = shaped ? Math.max(18, Math.min(inset * 1.15, Math.min(box!.w, box!.h) * 0.26)) : 22;
 
   const surfaceStyle: CSSProperties = shaped
     ? {
@@ -155,6 +182,21 @@ export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton
         // have no background at all until a hover re-applied `scale` and
         // recreated the context.
         isolation: "isolate",
+        // A BADGE-BEARING BUTTON PAINTS ABOVE THE REST-SPACE DOTS.
+        //
+        // `CornerVoids` (DynamicBoard) renders the vertex dots as SIBLINGS of
+        // the cells and AFTER them, so with everything at `z-index: auto` the
+        // dots win on DOM order. That normally costs nothing — the dot fits
+        // inside the union of the four bites, so no button overlaps it. But a
+        // badge corner has no bite: the badge sits exactly where the dot is,
+        // and the dot covered it.
+        //
+        // Raising the badge child cannot fix this. `isolation: isolate` above
+        // makes this button a stacking context, so the badge's own z-index is
+        // sealed inside it; only the BUTTON's position among its siblings can
+        // lift it. Applied only when a badge is present, so an ordinary cell
+        // keeps its old stacking exactly.
+        ...(anySkip ? { zIndex: 1 } : {}),
         // OFF THE BUTTON IS COMPLETELY OFF THE BUTTON. Without this the cut is
         // only a picture: the element's layout box stays rectangular, so a
         // click in the corner still activates it and framer's hover still
@@ -206,7 +248,15 @@ export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton
 
   // Published for the gaze hit-test: the LAYOUT box stays rectangular however
   // the surface is drawn, so the corner cuts have to be excluded explicitly.
-  const cutAttr = shaped ? { "data-corner-cut": `${radius.toFixed(2)},${offset.toFixed(2)}` } : {};
+  // A skipped corner is SOLID surface, so it must not read as void to a gaze —
+  // the flags ride along in the same attribute (`radius,offset[,skipTL,skipTR]`).
+  const cutAttr = shaped
+    ? {
+        "data-corner-cut": anySkip
+          ? `${radius.toFixed(2)},${offset.toFixed(2)},${skip.topLeft ? 1 : 0},${skip.topRight ? 1 : 0}`
+          : `${radius.toFixed(2)},${offset.toFixed(2)}`,
+      }
+    : {};
 
   const common = {
     className: className + (shaped ? " !rounded-none" : ""),
@@ -220,11 +270,40 @@ export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton
   // depends on this measurement landing, and a ref that silently fails to
   // attach degrades to the plain CSS box — the exact failure that is hardest
   // to notice, because it looks like the feature simply isn't switched on.
+  // Above the content, and pointer-transparent.
+  //
+  // Deliberately NOT `data-dwell-void`: we suppressed the bite so this corner
+  // is solid, selectable button, and marking it void would turn the corner we
+  // just reclaimed into a dead zone. `pointerEvents: "none"` keeps the badge
+  // out of `elementFromPoint` entirely, so both mouse and gaze land on the
+  // button underneath — the mark is decoration over a live target.
+  const badgeLayer = cornerBadges && (cornerBadges.topLeft || cornerBadges.topRight) ? (
+    <>
+      {cornerBadges.topLeft && (
+        <span
+          aria-hidden="true"
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 2, lineHeight: 0 }}
+        >
+          {cornerBadges.topLeft(badgePx)}
+        </span>
+      )}
+      {cornerBadges.topRight && (
+        <span
+          aria-hidden="true"
+          style={{ position: "absolute", top: 0, right: 0, pointerEvents: "none", zIndex: 2, lineHeight: 0 }}
+        >
+          {cornerBadges.topRight(badgePx)}
+        </span>
+      )}
+    </>
+  ) : null;
+
   if (as === "div") {
     return (
       <motion.div ref={setRefs as never} {...common}>
         {surface}
         {children}
+        {badgeLayer}
       </motion.div>
     );
   }
@@ -232,6 +311,7 @@ export const ShapedButton = forwardRef<HTMLElement, Props>(function ShapedButton
     <motion.button ref={setRefs as never} {...common} onClick={onClick} aria-label={ariaLabel}>
       {surface}
       {children}
+      {badgeLayer}
     </motion.button>
   );
 });

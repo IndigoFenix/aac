@@ -58,7 +58,7 @@ import {
   type FoldCodec, type FoldCtx, type FoldRecord, type FoldRefusal,
 } from "../../kernel/town/fold.js";
 // ⚖️ F5 — the draw runs on the ONE take primitive every other endpoint uses
-// (head-matched, facted variants in stable order), and the shed answers as an
+// (head-matched, facted variants in stable order), and the source answers as an
 // ordinary `StockEndpoint` so a leg to it needs no second execution path.
 import { stackHead, takeStock, type StockEndpoint } from "../../kernel/town/transfer.js";
 // ⚖️ F5 — ONE serviceability predicate for standing legs, shared with the town
@@ -205,7 +205,7 @@ export function wildDrawSectorOf(dx: number, dy: number): number {
  *
  *   · `condenseWildArea` INFERS one from the depletion it finds standing (a
  *     source that has lost units is a source somebody walked to);
- *   · `drawWildArea` BOOKS one it was told (a shed draw knows exactly who came
+ *   · `drawWildArea` BOOKS one it was told (a source draw knows exactly who came
  *     for it and from where).
  *
  * Weight is UNITS TAKEN either way, and the vector is from the area's CENTRE
@@ -559,18 +559,18 @@ export function advanceWildArea(
   return { ...rec, at: now, stands };
 }
 
-// ── ⚖️ F5 — THE DRAW: a shed yields without standing up ───────────────────
+// ── ⚖️ F5 — THE DRAW: a source yields without standing up ─────────────────
 //
-// (fold-round.md stage F5, REGION REACH: *"the offloaded wild/regional shed
+// (fold-round.md stage F5, REGION REACH: *"the offloaded wild/regional source
 // becomes a trade endpoint through the same condensed-partner seam — a town
 // draws on the region exactly as it trades with a stub town, price and legs
 // included."*)
 //
 // A condensed TOWN's shelf is topped up by a MINT — closed-form production
-// nobody is simulating (`stockAbstractPartner`, F-③'s integral). A shed's is
+// nobody is simulating (`stockAbstractPartner`, F-③'s integral). A source's is
 // not: the units are already in the record, standing in real stands, and a
 // draw MOVES them. That is the whole difference between a fiction and a
-// record, and it is why this is the one thing the shed needs that a stub town
+// record, and it is why this is the one thing the source needs that a stub town
 // does not — everything else (the endpoint, the priced leg, the scheduled
 // agreement) is the partner seam unchanged.
 
@@ -644,7 +644,7 @@ function fellSource(st: WildStand, src: NaturalSource, cls: number): Record<stri
   return out;
 }
 
-/** What a draw asks the shed for. */
+/** What a draw asks the source for. */
 export interface WildDrawInput {
   /** The good wanted — HEAD-matched, `takeStock`'s own rule (`wood` draws
    *  `wood.wet` too). */
@@ -672,12 +672,12 @@ export interface WildDrawResult {
 }
 
 /**
- * ⚖️ DRAW FROM AN OFFLOADED STAND — the shed's harvest, in closed form.
+ * ⚖️ DRAW FROM AN OFFLOADED STAND — the source's harvest, in closed form.
  *
  * The units come OUT of the record (they were always there), the stand's
  * population follows where the good is a kill product, and the
  * harvest-DIRECTION histogram books the draw against the sector the drawer
- * came from — the same `addWildDraw` the fold's own inference uses, so a shed
+ * came from — the same `addWildDraw` the fold's own inference uses, so a source
  * that has been sold from re-expands thinner on the side that bought.
  *
  * Deterministic and pure. Stands are visited in record order; a stand that
@@ -760,31 +760,35 @@ export function drawWildArea(rec: WildAreaRecord, input: WildDrawInput): WildDra
   return { rec: { ...rec, at: input.now ?? rec.at, stands, draw }, taken };
 }
 
-// ── ⚖️ F5 — THE SHED AS A TRADE ENDPOINT (one-way) ────────────────────────
+// ── ⚖️ F5 — THE SOURCE AS A TRADE ENDPOINT (one-way) ──────────────────────
 
-/** Where the shed stands: its own ground's centre, and the point a road to it
+/** Where the source stands: its own ground's centre, and the point a road to it
  *  is measured to. */
 export function wildAreaCenter(rec: WildAreaRecord): { x: number; y: number } {
   return { x: rec.area.x + rec.area.w / 2, y: rec.area.y + rec.area.h / 2 };
 }
 
 /**
- * A SHED, READ AS A PARTNER — everything the trade tier asks a condensed
+ * A SOURCE, READ AS A PARTNER — everything the trade tier asks a condensed
  * partner (`TownRecord`'s own list: what it has, where it is, how long the
  * road is), off the wild record instead of a town's. Deliberately the same
  * SHAPE and deliberately NOT the same type: a town is a party with needs that
  * trades both ways, and a forest is a source.
+ *
+ * ⚖️ "Source" — like "catchment" — names a ROLE, not an object type: the same
+ * object may be both, depending on circumstance (a depot is at once the place
+ * the harvest is stored locally AND the source it is distributed from).
  */
-export interface WildShedPartner {
+export interface WildSourcePartner {
   /** The area key (`wild:area:<key>`'s tail). */
   key: string;
   /**
-   * ⚖️ THE ENDPOINT ITS GOODS SIT AT — the shed's own scope id, and NEVER a
+   * ⚖️ THE ENDPOINT ITS GOODS SIT AT — the source's own scope id, and NEVER a
    * `town:` one. That single choice is what makes the one-way law STRUCTURAL
    * instead of a convention: `scopeReceivesGoods` reads FALSE off a `wild:` id
    * everywhere and forever (scope.ts: *"a shelf receives, a source only
-   * yields"* — and its own doc already names "an offloaded region shed" as the
-   * case), so no reader has to remember that this partner is special.
+   * yields"* — and its own doc already names "an offloaded region source" as
+   * the case), so no reader has to remember that this partner is special.
    */
   id: ScopeId;
   /** Where it stands (the record's ground, centre). */
@@ -800,10 +804,10 @@ export interface WildShedPartner {
 }
 
 /** Read a folded area as a trade partner, from the drawing town's place. */
-export function wildShedPartner(
+export function wildSourcePartner(
   rec: WildAreaRecord,
   from?: { x: number; y: number } | null,
-): WildShedPartner {
+): WildSourcePartner {
   const at = wildAreaCenter(rec);
   return {
     key: rec.key,
@@ -815,15 +819,15 @@ export function wildShedPartner(
 }
 
 /**
- * ⚖️ A SHED YIELDS AND NEVER RECEIVES — the capacity is ZERO, deliberately.
+ * ⚖️ A SOURCE YIELDS AND NEVER RECEIVES — the capacity is ZERO, deliberately.
  *
  * `putStock` finds no room for a single unit, so `transferStock` hands every
- * unit straight back to the source: a sell-to-shed leg cannot move goods even
+ * unit straight back to the sender: a sell-to-source leg cannot move goods even
  * if one were somehow posted, and nothing is lost in the attempt (which is the
  * conservation law's own requirement of a refusal). Drawing is unaffected —
  * taking reads the stack and never the capacity.
  *
- * `shelf` is the shed's BOUNDARY SHELF, the live map a draw lands in and a leg
+ * `shelf` is the source's BOUNDARY SHELF, the live map a draw lands in and a leg
  * ships out of: the exact counterpart of a condensed town's `partnerStock`
  * shelf, filled by `drawWildArea` where the town's is filled by a mint. No
  * `at`: like a partner town's endpoint this is abstract and scheduled-only —
@@ -835,7 +839,7 @@ export function wildShedPartner(
  * still owed against it goes on shipping instead of failing for want of an
  * endpoint.
  */
-export function wildShedEndpoint(key: string, shelf: Record<string, number>): StockEndpoint {
+export function wildSourceEndpoint(key: string, shelf: Record<string, number>): StockEndpoint {
   return { id: wildAreaId(key), kind: "wild", capacity: 0, stack: shelf, owner: null };
 }
 

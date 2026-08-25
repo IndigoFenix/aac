@@ -19,6 +19,10 @@ import {
 import {
   certifyCreatureQuestWorld, type CreatureCertification,
 } from "@shared/world-engine/interaction/quest/creature-quests";
+import { expand, isFoldRefusal, type FoldRecord } from "@shared/world-engine/kernel/town/fold";
+import type { TownRecord, TownFoldCtx } from "@shared/world-engine/kernel/town/barter";
+import { scopeIdOf } from "@shared/world-engine/kernel/town/scope";
+import { kindsOf } from "@shared/world-engine/kernel/town/goods-kinds";
 import { grownDays, grownBuildUp } from "@shared/world-engine/planet/growth";
 import {
   provideTownRoadBearings, provideTownRoadSeeds,
@@ -89,6 +93,72 @@ export interface CityTownLoaderOpts {
    *  SAME `townExtentM` the roads were ported at and the seam splices at.
    *  Absent / undefined = realism. */
   scale?: () => WorldScale | undefined;
+  /** ⚖️ B-③'s EXPAND DOOR (band-settlement-round.md S3): this city's
+   *  CONDENSED TOWN RECORD, when one exists — a settlement that folded with
+   *  goods on its shelf (a settled band's banked store). Consumed through
+   *  the fold dispatch's `expand` at materialization, so the goods land in
+   *  the built town conserving; the record's stack is DRAINED in place (the
+   *  host owns the transition — wild's own convention), which is what makes
+   *  a cache-drop rebuild safe against double-minting. Same determinism
+   *  contract as `roadBearings`/`roadSeeds`: a function of the city, not of
+   *  time. Absent / null = no record, the shipped path byte-identical. */
+  record?: (fc: FlightCity) => TownRecord | null;
+}
+
+/**
+ * ⚖️ CONSUME A CONDENSED TOWN RECORD INTO A BUILD CONFIG — the loader's
+ * half of `expand` (the placer). Two laws meet here:
+ *
+ * · THE LANE PICK (town-play.ts's own trap, honored not fought):
+ *   `config.stock` is IGNORED whenever `config.deltas` is present, so the
+ *   goods fold into `deltas.stock` when an override is in play and into
+ *   `config.stock` otherwise — never both.
+ * · THE GOOD→GLYPH SPLIT (F-③ — the integral/derivative lives at the
+ *   fold): a record's stack speaks the trade rung's GOOD keys ("food");
+ *   the built town's yard speaks item glyphs. A category good deals its
+ *   WHOLE units across its kinds by largest remainder (gather's own
+ *   apportionment); a concrete glyph lands directly. Fractional crumbs
+ *   STAY ON THE RECORD — nothing evaporates, and nothing invents a
+ *   fractional prop.
+ */
+export function consumeTownRecord(rec: TownRecord, config: TownPlayConfig): boolean {
+  const envelope: FoldRecord<TownRecord> = {
+    kind: "town",
+    id: scopeIdOf({ kind: "town", key: rec.key }),
+    at: 0,
+    payload: rec,
+    commitments: [],
+  };
+  const ctx: TownFoldCtx = {
+    now: 0,
+    place: (_key, stack) => {
+      const target = config.deltas
+        ? (config.deltas.stock ??= {})
+        : (config.stock ??= {});
+      for (const [good, units] of Object.entries(stack)) {
+        const whole = Math.floor(units);
+        if (whole <= 0) continue;
+        const kinds = kindsOf(good);
+        if (!kinds.length) {
+          target[good] = (target[good] ?? 0) + whole;
+        } else {
+          // Largest remainder over equal shares — deterministic (kinds
+          // order breaks ties), Σ exact.
+          const base = Math.floor(whole / kinds.length);
+          let left = whole - base * kinds.length;
+          kinds.forEach(g => {
+            const share = base + (left > 0 ? 1 : 0);
+            if (left > 0) left--;
+            if (share > 0) target[g] = (target[g] ?? 0) + share;
+          });
+        }
+        const rest = units - whole;
+        if (rest > 1e-9) stack[good] = rest;
+        else delete stack[good];
+      }
+    },
+  };
+  return !isFoldRefusal(expand(envelope, ctx));
 }
 
 /** The settlement key a city's town builds under (street-plan identity). */
@@ -121,6 +191,11 @@ export function cityTownConfig(
     // port and the interstates crossed them. Absent = realism, which is
     // exactly what an undeclared world means everywhere else.
     ...(scale ? { scale } : {}),
+    // …AND TO THE BODY ITS TIER DECLARES (food-scale-round ⑩): a village row
+    // (`planet/refine.ts`/`border.ts` stamp `PlanetCity.tier`) builds the
+    // 120 m village its lanes ported at, not a 450 m market town. Absent =
+    // "town", byte-identical — tier-0 capitals deliberately carry none.
+    ...(fc.city.tier ? { tier: fc.city.tier } : {}),
   };
 }
 
@@ -145,6 +220,12 @@ export function createCityTownLoader(opts: CityTownLoaderOpts = {}): CityTownLoa
     try {
       const config = foundedCfg.get(fc.city.cell)
         ?? cityTownConfig(fc, Date.now(), opts.questCount ?? 0, opts.scale?.());
+      // ⚖️ B-③ — THE LAZY MATERIALIZATION IS EXPAND: a city with a condensed
+      // record delivers its shelf into the town it becomes, conserving.
+      const rec = opts.record?.(fc) ?? null;
+      if (rec && Object.values(rec.stack).some(n => n > 0)) {
+        consumeTownRecord(rec, config);
+      }
       const play = await buildTownPlayStaged(config, async note => {
         entry.note = note;
         await breathe();

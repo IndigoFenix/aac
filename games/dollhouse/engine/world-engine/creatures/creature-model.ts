@@ -33,6 +33,7 @@ import { CreatureAnimator, type BodyActivity } from "./animation";
 import type { GaitPattern } from "./gait";
 import { requireSpecies, type Species } from "./species";
 import { clampOutfit, outfitPresetFor, type OutfitBlueprint } from "./clothing";
+import { buildStickGeometry, creatureSticks, stickMaterial } from "./stick-lod";
 import { getShadingMode } from "../materials";
 // Type-only — no runtime coupling to the (DOM/GL-heavy) renderer.
 import type { AvatarFrame, AvatarModel, AvatarModelFactory } from "../render3d";
@@ -110,14 +111,27 @@ function canWalk(bp: Blueprint): boolean {
 
 /** Build a posed geometry snapshot from a skeleton, harvesting the builder's
  *  material into `matRef` on first call (so every snapshot shares one material)
- *  and stripping the skin attributes (a baked frame is a plain, static Mesh). */
+ *  and stripping the skin attributes (a baked frame is a plain, static Mesh).
+ *
+ *  The STICK tier hands the same seam a different builder: no loft at all, one
+ *  camera-facing capsule per merged bone (stick-lod.ts). Everything downstream
+ *  — the clip, the shared material, BakedCreatureModel's per-frame geometry
+ *  swap — is untouched, which is the whole reason the tier slots in here. */
 function snapshot(
   skel: CreatureSkeleton,
   bp: Blueprint,
   toon: boolean | undefined,
   matRef: { mat?: THREE.Material },
-  sides?: number,
+  detail: CreatureDetail = "full",
 ): THREE.BufferGeometry {
+  if (detail === "stick") {
+    // UNLIT (stick-lod.ts) — so `toon` has nothing to act on here: there is no
+    // lighting at this tier to quantise. One shared material, one compiled
+    // program, however many species are on screen.
+    if (!matRef.mat) matRef.mat = stickMaterial();
+    return buildStickGeometry(creatureSticks(skel, bp));
+  }
+  const sides = detail === "simple" ? SIMPLE_SIDES : undefined;
   const built = buildCreatureMesh(skel, bp, { toon, ...(sides !== undefined ? { sides } : {}) });
   const geom = built.mesh.geometry;
   geom.deleteAttribute("skinIndex");
@@ -138,7 +152,7 @@ function bakeLocomotion(
   pattern: GaitPattern,
   toon: boolean | undefined,
   matRef: { mat?: THREE.Material },
-  sides?: number,
+  detail: CreatureDetail = "full",
 ): BakedClip {
   const animator = new CreatureAnimator(bp);
   animator.setSpeed(speed01);
@@ -165,27 +179,33 @@ function bakeLocomotion(
   for (let i = 0; i < frameCount; i++) {
     let last = step();
     for (let s = 1; s < stride; s++) last = step();
-    frames.push({ phase: i / frameCount, geometry: snapshot(last.skel, bp, toon, matRef, sides) });
+    frames.push({ phase: i / frameCount, geometry: snapshot(last.skel, bp, toon, matRef, detail) });
   }
   return { name: "walk", frames, loopSeconds: frameCount * stride * dt, loops: true };
 }
 
 /** Bake the static rest pose as a one-frame clip (idle / plants / fruit). */
-function bakeIdle(bp: Blueprint, toon: boolean | undefined, matRef: { mat?: THREE.Material }, sides?: number): BakedClip {
+function bakeIdle(bp: Blueprint, toon: boolean | undefined, matRef: { mat?: THREE.Material }, detail: CreatureDetail = "full"): BakedClip {
   const skel = buildSkeleton(bp);
-  return { name: "idle", frames: [{ phase: 0, geometry: snapshot(skel, bp, toon, matRef, sides) }], loopSeconds: 1, loops: false };
+  return { name: "idle", frames: [{ phase: 0, geometry: snapshot(skel, bp, toon, matRef, detail) }], loopSeconds: 1, loops: false };
 }
 
 const WALK_FRAMES = 14;
 const WALK_SPEED01 = 0.42;
 
 /** DETAIL TIERS (view-distance-lod-tiers.md Phase 3): `simple` is the
- *  mid-distance body — fewer loft sides and fewer baked walk frames. A
- *  RENDER-ONLY choice each client makes from ITS OWN camera (multiplayer peers
- *  dress the same replicated bodies at their own fidelity); never sim state. */
-export type CreatureDetail = "full" | "simple";
+ *  mid-distance body — fewer loft sides and fewer baked walk frames; `stick`
+ *  drops the loft entirely for a handful of camera-facing capsules along the
+ *  bones (stick-lod.ts). A RENDER-ONLY choice each client makes from ITS OWN
+ *  camera (multiplayer peers dress the same replicated bodies at their own
+ *  fidelity); never sim state. */
+export type CreatureDetail = "full" | "simple" | "stick";
 const SIMPLE_SIDES = 5;
 const SIMPLE_WALK_FRAMES = 7;
+/** Stick walk frames. Not lower than `simple`'s: at this tier a frame costs
+ *  ~0.1 ms of stick derivation against the clip's fixed ~35 ms of animator
+ *  warm-up, so cutting frames buys nothing and costs gait legibility. */
+const STICK_WALK_FRAMES = 7;
 
 /** The species' clamped blueprint, dressed in `outfit` when given. Fresh
  *  object per call (bake steps mutate posture). Absent outfit = the species
@@ -220,11 +240,10 @@ function buildSpeciesAssets(
   const restSkel = buildSkeleton(dressedBlueprint(species, outfit));
   const naturalHeight = Math.max(0.1, restSkel.bounds.max.y - restSkel.bounds.min.y);
 
-  const sides = detail === "simple" ? SIMPLE_SIDES : undefined;
-  const walkFrames = detail === "simple" ? SIMPLE_WALK_FRAMES : WALK_FRAMES;
-  clips.set("idle", bakeIdle(dressedBlueprint(species, outfit), toon, matRef, sides));
+  const walkFrames = detail === "simple" ? SIMPLE_WALK_FRAMES : detail === "stick" ? STICK_WALK_FRAMES : WALK_FRAMES;
+  clips.set("idle", bakeIdle(dressedBlueprint(species, outfit), toon, matRef, detail));
   if (species.kind === "creature" && canWalk(dressedBlueprint(species, outfit))) {
-    clips.set("walk", bakeLocomotion(dressedBlueprint(species, outfit), walkFrames, WALK_SPEED01, "trot", toon, matRef, sides));
+    clips.set("walk", bakeLocomotion(dressedBlueprint(species, outfit), walkFrames, WALK_SPEED01, "trot", toon, matRef, detail));
   }
 
   const material = matRef.mat!;
@@ -263,12 +282,26 @@ function outfitHash(outfit?: OutfitBlueprint): string {
   return `|o:${(h >>> 0).toString(36)}`;
 }
 
+/** THE STICK TIER IS OUTFIT-BLIND — one bake per species, not per garment.
+ *  A body at 45 m is ~44 px tall and its clothes are a couple of pixels of
+ *  colour, so dressing the capsules would buy nothing and cost the town its
+ *  whole wardrobe again (the `simple` tier warms one bake per head × palette
+ *  colour, staggered off the critical path because each is ~60 ms).
+ *
+ *  ONE definition, applied at the cache doors, so the key and the bake can
+ *  never disagree about what was baked — normalising in `assetKey` alone would
+ *  hand every outfit the FIRST one's capsules while claiming a shared key. */
+function outfitForDetail(outfit: OutfitBlueprint | undefined, detail: CreatureDetail): OutfitBlueprint | undefined {
+  return detail === "stick" ? undefined : outfit;
+}
+
 function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint, detail: CreatureDetail = "full"): string {
   // Key on the EFFECTIVE mode, not the raw field: an unset `toon` follows the
   // engine-wide mode, so keying on `look.toon` alone would hand a global-toon
   // creature the cached assets of an explicitly-standard one.
   const toon = look.toon ?? (getShadingMode() === "toon");
-  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${detail === "simple" ? "|lod:s" : ""}`;
+  const lod = detail === "simple" ? "|lod:s" : detail === "stick" ? "|lod:k" : "";
+  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${lod}`;
 }
 
 /** Get (building + caching on first call) the shared assets for a species. Call
@@ -277,9 +310,10 @@ function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint, deta
 export function getSpeciesAssets(
   id: string,
   look: CreatureLook = {},
-  outfit?: OutfitBlueprint,
+  rawOutfit?: OutfitBlueprint,
   detail: CreatureDetail = "full",
 ): SpeciesAssets {
+  const outfit = outfitForDetail(rawOutfit, detail);
   const key = assetKey(id, look, outfit, detail);
   let assets = ASSET_CACHE.get(key);
   if (!assets) {
@@ -307,10 +341,10 @@ export function getSpeciesAssets(
 export function disposeSpeciesAssets(
   id: string,
   look: CreatureLook = {},
-  outfit?: OutfitBlueprint,
+  rawOutfit?: OutfitBlueprint,
   detail: CreatureDetail = "full",
 ): void {
-  const key = assetKey(id, look, outfit, detail);
+  const key = assetKey(id, look, outfitForDetail(rawOutfit, detail), detail);
   const assets = ASSET_CACHE.get(key);
   if (assets) {
     assets.dispose();
@@ -482,14 +516,17 @@ class DynamicCreatureModel implements CreatureModel {
   private seatContactLocal: number;
   private time = 0;
 
-  /** Loft sides for the rebuild — set when built at "simple" detail, so even
-   *  the per-frame dynamic path lofts cheaper at distance. */
+  /** Loft sides for the rebuild — set when built at reduced detail, so even
+   *  the per-frame dynamic path lofts cheaper at distance. The STICK tier has
+   *  no dynamic form (the avatar factory never spins one up that far out —
+   *  see createCreatureAvatarFactory), so it falls back to the simple loft
+   *  rather than silently lofting at full fidelity. */
   private readonly sides: number | undefined;
 
   constructor(species: Species, look: CreatureLook, scale: number, outfit?: OutfitBlueprint, detail: CreatureDetail = "full") {
     this.bp = dressedBlueprint(species, outfit);
     this.toon = look.toon;
-    this.sides = detail === "simple" ? SIMPLE_SIDES : undefined;
+    this.sides = detail === "full" ? undefined : SIMPLE_SIDES;
     this.animator = new CreatureAnimator(this.bp);
     this.object.scale.setScalar(scale);
     this.object.add(this.rig);
@@ -760,7 +797,15 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
           activity: frame.state.activity?.kind ?? "none",
         };
         const g = frame.state.gesture;
-        const needsDyn = (g && g.id !== lastGestureId) || drive.activity !== "none";
+        // STICK TIER: never spin up a dynamic body. A gesture or an activity
+        // normally buys a per-frame re-lofted body so the NPC can point, reach
+        // or lie down — but this body is 18-44 px tall, none of that is
+        // legible, and paying a full-fidelity rebuild EVERY FRAME for a figure
+        // this small is the exact cost the tier exists to stop. Distant bodies
+        // stand and walk; the pose returns with the body the moment it crosses
+        // back into the simple band (a tier change re-enters this factory).
+        const poseable = detail !== "stick";
+        const needsDyn = poseable && ((g && g.id !== lastGestureId) || drive.activity !== "none");
         // A fresh gesture or a live activity on a baked NPC: spin up a dynamic
         // body to perform it (retired below once it settles).
         if (needsDyn && !dyn) {
@@ -769,19 +814,23 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
           container.add(dyn.object);
         }
         if (g && g.id !== lastGestureId) {
+          // Consumed even at the stick tier (which has no animator to drive),
+          // so a held gesture is not re-tested every frame; the body walks on.
           lastGestureId = g.id;
-          const s = frame.state;
-          const local = gestureLocalDir(g, s.x, s.y, s.fx, s.fy);
-          if (g.kind === "point") {
-            dyn!.animator.point(local, g.holdS);
-          } else if (g.kind === "pickup") {
-            // Reach → grasp → lift; the carry pose then HOLDS (the body stays
-            // dynamic — see the retire check below) until a putdown gesture.
-            // Target at about box-top height where the item sits.
-            dyn!.animator.pickUp({ x: local.x, y: 0.45, z: local.z }, g.sizeM ?? 0);
-          } else if (g.kind === "putdown") {
-            // No-op unless carrying (animation.ts guard) — hosts fire freely.
-            dyn!.animator.putDown({ x: local.x, y: 0.45, z: local.z });
+          if (poseable) {
+            const s = frame.state;
+            const local = gestureLocalDir(g, s.x, s.y, s.fx, s.fy);
+            if (g.kind === "point") {
+              dyn!.animator.point(local, g.holdS);
+            } else if (g.kind === "pickup") {
+              // Reach → grasp → lift; the carry pose then HOLDS (the body stays
+              // dynamic — see the retire check below) until a putdown gesture.
+              // Target at about box-top height where the item sits.
+              dyn!.animator.pickUp({ x: local.x, y: 0.45, z: local.z }, g.sizeM ?? 0);
+            } else if (g.kind === "putdown") {
+              // No-op unless carrying (animation.ts guard) — hosts fire freely.
+              dyn!.animator.putDown({ x: local.x, y: 0.45, z: local.z });
+            }
           }
         }
         if (dyn) {

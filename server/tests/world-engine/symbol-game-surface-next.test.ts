@@ -251,7 +251,9 @@ describe("surfaceNext — transitions (predict the next word)", () => {
 
   it("a listener subject leads with directives, frequency-ordered", () => {
     const syms = symbols(["you"]);
-    expect(syms.slice(0, 4)).toEqual(["go", "eat", "help", "play"]);
+    // PRIMITIVES FIRST (user law 2026-08-24) — the primitive order leads, and
+    // the frequency prior orders everything behind it.
+    expect(syms.slice(0, 4)).toEqual(["get", "give", "go", "help"]);
   });
 
   it("bulk verb bands surface only synonym-family heads (get, never take)", () => {
@@ -303,11 +305,15 @@ describe("surfaceNext — transitions (predict the next word)", () => {
     expect(syms).toContain("sad");
   });
 
-  it("'play' also offers PLAYMATES (play with mara)", () => {
+  it("'play' also offers PLAYMATES (play with mara), and no places at all", () => {
     const s = surfaceNext(["you", "play"], ctx());
     const mara = s.buttons.find((b) => b.symbol === "mara")!;
-    const home = s.buttons.find((b) => b.symbol === "home")!;
-    expect(mara.weight).toBeGreaterThan(home.weight);
+    const ball = s.buttons.find((b) => b.symbol === "ball")!;
+    expect(mara.weight).toBeGreaterThan(0);
+    expect(ball.weight).toBeGreaterThan(mara.weight); // the toy is still what you play WITH
+    // A PLACE IS NOT AN OBJECT (2026-08-24): `home` reaches the go board, not
+    // this one, so the whole places band is gone rather than merely outranked.
+    expect(s.buttons.some((b) => b.symbol === "home")).toBe(false);
   });
 
   it("descriptors follow the noun's TYPE: food talks temperature, not mood", () => {
@@ -409,7 +415,7 @@ describe("surfaceNext — group chips", () => {
     expect(s.groups.filter((g) => g.kind !== "verb")).toEqual([]);
     // What stands is the modal ACTION BAND — a different band with its own
     // budget (surface-modal-actions.test.ts owns its pins).
-    expect(s.groups.map((g) => g.id)).toEqual(["do", "play", "make", "get"]);
+    expect(s.groups.map((g) => g.id)).toEqual(["get", "do", "play", "make"]);
   });
 
   it("chips are deterministic and noun-order-independent", () => {
@@ -429,9 +435,11 @@ describe("surfaceNext — group chips", () => {
       expect(g.exemplars.length).toBeGreaterThan(0);
       for (const e of g.exemplars) expect(g.members).toContain(e);
     }
-    // The prototype prior, not the alphabet: apple/banana/cookie lead the foods
-    // even though bread and milk sort in among them.
-    expect(faces("food")).toEqual(["apple", "banana", "cookie"]);
+    // The SPEC's order, not the alphabet (2026-08-24): the treat pool authors
+    // cookie/apple/banana in that order and that row is the only place a food's
+    // priority is stated, so the chip wears them the same way — even though
+    // bread and milk sort in among them alphabetically.
+    expect(faces("food")).toEqual(["cookie", "apple", "banana"]);
     expect(faces("toy")[0]).toBe("ball");
     expect(faces("clothing")).toEqual(["shirt", "sock"]);
   });

@@ -120,7 +120,18 @@ export function declaresSettlementGap(spec: WorldScaleSpec | null): boolean {
 
 /** THE SCAN THIS PLANET FOUNDS BY. Authored `world.founding` wins (content
  *  outranks derivation); otherwise Gate A's closed form, with the spacing
- *  derived when — and only when — the world declared a gap to derive it from. */
+ *  derived when — and only when — the world declared a gap to derive it from.
+ *
+ *  ⚖️ NO `popCap` HERE, deliberately (food-scale-round ⑩, MEASURED
+ *  2026-08-24): the village tiers (`planet/refine.ts`/`planet/border.ts`)
+ *  found toward `TIER_POP_CAP.village` and stay byte-identical at the
+ *  shipped dials, but pricing tier-0 capitals at the town catchment collapses a
+ *  declared-gap world's capital lattice — the founding-scan fixture (2 km,
+ *  gap 32, dial 1) goes from minSpacing 6 to 146 cells and 33 sites to 1,
+ *  and even the re-dialled 6 km Home Planet would widen 6 → 11 cells
+ *  (~3× fewer capitals). Capitals carry no `PlanetCity.tier` either (the
+ *  city tier is unmeasured — `TIER_POP_CAP`); threading the tier-0 (capital) catchment is
+ *  its own design decision, not a byte-flip. */
 export function planetFoundingOpts(
   spec: PlanetWorldSpec, scale: WorldScaleSpec | null = null,
 ): FoundingOpts {

@@ -65,6 +65,7 @@ import {
 } from "@shared/world-engine/creatures/clothing";
 import { buildCreatureMesh, LOFT, type BuiltCreature } from "@shared/world-engine/creatures/mesh";
 import { bakePlantImpostor, buildPlantLods, makeImpostorMesh, plantMaterial } from "@shared/world-engine/creatures/plant-lod";
+import { buildStickGeometry, creatureSticks, stickMaterial } from "@shared/world-engine/creatures/stick-lod";
 import { propMaterial, terrainMaterial } from "@shared/world-engine/materials";
 import { CREATURE_EXAMPLES } from "@shared/world-engine/creatures/examples";
 import { DEFAULT_GAIT, GAIT_PATTERNS, type GaitParams, type GaitPattern } from "@shared/world-engine/creatures/gait";
@@ -134,9 +135,11 @@ let showSkeleton = false;
 // you watch legs plant/lift and knees fold as the body rises and lowers.
 let animatePosture = false;
 const savedPosture = { bodyPitch: 0, bodyHeight: 0 };
-// Plant LOD preview: swap the live skinned creature for the static LOD
-// tiers / baked impostor a distant plant instance would use (plant-lod.ts).
-let lodPreview: "off" | "lod1" | "impostor" = "off";
+// LOD preview: swap the live skinned creature for the static tier a DISTANT
+// instance would use. `lod1` / `impostor` are the plant ladder (plant-lod.ts);
+// `stick` is the tier both ladders share (stick-lod.ts) and is the one to
+// check on a CREATURE too — it is what a resident 45-110 m away is drawn as.
+let lodPreview: "off" | "stick" | "lod1" | "impostor" = "off";
 let lodObject: THREE.Object3D | null = null;
 let lodDisposers: Array<() => void> = [];
 // Walk gait: when on, the animation loop advances the gait phase from a
@@ -463,7 +466,17 @@ function rebuildGeometry(): ReturnType<typeof buildSkeleton> {
     const skel = buildSkeleton(blueprint);
     const lods = buildPlantLods(blueprint);
     lodDisposers.push(() => lods.dispose());
-    if (lodPreview === "impostor") {
+    if (lodPreview === "stick") {
+      const fig = creatureSticks(skel, blueprint);
+      const geom = buildStickGeometry(fig);
+      const mat = stickMaterial(); // unlit tier — `celShading` has no effect here
+      const mesh = new THREE.Mesh(geom, mat);
+      lodDisposers.push(() => geom.dispose(), () => mat.dispose());
+      lodObject = mesh;
+      statsEl.textContent =
+        `stick · ${fig.segments.length} capsules · ${geom.getAttribute("position").count} verts · ` +
+        `${geom.getIndex()!.count / 3} tris (LOD1: ${lods.lod1.vertices} verts)`;
+    } else if (lodPreview === "impostor") {
       const imp = bakePlantImpostor(renderer, lods, blueprint);
       const mesh = makeImpostorMesh(imp);
       lodDisposers.push(() => imp.dispose(), () => mesh.geometry.dispose(), () => (mesh.material as THREE.Material).dispose());
@@ -592,6 +605,22 @@ function colorRow(parent: HTMLElement, label: string, key: keyof Blueprint["skin
     blueprint.skin[key] = input.value;
     rebuild();
   });
+}
+
+/** A labelled <select> over a string union — used by the growths grammar rows
+ *  and by the view section's LOD preview. Rebuilds on change like every other
+ *  control here, so a caller never has to. */
+function enumSel<T extends string>(
+  parent: HTMLElement, options: readonly T[], value: T, set: (v: T) => void,
+): void {
+  const sel = el("select", undefined, parent) as HTMLSelectElement;
+  for (const o of options) {
+    const opt = el("option", undefined, sel) as HTMLOptionElement;
+    opt.value = o;
+    opt.textContent = o;
+    if (o === value) opt.selected = true;
+  }
+  sel.addEventListener("change", () => { set(sel.value as T); rebuild(); });
 }
 
 function buildPanel(): void {
@@ -930,18 +959,6 @@ function buildPanel(): void {
       input.value = obj[key];
       input.addEventListener("input", () => { obj[key] = input.value; rebuild(); });
     };
-    const enumSel = <T extends string>(
-      parent: HTMLElement, options: readonly T[], value: T, set: (v: T) => void,
-    ): void => {
-      const sel = el("select", undefined, parent) as HTMLSelectElement;
-      for (const o of options) {
-        const opt = el("option", undefined, sel) as HTMLOptionElement;
-        opt.value = o;
-        opt.textContent = o;
-        if (o === value) opt.selected = true;
-      }
-      sel.addEventListener("change", () => { set(sel.value as T); rebuild(); });
-    };
     blueprint.growths.forEach((gr, i) => {
       const head = el("div", "lab-row", s);
       el("label", undefined, head).textContent = `growth ${i}`;
@@ -984,12 +1001,6 @@ function buildPanel(): void {
         buildPanel();
         rebuild();
       });
-    }
-    // LOD preview — the static tiers a scattered plant instance uses.
-    {
-      const row = el("div", "lab-row", s);
-      el("label", undefined, row).textContent = "LOD preview";
-      enumSel(row, ["off", "lod1", "impostor"] as const, lodPreview, (v) => { lodPreview = v; });
     }
   }
 
@@ -1065,6 +1076,16 @@ function buildPanel(): void {
   // Loft quality + view toggles.
   {
     const s = section("loft / view");
+    // LOD PREVIEW — swap the live body for the static tier a DISTANT instance
+    // is drawn as. `stick` works on ANY blueprint (it is the creature far tier
+    // too, 45-110 m); `lod1` / `impostor` are the plant-only rungs below it.
+    // Lives here rather than under `growths` because it is a VIEW choice and
+    // the creature tier has nothing to do with plants.
+    {
+      const row = el("div", "lab-row", s);
+      el("label", undefined, row).textContent = "LOD preview";
+      enumSel(row, ["off", "stick", "lod1", "impostor"] as const, lodPreview, (v) => { lodPreview = v; });
+    }
     slider(s, "sides", LOFT as unknown as Record<string, number>, "sides", { min: 5, max: 14, int: true });
     slider(s, "headRings", LOFT as unknown as Record<string, number>, "headRings", { min: 3, max: 8, int: true });
     const toggles: Array<[string, () => boolean, (v: boolean) => void]> = [

@@ -57,6 +57,6 @@ describe("coerceSeizureConfig — tolerates legacy/partial stored values", () =>
   });
   it("keeps valid values", () => {
     expect(coerceSeizureConfig({ enabled: true, rhythmic: "high", atonic: "low", audioCorroboration: true }))
-      .toEqual({ enabled: true, rhythmic: "high", atonic: "low", audioCorroboration: true });
+      .toEqual({ enabled: true, rhythmic: "high", atonic: "low", audioCorroboration: true, markers: [] });
   });
 });

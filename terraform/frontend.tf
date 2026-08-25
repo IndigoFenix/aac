@@ -256,6 +256,15 @@ resource "aws_cloudfront_function" "landing_redirect" {
           return request;
         }
       }
+      // English lives at / — fold /en into it so the same page is not indexable
+      // at two URLs.
+      if (uri === '/en' || uri === '/en/') {
+        return {
+          statusCode: 301,
+          statusDescription: 'Moved Permanently',
+          headers: { 'location': { value: '/' } }
+        };
+      }
       // Per-locale prerendered landing pages: /he, /he/, /es, /es/, ...
       // Mirrors SUPPORTED_LANGUAGES in client/src/i18n/index.ts (minus 'en',
       // which is at /). Keep this list in sync when adding/removing languages.

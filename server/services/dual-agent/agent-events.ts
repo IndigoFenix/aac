@@ -450,6 +450,23 @@ export interface AppOpenRequestedEvent extends BaseEvent {
   appId: string;
   /** Optional search query / payload (e.g. YouTube videoId). */
   data?: string;
+  /**
+   * Live tool-call id, present ONLY when the Speaker's `open_app` produced this
+   * event and its functionResponse is being HELD until the open resolves.
+   *
+   * 🚨 This is what stops the Speaker promising an app the server then refuses.
+   * Gemini Live blocks generation while a functionResponse is outstanding
+   * (measured 2026-08-24 — scripts/test-live-toolcall-blocking.ts), so answering
+   * only after `routeAppOpen` settles means the model composes its sentence
+   * KNOWING the verdict. Before this, the ack went out in ~1ms with a flat "ok"
+   * and the refusal arrived ~2.7s later as a silent context injection, by which
+   * time the child had already been told the app was opening.
+   *
+   * Absent for a STUDENT press (`request_app_open`) and for the Board Manager's
+   * own open — neither has a live tool call to answer, so those paths keep
+   * taking the context-injection route.
+   */
+  toolCallId?: string;
 }
 
 /** Speaker requested closing the active app. */
@@ -544,6 +561,11 @@ export interface BoardButton {
    *  press handling (companion/facilitator/social) + a client color indicator.
    *  Defaults to "reply" when the BoardManager omits it. */
   role?: "reply" | "bid";
+  /** SPEECH ACT — what this button's utterance DOES (affirm/reject/request/
+   *  ask/express/social/direct/repair/comment). Orthogonal to `role`, which is
+   *  turn-taking force. Only ever the Board Manager's HINT here; the authority
+   *  is `deriveSpeechAct`, which prefers the glyph. See shared/aac/speech-act.ts. */
+  speechAct?: string;
   /** Group-chat addressee — the peer this button is aimed at (a peer name),
    *  or "ROOM"/omitted for everyone. Set by the Board Manager. */
   addressee?: string;
@@ -711,11 +733,34 @@ export interface ThoughtLeakEvent extends BaseEvent {
   note: string;
 }
 
+/**
+ * Speaker recited its own INPUT instead of replying — its spoken turn carried
+ * bracketed wire-format tags ("[CONTEXT] …", "[GAME] …") or opened with a
+ * stage direction ("(The user has closed the game.)"). Detected by
+ * `SpokenTurnGate` on the streaming transcript; the SpeakerAgent has the
+ * Coordinator suppress the audio mid-turn and emits this INSTEAD of
+ * speech_text_finalized / speech_end, so the recited context is not spoken,
+ * not captioned, not rebuilt from, and — critically — not echoed back into
+ * the model's context, which is what makes the behavior compound.
+ * `recited` is what the gate removed. `speech` is the RESIDUE left behind —
+ * best-effort, not a reply: removing "[CONTEXT]" leaves the injection's own
+ * payload ("other: he looks calm"), and any genuine sentence the model tacked
+ * on is buried in it. Recorded for the supervisor, never voiced.
+ */
+export interface ContextLeakEvent extends BaseEvent {
+  type: "context_leak";
+  source: "speaker";
+  recited: string;
+  /** Residue after the wire format is removed — supervisor record only. */
+  speech: string;
+}
+
 export type CrossAgentEvent =
   | MonitorCallRequestedEvent
   | PrivateNoteEvent
   | RemainSilentEvent
-  | ThoughtLeakEvent;
+  | ThoughtLeakEvent
+  | ContextLeakEvent;
 
 // ---------------------------------------------------------------------------
 // Monitor-broadcast event

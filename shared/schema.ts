@@ -1619,10 +1619,33 @@ export interface BoardButton {
   buttonType?: "normal" | "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
   /**
    * Conversational role of this button: "reply" (an answer/reaction that needs
-   * no response) vs "bid" (a question/request that hands the turn over). Drives
-   * a visual indicator and the per-mode press handling. Defaults to "reply".
+   * no response) vs "bid" (a question/request that hands the turn over).
+   *
+   * Drives the per-mode press handling AND the button's fill — a `bid` is
+   * painted orange, the third and last colour a board carries after yes-green
+   * and no-red. Defaults to "reply".
    */
   role?: "reply" | "bid";
+  /**
+   * SPEECH ACT — what this button's utterance DOES (affirm / reject / request /
+   * ask / express / social / direct / repair / comment). Orthogonal to `role`,
+   * which is turn-taking force: "Can I have water?" is a `request` AND a `bid`.
+   *
+   * Server-stamped from the GLYPH alone via `deriveSpeechAct`. It PAINTS
+   * NOTHING — its only rendered effect is the prosody mark already baked into
+   * the glyph string (request → the arc, ask → the `?`), so the client needs no
+   * special handling. Carried on the button as metadata the Monitor and the
+   * session summary can read.
+   *
+   * Colour comes from the yes/no SYMBOL and from `role` — see
+   * `resolveButtonColorToken` for why the palette is only three fills wide.
+   *
+   * See shared/aac/speech-act.ts. Typed as a string union rather than importing
+   * SpeechAct so this schema stays dependency-free for the drizzle side.
+   */
+  speechAct?:
+    | "affirm" | "reject" | "request" | "ask" | "express"
+    | "social" | "direct" | "repair" | "comment";
   /**
    * Group-chat addressee: the peer this button is specifically aimed at (a peer
    * name the Board Manager set when building a reply/bid directed at one peer),

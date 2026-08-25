@@ -73,10 +73,20 @@ export const FAUNA_BODY_PREFIX = "fauna:";
  *  top-level word, so "everything natural is spelled `wild:`" survives the
  *  loaded/unloaded split; no natural source is named `area`. */
 export const WILD_AREA_PREFIX = "wild:area:";
+/** ⚖️ A MOBILE COLLECTIVE — a band of people or a herd of animals, ONE object
+ *  (scope-definitions.md §Mobility: "a band is a herd of people"). The
+ *  condensed record of a mobile scatter scope (kernel/civ/bands.ts `Band`),
+ *  foldable through the generic dispatch like any other scope kind. */
+export const BAND_PREFIX = "band:";
 
 /** The scope id of an offloaded wild area. */
 export function wildAreaId(key: string): ScopeId {
   return `${WILD_AREA_PREFIX}${key}`;
+}
+
+/** The scope id of a mobile collective (band/herd). */
+export function bandScopeId(key: string): ScopeId {
+  return `${BAND_PREFIX}${key}`;
 }
 
 /**
@@ -129,6 +139,10 @@ export type ScopeRef =
    * only yields.
    */
   | { kind: "wild"; form: "box" | "flora" | "fauna" | "area"; species: string; tag: string }
+  /** A MOBILE COLLECTIVE — band of people, herd of animals: one object, one
+   *  kind (B-①, band-settlement-round.md). It RECEIVES goods (a band banks a
+   *  store — that is Gate A's whole subject), unlike a natural source. */
+  | { kind: "band"; key: string }
   /** Any registered container object — the fallback. */
   | { kind: "container"; objectId: string };
 
@@ -221,6 +235,7 @@ export function parseScopeId(id: ScopeId): ScopeRef {
   if (id.startsWith(BUILDING_FURN_PREFIX)) {
     return { kind: "buildingFurnPile", buildingKey: afterPrefix(id, BUILDING_FURN_PREFIX) };
   }
+  if (id.startsWith(BAND_PREFIX)) return { kind: "band", key: afterPrefix(id, BAND_PREFIX) };
   if (id.startsWith(TOWN_PREFIX)) return { kind: "town", key: afterPrefix(id, TOWN_PREFIX) };
   return { kind: "container", objectId: id };
 }
@@ -253,6 +268,7 @@ export function scopeIdOf(ref: ScopeRef): ScopeId {
     case "sitePile": return `${SITE_PILE_PREFIX}${ref.ord}`;
     case "annexPile": return `${ANNEX_PILE_PREFIX}${ref.ord}`;
     case "buildingFurnPile": return `${BUILDING_FURN_PREFIX}${ref.buildingKey}`;
+    case "band": return `${BAND_PREFIX}${ref.key}`;
     case "siteStock": return SITE_STOCK_ID;
     case "container": return ref.objectId;
   }
@@ -274,7 +290,7 @@ export function isTownYard(ref: ScopeRef): boolean {
  * question about the ENDPOINT rather than about the world's scenery.
  *
  * It is deliberately not "is it wild": a future source rendered as a mine
- * shaft, a fishery or an offloaded region shed answers the same way, and an
+ * shaft, a fishery or an offloaded region source answers the same way, and an
  * OWNED source (a tamed cow, an orchard the town planted) still only yields.
  * Who may draw from it is `mayUse`'s question, not this one.
  */
@@ -353,6 +369,10 @@ export function scopeParentOf(ref: ScopeRef, ctx: ScopeContext = {}): ScopeId | 
       // OUR yard hangs off our town; the town itself and a PARTNER's town hang
       // off nothing we model yet (the region tier `condense` would feed).
       return isTownYard(ref) ? localTown(ctx) : null;
+    case "band":
+      // A mobile collective hangs off the REGION it walks — nothing this
+      // session models: the same honest null a partner's town answers.
+      return null;
     case "depot":
     case "produce":
     case "shelf":

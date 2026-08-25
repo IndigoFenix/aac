@@ -49,6 +49,7 @@ import InitializationLoadingScreen from "@/components/InitializationLoadingScree
 import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
 import { PhotosApp } from "@/components/apps/PhotosApp";
+import { RestaurantApp } from "@/components/apps/RestaurantApp";
 import { PictureSearchApp } from "@/components/apps/PictureSearchApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
@@ -175,6 +176,7 @@ import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { usePoseTracking } from "@/hooks/usePoseTracking";
 import { usePoseEvents } from "@/hooks/usePoseEvents";
 import { useSeizureWatch } from "@/hooks/useSeizureWatch";
+import { useMotionField } from "@/hooks/useMotionField";
 import { useSceneChangeDetector, type MaskBox } from "@/hooks/useSceneChangeDetector";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
@@ -522,6 +524,12 @@ function renderAppContent(
   onBoardOptions?: (options: BoardOption[] | null, prompt?: string) => void,
   onGameMessage?: (msg: GameMessage) => void,
   t: (key: string, params?: Record<string, string | number>) => string = (key) => key,
+  /** Voice a press the way a board button press is voiced (the restaurant lanes). */
+  onSpeak?: (label: string, sentence: string) => void,
+  /** Re-run an app open server-side (the restaurant app after a menu capture). */
+  onRequestAppOpen?: (appId: string, appData?: any) => void,
+  /** Per-student board rendering settings, for the menu lane. */
+  boardRender?: { language?: string; iconTextRatio?: number; selectionMethod?: any; restSpace?: any },
 ): React.ReactNode {
   if (!activeApp) return null;
   if (activeApp.appId === "youtube") {
@@ -556,6 +564,26 @@ function renderAppContent(
         payload={activeApp.appData as import("@shared/picture-search").PictureSearchPayload | undefined}
         onClose={dismissApp}
         sendContextOnly={sendContextOnlyToAi}
+      />
+    );
+  }
+  if (activeApp.appId === "restaurant") {
+    // The one app aimed at the CARETAKER rather than the student — it finds the
+    // venue and gets its menu. See RestaurantApp's header.
+    return (
+      <RestaurantApp
+        studentId={studentId}
+        onClose={dismissApp}
+        sendContextOnly={sendContextOnlyToAi}
+        payload={activeApp.appData as import("@shared/venue-cuisine").RestaurantAppPayload | undefined}
+        onSpeak={onSpeak}
+        // Re-opening goes back through the SERVER so the mode is resolved by
+        // the one thing that knows whether a menu now exists.
+        onReopen={(data) => onRequestAppOpen?.("restaurant", data)}
+        language={boardRender?.language}
+        iconTextRatio={boardRender?.iconTextRatio}
+        selectionMethod={boardRender?.selectionMethod}
+        restSpace={boardRender?.restSpace}
       />
     );
   }
@@ -807,7 +835,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [showConstructionBoard, setShowConstructionBoard] = useState(false);
   // Backend-busy state lifted out of the provider (Home renders outside it) to
   // drive the subtle ambient processing indicators.
-  const [serverProcessing, setServerProcessing] = useState<import("@/hooks/dual-agent-types").ProcessingState>({ speaker: false, board: false, interpret: false });
+  const [serverProcessing, setServerProcessing] = useState<import("@/hooks/dual-agent-types").ProcessingState>({ speaker: false, board: false, interpret: false, app: false });
   const [voicingStudent, setVoicingStudent] = useState(false);
   // The button the child just pressed, shown with an ambient processing →
   // speaking cue until its voice finishes. `id` matches BoardButton.id.
@@ -1083,6 +1111,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // request_app_open round-trip (apps with server-resolved startup params),
   // bridged from DualAgentContext (the Apps overlay renders outside the provider).
   const requestAppOpenFnRef = useRef<((appId: string, appData?: any) => void) | null>(null);
+  /** Per-student board rendering settings, shared with the restaurant app's
+   *  menu lane so a menu looks like every other board the student uses. */
+  const restaurantBoardRender = useMemo(() => ({
+    language: currentLanguage,
+    iconTextRatio: userProfile?.aacSettings?.iconTextRatio ?? 3,
+    selectionMethod: eyegazeSettings.enabled ? eyegazeSettings.selectionMethod : "whole_button",
+    restSpace: eyegazeSettings.enabled ? eyegazeSettings.restSpace : "none",
+  }), [currentLanguage, userProfile?.aacSettings?.iconTextRatio, eyegazeSettings]);
   // request_board_open round-trip (a board-launch button the AI put on the
   // board), bridged the same way — the board renders outside the provider.
   const requestBoardOpenFnRef = useRef<((boardKey: string) => void) | null>(null);
@@ -1244,6 +1280,19 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     return () => clearTimeout(id);
   }, [faceTrackingEnabled, handGestureEnabled, sharedCameraStream, getUserCamera, cameras, startSharedCamera]);
 
+  // Seizure "watch": while a seizure-like pattern is suspected, run the trackers
+  // fast enough (~15fps) to resolve the 2–5Hz clonic band. The default cadences
+  // (300ms face/hand, 400ms pose — and the slower in-game ones) alias it
+  // completely. Safety wins over the game-smoothness throttle here.
+  //
+  // Declared ABOVE the trackers because it feeds their configs, and set BELOW by
+  // useSeizureWatch — the same forward-reference pattern the pose bump already
+  // used. The bump now reaches FACE and HAND too: the face is the primary sensor
+  // for this detector, so leaving it at 300ms (Nyquist 1.7Hz) would have aliased
+  // the clonic band on the one channel that matters most.
+  const [seizureWatchBump, setSeizureWatchBump] = useState(false);
+  const WATCH_TRACKER_MS = { processingIntervalMs: 66 };
+
   // Face expression tracking via MediaPipe FaceLandmarker. Reads from the single
   // shared user-camera <video> element (userVideoEl) owned by MultiCameraProvider.
   const {
@@ -1254,7 +1303,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   } = useFaceTracking({
     videoEl: userVideoEl,
     enabled: faceTrackingEnabled,
-    config: trackerConfig(700), // default 300ms; ~halve the rate during a game
+    // default 300ms; ~halve the rate during a game, but a seizure watch overrides
+    // both — the face is the seizure detector's primary sensor and its clock.
+    config: seizureWatchBump ? WATCH_TRACKER_MS : trackerConfig(700),
   });
 
   // DLL-based hardware trackers (currently Tobii) need a sidecar process spawned
@@ -1419,7 +1470,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   } = useHandGestureTracking({
     videoEl: userVideoEl,
     enabled: handGestureEnabled,
-    config: trackerConfig(800), // default 300ms; gestures matter least mid-game
+    // default 300ms; gestures matter least mid-game — but hand landmarks are the
+    // seizure detector's distal channel, so a watch bumps them too.
+    config: seizureWatchBump ? WATCH_TRACKER_MS : trackerConfig(800),
   });
 
   // Sign-language source of truth: AAC settings (clinician-controlled),
@@ -1462,11 +1515,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // only runs while the dual-agent session is active. Feeds the scene snapshot
   // + gesture context; a suspected fall escalates to a frame the Observer judges.
   const poseEnabled = useDualAgent && CLIENT_CAPABILITIES.poseSafety;
-  // Seizure "watch": while a seizure-like pattern is suspected, run the pose
-  // tracker fast enough (~15fps) to resolve the 2–5Hz clonic band. The default
-  // ~400ms cadence (and the slower in-game cadence) can't. Safety wins over the
-  // game-smoothness throttle here. Set by useSeizureWatch (declared below).
-  const [poseWatchActive, setPoseWatchActive] = useState(false);
   // Per-student seizure-detection config from the server (bridged up from
   // DualAgentContext). Null until the session initializes / when disabled.
   const [serverSeizure, setServerSeizure] = useState<import("@shared/aac/seizure-config").ClientSeizureConfig | null>(null);
@@ -1474,23 +1522,58 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // applied there) and bridged up the same way, because BoardAudioProvider is
   // mounted outside DualAgentProvider and can't read the context itself.
   const [serverAutoScan, setServerAutoScan] = useState<{ delayMs: number } | null>(null);
-  const poseConfig = poseWatchActive ? { processingIntervalMs: 66 } : trackerConfig(900);
+  const poseConfig = seizureWatchBump ? WATCH_TRACKER_MS : trackerConfig(900);
   const { poses: rawPoses } = usePoseTracking({ videoEl: userVideoEl, enabled: poseEnabled, config: poseConfig }); // default 400ms; heaviest tracker
   const { trackedPoses } = usePoseEvents({ poses: rawPoses, enabled: poseEnabled });
-  // Seizure-signature DSP over the same pose stream: a rhythmic-convulsive /
-  // atonic / post-ictal motion pattern escalates to a "seizure" frame carrying a
-  // [MOTION SIGNATURE] the Observer adjudicates (never an auto-alarm). Its
-  // suspicion signal bumps the pose rate via onWatchActiveChange. Gated on the
-  // per-student server config (clientConfig.seizure, bridged up from the context):
-  // disabled / unconfigured students never run it. Thresholds + seed baseline are
-  // per-student so the detectors are tuned to the student's own peculiarities.
-  const seizureEnabled = poseEnabled && !!serverSeizure?.enabled;
-  const { seizureInfo, signature: seizureSignature, watchActive: seizureWatchActive, baselineSamples: seizureBaselineSamples } = useSeizureWatch({
+  // Seizure-signature DSP: a rhythmic-convulsive / atonic / post-ictal motion
+  // pattern — or a presentation this student's clinician recorded — escalates to
+  // a "seizure" frame carrying a [MOTION SIGNATURE] the Observer adjudicates
+  // (never an auto-alarm). Its suspicion signal bumps every tracker's rate via
+  // onWatchActiveChange. Gated on the per-student server config
+  // (clientConfig.seizure, bridged up from the context): disabled / unconfigured
+  // students never run it.
+  //
+  // NOTE it is gated on FACE tracking, not pose. The detector was rebuilt
+  // face-first because at this camera distance pose frequently resolves nothing
+  // and its arm regions degenerate (see shared/aac/seizure-signature.ts). Pose is
+  // now passed as an additive extra; requiring it here would have kept the
+  // detector dead on every device where poseSafety is off.
+  const seizureEnabled = useDualAgent && faceTrackingEnabled && !!serverSeizure?.enabled;
+
+  // Landmark-free dense motion, as corroboration for the landmark channels. Runs
+  // at a lazy cadence normally and follows the watch bump when suspicion fires.
+  const subjectFaceBox = useMemo(() => {
+    let best: typeof rawFaces[number] | null = null;
+    let bestArea = -1;
+    for (const f of rawFaces) {
+      const area = f.boundingBox ? f.boundingBox.width * f.boundingBox.height : 0;
+      if (area > bestArea) { best = f; bestArea = area; }
+    }
+    return best?.boundingBox ?? null;
+  }, [rawFaces]);
+  const { getSample: getMotionField } = useMotionField({
+    videoEl: userVideoEl,
+    enabled: seizureEnabled,
+    intervalMs: seizureWatchBump ? 66 : 250,
+    faceBox: subjectFaceBox,
+  });
+
+  const {
+    seizureInfo,
+    signature: seizureSignature,
+    watchActive: seizureWatchActive,
+    baselineSamples: seizureBaselineSamples,
+    subjectPresent: seizureSubjectPresent,
+  } = useSeizureWatch({
+    faces: rawFaces,
+    hands: rawHands,
     poses: rawPoses,
+    getMotionField,
     enabled: seizureEnabled,
     thresholds: serverSeizure?.thresholds,
+    markers: serverSeizure?.markers,
     initialBaseline: serverSeizure?.baseline ?? null,
-    onWatchActiveChange: setPoseWatchActive,
+    onWatchActiveChange: setSeizureWatchBump,
   });
 
   // Get current identified person (non-blocking getter for dual-agent)
@@ -2654,6 +2737,53 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           )}
         </AnimatePresence>
 
+        {/* An app open is being resolved on the server.
+
+            This one is LOUDER than the other ambient cues on purpose. The
+            others decorate a moment the child is already getting feedback in —
+            the AI is about to talk, the board is about to change. This one
+            covers a deliberate SILENCE: Gemini Live blocks generation while
+            `open_app` is being decided, so between the press and the answer
+            there is no voice, no board change and no screen change. Measured at
+            up to ~2s. Without something visible that is indistinguishable from a
+            button that did nothing, and a child who cannot ask again is left
+            pressing it repeatedly.
+
+            Placed centre-screen rather than at an edge because it is answering
+            "did my press work?", which is where they are already looking. */}
+        <AnimatePresence>
+          {serverProcessing.app && (
+            <motion.div
+              key="app-busy"
+              role="status"
+              aria-label={t("processing.openingApp")}
+              className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="flex flex-col items-center gap-3 rounded-3xl bg-background/85 px-8 py-6 shadow-xl backdrop-blur-sm">
+                {/* Expanding rings — reads as "on its way", not as an error or a
+                    spinner stuck mid-load. */}
+                <div className="relative h-14 w-14">
+                  {[0, 1].map((i) => (
+                    <span
+                      key={i}
+                      className="absolute inset-0 rounded-2xl border-4 border-accent animate-ping"
+                      style={{ animationDelay: `${i * 0.6}s`, animationDuration: "1.6s" }}
+                    />
+                  ))}
+                  <span className="absolute inset-[18%] rounded-xl bg-accent/80" />
+                </div>
+                <span className="text-lg font-semibold text-foreground">
+                  {t("processing.openingApp")}
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Enter big-video mode — only in a plain call (no game) with someone on
             the line. Pulls the people you're talking to into a large window. */}
         {callInfo.active && callInfo.hasRemote && !gameActive && !videoLarge && (
@@ -3037,6 +3167,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               the board keep rendering underneath. */}
           {activeApp && activeApp.appId !== "social_trainer" && activeApp.appId !== "phone_call" ? (
             <div className="flex-1 min-w-0 h-full">
+              {/* The menu lane renders a real board inside the app, so it takes
+                  the SAME per-student render settings the main board does —
+                  otherwise a child's icon size and dwell method would silently
+                  change when they opened a menu. */}
               {renderAppContent(
                 activeApp,
                 dismissAppRef.current,
@@ -3049,6 +3183,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 handleBoardOptions,
                 handleWorldGameMessage,
                 t,
+                (label, sentence) => { void voiceFnRef.current?.([label], { [label]: sentence }); },
+                (appId, appData) => requestAppOpenFnRef.current?.(appId, appData),
+                restaurantBoardRender,
               )}
             </div>
           ) : boardMode === 'ai' ? (
@@ -3617,6 +3754,13 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 thresholds: serverSeizure?.thresholds ?? null,
                 hasSeedBaseline: !!serverSeizure?.baseline,
                 poseDetected: rawPoses.length > 0,
+                faceDetected: rawFaces.length > 0,
+                subjectPresent: seizureSubjectPresent,
+                // Which hand MediaPipe thinks is which. The sided per-student
+                // markers ride on this, so it is worth being able to confirm it
+                // with a one-handed wave — see seizureMotionSource.ts.
+                handSides: rawHands.map(h => h.handedness),
+                markerCount: serverSeizure?.markers?.length ?? 0,
                 baselineSamples: seizureBaselineSamples,
                 signature: seizureSignature,
                 willEscalate: !!seizureInfo,

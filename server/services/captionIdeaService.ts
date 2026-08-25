@@ -205,6 +205,8 @@ export async function extractCaptionIdeas(
   captionDebug("USER INPUT (sent to model)", input);
 
   const response = await provider.structuredComplete({
+    // Background: caption ideas are precomputed, not awaited.
+    background: true,
     model: cfg.model,
     input,
     instructions: ideaInstructions,

@@ -38,3 +38,6 @@ hila-session-debug.json
 
 # Star-flash trap output (games/world-lab/DEBUG-STAR-FLASH.md)
 games/world-lab/flash-out/
+
+# Fast-boot dev server bundle (scripts/dev-server.mjs)
+.dev

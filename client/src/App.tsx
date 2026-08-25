@@ -403,6 +403,13 @@ function Router() {
       {SUPPORTED_LANGUAGES.filter(l => l.code !== "en").map(lang => (
         <Route key={lang.code} path={`/${lang.code}`} component={LandingPage} />
       ))}
+      {/* English is served at "/" only. /en is folded into it rather than given
+          its own page, so the two never compete as duplicate content. The server
+          and the CDN answer a cold hit on /en with a 301; this covers the
+          client-side case. */}
+      <Route path="/en">
+        <Redirect to="/" replace />
+      </Route>
       <Route path="/" component={LandingPage} />
 
       {/* 404 fallback */}

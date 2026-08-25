@@ -13,7 +13,8 @@
 // autocorrelation, region counts) would be unusable and the per-student baseline
 // already self-adapts the energy SCALE. See planning-docs/aac-seizure-recognition.
 
-import type { Region } from "./seizure-signature";
+import type { Region } from "./motion-types";
+import { coerceSeizureMarkers, type SeizureMarker } from "./seizure-markers";
 
 /** Off folds detector-enable into the sensitivity dial. Higher = more sensitive
  *  = fires more readily (more warnings to the Observer, fewer misses). */
@@ -29,6 +30,17 @@ export interface SeizureConfig {
   atonic: SeizureSensitivity;
   /** Audio corroboration — only ever MODULATES a motion event, so binary. */
   audioCorroboration: boolean;
+  /**
+   * Per-student motor markers: the specific things THIS student does when they
+   * seize ("holds her left arm up"). Still technical config — they decide when
+   * the program escalates a frame — but unlike the sensitivity dials they are
+   * describing one child rather than tuning a generic detector.
+   *
+   * They exist because the generic convulsive gate requires bilateral symmetry
+   * and axial involvement, so a sustained UNILATERAL presentation can never
+   * pass it at any sensitivity. See seizure-markers.ts.
+   */
+  markers: SeizureMarker[];
 }
 
 /** Machine-written long-term baseline (the student's habitual motion), persisted
@@ -36,8 +48,13 @@ export interface SeizureConfig {
  *  tuned instead of re-learning from scratch. NOT clinician-edited. Mirrors
  *  MotionBaseline + a stamp. */
 export interface PersistedBaseline {
-  regionEnergy: Record<Region, number>;
+  /** Sparse: a region is present only if it was ever observed. An absent hand
+   *  must not be recorded as a still one. */
+  regionEnergy: Partial<Record<Region, number>>;
   samples: number;
+  /** Per-region observation counts — a region seen for only part of a session
+   *  must not be judged against a baseline built while it was missing. */
+  regionSamples?: Partial<Record<Region, number>>;
   /** ISO timestamp of the last write (informational). */
   updatedAt: string;
 }
@@ -56,6 +73,7 @@ export const DEFAULT_SEIZURE_CONFIG: SeizureConfig = {
   rhythmic: "off",
   atonic: "off",
   audioCorroboration: false,
+  markers: [],
 };
 
 /** Resolved DSP thresholds the client detectors actually run on. `enabled:false`
@@ -71,7 +89,10 @@ export interface SeizureThresholds {
   };
   atonic: {
     enabled: boolean;
-    /** Downward centroid drop (frame fraction) for a sudden collapse. */
+    /** Downward drop for a sudden collapse, in SUBJECT-SCALE units (face widths,
+     *  or torso span when pose is the source) — NOT frame fractions. The old
+     *  frame-fraction units meant the same real movement cleared or missed the
+     *  bar depending only on how close the child was sitting. */
     dropFrac: number;
   };
   /** Audio cue may annotate a motion event. */
@@ -88,10 +109,14 @@ const RHYTHMIC_BY_SENSITIVITY: Record<Exclude<SeizureSensitivity, "off">, { invo
   medium: { involvementMult: 1.8, escalateConfidence: 0.28 },
   high: { involvementMult: 1.3, escalateConfidence: 0.15 },
 };
+// In SUBJECT-SCALE units (see SeizureThresholds.atonic.dropFrac). A collapse
+// moves the head down by roughly one to three face widths; "medium" asks for
+// half of one. Only the sensitivity NAME is persisted per student, so retuning
+// these numbers needs no migration.
 const ATONIC_DROP_BY_SENSITIVITY: Record<Exclude<SeizureSensitivity, "off">, number> = {
-  low: 0.12,
-  medium: 0.08,
-  high: 0.05,
+  low: 0.75,
+  medium: 0.5,
+  high: 0.35,
 };
 
 /** Resolve a clinician config into the DSP thresholds the detectors run on. */
@@ -106,6 +131,12 @@ export function resolveThresholds(config: SeizureConfig): SeizureThresholds {
   };
 }
 
+/** Markers the client should actually evaluate — none when the feature is off,
+ *  so a disabled student can't be escalated by a stale marker list. */
+export function resolveMarkers(config: SeizureConfig): SeizureMarker[] {
+  return config.enabled ? config.markers : [];
+}
+
 /** What the server ships to the AAC client in clientConfig.seizure: the resolved
  *  DSP thresholds the detectors run on + the seed baseline. Absent/`enabled:false`
  *  → the client skips the detector. Shared so client + server agree on the shape. */
@@ -113,6 +144,8 @@ export interface ClientSeizureConfig {
   enabled: boolean;
   thresholds: SeizureThresholds;
   baseline?: PersistedBaseline | null;
+  /** Per-student motor markers the client DSP evaluates each window. */
+  markers?: SeizureMarker[];
 }
 
 /** Normalize a possibly-partial/legacy stored value into a full config. */
@@ -125,5 +158,6 @@ export function coerceSeizureConfig(raw: unknown): SeizureConfig {
     rhythmic: sens(c.rhythmic, DEFAULT_SEIZURE_CONFIG.rhythmic),
     atonic: sens(c.atonic, DEFAULT_SEIZURE_CONFIG.atonic),
     audioCorroboration: c.audioCorroboration === true,
+    markers: coerceSeizureMarkers(c.markers),
   };
 }

@@ -1,0 +1,58 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=02a520cc+dirty
+# started=2026-08-24T13:04:20.427Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /stock
+CHEAT  /stock
+> say mara eat apple
+OK     said: mara + eat + apple
+TOAST  ▶ party (1): mara + eat + apple (feedback)
+TICK   quiet after 0.8s.
+> wait 40
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+EXIT   orrin left view here west.
+ENTER  orrin came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+EXIT   mara left view there east.
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 40.0s.
+> /stock
+CHEAT  /stock
+> say mara eat apple
+OK     said: mara + eat + apple
+TOAST  ▶ party (1): mara + eat + apple (feedback)
+TICK   quiet after 0.8s.
+> wait 40
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view there west.
+EXIT   mara left view there east.
+EXIT   biscuit left view here south.
+EXIT   orrin left view there west.
+EXIT   pip left view here north.
+ENTER  pip came into view here north.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view here south.
+ENTER  orrin came into view there west.
+EXIT   pip left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view there south.
+EXIT   orrin left view there west.
+TICK   waited 40.0s.
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=8  presses=0  screens=1  sim=86.7s
+# events: EXIT 15  ENTER 11  TICK 5  CHEAT 3  OK 2  TOAST 2  BOARD 1  NOTE 1  SAY 1

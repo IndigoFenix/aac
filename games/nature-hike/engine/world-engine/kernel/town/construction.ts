@@ -821,6 +821,35 @@ export interface SerializedTownDeltas {
    *  Keyed by the scalar (never the good) so the re-inject needs no
    *  economy lookup. Absent = none (every pre-⑤ save). */
   driftBank?: Record<string, number>;
+  /** ⚖️ THE DOMESTIC HERD (band-settlement-round B-⑥), species → row:
+   *  owned animals CONVERTED at the homestead→town promotion seam
+   *  (city-founding's decided handoff law — individual owned-animal
+   *  containers are physics only at homestead scale; never both accounts
+   *  at once). `n` is the counts half of a collective record (`Band.mix`'s
+   *  vocabulary); `stock` is the animals' own live produce (wool on the
+   *  sheep), pooled per species — riding the record so the cycle conserves
+   *  goods exactly, the wild codec's own "live stack, not the initial
+   *  roll" law. Absent = none (every pre-B-⑥ save). */
+  herd?: Record<string, HerdRow>;
+}
+
+/** One species' converted herd: head count + their pooled live produce. */
+export interface HerdRow {
+  n: number;
+  stock: Record<string, number>;
+}
+
+/** Sum `add` into `into` per species — the ONE herd-merge shape (mergeSites,
+ *  siteTownConfig and the bank all fold through it, so they cannot drift). */
+export function mergeHerd(
+  into: Record<string, HerdRow>, add: Readonly<Record<string, HerdRow>> | undefined,
+): Record<string, HerdRow> {
+  for (const [sp, row] of Object.entries(add ?? {})) {
+    const t = into[sp] ?? (into[sp] = { n: 0, stock: {} });
+    t.n += row.n;
+    for (const [g, u] of Object.entries(row.stock)) t.stock[g] = (t.stock[g] ?? 0) + u;
+  }
+  return into;
 }
 
 /** The per-town overlay store. `version` is the global monotone the
@@ -966,6 +995,9 @@ export interface TownDeltas {
    *  credited, mutated in place (the `stock` pattern); serializes with the
    *  deltas so a reload re-injects what the lane already delivered. */
   readonly driftBank: Record<string, number>;
+  /** ⚖️ THE DOMESTIC HERD (B-⑥): species → {n, stock}, mutated in place
+   *  (the `stock` pattern); serializes with the deltas. */
+  readonly herd: Record<string, HerdRow>;
   toJSON(): SerializedTownDeltas;
 }
 
@@ -1095,6 +1127,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     ]),
   );
   const driftBank: Record<string, number> = { ...(json?.driftBank ?? {}) };
+  const herd: Record<string, HerdRow> = mergeHerd({}, json?.herd);
   const store: TownDeltas = {
     version: json?.version ?? 0,
     get: (key) => buildings.get(key),
@@ -1224,6 +1257,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     shellFurnPiles,
     craftQueue,
     driftBank,
+    herd,
     toJSON: () => ({
       version: store.version,
       buildings: Object.fromEntries(
@@ -1255,6 +1289,9 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
           .map(([k, q]) => [String(k), q.map((e) => JSON.parse(JSON.stringify(e)) as QueuedCraft)]),
       ),
       driftBank: { ...driftBank },
+      // Absent-tolerant on read; emitted only when someone lives here, so
+      // every pre-B-⑥ save's serialized form stays byte-identical.
+      ...(Object.keys(herd).length ? { herd: mergeHerd({}, herd) } : {}),
     }),
   };
   return store;

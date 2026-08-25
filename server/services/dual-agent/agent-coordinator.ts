@@ -22,6 +22,8 @@ import { isUrlPermitted } from "@shared/permitted-websites";
 import { enabledHomeActions, findHomeAction } from "@shared/home-actions";
 import { executeHomeAction } from "./home-action-service";
 import { resolveBoardKey } from "@shared/board-keys";
+import { resolveButtonColorToken } from "@shared/button-color";
+import { deriveSpeechAct, applySpeechActMark } from "@shared/aac/speech-act";
 import { buttonActionFromOpen, renderableBoardCover, renderableEmojiIcon } from "./board-launch";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { boardRepository } from "../../repositories/boardRepository";
@@ -86,7 +88,7 @@ import type { ObserverToolConfig } from "./tool-declarations-observer";
 import type { SpeakerToolConfig } from "./tool-declarations-speaker";
 import type { BoardManagerToolConfig } from "./tool-declarations-board-manager";
 import { buildDefaultClientConfig, buildClientAutoScanConfig, type ClientSeizureConfig } from "./client-config";
-import { coerceSeizureConfig, resolveThresholds } from "@shared/aac/seizure-config";
+import { coerceSeizureConfig, resolveThresholds, resolveMarkers } from "@shared/aac/seizure-config";
 import { APP_REGISTRY, getEnabledAppsFromConfig, getAppDefinition } from "./app-registry";
 import type { AppConfig } from "./app-registry";
 import type { AACAppDefinition } from "./types";
@@ -131,6 +133,7 @@ import type {
   GestureRecognizedEvent,
   ObservationModeChangeEvent,
   ThoughtLeakEvent,
+  ContextLeakEvent,
 } from "./agent-events";
 import {
   parseDefinedGestures,
@@ -212,7 +215,7 @@ import type { SocialPeerParams } from "@shared/social-bot/debug";
 import { generatePersona, describePersona, buildSlpConfig, type GeneratedPersona } from "../social-bot/persona-generator";
 import { COMPETENCIES, type Archetype, type Competency, type SlpConfig } from "../social-bot/personality-and-challenge";
 import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
-import { resolveAppStartupParams, type StartupResolveContext } from "./startup-resolver";
+import { resolveAppStartupParams, decideAiOpen, type StartupResolveContext } from "./startup-resolver";
 import { pickVoice as pickSocialPeerVoice, geminiVoiceGender, peerVoicePitchSemitones, peerVoiceFormantSemitones } from "../social-bot/voice-pick";
 import {
   buildSocialDebriefDirective,
@@ -258,6 +261,13 @@ import {
   flowNote,
 } from "./agent-flow-logger";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
+import { normalizeVenueMenuSettings } from "@shared/venue-menus";
+import type { VenueBoardStudent } from "../venue-menus/venue-board-service";
+import {
+  resolveRestaurantOpen,
+  restaurantOpenNote,
+  RESTAURANT_APP_ID,
+} from "../venue-menus/restaurant-app-open";
 import { smartMergeButtons, sameBoard, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER, PARTY_UNKNOWN } from "./speech-party";
 import { userSpeechDrivesBoard, speakerReplyTriggers } from "./speech-board-trigger";
@@ -500,6 +510,25 @@ const THOUGHT_LEAK_CORRECTION =
   `or any similar marker; everything you voice reaches the user. ` +
   `Continue the conversation naturally on your next turn.`;
 
+/** Corrective injected into the Speaker after it RECITED its own input
+ *  instead of replying — the turn carried bracketed wire format ("[CONTEXT]
+ *  …", "[GAME] …") or opened with a stage direction ("(The user has closed
+ *  the game.)"). Same framing as the thought-leak corrective: reassure the
+ *  model nothing reached the child (so it doesn't apologize aloud), name the
+ *  exact failure, and restate the contract. */
+const CONTEXT_LEAK_CORRECTION =
+  `[SYSTEM CORRECTION] Your last turn read your own INPUT out loud instead of ` +
+  `replying — it contained bracketed system markers like "[CONTEXT] …" or ` +
+  `"[GAME] …", or opened with a narrated stage direction in parentheses such ` +
+  `as "(The user has closed the game.)". That whole turn was caught and ` +
+  `suppressed: the user did NOT see or hear any of it, so do NOT apologize ` +
+  `for it or refer to it. Everything the system sends you in brackets or as ` +
+  `a situation note is BACKGROUND for you only — it tells you what is ` +
+  `happening; it is never something to say. Never narrate what the user just ` +
+  `did. Say only the words you mean the user to hear, in plain language, with ` +
+  `no brackets and no parenthetical narration. Continue naturally on your ` +
+  `next turn.`;
+
 /** Corrective injected after the Speaker prefixes its spoken reply with a
  *  leaked meta-tag ("[USER to YOU]", "[MODE …]", "[CONTEXT …]"). The tag was
  *  already stripped before it reached the user, the TTS, and the
@@ -610,7 +639,14 @@ function buildClientSeizureConfig(aacSettings: any): ClientSeizureConfig | undef
   const raw = aacSettings?.seizureDetection;
   const config = coerceSeizureConfig(raw?.config);
   if (!config.enabled) return undefined;
-  return { enabled: true, thresholds: resolveThresholds(config), baseline: raw?.baseline ?? null };
+  return {
+    enabled: true,
+    thresholds: resolveThresholds(config),
+    baseline: raw?.baseline ?? null,
+    // Per-student motor markers — the DSP evaluates these client-side each
+    // window, so they ship with the config rather than being adjudicated here.
+    markers: resolveMarkers(config),
+  };
 }
 
 function clientMsgSummary(msg: ClientMessage): string {
@@ -698,27 +734,50 @@ function buildBoardFromButtons(
     pages: [{
       id: pageId,
       name: "Main",
-      buttons: buttons.map((b, i) => ({
-        id: `btn-${Date.now()}-${i}`,
-        label: b.label,
-        spokenText: b.label,
-        ...(b.sentence ? { sentence: b.sentence } : {}),
-        ...(b.role ? { role: b.role } : {}),
-        ...(b.buttonType ? { buttonType: b.buttonType } : {}),
-        ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
-        ...(b.narrowDimension ? { narrowDimension: b.narrowDimension } : {}),
-        ...(b.narrowValue ? { narrowValue: b.narrowValue } : {}),
-        ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
-        ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
-        row: Math.floor(i / cols),
-        col: i % cols,
-        action: buttonActionFromOpen(b.open, b.sentence ?? b.speech ?? b.label, homeActions),
-        style: {},
-        iconRef: b.iconRef || "fas fa-comment",
-        symbolPath: b.symbolPath,
-        ...(b.glyph ? { glyph: b.glyph } : {}),
-        ...(b.glyphFallback ? { glyphFallback: b.glyphFallback } : {}),
-      })),
+      buttons: buttons.map((b, i) => {
+        // SPEECH ACT — derived from the GLYPH here, on the way out, so every
+        // board the new path ships is classified the same way. Its ONLY job is
+        // the prosody mark appended to the glyph (`request` → the arc, `ask` →
+        // the `?`); it decides no colour. See shared/aac/speech-act.ts.
+        //
+        // MACHINERY IS EXEMPT. wordfinder/more are fixed chrome whose label and
+        // glyph the renderer ignores outright, and suggestion/narrow are
+        // guessing-mode narrowing affordances that already own their appearance
+        // via `resolveBorderClass`. Marking any of them could only re-mark
+        // something already decided — and this is the exact surface the
+        // 2026-08-19 Word Finder annihilation went through, so it stays narrow.
+        const isMachinery = b.buttonType === "wordfinder" || b.buttonType === "more"
+          || b.buttonType === "suggestion" || b.buttonType === "narrow";
+        const act = isMachinery ? undefined : deriveSpeechAct({ glyph: b.glyph });
+        const glyph = isMachinery ? b.glyph : applySpeechActMark(b.glyph, act);
+        return {
+          id: `btn-${Date.now()}-${i}`,
+          label: b.label,
+          spokenText: b.label,
+          ...(b.sentence ? { sentence: b.sentence } : {}),
+          ...(b.role ? { role: b.role } : {}),
+          ...(act ? { speechAct: act } : {}),
+          // The old path (LiveRelay.buildBoardFromButtons) always filled `color`
+          // and this one never did, leaving the client's fallback to re-derive
+          // it. Fill it here too, so the speech-act paint reaches boards that
+          // never round-trip through the client resolver.
+          color: resolveButtonColorToken({ glyph, buttonType: b.buttonType, role: b.role }),
+          ...(b.buttonType ? { buttonType: b.buttonType } : {}),
+          ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
+          ...(b.narrowDimension ? { narrowDimension: b.narrowDimension } : {}),
+          ...(b.narrowValue ? { narrowValue: b.narrowValue } : {}),
+          ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
+          ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
+          row: Math.floor(i / cols),
+          col: i % cols,
+          action: buttonActionFromOpen(b.open, b.sentence ?? b.speech ?? b.label, homeActions),
+          style: {},
+          iconRef: b.iconRef || "fas fa-comment",
+          symbolPath: b.symbolPath,
+          ...(glyph ? { glyph } : {}),
+          ...(b.glyphFallback ? { glyphFallback: b.glyphFallback } : {}),
+        };
+      }),
     }],
     currentPageId: pageId,
   };
@@ -810,6 +869,12 @@ export class AgentCoordinator {
   // Connection lifecycle
   // -------------------------------------------------------------------------
   private state: CoordinatorState = "initializing";
+  /** Delay before the "opening…" cue appears. Most opens settle in a few ms and
+   *  a cue that flashes on and off is noise; the ones that matter await a
+   *  startup-resolver call, and the Speaker is silent for all of it. */
+  private static readonly APP_OPEN_CUE_DELAY_MS = 250;
+  private appOpenCueTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** The client socket. NOT readonly: adoptSocket rebinds a detached
    *  coordinator to a reconnect's fresh socket in place. */
   private ws: WSWebSocket;
@@ -3000,6 +3065,7 @@ export class AgentCoordinator {
     if (!state.availableBoards.some(b => b.key === HOME_BOARD_KEY)) {
       state.availableBoards.unshift({ key: HOME_BOARD_KEY, name: "Home", id: "__home__" } as any);
     }
+
     runInSessionContext(this.sessionId, this.debugMode, () => {
       logLiveSession("AVAILABLE_BOARDS", `at prompt-build: ${state.availableBoards!.length} board(s) — [${state.availableBoards!.map(b => b.key).join(", ")}]`);
     });
@@ -7361,6 +7427,9 @@ export class AgentCoordinator {
       case "thought_leak":
         this.onSpeakerThoughtLeak(event);
         return;
+      case "context_leak":
+        this.onSpeakerContextLeak(event);
+        return;
     }
   }
 
@@ -7403,6 +7472,43 @@ export class AgentCoordinator {
     // no [AI to USER] Observer injection, no appendToConversationLog, no
     // invokeBoardManager. The board keeps whatever the press-time rebuild
     // produced; the model gets a clean slate on its next turn.
+  }
+
+  /** The Speaker recited its own input this turn — bracketed wire format or
+   *  a narrated stage direction reached its spoken output. Audio was already
+   *  suppressed mid-stream by onSpeakerSuppressAudio(). This closes the turn
+   *  out WITHOUT any speech_end side effect — no echo back into Speaker
+   *  context, no conversationLog append, no BoardManager rebuild — because
+   *  feeding recited context back as "what you just said" is precisely the
+   *  self-reinforcing loop that makes it compound. Mirrors
+   *  onSpeakerThoughtLeak() exactly; only the record and the corrective
+   *  differ. */
+  private onSpeakerContextLeak(event: ContextLeakEvent): void {
+    // Lift suppression so the next turn's audio flows normally.
+    this.suppressSpeakerAudio = false;
+    this.speakerSpeaking = false;
+    this.clearSpeakerBusy();
+
+    // Supervisor channels only — never into agent-visible context.
+    this.writeSupervisorOnly(
+      `[SPEAKER recited its input into speech, suppressed] ${event.recited}`
+      + (event.speech ? ` || residue: "${event.speech}"` : ""),
+    );
+
+    // One-shot "thinking" pulse so the client shows the avatar paused rather
+    // than wondering why the audio cut out.
+    this.send({ type: "thinking", active: true });
+    // Reset the client's text accumulator — it may hold a fragment sent
+    // before detection fired.
+    this.send({ type: "complete", data: {} });
+
+    this.speaker?.sendContextInjection(CONTEXT_LEAK_CORRECTION);
+
+    flowNote("SPEAKER", `context_leak suppressed + corrective injected: "${event.recited.slice(0, 80)}"`);
+
+    // Deliberately NOT done here (unlike speech_end): no [YOU to USER] echo,
+    // no [AI to USER] Observer injection, no appendToConversationLog, no
+    // invokeBoardManager.
   }
 
   private onSpeakerSpeechStart(event: SpeechStartEvent): void {
@@ -8078,9 +8184,14 @@ export class AgentCoordinator {
         //    payload and always shows the "unavailable" screen.
         //  - picture_search → the server runs the search; a locally-launched
         //    tile would open an app with no pictures in it.
+        //  - restaurant → the server resolves the MODE (menu / floor / search /
+        //    caretaker) and builds the board. Launched locally it would get no
+        //    payload and fall to the caretaker screen every single time, which
+        //    is the one lane the student cannot use.
         needsStartupResolution:
           a.id === "youtube" ||
           a.id === PICTURE_SEARCH_APP_ID ||
+          a.id === RESTAURANT_APP_ID ||
           (!!a.startup && a.id !== "social_trainer"),
       }));
 
@@ -8157,6 +8268,25 @@ export class AgentCoordinator {
 
   /** Resolve an app's startup params (or defaults). Thin wrapper around the
    *  resolver that builds the context from session state. */
+  /**
+   * Ask the decision model whether an AI-chosen open should happen.
+   *
+   * Only ever called with `source: "ai"`. Fails open — see `decideAiOpen`.
+   */
+  private async decideAiAppOpen(
+    app: { id: string; name: string; aiOpenPolicy: import("@shared/app-startup").AiOpenPolicy },
+    data?: string,
+  ): Promise<import("@shared/app-startup").AiOpenDecision> {
+    const base = this.buildStartupResolveContext(
+      // The decision needs the session context, not a spec; a throwaway spec
+      // keeps one context builder rather than two that can drift apart.
+      { appId: app.id, guidance: "", paramsSchema: { type: "object", properties: {} }, defaults: {} },
+      { source: "ai", data },
+    );
+    const { spec: _unused, ...rest } = base;
+    return decideAiOpen({ ...rest, appId: app.id, appName: app.name, policy: app.aiOpenPolicy });
+  }
+
   private async resolveStartupParams(
     spec: AppStartupSpec,
     source: "ai" | "student",
@@ -8266,7 +8396,90 @@ export class AgentCoordinator {
     flowNote("COORDINATOR", `Home action "${action.id}" fired (${outcome.kind}).`);
   }
 
+  /**
+   * Route an app open, and GUARANTEE the Speaker's held `open_app` ack settles.
+   *
+   * The inner routine has a dozen exit paths; this wrapper exists so that none
+   * of them can leave a functionResponse outstanding. Gemini Live blocks
+   * generation while one is (measured 2026-08-24 — see
+   * scripts/test-live-toolcall-blocking.ts), so a missed settle is not a lost
+   * log line, it is a Speaker that never talks again. The `finally` fails OPEN
+   * for exactly that reason.
+   */
   private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
+    let settled = false;
+    /**
+     * Hand the model the verdict. On the Live path this answers the held
+     * functionResponse BEFORE the model composes its sentence, so a refusal
+     * changes what gets said instead of contradicting it afterwards. A student
+     * press and a Board Manager open held nothing, so they keep taking the
+     * after-the-fact context-injection route.
+     */
+    const settle = (opened: boolean, note?: string): void => {
+      if (settled) return;
+      settled = true;
+      this.clearAppOpenCue();
+      if (event.toolCallId) {
+        this.speaker?.resolveAppOpen?.(event.toolCallId, { opened, note });
+      } else if (note) {
+        this.speaker?.sendContextInjection(note);
+      }
+      // A REFUSAL is a board event too. Every refusal path used to `return`
+      // before invokeBoardManager, so the board kept whatever the Speaker's
+      // (now retracted) promise had prompted — on 2026-08-24 that left a child
+      // looking at restaurant follow-ups for an app that never opened, and the
+      // Board Manager still reasoning about "the restaurant app" a minute
+      // later. The successful paths invoke it themselves, after their own
+      // payload is on the wire.
+      if (!opened) this.invokeBoardManager([event]);
+    };
+    // Only for a HELD open. That is precisely the case where the child is
+    // facing an unexplained silence — the Speaker cannot talk until this
+    // settles. A student press already got feedback from their own touch (and
+    // the apps board renders its own spinner), so a second overlay would just
+    // be two indicators for one wait.
+    if (event.toolCallId) this.armAppOpenCue();
+    try {
+      await this.routeAppOpenInner(event, settle);
+    } catch (err) {
+      // The inner catch only covers the custom-app tail. Anything else would
+      // otherwise escape as an unhandled rejection (routeAppOpen is
+      // void-dispatched), taking the reason with it.
+      flowNote("COORDINATOR", `routeAppOpen threw for "${event.appId}": ${String(err)}`);
+      logLiveSession("APP_OPEN_FAILED", `${event.appId}: ${String(err)}`);
+    } finally {
+      // Fell through without a verdict (a path I did not tag, or the throw
+      // above). Allow the open rather than stranding the turn: a held ack that
+      // never settles is a Speaker that never speaks again.
+      settle(true);
+    }
+  }
+
+  /**
+   * Light the "opening…" cue, but only if the open is actually slow.
+   *
+   * Most opens settle in a few ms and a cue that flashes on and off is visual
+   * noise. The ones that matter await a startup-resolver call, and during those
+   * the Speaker is deliberately silent — so this is the only thing telling the
+   * child their press was heard.
+   */
+  private armAppOpenCue(): void {
+    this.clearAppOpenCue();
+    this.appOpenCueTimer = setTimeout(() => {
+      this.appOpenCueTimer = null;
+      this.processing.markAppBusy();
+    }, AgentCoordinator.APP_OPEN_CUE_DELAY_MS);
+  }
+
+  private clearAppOpenCue(): void {
+    if (this.appOpenCueTimer) { clearTimeout(this.appOpenCueTimer); this.appOpenCueTimer = null; }
+    this.processing.clearAppBusy();
+  }
+
+  private async routeAppOpenInner(
+    event: AppOpenRequestedEvent,
+    settle: (opened: boolean, note?: string) => void,
+  ): Promise<void> {
     const appId = event.appId;
     const triggerSource: "ai" | "student" = event.source === "client" ? "student" : "ai";
     // The Word Finder owns the screen while it is open. Prompt guidance alone
@@ -8276,9 +8489,7 @@ export class AgentCoordinator {
     // press still opens — their press is them leaving the Word Finder.
     if (triggerSource === "ai" && this.guessingState) {
       flowNote("COORDINATOR", `Blocked AI open_app("${appId}") — Word Finder active.`);
-      this.speaker?.sendContextInjection(
-        `[APP OPEN BLOCKED] The Word Finder is open — help the user find their word first. Open apps only after it closes.`,
-      );
+      settle(false, `[APP OPEN BLOCKED] The Word Finder is open — help the user find their word first. Open apps only after it closes.`);
       return;
     }
     if (appId === "social_trainer") {
@@ -8289,12 +8500,50 @@ export class AgentCoordinator {
       // resolved INSIDE startSocialPeerSession so all entry points
       // (AI open_app, client social_trainer_started) get tuned peers.
       void this.startSocialPeerSession(triggerSource === "ai" ? "speaker_open_app" : "client_launch");
+      settle(true);
       return;
     }
 
     // Built-in AAC app? (drawing, music, youtube, games, …)
     const builtIn = getAppDefinition(appId);
     if (builtIn) {
+      // What the Speaker is told about the screen that actually appeared —
+      // which photo, how many pictures, which restaurant mode.
+      //
+      // 🚨 ACCUMULATED, NOT INJECTED. On the Live path a functionResponse is
+      // outstanding for this whole branch, and pushing client content while the
+      // model is blocked on one is the exact shape that produced permanent
+      // silence in testing. Everything here rides out on the single `settle`
+      // at the tail instead.
+      let openDetail: string | undefined;
+      // 🚨 WHETHER, before HOW. An app that declares a policy puts an
+      // AI-CHOSEN open to a small decision model before anything else happens,
+      // and that model may refuse it. A student press never reaches here: the
+      // press IS the ask.
+      //
+      // This is the mechanism instead of more prompt text, because prompt text
+      // was tried and did not hold — see `AiOpenPolicy` for the two live
+      // failures that produced it. It fails OPEN, so a resolver outage returns
+      // today's behaviour rather than an AAC device that stops opening apps.
+      if (triggerSource === "ai" && builtIn.aiOpenPolicy) {
+        const decision = await this.decideAiAppOpen(
+          { id: builtIn.id, name: builtIn.name, aiOpenPolicy: builtIn.aiOpenPolicy },
+          event.data,
+        );
+        if (!decision.open) {
+          flowNote(
+            "COORDINATOR",
+            `Open decision REFUSED open_app("${appId}"${event.data ? `, "${event.data}"` : ""}) — ${decision.reason ?? "not what the user wants"}.`,
+          );
+          settle(
+            false,
+            `[APP OPEN DECLINED] ${builtIn.name} is not what they are asking for.` +
+              (decision.reason ? ` ${decision.reason}` : "") +
+              ` Answer what they actually said instead — do not mention the app, and do not try to open it again this turn.`,
+          );
+          return;
+        }
+      }
       if (appId === "youtube") {
         // Browse mode needs the permitted channels/videos/playlists in the
         // payload (the client RSS-fetches each channel's recent uploads). The
@@ -8307,12 +8556,13 @@ export class AgentCoordinator {
         const videos = st?.permittedYoutubeVideos || [];
         const playlists = st?.permittedYoutubePlaylists || [];
         if (channels.length || videos.length || playlists.length) {
-          this.send({ type: "app_open", data: { appId: "youtube", appData: { channels, videos, playlists } } });
+          this.sendAppOpen({ appId: "youtube", appData: { channels, videos, playlists } });
         } else if (event.data) {
           // No curated content but the AI passed a query — let the client search.
-          this.send({ type: "app_open", data: { appId: "youtube", data: event.data } });
+          this.sendAppOpen({ appId: "youtube", data: event.data });
         } else {
-          this.speaker?.sendContextInjection(
+          settle(
+            false,
             `[APP OPEN FAILED] YouTube has no permitted channels, playlists, or videos configured and no search query was given — tell the user this activity isn't available right now and suggest something else.`,
           );
           return;
@@ -8325,7 +8575,8 @@ export class AgentCoordinator {
         const resolution = await resolvePhotoRequest(this.studentId ?? "", event.data);
 
         if (resolution.kind === "empty") {
-          this.speaker?.sendContextInjection(
+          settle(
+            false,
             `[APP OPEN FAILED] There are no photos loaded for this user yet — say so warmly and suggest something else. Do NOT promise to add photos yourself.`,
           );
           return;
@@ -8333,28 +8584,58 @@ export class AgentCoordinator {
 
         if (resolution.kind === "match") {
           // Open straight to the resolved photo; the app does not re-match.
-          this.send({
-            type: "app_open",
-            data: { appId: "photos", appData: { photoId: resolution.photoId } },
-          });
-          this.speaker?.sendContextInjection(
-            resolution.caption
-              ? `[PHOTO] Now showing the photo captioned ${wrapUntrusted(resolution.caption)}. Talk about THAT photo warmly.`
-              : `[PHOTO] Now showing a photo with NO caption. Do NOT guess who or what is in it — invite them to tell you about it.`,
-          );
+          this.sendAppOpen({ appId: "photos", appData: { photoId: resolution.photoId } });
+          openDetail = resolution.caption
+            ? `[PHOTO] Now showing the photo captioned ${wrapUntrusted(resolution.caption)}. Talk about THAT photo warmly.`
+            : `[PHOTO] Now showing a photo with NO caption. Do NOT guess who or what is in it — invite them to tell you about it.`;
         } else if (resolution.kind === "no_match") {
           // Opened, but NOT on the photo that was asked for.
-          this.send({ type: "app_open", data: { appId: "photos" } });
-          this.speaker?.sendContextInjection(
+          this.sendAppOpen({ appId: "photos" });
+          openDetail =
             `[PHOTO] No photo matches "${event.data}". The user is browsing all ${resolution.libraryCount} photos instead. ` +
-              `Do NOT claim you found it or describe it — say you could not find that one and invite them to pick.`,
-          );
+            `Do NOT claim you found it or describe it — say you could not find that one and invite them to pick.`;
         } else {
-          this.send({ type: "app_open", data: { appId: "photos" } });
-          this.speaker?.sendContextInjection(
-            `[PHOTO] Browsing ${resolution.libraryCount} photos. Wait for them to choose before commenting on any one.`,
-          );
+          this.sendAppOpen({ appId: "photos" });
+          openDetail = `[PHOTO] Browsing ${resolution.libraryCount} photos. Wait for them to choose before commenting on any one.`;
         }
+      } else if (appId === RESTAURANT_APP_ID) {
+        // The MODE is resolved here, server-side, exactly like the photos and
+        // picture_search branches above: the AI says what the student wants,
+        // and the server decides what can actually be shown. It is the only
+        // side that knows whether a venue is bound, whether its menu passed
+        // review, whether a clinician allowed the student to browse, and what
+        // the child is allergic to. A model choosing the mode would be a model
+        // opening a menu that does not exist.
+        const payload = await this.resolveRestaurantOpen(event.data, triggerSource);
+        // 🚨 HARD GATE on AI-initiated opens that land nowhere.
+        //
+        // `caretaker` means the app has NOTHING for the student: no venue
+        // bound, and no student browsing. If the AI opens it anyway, a child
+        // who pressed a food button gets handed an adult's text screen.
+        //
+        // This is a gate rather than more prompt text because prompt text was
+        // already tried and did not hold. The registry entry says, in as many
+        // words, that a student naming a food wants to EAT and that the app is
+        // for when the RESTAURANT is the point — and on 2026-08-23 the Speaker
+        // read that, watched Daniel press פיצה on a food board in his own
+        // bedroom, and called open_app("restaurant", "pizza") regardless. A
+        // model reaching for the tool that matches the noun is not something
+        // one more paragraph fixes. Same shape as the Word Finder gate above.
+        //
+        // A STUDENT press is never refused: pressing the tile IS the ask, and
+        // the caretaker screen is a legitimate place for an adult to land.
+        if (triggerSource === "ai" && payload.mode === "caretaker") {
+          flowNote("COORDINATOR", `Blocked AI open_app("restaurant") — nothing for the student there (${payload.reason ?? "no_menu"}).`);
+          settle(
+            false,
+            `[APP OPEN BLOCKED] The restaurant app has nothing to show the user right now — ` +
+              `they are not at a restaurant and cannot look for one. Naming a food is not asking ` +
+              `to go out: answer what they actually said instead, and talk about the food itself.`,
+          );
+          return;
+        }
+        this.sendAppOpen({ appId, appData: payload });
+        openDetail = restaurantOpenNote(payload);
       } else if (appId === PICTURE_SEARCH_APP_ID) {
         // Search SERVER-side before opening, same contract as the photos branch
         // above: the Speaker is told what actually came back, so it cannot
@@ -8372,8 +8653,8 @@ export class AgentCoordinator {
           // the one thing an eyegaze user cannot recover from, so the screen
           // must change even though there is nothing to show yet.
           const empty: PictureSearchPayload = { query: null, results: [] };
-          this.send({ type: "app_open", data: { appId, appData: empty } });
-          this.speaker?.sendContextInjection(pictureSearchFailureNote(outcome, event.data));
+          this.sendAppOpen({ appId, appData: empty });
+          settle(true, pictureSearchFailureNote(outcome, event.data));
           this.invokeBoardManager([event]);
           return;
         }
@@ -8386,7 +8667,6 @@ export class AgentCoordinator {
             "COORDINATOR",
             `picture_search refused (${outcome.kind}${outcome.kind === "blocked" ? `: "${outcome.term}"` : ""}) for "${event.data ?? ""}".`,
           );
-          this.speaker?.sendContextInjection(pictureSearchFailureNote(outcome, event.data));
           // A student PRESS must still change the screen: without this, the
           // refusal sends no app_open, the client's 6s backstop times out and
           // opens the app with NO payload — a blank shell after a silent wait
@@ -8394,13 +8674,14 @@ export class AgentCoordinator {
           // Speaker's note explains it aloud.
           if (triggerSource === "student") {
             const empty: PictureSearchPayload = { query: event.data?.trim() || null, results: [] };
-            this.send({ type: "app_open", data: { appId, appData: empty } });
+            this.sendAppOpen({ appId, appData: empty });
           }
+          settle(triggerSource === "student", pictureSearchFailureNote(outcome, event.data));
           return;
         }
 
         const payload: PictureSearchPayload = { query: outcome.query, results: outcome.results };
-        this.send({ type: "app_open", data: { appId, appData: payload } });
+        this.sendAppOpen({ appId, appData: payload });
 
         // Picture search is the first AAC feature whose cost is bandwidth
         // rather than tokens: every image the student sees is fetched by us and
@@ -8426,13 +8707,12 @@ export class AgentCoordinator {
           .slice(0, 5)
           .map(wrapUntrusted)
           .join(", ");
-        this.speaker?.sendContextInjection(
+        openDetail =
           `[PICTURES] Now showing ${outcome.results.length} picture${outcome.results.length === 1 ? "" : "s"} ` +
-            `found on the web for "${outcome.query}". ` +
-            (titles ? `They are captioned: ${titles}. ` : "") +
-            `These came from a web search — nobody has checked them. Talk about what was SEARCHED FOR, ` +
-            `not about details you cannot see, and never claim a specific picture shows something in particular.`,
-        );
+          `found on the web for "${outcome.query}". ` +
+          (titles ? `They are captioned: ${titles}. ` : "") +
+          `These came from a web search — nobody has checked them. Talk about what was SEARCHED FOR, ` +
+          `not about details you cannot see, and never claim a specific picture shows something in particular.`;
       } else {
         // Apps with a startup definition get intelligently-chosen params
         // (e.g. space_trader's startLevel) resolved before launch. Apps
@@ -8449,10 +8729,14 @@ export class AgentCoordinator {
           data: { appId, data: event.data, ...(params ? { appData: { params } } : {}) },
         });
         if (resolverNote) {
-          this.speaker?.sendContextInjection(`[APP STARTUP] ${appId}: ${resolverNote}`);
+          openDetail = `[APP STARTUP] ${appId}: ${resolverNote}`;
         }
       }
-      this.speaker?.sendContextInjection(`[APP OPEN] ${appId}${event.data ? ` (${event.data})` : ""}`);
+      settle(
+        true,
+        `[APP OPEN] ${appId}${event.data ? ` (${event.data})` : ""}` + (openDetail ? `
+${openDetail}` : ""),
+      );
       this.invokeBoardManager([event]);
       return;
     }
@@ -8461,43 +8745,43 @@ export class AgentCoordinator {
     // and ship the renderable payload (the client renders custom apps only when
     // it receives { appId: "custom_app", appData: { id, definition } }, or the
     // dedicated goal-tree payload). Mirrors the legacy live-relay open_app path.
+    let customDetail: string | undefined;
     try {
       const app = await customAppRepository.getApp(appId);
       if (!app) {
-        this.speaker?.sendContextInjection(`[APP OPEN FAILED] app ${appId} not found — tell the user it isn't available.`);
+        settle(false, `[APP OPEN FAILED] app ${appId} not found — tell the user it isn't available.`);
         return;
       }
       if (isGoalTreeApp(app)) {
         const prepared = prepareGoalTreeAppOpen(app);
         if (!prepared.ok) {
-          this.speaker?.sendContextInjection(`[APP OPEN FAILED] ${prepared.error}`);
+          settle(false, `[APP OPEN FAILED] ${prepared.error}`);
           return;
         }
-        this.send({ type: "app_open", data: prepared.payload });
+        this.sendAppOpen(prepared.payload as { appId: string; appData?: unknown });
         // Light startup tuning: resolve how the companion should frame the
         // quest for this student and fold it into the AI's context note. The
         // certified game payload is unchanged (no client plumbing).
         const { params } = await this.resolveStartupParams(goalTreeStartupSpec(), triggerSource);
         const note = goalTreeStartupNote(params);
-        if (note) this.speaker?.sendContextInjection(`[GAME STARTUP]${note}`);
+        if (note) customDetail = `[GAME STARTUP]${note}`;
       } else {
         const validation = validateCustomAppDefinition(app.definition);
         if (!validation.ok) {
-          this.speaker?.sendContextInjection(
+          settle(
+            false,
             `[APP OPEN FAILED] custom app "${app.name}" definition is invalid: ${validation.errors.slice(0, 2).join("; ")}`,
           );
           return;
         }
-        this.send({
-          type: "app_open",
-          data: { appId: "custom_app", appData: { id: app.id, definition: validation.data } },
-        });
+        this.sendAppOpen({ appId: "custom_app", appData: { id: app.id, definition: validation.data } });
       }
-      this.speaker?.sendContextInjection(`[APP OPEN] ${app.name}`);
+      settle(true, `[APP OPEN] ${app.name}` + (customDetail ? `
+${customDetail}` : ""));
       this.invokeBoardManager([event]);
     } catch (err) {
       logLiveSession("APP_OPEN_FAILED", `${appId}: ${String(err)}`);
-      this.speaker?.sendContextInjection(`[APP OPEN FAILED] couldn't open the app — tell the user and suggest something else.`);
+      settle(false, `[APP OPEN FAILED] couldn't open the app — tell the user and suggest something else.`);
     }
   }
 
@@ -8934,7 +9218,7 @@ export class AgentCoordinator {
       // Client: open the (header-only) app surface and ship the face data.
       // The live peer speaks via native audio, so the TTS pitch/formant age
       // shaping doesn't apply — send neutral (0) shifts in that case.
-      this.send({ type: "app_open", data: { appId: "social_trainer" } });
+      this.sendAppOpen({ appId: "social_trainer" });
       this.send({
         type: "social_session",
         data: {
@@ -9139,7 +9423,7 @@ export class AgentCoordinator {
     // appData.url) — nest url/label under appData to match every other app_open
     // payload. A flat `{ appId, url }` here leaves appData undefined and the
     // browser never renders.
-    this.send({ type: "app_open", data: { appId: "browser", appData: { url: event.url, label: event.label } } });
+    this.sendAppOpen({ appId: "browser", appData: { url: event.url, label: event.label } });
     this.speaker?.sendContextInjection(`[WEBSITE OPEN] ${event.url}${event.label ? ` (${event.label})` : ""}`);
     this.invokeBoardManager([event]);
   }
@@ -10076,6 +10360,40 @@ export class AgentCoordinator {
     return state?.availableBoards ?? [];
   }
 
+  /**
+   * Resolve a restaurant-app open. The session owns two facts the resolver
+   * cannot reach on its own — which student this is, and where the device last
+   * reported being — so this gathers them and delegates everything else.
+   */
+  private async resolveRestaurantOpen(data?: string | null, trigger: "ai" | "student" = "ai") {
+    const monitor = this.sessionId
+      ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent
+      : undefined;
+    const gps = monitor?.getGps?.() ?? null;
+    return resolveRestaurantOpen({ student: this.venueBoardStudent(), gps, data, trigger });
+  }
+
+  /**
+   * The three student fields the venue-menu board needs, or null when we do
+   * not have a student yet.
+   *
+   * Takes an already-loaded row when the caller has one (prompt build does),
+   * and otherwise reads the session's cached student — the board-open path is
+   * a PRESS, and re-fetching the student row there would add a query between
+   * a child's finger and their menu.
+   */
+  private venueBoardStudent(row?: any): VenueBoardStudent | null {
+    const student = row
+      ?? (this.sessionId ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent.getStudent?.() : undefined);
+    const id = this.studentId ?? student?.id;
+    if (!id) return null;
+    return {
+      id,
+      birthDate: student?.birthDate ?? null,
+      aacSettings: (student?.aacSettings as VenueBoardStudent["aacSettings"]) ?? null,
+    };
+  }
+
   /** The student's normalized smart-home slots (all of them, enabled or not).
    *  Empty before the session cache exists. */
   private sessionHomeActions(): HomeAction[] {
@@ -10370,6 +10688,10 @@ export class AgentCoordinator {
     }
 
     let boardData: any;
+    // Usually the registered name, but the venue board can fall back to the
+    // floor board below — and a floor board labelled "Cafe Aroma" would be
+    // telling a caretaker a menu loaded when none did.
+    let boardName = match.name;
     if (match.key === HOME_BOARD_KEY) {
       const studentLang = dualAgentService.getSessionCache(this.sessionId!)?.monitorAgent.getStudent?.()?.primaryLanguage || "en";
       boardData = buildDefaultHomeBoard(studentLang, this.isSocialTrainerEnabled());
@@ -10401,7 +10723,7 @@ export class AgentCoordinator {
     // Stale cached values would otherwise still point at the previous
     // board for the rest of the session.
     this.boardManagerToolConfig.loadedBoardKey = match.key;
-    this.boardManagerToolConfig.loadedBoardName = match.name;
+    this.boardManagerToolConfig.loadedBoardName = boardName;
     const page = (boardData as any).pages?.[0];
     if (page?.buttons) {
       const nativeButtons = page.buttons.filter((b: any) => typeof b?.label === "string");
@@ -10410,18 +10732,18 @@ export class AgentCoordinator {
     }
     this.send({
       type: "set_board",
-      data: { board: boardData, name: match.name, boardId: match.id },
+      data: { board: boardData, name: boardName, boardId: match.id },
     });
     runInSessionContext(this.sessionId || "?", this.debugMode, () => {
-      logLiveSession("BOARD_LOADED", `key="${boardKey}" name="${match.name}" id=${match.id}${byUser ? " (user press)" : ""}`);
+      logLiveSession("BOARD_LOADED", `key="${boardKey}" name="${boardName}" id=${match.id}${byUser ? " (user press)" : ""}`);
     });
-    flowNote("COORDINATOR", `${byUser ? "user opened" : "set_board"}("${boardKey}") — loaded "${match.name}".`);
+    flowNote("COORDINATOR", `${byUser ? "user opened" : "set_board"}("${boardKey}") — loaded "${boardName}".`);
     if (byUser) {
       // The press voices nothing, so this note is the only way the AI learns
       // the user changed surface. Context only — never a turn: the user chose
       // a board to speak FROM, not something to be answered.
       this.speaker?.sendContextInjection(
-        `[BOARD OPENED BY USER] "${match.name}" — the user pressed a ${T.button} to open this pre-built ${T.board}. It is now their surface; they will speak from it.`,
+        `[BOARD OPENED BY USER] "${boardName}" — the user pressed a ${T.button} to open this pre-built ${T.board}. It is now their surface; they will speak from it.`,
       );
     }
     // Re-prime the "Practice friend" face when the home board is (re)loaded
@@ -11989,12 +12311,42 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
   }
 
   private send(msg: ServerMessage): void {
-    if (this.ws.readyState !== this.ws.OPEN) return;
+    if (this.ws.readyState !== this.ws.OPEN) {
+      // 🚨 NOT silent. This used to `return` with no trace, which is how an app
+      // open could be "successful" in every log line around it while the message
+      // that actually opens the app never left the process — the agents were
+      // then told it opened and built a whole turn around a screen that was
+      // never there. A dropped send is a real event; say so.
+      flowNote(
+        "COORDINATOR",
+        `DROPPED ${(msg as { type?: string }).type ?? "message"} — client socket not open (readyState=${this.ws.readyState}).`,
+      );
+      return;
+    }
     try {
       this.ws.send(JSON.stringify(msg));
     } catch (err) {
       console.error("[AgentCoordinator] ws.send failed:", err);
+      flowNote("COORDINATOR", `ws.send FAILED for ${(msg as { type?: string }).type ?? "message"}: ${String(err)}`);
     }
+  }
+
+  /**
+   * Send the one message that actually puts an app on the child's screen.
+   *
+   * Exists because `app_open` was the only step in the open chain with no log
+   * line: the decision, the resolution and the agent notification all logged,
+   * so a flow log read as "opened" whether or not the client was ever told.
+   * Every app_open goes through here.
+   */
+  private sendAppOpen(data: { appId: string; data?: string; appData?: unknown }): void {
+    const detail = [
+      data.appId,
+      data.data ? `data="${data.data}"` : null,
+      data.appData ? "appData=yes" : "appData=none",
+    ].filter(Boolean).join(" ");
+    flowOutput("COORDINATOR", "app_open", detail);
+    this.send({ type: "app_open", data } as ServerMessage);
   }
 
   // ── Processing indicators ──────────────────────────────────────────

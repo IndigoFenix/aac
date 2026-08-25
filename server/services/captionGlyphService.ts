@@ -223,6 +223,8 @@ async function runGlyphModel(
   captionDebug("USER INPUT (sent to model)", input);
 
   const response = await provider.structuredComplete({
+    // Background: caption glyphs are precomputed, not awaited.
+    background: true,
     model: cfg.model,
     input,
     instructions,

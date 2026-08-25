@@ -12,7 +12,18 @@
 //      === rations/person — food_need and the derived supply close at fill
 //      ≈ 1 for a balanced town, by construction, not by coincidence.
 //   4. Field GEOMETRY (kernel/town/plan.ts) sums to the same honest acreage
-//      the books assume — the map and the books agree.
+//      the books assume — the map and the books agree AT THE SEATED
+//      POPULATION. ⚖️ β2 RESTATED IDENTITY (food-scale-round Stage β2): the
+//      geometry sizes from `min(pop, popCap)` — the souls the street tree
+//      actually seated — while the books keep feeding the assigned scalar
+//      (`plan.fields` has no economic reader, so nothing starves). Where a
+//      site seats everyone the two are the same number and every pin below is
+//      what S2 shipped; where it cannot, the divergence is exactly the seated
+//      share, published as `popSpill` and converged by Stage β3's
+//      spill-founding. The over-subscribed regression fixture lives in
+//      food-scale.test.ts ("Stage β2 — plan honesty"); this suite's own
+//      fixtures turn out to over-subscribe too (REAL 450 m ground seats ~909
+//      lots against a want of ~1304), so the targets below read SEATED.
 //
 // Pure logic + one live (DB-free) TownWorld stepping — no DOM/GL/DB.
 
@@ -153,7 +164,7 @@ describe("S&D S3 — the dial is WIRED, and the identity survives it", () => {
     expect(acresPerPerson2 * farmProc2.efficiency!).toBeCloseTo(rationsPerPerson2 * SURPLUS, 15);
   });
 
-  it("kernel/town/plan.ts's field geometry reads the SAME dial (map ≡ books)", () => {
+  it("kernel/town/plan.ts's field geometry reads the SAME dial (map ≡ books at SEATED pop)", () => {
     const dial4 = resolveWorldScale({ resource_compression: 4 });
     const eco = compileEconomy([townPlayEconomy(REAL_SCALE)], { construction: true });
     const town = createTownWorld({
@@ -165,7 +176,11 @@ describe("S&D S3 — the dial is WIRED, and the identity survives it", () => {
     const planReal = townPlan(town, eco, "dialfield", 11);
     const planDial = townPlan(town, eco, "dialfield", 11, 0, undefined, [], undefined, undefined, dial4);
     const fieldAreaM2 = (fields: readonly TownField[]) => fields.reduce((s, f) => s + f.w * f.h, 0);
-    const targetDial4 = pop * farmAreaPerPersonM2("ancient", 4) * SURPLUS; // a quarter the acreage
+    // ⚖️ β2 — the target reads the SEATED population (here the want's
+    // ×HOUSEHOLD rounding nicks half a soul: popCap 1465 vs pop 1465.5, a
+    // 0.03% divergence the identity restatement makes explicit).
+    const seated = Math.min(pop, planDial.popCap);
+    const targetDial4 = seated * farmAreaPerPersonM2("ancient", 4) * SURPLUS; // a quarter the acreage
     // Stochastic patch jitter — the same ±40% ballpark S2's own suite gates
     // on (patch COUNT is a rendering-resolution cap; patch SIZE is exact in
     // expectation, not per-seed).
@@ -252,7 +267,7 @@ describe("kernel/town/plan.ts — field GEOMETRY sums to the same honest acreage
     return fields.reduce((sum, f) => sum + f.w * f.h, 0);
   }
 
-  it("a farmland town's Σ field area lands in the honest ballpark of pop × 12 acres × (1 + σ)", () => {
+  it("a farmland town's Σ field area lands in the honest ballpark of SEATED pop × 12 acres × (1 + σ)", () => {
     // A big-enough population pins the patch count at TOWN_DIMS.fieldPatchCap
     // (rendering ceiling), which shrinks the jitter-sampling variance of the
     // realized sum against its analytic target — still stochastic (each
@@ -266,11 +281,20 @@ describe("kernel/town/plan.ts — field GEOMETRY sums to the same honest acreage
     const plan = townPlan(town, eco, "widefield", 11);
     expect(plan.fields.length).toBeGreaterThan(0);
     const pop = town.scalar("population");
-    // MOVED PIN, WITH WHY (σ): the ground the town works is what it PLANS to
-    // work, and that is the table plus the farm's declared margin — read off
-    // the producer row, exactly as the geometry itself reads it, so map ≡
-    // books survives the change instead of being restated here.
-    const targetM2 = pop * farmAreaPerPersonM2("ancient") * SURPLUS;
+    // ⚖️ β2 RESTATED IDENTITY (map ≡ books at SEATED pop) — and this fixture
+    // is a genuine over-subscription witness: 200 grown days push the books
+    // to ~6519 souls while REAL 450 m ground seats 909 lots (popCap ~4545,
+    // seated share ~0.70). The map draws the seated; `popSpill` records the
+    // rest; the books still feed the full scalar (nothing here starves —
+    // see the fill ≈ 1 pin above, which reads the books alone).
+    expect(plan.popCap).toBeLessThan(pop);
+    expect(plan.popSpill).toBeCloseTo(pop - plan.popCap, 6);
+    const seated = Math.min(pop, plan.popCap);
+    // MOVED PIN, WITH WHY (σ, restated by β2): the ground the town works is
+    // what it PLANS to work for the souls it SEATS — the table plus the
+    // farm's declared margin, read off the producer row, exactly as the
+    // geometry itself reads it.
+    const targetM2 = seated * farmAreaPerPersonM2("ancient") * SURPLUS;
     const measuredM2 = fieldAreaM2(plan.fields);
     // 594× short (the survey's own measurement of the pre-S2 code) would
     // fail this by two orders of magnitude; a generous ±40% band catches a
@@ -278,8 +302,8 @@ describe("kernel/town/plan.ts — field GEOMETRY sums to the same honest acreage
     expect(measuredM2).toBeGreaterThan(targetM2 * 0.6);
     expect(measuredM2).toBeLessThan(targetM2 * 1.4);
     // Measured, for the record (see the round's landing notes for the
-    // before/after acres-per-person figure this produces).
-    const acresPerPerson = measuredM2 / M2_PER_ACRE / pop;
+    // before/after acres-per-person figure this produces) — per SEATED soul.
+    const acresPerPerson = measuredM2 / M2_PER_ACRE / seated;
     expect(acresPerPerson).toBeGreaterThan(farmAcresPerPerson("ancient") * SURPLUS * 0.6);
     expect(acresPerPerson).toBeLessThan(farmAcresPerPerson("ancient") * SURPLUS * 1.4);
   });

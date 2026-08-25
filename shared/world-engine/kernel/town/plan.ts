@@ -562,12 +562,13 @@ export function townPlan(
   scale?: WorldScale,
   services: readonly ServicePoint[] = [],
   obstacles: readonly Rect[] = [],
+  tier?: SettlementTier,
 ): TownPlan {
   // The generator IS the implementation; the sync path just drains it, so
   // the two can never drift (staged output is byte-identical by construction).
   const gen = townPlanSteps(
     tri, eco, siteKey, seed, buildUp, housePalette, foundedSlots, species, ageDays,
-    scale, services, obstacles,
+    scale, services, obstacles, tier,
   );
   for (;;) {
     const r = gen.next();
@@ -617,6 +618,12 @@ export function* townPlanSteps(
    *  handed the identical list or the two lattices disagree. Empty = the
    *  unfed `GrowOpts.obstacles` seat, byte-identical legacy growth. */
   obstacles: readonly Rect[] = [],
+  /** THE SETTLEMENT TIER (food-scale-round ⑩): the BODY this settlement
+   *  declares (`REAL_TIER_EXTENT_M`) — the village ladder of
+   *  `planet/refine.ts`/`planet/border.ts` hands `"village"` through
+   *  `TownPlayConfig.tier`, and the extent seat below reads it. Absent =
+   *  `"town"`, byte-identical legacy output. */
+  tier?: SettlementTier,
 ): Generator<string, TownPlan> {
   const city = tri.cities.find(c => c.key === siteKey);
   if (!city) throw new Error(`townPlan: unknown city "${siteKey}"`);
@@ -665,15 +672,15 @@ export function* townPlanSteps(
    *  Street growth holds its built margin back from this, so `radius` below
    *  is an OUTPUT that fits inside.
    *
-   *  ⚖️ THE TIER SEAT (food-scale-round ④⑵): the clip is read through
-   *  `tierExtentM`, so a hamlet, a village and a market town can declare
+   *  ⚖️ THE TIER SEAT (food-scale-round ④⑵, threaded by ⑩): the clip is read
+   *  through `tierExtentM`, so a hamlet, a village and a market town declare
    *  different BODIES on one world instead of all declaring 450 m and being
-   *  told apart only by the clip. Nothing hands this generator a tier yet —
-   *  `planet/refine.ts`/`planet/border.ts` own the tier ladder and are
-   *  SEQUENCED-AFTER — so it reads `"town"`, which IS `townExtentM` and is
-   *  byte-identical to what shipped. */
-  const tier: SettlementTier = "town";
-  const extentM = tierExtentM(tier, scale ?? REAL_SCALE);
+   *  told apart only by the clip. The tier rides in from the founded row
+   *  (`PlanetCity.tier` → `TownPlayConfig.tier` → the parameter above) —
+   *  `planet/refine.ts`/`planet/border.ts` stamp their villages. A caller
+   *  naming none reads `"town"`, which IS `townExtentM` and is byte-identical
+   *  to what shipped. */
+  const extentM = tierExtentM(tier ?? "town", scale ?? REAL_SCALE);
   const net = growStreets(
     seed, siteKey, slotNeed + CIVIC_SLOT_RESERVE,
     { seeds: bias.seeds, extentM, ...(obstacles.length ? { obstacles } : {}) },
@@ -930,13 +937,38 @@ export function* townPlanSteps(
   // count itself is now read through `seatedFrac`: a site seating a fifth of
   // its assigned population employs a fifth of its assigned economy. A town at
   // or above capacity scales by exactly 1, so nothing shipped moves.
+  //
+  // ⚖️ THE STAPLE-ONLY WORKS FLOOR (food-scale-round Stage β2, survey
+  // correction 7). Scaling craft works to zero on a badly-seated site is
+  // honest — nothing about three households implies a weaver. Scaling the FARM
+  // to zero is a lie the town's own books refute: those seated households eat
+  // every day (`food_need`), their grain comes off `field_acres` through a
+  // farm the economy really built (`farms` > 0), and the fields themselves are
+  // drawn right below — a village with cultivated ground and no farm building
+  // contradicts its own ledger. So the STAPLE row alone gets a floor of one,
+  // gated on `scalar > 0` (a town whose books never built a farm gets no
+  // phantom — food must be built, not assumed) and `seatedFrac > 0` (nobody
+  // seated, nobody farming). A 3-lot hamlet with farm+weaver+tailor would be a
+  // worse lie than none; the farm is the one building whose absence
+  // contradicts the food books, so the floor stops there. At seatedFrac === 1
+  // this is byte-identical: `farms` is an integer count (seeded/injected whole
+  // works), so `round(scalar × 1)` already clears the floor whenever it is
+  // nonzero. WHICH row is the staple is the content's declaration, not this
+  // file's: the producer row carries `staple: true` (economy.ts BuildingDef,
+  // declared on town-play's farm row) — plan.ts never names "farm" here.
   const workCounts: Array<[string, number, number | null, { color: string; w: number; h: number }]> =
-    count <= 0 ? [] : eco.works.map(def => [
-      def.key,
-      Math.min(def.mapCap, Math.round(dual.settlementScalar(siteKey, def.countScalar) * seatedFrac)),
-      def.leansToward ? bias.toward[def.leansToward] ?? null : null,
-      def.style,
-    ]);
+    count <= 0 ? [] : eco.works.map(def => {
+      const scalar = dual.settlementScalar(siteKey, def.countScalar);
+      const n = def.staple
+        ? Math.min(def.mapCap, Math.max(scalar > 0 && seatedFrac > 0 ? 1 : 0, Math.round(scalar * seatedFrac)))
+        : Math.min(def.mapCap, Math.round(scalar * seatedFrac));
+      return [
+        def.key,
+        n,
+        def.leansToward ? bias.toward[def.leansToward] ?? null : null,
+        def.style,
+      ];
+    });
   const farmSpots: Array<{ x: number; y: number }> = [];
   for (const [type, n, toward, style] of workCounts) {
     for (let k = 0; k < n; k++) {
@@ -1048,6 +1080,24 @@ export function* townPlanSteps(
   // deltas — *"no phantom founding farm; food must be built, not assumed"*
   // (`server/tests/world-engine/town-founding-age.test.ts`). Gating on `pop`
   // would hand the wagon a cultivated hinterland on day 0.
+  //
+  // ⚖️ FIELDS ARE DRAWN FOR THE SEATED (food-scale-round Stage β2, ⑫
+  // "population follows capacity"). The area below sizes from
+  // `min(pop, popCap)` — the souls this site actually seats — not the raw
+  // assigned scalar: the 71 m regression town is assigned 973 souls, seats 5,
+  // and used to draw 973 people's fields (a sixth of its 2 km world) around
+  // one house. THE BOOKS STILL FEED THE ASSIGNED: `plan.fields` has no
+  // economic reader, and supply (`grain_out = field_acres × eff`) and need
+  // (`food_need = pop × 0.001`) both derive from the same `population` scalar
+  // the same day — so this clamp can starve nothing. Its one cost is a
+  // MAP↔BOOKS divergence, exactly the seated share: the map draws the seated,
+  // the books feed the assigned, and `popSpill` above is the published
+  // reconciliation between them. Stage β's planet-side founding (β3, the
+  // spill founds sites — food-scale-round.md "# STAGE β" › "The β stages") is
+  // what converges the two: the demand this site turned away founds another
+  // site instead of phantom-farming this one. Re-pinned as "map ≡ books at
+  // SEATED pop" (food-scale.test.ts / town-farm-area.test.ts) — recorded,
+  // never silent.
   const fields: TownField[] = [];
   if (biome === "farmland" && houseCount > 0) {
     const anchors = farmSpots.length
@@ -1065,7 +1115,7 @@ export function* townPlanSteps(
     const farmRow = eco.works.find((w) => w.key === "farm");
     const surplusFrac = producerSurplusFrac(farmRow?.surplusFrac, "staple");
     const totalFieldAreaM2 =
-      pop * farmAreaPerPersonM2("ancient", scale?.resourceCompression ?? 1) * (1 + surplusFrac);
+      Math.min(pop, popCap) * farmAreaPerPersonM2("ancient", scale?.resourceCompression ?? 1) * (1 + surplusFrac);
     // Patch COUNT is a rendering-resolution knob (TOWN_DIMS.fieldPatchCap,
     // explicitly-declared content) — patch SIZE carries the honest total
     // past it, which is what makes a big town's fields visibly DOMINATE it

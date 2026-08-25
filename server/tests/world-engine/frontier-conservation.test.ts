@@ -1,11 +1,14 @@
-// 🚨 THE FRONTIER CONSERVATION DIAGNOSIS — REGRESSION PIN, EXPECTED TO FAIL.
+// 🚨 THE FRONTIER CONSERVATION DIAGNOSIS — now a REGRESSION SUITE, all green.
 //
-// Written as a DIAGNOSIS artefact (planning-docs/games/world-engine/
-// frontier-conservation-diagnosis.md), not as a passing suite. Every
-// `test.failing` below pins a PROVEN item-conservation defect that is still in
-// the tree; each one flips to a plain `it` in the fix round, and jest will tell
-// you when that day comes (a `test.failing` that stops throwing FAILS the run,
-// which is exactly the alarm we want).
+// Born as a DIAGNOSIS artefact (planning-docs/games/world-engine/
+// frontier-conservation-diagnosis.md): every conservation defect below was
+// first pinned as a `test.failing` that passed BECAUSE the defect was present,
+// then flipped to a plain `it` in the round that fixed it. ② landed
+// 2026-08-14 (the twin's shadow store), the deadlock/spoken-cap round
+// 2026-08-15, and the MOUNT-STATE CONTRACT round (①/③a/③b/④ below) 2026-08-23:
+// every mount an item can take — hands, worn, stowed whole, mirror shell,
+// order pile with or without a town — now lands in a representation exactly
+// one reader reads.
 //
 // THE REPORT: "Frontier Homestead: creatures loop saying 'I will carry the wood
 // to the block', circling the central box carrying logs." Driving text mode
@@ -15,7 +18,8 @@
 //
 // THREE SEPARATE DEFECTS, bisected here one op at a time:
 //
-//   ① THE POCKET CENSUS BLIND SPOT.  scope.ts `auditScopeTree` (:453-459) reads
+//   ① THE POCKET CENSUS BLIND SPOT — ✅ FIXED 2026-08-23.  scope.ts
+//      `auditScopeTree` reads
 //      `looseIn(n.id)` only for nodes that came out of `input.ids()`.
 //      quest-host `scopeTreeOf().ids()` lists `pocket:<cid>` ONLY for a body
 //      that wears a bag or carries a REGISTERED CONTAINER (the
@@ -43,15 +47,17 @@
 //      booted describe, the writer half (the director driving a loaded
 //      unobserved haul home) in the harness describe at the bottom.
 //
-//   ③ (pinned, not yet localized to a single line) A BASKET PER HAUL TRIP.
-//      The arc test at the bottom is the standing net.
+//   ③ A BASKET PER HAUL TRIP — ✅ FIXED 2026-08-23 (localized: worn bags and
+//      whole-object stows had no countable home; the pool of existing bags
+//      surfaced as they changed mount). The arc test at the bottom stays as
+//      the standing net.
 //
 // DB-free by construction: `bootTextQuest` is the same headless boot
 // `headless-quest-boot.test.ts` uses, over the smallest shipped world document
 // (`scripts/worlds/frontier.spec.json`, the very world the bug was reported
 // against). Run it with:  npm run test:engine -- frontier
 
-import { describe, it, test, expect, beforeAll, afterAll } from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bootTextQuest, type TextQuestRun } from "@shared/world-engine/headless/text-quest.js";
@@ -79,6 +85,7 @@ import { REAL_SCALE } from "@shared/world-engine/scale.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
 import type { ContainerRecord } from "@shared/world-engine/kernel/town/containers.js";
 import type { StockEndpoint } from "@shared/world-engine/kernel/town/transfer.js";
+import type { FoundedSite } from "@shared/world-engine/interaction/town/founding.js";
 
 const specPath = join(process.cwd(), "scripts", "worlds", "frontier.spec.json");
 const doc = JSON.parse(readFileSync(specPath, "utf8"));
@@ -143,93 +150,71 @@ describe("frontier — item conservation across a construction haul arc", () => 
     expect(units(run, "basket")).toBe(basket0 + 1);
   }, 600_000);
 
-  test.failing(
-    "🚨 DEFECT ① — a BARE prop taken into the hands must not leave the audit",
-    () => {
-      const before = units(run, "block");
-      // Nothing has left the session: the same object, one metre higher.
-      expect(carryObject(run.state, BARE, bodyId)).toBe(true);
-      // FAILS: `before - 1`.
-      //   scope.ts:453-459        auditScopeTree — looseIn is read per NODE
-      //   quest-host.ts:25904-25908  ids() — pocket:<cid> only `if (o.carriedBy
-      //                              && isContainerId(session, objId))`
-      //   quest-host.ts:25822-25831  census — buckets it under pocket:<cid> anyway
-      //   quest-host.ts:25802        parentOfObject — `o.carriedBy` is the parent
-      // ⇒ the bucket exists and nobody ever asks for it.
-      expect(units(run, "block")).toBe(before);
-    },
-    600_000,
-  );
+  it("① FIXED — a BARE prop taken into the hands does not leave the audit", () => {
+    const before = units(run, "block");
+    // Nothing has left the session: the same object, one metre higher.
+    expect(carryObject(run.state, BARE, bodyId)).toBe(true);
+    // The census always bucketed a carried prop under `pocket:<cid>`; the
+    // defect was `ids()` gating that NODE on `isContainerId`, so a body
+    // holding a bare block had a bucket nobody ever asked for — every bagless
+    // porter's load was invisible for the whole walk (`giveUnitsToBody`'s
+    // no-bag arm mints exactly this shape). `ids()` now lists a pocket for a
+    // body holding ANYTHING.
+    expect(units(run, "block")).toBe(before);
+  }, 600_000);
 
-  it("THE DIFFERENTIAL — the same op on a REGISTERED CONTAINER conserves, which names the gate", () => {
+  it("…and the same op on a REGISTERED CONTAINER still conserves (the old differential)", () => {
     const before = units(run, "basket");
     expect(carryObject(run.state, BAG, bodyId)).toBe(true);
-    // Identical operation, opposite outcome. The ONLY difference between this
-    // prop and the one above is `relation !== undefined`, which is the literal
-    // body of `isContainerId` (containers.ts:217-219) — the predicate
-    // quest-host.ts:25906 gates the pocket node on. That is the bug, isolated
-    // to one boolean.
+    // Pre-fix this was the DIFFERENTIAL that isolated ① to one boolean
+    // (`relation !== undefined`, the literal body of `isContainerId`). Both
+    // arms conserve now; this half stays as the container-side control.
     expect(units(run, "basket")).toBe(before);
   }, 600_000);
 
-  // ── ③ THE OTHER TWO MOUNTS THE AUDIT CANNOT SEE ───────────────────────────
+  // ── ③ THE OTHER TWO MOUNTS THE AUDIT COULDN'T SEE ─────────────────────────
   //
-  // ① is the HELD case. The census keys every prop off `parentOfObject`
-  // (quest-host.ts:25798-25803), and two of the three mounts a container can
-  // have leave it with no countable home at all. This is what the transcripts'
-  // "basket 11→16, satchel 0→2, then flat" really is: not a per-trip mint but a
-  // bounded pool of already-existing bags becoming VISIBLE as they change
-  // mount. Sampling during the climb reads as "+1 per haul trip".
+  // ① was the HELD case. The census keys every prop off `parentOfObject`, and
+  // two of the three mounts a container can take used to leave it with no
+  // countable home at all. That is what the transcripts' "basket 11→16,
+  // satchel 0→2, then flat" really was: not a per-trip mint but a bounded pool
+  // of already-existing bags becoming VISIBLE as they changed mount. Sampling
+  // during the climb read as "+1 per haul trip".
 
-  test.failing(
-    "🚨 DEFECT ③a — a WORN container is still a thing the session owns",
-    () => {
-      // The player boots wearing a satchel (`donWornBag`, quest-host.ts:14827+).
-      const wornSatchels = [...run.session.containerRecords.values()].filter(
-        (r) => r.mount === "worn" && r.glyph === "satchel",
-      ).length;
-      expect(wornSatchels).toBeGreaterThan(0); // measured: 1 at boot
-      // FAILS: 0.
-      //   quest-host.ts:14845     donWornBag sets mount:"worn" …
-      //   containers.ts:376-378   …so the row leaves `looseEntries` …
-      //   quest-host.ts:25819     …so the census never reaches it …
-      //   quest-host.ts:26104     …and `pocket:<cid>` is a stackless node.
-      // The bag's CONTENTS survive (its own container row is an endpoint); the
-      // bag itself is worth nothing until somebody takes it off, at which point
-      // it reads as +1 minted from nowhere — the transcripts' "satchel: 1".
-      expect(units(run, "satchel")).toBeGreaterThanOrEqual(wornSatchels);
-    },
-    600_000,
-  );
+  it("③a FIXED — a WORN container is a thing the session owns", () => {
+    // The player boots wearing a satchel (`donWornBag`).
+    const wornSatchels = [...run.session.containerRecords.values()].filter(
+      (r) => r.mount === "worn" && r.glyph === "satchel",
+    ).length;
+    expect(wornSatchels).toBeGreaterThan(0); // measured: 1 at boot
+    // `mount:"worn"` leaves `looseEntries`, so the old census never reached
+    // the bag: worth 0 while worn, then "+1 minted from nowhere" on doff —
+    // the transcripts' "satchel: 1". The census now reads the wear register
+    // directly: one unit of the bag's own glyph under `pocket:<wearer>` (its
+    // CONTENTS were always safe — the bag's own row is an endpoint).
+    expect(units(run, "satchel")).toBeGreaterThanOrEqual(wornSatchels);
+  }, 600_000);
 
-  test.failing(
-    "🚨 DEFECT ③b — a container put INSIDE a box as a whole object must not evaporate",
-    () => {
-      const body = run.state.avatars[bodyId]!;
-      const pid = "probe:stow-basket";
-      run.host.world!.addObject(itemObjectSpec("basket", pid, { x: body.x, y: body.y }));
-      setLooseProp(run.session, pid, { entityId: "probe_stow", glyph: "basket", at: run.session.townClock });
-      run.session.containerRecords.get(pid)!.relation = "in";
+  it("③b FIXED — a container put INSIDE a box as a whole object does not evaporate", () => {
+    const body = run.state.avatars[bodyId]!;
+    const pid = "probe:stow-basket";
+    run.host.world!.addObject(itemObjectSpec("basket", pid, { x: body.x, y: body.y }));
+    setLooseProp(run.session, pid, { entityId: "probe_stow", glyph: "basket", at: run.session.townClock });
+    run.session.containerRecords.get(pid)!.relation = "in";
 
-      const onFloor = units(run, "basket");
-      // `stowCarriedIn`'s WHOLE-OBJECT arm, verbatim (quest-host.ts:14100-14103):
-      // a container that may not dissolve (`mayDissolveToStack` — i.e. a
-      // NON-EMPTY one) is placed in the box as itself, and — unlike the dissolve
-      // arm three lines below it, which does `stackAdd(stock, small.glyph)` —
-      // the box's stack is NEVER credited.
-      expect(placeInContainer(run.state, pid, "town:yard", "in")).toBe(true);
+    const onFloor = units(run, "basket");
+    // The WHOLE-OBJECT arm: a container that may not dissolve stays a real
+    // thing inside the box, and nothing credits the box's stack for it.
+    expect(placeInContainer(run.state, pid, "town:yard", "in")).toBe(true);
 
-      // FAILS: `onFloor - 1`. Measured 12 → 11.
-      //   quest-host.ts:25821   census: `if (!o || o.containedIn) continue;`
-      //                         — "in a box: counted as that box's stack",
-      //                         which is true for the dissolve arm and FALSE
-      //                         for the one above.
-      // So a full basket stowed in the yard crate is destroyed, and pulling it
-      // back out mints it again.
-      expect(units(run, "basket")).toBe(onFloor);
-    },
-    600_000,
-  );
+    // The old census skipped EVERY `containedIn` prop ("in a box: counted as
+    // that box's stack") — true for a banked MIRROR shell, false for this
+    // whole object, which was therefore counted by nobody (measured 12 → 11)
+    // and minted again on the way back out. The census now distinguishes the
+    // two by the record's `mirror` flag: a shell's unit is the box's stack
+    // row; a whole thing counts as itself, under the box.
+    expect(units(run, "basket")).toBe(onFloor);
+  }, 600_000);
 
   // ── ② THE TWIN'S SHADOW STORE — ✅ FIXED 2026-08-14 ────────────────────────
   //
@@ -270,7 +255,7 @@ describe("frontier — item conservation across a construction haul arc", () => 
       // materializes it for a found row on the way past).
       const node = run.host.scopeTree().find((n) => n.id === pileId);
       if (!node) {
-        throw new Error(`the audit tree does not list ${pileId} — ids() lists order piles only for a session with a TOWN (quest-host.ts:25874)`);
+        throw new Error(`the audit tree does not list ${pileId} — ids() must enumerate the SAME book stockEndpointOf resolves (④)`);
       }
       expect(node.endpoint?.stack).toBe(row.pile);
 
@@ -299,6 +284,148 @@ describe("frontier — item conservation across a construction haul arc", () => 
     } finally {
       run.session.containerRecords.delete(pileId);
       book.removeOrder(row.ord);
+    }
+  }, 600_000);
+
+  // ── ④ THE TOWN-LESS SESSION'S PILES ───────────────────────────────────────
+
+  it("④ FIXED — a HOMESTEAD's piles are in the tree: ids() lists from the book the resolver answers", () => {
+    // `stockEndpointOf` resolves `orderpile:` for `town ?? foundedSite`, but
+    // `ids()` used to enumerate them only INSIDE `if (session.town)` — so a
+    // founded-site (homestead) session resolved its pile endpoints perfectly
+    // well while the audit never asked for one, and every unit staged into a
+    // homestead pile read as LOST. Same one-boolean shape as ①: enumeration
+    // and resolver disagreeing about the key space.
+    const t = run.session.town;
+    const book = orderBook();
+    if (!book) throw new Error("this world booted with no order book — fixture broken, not a finding");
+    const lot: FoundingCandidate = { type: "house", slot: 43, dx: -40, dy: 30, w: 9, h: 8, door: "south" };
+    const row: FoundedBuilding = book.foundBuilding(lot, 0, 4, { block: 6 });
+    const pileId = `orderpile:${row.ord}`;
+    const savedSite = run.session.foundedSite;
+    try {
+      // THE HOMESTEAD SHAPE, exactly: no town, the same order book riding the
+      // founded site (founding.ts serializes it just so).
+      run.session.town = null;
+      run.session.foundedSite = {
+        key: "probe-homestead",
+        seed: 0,
+        at: { x: 0, y: 0 },
+        foundedDay: 0,
+        stock: {},
+        deltas: book,
+        buildings: 0,
+        residents: [],
+      } satisfies FoundedSite;
+      const node = run.host.scopeTree().find((n) => n.id === pileId);
+      if (!node) {
+        throw new Error(`the audit tree does not list ${pileId} for a founded-site session — defect ④ is back`);
+      }
+      // The alias law, same as ②: the endpoint IS the row's live map…
+      expect(node.endpoint?.stack).toBe(row.pile);
+      // …and a credit staged into the homestead's pile is a thing the session
+      // owns — the exact units that used to read as LOST.
+      const before = units(run, "block");
+      row.pile!["block"] = (row.pile!["block"] ?? 0) + 5;
+      expect(units(run, "block")).toBe(before + 5);
+      row.pile!["block"] = row.pile!["block"]! - 5;
+      expect(units(run, "block")).toBe(before);
+    } finally {
+      run.session.town = t;
+      run.session.foundedSite = savedSite;
+      book.removeOrder(row.ord);
+    }
+  }, 600_000);
+
+  // ── W1 THE GARMENT'S HOME (⑩ audit, wear round rung 1) ───────────────────
+
+  it("W1 FIXED — a WORN GARMENT is a thing the session owns (the fifth item location)", () => {
+    // `session.worn` was outside every audited location (item-move.ts's closed
+    // union AND the scope tree): a shirt was worth 0 while worn, and the equip
+    // path's doffed `.dirty` unit read as minted from nowhere. The census now
+    // banks one unit of the worn glyph under `pocket:<wearer>` and `ids()`
+    // lists a dressed body's node — the ③a shape, for garments.
+    //
+    // The boot dresses its streamed residents (seedWorn), so the register is
+    // live in this very fixture…
+    expect(run.session.worn.size).toBeGreaterThan(0);
+    const [realCid, realW] = [...run.session.worn.entries()][0]!;
+    expect(units(run, realW.glyph)).toBeGreaterThanOrEqual(1);
+    void realCid;
+    // …and a probe row moves the audit by exactly one, on and off.
+    const PROBE_GLYPH = "shirt.color_red";
+    const before = units(run, PROBE_GLYPH);
+    run.session.worn.set("probe_wearer", { glyph: PROBE_GLYPH, n: 0 });
+    try {
+      expect(units(run, PROBE_GLYPH)).toBe(before + 1);
+    } finally {
+      run.session.worn.delete("probe_wearer");
+    }
+    expect(units(run, PROBE_GLYPH)).toBe(before);
+  }, 600_000);
+
+  // ── #25 THE DELIVERY-LEG MINT (facet mismatch) ────────────────────────────
+
+  it("#25 FIXED — a FACTED source conserves through a REAL haul arc (the delivery-leg mint)", () => {
+    // The 08-15 arc's signature: `commitRefineOrder` credits the CONCRETE
+    // variant (`block.material_wood`), the bill says "block", and the load leg
+    // measured availability HEAD-matched (`stackUnits`) but debited with the
+    // exact-key `stackTake` — a silent no-op against a facted row. The body
+    // was credited, the source never drained, and the next sweep ordered the
+    // same load again: "bring 12 block — delivered" ×30 for one 12-block mill,
+    // census 127 of 29 milled. This drives the REAL machinery: a costed lot on
+    // the live book, the director's own haul sweep, a real porter walking a
+    // real agreement through the fixed load leg.
+    const book = orderBook();
+    if (!book) throw new Error("no order book — fixture broken, not a finding");
+    const yard = run.session.containerRecords.get(TOWN_YARD_EP);
+    if (!yard?.stock) throw new Error("no yard stock — fixture broken, not a finding");
+
+    // Repaint the supply as the mill's own product: ONLY facted blocks on the
+    // shelf, so every draw the bill provokes must cross the head/facet seam.
+    const plainBlocks = yard.stock["block"] ?? 0;
+    delete yard.stock["block"];
+    yard.stock["block.material_wood"] = (yard.stock["block.material_wood"] ?? 0) + 8;
+
+    // Every block in the session, whatever its facet — heads and variants are
+    // one good to the conservation question.
+    const totalBlocks = () =>
+      Object.entries(run.host.stockAudit())
+        .filter(([g]) => g === "block" || g.startsWith("block."))
+        .reduce((s, [, n]) => s + n, 0);
+
+    // Staked near the town center so the session's own player position keeps
+    // the site OBSERVED (< 120 m) — the twin already draws via `takeStock`;
+    // the leg under test is the real porter's.
+    const lot: FoundingCandidate = { type: "house", slot: 45, dx: 12, dy: 14, w: 9, h: 8, door: "south" };
+    const row: FoundedBuilding = book.foundBuilding(lot, 0, 4, { block: 6 });
+    const before = totalBlocks();
+    const yardBefore = yard.stock["block.material_wood"] ?? 0;
+
+    try {
+      // Let the sweep post the haul and a resident walk it. Bail as soon as a
+      // delivery lands; the cap keeps a broken run from hanging the suite.
+      row.pile ??= {};
+      for (let i = 0; i < 12 && !Object.keys(row.pile).length; i++) run.advanceS(20);
+
+      // A delivery HAPPENED (the arc is live, not vacuously green)…
+      const delivered = Object.entries(row.pile).reduce((s, [, n]) => s + n, 0);
+      expect(delivered).toBeGreaterThan(0);
+      // …the pile holds the CONCRETE variant the shelf actually held — the
+      // twin's own bookkeeping, now from the observed leg too…
+      expect(row.pile["block.material_wood"] ?? 0).toBeGreaterThan(0);
+      // …the source actually DRAINED (the mint's defining symptom was a shelf
+      // that never went down)…
+      expect(yard.stock["block.material_wood"] ?? 0).toBeLessThan(yardBefore);
+      // …and NOT ONE unit was minted or destroyed across the whole arc: shelf
+      // + pile + every body mid-carry sum to exactly what we started with
+      // (countable mid-flight because the mount-state round landed first).
+      expect(totalBlocks()).toBe(before);
+    } finally {
+      // Put the fixture back: the staked order dies and the plain supply
+      // returns for the tests downstream.
+      book.removeOrder(row.ord);
+      yard.stock["block"] = (yard.stock["block"] ?? 0) + plainBlocks;
     }
   }, 600_000);
 

@@ -35,6 +35,7 @@ import {
 import { ttsFacade, isClientSideTtsVoice, sanitizeElevenLabsApiKey, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
+import { normalizeVenueMenuSettings } from "@shared/venue-menus";
 import { buildPhotoLibrarySummary } from "../photos/photo-context";
 import { getContactsWithPhotoStatusByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
@@ -785,7 +786,12 @@ export class DualAgentService {
       messages: [],
       pendingMessages: [],
       muteState,
-      appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
+      appState: {
+        enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null, {
+          venueMenusEnabled: normalizeVenueMenuSettings(aacSt?.venueMenus).enabled,
+        }),
+        activeApp: null,
+      },
       pictureSearch: pictureSearchConfigFrom(aacSt?.appConfig),
       permittedWebsites,
       permittedYoutubeChannels,
@@ -982,7 +988,9 @@ export class DualAgentService {
       if (student) {
         const aacSt = student.aacSettings;
         state.remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
-        state.appState.enabledApps = getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null);
+        state.appState.enabledApps = getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null, {
+          venueMenusEnabled: normalizeVenueMenuSettings(aacSt?.venueMenus).enabled,
+        });
         state.pictureSearch = pictureSearchConfigFrom(aacSt?.appConfig);
         state.permittedWebsites = Array.isArray(aacSt?.permittedWebsites)
           ? (aacSt!.permittedWebsites as PermittedWebsite[])

@@ -69,10 +69,17 @@ const AFFORDANCE_VERBS: Record<AffordanceTag, string[]> = {
  *  on — intent-compile CATEGORY_NEEDS / SATISFY_NEED_PREFIX). */
 const CATEGORY_VERBS: Record<string, string[]> = {
   food: ["eat", "cook", "heat", "want", "give"],
+  // A drink is DRUNK, not eaten (2026-08-24) — the verb that makes the category
+  // worth having. `fill` because a drink arrives in something.
+  drink: ["drink", "want", "get", "give", "fill"],
   toy: ["play", "want", "give"],
   clothing: ["wear", "wash", "want", "give"],
   instrument: ["play", "want"],
   book: ["read", "want"],
+  // The table setting and the worked materials: both are things a hand moves,
+  // and a material is what MAKING consumes.
+  tableware: ["get", "give", "want", "fill", "wash"],
+  material: ["get", "give", "want", "make", "build"],
 };
 
 /** Verbs a SPECIES KIND implies. */

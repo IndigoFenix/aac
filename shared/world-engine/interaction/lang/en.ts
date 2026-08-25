@@ -117,6 +117,18 @@ const CENTRAL: Record<string, Lexeme> = {
   // The animal-people (bear/frog/dog/rabbit) reuse the words above; these fill
   // the remaining registered species so a creature is never "the there".
   person: { w: "person", plw: "people" },
+  // KINSHIP AND ROLE WORDS (2026-08-24) — the people a child names. CORE ENGINE
+  // CONCEPTS by law (they are frame words, not spec'd objects), so their lexemes
+  // live here rather than on any registry row; the student's OWN people arrive
+  // separately, as named creatures from the people directory.
+  mom: { w: "mom" },
+  dad: { w: "dad" },
+  baby: { w: "baby", plw: "babies" },
+  girl: { w: "girl" },
+  boy: { w: "boy" },
+  friend: { w: "friend" },
+  teacher: { w: "teacher" },
+  street: { w: "street" },
   animal: { w: "animal" },
   creature: { w: "creature" },
   water: { w: "water", mass: true },

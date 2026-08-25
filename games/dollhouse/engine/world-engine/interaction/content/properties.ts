@@ -79,8 +79,14 @@ const AFFORDANCE_PROPERTIES: Partial<Record<AffordanceTag, readonly ObjectProper
 /** Which property a KIND_CATEGORY tag implies. */
 const CATEGORY_PROPERTIES: Readonly<Record<string, ObjectProperty>> = {
   food: "food",
+  // A drink is not a food (2026-08-24): `eat` and `drink` are different asks and
+  // open different boards, so the category the pools file tags a milk with has
+  // to arrive as its own property.
+  drink: "drink",
   toy: "toy",
   clothing: "clothing",
+  tableware: "tableware",
+  material: "material",
   instrument: "instrument",
   book: "book",
 };

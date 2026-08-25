@@ -212,7 +212,7 @@ import { numeraireActive } from "@shared/world-engine/kernel/town/money.js";
 import {
   barterRefusalLine,
   barterTermsLine,
-  // ⚖️ H2 — "they + give.not + wood": the shed's own shortfall, in the
+  // ⚖️ H2 — "they + give.not + wood": the source's own shortfall, in the
   // vocabulary a refusing partner already speaks. A forest that has no metal
   // is not a different kind of no.
   barterWontPartLine,
@@ -288,11 +288,11 @@ import {
   wildAreaCounts,
   wildAreaPopulation,
   wildAreaStock,
-  wildShedEndpoint,
-  wildShedPartner,
+  wildSourceEndpoint,
+  wildSourcePartner,
   type WildAreaRecord,
   type WildFoldCtx,
-  type WildShedPartner,
+  type WildSourcePartner,
 } from "./wild-area.js";
 // ⚖️ F1 (fold-round.md) — the ONE fold's generic accounting: `foldedStock`
 // sums a registered kind's own `stockOf` over a set of folded payloads, so
@@ -377,6 +377,17 @@ import {
   getSpeciesAssets,
   type CreatureDetail,
 } from "../../creatures/creature-model.js";
+// The view-tier ladder itself (pure — creatures/view-tiers.ts). Imported for
+// the host's own banding AND re-exported below, which is how every game
+// already reaches these.
+import {
+  TIER_BANDS,
+  TIER_RANK,
+  seedTier,
+  steppedTier,
+  detailForTier,
+  type CreatureTier,
+} from "../../creatures/view-tiers.js";
 import {
   outfitPresetFor,
   outfitIndexOf,
@@ -931,6 +942,13 @@ import {
   splitStock,
   isLargeGlyph,
   totalStackUnits,
+  satiationDaysOf,
+  rationTotalOf,
+  carryRationTotalOf,
+  unitsForRations,
+  grainSatiationDaysOf,
+  mealDrawPlan,
+  ingestMeterAfter,
 } from "@shared/world-engine/kernel/town/goods-kinds.js";
 import { designatedContainerId, livesOnTheFloor } from "@shared/world-engine/kernel/town/container-home.js";
 import {
@@ -2888,7 +2906,7 @@ export interface QuestHost3D {
    * shelf); `"fold"` condenses it; `"load"` expands it; `"cycle"` does both
    * and prints the session's stock audit at each step, which is the
    * conservation evidence for the fold. ⚖️ F5: `"draw <good>"` orders a
-   * standing draw on the FOLDED shed — priced off its own road through
+   * standing draw on the FOLDED source — priced off its own road through
    * `partnerLegSeconds` — and runs the sweep's draw arm once, so the record
    * loses exactly what the shelf gains and the audit lines around it say so.
    *
@@ -3324,12 +3342,20 @@ function dealGood(dress: DressPalette, goodKey: string, n: number, salt: number)
   return out;
 }
 
-/** CREATURE VIEW TIER (view-distance-lod-tiers.md Phase 3): the fidelity every
- *  town body is BUILT at — full skinned bake, the simple (fewer-sides) bake, or
- *  the placeholder capsule at far district range. A RENDER-ONLY, per-client
- *  choice computed from the LOCAL camera (each multiplayer peer dresses the
- *  same replicated bodies at its own fidelity) — never sim state. */
-export type CreatureTier = CreatureDetail | "capsule";
+/** CREATURE VIEW TIER — the fidelity a town body is BUILT at. The ladder, its
+ *  bands, the hysteretic step and the tier→detail mapping all live in
+ *  creatures/view-tiers.ts (pure, so the driver and the tests share the ONE
+ *  boundary rule without value-importing this host); re-exported here because
+ *  this is the module every game already reaches for them through. */
+export {
+  TIER_BANDS,
+  TIER_RANK,
+  seedTier,
+  steppedTier,
+  detailForTier,
+  type CreatureTier,
+  type TierBand,
+} from "../../creatures/view-tiers.js";
 
 function makeTownModelFactory(
   npcIcons: Map<string, string>,
@@ -3354,13 +3380,21 @@ function makeTownModelFactory(
       getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)));
     }
   }
-  // The SIMPLE-loft wardrobe warms too, but STAGGERED off the critical path
-  // (one bake per macrotask): a body's first drop into the simple band must
-  // not pay its 55-70 ms main-thread bake mid-play (the readouts' recurring
+  // The far-tier bakes warm too, but STAGGERED off the critical path (one bake
+  // per macrotask): a body's first drop into a far band must not pay its
+  // 55-70 ms main-thread bake mid-play (the readouts' recurring
   // `[bake-probe] …|lod:s` hitches), and warming them synchronously would
   // double the mount hitch instead.
+  //
+  // STICK GOES FIRST, and it is ONE entry for the whole town: the tier is
+  // outfit-blind (creature-model.ts's outfitForDetail), so the wardrobe that
+  // costs `simple` one bake per head × palette colour costs stick a single
+  // bake — and it is also the band bodies cross into FIRST on any approach.
   if (typeof setTimeout !== "undefined") {
-    const warm: Array<() => void> = [() => getSpeciesAssets(species, {}, undefined, "simple")];
+    const warm: Array<() => void> = [
+      () => getSpeciesAssets(species, {}, undefined, "stick"),
+      () => getSpeciesAssets(species, {}, undefined, "simple"),
+    ];
     for (const head of dress.heads) {
       for (const color of dress.colors) {
         warm.push(() => getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)), "simple"));
@@ -3374,10 +3408,10 @@ function makeTownModelFactory(
     };
     setTimeout(next, 1000);
   }
-  // Skinned bodies drop to the SIMPLE loft whenever the tier is not full — the
-  // capsule tier only ever REPLACES a body wholesale (dispatch below), so any
-  // skinned body it still builds (fresh spawns mid-cross) lofts cheap too.
-  const detailFor = (id: string): CreatureDetail => (!tierFor || tierFor(id) === "full" ? "full" : "simple");
+  // The tier a body BUILDS at — detailForTier is the ONE mapping (the capsule
+  // tier only ever REPLACES a body wholesale via the dispatch below, so any
+  // skinned body it still builds — a fresh spawn mid-cross — takes sticks).
+  const detailFor = (id: string): CreatureDetail => detailForTier(tierFor?.(id));
   const people = createCreatureAvatarFactory({
     speciesFor: (id) => overrides?.get(id)?.species ?? species,
     heightM: 1.7,
@@ -4240,27 +4274,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  per-camera law) — with hysteresis, and crossings drain through the same
    *  staggered queue. The EFFECTIVE tier is the coarser of the two. */
   const bodyTiers = new Map<string, CreatureTier>();
-  const BODY_SIMPLE_M = 45;
-  const BODY_CAPSULE_M = 110;
   const BODY_TIER_HYST_M = 10;
-  const TIER_RANK: Record<CreatureTier, number> = { full: 0, simple: 1, capsule: 2 };
-  const seedBodyTier = (d: number): CreatureTier =>
-    d > BODY_CAPSULE_M ? "capsule" : d > BODY_SIMPLE_M ? "simple" : "full";
-  const bandedBodyTier = (prev: CreatureTier, d: number): CreatureTier => {
-    switch (prev) {
-      case "full":
-        return d > BODY_SIMPLE_M + BODY_TIER_HYST_M
-          ? d > BODY_CAPSULE_M + BODY_TIER_HYST_M ? "capsule" : "simple"
-          : "full";
-      case "simple":
-        if (d > BODY_CAPSULE_M + BODY_TIER_HYST_M) return "capsule";
-        return d < BODY_SIMPLE_M - BODY_TIER_HYST_M ? "full" : "simple";
-      case "capsule":
-        return d < BODY_CAPSULE_M - BODY_TIER_HYST_M
-          ? d < BODY_SIMPLE_M - BODY_TIER_HYST_M ? "full" : "simple"
-          : "capsule";
-    }
-  };
+  const seedBodyTier = (d: number): CreatureTier => seedTier(TIER_BANDS, d);
+  const bandedBodyTier = (prev: CreatureTier, d: number): CreatureTier =>
+    steppedTier(TIER_BANDS, prev, d, BODY_TIER_HYST_M);
   /** The LOCAL CAMERA focus the per-body LOD measures from ([LOD per-camera]
    *  LAW: render chrome from the camera, NEVER a sim body). In spirit /
    *  dollhouse mode the camera frames `spiritFrame` — the observed house, which
@@ -7688,7 +7705,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const o = overrides.get(id)?.outfit;
         return o !== undefined ? outfitPresetFor(o) : undefined;
       },
-      detailFor: (id) => (tierFor(id) === "full" ? "full" : "simple"),
+      detailFor: (id) => detailForTier(tierFor(id)),
     });
     return (id, isLocal) => (isCreatedPersonBodyId(id) ? people(id, isLocal) : rest(id, isLocal));
   }
@@ -12292,6 +12309,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // draw from (`properDrawFor` ①) — whether or not this body can open it
     // today. An unreachable pantry is still where the food belongs.
     const homeId = goodKey === "water" ? `furn_${houseIndex}_barrel` : `furn_${houseIndex}_chest_${goodKey}`;
+    // ⚖️ THE ROW'S DENOMINATION (step ⑧): ration-family rows count every ctx
+    // quantity in RATIONS — the goods clock's own unit, so the drive's `below`
+    // (surplusUnits) and the deposit's `upTo` (boxCap) compare rations to
+    // rations — while everything else keeps raw item counts. Satiation-1 goods
+    // make the two identical, so only FOOD actually moves.
+    const inRations = rationDenominated(tpl.key);
     {
       const cap = goodKey === "water"
         ? BARREL_CAP
@@ -12301,8 +12324,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // REAL units for the drive's floor, FREE units for the acquire branch
         // (StockCandidate.free): a pantry below its buffer is short whether or
         // not a housemate has spoken for what's left in it, but the housemate
-        // that spoke first is the one that gets to draw it.
-        const units = stackTotalOf(session.containerRecords.get(homeId)?.stock, goodKey);
+        // that spoke first is the one that gets to draw it. `cap` is already a
+        // ration number (boxCap / BARREL_CAP), so the ration read keeps
+        // `room = cap − units` a rations-to-rations subtraction.
+        const units = inRations
+          ? rationTotalOf(session.containerRecords.get(homeId)?.stock, goodKey)
+          : stackTotalOf(session.containerRecords.get(homeId)?.stock, goodKey);
         containers.home = {
           id: homeId,
           place: P(homeId),
@@ -12371,7 +12398,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (id.startsWith("small:") && !containerAccessible(session, id, grasp)) continue;
         const units = Object.entries(stock)
           .filter(([g, n]) => n > 0 && matchesNeedItem(g, tpl.item))
-          .reduce((s, [, n]) => s + n, 0);
+          // A ration row weighs each glyph at its own satiation (step ⑧); the
+          // rest keep raw counts. Identity for satiation-1 goods.
+          .reduce((s, [g, n]) => s + n * (inRations ? satiationDaysOf(g) : 1), 0);
         // FIRST-MATCH-IN-INSERTION-ORDER, over FREE units: a box a housemate
         // has already spoken dry is not a box that holds a toy for you.
         const free = freeNeedUnits(session, cid, id, goodKey, units);
@@ -12434,13 +12463,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const oid = `furn_${wanterHouse}_${kind}`;
         if (!state.objects[oid]) continue;
         const cap = kind === "bowl" ? BOWL_CAP : 99;
-        const units = stackTotalOf(session.containerRecords.get(oid)?.stock, goodKey);
+        // An adopt row is ration-denominated (its `upTo: 1` means one RATION —
+        // the wanter's whole meal), so the station's stock reads in rations and
+        // its PHYSICAL item room converts at the good's deal grain (step ⑧).
+        const itemUnits = stackTotalOf(session.containerRecords.get(oid)?.stock, goodKey);
+        const units = inRations ? rationTotalOf(session.containerRecords.get(oid)?.stock, goodKey) : itemUnits;
+        const room = inRations
+          ? Math.max(0, cap - itemUnits) * grainSatiationDaysOf(goodKey)
+          : Math.max(0, cap - itemUnits);
         const d = distToObj(oid);
         containers.recipient = {
           id: oid,
           place: P(oid),
           units,
-          room: Math.max(0, cap - units),
+          room,
           ...(d !== undefined ? { d } : {}),
         };
         break;
@@ -12544,10 +12580,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (state.objects[sid]) {
           // A FOOD want also counts waiting MEALS (round 7): a served
           // hot dish on the table pulls the hungry straight to it (the
-          // acquire+consume combine — the dinner scene).
-          const waiting =
-            stackTotalOf(session.containerRecords.get(sid)?.stock, goodKey) +
-            (goodKey === "food" ? stackTotalOf(session.containerRecords.get(sid)?.stock, "meal") : 0);
+          // acquire+consume combine — the dinner scene). A ration row counts
+          // the wait in RATIONS (step ⑧) — five apples on the table are one
+          // diner's meal, not five — which also keeps the in-flight subtraction
+          // honest (each diner in flight will eat about one ration).
+          const waiting = inRations
+            ? rationTotalOf(session.containerRecords.get(sid)?.stock, goodKey) +
+              (goodKey === "food" ? rationTotalOf(session.containerRecords.get(sid)?.stock, "meal") : 0)
+            : stackTotalOf(session.containerRecords.get(sid)?.stock, goodKey) +
+              (goodKey === "food" ? stackTotalOf(session.containerRecords.get(sid)?.stock, "meal") : 0);
           // ⚠️ THE STAMPEDE GUARD DOES NOT APPLY TO YOUR OWN PLACE AT A RITUAL.
           // A ritual's bill is already one portion PER HEAD, so the food on the
           // table is reserved by construction and there is nothing to race for.
@@ -12726,7 +12767,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (o.x < x0 || o.x > x0 + house.w || o.y < y0 || o.y > y0 + house.h) continue;
           if (inPlay(objId)) continue;
           cands.push({
-            c: { id: objId, place: P(objId), units: 1 },
+            // A loose prop is taken WHOLE either way; a ration row prices the
+            // pickup at what the thing is worth to eat (step ⑧ — a floor apple
+            // is a fifth of a meal, not one).
+            c: { id: objId, place: P(objId), units: inRations ? satiationDaysOf(rec.glyph!) : 1 },
             d: body ? Math.hypot(o.x - body.x, o.y - body.y) : 0,
             g: rec.glyph,
           });
@@ -12757,7 +12801,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // laundry chore reaches the wardrobe, not Mara's treasures.
           if (!mayUse(cid, houseIndex, session.containerRecords.get(boxId)?.owner)) continue;
           if (inPlay(boxId)) continue; // a basket somebody is playing with
-          const units = stackTotalOf(stock, goodKey);
+          const units = inRations ? rationTotalOf(stock, goodKey) : stackTotalOf(stock, goodKey);
           if (units <= 0) continue;
           const o = state.objects[boxId];
           if (!o) continue;
@@ -12849,8 +12893,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       stations = stations.filter((s) => s.id === live.placeId);
       if (!stations.length && state.objects[live.placeId]) {
         // The place isn't in this row's own station list (a floor station for a
-        // fixture-shaped satisfy). Offer it anyway — the event is there.
-        const waiting = stackTotalOf(session.containerRecords.get(live.placeId)?.stock, goodKey);
+        // fixture-shaped satisfy). Offer it anyway — the event is there. Same
+        // denomination as the row's own stations (step ⑧).
+        const waiting = inRations
+          ? rationTotalOf(session.containerRecords.get(live.placeId)?.stock, goodKey)
+          : stackTotalOf(session.containerRecords.get(live.placeId)?.stock, goodKey);
         stations = [{ id: live.placeId, place: P(live.placeId), kind: fixtureKindOf(state, live.placeId), waiting }];
       }
       sources = [];
@@ -12925,10 +12972,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // (provision:food) row must NOT see meals, or the cook would take
           // its own finished dish back to the oven and the pantry row would
           // bank dinner into the raw-food chest.
-          : carryTotalOf(onMe, goodKey) +
-            (tpl.satisfy.kind === "consume" && goodKey === "food"
-              ? carryTotalOf(onMe, "meal")
-              : 0),
+          // A RATION ROW counts its hand in rations (step ⑧ — same seam as its
+          // containers, so `min(carried, room)` and the stock drive's
+          // `units + inHand` never mix units).
+          : inRations
+            ? carryRationTotalOf(onMe, goodKey) +
+              (tpl.satisfy.kind === "consume" && goodKey === "food"
+                ? carryRationTotalOf(onMe, "meal")
+                : 0)
+            : carryTotalOf(onMe, goodKey) +
+              (tpl.satisfy.kind === "consume" && goodKey === "food"
+                ? carryTotalOf(onMe, "meal")
+                : 0),
       // A stock drive measured in another category (`of`) counts THAT
       // category's carried units for its fire check (needs.ts) — the
       // cook's in-hand meal is the loop's brake.
@@ -12943,8 +12998,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // carrying or wearing, else ONE if its hands are free (scope-shape.ts
       // `stackRoom`). Every take is capped by it, so a body that came to market
       // without a basket walks home with one apple, and THAT is the decision
-      // step ④ will price rather than the script that used to hide it.
-      room: stackRoom(carry),
+      // step ④ will price rather than the script that used to hide it. For a
+      // ration row the item room converts at the good's DEAL GRAIN (step ⑧ —
+      // a bag with room for 8 fruit has room for 1.6 rations of food), so the
+      // take sizing and its valuation stay in the row's own unit.
+      room: inRations ? stackRoom(carry) * grainSatiationDaysOf(goodKey) : stackRoom(carry),
       // THE RESTOCK TARGET (the fix for single-unit grocery trips): how many
       // units the HOUSEHOLD still has ROOM for at home — which is exactly the
       // home container's remaining capacity, already resolved above. Applied
@@ -13003,20 +13061,67 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** THE INGEST EFFECT — what eating/drinking does to the EATER's body, declared
    *  ONCE so the autonomous need path and a spoken "eat X" command apply the
    *  IDENTICAL change (the redundancy the planner's effect model exists to kill):
-   *  the matching hunger/thirst row empties, and digestion pushes the waste
-   *  meter. `tplKey` names the row emptied (its "thirst"/"hunger" prefix also
-   *  picks the digestion weight). A body with no such row — a stray, a pet that
-   *  doesn't run the meter — is simply unaffected; it still visibly consumes the
-   *  item. This is the effect BOUND to the `eat`/`consume` action; the two call
-   *  sites (need-consume, command-eat) will collapse into one when the command
-   *  path moves onto the per-tick planner. */
-  function applyIngestEffect(session: QuestSession, cid: string, tplKey: string) {
-    session.needMeters.set(`${cid}|${tplKey}`, 0);
+   *  the matching hunger/thirst row is paid down by what was eaten, and
+   *  digestion pushes the waste meter. `tplKey` names the row (its
+   *  "thirst"/"hunger" prefix also picks the digestion weight). A body with no
+   *  such row — a stray, a pet that doesn't run the meter — is simply
+   *  unaffected; it still visibly consumes the item. This is the effect BOUND
+   *  to the `eat`/`consume` action; the two call sites (need-consume,
+   *  command-eat) will collapse into one when the command path moves onto the
+   *  per-tick planner.
+   *
+   *  `satiationDays` (food-scale-round Q2, step ⑦): person-days the ingested
+   *  units cover — `satiationDaysOf(glyph)` for one hand-fed unit, the meal's
+   *  drawn total for the NPC's table sitting. HUNGER subtracts it as a meter
+   *  fraction, clamped at 0, so five hand-fed apples each visibly move the
+   *  meter; a covering amount (≥ one ration) clears the appetite outright,
+   *  OVERSHOOT INCLUDED — which makes the default-1 call byte-identical to the
+   *  old unconditional zero (satiation-1 content: one unit, meter 0, same
+   *  interval). THIRST (and any non-hunger row) keeps the FULL CLEAR:
+   *  satiation is a FOOD axis — water's default 1 over thirst's 1.25 fill-days
+   *  would leave a phantom 0.2 residue.
+   *
+   *  ⚖️ THE DIVISOR IS `NEED_FILL_DAYS.hunger` — THE RATION ANCHOR (one meter
+   *  threshold = one ration = NEED_FILL_DAYS.hunger person-days). NEVER
+   *  `needFillDays(scale, "hunger")`: metabolism must not enter — a 3×
+   *  metabolism world eats 3 rations a day, not ⅓-ration meals.
+   *
+   *  The waste bump stays ONCE PER CALL — i.e. once per MEAL on the consume
+   *  path, once per hand-fed unit on the command path (waste tracks meals, not
+   *  items — see the meal loop's single call). */
+  function applyIngestEffect(session: QuestSession, cid: string, tplKey: string, satiationDays = 1) {
+    const key = `${cid}|${tplKey}`;
+    if (tplKey.startsWith("hunger")) {
+      // The subtraction has ONE owner (goods-kinds `ingestMeterAfter`): a
+      // covering amount full-clears (overshoot included), less subtracts its
+      // ration fraction — divisor NEED_FILL_DAYS.hunger, never the scale's.
+      session.needMeters.set(key, ingestMeterAfter(session.needMeters.get(key) ?? 0, satiationDays));
+    } else {
+      session.needMeters.set(key, 0);
+    }
     if (session.dollhouse === houseIndexOfCid(cid) && !isPetCid(cid)) {
       const wk = `${cid}|waste`;
       const bump = tplKey.startsWith("thirst") ? WASTE_DRINK_BUMP : WASTE_MEAL_BUMP;
       session.needMeters.set(wk, (session.needMeters.get(wk) ?? 0) + bump);
     }
+  }
+
+  /** ⚖️ WHICH ROWS COUNT IN RATIONS (food-scale-round step ⑧). The ration
+   *  split keeps the ACCOUNTING unit a person-day while item counts multiply,
+   *  and these row families are the ones whose thresholds are ration numbers —
+   *  hunger/thirst's "one firing is one ration" and the provisioning family's
+   *  `below`/`upTo` off the goods clock (`surplusUnits`/`boxCap`). For them
+   *  the ctx quantities (container units, carried, room) and the resulting
+   *  take/deposit step units are RATIONS, converted through the satiation
+   *  seam at the counting sites and back to items at the physical draw.
+   *  Everything else — the tidy family's clutter counts, cook's one-unit pot
+   *  pass, spoken take/put commands ("command") — stays item-denominated, so
+   *  those paths are byte-identical (and their goods all sit at satiation 1
+   *  anyway). Keyed off the template key so the ctx builder and the step
+   *  executors can never disagree about a step's denomination. */
+  const RATION_ROW_PREFIXES = new Set(["hunger", "thirst", "provision", "adopt"]);
+  function rationDenominated(tplKey: string): boolean {
+    return RATION_ROW_PREFIXES.has(tplKey.split(":")[0]!);
   }
 
   /** Apply an ARRIVED step's elemental effect over the container/stack model. A take
@@ -13064,8 +13169,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Clamping here (rather than trusting the decision) means no take path
       // can overfill a body, and a body that arrives full simply takes nothing
       // and re-decides — the want stays live and surfaces.
+      //
+      // ⚖️ A RATION-ROW step's `units` are RATIONS (step ⑧ — sized against the
+      // goods clock), so the item room converts at the deal grain here exactly
+      // as the deciding ctx did; the per-unit doors below still bound the
+      // PHYSICAL draw, so the clamp and the bag can never disagree.
+      const inRations = rationDenominated(step.tplKey);
+      const grainDays = inRations ? grainSatiationDaysOf(step.goodKey) : 1;
       const carry = bodyCarryOf(session, cid);
-      const room = stackRoom(carry);
+      const room = stackRoom(carry) * grainDays;
       const units = Math.max(0, Math.min(step.units, room));
       if (units === 0) {
         // Nothing moved ⇒ nothing is spoken for: the units this body reserved
@@ -13165,10 +13277,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // A shopper buys what it LIKES; no preference → a mixed basket. The
           // SHELF is charged for what the body actually carried away — units it
           // had no room for were never bought and are still on the stall.
+          //
+          // ⚖️ The shelf's stock is RATION-denominated (the economy sawtooth);
+          // a ration row's `offered` is rations too, so the PHYSICAL basket
+          // converts through the satiation seam (step ⑧ — 3 rations of food
+          // deal as 15 fruit) and the charge is the ration worth of what the
+          // body actually took, so the stall's books never see item counts.
+          // An item-row step (a spoken "take" command) keeps the old 1:1 path.
           const liked = preferredOf(likes, kindsOf(step.goodKey));
-          const basket = liked ? { [liked]: offered } : dealGood(session.dress, step.goodKey, offered, fnv1a(cid));
+          const basket = liked
+            ? { [liked]: inRations ? unitsForRations(offered, liked) : offered }
+            : dealGood(session.dress, step.goodKey, inRations ? unitsForRations(offered, kindsOf(step.goodKey)[0] ?? step.goodKey) : offered, fnv1a(cid));
           for (const [k, n] of Object.entries(basket)) {
-            take += giveUnitsToBody(session, cid, k, n, reach ? { at: reach } : {});
+            const got = giveUnitsToBody(session, cid, k, n, reach ? { at: reach } : {});
+            take += inRations ? got * satiationDaysOf(k) : got;
           }
           chargeSourceTake(session, step.objId, take);
         }
@@ -13181,14 +13303,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           ? Object.keys(stock).filter((g) => (stock[g] ?? 0) > 0 && matchesNeedItem(g, { affords: step.affords }))
           : kindOrder(step.goodKey);
         for (const k of order) {
-          while (take < units && (stock[k] ?? 0) > 0) {
+          // A ration row counts each drawn item at its own satiation (step ⑧
+          // — a 1-ration pantry take lifts five apples); item rows count 1.
+          const w = inRations ? satiationDaysOf(k) : 1;
+          while (take < units - 1e-9 && (stock[k] ?? 0) > 0) {
             // ONE UNIT, TAKE-FIRST-ACCOUNT-SECOND: the body is asked before the
             // box is debited, so a body that runs out of room mid-draw leaves
             // the rest on the shelf instead of dropping it on the floor.
             if (giveUnitsToBody(session, cid, k, 1, reach ? { at: reach } : {}) < 1) break;
             stock[k]! -= 1;
             if (stock[k]! <= 0) delete stock[k];
-            take++;
+            take += w;
           }
         }
         if (take > 0) setContainerStock(session, step.objId, stock);
@@ -13225,8 +13350,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             (g) => !provisionedHeads(session, houseIndexOfCid(cid)).has(headOf(g)),
           );
       const boxAt = state.objects[step.objId];
+      // A ration row's deposit `units` are RATIONS (step ⑧): each banked item
+      // pays its own satiation toward them, so a 3-ration bank files fifteen
+      // apples. Item rows (tidy/unload, commands) keep the 1:1 count.
+      const inRations = rationDenominated(step.tplKey);
       for (const k of kinds) {
-        while (put < step.units) {
+        const w = inRations ? satiationDaysOf(k) : 1;
+        while (put < step.units - 1e-9) {
           // OFF THE BODY FIRST, into the box second — the hands instance leaves
           // through its own door, bag units are stack arithmetic, and either way
           // the unit is credited here exactly once.
@@ -13236,7 +13366,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // An "on" container SHOWS what was just set down (the served
           // meal steams on the tabletop; the pet bowl fills visibly).
           addVisibleContainedProp(session, step.objId, k);
-          put++;
+          put += w;
         }
       }
       if (put > 0) {
@@ -13476,21 +13606,47 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // worth eating — raw fruit is the fallback, never the preference.
       const eatOrder =
         step.goodKey === "food" ? [...kindOrder("meal"), ...kindOrder("food")] : kindOrder(step.goodKey);
-      let eaten: string | undefined;
+      // ⚖️ ONE ARRIVAL IS ONE MEAL (needs.ts hungerTemplate's binding note /
+      // food-scale-round Q2 step ⑦): the sitting draws as many units as the
+      // APPETITE costs — the meter capped at its one-ration threshold (the
+      // drive's `threshold: 1`) — each unit priced at its OWN glyph
+      // (`satiationDaysOf`: a mixed meal of 1 stew + 2 apples is 1.4), hand
+      // first, then the station's stock, stopping early when the appetite is
+      // covered or nothing edible remains. A row with no live meter (a spoken
+      // "eat at the table" delegation) still eats exactly ONE unit — the
+      // commanded bite, as it always did. Eating down to 0 in one sitting is
+      // what keeps one hunger cycle = one game-day and the service radius
+      // honest — do not "simplify" it back to one unit per firing.
+      const appetite = Math.min(session.needMeters.get(`${cid}|${step.tplKey}`) ?? 0, 1);
       const onMe = carriedNow();
-      const inHand = eatOrder.filter((k) => (onMe[k] ?? 0) > 0);
-      if (inHand.length > 0 && takeUnitsFromBody(session, cid, inHand[0]!, 1) > 0) {
-        eaten = inHand[0]!;
-        dropOwnedInstances(session, cid, eaten, 1);
-      } else if (step.objId) {
-        const stock = session.containerRecords.get(step.objId)?.stock ?? {};
-        const waiting = eatOrder.filter((k) => (stock[k] ?? 0) > 0);
-        if (waiting.length > 0) {
-          eaten = waiting[0]!;
-          stock[eaten]! -= 1;
-          if (stock[eaten]! <= 0) delete stock[eaten];
-          setContainerStock(session, step.objId, stock);
-          removeVisibleContainedProp(session, step.objId, eaten);
+      const stock0 = step.objId ? session.containerRecords.get(step.objId)?.stock ?? {} : {};
+      const offers = [
+        ...eatOrder.filter((k) => (onMe[k] ?? 0) > 0).map((k) => ({ glyph: k, units: onMe[k]!, hand: true })),
+        ...eatOrder.filter((k) => (stock0[k] ?? 0) > 0).map((k) => ({ glyph: k, units: stock0[k]!, hand: false })),
+      ];
+      const plan = mealDrawPlan(appetite, offers);
+      // EXECUTE the plan through the existing per-unit doors, accounting only
+      // what actually moved (item conservation, R2): every side effect the
+      // single-unit draw had — dropOwnedInstances, setContainerStock,
+      // removeVisibleContainedProp — lands per unit, exactly as before.
+      let eaten: string | undefined;
+      let satEaten = 0;
+      for (let i = 0; i < offers.length; i++) {
+        const offer = offers[i]!;
+        for (let u = 0; u < plan.draws[i]!; u++) {
+          if (offer.hand) {
+            if (takeUnitsFromBody(session, cid, offer.glyph, 1) < 1) break;
+            dropOwnedInstances(session, cid, offer.glyph, 1);
+          } else {
+            const stock = session.containerRecords.get(step.objId!)?.stock ?? {};
+            if ((stock[offer.glyph] ?? 0) <= 0) break;
+            stock[offer.glyph]! -= 1;
+            if (stock[offer.glyph]! <= 0) delete stock[offer.glyph];
+            setContainerStock(session, step.objId!, stock);
+            removeVisibleContainedProp(session, step.objId!, offer.glyph);
+          }
+          eaten ??= offer.glyph;
+          satEaten += satiationDaysOf(offer.glyph);
         }
       }
       // 🚨 NO UNIT, NO MEAL. The ingest used to fire whether or not anything
@@ -13514,9 +13670,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return;
       }
       session.needDepositFail.delete(failKey);
-      // The body effect (empty the hunger/thirst row + digestion's waste bump)
-      // is the shared ingest effect — same code a spoken "eat X" command runs.
-      applyIngestEffect(session, cid, step.tplKey);
+      // The body effect (pay down the hunger/thirst row + digestion's waste
+      // bump) is the shared ingest effect — same code a spoken "eat X" command
+      // runs — called ONCE with the meal's drawn satiation (the waste bump
+      // tracks meals, not items). A meal that covered the appetite clears the
+      // meter, overshoot included; a meal cut short by a dry larder subtracts
+      // exactly what was eaten and leaves the row live (the give-up strikes
+      // above keep handling the truly-empty arrivals).
+      applyIngestEffect(session, cid, step.tplKey, satEaten);
       // The effect is instant — hold a brief EAT body-visual so the meal is
       // SEEN (syncNeedActivities drives AvatarState.activity from this). A
       // meal eaten from a claimed CHAIR (§3.3) carries the seat along: the
@@ -13566,14 +13727,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** Re-anchor ALL of a house's goods clocks to their real chest counts (§13 demote /
    *  the UNLOAD edge): the schedule resumes from whatever eating, restocking, thefts
-   *  and gifts left in the boxes. */
+   *  and gifts left in the boxes. The clock counts RATIONS (step ⑧), so the
+   *  chest's item stacks are read through the satiation seam — 35 apples
+   *  re-anchor the food schedule at 7 person-days, not 35. */
   function reanchorHouseGoods(session: QuestSession, houseIndex: number) {
     const rc = residentTownCtx(session, houseIndex); // neighbor-aware: ITS clock
     const house = rc?.house;
     if (!rc || !house) return;
     for (const g of rc.goods) {
-      const units = stackTotalOf(session.containerRecords.get(`furn_${houseIndex}_chest_${g.good.key}`)?.stock, g.good.key);
-      g.reanchor(house, units, session.townClock);
+      const rations = rationTotalOf(session.containerRecords.get(`furn_${houseIndex}_chest_${g.good.key}`)?.stock, g.good.key);
+      g.reanchor(house, rations, session.townClock);
     }
   }
 
@@ -13594,7 +13757,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const level = Math.min(Math.floor(g.boxCap), Math.max(0, Math.round(g.pantry(house, session.townClock))));
           const stock = ensureContainerStock(session, objId);
           for (const k of kindsOf(g.good.key)) delete stock[k]; // re-sync the good's own kinds only
-          Object.assign(stock, dealGood(session.dress, g.good.key, level, house.index));
+          // The schedule's `level` is RATIONS; the chest holds ITEMS (step ⑧).
+          // Convert at the deal grain — every kind one deal produces shares its
+          // satiation (the uniform-grain pin), so 7 rations of food deal as 35
+          // fruit while 7 of clothing stay 7 garments.
+          Object.assign(stock, dealGood(session.dress, g.good.key, unitsForRations(level, kindsOf(g.good.key)[0] ?? g.good.key), house.index));
         }
         // ⏸️ THE LOAD EDGE IS A RESTOCK EVENT: the schedule's off-show drain
         // and its dawn deliveries land here all at once, so a row parked on an
@@ -13622,7 +13789,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // hands must not lift it out from under the count (`unshelveProp` is the
     // only way it becomes a real thing). Same object, one affordance different.
     world.addObject(itemObjectSpec(glyph, pid, c, { carry: false }));
-    setLooseProp(session, pid, { entityId, glyph, at: session.townClock });
+    // A MIRROR, and flagged as one: its unit is the row on the box's stack, so
+    // the loose census must not count the shell too (the same chair twice).
+    setLooseProp(session, pid, { entityId, glyph, at: session.townClock }).mirror = true;
     session.needsPropsEpoch++; // a new loose prop wakes dormant tidy/fun decides
     placeInContainer(world.state, pid, objId, "on");
   }
@@ -14469,11 +14638,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return placeInContainer(world.state, objId, containerObjId, rel);
     }
     const stock = ensureContainerStock(session, containerObjId);
-    stackAdd(stock, small.glyph);
-    bumpStockEpoch(session); // ⏸️ a whole prop became stock — wakes parked rows
     if (rel === "on") {
+      // ⚖️ MIRROR LAW (project_surface_props_are_mirrors): once the unit is
+      // banked on the table's stack, the visible shell must be a MIRROR — no
+      // carry affordance, flagged on its record — or a gaze-carry could lift
+      // it out from under the count and the census would count it a second
+      // time. This arm used to leave the original CARRYABLE object standing
+      // in the slot: the one liftable banked shell in the whole system.
+      // `unshelveProp` is the conversion back (same object id, same entity).
+      //
+      // ASK THE SURFACE FIRST (containerRoom's own docstring): banking before
+      // a refused place left a stack unit AND a floor prop — a unit in two
+      // places. A full table now refuses before anything is credited, and the
+      // prop stays the real dropped thing it already is.
+      if (containerRoom(world.state, containerObjId, "on") <= 0) return false;
+      const c = world.state.objects[containerObjId];
+      world.removeObject(objId);
+      world.addObject(itemObjectSpec(small.glyph, objId, c ?? o, { carry: false }));
       placeInContainer(world.state, objId, containerObjId, "on"); // visible on the table
+      stackAdd(stock, small.glyph);
+      small.mirror = true;
+      bumpStockEpoch(session); // ⏸️ a whole prop became stock — wakes parked rows
     } else {
+      stackAdd(stock, small.glyph);
+      bumpStockEpoch(session); // ⏸️ a whole prop became stock — wakes parked rows
       world.removeObject(objId);
       // An emptied container that just became a tally leaves no registration
       // behind — a stale one is an endpoint pointing at an object that is gone.
@@ -15592,13 +15780,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           removeLooseProp(session, o);
         }
         // THE INGEST EFFECT is bound to the action, not to the need machinery:
-        // if the eater runs a matching hunger/thirst row it empties (the meter
-        // key already carries the template), so "you eat the banana" satisfies
-        // hunger exactly as the creature eating on its own would. A body with no
-        // such row just eats. Same applyIngestEffect the need path calls.
+        // if the eater runs a matching hunger/thirst row it is paid down (the
+        // meter key already carries the template), so "you eat the banana"
+        // works on hunger exactly as the creature eating on its own would. A
+        // body with no such row just eats. Same applyIngestEffect the need
+        // path calls — HERE passing the eaten glyph's OWN satiation (food-
+        // scale-round Q2): this is the hand-feed path, the one place a single
+        // unit moves the meter a FRACTION, so feeding a hungry creature takes
+        // five apples and every one of them visibly does something. (A thirst
+        // row still full-clears inside the effect — satiation is a food axis.)
         const prefix = DRINK_GLYPHS.has(head) ? "thirst:" : "hunger:";
         const meterKey = [...session.needMeters.keys()].find((k) => k.startsWith(`${cid}|${prefix}`));
-        if (meterKey) applyIngestEffect(session, cid, meterKey.slice(cid.length + 1));
+        if (meterKey) applyIngestEffect(session, cid, meterKey.slice(cid.length + 1), satiationDaysOf(glyph));
         // THE MEAL IS SEEN (parity with the needs consume): the EAT visual — a
         // chair meal shows seated (and a little longer), a standing one the eat rig.
         if (state.avatars[npcId]) {
@@ -16587,9 +16780,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         handsS: p.handsS[branchOf(intent.from)],
       }),
     );
+    // A ration row's ctx.room is RATIONS (step ⑧), so a bag's ITEM room joins
+    // the comparison through the same deal-grain conversion the ctx used.
+    const bagRoomOf = (bag: IdleBag): number =>
+      rationDenominated(tpl.key) ? bag.room * grainSatiationDaysOf(tpl.item.category ?? "") : bag.room;
     let best: { bag: IdleBag; net: number } | null = null;
     for (const bag of idleBagsFor(session, cid)) {
-      if (bag.room <= (ctx.room ?? 1)) continue; // no more room than the hands: no gain
+      if (bagRoomOf(bag) <= (ctx.room ?? 1)) continue; // no more room than the hands: no gain
       // RE-DECIDE THE SAME ROW AGAINST THE BIGGER BAG — the honest "price the
       // plan twice". Re-deciding (rather than re-deriving the take size here)
       // is what keeps the two answers the SAME rule: restock target, claims,
@@ -16600,7 +16797,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // it could only bring one unit back from; WITH a bag the market's fifty
       // win. So the bag plan is priced against ITS OWN source, not forced back
       // onto the bare plan's.
-      const withBag = decideNeed(tpl, { ...ctx, room: bag.room });
+      const withBag = decideNeed(tpl, { ...ctx, room: bagRoomOf(bag) });
       if (withBag.kind !== "take") continue;
       if (withBag.units <= intent.units) continue; // the bag buys nothing here
       const srcAt = containerAnchor(session, withBag.from.id);
@@ -18511,9 +18708,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const objId = `furn_${house.index}_chest_${g.good.key}`;
         // Seed the chest to the REAL pantry level (doc §13a.3) — so eating draws down a
         // truthful count, not a token 2. Clamped to the box capacity; food splits
-        // into fruit KINDS (each house flavors its own pantry mix).
+        // into fruit KINDS (each house flavors its own pantry mix). The level is
+        // RATIONS off the goods clock; the chest holds ITEMS — convert at the
+        // deal grain (step ⑧, same seam as the load edge).
         const level = Math.min(g.boxCap, Math.max(1, Math.round(g.pantry(house, session.townClock))));
-        registerContainer(session, objId, "in", owner, dealGood(session.dress, g.good.key, level, house.index));
+        registerContainer(session, objId, "in", owner, dealGood(session.dress, g.good.key, unitsForRations(level, kindsOf(g.good.key)[0] ?? g.good.key), house.index));
       }
       // THE HOUSEHOLD'S BASKET (step ③ seeding) — ONE, standing on the living
       // room floor where the goods chests corner, at the same once-per-session
@@ -18604,6 +18803,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }
       }
     });
+
+    // ⚖️ B-⑥ (band-settlement-round) — THE CONVERTED HERD, rendered: a
+    // promoted site's owned animals live on as the town's domestic-herd
+    // COUNT (deltas.herd — the taming handoff law's end state), and the
+    // count grazes here as scenery beside the town centre: bodies with NO
+    // container row, because at town rung the ABSTRACT account is the
+    // physics — exactly the law's "never both at once". Capped per
+    // species: the record is the count; the render is a sample of it.
+    for (const [sp, row] of Object.entries(town.deltas.herd)) {
+      const heads = Math.min(6, Math.max(0, Math.floor(row.n)));
+      for (let i = 0; i < heads; i++) {
+        const a = (i / Math.max(1, heads)) * Math.PI * 2 + 1.3;
+        const r = 7 + (i % 3) * 1.6;
+        world!.addNpc({
+          id: `fauna:${sp}:herd_${i}`,
+          x: c.x + Math.cos(a) * r,
+          y: c.y + Math.sin(a) * r,
+          behavior: {
+            movement: "wander",
+            wanderRadius: 5,
+            home: { x: c.x, y: c.y },
+            speed: 0.5,
+            conversationRadius: 3,
+          },
+        });
+      }
+    }
   }
 
   /** A market store's currently-available unit count: the time-pure shelf (`stockOf` at
@@ -24675,7 +24901,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** The key the session's own scatter folds under. ONE area for now — the
-   *  ground this session renders; a region of many sheds is the world-size
+   *  ground this session renders; a region of many sources is the world-size
    *  round's (the record and its id grammar already take a key). */
   const HOME_WILD_AREA = "home";
 
@@ -24878,7 +25104,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * An LOD transition is REVERSIBLE HOUSEKEEPING; every other fold in the host
    * is a DECISION somebody made — `/wild fold` is an instrument a developer is
    * holding, a session handover is an authority transfer, and the world-size
-   * round's regional sheds are draw partners that were never this session's
+   * round's regional sources are draw partners that were never this session's
    * scenery. A driver that unfolded those would be overruling the caller, and
    * it measurably did: with this set absent, `/wild fold` was undone within one
    * sweep (five sim-seconds), turning F5b's own live proofs — f5-shed.txt,
@@ -25366,7 +25592,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const stock = Object.entries(wildAreaStock(rec))
         .map(([g, n]) => `${g}:${n}`)
         .join(" ");
-      // ⚖️ F5 — …and what is waiting AT THE ROAD, when anything is. A shed with
+      // ⚖️ F5 — …and what is waiting AT THE ROAD, when anything is. A source with
       // an empty boundary shelf prints exactly what it always printed.
       const shelf = Object.entries(session.partnerStock[wildAreaId(rec.key)] ?? {})
         .filter(([, n]) => n > 0)
@@ -25381,7 +25607,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** ⚖️ S&D S4 — the `/wild` cheat's whole body (see `wildProbe`).
-   *  ⚖️ F5 adds `draw <good>`: order a standing draw on the folded shed and run
+   *  ⚖️ F5 adds `draw <good>`: order a standing draw on the folded source and run
    *  the first load out to its road, so the region-reach seam can be exercised
    *  from text mode — the same argument the fold verbs were given ("a
    *  conservation law that can only be exercised in a browser is a law nobody
@@ -25393,19 +25619,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (verb === "draw") {
       const good = rest[0] ?? "wood";
       lines.push(`before: ${stockLine(session)}`);
-      const shed = shedPartnerOf(session, HOME_WILD_AREA);
-      const order = shed ? orderRegionDraw(session, HOME_WILD_AREA, good, 1) : null;
-      if (!shed) lines.push("nothing folded to draw from");
+      const source = sourcePartnerOf(session, HOME_WILD_AREA);
+      const order = source ? orderRegionDraw(session, HOME_WILD_AREA, good, 1) : null;
+      if (!source) lines.push("nothing folded to draw from");
       else if (!order) lines.push("nowhere here to put it (no yard, no site)");
       else {
-        const road = shed.distanceM === null ? "no road" : `${Math.round(shed.distanceM)}m`;
+        const road = source.distanceM === null ? "no road" : `${Math.round(source.distanceM)}m`;
         lines.push(
-          `ordered ${good} from ${shed.id} — ${road}, ` +
-            `leg ${Math.round(partnerLegSeconds(session, shed))}s, due ${Math.round(order.nextDueAt ?? 0)}`,
+          `ordered ${good} from ${source.id} — ${road}, ` +
+            `leg ${Math.round(partnerLegSeconds(session, source))}s, due ${Math.round(order.nextDueAt ?? 0)}`,
         );
         // The sweep's own arm, run now so one cheat call shows the draw: the
         // shelf fills out of the record and the leg ships it when it comes due.
-        drawShedShelf(session, HOME_WILD_AREA, order.goods);
+        drawSourceShelf(session, HOME_WILD_AREA, order.goods);
         lines.push(`drawn: ${stockLine(session)}`);
       }
     }
@@ -26746,13 +26972,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   };
 
-  /** A house goods chest's capacity — the good's boxCap (PANTRY_CAP for
-   *  food). Null for everything else (uncapped). */
+  /** A house goods chest's capacity in ITEMS — the good's boxCap (RATIONS,
+   *  the economy's unit) converted at the deal grain (step ⑧: a 15-ration
+   *  food box physically holds 75 fruit; satiation-1 goods are unchanged).
+   *  Every caller compares this against raw item counts (`totalStackUnits`),
+   *  so it must be an item number — the ration accounting lives on the ctx's
+   *  home role and the goods clock, never here. Null for everything else
+   *  (uncapped). */
   function houseChestCap(session: QuestSession, id: string): number | null {
     const m = /^furn_\d+_chest_(.+)$/.exec(id);
     if (!m || !session.town) return null;
     const g = session.town.stage.goods.find((x) => x.good.key === m[1]);
-    return g ? Math.max(1, Math.round(g.boxCap)) : null;
+    return g ? Math.max(1, unitsForRations(g.boxCap, kindsOf(g.good.key)[0] ?? g.good.key)) : null;
   }
 
   /**
@@ -26898,6 +27129,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   function scopeTreeOf(session: QuestSession): ScopeStockInput {
     const t = session.town;
+    /** ④ THE ORDER BOOK, whichever one this session has. `stockEndpointOf`
+     *  answers `orderpile:`/`sitepile:` ids for `town ?? foundedSite`, so
+     *  every reader HERE must ask the same book — an id space the resolver
+     *  answers but the walk never lists is exactly the ①/③ blind spot one
+     *  rung up (a homestead's staged materials read as LOST). */
+    const book = t?.deltas ?? session.foundedSite?.deltas;
     /** WHICH SCOPE A PROP OR BOX HANGS OFF. Hoisted because the containment
      *  rule and the loose census must be the SAME rule — a prop counted under a
      *  parent the tree disagrees with is a unit in two places or none. */
@@ -26911,12 +27148,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       //
       // ⑤ PAYOFF: one record read replaces the old linear scan of
       // `wornBags` — the wearer is `mount:"worn"`'s own `wearer` field now.
-      const wornRec = session.containerRecords.get(objectId);
-      if (wornRec?.mount === "worn") return `${POCKET_EP}${wornRec.wearer}`;
-      const o = world?.state.objects[objectId];
-      if (!o || !world) return null;
-      if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
-      return scopeOfPoint(o.x, o.y);
+      //
+      // Hop-capped loop, not recursion: nesting walks OUT of unregistered
+      // boxes (a thing in a pouch in a crate hangs off the crate), and a
+      // containment cycle is not a tree — stop rather than spin.
+      let id = objectId;
+      for (let hop = 0; hop < 8; hop++) {
+        const wornRec = session.containerRecords.get(id);
+        if (wornRec?.mount === "worn") return `${POCKET_EP}${wornRec.wearer}`;
+        const o = world?.state.objects[id];
+        if (!o || !world) return null;
+        if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
+        // INSIDE A BOX: the thing hangs off the box (③b — a whole basket
+        // stowed in a crate is the crate's business). A registered box is a
+        // node of the tree in its own right; an unregistered one is furniture
+        // the walk keeps climbing past.
+        if (o.containedIn) {
+          const boxId = o.containedIn.objectId;
+          if (isContainerId(session, boxId)) return boxId;
+          id = boxId;
+          continue;
+        }
+        return scopeOfPoint(o.x, o.y);
+      }
+      return null;
     };
     /**
      * THE LOOSE CENSUS, built ONCE per tree and read by id.
@@ -26932,18 +27187,49 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (censusMemo) return censusMemo;
       censusMemo = new Map();
       if (!world) return censusMemo;
-      for (const [objId, rec] of looseEntries(session)) {
-        const o = world.state.objects[objId];
-        if (!o || o.containedIn) continue; // in a box: counted as that box's stack
-        const parent = parentOfObject(objId);
-        if (!parent) continue;
-        let bucket = censusMemo.get(parent);
+      const add = (parent: ScopeId, glyph: string) => {
+        let bucket = censusMemo!.get(parent);
         if (!bucket) {
           bucket = {};
-          censusMemo.set(parent, bucket);
+          censusMemo!.set(parent, bucket);
         }
-        const glyph = rec.glyph!; // mount:"loose" always carries a glyph
         bucket[glyph] = (bucket[glyph] ?? 0) + 1;
+      };
+      for (const [objId, rec] of session.containerRecords) {
+        // ③a A WORN container is still a thing the session owns. It has no
+        // world object to stand for it (`donWornBag` removed that), so the
+        // wear register answers: one unit of its own glyph, in the wearer's
+        // pocket. Its CONTENTS are its own endpoint row and never counted
+        // here. Without this line a bag was worth 0 while worn and read as
+        // +1 minted from nowhere the moment somebody doffed it.
+        if (rec.mount === "worn") {
+          if (rec.glyph && rec.wearer) add(`${POCKET_EP}${rec.wearer}`, rec.glyph);
+          continue;
+        }
+        if (rec.mount !== "loose") continue;
+        const o = world.state.objects[objId];
+        if (!o) continue;
+        // ③b IN A BOX, two honest cases the old blanket skip conflated:
+        // a MIRROR's unit is the row on the box's stack (counting the shell
+        // would be the same chair twice — skip); a prop stowed as a WHOLE
+        // object was never banked anywhere, so it counts as itself, under
+        // the box (`parentOfObject`'s containedIn arm).
+        if (o.containedIn && rec.mirror) continue;
+        const parent = parentOfObject(objId);
+        if (!parent) continue;
+        add(parent, rec.glyph!); // mount:"loose" always carries a glyph
+      }
+      // W1 — THE GARMENT ON THE BODY'S BACK. `session.worn` is the wear
+      // register's OTHER half (garments, not containers), and it was the
+      // fifth, unaudited item location (fixture-placement-audit.md ⑩/W1):
+      // a shirt was worth 0 while worn and read as minted the moment the
+      // equip path doffed it into a `.dirty` unit. One unit of its own
+      // glyph, in the wearer's pocket — the ③a shape exactly. With this
+      // line the equip paths become conservation-NEUTRAL end to end: the
+      // clean unit leaves the carry as the worn row takes it, and the worn
+      // row hands its old glyph back as the dirty prop.
+      for (const [cid, w] of session.worn) {
+        if (w.glyph) add(`${POCKET_EP}${cid}`, w.glyph);
       }
       return censusMemo;
     };
@@ -26973,10 +27259,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           for (const h of t.plan.houses) out.add(`h_${h.index}`);
           t.plan.works.forEach((_, i) => out.add(`w_${i}`));
           for (const row of t.deltas.cohorts) out.add(cohortEndpointId(row.district));
-          for (const o of t.deltas.orders()) out.add(`${ORDER_PILE_EP}${o.ord}`);
+          // `bfurn:` stays HERE, town-gated: `stockEndpointOf`'s
+          // buildingFurnPile arm refuses without a town, and the walk lists
+          // exactly the key space the resolver answers — no more, no less.
           for (const key of shellFurnPilesOf(session).keys()) out.add(`${BFURN_EP}${key}`);
           for (const p of tradePartnersOf(session)) out.add(townEndpointId(p.key));
         }
+        // ④ ORDER PILES COME FROM THE BOOK, not from the town: a homestead
+        // (founded-site, no town yet) resolves its pile endpoints perfectly
+        // well, and an enumeration gated on `t` made every unit staged into
+        // one read as LOST. Same one-boolean shape as the pocket gate below.
+        if (book) for (const o of book.orders()) out.add(`${ORDER_PILE_EP}${o.ord}`);
         // ⚖️ F5 — AND EVERY REGION SHED'S BOUNDARY SHELF. The folded stands
         // themselves are counted through their codec (`foldedStock("wild", …)`
         // in `sessionStockAudit`); the shelf a draw lands on is a live stack
@@ -26997,18 +27290,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // ⑤ PAYOFF: one loop replaces the old `containers.keys()` +
         // `containerStock.keys()` pair — every container row carries both now.
         for (const [id] of containerEntries(session)) out.add(id);
-        // BODIES — as stackless parent nodes. They carry no stack of their own
-        // (their containers, already enumerated above, do), so listing one adds
-        // structure to the tree without adding a single unit to the audit. The
-        // player is always listed; every other body earns its node by wearing
-        // or holding a container, which is the only way a body can have goods
-        // on it at all.
+        // BODIES — as parent nodes. They carry no stack of their own (their
+        // containers, already enumerated above, do), but the census banks
+        // loose units under `pocket:` ids, so a body holding ANYTHING must be
+        // a node or its unit is bucketed under an id nobody asks for. ① The
+        // old gate here (`isContainerId`) listed a body holding a BASKET and
+        // skipped one holding a bare BLOCK — precisely what `giveUnitsToBody`'s
+        // no-bag arm mints for a porter with no bag, so every bagless carrier's
+        // load was invisible for the whole walk and reappeared on unload.
         out.add(`${POCKET_EP}${LOCAL_PLAYER_CID}`);
         for (const cid of session.wornBagIndex.keys()) out.add(`${POCKET_EP}${cid}`);
-        for (const [objId, o] of Object.entries(world?.state.objects ?? {})) {
-          if (o.carriedBy && isContainerId(session, objId)) {
-            out.add(`${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`);
-          }
+        // W1 — a DRESSED body is a node for the same reason a carrying one
+        // is: the census banks its garment under `pocket:<cid>`, and a bucket
+        // under an id nobody lists is a unit nobody counts. (A streamed-out
+        // member keeps its node — its shirt did not stop existing when the
+        // camera looked away; only DEMOTE retires the row.)
+        for (const cid of session.worn.keys()) out.add(`${POCKET_EP}${cid}`);
+        for (const o of Object.values(world?.state.objects ?? {})) {
+          if (o.carriedBy) out.add(`${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`);
         }
         return out;
       },
@@ -27022,8 +27321,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       buildingOfOrder: (ord) => {
         // A FOUNDED order has no building yet — it IS one being made, on ground
         // that belongs to the town. Every other order grows or shrinks an
-        // existing building and names it.
-        const o = t?.deltas.orders().find((q) => q.ord === ord);
+        // existing building and names it. Read from the BOOK (④): the same
+        // rows `ids()` lists and `stockEndpointOf` resolves.
+        const o = book?.orders().find((q) => q.ord === ord);
         return o && "buildingKey" in o ? o.buildingKey : null;
       },
       townId: () => (t ? TOWN_SCOPE : null),
@@ -27239,7 +27539,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!p) return null;
       return { id, kind: "town", stack: p.stack, owner: null };
     }
-    // ⚖️ F5 — AN OFFLOADED REGION SHED (`wild:area:<key>`): the partner endpoint
+    // ⚖️ F5 — AN OFFLOADED REGION SOURCE (`wild:area:<key>`): the partner endpoint
     // one rung out of town, aliasing its boundary shelf — what has been cut and
     // is waiting at the road. ONE-WAY by the endpoint's own capacity (0), which
     // is `scopeReceivesGoods`'s "a source only YIELDS" made executable rather
@@ -27253,7 +27553,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // in leaves the shelf (and any leg still owed against it) alone.
     if (ref.kind === "wild" && ref.form === "area") {
       if (!session.wildAreas.has(ref.tag) && !session.partnerStock[id]) return null;
-      return wildShedEndpoint(ref.tag, shedShelf(session, ref.tag));
+      return wildSourceEndpoint(ref.tag, sourceShelf(session, ref.tag));
     }
     // A CONSTRUCTION ORDER's PILE (phase 2): `orderpile:<ord>` aliases the
     // order's live pile — the staked plot's material heap. Communal,
@@ -27733,22 +28033,42 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             const moved: Record<string, number> = {};
             for (const [g, n] of Object.entries(agr.goods)) {
               if (!src) break;
-              const have = stackUnits(src.stack, g);
-              const got = giveUnitsToBody(session, cid, g, Math.min(n, have), { at: from.at });
-              for (let k = 0; k < got; k++) stackTake(src.stack, g);
-              if (got > 0) moved[g] = got;
+              // 🚨 THE MINT THAT WAS (#25). The bill speaks in HEADS ("block")
+              // while a mill's commit credits the CONCRETE variant
+              // ("block.material_wood"). Availability here always head-matched
+              // (`stackUnits`), but the old debit was the exact-key
+              // `stackTake(src.stack, g)` — a silent no-op against a facted
+              // row. The body got credited, the source kept its stock, and the
+              // next sweep ordered the same load again: +12 minted per trip,
+              // "bring 12 block — delivered" ×30 for one 12-block mill.
+              // `takeStock` is the kernel's own head-matched draw (plain row
+              // first, then facted variants) and returns exactly what left, BY
+              // CONCRETE GLYPH — and the concrete variant is what rides the
+              // body and lands at the destination, which is byte-for-byte the
+              // twin's bookkeeping (`twinStagePile` credits takeStock's own
+              // keys). Observed and unobserved hauls leave the SAME books.
+              const taken = takeStock(src.stack, g, n);
+              for (const [cg, c] of Object.entries(taken)) {
+                const got = giveUnitsToBody(session, cid, cg, c, { at: from.at });
+                // What the body refuses (a bagless porter carries ONE whole
+                // thing) goes straight back on the shelf — debited exactly
+                // once or not at all.
+                if (got < c) src.stack[cg] = (src.stack[cg] ?? 0) + (c - got);
+                if (got <= 0) continue;
+                moved[cg] = (moved[cg] ?? 0) + got;
+                for (let k = 0; k < got; k++) removeVisibleContainedProp(session, agr.from, cg);
+                // The loaded units are no longer spoken for (pipeline ② —
+                // no-op for agreements that reserved nothing). Reservations
+                // are HEAD-denominated (reserve spoke the bill's word), so
+                // the consume stays keyed by the agreement's own glyph.
+                session.reservations.consume(agrHolder(agreementId), agr.from, g, got);
+              }
             }
             if (!Object.keys(moved).length) {
               session.transfers.fail(agreementId, "missing");
               session.reservations.release(bagHolder(agreementId));
               npcChatBubble(session, cid, noStock(head)[syntax]);
               return;
-            }
-            for (const [g, c] of Object.entries(moved)) {
-              for (let k = 0; k < c; k++) removeVisibleContainedProp(session, agr.from, g);
-              // The loaded units are no longer spoken for (pipeline ② —
-              // no-op for agreements that reserved nothing).
-              session.reservations.consume(agrHolder(agreementId), agr.from, g, c);
             }
             if (agr.from === activeBagOf(session, LOCAL_PLAYER_CID)?.objId) pushPocket(session);
             fellIfConsumed(session, agr.from); // a hauled-empty kill-source is felled
@@ -28045,8 +28365,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  where it honestly does not. Order time AND the per-leg re-derive read
    *  THIS, so one partner can never be priced two ways.
    *
-   *  ⚖️ F5 — AND THE REGION SHED PRICES THROUGH IT TOO. The parameter is the
-   *  ROAD and nothing else, so a `WildShedPartner` (its distance measured off
+   *  ⚖️ F5 — AND THE REGION SOURCE PRICES THROUGH IT TOO. The parameter is the
+   *  ROAD and nothing else, so a `WildSourcePartner` (its distance measured off
    *  the record's own ground) is priced by the same seat, at the same
    *  `transactionDayFrac({kind:"shipment-leg"})` floor, as a stub town three
    *  kilometres out. A second pricing path for "but it's a forest" is exactly
@@ -28058,7 +28378,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return barterLegSeconds(session.scale, partner?.distanceM ?? null);
   }
 
-  // ── ⚖️ F5 — THE REGION SHED AS A ONE-WAY TRADE PARTNER ────────────────────
+  // ── ⚖️ F5 — THE REGION SOURCE AS A ONE-WAY TRADE PARTNER ──────────────────
   //
   // (fold-round.md F5, REGION REACH: *"a town draws on the region exactly as it
   // trades with a stub town, price and legs included."*) An offloaded stand is
@@ -28068,26 +28388,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // agreement on the ② ledger, priced by the ONE `partnerLegSeconds` road,
   // executed against a boundary shelf that a pre-sweep arm tops up.
   //
-  // 🚨 WITH ONE DIFFERENCE THE TYPES ENFORCE, TWICE. The shed's endpoint id is
+  // 🚨 WITH ONE DIFFERENCE THE TYPES ENFORCE, TWICE. The source's endpoint id is
   // its own scope id (`wild:area:<key>`), so `scopeReceivesGoods` reads FALSE
-  // off it — the law scope.ts already wrote for "an offloaded region shed" —
+  // off it — the law scope.ts already wrote for "an offloaded region source" —
   // and the endpoint itself carries capacity 0, so `putStock` refuses every
-  // unit and `transferStock` hands it back. A buy-from-shed leg exists; a
-  // sell-to-shed leg cannot move a thing.
+  // unit and `transferStock` hands it back. A buy-from-source leg exists; a
+  // sell-to-source leg cannot move a thing.
   //
   // AND THE SHELF IS FILLED BY A DRAW, NOT A MINT. That is the whole
   // difference between a fiction and a record: a stub town's shelf is topped
   // up with what its unsimulated production WOULD have made (F-③'s integral),
-  // while every unit the shed sells was already standing in the record and
+  // while every unit the source sells was already standing in the record and
   // leaves it (`drawWildArea` — felling where it must, and booking the
   // direction it was drawn from).
 
-  /** A shed's BOUNDARY SHELF — what has been cut and is waiting at the road.
+  /** A source's BOUNDARY SHELF — what has been cut and is waiting at the road.
    *  The exact counterpart of `abstractPartnerStack`, and it rides the same
-   *  persisted map (`TownDeltas.partnerStock`) keyed by the shed's ENDPOINT ID:
-   *  a shed has no partner key, and no partner key can collide with one,
+   *  persisted map (`TownDeltas.partnerStock`) keyed by the source's ENDPOINT ID:
+   *  a source has no partner key, and no partner key can collide with one,
    *  because no town is called `wild:area:…`. */
-  function shedShelf(session: QuestSession, key: string): Record<string, number> {
+  function sourceShelf(session: QuestSession, key: string): Record<string, number> {
     const id = wildAreaId(key);
     let s = session.partnerStock[id];
     if (!s) {
@@ -28097,10 +28417,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return s;
   }
 
-  /** Where a draw is measured FROM, and the direction the shed's harvest
+  /** Where a draw is measured FROM, and the direction the source's harvest
    *  histogram books it against: our own gate. Null ⇒ no geometry, which takes
    *  the flat leg and books no direction (the place-less stub's honest null). */
-  function shedDrawOrigin(session: QuestSession): { x: number; y: number } | null {
+  function sourceDrawOrigin(session: QuestSession): { x: number; y: number } | null {
     return session.town?.stage.center ?? session.foundedSite?.at ?? null;
   }
 
@@ -28109,9 +28429,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  barter vocabulary — a partner quotes, wants, refuses and RECEIVES — and a
    *  forest does none of those; putting one in it would let "trade wood with
    *  the city" resolve to a stand of oaks. */
-  function shedPartnerOf(session: QuestSession, key: string): WildShedPartner | null {
+  function sourcePartnerOf(session: QuestSession, key: string): WildSourcePartner | null {
     const rec = session.wildAreas.get(key);
-    return rec ? wildShedPartner(rec, shedDrawOrigin(session)) : null;
+    return rec ? wildSourcePartner(rec, sourceDrawOrigin(session)) : null;
   }
 
   /**
@@ -28120,15 +28440,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * world-size round mints a region of many — so the spoken route reads the
    * whole map rather than the `home` key, and does it in an order that cannot
    * drift: cheapest `partnerLegSeconds` (the same ONE seat the order is priced
-   * by, so the shed we pick IS the shed that is cheapest to ship from), ties
+   * by, so the source we pick IS the source that is cheapest to ship from), ties
    * broken on the area KEY. Never Map insertion order, which is a fold history
    * and not a fact about the world.
    */
-  function shedsByLeg(session: QuestSession): WildShedPartner[] {
-    const out: WildShedPartner[] = [];
+  function sourcesByLeg(session: QuestSession): WildSourcePartner[] {
+    const out: WildSourcePartner[] = [];
     for (const key of [...session.wildAreas.keys()].sort()) {
-      const shed = shedPartnerOf(session, key);
-      if (shed) out.push(shed);
+      const source = sourcePartnerOf(session, key);
+      if (source) out.push(source);
     }
     return out.sort(
       (a, b) =>
@@ -28138,43 +28458,43 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
-   * ⚖️ H2 — WHAT THIS SHED CAN ACTUALLY HAND OVER: what is STANDING in the
+   * ⚖️ H2 — WHAT THIS SOURCE CAN ACTUALLY HAND OVER: what is STANDING in the
    * record (`yields`, i.e. `wildAreaStock`) plus what is already CUT and
    * waiting on its boundary shelf.
    *
-   * The shelf half is not a flourish. `wildShedEndpoint`'s own law is that the
+   * The shelf half is not a flourish. `wildSourceEndpoint`'s own law is that the
    * shelf OUTLIVES the record — timber already at the road is not standing
-   * timber — so a shed whose stand has been drawn down to nothing may still
-   * have a load ready to ship, and calling that shed empty would refuse an
+   * timber — so a source whose stand has been drawn down to nothing may still
+   * have a load ready to ship, and calling that source empty would refuse an
    * order it can serve. Read straight off `partnerStock`, never through
-   * `shedShelf`, because that one MINTS the entry it fails to find and a
+   * `sourceShelf`, because that one MINTS the entry it fails to find and a
    * question must not leave a mark on the books.
    */
-  function shedCanYield(session: QuestSession, shed: WildShedPartner, glyph: string): number {
-    const shelf = session.partnerStock[shed.id] ?? {};
-    return (shed.yields[glyph] ?? 0) + stackUnits(shelf, glyph);
+  function sourceCanYield(session: QuestSession, source: WildSourcePartner, glyph: string): number {
+    const shelf = session.partnerStock[source.id] ?? {};
+    return (source.yields[glyph] ?? 0) + stackUnits(shelf, glyph);
   }
 
   /**
    * ⚖️ THE DRAW ARM — the mint's twin, run before the scheduled sweep for
-   * exactly the goods a due row asks of a shed.
+   * exactly the goods a due row asks of a source.
    *
    * Conserving by construction: `drawWildArea` answers what LEFT the record,
    * and every one of those units lands on the shelf — the record's own audit
    * total (`foldedStock("wild", …)`) falls by exactly what the shelf gains,
    * and both are in `sessionStockAudit`. Nothing is drawn that the shelf
-   * already holds, so a route that ships less than the shed yields (a felled
+   * already holds, so a route that ships less than the source yields (a felled
    * tree is bigger than one order) draws nothing on its next leg.
    */
-  function drawShedShelf(
+  function drawSourceShelf(
     session: QuestSession,
     key: string,
     goods: Readonly<Record<string, number>>,
   ): void {
     let rec = session.wildAreas.get(key);
     if (!rec) return;
-    const shelf = shedShelf(session, key);
-    const from = shedDrawOrigin(session);
+    const shelf = sourceShelf(session, key);
+    const from = sourceDrawOrigin(session);
     for (const [glyph, qty] of Object.entries(goods)) {
       const need = Math.ceil(qty) - stackUnits(shelf, glyph);
       if (!(need > 0)) continue;
@@ -28191,12 +28511,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
-   * ORDER A STANDING DRAW from the region shed — the shed's half of
+   * ORDER A STANDING DRAW from the region source — the source's half of
    * `orderTribute`, and the same shape: a scheduled ② row, our end the yard or
    * the site crate, the first load a full LEG out (`partnerLegSeconds` over the
-   * shed's own road), one load per street day after that.
+   * source's own road), one load per street day after that.
    *
-   * Returns false when there is no such shed or nowhere here to put the goods.
+   * Returns false when there is no such source or nowhere here to put the goods.
    */
   function orderRegionDraw(
     session: QuestSession,
@@ -28204,24 +28524,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     glyph: string,
     perDay = 1,
   ): TransferAgreement | null {
-    const shed = shedPartnerOf(session, key);
+    const source = sourcePartnerOf(session, key);
     const homeId = tradeHomeEndpointId(session);
-    if (!shed || !homeId) return null;
+    if (!source || !homeId) return null;
     return session.transfers.post({
-      from: shed.id,
+      from: source.id,
       to: homeId,
       goods: { [glyph]: Math.max(1, Math.floor(perDay)) },
       issuer: LOCAL_PLAYER_CID,
       mode: "scheduled",
       now: session.taskClock,
       every: FOOD_DAY_SEC,
-      dueAt: session.taskClock + partnerLegSeconds(session, shed),
-      sourceGlyph: `draw ${glyph} from ${shed.id}`,
+      dueAt: session.taskClock + partnerLegSeconds(session, source),
+      sourceGlyph: `draw ${glyph} from ${source.id}`,
     });
   }
 
   /**
-   * ⚖️ H1 — "GET WOOD FROM THE FOREST", SPOKEN. The region shed's half of
+   * ⚖️ H1 — "GET WOOD FROM THE FOREST", SPOKEN. The region source's half of
    * `orderTrade`: the sentence the child already knows how to build, routed to
    * the same ② scheduled row the `/wild draw` cheat posts, with the terms said
    * ALOUD. Until now the word `forest` reached nothing at all — the fetch
@@ -28242,8 +28562,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  • NEITHER ⇒ REFUSED ALOUD. No stand, no record: there is no forest here,
    *    and saying so is the whole of the honest answer.
    *
-   * ⚖️ H2 adds the FOURTH: A SHED THAT HAS NO SUCH GOOD REFUSES BY NAME. The
-   * candidates are ALL condensed areas (`shedsByLeg`), cheapest road first, and
+   * ⚖️ H2 adds the FOURTH: A SOURCE THAT HAS NO SUCH GOOD REFUSES BY NAME. The
+   * candidates are ALL condensed areas (`sourcesByLeg`), cheapest road first, and
    * the one drawn from is the cheapest that can actually hand the good over —
    * so "get metal from the forest" against a stand of oaks does not post a row
    * that would ship nothing forever. It says "they don't give metal" and the
@@ -28289,23 +28609,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       presenter.toast(banner, "feedback");
       return true;
     };
-    // ⚖️ H2 — WHICH SHED. Every condensed area, cheapest road first; the one we
-    // draw from is the cheapest that can actually hand the good over.
-    const sheds = shedsByLeg(session);
-    const shed = sheds.find((s) => shedCanYield(session, s, glyph) > 0);
-    if (!shed) {
+    // ⚖️ H2 — WHICH SOURCE. Every condensed area, cheapest road first; the one
+    // we draw from is the cheapest that can actually hand the good over.
+    const sources = sourcesByLeg(session);
+    const source = sources.find((s) => sourceCanYield(session, s, glyph) > 0);
+    if (!source) {
       // STILL STANDING ⇒ not our business: the trees are there and the errand
       // path is the right answer. Checked BEFORE the shortfall so a live world
       // with some OTHER area folded keeps its errand (H1's live law).
       if ((session.wilderness?.features.length ?? 0) > 0) return false;
-      if (sheds.length) {
+      if (sources.length) {
         // ⚖️ H2 — DRAW SHORTFALL, SPOKEN HONESTLY. There is a forest and it
         // does not have this: the partner-refusal vocabulary already has the
-        // sentence for that ("they + give.not + metal"), and a shed is a
+        // sentence for that ("they + give.not + metal"), and a source is a
         // partner. The banner names what it DOES yield, so the answer teaches
         // instead of merely refusing — a region that stocks nothing at all
         // says so rather than listing an empty set.
-        const nearest = sheds[0]!;
+        const nearest = sources[0]!;
         const has = Object.entries(nearest.yields)
           .filter(([, n]) => n > 0)
           .map(([g]) => g)
@@ -28334,12 +28654,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // shape — 1–3 a day, `all` reading as the plain standing 1.
     const q = orderQuantity(quantityWord);
     const perDay = Number.isFinite(q) ? Math.max(1, Math.min(3, q)) : 1;
-    const order = orderRegionDraw(session, shed.key, glyph, perDay);
+    const order = orderRegionDraw(session, source.key, glyph, perDay);
     if (!order) return answer(CANT_HERE, `💬 "${sentence}" — nowhere here to put it`);
-    const road = shed.distanceM === null ? "no road" : `${Math.round(shed.distanceM)}m`;
-    const legS = Math.round(partnerLegSeconds(session, shed));
+    const road = source.distanceM === null ? "no road" : `${Math.round(source.distanceM)}m`;
+    const legS = Math.round(partnerLegSeconds(session, source));
     const terms =
-      `🌲 draw: ${perDay} ${glyph} each day from ${shed.id} — ${road}, ` +
+      `🌲 draw: ${perDay} ${glyph} each day from ${source.id} — ${road}, ` +
       `first load in ${legS}s`;
     // THE CLERK SPEAKS THE STANDING FACT the player just created, exactly as
     // the tribute clerk does — "they give wood" — and the PRICE (the road and
@@ -28846,13 +29166,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (due.length) {
         const partners = tradePartnersOf(session);
         for (const a of due) {
-          // ⚖️ F5 — A REGION SHED IS DRAWN, NOT MINTED: the units it ships were
-          // standing in its record and leave it (`drawShedShelf`), which is the
+          // ⚖️ F5 — A REGION SOURCE IS DRAWN, NOT MINTED: the units it ships were
+          // standing in its record and leave it (`drawSourceShelf`), which is the
           // one place a real closed form differs from a fictional one. Same arm,
           // same moment, same purpose — the far end has stock before the leg runs.
-          const shed = parseScopeId(a.from);
-          if (shed.kind === "wild" && shed.form === "area") {
-            drawShedShelf(session, shed.tag, a.goods);
+          const source = parseScopeId(a.from);
+          if (source.kind === "wild" && source.form === "area") {
+            drawSourceShelf(session, source.tag, a.goods);
             continue;
           }
           const p = partners.find((tp) => townEndpointId(tp.key) === a.from);
@@ -29979,6 +30299,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         deleteContainerRecord(session, bagRef.objId);
         if (wasWorn) session.wornBagIndex.delete(cid);
       }
+      // ④ THE GARMENT ON ITS BACK (W1 — the lifecycle half). `seedWorn` MINTS
+      // a garment at embodiment; demote is the inverse door, so the row is
+      // UNMINTED here — deleted, not banked — and a demote/promote cycle nets
+      // exactly zero (the abstract tier dresses itself, the same way the
+      // "1023 more people" were never counted as shirts). Everything the
+      // equip economy moved in between was real units through the audited
+      // doors above. Before this line the row simply outlived the body
+      // (fixture-placement-audit.md discrepancy 7): no `.delete` existed
+      // anywhere, `seedWorn` early-returned on the stale row, and — once W1's
+      // census arm landed — a ghost's shirt would have counted forever.
+      session.worn.delete(cid);
       stressSum += session.stress.get(cid) ?? 0;
       clearNeedStep(session, cid);
       session.liveNeedBodies.delete(cid);

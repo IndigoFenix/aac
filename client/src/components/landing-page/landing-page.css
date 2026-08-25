@@ -482,6 +482,33 @@
   color: var(--lp-text-muted);
 }
 
+/* Per-locale links. Each one is a real endpoint (/he, /es, ...), so they read
+   as navigation rather than as a control; the current locale is de-emphasised
+   because clicking it goes nowhere. */
+.landing-lang-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.8rem;
+}
+
+.landing-lang-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.landing-lang-links a:hover,
+.landing-lang-links a:focus-visible {
+  text-decoration: underline;
+}
+
+.landing-lang-links a[aria-current="page"] {
+  color: var(--lp-primary);
+  font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .landing-hero-grid {

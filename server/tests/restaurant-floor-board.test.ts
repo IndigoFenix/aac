@@ -17,7 +17,6 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   buildRestaurantFloorBoard,
-  RESTAURANT_FLOOR_BOARD_KEY,
   RESTAURANT_FLOOR_GLYPH_KEYS,
 } from "../services/dual-agent/restaurant-floor-board.js";
 import { getVocabularyItem } from "../../shared/glyph-registry.js";
@@ -26,7 +25,9 @@ describe("restaurant floor board", () => {
   const board = buildRestaurantFloorBoard();
 
   it("exposes a stable board key", () => {
-    expect(RESTAURANT_FLOOR_BOARD_KEY).toBe("restaurant_floor");
+    // No board key: this is a screen of the restaurant app, not one of the
+    // student's pre-built boards. It must not appear in <prebuilt_boards>.
+    expect(board.pages?.[0]?.buttons?.length).toBeGreaterThan(0);
   });
 
   it("builds one page of 8 buttons on a 4x2 grid", () => {

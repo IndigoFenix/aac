@@ -505,7 +505,7 @@ export interface TextCheatHost {
   whyProbe?(cid: string): unknown;
   /** ⚖️ S&D S4 — the wild stand, and the LOD fold between its two forms
    *  (`/wild [fold|load|cycle]`); ⚖️ F5 adds `draw <good>`, the region-reach
-   *  draw on an already-folded shed. 🚨 THE ONE CHEAT THAT MOVES SOMETHING: the
+   *  draw on an already-folded source. 🚨 THE ONE CHEAT THAT MOVES SOMETHING: the
    *  driver that folds a stand lives in the GL boot, so headless has no other
    *  way to exercise the conservation law. See `QuestHost3D.wildProbe`. */
   wildProbe?(verb?: string): string;

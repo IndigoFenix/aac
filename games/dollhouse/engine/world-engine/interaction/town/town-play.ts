@@ -40,7 +40,7 @@ import { registerPlaceArt } from "@shared/glyph-place-art.js";
 import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
 import {
   clothingFillDays, farmAcresPerPerson, producerSurplusFrac, REAL_HOUSE_BUILD_DAYS,
-  REAL_SCALE, REAL_SURPLUS_FRAC, serviceRadiusM, type WorldScale,
+  REAL_SCALE, REAL_SURPLUS_FRAC, TIER_POP_CAP, serviceRadiusM, type SettlementTier, type WorldScale,
 } from "@shared/world-engine/scale.js";
 
 export interface TownPlayConfig {
@@ -130,6 +130,13 @@ export interface TownPlayConfig {
    *  faster clock lays a denser town. Folded in at buildTownScope from the
    *  document's `game.scale`. Absent = the clock-blind legacy layout. */
   scale?: WorldScale;
+  /** THE SETTLEMENT TIER (scale.ts `REAL_TIER_EXTENT_M`, food-scale-round
+   *  ⑩): the BODY this settlement declares — a village lays out to 120 m of
+   *  extent where a market town lays 450. Folded in from the founded row
+   *  (`PlanetCity.tier`, the refine/border village ladder) by
+   *  `city-towns.ts cityTownConfig`, exactly as `scale` above rides in.
+   *  Absent = `"town"`, byte-identical to every config that exists today. */
+  tier?: SettlementTier;
 }
 
 export interface TownFamilyMember {
@@ -469,6 +476,10 @@ export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
         // craft default. `plan.ts` reads it off the compiled row so the
         // FIELDS ON THE MAP and the acreage in the BOOKS can never disagree.
         surplusFrac: FARM_SURPLUS_FRAC,
+        // The works floor's spec-side seat (Stage β close): this row IS the
+        // staple grower, so IT declares it — plan.ts floors the staple row
+        // on a badly-seated site instead of matching a building name.
+        staple: true,
         sells: ["food"], leansToward: "fertility", mapCap: 8, district: "farm",
         style: { color: "#7d9c53", w: 18, h: 12 }, vignette: { w: 5, h: 4 },
         glyph: "🌾", title: "🌾 Farmstead", info: ["{farms} farms."],
@@ -860,7 +871,41 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   }
   const eco: CompiledEconomy = config.numeraire ? { ...compiled, numeraire: config.numeraire } : compiled;
   const key = config.key ?? TOWN_KEY;
-  const startPop = config.startPop ?? START_POP;
+  // POPULATION FOLLOWS CAPACITY (food-scale-round.md STAGE β1/β1b, ⑫): a
+  // config that declares a tier declares a BODY. TWO quantities meet here,
+  // and they are not the same number:
+  //
+  //   seats   — `TIER_POP_CAP[tier]` (scale.ts: mean frontage slots ×
+  //             HOUSEHOLD at the tier's extent; measured, not designed).
+  //             The souls the streets actually HOUSE, and the number the
+  //             population should SETTLE ON (the round's opening ruling:
+  //             "a 240 m village of 28 houses and 140 souls" — an
+  //             equilibrium, not a wall). The founding crowd is clamped
+  //             here: a village never seats 200 settlers on day 0.
+  //   ceiling — the Malthus crowding parameter (`vitals.capacity`), where
+  //             births taper to ZERO. A logistic taper settles at
+  //             `ceiling × (1 − death/birth)`, so the ceiling that puts
+  //             equilibrium ON the seats is `seats ÷ (1 − death/birth)` —
+  //             DERIVED from the same compiled vitals the TownWorld day
+  //             step reads (never a literal 2×: a re-dialled species
+  //             re-derives). A dying stock (birth ≤ death) declines
+  //             regardless and gets no amplified ceiling: ceiling = seats.
+  //
+  // No tier ⇒ NO capacity — deliberately: tier-0 planet capitals carry no
+  // tier (the standing design call) and the dollhouse bench replay pins the
+  // tierless path byte-identical, so absence must thread through as pure
+  // absence, never as a default "town".
+  const seats = config.tier ? TIER_POP_CAP[config.tier] : undefined;
+  // The same resolution town-world.ts applies to its day-step vitals.
+  const vit = eco.vitals[0] ?? { birthRate: 0.02, deathRate: 0.01 };
+  const capacity = seats !== undefined
+    ? (vit.birthRate > vit.deathRate
+        ? seats / (1 - vit.deathRate / vit.birthRate)
+        : seats)
+    : undefined;
+  const startPop = seats !== undefined
+    ? Math.min(config.startPop ?? START_POP, seats)
+    : (config.startPop ?? START_POP);
   const structures = config.structures ?? TOWN_PLAY_STRUCTURES;
   // THE PLACE ART THIS SESSION DRAWS WITH (shared/glyph-place-art.ts). A room or
   // a building is ONE symbol — the shell plate plus the fixture that names it —
@@ -901,6 +946,10 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     economy: eco,
     charter: config.charter ?? CHARTER,
     startPop,
+    // The tier's crowding ceiling (derivation above) — spread-conditional
+    // so a tierless config hands createTownWorld the IDENTICAL opts shape
+    // it always got (β1's absent-path law: byte-identical, not equivalent).
+    ...(capacity !== undefined ? { capacity } : {}),
     // The founding farm (villageSeed's shape) — but a ZERO-POP founded site
     // starts with NO buildings at all (①b zero-building growth), and a
     // FOUNDING-AGE town (city-founding) hasn't built one yet either: its
@@ -955,6 +1004,9 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
     // grow their lanes AROUND the farmsteads they formed between, and the
     // founding enumeration reads the identical list so both trees agree.
     groundObstacles(deltas),
+    // THE TIER (food-scale-round ⑩): the settlement body this config
+    // declares — a founded village row builds a village. Absent = "town".
+    config.tier,
   );
   // RECORD WHAT IT GREW AROUND (growth phase B §2.1 / handoff 3). The seed
   // set is the tree's identity: replayed verbatim it regrows the identical

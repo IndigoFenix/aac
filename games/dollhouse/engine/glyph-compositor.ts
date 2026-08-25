@@ -31,13 +31,27 @@ import {
  * the compositor renders as separate corner badges so a sentence can stack
  * tense + prosody (e.g. `i_me+want+water#past#question` = "Did I want
  * water?"):
- *   - PROSODY: `question` / `exclamation` — purple/red ?/! badge, top-right.
+ *   - PROSODY: `question` / `exclamation` / `request` — badge, top-right.
  *   - TENSE:   `past` / `future`           — amber/blue ←/→ badge, top-left.
  * Each axis allows at most one tag; if both members of an axis appear,
  * the renderer collapses them (question+exclamation → "?!"). Cross-axis
  * tags coexist on opposite corners.
+ *
+ * `request` is the ARC MARK — an invented punctuation for directives, drawn as
+ * a wide upturned arc ("an open hand held out"). Two constraints shaped it and
+ * both are load-bearing if it is ever redrawn:
+ *   - It cannot be an ARROW: the tense badge already owns ←/→/↔.
+ *   - It MUST be mirror-invariant. RTL mirroring is opt-OUT across the glyph
+ *     system, so a mark defined by its handedness flips in Hebrew and Arabic —
+ *     a mirrored `?` (the percontation point) would be un-mirrored straight
+ *     back into a `?`. An upturned arc survives the flip unchanged.
+ * It is drawn as a PATH rather than a text character (`‿` is too small and
+ * font-dependent to read at badge size) and STROKE-ONLY rather than filled,
+ * because badge salience should be inverse to frequency: `?` can be a loud
+ * solid square since questions are rare, but requests are the default mode of
+ * an AAC board and a saturated badge on most buttons is noise.
  */
-export type ToneTag = "question" | "exclamation" | "past" | "future";
+export type ToneTag = "question" | "exclamation" | "request" | "past" | "future";
 
 /**
  * Connectors — a closed set of forward-binding joins between two GLYPHs
@@ -133,10 +147,10 @@ export interface ParsedGlyph {
  * smaller, which is the practical limit students will hit first.
  */
 export const MAX_SLOTS = 16;
-const KNOWN_TONE_TAGS = new Set<ToneTag>(["question", "exclamation", "past", "future"]);
+const KNOWN_TONE_TAGS = new Set<ToneTag>(["question", "exclamation", "request", "past", "future"]);
 
 /** Tags that occupy the prosody (top-right) badge. */
-const PROSODY_TAGS = new Set<ToneTag>(["question", "exclamation"]);
+const PROSODY_TAGS = new Set<ToneTag>(["question", "exclamation", "request"]);
 /** Tags that occupy the tense (top-left) badge. */
 const TENSE_TAGS = new Set<ToneTag>(["past", "future"]);
 
@@ -348,7 +362,7 @@ export interface GlyphLayout {
   viewBoxWidth: number;
   viewBoxHeight: number;
   slots: SlotLayout[];
-  /** Prosody (?/!) badge — top-right in LTR, top-left in RTL. */
+  /** Prosody (?/!/arc) badge — top-right in LTR, top-left in RTL. */
   cornerBadge: { x: number; y: number; size: number };
   /** Tense (←/→) badge — top-left in LTR, top-right in RTL. Opposite the prosody badge. */
   tenseBadge: { x: number; y: number; size: number };
@@ -376,17 +390,32 @@ export function computeLayout(parsed: ParsedGlyph, rtl = false): GlyphLayout {
     });
   }
 
+  // BADGE SIZE GROWS WITH SLOT COUNT.
+  //
+  // The viewBox is `count * SLOT_UNIT` wide but only SLOT_UNIT tall, so a
+  // 3-slot sentence letterboxed into a squarish button renders at roughly a
+  // third the scale of a 1-slot word. A fixed-size badge therefore shrank with
+  // the sentence: on "I want water" the mark drew about 10 device px against
+  // 31 px on a lone question word — smallest exactly where it is needed most,
+  // since sentences are what carry `#request`.
+  //
+  // Compensating fully (size × count) would put a 72-unit badge in a 100-unit
+  // viewBox and swallow the artwork, so this scales by the SQUARE ROOT of the
+  // slot count and caps at 3: 1 slot → 24, 2 → 34, 3+ → 42. That recovers most
+  // of the lost size while the badge stays a corner mark rather than a
+  // co-equal element.
+  const badgeSize = Math.round(CORNER_BADGE_SIZE * Math.sqrt(Math.min(count, 3)));
   const cornerBadge = {
-    x: rtl ? 0 : viewBoxWidth - CORNER_BADGE_SIZE,
+    x: rtl ? 0 : viewBoxWidth - badgeSize,
     y: 0,
-    size: CORNER_BADGE_SIZE,
+    size: badgeSize,
   };
   // Tense badge sits on the opposite top corner so prosody (?/!) and
   // tense (past/future) don't collide when both are set on a sentence.
   const tenseBadge = {
-    x: rtl ? viewBoxWidth - CORNER_BADGE_SIZE : 0,
+    x: rtl ? viewBoxWidth - badgeSize : 0,
     y: 0,
-    size: CORNER_BADGE_SIZE,
+    size: badgeSize,
   };
 
   return { viewBoxWidth, viewBoxHeight, slots, cornerBadge, tenseBadge };

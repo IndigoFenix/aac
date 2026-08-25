@@ -30,11 +30,7 @@ import {
   SPEAKER_TOOL_ACK,
 } from "./prompts/speaker";
 import { flowInput, flowTool, flowOutput, flowNote } from "./agent-flow-logger";
-import {
-  LeadingTagStripper,
-  stripLeadingTags,
-  extractLeadingTags,
-} from "./leading-tag-stripper";
+import { SpokenTurnGate, sanitizeSpokenTurn } from "./spoken-turn-gate";
 import type {
   SpeakerEvent,
   SpeechStartEvent,
@@ -50,6 +46,7 @@ import type {
   PrivateNoteEvent,
   RemainSilentEvent,
   ThoughtLeakEvent,
+  ContextLeakEvent,
 } from "./agent-events";
 import type { ISpeakerAgent } from "./speaker-interface";
 
@@ -62,7 +59,8 @@ export type SpeakerOutputEvent =
   | MonitorCallRequestedEvent
   | PrivateNoteEvent
   | RemainSilentEvent
-  | ThoughtLeakEvent;
+  | ThoughtLeakEvent
+  | ContextLeakEvent;
 
 /** Marker the native-audio model leaks when it VOICES its private-thought
  *  tool instead of calling it. An underscore-joined token like
@@ -161,8 +159,22 @@ export interface SpeakerStartConfig {
 // SpeakerAgent
 // ---------------------------------------------------------------------------
 
+/**
+ * How long an `open_app` functionResponse may be withheld before we answer
+ * "ok" anyway.
+ *
+ * Sized against what is actually being waited on: the slowest leg of
+ * routeAppOpen is one startup-resolver call (~1.5s observed). 2.5s clears
+ * that with headroom while staying under the point where a child decides the
+ * device is broken. Erring long is the dangerous direction — Live blocks
+ * generation for the whole hold.
+ */
+export const APP_OPEN_ACK_TIMEOUT_MS = 2500;
+
 export class SpeakerAgent implements ISpeakerAgent {
   private provider: LiveProvider | null = null;
+  /** Held `open_app` functionResponses, keyed by live tool-call id. */
+  private pendingAppOpenAcks = new Map<string, { name: string; timer: ReturnType<typeof setTimeout> }>();
   private readonly callbacks: SpeakerCallbacks;
   private readonly providerKey: LLMProviderKey;
   private useDirectAudio = true;
@@ -180,13 +192,21 @@ export class SpeakerAgent implements ISpeakerAgent {
    *  speaking. Defaults to "USER" — applied to the next SpeechEnd event
    *  and reset by resetTurnAccumulators(). */
   private pendingSpeechTarget: string | undefined;
-  /** Incrementally strips a leaked leading meta-tag ("[USER to YOU]", …)
-   *  off the streaming subtitle so the child never sees it. A fresh
-   *  instance per turn (resetTurnAccumulators). */
-  private subtitleStripper = new LeadingTagStripper();
-  /** The leading tag the model leaked into its spoken output this turn
-   *  (empty when none). Drives the Coordinator's one-shot corrective. */
+  /** THE gate on what this turn is allowed to have said — the one place
+   *  that decides what reaches the caption, the audio, the Board Manager,
+   *  the Observer echo and the model's own context. A fresh instance per
+   *  turn (resetTurnAccumulators). See spoken-turn-gate.ts. */
+  private turnGate = new SpokenTurnGate();
+  /** A single benign leading group the model leaked this turn (empty when
+   *  none) — drives the Coordinator's one-shot corrective. The turn still
+   *  reaches the child; only the prefix is removed. */
   private leakedLeadingTagThisTurn = "";
+  /** Set once per turn when the gate disqualifies the utterance outright:
+   *  the model recited its own input rather than replying. While true,
+   *  transcription deltas and audio are suppressed and the turn resolves
+   *  to a ContextLeakEvent instead of speech_text_finalized / speech_end.
+   *  Same shape as leakedThoughtThisTurn. */
+  private leakedContextThisTurn = false;
 
   constructor(providerKey: LLMProviderKey, callbacks: SpeakerCallbacks) {
     this.providerKey = providerKey;
@@ -276,6 +296,9 @@ export class SpeakerAgent implements ISpeakerAgent {
   }
 
   close(): void {
+    // Held acks die with the session — their timers would otherwise fire against
+    // a torn-down provider, and a reconnect issues fresh tool-call ids anyway.
+    this.clearPendingAppOpenAcks();
     this.provider?.close();
     this.provider = null;
   }
@@ -330,8 +353,9 @@ export class SpeakerAgent implements ISpeakerAgent {
     this.speechStartEmittedThisTurn = false;
     this.pendingSpeechTarget = undefined;
     this.leakedThoughtThisTurn = false;
-    this.subtitleStripper = new LeadingTagStripper();
+    this.turnGate = new SpokenTurnGate();
     this.leakedLeadingTagThisTurn = "";
+    this.leakedContextThisTurn = false;
   }
 
   private maybeEmitSpeechStart(): void {
@@ -342,7 +366,9 @@ export class SpeakerAgent implements ISpeakerAgent {
     // BEFORE the first audio chunk, so this is effectively the complete
     // utterance. BoardManager uses it to build follow-up buttons on the
     // speech_start trigger instead of waiting for turnComplete.
-    const transcriptSoFar = this.currentTurnTranscript.trim();
+    // Through the gate like every other consumer — BoardManager must never
+    // see recited context, not even in the early snapshot.
+    const transcriptSoFar = sanitizeSpokenTurn(this.currentTurnTranscript).speech;
     const event: SpeechStartEvent = {
       type: "speech_start",
       source: "speaker",
@@ -368,8 +394,9 @@ export class SpeakerAgent implements ISpeakerAgent {
     this.currentTurnTranscript += text;
 
     // Already suppressing this turn — swallow the rest of the leaked
-    // reasoning so it neither reaches the client subtitle nor the avatar.
-    if (this.leakedThoughtThisTurn) return;
+    // reasoning / recited context so it reaches neither the client subtitle
+    // nor the avatar.
+    if (this.leakedThoughtThisTurn || this.leakedContextThisTurn) return;
 
     // Detect the model voicing its private reasoning. The leak marker
     // ("private_thought …") leads the utterance, so this fires on the
@@ -383,13 +410,24 @@ export class SpeakerAgent implements ISpeakerAgent {
       return;
     }
 
-    // Strip a leaked leading meta-tag ("[USER to YOU]", "[MODE …]") off the
-    // FRONT of the utterance before it reaches the client subtitle / avatar
-    // mouth. The stripper withholds deltas while the bracket is still open,
-    // then passes cleaned text through unchanged for the rest of the turn.
-    const cleaned = this.subtitleStripper.push(text);
-    if (this.subtitleStripper.stripped && !this.leakedLeadingTagThisTurn) {
-      this.leakedLeadingTagThisTurn = this.subtitleStripper.strippedTag;
+    // THE gate. It withholds deltas while a bracket / paren group is still
+    // open, removes what the policy removes, and flips `severe` the moment
+    // the utterance stops being a reply and becomes the model reciting its
+    // own input. Nothing downstream sees text this call didn't pass.
+    const cleaned = this.turnGate.push(text);
+    if (this.turnGate.severe) {
+      // Disqualified turn. Same treatment as a thought leak: kill the audio
+      // NOW — the gate fires on the first offending group, before the child
+      // has heard the recitation play out. The turn resolves to a
+      // ContextLeakEvent in handleTurnComplete.
+      this.leakedContextThisTurn = true;
+      flowOutput("SPEAKER", "context_leak_detected", this.currentTurnTranscript.trim());
+      this.callbacks.onSuppressAudio?.();
+      return;
+    }
+    const verdict = this.turnGate.result();
+    if (verdict.verdict === "mild" && !this.leakedLeadingTagThisTurn) {
+      this.leakedLeadingTagThisTurn = verdict.leaked;
     }
     if (cleaned.trim()) this.callbacks.onTranscriptionDelta?.(cleaned);
   }
@@ -404,9 +442,14 @@ export class SpeakerAgent implements ISpeakerAgent {
     // The ThoughtLeakEvent is emitted from handleTurnComplete instead, so
     // BoardManager never rebuilds from it and it's never echoed back.
     if (this.leakedThoughtThisTurn) return;
-    // Strip a leaked leading meta-tag so BoardManager builds replies from
-    // the real utterance, not "[USER to YOU] …".
-    const transcript = stripLeadingTags(this.currentTurnTranscript).trim();
+    // Disqualified turn — the ContextLeakEvent replaces this event too, so
+    // BoardManager never rebuilds from recited context.
+    const gated = sanitizeSpokenTurn(this.currentTurnTranscript);
+    if (this.leakedContextThisTurn || gated.verdict === "severe") {
+      this.leakedContextThisTurn = true;
+      return;
+    }
+    const transcript = gated.speech;
     if (!transcript) return;
     flowOutput("SPEAKER", "text_finalized", transcript);
     const event: SpeechTextFinalizedEvent = {
@@ -451,6 +494,26 @@ export class SpeakerAgent implements ISpeakerAgent {
       return;
     }
 
+    // Disqualified turn: the model recited its input instead of replying.
+    // Emit a ContextLeakEvent INSTEAD of SpeechEnd — same contract as the
+    // thought leak above. The Coordinator lifts audio suppression, records
+    // the recitation on supervisor channels and injects a corrective, but
+    // never echoes it back to the model or rebuilds the board from it.
+    if (this.useDirectAudio && this.leakedContextThisTurn) {
+      const gated = sanitizeSpokenTurn(this.currentTurnTranscript);
+      flowOutput("SPEAKER", "context_leak", gated.leaked);
+      const event: ContextLeakEvent = {
+        type: "context_leak",
+        source: "speaker",
+        timestamp: Date.now(),
+        recited: gated.leaked,
+        speech: gated.speech,
+      };
+      this.callbacks.onEvent(event);
+      this.resetTurnAccumulators();
+      return;
+    }
+
     // Native-audio path: emit SpeechEnd if any audio was produced this turn.
     // The Coordinator uses SpeechEnd to:
     //   1. Lift mic mute on Observer (with ~300ms tail)
@@ -462,9 +525,11 @@ export class SpeakerAgent implements ISpeakerAgent {
       // conversation log — otherwise the tag teaches the model the prefix
       // is expected and the behavior compounds.
       const rawTranscript = this.currentTurnTranscript.trim();
-      const transcript = stripLeadingTags(rawTranscript).trim();
+      const gated = sanitizeSpokenTurn(rawTranscript);
+      const transcript = gated.speech;
       const leakedLeadingTag =
-        this.leakedLeadingTagThisTurn || extractLeadingTags(rawTranscript);
+        this.leakedLeadingTagThisTurn
+        || (gated.verdict === "mild" ? gated.leaked : "");
       if (leakedLeadingTag) {
         flowOutput("SPEAKER", "leading_tag_stripped", leakedLeadingTag);
       }
@@ -486,13 +551,20 @@ export class SpeakerAgent implements ISpeakerAgent {
   private handleInterrupted(): void {
     // Native-audio interrupt — Speaker was stopped mid-utterance.
     // Still emit SpeechEnd so Observer's mic mute lifts and Board
-    // Manager gets a chance to rebuild for the interrupted state.
-    if (this.useDirectAudio && this.currentTurnHadAudio) {
+    // Manager gets a chance to rebuild for the interrupted state — unless
+    // the turn was already disqualified, in which case there is no speech
+    // to report and echoing the fragment is the loop we're breaking.
+    if (
+      this.useDirectAudio
+      && this.currentTurnHadAudio
+      && !this.leakedThoughtThisTurn
+      && !this.leakedContextThisTurn
+    ) {
       const event: SpeechEndEvent = {
         type: "speech_end",
         source: "speaker",
         timestamp: Date.now(),
-        transcript: stripLeadingTags(this.currentTurnTranscript).trim() + " [interrupted]",
+        transcript: sanitizeSpokenTurn(this.currentTurnTranscript).speech + " [interrupted]",
       };
       this.callbacks.onEvent(event);
     }
@@ -506,14 +578,24 @@ export class SpeakerAgent implements ISpeakerAgent {
   private handleToolCalls(calls: ToolCall[]): void {
     // Acknowledge tool calls so the Live session doesn't hang. Speaker's
     // tools are mostly fire-and-forget (no return value); "ok" suffices.
+    //
+    // `open_app` is the ONE exception: it is a request the server can refuse,
+    // so its ack is HELD until routeAppOpen has decided (see holdAppOpenAck).
+    // Everything else is acked immediately, exactly as before.
     if (this.provider) {
-      this.provider.sendToolResponseAsContent(
-        calls.map(c => ({
-          id: c.id,
-          name: c.name || "unknown",
-          response: SPEAKER_TOOL_ACK,
-        })),
-      );
+      const immediate = calls.filter(c => !this.willHoldAck(c));
+      if (immediate.length) {
+        this.provider.sendToolResponseAsContent(
+          immediate.map(c => ({
+            id: c.id,
+            name: c.name || "unknown",
+            response: SPEAKER_TOOL_ACK,
+          })),
+        );
+      }
+      for (const call of calls) {
+        if (this.willHoldAck(call)) this.holdAppOpenAck(call);
+      }
     }
 
     const now = Date.now();
@@ -530,6 +612,77 @@ export class SpeakerAgent implements ISpeakerAgent {
     }
   }
 
+  /**
+   * Should this call's functionResponse be withheld until the server decides?
+   *
+   * Only `open_app`, and only when it carries an id to answer. A call with no
+   * id cannot be answered later, so it takes the immediate-ack path rather than
+   * being held forever.
+   */
+  private willHoldAck(call: ToolCall): boolean {
+    return call.name === "open_app" && !!call.id;
+  }
+
+  /**
+   * Withhold `open_app`'s functionResponse until `resolveAppOpen` supplies the
+   * verdict, with a fail-open backstop.
+   *
+   * 🚨 THE BACKSTOP IS NOT OPTIONAL. Gemini Live blocks generation while a
+   * functionResponse is outstanding, so a hold that never settles is a Speaker
+   * that never speaks again — worse than the promise this replaces. If
+   * routeAppOpen throws, hangs, or the coordinator simply forgets a path, the
+   * timer answers "ok" and the session carries on.
+   */
+  private holdAppOpenAck(call: ToolCall): void {
+    const id = call.id!;
+    const existing = this.pendingAppOpenAcks.get(id);
+    if (existing) clearTimeout(existing.timer);
+    const timer = setTimeout(() => {
+      flowNote("SPEAKER", `open_app ack timed out after ${APP_OPEN_ACK_TIMEOUT_MS}ms — answering "ok" so the turn can continue.`);
+      this.answerAppOpen(id, SPEAKER_TOOL_ACK);
+    }, APP_OPEN_ACK_TIMEOUT_MS);
+    this.pendingAppOpenAcks.set(id, { name: call.name || "open_app", timer });
+  }
+
+  /**
+   * The server settled an `open_app`. Hand the model the real outcome so it can
+   * compose its sentence knowing whether the app is actually there.
+   *
+   * `note` is written FOR the model — it is the same guidance that used to be
+   * injected as `[APP OPEN BLOCKED]` after the fact, delivered early enough to
+   * change what gets said instead of contradicting it.
+   */
+  resolveAppOpen(callId: string | undefined, verdict: { opened: boolean; note?: string }): void {
+    if (!callId) return;               // student press / Board Manager open — nothing was held
+    if (!this.pendingAppOpenAcks.has(callId)) return;  // already settled (timeout, or a duplicate settle)
+    this.answerAppOpen(callId, {
+      output: verdict.opened ? "opened" : "refused",
+      ...(verdict.note ? { detail: verdict.note } : {}),
+    });
+  }
+
+  /** Send the held response and retire the pending entry. */
+  private answerAppOpen(callId: string, response: Record<string, unknown>): void {
+    const pending = this.pendingAppOpenAcks.get(callId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingAppOpenAcks.delete(callId);
+    // 🚨 sendToolResponse, NOT sendToolResponseAsContent. The as-content path
+    // (sendClientContent, turnComplete:false) resolves the call WITHOUT
+    // triggering generation — fine for a 1ms ack that beats the model's own
+    // turn end, but after a hold the model has already closed its turn and
+    // would simply never speak again. Measured both ways on 2026-08-24;
+    // as-content produced total silence, sendToolResponse resumed correctly.
+    // See scripts/test-live-toolcall-blocking.ts.
+    this.provider?.sendToolResponse([{ id: callId, name: pending.name, response }]);
+  }
+
+  /** Drop every held ack (teardown / reconnect) so no timer outlives the session. */
+  private clearPendingAppOpenAcks(): void {
+    for (const { timer } of this.pendingAppOpenAcks.values()) clearTimeout(timer);
+    this.pendingAppOpenAcks.clear();
+  }
+
   /** A single tool call may produce multiple events (e.g. speak() emits
    *  SpeechStart + SpeechEnd in fallback mode). Returns an array. */
   private parseToolCall(call: ToolCall, now: number): SpeakerOutputEvent[] {
@@ -542,10 +695,24 @@ export class SpeakerAgent implements ISpeakerAgent {
         // Fallback path only. Text is fed to server TTS by the Coordinator.
         const rawText = asString(args.text);
         if (!rawText) return [];
-        // Strip a leaked leading meta-tag ("[USER to YOU] …") so the TTS
-        // never voices it and it never re-enters the transcript.
-        const text = stripLeadingTags(rawText).trim() || rawText;
-        const leakedLeadingTag = extractLeadingTags(rawText);
+        // Through the same gate as the native-audio path — the fallback
+        // TTS is just as capable of voicing recited context.
+        const gated = sanitizeSpokenTurn(rawText);
+        if (gated.verdict === "severe") {
+          // Disqualified: nothing is spoken, nothing is echoed back.
+          flowOutput("SPEAKER", "context_leak", gated.leaked);
+          const leak: ContextLeakEvent = {
+            type: "context_leak",
+            source: "speaker",
+            timestamp: now,
+            recited: gated.leaked,
+            speech: gated.speech,
+          };
+          this.resetTurnAccumulators();
+          return [leak];
+        }
+        const text = gated.speech || rawText;
+        const leakedLeadingTag = gated.verdict === "mild" ? gated.leaked : "";
         if (leakedLeadingTag) {
           flowOutput("SPEAKER", "leading_tag_stripped", leakedLeadingTag);
         }
@@ -618,13 +785,21 @@ export class SpeakerAgent implements ISpeakerAgent {
 
       case "open_app": {
         const appId = asString(args.app_id);
-        if (!appId) return [];
+        if (!appId) {
+          // No app id to route — nothing will ever settle the held ack, so
+          // release it here rather than making the model wait out the backstop.
+          if (call.id) this.answerAppOpen(call.id, SPEAKER_TOOL_ACK);
+          return [];
+        }
         const event: AppOpenRequestedEvent = {
           type: "app_open_requested",
           source: "speaker",
           timestamp: now,
           appId,
           data: asString(args.data),
+          // Carries the held functionResponse through to routeAppOpen, which
+          // answers it with the real verdict. Only set when we actually held.
+          toolCallId: this.willHoldAck(call) ? call.id : undefined,
         };
         return [event];
       }

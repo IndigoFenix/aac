@@ -33,10 +33,11 @@ import { seasonPhaseAtDay, seasonYieldAt, SPRING_PHASE } from "../../seasons";
 import type { WorldScale } from "../../scale";
 import { bootDual, type DualWorld, type DualSpec, type DualNode, type DualEdge } from "./dual";
 import {
-  gatherBand, settleBand, disperseBandFully, stepBandDay, bandPressure,
+  gatherBand, settleBand, settledTownStack, disperseBandFully, stepBandDay, bandPressure,
   gateASettles, gateAThreshold, PRESSURE_FLOOR_DEFAULT,
   type Band, type CapacityField, type WildSpecies,
 } from "./bands";
+import { condenseTown, type TownRecord } from "../town/barter";
 import {
   freightOf, refineryLicense,
   type Freight, type NamedFreight, type RefineryVerdict,
@@ -564,6 +565,14 @@ export interface TriWorld {
     harvested: number;
     dead?: { day: number; pop: number };
     colonyOf?: string;
+    /** ⚖️ B-③ (band-settlement-round.md) — the city's CONDENSED TOWN
+     *  RECORD, minted at founding via `condenseTown` (the never-run-town
+     *  factory): a settling band's banked store rides here as trade-rung
+     *  stock units instead of evaporating at `settleBand`. The eventual
+     *  lazy materialization is `expand` — this record is the bridge type
+     *  the region layer will hand across. Census-path foundings carry an
+     *  empty shelf (store 0, same record shape). */
+    record?: TownRecord;
   }>;
   /** Recorded civilization keyframes (null when the world declares no
    *  history option). Rosters are read-time snapshots; frames accumulate
@@ -673,20 +682,40 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
   // up at most the cap, apportioned across species largest-remainder
   // (the mix keeps its proportions), and the RESIDUE stays wild — it
   // regrows, and may gate a later founding nearby.
-  const harvest = (c: FoundingSite): { total: number; mix: Record<string, number> } =>
+  const harvest = (c: FoundingSite): { total: number; mix: Record<string, number>; store: number } =>
     settleBand(gatherBand(grid, wilds, c, {
       radius: prep.founding.radius,
       maxHarvest: prep.founding.maxHarvest,
     }));
 
+  // ⚖️ B-③ (band-settlement-round.md) — the staple a band banks and a
+  // founding's record speaks, resolved before the FIRST founding can mint:
+  // the economy's own row when it names the good, else the registry's.
+  const storeGood = opts.bandFounding?.storeGood ?? "food";
+  const bandStaple: Freight =
+    opts.economy?.freights.find(f => f.good === storeGood) ?? freightOf(storeGood);
+
+  /** ⚖️ B-③ NOTHING EVAPORATES AT A SETTLE: every founding mints its
+   *  condensed town record via `condenseTown` — the never-run-town
+   *  factory (F-⑤) — and a settling band's banked store rides into the
+   *  record's stack, rations → trade-rung units at the staple's density
+   *  (`settledTownStack`, identity for the staple). The census path
+   *  founds with store 0: an empty shelf, the same record shape. */
+  const mintCityRecord = (key: string, store: number): TownRecord =>
+    condenseTown({ key, stack: settledTownStack(store, storeGood, bandStaple) });
+
   const cities: TriWorld["cities"] = [];
   const nodes: DualNode[] = [];
   for (const def of opts.cities) {
-    const { total: taken } = harvest(def.at);
+    const crowd = harvest(def.at);
+    const taken = crowd.total;
     if (taken <= 0) throw new Error(`foundTri: no crowd to harvest at (${def.at.x},${def.at.y})`);
     const ch = charter(def.at.cell);
     const extra = typeof def.scalars === "function" ? def.scalars(ch, taken * scale) : (def.scalars ?? {});
-    cities.push({ key: def.key, name: def.name, x: def.at.x, y: def.at.y, cell: def.at.cell, harvested: taken });
+    cities.push({
+      key: def.key, name: def.name, x: def.at.x, y: def.at.y, cell: def.at.cell, harvested: taken,
+      record: mintCityRecord(def.key, crowd.store),
+    });
     nodes.push({
       key: def.key,
       name: def.name,
@@ -766,8 +795,11 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
 
   /** Commit a founding: the crowd (already off the grid) becomes a city
    *  with a road to its nearest living neighbour. Shared by the census
-   *  path (maybeFound) and the Gate A path (a settling band). */
-  const commitFounding = async (at: FoundingSite, taken: number, mix: Record<string, number>): Promise<boolean> => {
+   *  path (maybeFound, store 0) and the Gate A path (a settling band —
+   *  whose banked `store` rides into the city's record, B-③). */
+  const commitFounding = async (
+    at: FoundingSite, taken: number, mix: Record<string, number>, store = 0,
+  ): Promise<boolean> => {
     const auto = opts.autoFound!;
     const living = cities.filter(c => !c.dead);
     const ch = charter(at.cell);
@@ -793,7 +825,12 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
       edges: roadEdges,
     });
     if (idx < 0) return false;
-    cities.push({ key: def.key, name: def.name, x: at.x, y: at.y, cell: at.cell, harvested: taken });
+    cities.push({
+      key: def.key, name: def.name, x: at.x, y: at.y, cell: at.cell, harvested: taken,
+      // ⚖️ B-③ — minted AFTER the dual accepted (a refused founding keeps
+      // the band standing, store and all; nothing may half-happen).
+      record: mintCityRecord(def.key, store),
+    });
     cityIndex.set(def.key, cities.length - 1);
     harvestedTotal += taken;
     const grown = new Float64Array(cities.length);
@@ -814,9 +851,9 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
     if (auto.maxCities !== undefined && cities.filter(c => !c.colonyOf).length >= auto.maxCities) return;
     const at = bestCrowdSite(cities.filter(c => !c.dead).map(c => [c.x, c.y] as [number, number]));
     if (!at) return;
-    const { total: taken, mix } = harvest(at);
+    const { total: taken, mix, store } = harvest(at);
     if (taken <= 0) return;
-    await commitFounding(at, taken, mix);
+    await commitFounding(at, taken, mix, store);
   };
 
   // ---- GATE A (step ④): bands live between the wild and the founding ----
@@ -826,12 +863,8 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
     throw new Error("foundTri: bandFounding requires autoFound (its scan, cadence and factory)");
   }
   const bands: Band[] = [];
-  /** The staple a band banks: the economy's resolved row, else the
-   *  freight registry's (spoilage reads its keepDays). */
-  const bandStaple: Freight = ((): Freight => {
-    const good = bf?.storeGood ?? "food";
-    return opts.economy?.freights.find(f => f.good === good) ?? freightOf(good);
-  })();
+  // The staple a band banks (`bandStaple`) is resolved up top, before the
+  // first founding — B-③'s record mint reads it there.
   /** What the land OFFERS a band per period: the habitat × scale each
    *  wild converges toward (falling back to the crowd field itself on a
    *  grid without the habitat) — never the standing crop a gather just
@@ -992,8 +1025,9 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
           cell: band.cell, density: band.size, score: band.size,
         };
         const crowd = settleBand(band);
-        // A refused founding keeps the band standing (people conserved).
-        if (await commitFounding(at, crowd.total, crowd.mix)) bands.splice(i, 1);
+        // A refused founding keeps the band standing (people conserved —
+        // and the store too: the record is only minted on acceptance).
+        if (await commitFounding(at, crowd.total, crowd.mix, crowd.store)) bands.splice(i, 1);
       }
     }
 

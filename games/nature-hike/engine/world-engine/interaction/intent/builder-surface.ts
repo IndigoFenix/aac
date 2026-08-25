@@ -56,6 +56,11 @@ import {
   type RoomProgramDef,
   type StructureProgramDef,
 } from "../../kernel/town/programs.js";
+import { buildConcepts } from "../content/concepts.js";
+import { PLACE_STUBS } from "../content/words.js";
+import { CORE_PEOPLE } from "../../object-properties.js";
+import { FURNITURE_ITEMS, STATION_ACTS } from "../../kernel/town/stations.js";
+import { fixtureWord } from "../../types.js";
 import { headOf } from "../../variations.js";
 import { languageFor } from "../lang/index.js";
 import { baseWord, type GlyphLanguage } from "../lang/core.js";
@@ -171,6 +176,18 @@ export interface BuilderNounEntry {
 
 export interface BuilderSurfaceOpts {
   nouns?: BuilderNounEntry[];
+  /**
+   * ONE VOCABULARY, IN GAME AND OUT (user decision 2026-08-24). The caller's
+   * nouns are MERGED with the default library rather than replacing it, host
+   * first, first entry per head winning — so a scene's own people and stock
+   * outrank the generic word for the same thing, and a child keeps every word
+   * they had on the board before the game opened.
+   *
+   * `false` restores the old behaviour (the caller's list and nothing else) —
+   * for a surface that must pin an exact board, and for a host that genuinely
+   * wants to speak only its own scene.
+   */
+  defaults?: boolean;
   /** BCP-47 locale for word labels (lang-layer lexicon; en fallback). */
   locale?: string;
   /** Filter to one category tab (one of `BUILDER_CATEGORIES`). */
@@ -218,61 +235,40 @@ export const BUILDER_CATEGORIES: readonly string[] = [
 const LEX_KEYS = Object.keys(LEXICON);
 
 // ---------------------------------------------------------------------------
-// The default game objects (world-engine-aac-integration.md)
+// The default vocabulary — DERIVED FROM THE SPEC (user law, 2026-08-24)
 // ---------------------------------------------------------------------------
 //
-// The OUT-OF-GAME builder has no host pushing a noun list, so the "things" tab
-// would be empty. This is the curated stand-in: the standard objects a student
-// composes sentences about, every head/glyph one the engine GENUINELY knows —
-// the goods kinds (apple/banana/grape/cookie, shirt/dress), the authored toys
-// (ball/blocks/puzzle), the common stations (bed/table/chair/box/
-// refrigerator/oven), book/bowl/lamp, and water (a core engine concept, the
-// one entry with legitimately no spec properties). So an out-of-game
-// composition round-trips into any game unchanged.
+// The out-of-game builder has no host pushing a noun list, so it needs one of
+// its own. It does NOT get an authored one: almost every noun — its context,
+// its icon, its translations, what it does — comes from the game spec, because
+// that is also where a clinician will add one, and a noun's physical parameters
+// are what decide both its game role and where it appears on a board. A curated
+// array here was a SECOND SOURCE OF TRUTH: it disagreed with the world about
+// what exists (nineteen items, of which two were a lamp and a bowl) and it went
+// stale the moment anyone authored a pool member.
 //
-// `bear.toy` (the teddy, as the DOLL FACET — "teddy" is retired as a word)
-// was here too but was pulled (user request): a composed two-word glyph is
-// not a SENTENCE STARTER — it reads to a new user as one word, not a
-// head-plus-modifier the board taught them to build. The plain doll/ball/
-// blocks/puzzle entries stay as the starter set; `bear.toy` is still
-// reachable the normal way — press `bear`, then the toy modifier.
+// So the library is a WALK of the registries that define nouns:
 //
-// PROPERTIES COME FROM THE SPEC SIDE (user law): each entry's properties are
-// read through `propertiesOf` at call time, never authored here — this list
-// only names WHICH objects surface. `acts` adds the station's own use verbs
-// (you SLEEP in a bed) on top of the property-implied affordances.
-
-const DEFAULT_NOUNS: readonly { symbol: string; acts?: readonly string[] }[] = [
-  // Food + drink
-  { symbol: "apple" },
-  { symbol: "banana" },
-  { symbol: "grape" },
-  { symbol: "cookie" },
-  { symbol: "water", acts: ["drink", "fill"] },
-  // Toys (the authored set)
-  { symbol: "ball" },
-  { symbol: "blocks" },
-  { symbol: "puzzle" },
-  // Clothing
-  { symbol: "shirt" },
-  { symbol: "dress" },
-  // Around the house
-  { symbol: "book" },
-  { symbol: "bowl", acts: ["fill"] },
-  { symbol: "box" },
-  { symbol: "bed", acts: ["sleep", "rest"] },
-  { symbol: "table", acts: ["eat"] },
-  { symbol: "chair", acts: ["sit"] },
-  { symbol: "refrigerator" },
-  { symbol: "oven", acts: ["cook", "heat"] },
-  { symbol: "lamp" },
-];
+//   1. CONCEPTS  — `buildConcepts()`, the joined taught vocabulary (pool
+//      members + category-tagged symbols, with affordances already derived from
+//      pool affordance, category and species).
+//   2. PEOPLE    — the kinship and role frame words (`CORE_PEOPLE`), which have
+//      no spec row by law and would otherwise reach no board.
+//   3. FIXTURES  — the built world's stations (`FURNITURE_ITEMS`), spoken as
+//      `fixtureWord`, with the verbs their kind affords (`STATION_ACTS`).
+//   4. PLACES    — every room and building the programs declare, plus the place
+//      words the town has no program for yet (`PLACE_STUBS`).
+//
+// Everything else follows from the row: properties through `propertiesOf`,
+// words through the lang layer's spec overlay, rank through `nounRank`. Adding a
+// spec row adds a button, in one edit, in four languages.
 
 /** The verbs a thing's PROPERTIES imply (the quest host's own affordance
  *  derivation, mirrored) — mechanics and board agree by construction. */
 function propertyAffords(props: readonly string[]): string[] {
   const v: string[] = [];
   if (props.includes("food")) v.push("eat");
+  if (props.includes("drink")) v.push("drink");
   if (props.includes("clothing")) v.push("wear", "wash");
   if (props.includes("toy")) v.push("play");
   if (props.includes("openable")) v.push("open", "shut");
@@ -281,21 +277,93 @@ function propertyAffords(props: readonly string[]): string[] {
   return v;
 }
 
+/** What any HANDLEABLE thing affords before anything specific is known. A
+ *  FIXTURE gets only the wish: an oven is a thing you can want and go to, never
+ *  a thing you hand to somebody, and a board that thought otherwise led "you
+ *  give ___" with the kitchen. */
+const ITEM_BASELINE = ["want", "get", "give"] as const;
+const FIXTURE_BASELINE = ["want"] as const;
+
+/** Pools whose members are BODIES rather than objects — the one thing the
+ *  concept join cannot tell us from the symbol alone. */
+const CREATURE_AFFORDANCES = new Set(["receptive-npc"]);
+
+const entry = (
+  symbol: string,
+  kind: "item" | "creature" | "place",
+  affords: readonly string[],
+  properties: readonly string[] = propertiesOf(symbol),
+): BuilderNounEntry => ({
+  symbol,
+  kind,
+  affords: [...new Set(affords)],
+  properties: [...properties],
+});
+
 /**
- * The default game objects for a builder with NO live host (the AAC's
- * out-of-game sentence builder): curated standard objects with spec-derived
- * properties and affordances. Deterministic order (the list above); all
- * `kind: "item"`, no `present` flags — there is no scene to be present in.
+ * The out-of-game builder's noun library: every noun the SPEC defines, in the
+ * vocabulary's own order. Deterministic (fixed registries, fixed walk); no
+ * `present` flags — there is no scene to be present in.
  */
+let DEFAULTS: BuilderNounEntry[] | null = null;
+
+/** The derived library, computed once (the registries are fixed data). Callers
+ *  get a fresh array so nobody can mutate the shared one. */
 export function defaultBuilderNouns(): BuilderNounEntry[] {
-  return [
-    ...DEFAULT_NOUNS.map(({ symbol, acts }) => {
-      const properties = propertiesOf(symbol);
-      const affords = [...new Set(["want", "get", "give", ...(acts ?? []), ...propertyAffords(properties)])];
-      return { symbol, kind: "item" as const, affords, properties };
-    }),
-    ...placeBuilderNouns(),
-  ];
+  return (DEFAULTS ??= walkDefaultNouns()).map((n) => ({ ...n }));
+}
+
+function walkDefaultNouns(): BuilderNounEntry[] {
+  const out: BuilderNounEntry[] = [];
+  const seen = new Set<string>();
+  const push = (e: BuilderNounEntry) => {
+    const h = headOf(e.symbol);
+    if (!h || seen.has(h)) return;
+    seen.add(h);
+    out.push(e);
+  };
+
+  // 1. The taught vocabulary, affordances and all.
+  for (const c of buildConcepts().values()) {
+    const creature =
+      c.species?.kind === "creature" ||
+      (c.pools ?? []).some((p) => CREATURE_AFFORDANCES.has(p.affordance));
+    const props = c.properties ?? [];
+    push(
+      entry(
+        c.symbol,
+        creature ? "creature" : "item",
+        creature
+          ? c.affords
+          : [
+              ...(props.includes("furniture") ? FIXTURE_BASELINE : ITEM_BASELINE),
+              ...c.affords,
+              ...propertyAffords(props),
+            ],
+        props,
+      ),
+    );
+  }
+
+  // 2. The people a child names. Frame words with no spec row by law, so they
+  //    are the one group this walk cannot read off a registry.
+  for (const person of CORE_PEOPLE) {
+    push(entry(person, "creature", ["talk", "help", "hug", "give", "see", "want"], []));
+  }
+
+  // 3. The built world. A station is spoken as its `fixtureWord` (the chest row
+  //    speaks "box"), and what it is FOR rides its own registry row.
+  for (const f of FURNITURE_ITEMS) {
+    const word = fixtureWord(f.kind);
+    const props = propertiesOf(word);
+    const baseline = props.includes("furniture") ? FIXTURE_BASELINE : ITEM_BASELINE;
+    push(entry(word, "item", [...baseline, ...(STATION_ACTS[f.kind] ?? []), ...propertyAffords(props)], props));
+  }
+
+  // 4. Places.
+  for (const place of placeBuilderNouns()) push(place);
+
+  return out;
 }
 
 /**
@@ -344,6 +412,15 @@ export function placeBuilderNouns(
       glyph: structureProgramDisplayGlyph(b),
     });
   }
+  // The place words with no program yet (words.ts PLACE_STUBS) — real words,
+  // real icons, four languages; the town simply cannot raise them yet. They sit
+  // ahead of the room kinds because a child goes to school far more often than
+  // to a storeroom.
+  for (const symbol of PLACE_STUBS) {
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
+    out.push({ symbol, kind: "place", affords: ["go"], properties: propertiesOf(symbol) });
+  }
   for (const r of rooms) {
     const symbol = r.word ?? r.kind;
     if (seen.has(symbol)) continue;
@@ -366,6 +443,19 @@ export function placeBuilderNouns(
 // The adapter
 // ---------------------------------------------------------------------------
 
+/** First entry per head wins — the federation's own rule, applied to a list. */
+function dedupeByHead(nouns: readonly BuilderNounEntry[]): BuilderNounEntry[] {
+  const seen = new Set<string>();
+  const out: BuilderNounEntry[] = [];
+  for (const n of nouns) {
+    const h = headOf(n.symbol);
+    if (!h || seen.has(h)) continue;
+    seen.add(h);
+    out.push(n);
+  }
+  return out;
+}
+
 /** Person-deixis heads that take the CREATURE descriptor axes ("i_me + hungry"). */
 const ANIMATE_DEIXIS = new Set(["i_me", "you", "we", "us", "they"]);
 
@@ -382,7 +472,14 @@ const headSym = (token: string): string => headOf(token.replace(/#\w+/g, ""));
  */
 export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts = {}): BuilderSurfaceJson {
   const lang = languageFor(opts.locale);
-  const nouns = opts.nouns ?? [];
+  // DEDUPED BY HEAD, host first: the merge would otherwise list a word twice
+  // whenever a caller already carries one the defaults know (and every caller
+  // that passes `defaultBuilderNouns()` itself would double the whole library).
+  // The button map dedupes too, but the "things" tab and the chip clusters read
+  // this list directly.
+  const nouns = dedupeByHead(
+    opts.defaults === false ? (opts.nouns ?? []) : [...(opts.nouns ?? []), ...defaultBuilderNouns()],
+  );
 
   // First entry per head wins (determinism) — the same head can arrive twice
   // when a composed variant ("shirt.color_red") and the bare kind both exist.

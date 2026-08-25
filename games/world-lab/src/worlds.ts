@@ -133,11 +133,24 @@ export const TEST_WORLDS: NamedWorld[] = [
       //                             extent 450 m (the clip ceiling is 625, so
       //                             the declared town body binds), 210-233 lots
       //                             and 195 houses MEASURED at 4 seeds.
-      //   resource_compression 20 → the food requirement lowered where it
-      //                             belongs (`farmAreaPerPersonM2`): 2 428 m²
-      //                             per person instead of 48 562, so a village's
-      //                             fields fit inside the territory its lattice
-      //                             gives it with lean-season slack to spare.
+      //   resource_compression 7.5 → the food requirement lowered where it
+      //                             belongs (`farmAreaPerPersonM2`): 6 474.97 m²
+      //                             per person (1.6 acres) instead of 48 562.
+      //                             STAGE β RE-SOLVE (food-scale-round.md
+      //                             "# STAGE β" › β4): the dial derives from
+      //                             the MEASURED village popCap 140 —
+      //                             A_allowed = 6.25e6 × 0.25 × 0.70 /
+      //                             (140 × 1.20) = 6 510 m²/person ⇒ dial =
+      //                             12 × 4 046.8564 / 6 510 = 7.46 → 7.5.
+      //                             The old 20 was the conservative
+      //                             pre-Stage-β choice, made while fields
+      //                             were still sized from RAW population;
+      //                             β1-β3 made population follow capacity,
+      //                             which is what the Phase A close said the
+      //                             re-solve had to wait for. 7.5 sits 0.55%
+      //                             above the 7.4592 cliff where the village
+      //                             catchment (2 493 m) would out-grow this
+      //                             lattice — pinned in food-scale.test.ts.
       //   radius 2000 → 10000     → and THAT is what a 2 500 m lattice costs.
       //                             A 2 km body holds 4π·2000²·0.29 / 2 500² =
       //                             2.3 sites — a two-hamlet world. 50 sites
@@ -149,7 +162,7 @@ export const TEST_WORLDS: NamedWorld[] = [
       // back, put `radius` at 2000/1400 and leave the two dials alone: the
       // preset then declares itself a TWO-HAMLET world (which is true) instead
       // of an 88× city world (which was not).
-      session: { avatar: "spirit", scale: { gap_compression: 10, resource_compression: 20 } },
+      session: { avatar: "spirit", scale: { gap_compression: 10, resource_compression: 7.5 } },
     },
   },
   {
@@ -159,15 +172,32 @@ export const TEST_WORLDS: NamedWorld[] = [
       // A single BODY as the root — a planet with no surrounding system (its
       // sun/stars come later). Watched from orbit as a spirit; gaze-zoom down.
       tree: { kind: "body", params: { geology: { seed: 7 }, radius: 6000, rain: 1.5 } },
-      // A 6 km BODY DECLARES ITS GAP TOO (GL fix round, R3). Declaring nothing
-      // does not mean "no compression" — it means EARTH, and this planet is
-      // not Earth: its 393 m chart cell founded cities 844 m apart while the
-      // undeclared extent stayed at Earth's 450 m, so 2·450 + 10 = 910 m of
-      // town straddled an 844 m gap and 13 of 65 road ends had no open country
-      // to port in (measured). 30 is 25 km ÷ the 844 m gap it really founds
-      // at; the derived scan holds that lattice (2 cells = 785 m, realized p50
-      // 844 m) and the extent falls to 208 m, clearing the clip law at 427 m.
-      session: { avatar: "spirit", scale: { gap_compression: 30 } },
+      // ⚖️ THE SAME DIALS AS EARTHLIKE (food-scale-round.md ⑨, 2026-08-24).
+      //
+      // It used to declare `gap_compression: 30` — measured against the 844 m
+      // gap this body's 393 m chart cell really founded at, back when the
+      // extent was one undeclared 450 m for every settlement and the clip law
+      // was the emergency being fixed (2·450 + 10 = 910 m of town straddling
+      // an 844 m gap, 13 of 65 road ends portless). The tier anchors ended
+      // that emergency: a village now declares its own 120 m body, so the gap
+      // no longer has to be crushed to keep towns off each other's roads.
+      //
+      //   gap_compression 10      → the user's 1/10: a 2 500 m lattice (the
+      //                             derived scan holds 6 chart cells,
+      //                             realized 2 356 m), clearing the clip law
+      //                             with room — 910 m of two town bodies
+      //                             against a 2 500 m gap. A 6 km body holds
+      //                             4π·6000²·0.29 / 2 500² ≈ 21 sites.
+      //   resource_compression 7.5 → the food requirement lowered where it
+      //                             belongs (`farmAreaPerPersonM2`): 6 474.97 m²
+      //                             per person (1.6 acres), Stage β4's
+      //                             re-solve from the measured village popCap
+      //                             140, so a village's fields fit the
+      //                             territory its lattice gives it — same
+      //                             solve as Earthlike, same numbers (the
+      //                             derivation and the 7.4592 cliff live on
+      //                             that preset's block).
+      session: { avatar: "spirit", scale: { gap_compression: 10, resource_compression: 7.5 } },
     },
   },
   {
@@ -179,22 +209,33 @@ export const TEST_WORLDS: NamedWorld[] = [
       // from a wilderness chunk anchored at a deterministic founding site,
       // with the planet itself rendered around and under it.
       tree: { kind: "body", params: { geology: { seed: 11 }, radius: 5000, rain: 1.5 } },
-      // ⚖️ SMALL RADIUS + gap_compression IS THE BIOME COMPRESSION. Climate
-      // bands (climate.ts) are latitude-driven and span the WHOLE sphere, so on
-      // a 5 km body the walk from steppe to forest to ice is minutes, not
-      // months — that compression is the point of a hike, and it is DECLARED
-      // here rather than faked by painting biomes small. `gap_compression: 30`
-      // is Home Planet's measured value (25 km ÷ the ~844 m gap a body this
-      // size really founds at), carried over so the settlement lattice this
-      // planet derives stays the one that satisfies the clip law. `world
-      // .founding` is deliberately OMITTED: an authored `founding` literal
-      // outranks derivation, and the derived scan reads exactly the gap
-      // declared above (planetFoundingOpts) — declaring both is how the two
-      // came to disagree on the older presets. `locomotion: 2` doubles the
-      // gait so the compressed country is crossed at a walker's patience.
+      // ⚖️ SMALL RADIUS IS THE BIOME COMPRESSION. Climate bands (climate.ts)
+      // are latitude-driven and span the WHOLE sphere, so on a 5 km body the
+      // walk from steppe to forest to ice is minutes, not months — that
+      // compression is the point of a hike, and it is DECLARED here rather
+      // than faked by painting biomes small.
+      //
+      // THE DIALS ARE EARTHLIKE'S (food-scale-round.md ⑨, 2026-08-24):
+      // `gap_compression: 10` is the user's 1/10 settlement lattice and
+      // `resource_compression: 7.5` the matching food solve (Stage β4's
+      // re-solve from the measured village popCap 140 — the derivation lives
+      // on the Earthlike block), replacing the old 30 that was measured
+      // against the clip-law emergency the tier anchors ended (see Home
+      // Planet). `locomotion: 2` doubles the gait so the compressed country
+      // is crossed at a walker's patience — and doubles the day's walk with
+      // it (townSpacingM), so settlements stand a 5 000 m lattice apart: a
+      // hike crosses wilderness between a handful of far sites, not a suburb.
+      // (The village catchment at 7.5 is 2 493 m — Earthlike's 2 500 m
+      // lattice clears it by 7 m, this one by a mile.) The hike's OWN spec,
+      // games/nature-hike/src/game.spec.json, declares these same dials and
+      // is pinned in lockstep (food-scale.test.ts, Stage β4) — flip both or
+      // neither. `world.founding` is deliberately OMITTED: an
+      // authored `founding` literal outranks derivation, and the derived scan
+      // must read exactly the gap declared above (planetFoundingOpts) —
+      // declaring both is how the two came to disagree on the older presets.
       session: {
         avatar: true, avatar_species: "human_cute",
-        scale: { rotation: 360, sleep_fraction: 0.05, gap_compression: 30, locomotion: 2 },
+        scale: { rotation: 360, sleep_fraction: 0.05, gap_compression: 10, resource_compression: 7.5, locomotion: 2 },
       },
     },
   },

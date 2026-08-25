@@ -823,8 +823,16 @@ export type ServerMessage =
 /** Which backend activity a `processing` envelope refers to:
  *  - "speaker": Speaker agent is composing a reply (until it speaks or stays silent)
  *  - "board":   Board Manager is rebuilding (until board_rebuilt / board_no_change)
- *  - "interpret": a composed sentence (glyph_press) is being interpreted into speech */
-export type ProcessingActivity = "speaker" | "board" | "interpret";
+ *  - "interpret": a composed sentence (glyph_press) is being interpreted into speech
+ *  - "app":     an app open is being resolved server-side (routeAppOpen) — the
+ *               one cue the child NEEDS, because the Speaker is deliberately
+ *               silent for its whole duration. Gemini Live blocks generation
+ *               while `open_app`'s functionResponse is outstanding (measured
+ *               2026-08-24, see scripts/test-live-toolcall-blocking.ts), which
+ *               is what stops it promising an app the server then refuses — but
+ *               it means a press can be followed by ~2s of nothing. Without a
+ *               visible cue that reads as failure. */
+export type ProcessingActivity = "speaker" | "board" | "interpret" | "app";
 
 /** Server-owned social-training session lifecycle (three-agent path).
  *  "started" carries everything the client needs to render the peer's

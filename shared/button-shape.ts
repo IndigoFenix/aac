@@ -33,6 +33,31 @@ export interface CornerCutGeometry {
   radius: number;
   /** Half the grid gap: how far outside the button corner the circle sits. */
   offset: number;
+  /**
+   * Corners to leave SQUARE — the cut is skipped there and the path turns a
+   * right angle instead.
+   *
+   * The one caller is a corner carrying a GLYPH MARK badge (the `?`, the `!`,
+   * the request arc, the tense arrow). Those have to sit at the button's true
+   * corner to read as corner marks at all, and the interior is already cramped,
+   * so the badge takes the corner and the bite gives way.
+   *
+   * ⚠️ This DOES break the vertex circle: the empty disc at a grid vertex is
+   * composed from the four bites around it, so a skipped corner leaves that
+   * disc a quadrant short. That is a deliberate trade (user call, 2026-08-24) —
+   * enough of the circle survives to park a gaze on, and badges only ever take
+   * TOP corners, so a vertex loses at most half. Do not skip corners for
+   * anything less than a badge.
+   */
+  skip?: CornerSkip;
+}
+
+/** Which corners are left square. Omitted / all-false = the usual four bites. */
+export interface CornerSkip {
+  topLeft?: boolean;
+  topRight?: boolean;
+  bottomRight?: boolean;
+  bottomLeft?: boolean;
 }
 
 /** Stop the four cuts from meeting in the middle of a small button. */
@@ -59,7 +84,7 @@ export function cornerInset(radius: number, offset: number): number {
  * Concave corners sweep the opposite way from convex ones, hence sweep-flag 0.
  */
 export function cornerCutPath(geom: CornerCutGeometry): string {
-  const { w, h, offset } = geom;
+  const { w, h, offset, skip } = geom;
   const r = clampRadius(geom);
   const a = cornerInset(r, offset);
 
@@ -67,16 +92,22 @@ export function cornerCutPath(geom: CornerCutGeometry): string {
   if (a <= 0 || r <= 0) return `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`;
 
   const f = (n: number) => Number(n.toFixed(2));
+  // Each corner is either an arc sweeping the bite (concave, sweep-flag 0) or
+  // a straight right angle through the corner point itself.
+  const arc = (x: number, y: number) => `A ${f(r)} ${f(r)} 0 0 0 ${f(x)} ${f(y)}`;
+  const square = (x: number, y: number) => `L ${f(x)} ${f(y)}`;
+  const tl = skip?.topLeft, tr = skip?.topRight, br = skip?.bottomRight, bl = skip?.bottomLeft;
+
   return [
-    `M ${f(a)} 0`,
-    `L ${f(w - a)} 0`,
-    `A ${f(r)} ${f(r)} 0 0 0 ${f(w)} ${f(a)}`,
-    `L ${f(w)} ${f(h - a)}`,
-    `A ${f(r)} ${f(r)} 0 0 0 ${f(w - a)} ${f(h)}`,
-    `L ${f(a)} ${f(h)}`,
-    `A ${f(r)} ${f(r)} 0 0 0 0 ${f(h - a)}`,
-    `L 0 ${f(a)}`,
-    `A ${f(r)} ${f(r)} 0 0 0 ${f(a)} 0`,
+    `M ${f(tl ? 0 : a)} 0`,
+    square(tr ? w : w - a, 0),
+    tr ? square(w, 0) : arc(w, a),
+    square(w, br ? h : h - a),
+    br ? square(w, h) : arc(w - a, h),
+    square(bl ? 0 : a, h),
+    bl ? square(0, h) : arc(0, h - a),
+    square(0, tl ? 0 : a),
+    tl ? square(0, 0) : arc(a, 0),
     "Z",
   ].join(" ");
 }
@@ -117,17 +148,23 @@ export function pointInCornerCut(
   offset: number,
   x: number,
   y: number,
+  /** Corners left SQUARE by a badge — solid surface, so NOT void to a gaze.
+   *  Omitting it keeps the old all-four-corners behaviour. */
+  skip?: CornerSkip,
 ): boolean {
   if (radius <= 0) return false;
-  const cx = [rect.left - offset, rect.right + offset];
-  const cy = [rect.top - offset, rect.bottom + offset];
   const r2 = radius * radius;
-  for (const px of cx) {
-    for (const py of cy) {
-      const dx = x - px;
-      const dy = y - py;
-      if (dx * dx + dy * dy <= r2) return true;
-    }
+  const corners: Array<[number, number, boolean | undefined]> = [
+    [rect.left - offset, rect.top - offset, skip?.topLeft],
+    [rect.right + offset, rect.top - offset, skip?.topRight],
+    [rect.right + offset, rect.bottom + offset, skip?.bottomRight],
+    [rect.left - offset, rect.bottom + offset, skip?.bottomLeft],
+  ];
+  for (const [px, py, skipped] of corners) {
+    if (skipped) continue;
+    const dx = x - px;
+    const dy = y - py;
+    if (dx * dx + dy * dy <= r2) return true;
   }
   return false;
 }

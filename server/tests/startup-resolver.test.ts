@@ -6,8 +6,14 @@
  * spec's defaults. Contract: it NEVER throws and ALWAYS returns a complete
  * parameter set; the defaults fast-path is unbilled.
  *
- * We drive it through the provider test seam (setStructuredProvider) and stub
- * GEMINI_API_KEY so no network call is made.
+ * We drive it through the provider test seam (setStructuredProvider). Note that
+ * setting GEMINI_API_KEY here is about REACHABILITY, not safety: it decides
+ * whether the resolver bothers to try, and nothing more. The header used to
+ * claim that stubbing the key was what kept the suite off the network — that
+ * was never true after the structured provider began defaulting to Vertex,
+ * which needs a GCP project and not a key, and this file duly spent real money
+ * on every run. What keeps the suite offline is that every test that reaches
+ * the provider installs a fake first, plus the credential scrub in setup.ts.
  */
 
 import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
@@ -92,6 +98,11 @@ describe("validateAndMergeParams", () => {
 describe("resolveAppStartupParams", () => {
   const prevKey = process.env.GEMINI_API_KEY;
   const prevTimeout = process.env.AAC_STARTUP_RESOLVER_TIMEOUT_MS;
+  // Reachability is key-OR-project now, so the unreachable case has to clear
+  // the project too — and put it back, or every later test in this file runs
+  // against a different environment than it thinks.
+  const prevProject = process.env.GOOGLE_CLOUD_PROJECT_ID;
+  const prevProjectAlt = process.env.GOOGLE_CLOUD_PROJECT;
 
   beforeEach(() => {
     process.env.GEMINI_API_KEY = "test-key";
@@ -104,6 +115,10 @@ describe("resolveAppStartupParams", () => {
     else process.env.GEMINI_API_KEY = prevKey;
     if (prevTimeout === undefined) delete process.env.AAC_STARTUP_RESOLVER_TIMEOUT_MS;
     else process.env.AAC_STARTUP_RESOLVER_TIMEOUT_MS = prevTimeout;
+    if (prevProject === undefined) delete process.env.GOOGLE_CLOUD_PROJECT_ID;
+    else process.env.GOOGLE_CLOUD_PROJECT_ID = prevProject;
+    if (prevProjectAlt === undefined) delete process.env.GOOGLE_CLOUD_PROJECT;
+    else process.env.GOOGLE_CLOUD_PROJECT = prevProjectAlt;
   });
 
   it("returns resolved params and bills on a successful call", async () => {
@@ -123,8 +138,14 @@ describe("resolveAppStartupParams", () => {
     expect(res.params.startLevel).toBe(6);
   });
 
-  it("falls back to defaults (and does not bill) when there is no API key", async () => {
+  it("falls back to defaults (and does not bill) when Gemini is unreachable", async () => {
+    // Unreachable now means no key AND no GCP project: the structured provider
+    // prefers Vertex, so a Vertex-only deployment has no GEMINI_API_KEY and is
+    // perfectly healthy. Clearing only the key would leave this passing
+    // vacuously on any machine whose .env carries a project.
     delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_CLOUD_PROJECT_ID;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
     const trackUsage = jest.fn();
     let called = false;
     fakeProvider(async () => {
@@ -156,11 +177,24 @@ describe("resolveAppStartupParams", () => {
   });
 
   it("returns defaults immediately when the resolver is disabled (timeout 0)", async () => {
+    // "Disabled" has to mean the call is never SENT, not merely never awaited.
+    // It used to mean the latter: the request was built as an argument to
+    // withTimeout, so it went out before the ms<=0 guard could decline it, and
+    // a timeout of 0 billed a full Gemini call per app open while returning
+    // defaults. The `called` assertion below is the whole point of this test —
+    // without it every other expectation here passes just as happily on the
+    // broken version.
     process.env.AAC_STARTUP_RESOLVER_TIMEOUT_MS = "0";
     const trackUsage = jest.fn();
+    let called = false;
+    fakeProvider(async () => {
+      called = true;
+      return gptResponse(JSON.stringify({ startLevel: 5 }));
+    });
     const res = await resolveAppStartupParams(makeCtx({ trackUsage }));
     expect(res.params).toEqual({ startLevel: 0 });
     expect(res.usedDefaults).toBe(true);
+    expect(called).toBe(false);
     expect(trackUsage).not.toHaveBeenCalled();
   });
 });

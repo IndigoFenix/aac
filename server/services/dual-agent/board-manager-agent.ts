@@ -403,8 +403,14 @@ export function renderInvocationContext(input: BoardManagerInvocationInput): str
 
   // Current surface state
   if (input.loadedBoardId) {
+    // The KEY and NAME live here rather than in the set_board tool description,
+    // where they used to invalidate the prompt cache on every board change.
+    // See buildSetBoardTool.
+    const loaded = input.toolConfig.loadedBoardKey
+      ? ` key="${input.toolConfig.loadedBoardKey}"${input.toolConfig.loadedBoardName ? ` (name: "${input.toolConfig.loadedBoardName}")` : ""}`
+      : "";
     lines.push(`<current_state>`);
-    lines.push(`A custom board is currently LOADED (id: ${input.loadedBoardId}). Navigate sub-pages with press_button, or call rebuild_board to unload it entirely.`);
+    lines.push(`A custom board is currently LOADED${loaded} (id: ${input.loadedBoardId}) — do NOT re-select it. Navigate sub-pages with press_button, or call rebuild_board to unload it entirely.`);
   } else {
     lines.push(`<current_state>`);
     lines.push(`Dynamic board mode (no custom board loaded).`);
@@ -980,6 +986,34 @@ export function classifyProviderFailure(message: string): "RATE_LIMITED" | "ERRO
     : "ERROR";
 }
 
+/** How many times a rate-limited call is retried before giving up. */
+export const RATE_LIMIT_RETRIES = 2;
+/** First backoff step. Doubles each attempt, with jitter on top. */
+export const RATE_LIMIT_BASE_DELAY_MS = 400;
+
+/**
+ * Backoff for attempt `n` (0-based): exponential, with FULL jitter.
+ *
+ * 🚨 We used not to retry a 429 at all, and that was right for the failure we
+ * had then — the AI Studio key's DAILY cap (2026-08-20), where the quota was
+ * gone for the rest of the day and an immediate retry only doubled the load
+ * against it.
+ *
+ * Vertex is a different animal. Gemini there runs on dynamic shared quota:
+ * there is no per-project ceiling to exhaust, and a 429 means the shared pool
+ * was momentarily tight. Capacity changes second to second, so retry with
+ * backoff is Google's own first recommendation. Same status code, opposite
+ * correct response — which is why the DELAY carries the weight: an immediate
+ * retry is the one thing that is wrong under both regimes.
+ *
+ * Full jitter (random across the whole window rather than a fixed delay plus
+ * noise) because every session hitting a tight pool would otherwise retry in
+ * lockstep and rebuild the spike it is backing off from.
+ */
+export function rateLimitBackoffMs(attempt: number, random: () => number = Math.random): number {
+  return Math.round(random() * RATE_LIMIT_BASE_DELAY_MS * Math.pow(2, attempt));
+}
+
 function failureResult(err: Error, where?: string): BoardManagerInvocationResult {
   const msg = err.message ?? String(err);
   const rateLimited = classifyProviderFailure(msg) === "RATE_LIMITED";
@@ -1052,6 +1086,37 @@ export class BoardManagerAgent {
       .catch(() => { /* lazily retried on first invoke */ });
   }
 
+  /**
+   * Run a completion, retrying ONLY on a rate limit, with jittered backoff.
+   *
+   * Anything else rethrows immediately: a malformed response is the caller's to
+   * handle (it retries with feedback, which a plain re-send would not fix), and
+   * an abort must stay an abort.
+   */
+  private async completeWithRateLimitRetry(
+    provider: ChatProvider,
+    request: ChatRequest,
+    signal?: AbortSignal,
+  ): Promise<ChatCompletionResult> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {
+      try {
+        return await provider.completeChat(request);
+      } catch (err) {
+        lastErr = err;
+        const message = (err as Error).message;
+        if (classifyProviderFailure(message) !== "RATE_LIMITED") throw err;
+        if (signal?.aborted || attempt === RATE_LIMIT_RETRIES) throw err;
+        const delay = rateLimitBackoffMs(attempt);
+        flowNote("BOARD_MGR", `Rate limited — retrying in ${delay}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRIES}).`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        // The board is only worth building if anyone is still waiting for it.
+        if (signal?.aborted) throw lastErr;
+      }
+    }
+    throw lastErr;
+  }
+
   async invoke(input: BoardManagerInvocationInput): Promise<BoardManagerInvocationResult> {
     const provider = input.provider !== undefined
       ? getChatProvider(input.provider, { useVertex: this.useVertex })
@@ -1085,6 +1150,15 @@ export class BoardManagerAgent {
       if (handle) {
         cachedContent = handle.name;
         this.pendingCacheCreateTokens += handle.createdTokens;
+        // A CREATE is a whole prompt billed at the full input rate, so it is
+        // the single biggest thing that moves a turn's token count. It used to
+        // reach only the server console, which is why three cache re-creations
+        // in one session looked like an unexplained "prompt spike" in
+        // agent-flow-debug.log. If a session shows repeated creations, the tool
+        // declarations are varying — see buildSetBoardTool.
+        if (handle.createdTokens > 0) {
+          flowNote("BOARD_MGR", `Prompt cache CREATED (${handle.createdTokens} tokens billed as input this turn).`);
+        }
       }
     }
 
@@ -1146,23 +1220,32 @@ export class BoardManagerAgent {
       toolChoice: "required",
     };
 
+    const request = cachedContent ? cachedRequest : inlineRequest;
     let result: ChatCompletionResult;
     try {
-      result = await provider.completeChat(cachedContent ? cachedRequest : inlineRequest);
+      result = await this.completeWithRateLimitRetry(provider, request, input.signal);
     } catch (err) {
-      // A rejected cache handle (expired/deleted server-side between the
-      // ensure and the call) is recoverable: drop it and retry inline once.
-      if (cachedContent && !input.signal?.aborted && provider instanceof GeminiChatProvider) {
-        console.warn("[BoardManagerAgent] cached completion failed — retrying inline:", (err as Error).message);
+      const message = (err as Error).message;
+      // 🚨 A RATE LIMIT SAYS NOTHING ABOUT THE CACHE HANDLE.
+      //
+      // This used to drop the prompt cache on ANY failure, which turned a 429
+      // into a self-feeding loop: the 429 deleted the cache, the next turn
+      // re-created it at the full input rate for the whole prompt (~13.5k
+      // tokens), and that extra throughput made the next 429 likelier. Only a
+      // handle the API actually REJECTED — expired or deleted server-side — is
+      // worth throwing away.
+      const rateLimited = classifyProviderFailure(message) === "RATE_LIMITED";
+      if (cachedContent && !rateLimited && !input.signal?.aborted && provider instanceof GeminiChatProvider) {
+        console.warn("[BoardManagerAgent] cached completion failed — retrying inline:", message);
         provider.invalidatePromptCache(cachedContent);
         try {
-          result = await provider.completeChat(inlineRequest);
+          result = await this.completeWithRateLimitRetry(provider, inlineRequest, input.signal);
         } catch (retryErr) {
           console.error("[BoardManagerAgent] completion failed:", (retryErr as Error).message);
           return failureResult(retryErr as Error, "inline retry");
         }
       } else {
-        console.error("[BoardManagerAgent] completion failed:", (err as Error).message);
+        console.error("[BoardManagerAgent] completion failed:", message);
         return failureResult(err as Error);
       }
     }

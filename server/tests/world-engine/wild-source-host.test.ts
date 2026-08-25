@@ -1,5 +1,5 @@
 /**
- * ⚖️ HOST ROUND (fold-round.md H1–H3) — THE REGION SHED, FROM THE PLAYER'S SIDE.
+ * ⚖️ HOST ROUND (fold-round.md H1–H3) — THE REGION SOURCE, FROM THE PLAYER'S SIDE.
  *
  * F5b made a folded stand a one-way trade partner and proved it from a cheat.
  * A conservation law you can only reach with `/wild draw` is a law no child
@@ -27,7 +27,7 @@
  * of BOOKS, no frames — because 84 sim-seconds of frontier frames costs a
  * minute and a half of wall clock and proves nothing the sweep doesn't.
  *
- * DB-free / GL-free — `npm run test:engine -- shed`.
+ * DB-free / GL-free — `npm run test:engine -- wild-source`.
  */
 import { describe, it, expect } from "@jest/globals";
 import { readFileSync } from "node:fs";
@@ -35,7 +35,7 @@ import { join } from "node:path";
 import { bootTextQuest, type TextQuestRun } from "@shared/world-engine/headless/text-quest.js";
 import {
   wildAreaStock,
-  wildShedPartner,
+  wildSourcePartner,
   type WildAreaRecord,
 } from "@shared/world-engine/interaction/quest/wild-area.js";
 import { barterLegSeconds } from "@shared/world-engine/kernel/town/barter.js";
@@ -45,7 +45,7 @@ import { stackUnits, type TransferAgreement } from "@shared/world-engine/kernel/
 import { wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness.js";
 
 // The FRONTIER world: a town scope WITH wilderness (the dollhouse has none, so
-// it can never grow a shed). Same document `scripts/worlds/frontier.spec.json`
+// it can never grow a source). Same document `scripts/worlds/frontier.spec.json`
 // the F5b transcripts were taken against.
 const specPath = join(process.cwd(), "scripts", "worlds", "frontier.spec.json");
 const doc = JSON.parse(readFileSync(specPath, "utf8")) as Record<string, unknown>;
@@ -58,15 +58,15 @@ function toastTap(run: TextQuestRun): { all: string[]; since: (n: number) => str
   return { all, since: (n) => all.slice(n).join(" | ") };
 }
 
-/** The ② rows aimed at our yard FROM the region shed — the only rows a draw
+/** The ② rows aimed at our yard FROM the region source — the only rows a draw
  *  may ever create. */
 function drawRows(run: TextQuestRun, key = "home"): TransferAgreement[] {
-  const shedId = wildAreaId(key);
-  return run.session.transfers.active().filter((a) => a.from === shedId);
+  const sourceId = wildAreaId(key);
+  return run.session.transfers.active().filter((a) => a.from === sourceId);
 }
 
 /** Every row a draw of any kind has ever posted, newest last — the reading H2
- *  needs, where WHICH shed answered is the whole question. */
+ *  needs, where WHICH source answered is the whole question. */
 function allDrawRows(run: TextQuestRun): TransferAgreement[] {
   return run.session.transfers.active().filter((a) => a.from.startsWith("wild:area:"));
 }
@@ -79,30 +79,30 @@ function allDrawRows(run: TextQuestRun): TransferAgreement[] {
  * keeps the stock and moves the GROUND, which is the only input the leg price
  * reads.
  */
-function cloneShed(
+function cloneSource(
   run: TextQuestRun,
   key: string,
   area: { x: number; y: number; w: number; h: number },
 ): void {
   const src = run.session.wildAreas.get("home");
-  if (!src) throw new Error("cloneShed: nothing folded to clone");
+  if (!src) throw new Error("cloneSource: nothing folded to clone");
   const copy = structuredClone(src) as WildAreaRecord;
   copy.key = key;
   copy.area = area;
   run.session.wildAreas.set(key, copy);
 }
 
-/** What the shed still owns, standing or cut: record stock + boundary shelf.
+/** What the source still owns, standing or cut: record stock + boundary shelf.
  *  The conservation reading — a draw moves units between these two and the
  *  yard, and creates none. */
-function shedHolds(run: TextQuestRun, glyph: string): number {
+function sourceHolds(run: TextQuestRun, glyph: string): number {
   const rec = run.session.wildAreas.get("home");
   const standing = rec ? wildAreaStock(rec)[glyph] ?? 0 : 0;
   return standing + stackUnits(run.session.partnerStock[wildAreaId("home")] ?? {}, glyph);
 }
 
-describe("H1/H2 — the spoken region draw and which shed answers it", () => {
-  it("routes a folded wild to the ledger, ships it, picks the cheapest shed, and refuses aloud when it cannot serve", () => {
+describe("H1/H2 — the spoken region draw and which source answers it", () => {
+  it("routes a folded wild to the ledger, ships it, picks the cheapest source, and refuses aloud when it cannot serve", () => {
     const run = bootTextQuest({ world: doc, seed: 12, dt: 1 / 10 });
     try {
       run.advance(20);
@@ -114,7 +114,7 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       expect(s.wildAreas.size).toBe(0);
       const mark0 = toasts.all.length;
       run.speak("get + wood + from + forest");
-      // No shipment: not one row against the shed exists, and the wild was not
+      // No shipment: not one row against the source exists, and the wild was not
       // folded to make one possible. That second half is the load-bearing one —
       // a sentence that could fold the world would pop the stand the player is
       // looking at straight out of existence.
@@ -128,7 +128,7 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       run.host.wildProbe("fold");
       const rec = s.wildAreas.get("home");
       expect(rec).toBeDefined();
-      const held0 = shedHolds(run, "wood");
+      const held0 = sourceHolds(run, "wood");
       expect(held0).toBeGreaterThan(0);
 
       const t0 = s.taskClock;
@@ -145,8 +145,8 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       // geometry through `barterLegSeconds`, so a second pricing path for
       // "but it's a forest" would fail this line the day it is written.
       const origin = s.town?.stage.center ?? s.foundedSite?.at ?? null;
-      const shed = wildShedPartner(rec!, origin);
-      const legS = barterLegSeconds(s.scale, shed.distanceM);
+      const source = wildSourcePartner(rec!, origin);
+      const legS = barterLegSeconds(s.scale, source.distanceM);
       expect(legS).toBeGreaterThan(0);
       expect(row.nextDueAt).toBeCloseTo(t0 + legS, 6);
 
@@ -168,11 +168,11 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       const warp = run.warpDays(1); // days of BOOKS — the sweep, not the frames
       expect(warp.ok).toBe(true);
       const yard1 = stackUnits(s.town?.deltas.stock ?? {}, "wood");
-      const held1 = shedHolds(run, "wood");
+      const held1 = sourceHolds(run, "wood");
       expect(yard1).toBeGreaterThan(yard0);
-      // Nothing was minted: the shed's own books gave at least what the yard
+      // Nothing was minted: the source's own books gave at least what the yard
       // gained. (A kill draw fells a whole tree, so the shelf may hold the
-      // remainder — hence `shedHolds` counts standing AND cut.)
+      // remainder — hence `sourceHolds` counts standing AND cut.)
       expect(held0 - held1).toBeGreaterThanOrEqual(yard1 - yard0);
 
       // ── QUANTITY SCALES THE DAILY LOAD (the tribute rule, 1–3) ────────────
@@ -187,7 +187,7 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       run.speak("get + all + wood + from + forest");
       expect(drawRows(run).filter((a) => (a.goods.wood ?? 0) === 1)).toHaveLength(ones + 1);
 
-      // ══ H2 — MULTI-SHED SELECTION ═══════════════════════════════════════
+      // ══ H2 — MULTI-SOURCE SELECTION ═════════════════════════════════════
       //
       // The home area sits AT the town centre (distance 0), so every injected
       // rival is farther or exactly level — which is precisely the two cases
@@ -198,7 +198,7 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       // `aaa-far` sorts FIRST alphabetically and is a kilometre out. If the
       // picker read the map (or the key) instead of the leg, it would answer
       // from there.
-      cloneShed(run, "aaa-far", { ...homeArea, x: homeArea.x + 4000, y: homeArea.y + 4000 });
+      cloneSource(run, "aaa-far", { ...homeArea, x: homeArea.x + 4000, y: homeArea.y + 4000 });
       const mark3 = allDrawRows(run).length;
       run.speak("get + wood + from + forest");
       const picked = allDrawRows(run).slice(mark3);
@@ -209,7 +209,7 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       // Same ground ⇒ same road ⇒ same price. `aaa-tie` was inserted LAST and
       // sorts FIRST; the key is what decides, so the answer is stable across
       // any fold history that produced the same two areas.
-      cloneShed(run, "aaa-tie", { ...homeArea });
+      cloneSource(run, "aaa-tie", { ...homeArea });
       const mark4 = allDrawRows(run).length;
       run.speak("get + wood + from + forest");
       const tied = allDrawRows(run).slice(mark4);
@@ -228,10 +228,10 @@ describe("H1/H2 — the spoken region draw and which shed answers it", () => {
       // ── DRAW SHORTFALL IS HONEST ──────────────────────────────────────────
       // A stand of oaks has no meat. The refusal is the partner vocabulary's
       // own ("they + give.not + meat") and NOT A ROW: a posted row would ship
-      // nothing, every day, forever — the exact silent failure a shed's
+      // nothing, every day, forever — the exact silent failure a source's
       // one-way ledger makes so easy to write.
-      for (const shed of [...s.wildAreas.values()]) {
-        expect(wildAreaStock(shed).meat ?? 0).toBe(0);
+      for (const source of [...s.wildAreas.values()]) {
+        expect(wildAreaStock(source).meat ?? 0).toBe(0);
       }
       const mark6 = allDrawRows(run).length;
       const toastMark = toasts.all.length;
@@ -349,7 +349,7 @@ describe("H3 — a stand folds only where nobody can see it", () => {
       // (Measured: parking the camera at 10× the side landed it on the world
       // corner.) The driver only has work to do once a wild area's ground is a
       // PART of the world, which is precisely the region layer's shape — so the
-      // pin gives one stand a sub-world ground, exactly as `cloneShed` above
+      // pin gives one stand a sub-world ground, exactly as `cloneSource` above
       // gives H2 a second area. Everything below is the region layer's geometry
       // arriving early; the shipped-today verdict is INERT, and that is what the
       // h3-doll / h3-frontier transcript pairs pin.
@@ -459,12 +459,12 @@ describe("H3 — a stand folds only where nobody can see it", () => {
 
       // ── PHASE F — THE DRIVER REVERSES ONLY ITS OWN HOUSEKEEPING ───────────
       // A record the driver did not fold is somebody's DECISION — a `/wild
-      // fold`, a session handover, a regional shed — and an LOD sweep may not
+      // fold`, a session handover, a regional source — and an LOD sweep may not
       // overrule it. Measured before this rule existed: `/wild fold` was undone
       // within one sweep, turning F5b's own live proofs from `folded
       // wild:area:home` into `loaded: oak×8 …`.
       const homeArea = s.wildAreas.get("home")!.area;
-      cloneShed(run, "zzz-remote", { ...homeArea, x: homeArea.x + 4000 });
+      cloneSource(run, "zzz-remote", { ...homeArea, x: homeArea.x + 4000 });
 
       // ── PHASE B — THE BAND COMES BACK, THE STAND STANDS ───────────────────
       moveCamera(run, STAND_SIDE / 2, STAND_SIDE / 2);

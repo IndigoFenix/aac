@@ -87,6 +87,9 @@ describe("text builder — the screen is the engine's own surface (law ④)", ()
     const b = builder();
     expect(b.tap("want").ok).toBe(true);
     expect(screen(b)[0]).toBe(`BUILDER so far: want  "I want."`);
+    // A bare desire offers categories, not the pantry — the apple lives behind
+    // its chip (2026-08-24).
+    expect(b.setGroup("food").ok).toBe(true);
     expect(b.tap("apple").ok).toBe(true);
     // The preview is translateGlyph with firstPerson — never a re-composition.
     expect(screen(b)[0]).toBe(`BUILDER so far: want + apple  "I want an apple."  (complete)`);
@@ -96,6 +99,7 @@ describe("text builder — the screen is the engine's own surface (law ④)", ()
   it("speaks the locale it was given", () => {
     const he = createTextBuilder({ locale: "he", grid: 8, nouns: NOUNS });
     he.tap("want");
+    he.setGroup("food");
     he.tap("apple");
     const ev = he.block() as Extract<TextEvent, { tag: "BUILDER" }>;
     expect(ev.partial).toBe("want + apple");
@@ -121,7 +125,7 @@ describe("text builder — modifier composition (the SpeakMenu rule)", () => {
     const b = builder();
     b.tap("want");
     b.setTab("things");
-    b.page("more"); // `shirt` did not rank into the grid — that IS the cost
+    b.setGroup("clothing"); // `shirt` did not rank into the grid — that IS the cost
     expect(b.tap("shirt").ok).toBe(true);
 
     const lines = screen(b);
@@ -154,6 +158,7 @@ describe("text builder — modifier composition (the SpeakMenu rule)", () => {
   it("a number reaches into the rail as well as the grid", () => {
     const b = builder();
     b.tap("want");
+    b.setGroup("food");
     b.tap("apple");
     const ev = b.block() as Extract<TextEvent, { tag: "BUILDER" }>;
     const firstMod = ev.options.find((o) => o.modifier);
@@ -189,7 +194,11 @@ describe("text builder — tabs, groups and paging (§7: the tab pages at the gr
     expect(b.setGroup("food").ok).toBe(true);
     const ev = b.block() as Extract<TextEvent, { tag: "BUILDER" }>;
     expect(ev.group).toBe("food");
-    expect(ev.options.map((o) => o.id).sort()).toEqual(["apple", "banana", "cookie", "grape"]);
+    // The foods the spec knows — treats and staples together, since the library
+    // is derived from the registries now rather than curated.
+    expect(ev.options.map((o) => o.id)).toEqual(
+      expect.arrayContaining(["apple", "banana", "cookie", "grape", "bread", "cheese"]),
+    );
   });
 
   it("names the tabs and the chips it does have when asked for one it does not", () => {
@@ -202,7 +211,7 @@ describe("text builder — tabs, groups and paging (§7: the tab pages at the gr
   it("a word tap resets the view — a new head re-ranks everything", () => {
     const b = builder();
     b.setTab("things");
-    b.page("more");
+    b.setGroup("clothing");
     b.tap("shirt");
     const ev = b.block() as Extract<TextEvent, { tag: "BUILDER" }>;
     expect(ev.tab).toBeUndefined();
@@ -213,7 +222,7 @@ describe("text builder — tabs, groups and paging (§7: the tab pages at the gr
     const b = builder();
     b.tap("want");
     b.setTab("things");
-    b.page("more");
+    b.setGroup("clothing");
     b.tap("shirt");
     b.tap(".dirty");
     expect(b.partial()).toBe("want + shirt.dirty");
@@ -277,7 +286,7 @@ describe("text session — press/screen accounting (law ④'s metric)", () => {
 
     r.session.command("build want"); //       press 1, screen 2
     r.session.command("build tab things"); // press 2, screen 3
-    r.session.command("more"); //             press 3, screen 4  (the builder pages)
+    r.session.command("build group clothing"); // press 3, screen 4  (the chip narrows)
     r.session.command("build shirt"); //      press 4, screen 5
     expect(r.session.sessionStats()).toEqual({ commands: 5, presses: 4, screens: 5 });
 
@@ -292,9 +301,13 @@ describe("text session — press/screen accounting (law ④'s metric)", () => {
   it("restarts the count at the next composition — each utterance is measured alone", () => {
     const r = rig();
     r.session.command("build want");
+    r.session.command("build group food");
     r.session.command("build apple");
     const first = r.session.command("build play");
-    expect(first.lines).toContain("NOTE   reached in 3 presses across 2 screens.");
+    // Four presses now: the desire board offers categories, so the apple costs
+    // its chip (2026-08-24) — which is exactly the kind of cost this metric is
+    // here to make visible.
+    expect(first.lines).toContain("NOTE   reached in 4 presses across 3 screens.");
 
     r.session.command("build want");
     const second = r.session.command("build play");
@@ -355,10 +368,17 @@ describe("text session — press/screen accounting (law ④'s metric)", () => {
 // `applyExclusiveModifier`) — same builder, same bug.
 // ───────────────────────────────────────────────────────────────────────────
 describe("the modifier rail keeps a descriptor axis exclusive", () => {
-  /** Compose a head that takes a descriptor rail. */
+  /** Compose a head that takes a descriptor rail.
+   *
+   *  The [food] chip is part of the path now (2026-08-24): a bare desire offers
+   *  the CATEGORIES and the child's own habits, never the whole pantry, so the
+   *  apple is one chip press in. That extra press is the design, and text mode
+   *  showing it is text mode doing its job. */
   function withHead() {
     const b = builder();
-    for (const w of ["i_me", "want", "apple"]) b.tap(w);
+    for (const w of ["i_me", "want"]) b.tap(w);
+    b.setGroup("food");
+    b.tap("apple");
     return b;
   }
 

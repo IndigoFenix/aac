@@ -281,6 +281,61 @@ describe("computeLayout", () => {
     expect(l.viewBoxWidth).toBe(SLOT_UNIT);
     expect(l.slots.length).toBe(1);
   });
+
+  it("badge GROWS with slot count so a sentence's mark stays legible", () => {
+    // A wide viewBox is letterboxed into a squarish button, so a fixed-size
+    // badge shrinks with the sentence — smallest exactly where `#request`
+    // lives. Regression guard for that: more slots must never mean a
+    // smaller badge, and a 3-slot sentence must be meaningfully bigger
+    // than a lone word.
+    const one = computeLayout(parseGlyph("water#request")).cornerBadge.size;
+    const two = computeLayout(parseGlyph("want+water#request")).cornerBadge.size;
+    const three = computeLayout(parseGlyph("i_me+want+water#request")).cornerBadge.size;
+    expect(two).toBeGreaterThan(one);
+    expect(three).toBeGreaterThan(two);
+    expect(three).toBeGreaterThan(one * 1.5);
+  });
+
+  it("badge growth is capped, so it never swallows the artwork", () => {
+    const three = computeLayout(parseGlyph("a+b+c#request")).cornerBadge.size;
+    const six = computeLayout(parseGlyph("a+b+c+d+e+f#request")).cornerBadge.size;
+    expect(six).toBe(three);
+    // Still a corner mark, not a co-equal element: under half the viewBox height.
+    expect(six).toBeLessThan(SLOT_UNIT / 2);
+  });
+
+  it("prosody and tense badges sit on OPPOSITE corners at the same size", () => {
+    // `#past#request` must not stack two marks on one corner.
+    const l = computeLayout(parseGlyph("i_me+want+water#past#request"), false);
+    expect(l.tenseBadge.x).toBe(0);
+    expect(l.cornerBadge.x).toBe(l.viewBoxWidth - l.cornerBadge.size);
+    expect(l.tenseBadge.size).toBe(l.cornerBadge.size);
+  });
+});
+
+describe("the #request ARC MARK", () => {
+  it("parses as a prosody tag", () => {
+    expect(parseGlyph("i_me+want+water#request").toneTags).toContain("request");
+  });
+
+  it("does not eat the slots it rides on", () => {
+    expect(parseGlyph("i_me+want+water#request").slots.map((s) => s.key))
+      .toEqual(["i_me", "want", "water"]);
+  });
+
+  it("coexists with a tense tag and survives serialization", () => {
+    const parsed = parseGlyph("want+water#past#request");
+    expect(parsed.toneTags).toEqual(expect.arrayContaining(["past", "request"]));
+    expect(parseGlyph(serializeGlyph(parsed)).toneTags)
+      .toEqual(expect.arrayContaining(["past", "request"]));
+  });
+
+  it("is mirror-invariant by position — RTL moves it, never reflects its meaning", () => {
+    // The mark itself is an upturned arc precisely so the opt-OUT RTL mirror
+    // cannot turn it into a different sign (a mirrored `?` would read as `?`).
+    const rtl = computeLayout(parseGlyph("a+b#request"), true);
+    expect(rtl.cornerBadge.x).toBe(0);
+  });
 });
 
 describe("dominantToneFamily", () => {

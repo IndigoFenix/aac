@@ -135,8 +135,28 @@ const CATALOGUE: ReadonlyArray<{
   // body plan behind it. Appended rather than interleaved — registry order is
   // stable data other derivations index against.
   { id: "elephant", kind: "creature", example: "Elephant (trunk)" },
-  { id: "horse", kind: "creature", example: "Horse" },
-  { id: "cat", kind: "creature", example: "Cat" },
+  {
+    id: "horse",
+    kind: "creature",
+    example: "Horse",
+    words: {
+      en: { w: "horse" },
+      he: { w: "סוס", g: "m" },
+      es: { w: "caballo", g: "m" },
+      pt: { w: "cavalo", g: "m" },
+    },
+  },
+  {
+    id: "cat",
+    kind: "creature",
+    example: "Cat",
+    words: {
+      en: { w: "cat" },
+      he: { w: "חתול", g: "m" },
+      es: { w: "gato", g: "m" },
+      pt: { w: "gato", g: "m" },
+    },
+  },
   {
     id: "dog",
     kind: "creature",

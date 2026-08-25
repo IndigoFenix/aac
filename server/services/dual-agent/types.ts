@@ -52,6 +52,12 @@ export interface AACAppDefinition {
    * handed to the app at launch. Apps without it open instantly with no params.
    */
   startup?: AppStartupSpec;
+  /**
+   * Optional policy for AI-initiated opens. When present, an open the ASSISTANT
+   * chose is put to a small decision model first, which may refuse it. A
+   * student press is never second-guessed. See `AiOpenPolicy`.
+   */
+  aiOpenPolicy?: import("@shared/app-startup").AiOpenPolicy;
 }
 
 /**

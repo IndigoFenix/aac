@@ -45,22 +45,27 @@ const actionIds = (tokens: string[], c = ctx()) =>
   board(tokens, c).groups.filter((g) => g.kind === "verb").map((g) => g.id);
 
 describe("the action band a bare desire verb opens", () => {
-  it("want offers actions INLINE — common first — with the nouns still leading", () => {
+  it("want offers actions INLINE and they LEAD — the nouns hold the rest of the grid", () => {
     const s = board(["i_me", "want"]);
     const k = s.buttons.map((b) => b.symbol);
-    // Things a child wants lead (afford-want items outrank every action)…
-    expect(k.slice(0, 2).sort()).toEqual(["apple", "ball"]);
-    // …and the most common actions stand right behind them, as verbs.
+    // THE ACTIONS LEAD (user decision 2026-08-24). They used to rank below every
+    // wantable thing, which on the real board meant a whole page of objects —
+    // alphabetically ordered at that — before the first verb. "Nouns lead" was
+    // never meant to mean "nouns hold all of page one".
+    expect(k.slice(0, 2)).toEqual(["get", "give"]);
     for (const v of ["go", "eat", "play"]) {
       expect({ v, role: s.buttons.find((b) => b.symbol === v)?.role }).toEqual({ v, role: "verb" });
     }
-    expect(k.indexOf("go")).toBeGreaterThan(k.indexOf("ball"));
+    // …and the things a child wants are right behind them, still the bulk of it.
+    expect(k.indexOf("go")).toBeLessThan(k.indexOf("ball"));
+    expect(k).toContain("apple");
+    expect(k).toContain("ball");
     expect(s.open).toContain("verb");
   });
 
   it("need and like open the same path", () => {
     for (const modal of ["need", "like"]) {
-      expect({ modal, ids: actionIds([modal]) }).toEqual({ modal, ids: ["do", "play", "make", "get"] });
+      expect({ modal, ids: actionIds([modal]) }).toEqual({ modal, ids: ["get", "do", "play", "make"] });
       expect({ modal, has: syms([modal]).includes("eat") }).toEqual({ modal, has: true });
     }
   });
@@ -82,7 +87,9 @@ describe("the action band a bare desire verb opens", () => {
     });
     const s = board(["i_me", "want"], wide);
     const verbs = s.groups.filter((g) => g.kind === "verb");
-    expect(verbs.map((g) => g.id)).toEqual(["do", "play", "make", "get"]);
+    // Ranked by their best member, like the noun chips beside them — [get]
+    // leads because `get`/`give` lead the primitive order.
+    expect(verbs.map((g) => g.id)).toEqual(["get", "do", "play", "make"]);
     // A band of its own: the noun clusters keep their budget and precede it.
     const firstVerb = s.groups.findIndex((g) => g.kind === "verb");
     expect(firstVerb).toBeGreaterThan(0);

@@ -106,6 +106,8 @@ export async function extractMenuFromText(
 
   try {
     const response = await getStructuredProvider(PROVIDER).structuredComplete({
+      // Background: web extraction runs once per venue, behind the cache write.
+      background: true,
       model: MODEL,
       instructions: `${EXTRACTION_PROMPT}\n\nThis page is for: ${options.venueName}.${language}`,
       schemaName: "web_menu_page",

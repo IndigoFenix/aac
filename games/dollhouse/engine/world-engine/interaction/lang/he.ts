@@ -155,6 +155,15 @@ const CENTRAL: Record<string, Lexeme> = {
   doll: { w: "בובה", g: "f" },
   // Creature SPECIES words (reference resolution: "אני מדבר עם ה{מין}").
   person: { w: "אדם", g: "m", plw: "אנשים" },
+  // KINSHIP AND ROLE WORDS (2026-08-24) — see en.ts.
+  mom: { w: "אמא", g: "f" },
+  dad: { w: "אבא", g: "m" },
+  baby: { w: "תינוק", g: "m" },
+  girl: { w: "ילדה", g: "f", plw: "ילדות" },
+  boy: { w: "ילד", g: "m", plw: "ילדים" },
+  friend: { w: "חבר", g: "m" },
+  teacher: { w: "מורה", g: "m" },
+  street: { w: "רחוב", g: "m" },
   animal: { w: "חיה", g: "f", plw: "חיות" },
   creature: { w: "יצור", g: "m" },
   water: { w: "מים", g: "m", pl: true, mass: true },

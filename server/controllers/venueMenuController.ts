@@ -22,6 +22,7 @@ import { getStudentAllergies } from "../services/venue-menus/student-allergies";
 import { webMenuService } from "../services/venue-menus/web-menu-service";
 import { MAX_FRAMES } from "../services/venue-menus/camera-extraction";
 import { resolveVenueMenuSettings, needsReview, isSourceEnabled } from "@shared/venue-menus";
+import { venueBrowseService } from "../services/venue-menus/venue-browse-service";
 
 /** A base64 JPEG, with or without its data-URL prefix. */
 const frameSchema = z.string().min(1);
@@ -43,6 +44,14 @@ const nearbySchema = z.object({
   longitude: z.number().min(-180).max(180),
   /** True only when a caretaker pressed "search near me" (§3, requirement 5). */
   allowOutboundSearch: z.boolean().optional(),
+});
+
+const browseSchema = z.object({
+  studentId: z.string().min(1),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  /** A `CUISINE_CATEGORIES` key, or absent for "what food is around?". */
+  category: z.string().max(40).optional(),
 });
 
 const fetchWebSchema = z.object({
@@ -213,9 +222,82 @@ class VenueMenuController {
         allowOutboundSearch: !!allowOutboundSearch,
       });
 
-      res.json({ success: true, ...result });
+      res.json({
+        success: true,
+        ...result,
+        // Which menu sources this student may use, so the app offers only the
+        // buttons that can actually work instead of failing on press.
+        sources: settings.sources,
+      });
     } catch (error) {
       console.error("Error resolving nearby venues:", error);
+      res.status(500).json({ success: false, message: "error:VENUE_SEARCH_FAILED" });
+    }
+  }
+
+  /**
+   * POST /api/venue-menus/browse — "what do you want to eat?"
+   *
+   * The STUDENT's discovery call, and the only one they can make. It reports
+   * food types nearby and, given a type, the places serving it.
+   *
+   * It binds NOTHING. There is no `allowOutboundSearch` flag here and no link
+   * written: browsing is a want expressed, not a table sat at, and the service
+   * rate-limits its own outbound searches by position precisely because a
+   * student can press far more often than a caretaker ever did.
+   */
+  async browse(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const parsed = browseSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ success: false, message: "error:INVALID_LOCATION" });
+        return;
+      }
+      const { studentId, latitude, longitude, category } = parsed.data;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, user.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "error:NO_STUDENT_ACCESS" });
+        return;
+      }
+
+      const student = await studentService.getStudentById(studentId);
+      if (!student) {
+        res.status(404).json({ success: false, message: "error:STUDENT_NOT_FOUND" });
+        return;
+      }
+
+      const settings = resolveVenueMenuSettings(
+        student.aacSettings?.venueMenus,
+        {
+          birthDate: student.birthDate,
+          languageLevel: student.aacSettings?.languageLevel ?? null,
+        },
+        new Date(),
+      );
+
+      // Two separate switches, two separate refusals: the feature can be on
+      // for a student whose caretaker does not want them starting searches.
+      if (!settings.enabled) {
+        res.status(403).json({ success: false, message: "error:VENUE_MENUS_DISABLED" });
+        return;
+      }
+      if (!settings.studentBrowse) {
+        res.status(403).json({ success: false, message: "error:VENUE_BROWSE_DISABLED" });
+        return;
+      }
+
+      const result = await venueBrowseService.browse({
+        studentId,
+        gps: { latitude, longitude },
+        settings,
+        category: category ?? null,
+      });
+
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Error browsing venues:", error);
       res.status(500).json({ success: false, message: "error:VENUE_SEARCH_FAILED" });
     }
   }

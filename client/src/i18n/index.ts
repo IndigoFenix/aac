@@ -24,13 +24,13 @@ export interface Language {
 
 export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'en', name: 'English', nativeName: 'English', direction: 'ltr' },
-  { code: 'he', name: 'Hebrew', nativeName: 'עברית', direction: 'rtl' },
   { code: 'es', name: 'Spanish', nativeName: 'Español', direction: 'ltr' },
   { code: 'pt', name: 'Portuguese', nativeName: 'Português', direction: 'ltr' },
   { code: 'fr', name: 'French', nativeName: 'Français', direction: 'ltr' },
   { code: 'ru', name: 'Russian', nativeName: 'Русский', direction: 'ltr' },
   { code: 'de', name: 'German', nativeName: 'Deutsch', direction: 'ltr' },
   { code: 'ar', name: 'Arabic', nativeName: 'العربية', direction: 'rtl' },
+  { code: 'he', name: 'Hebrew', nativeName: 'עברית', direction: 'rtl' },
   { code: 'zh', name: 'Mandarin', nativeName: '中文', direction: 'ltr' },
   { code: 'yue', name: 'Cantonese', nativeName: '粵語', direction: 'ltr' },
   { code: 'ko', name: 'Korean', nativeName: '한국어', direction: 'ltr' },

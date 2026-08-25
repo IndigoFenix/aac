@@ -238,7 +238,15 @@ export function createGeologyBaker(opts: GeologyBakerOpts = {}): GeologyBaker {
       // DERIVED (scale.ts `townExtentM`) and BAKED INTO `roadRoutes`, which is
       // this entry's payload — a stale entry would replay roads clipped at the
       // old literal while the live town grows to the new circle.
-      const cacheKey = `refine8:${baked.key}:${regionCell}`;
+      // "refine9" = food-scale-round ⑩: the derivation now speaks the VILLAGE
+      // tier (`tierExtentM("village", …)` — 120 m where refine8 clipped at the
+      // 450 m town body) and the village rows carry `tier`; same law as
+      // refine8, so the key moves with the derivation.
+      // "refine10" = food-scale-round STAGE β β3: SPILL FOUNDING — a second
+      // relaxed-threshold pass appends the villages the first-pass crowd
+      // overflow funds (refine.ts spill seam), and their roads/rivers ride
+      // this payload; a stale entry would replay the pre-spill site set.
+      const cacheKey = `refine10:${baked.key}:${regionCell}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
         // Villages ride the sites slot; roads/highways/rivers ride their own.
@@ -286,10 +294,15 @@ export function createGeologyBaker(opts: GeologyBakerOpts = {}): GeologyBaker {
       // "stitch9": growth phase A — cross-border village roads
       // port-terminate at both villages' extents.
       // "stitch10": growth phase C §1.2 — those extents are now the DERIVED
-      // number each region carries (`RefinedRegion.townExtentM`), so the
+      // number each region carries (`RefinedRegion.villageExtentM`), so the
       // stitched polylines in this payload move whenever the derivation does.
       // Same law as refine8: the clipped geometry IS the cached value.
-      const cacheKey = `stitch10:${baked.key}:${lo}:${hi}`;
+      // "stitch11": food-scale-round ⑩ — that number now speaks the VILLAGE
+      // tier (120 m, not the 450 m town body), so the ports moved again.
+      // "stitch12": food-scale-round STAGE β β3 — spill founding can grow
+      // either side's village set, and a stitch is a function of the PAIR's
+      // sets, so pre-spill stitch geometry is stale by construction.
+      const cacheKey = `stitch12:${baked.key}:${lo}:${hi}`;
       const hit = await cacheGet(db, cacheKey);
       if (hit) {
         return {

@@ -39,6 +39,7 @@ import { bubbleAnchorDraws, exemptSpeakers, type BubbleViewpoint } from "./bubbl
 import { cornerOrbitDelta } from "./spirit/corner-orbit.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
 import { buildObjectModel, objectModelKey, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
+import { setStickViewportPx } from "./creatures/stick-lod.js";
 import { naturalSourceOf } from "./products.js";
 import { useContractFor, useAnchorWorld, type ContactPart } from "./furniture-use.js";
 import {
@@ -2715,6 +2716,10 @@ export class World3DRenderer {
     // flight composer owns the GL size + the shared camera's aspect.
     this.vw = Math.max(1, width);
     this.vh = Math.max(1, height);
+    // The STICK LOD floors a limb's width at a pixel count, which needs the
+    // DRAWING-BUFFER height (logical × DPR). Pushed before the host early-out,
+    // because a host-mode view renders stick bodies exactly like an owner one.
+    setStickViewportPx(this.vh * (dpr || 1));
     if (this.host) return;
     this.renderer!.setPixelRatio(dpr || 1);
     this.renderer!.setSize(this.vw, this.vh, false);

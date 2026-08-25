@@ -95,6 +95,15 @@ const CENTRAL: Record<string, Lexeme> = {
   doll: { w: "boneca", g: "f" },
   // Creature SPECIES words (reference resolution: "falo com o/a {espécie}").
   person: { w: "pessoa", g: "f", plw: "pessoas" },
+  // KINSHIP AND ROLE WORDS (2026-08-24) — see en.ts.
+  mom: { w: "mamãe", g: "f" },
+  dad: { w: "papai", g: "m" },
+  baby: { w: "bebê", g: "m", plw: "bebês" },
+  girl: { w: "menina", g: "f" },
+  boy: { w: "menino", g: "m" },
+  friend: { w: "amigo", g: "m" },
+  teacher: { w: "professor", g: "m" },
+  street: { w: "rua", g: "f" },
   animal: { w: "animal", g: "m", plw: "animais" },
   creature: { w: "criatura", g: "f" },
   // Devices (§5) + their toggle states (agree with the device's gender).

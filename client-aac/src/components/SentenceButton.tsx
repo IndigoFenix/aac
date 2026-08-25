@@ -50,7 +50,7 @@ export interface SentenceButtonInput {
 
 /** The AAC Glyph wrapper, adapted to the shared GlyphRenderProps shape. */
 const AacGlyph = (p: GlyphRenderProps) => (
-  <Glyph glyph={p.glyph} fallback={p.fallback} noBackground={p.noBackground} ariaLabel={p.ariaLabel} />
+  <Glyph glyph={p.glyph} fallback={p.fallback} noBackground={p.noBackground} badges={p.badges} ariaLabel={p.ariaLabel} />
 );
 
 /**

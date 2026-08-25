@@ -12,10 +12,14 @@
  * player), airborne or grounded — flying low over a forest shows the forest.
  * Representation is the creature-lab plant-LOD ladder, instanced:
  *   FAR  — baked impostor billboards (bakePlantImpostor), one draw per species
+ *   MID  — the STICK tier (plant-lod's `stick`): trunk and boughs as thick
+ *          camera-facing lines, canopy as circles. Unlike a billboard it still
+ *          TURNS, so a mid-distance forest keeps its parallax for ~a quarter of
+ *          LOD1's vertices.
  *   NEAR — the species' real LOD1 static geometry (buildPlantLods), same
  *          placements, swapped in as the focus approaches (impostors RESOLVE
- *          into real trees).
- * Both representations share one set of deterministic placements per tile.
+ *          into stick trees, then into real trees).
+ * All three representations share one set of deterministic placements per tile.
  *
  * What grows where comes from the planet's ECOLOGY: each tile reads the biome
  * field at its center (grid.fields.biome — 0 barren, then DEFAULT_BIOSPHERE
@@ -32,13 +36,15 @@ import {
   bakePlantImpostor,
   makeImpostorMesh,
   plantMaterial,
+  plantStickMaterial,
   type PlantImpostor,
 } from "@shared/world-engine/creatures/plant-lod";
 
 const TILE_M = 200;          // tile edge (metres of arc at the face centre)
 const LOAD_R = 1_500;        // tiles stream in inside this of the ground focus
 const UNLOAD_R = 2_100;      // …and out past this (hysteresis)
-const NEAR_R = 260;          // impostors RESOLVE to real geometry inside this
+const NEAR_R = 260;          // sticks RESOLVE to real LOD1 geometry inside this
+const STICK_R = 700;         // …and impostors resolve to STICK trees inside this
 const BUILD_BUDGET = 2;      // tile builds per ensure() call (spread the cost)
 
 // Per-biome scatter counts per tile (biome field: 0 barren, 1 tree, 2 grass,
@@ -77,6 +83,10 @@ interface SpeciesAssets {
   realGeom: THREE.BufferGeometry;
   realMat: THREE.Material;
   realHeightM: number;
+  stickGeom: THREE.BufferGeometry;
+  /** NOT `realMat` — stick geometry stores capsule endpoints and only the
+   *  stick shader knows how to expand them (plant-lod's plantStickMaterial). */
+  stickMat: THREE.Material;
 }
 const assetsCache = new Map<string, SpeciesAssets>();
 
@@ -97,6 +107,8 @@ function speciesAssets(renderer: THREE.WebGLRenderer, species: string): SpeciesA
       realGeom: lods.lod1.geometry,
       realMat: plantMaterial(),
       realHeightM: Math.max(0.1, lods.bounds.max.y - lods.bounds.min.y),
+      stickGeom: lods.stick.geometry,
+      stickMat: plantStickMaterial(),
     };
     assetsCache.set(species, a);
   }
@@ -254,6 +266,9 @@ export function floraTreesNear(body: CelestialBody, world: THREE.Vector3, r: num
 }
 
 // ── Per-tile state ──────────────────────────────────────────────────────────
+/** Which representation a tile is drawing. Ordered far → near. */
+type FloraTier = "billboard" | "stick" | "real";
+
 interface Tile {
   /** Tile address (`face:tx:ty`) — prefix of its instances' twin keys. */
   key: string;
@@ -262,16 +277,21 @@ interface Tile {
   center: THREE.Vector3;
   placements: Map<string, Placement[]>;
   billboards: THREE.InstancedMesh[];
+  /** Built LAZILY on first entry into the rung and then KEPT — a tile crossing
+   *  a band toggles `visible`, never rebuilds (an InstancedMesh rebuild per
+   *  crossing is the churn the creature tiers learned about the hard way). */
+  sticks: THREE.InstancedMesh[] | null;
   real: THREE.InstancedMesh[] | null;
-  near: boolean;
-  /** The TREE meshes (billboard + near-real) — the suppression rewrite
-   *  targets; geomH is each mesh's un-scaled geometry height. */
+  tier: FloraTier;
+  /** The TREE meshes (every rung) — the suppression rewrite targets; geomH is
+   *  each mesh's un-scaled geometry height. */
   oak: { mesh: THREE.InstancedMesh; geomH: number }[];
 }
 
 export interface FloraField {
   /** Stream tiles around `focusWorld` (the surface point under the player);
-   *  tiles within NEAR_R of `nearWorld` swap impostors for real geometry.
+   *  tiles within STICK_R of `nearWorld` swap impostors for stick trees, and
+   *  within NEAR_R for real geometry.
    *  `exclude` skips tiles near a live town anchor (its own flora rules). */
   ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, exclude?: { world: THREE.Vector3; r: number }): void;
   /** SUPPRESS individual tree instances (twin keys `face:tx:ty:i` from
@@ -345,7 +365,7 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
     if (!sc) {
       // Open water — an empty tile entry so we don't re-test every pass.
       const dir = dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, _dir).clone();
-      tiles.set(key, { key, group: new THREE.Group(), center: dir.multiplyScalar(R), placements: new Map(), billboards: [], real: null, near: false, oak: [] });
+      tiles.set(key, { key, group: new THREE.Group(), center: dir.multiplyScalar(R), placements: new Map(), billboards: [], sticks: null, real: null, tier: "billboard", oak: [] });
       return;
     }
     const group = new THREE.Group();
@@ -357,7 +377,7 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
 
     const tile: Tile = {
       key, group, center: sc.dir.clone().multiplyScalar(R + sc.h0),
-      placements: sc.placements, billboards: [], real: null, near: false, oak: [],
+      placements: sc.placements, billboards: [], sticks: null, real: null, tier: "billboard", oak: [],
     };
     for (const [species, pls] of sc.placements) {
       if (!pls.length) continue;
@@ -378,31 +398,42 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
     tiles.set(key, tile);
   };
 
-  const setNear = (tile: Tile, near: boolean): void => {
-    if (tile.near === near) return;
-    tile.near = near;
-    if (near && !tile.real) {
-      tile.real = [];
-      for (const [species, pls] of tile.placements) {
-        if (!pls.length) continue;
-        const a = speciesAssets(renderer, species);
-        const isTree = species === FLORA_TREE_SPECIES;
-        const mesh = buildMesh(
-          pls, a.realHeightM, isTree ? a.realHeightM : GRASS_H, a.realGeom, a.realMat,
-          isTree ? oakHiddenAt(tile.key) : undefined,
-        );
-        mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
-        tile.group.add(mesh);
-        tile.real.push(mesh);
-        if (isTree) tile.oak.push({ mesh, geomH: a.realHeightM });
-      }
+  /** Build one rung's instanced meshes for a tile. The stick and real rungs
+   *  share the plant's own bounds, so both stand at the model's native height
+   *  and a rung swap never changes a tree's size. */
+  const buildRung = (tile: Tile, tier: "stick" | "real"): THREE.InstancedMesh[] => {
+    const out: THREE.InstancedMesh[] = [];
+    for (const [species, pls] of tile.placements) {
+      if (!pls.length) continue;
+      const a = speciesAssets(renderer, species);
+      const isTree = species === FLORA_TREE_SPECIES;
+      const mesh = buildMesh(
+        pls, a.realHeightM, isTree ? a.realHeightM : GRASS_H,
+        tier === "stick" ? a.stickGeom : a.realGeom,
+        tier === "stick" ? a.stickMat : a.realMat,
+        isTree ? oakHiddenAt(tile.key) : undefined,
+      );
+      mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
+      tile.group.add(mesh);
+      out.push(mesh);
+      if (isTree) tile.oak.push({ mesh, geomH: a.realHeightM });
     }
-    for (const m of tile.billboards) m.visible = !near;
-    if (tile.real) for (const m of tile.real) m.visible = near;
+    return out;
+  };
+
+  const setTier = (tile: Tile, tier: FloraTier): void => {
+    if (tile.tier === tier) return;
+    tile.tier = tier;
+    if (tier === "stick" && !tile.sticks) tile.sticks = buildRung(tile, "stick");
+    if (tier === "real" && !tile.real) tile.real = buildRung(tile, "real");
+    for (const m of tile.billboards) m.visible = tier === "billboard";
+    if (tile.sticks) for (const m of tile.sticks) m.visible = tier === "stick";
+    if (tile.real) for (const m of tile.real) m.visible = tier === "real";
   };
 
   const disposeTile = (tile: Tile, key: string): void => {
     for (const m of tile.billboards) { tile.group.remove(m); m.dispose(); }
+    if (tile.sticks) for (const m of tile.sticks) { tile.group.remove(m); m.dispose(); }
     if (tile.real) for (const m of tile.real) { tile.group.remove(m); m.dispose(); }
     tile.group.removeFromParent();
     tiles.delete(key);
@@ -450,7 +481,8 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
       for (const [key, tile] of tiles) {
         const d = tile.center.distanceTo(focusLocal);
         if (d > UNLOAD_R) { disposeTile(tile, key); continue; }
-        setNear(tile, nearLocal !== null && tile.center.distanceTo(nearLocal) < NEAR_R);
+        const dNear = nearLocal ? tile.center.distanceTo(nearLocal) : Infinity;
+        setTier(tile, dNear < NEAR_R ? "real" : dNear < STICK_R ? "stick" : "billboard");
       }
     },
     setTwinHidden(hidden) {

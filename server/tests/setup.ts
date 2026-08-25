@@ -14,6 +14,40 @@ dotenv.config();
 // Set test environment variables.
 process.env.NODE_ENV = 'test';
 
+// ── No live LLM credentials in a test worker ─────────────────────────────────
+// `dotenv.config()` above hands every worker the developer's REAL keys and GCP
+// service account, so any suite that slips past its provider mock bills a live
+// account instead of failing. That is not hypothetical: `startup-resolver.test.ts`
+// spent real Vertex money on every run, because `AAC_STARTUP_RESOLVER_TIMEOUT_MS=0`
+// issued the call before the "resolver disabled" guard could decline it. The
+// tests all PASSED — the only visible symptom was the abandoned request
+// outliving its worker and killing it with ERR_VM_MODULE_NOT_MODULE from deep
+// inside gaxios, intermittently, after the PASS line had already printed.
+//
+// So we take the keys away rather than trusting each suite to mock everything
+// it transitively reaches. Same reasoning as the DATABASE_URL redirect below:
+// a leak should cost an auth error, not an invoice. Removing the GCP project
+// also means `vertexClientOptions()` returns null, so the Vertex client — and
+// the google-auth token fetch that produced that crash — cannot be built here
+// at all.
+//
+// The real-LLM suites (`npm run test:llm`, `npm run test:ai`) share this file
+// via the base config and DO need the keys, so they opt back in explicitly.
+if (!process.env.ALLOW_REAL_LLM_CREDENTIALS) {
+  for (const key of [
+    'GEMINI_API_KEY',
+    'GEMINI_API_KEY_2',
+    'GOOGLE_CLOUD_PROJECT_ID',
+    'GOOGLE_CLOUD_PROJECT',
+    'GOOGLE_APPLICATION_CREDENTIALS_JSON',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+  ]) {
+    delete process.env[key];
+  }
+}
+
 // Force the connection at the TEST database, in every worker, BEFORE any test
 // file imports server/db.ts (setupFilesAfterEnv runs first). Configs that drop
 // `globalSetup` (jest.config.unit.js, jest.config.engine.js) never get the

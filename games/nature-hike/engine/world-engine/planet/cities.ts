@@ -12,10 +12,12 @@
 
 import type { BuiltPlanet } from "./planet-game.js";
 import {
-  classifyNode, constraintCeiling, markShadows,
-  type CeilingOpts, type CeilingReading, type FoundingSite, type NodeReading, type NodeTypingOpts,
+  classifyNode, constraintCeiling, findFoundingSites, markShadows,
+  type CeilingOpts, type CeilingReading, type CellGrid, type FoundingOpts, type FoundingSite,
+  type NodeReading, type NodeTypingOpts,
 } from "../kernel/cells/index.js";
 import { hinterlandJobs, cityLicense, type CityLicense } from "../kernel/civ/jobs.js";
+import { TIER_POP_CAP, type SettlementTier } from "../scale.js";
 
 /** GRID PERSONS one TIER-1 founding raises — a hamlet's worth, against the
  *  capital's hundred (`planet-game.ts PLANET_FOUND_POP`). The region and
@@ -27,9 +29,90 @@ import { hinterlandJobs, cityLicense, type CityLicense } from "../kernel/civ/job
  *  border — one direction only. */
 export const REGION_FOUND_POP = 25;
 
+// ── SPILL FOUNDING (food-scale-round.md "# STAGE β", survey correction 8 +
+// β3) — the user's law: "the region answers with more towns, never
+// overstuffed ones". A founding site's potential crowd is the SAME formula
+// `foundCitiesFromSites` uses for startPop — min(2000, round(density × 5)),
+// pre-visit-clamp — but the village tier seats only `TIER_POP_CAP.village`
+// of it. The excess is a real crowd the land wanted to seat; Stage β's
+// answer is that it founds MORE villages on marginal land instead of
+// inflating any single row past its tier.
+
+/** THE ONE HONEST LEVER (correction 8): the first scan already accepts every
+ *  spacing-disjoint cell clearing gateAThreshold, so extra sites can only
+ *  come from BELOW-threshold land — pressure colonizes marginal land, a
+ *  daughter settlement provisioned by its mother clears a lower founding
+ *  bar (historically honest). 0.5 is the FLOOR — no deeper relaxation —
+ *  and spacing NEVER shrinks: the lattice is the priced staple catchment
+ *  (`townSpacingM`), not a crowding knob. */
+export const SPILL_THRESHOLD_RELAX = 0.5;
+
+/** THE REGION'S SPILL BUDGET: Σ over the FIRST-PASS interior sites of the
+ *  crowd the village tier turns away — `max(0, min(2000, round(density × 5))
+ *  − TIER_POP_CAP.village)` per site. The 2000 sanity clamp applies BEFORE
+ *  the subtraction (a metropolis-dense site owes at most 1 860, exactly as
+ *  its startPop could never exceed 2 000), and the per-site floor of 0 means
+ *  a hamlet-sized site owes nothing.
+ *
+ *  SINGLE DISCHARGE: spill sites do NOT recurse — their own potential never
+ *  re-enters this sum. The budget is the first-pass truth about the land;
+ *  a recursive pass would mint crowd from the relaxation itself (each
+ *  relaxed round funding the next), which is exactly the overstuffing the
+ *  user's law forbids. One extra pass, done. */
+export function spillBudget(sites: ReadonlyArray<Pick<FoundingSite, "density">>): number {
+  let sum = 0;
+  for (const s of sites) {
+    sum += Math.max(0, Math.min(2000, Math.round(s.density * 5)) - TIER_POP_CAP.village);
+  }
+  return sum;
+}
+
+/** THE SECOND PASS (β3): re-scan at the relaxed threshold with the SAME
+ *  spacing and the first-pass sites as occupied fixed points, then take
+ *  rank-ordered marginal sites until their seats (`TIER_POP_CAP.village`
+ *  each) cover the budget — `taken × 140 ≥ budget`, i.e. ceil(budget/140)
+ *  sites — or candidates exhaust. A candidate above the original threshold
+ *  cannot reappear here: anything spacing-disjoint from the whole first-pass
+ *  set would already have been accepted by that pass's greedy sweep, so
+ *  every taken site is genuinely marginal land.
+ *
+ *  `filter` mirrors the caller's post-scan site veto (refine's ice filter)
+ *  and runs BEFORE the take, so a vetoed cell never consumes seats of the
+ *  budget. Returns candidates too — the ledger's measurement seam. */
+export function spillFoundingSites(
+  grid: CellGrid,
+  founding: FoundingOpts,
+  firstPass: readonly FoundingSite[],
+  budget: number,
+  filter?: (s: FoundingSite) => boolean,
+): { candidates: FoundingSite[]; taken: FoundingSite[] } {
+  if (budget <= 0) return { candidates: [], taken: [] };
+  const relaxed = findFoundingSites(grid, {
+    ...founding,
+    threshold: founding.threshold * SPILL_THRESHOLD_RELAX,
+    occupied: [
+      ...(founding.occupied ?? []),
+      ...firstPass.map(s => [s.x, s.y] as [number, number]),
+    ],
+  });
+  const candidates = filter ? relaxed.filter(filter) : relaxed;
+  const taken = candidates.slice(
+    0, Math.min(candidates.length, Math.ceil(budget / TIER_POP_CAP.village)),
+  );
+  return { candidates, taken };
+}
+
 export interface PlanetCity {
   /** The substrate cell the city sits on — its identity AND its town seed. */
   cell: number;
+  /** THE SETTLEMENT TIER this row founds at (food-scale-round ⑩): names the
+   *  BODY the visited town builds (`REAL_TIER_EXTENT_M` through plan.ts's
+   *  `tierExtentM` seat). The village tier of `planet/refine.ts` /
+   *  `planet/border.ts` stamps `"village"`; tier-0 capitals DELIBERATELY
+   *  carry none — absent = `"town"`, byte-identical to everything that
+   *  existed before the tier was threaded (the `city` tier is unmeasured;
+   *  see `TIER_POP_CAP`). */
+  tier?: SettlementTier;
   /** Deterministic display name (unique within the planet). */
   name: string;
   /** Unit direction from the planet's center (topo.pos3). */

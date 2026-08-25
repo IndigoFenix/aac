@@ -36,6 +36,10 @@ import {
 } from "../../freight";
 import { needFillDays, townSpacingM, type WorldScale } from "../../scale";
 import { carryCapacityOf } from "../town/scope-shape";
+import { BAND_PREFIX, bandScopeId, type ScopeId } from "../town/scope";
+import {
+  registerFoldCodec, type FoldCodec, type FoldCtx, type FoldRecord, type FoldRefusal,
+} from "../town/fold";
 
 /** One wild species' presence on the grid: its key, and the capacity
  *  field its crowds are read off (the base `forage` for humans; a
@@ -152,9 +156,31 @@ export function gatherBand(
  * returned crowd is the composition's birth population (feed `mix` to
  * harvestStartpop — who was in the band decides who founds). The band
  * is spent; callers drop their reference.
+ *
+ * ⚖️ B-③ NOTHING EVAPORATES (band-settlement-round.md): the banked STORE
+ * rides the settle result. It used to be dropped here — the standing F-①
+ * violation fold-round.md:29 named — so the caller that discards it now
+ * has to do it in writing. `settledTownStack` below is the units bridge.
  */
-export function settleBand(band: Band): { total: number; mix: Record<string, number> } {
-  return { total: band.size, mix: band.mix };
+export function settleBand(band: Band): { total: number; mix: Record<string, number>; store: number } {
+  return { total: band.size, mix: band.mix, store: band.store };
+}
+
+/**
+ * ⚖️ B-③ THE UNITS BRIDGE, F-③'s integral at the settle fold: rations →
+ * trade-rung stock units, `units = rations / valueDensity`. For the staple
+ * the conversion is the IDENTITY — one bulk unit IS one ration of staple
+ * (freight.ts's caloric anchor, valueDensity ≡ 1) — pinned for the first
+ * time here, because a settling band is the first place a banked ration
+ * count crosses onto a stack. The row is keyed by the freight GOOD (the
+ * trade rung's own vocabulary — a partner shelf speaks "food", never
+ * "apple"); the good→glyph split belongs to the EXPANDED side's placer.
+ */
+export function settledTownStack(
+  store: number, good: string, freight: Pick<Freight, "valueDensity">,
+): Record<string, number> {
+  if (store <= 0) return {};
+  return { [good]: store / freight.valueDensity };
 }
 
 /**
@@ -488,6 +514,14 @@ export interface FoundingScanOpts extends CarryOpts {
   minSpacingCapCells?: number;
   /** Kept when the tier declares no `cellSizeM` (see above). */
   minSpacing?: number;
+  /** The TIER CAPACITY this scan founds TOWARD (`scale.ts TIER_POP_CAP`) —
+   *  the souls the settlement grows to house, NOT the founding party
+   *  (`foundPop` is the take; this is what the take becomes). The staple
+   *  catchment prices the settlement the site turns into: spacing becomes
+   *  `max(declared lattice, catchmentSpacingM(popCap))`, so tiers big enough
+   *  to out-eat their lattice stand further apart (food-scale-round.md ⑩).
+   *  Absent ⇒ the declared lattice alone, byte-identical. */
+  popCap?: number;
 }
 
 /**
@@ -504,7 +538,7 @@ export function foundingScan(opts: FoundingScanOpts): FoundingOpts {
         opts.minSpacingCapCells ?? Infinity,
         Math.max(
           opts.minSpacingFloorCells ?? 1,
-          Math.round(townSpacingM(opts.scale) / opts.cellSizeM),
+          Math.round(townSpacingM(opts.scale, opts.popCap) / opts.cellSizeM),
         ),
       )
     : (opts.minSpacing ?? 1);
@@ -515,3 +549,151 @@ export function foundingScan(opts: FoundingScanOpts): FoundingOpts {
     maxHarvest: opts.foundPop,
   };
 }
+
+// ─────────────────── THE BAND CODEC (band-settlement-round.md B-①/B-②)
+//
+// ⚖️ B-① ONE COLLECTIVE: a band of people and a herd of animals are the
+// same object (scope-definitions.md §Mobility — "a band is a herd of
+// people"); `Band.mix` was species-generic from birth, so the codec is
+// written once and never forks per species.
+//
+// ⚖️ B-② FORMATION IS CONDENSE, DISPERSAL IS EXPAND. `gatherBand` and
+// `disperseBand` above ARE the two halves and stay byte-unchanged (F1's
+// wild precedent: the codec wraps, it does not rewrite). The kind joins
+// the exact-conservation family with the same split wild-area uses:
+// `stockOf` answers the STORE (goods), `bandCounts` answers the MIX
+// (populations) — people are the counts half of the audit, never a row
+// in a glyph sum.
+//
+// The scope id is `band:<cell>`: a band's identity is where it stands,
+// exactly as a city is an ADDRESS (planet/cities.ts's law) — live bands
+// never share a cell (the occupied set excludes), and a stable identity
+// across walks is the migration round's question, not this one's.
+
+/** A band's scope id — its gather cell IS its key. */
+export function bandScopeIdOf(band: Band): ScopeId {
+  return bandScopeId(String(band.cell));
+}
+
+/** The condensed payload: the band itself (aliased, not copied — the
+ *  record IS the entity, wild's own convention), plus the staple its
+ *  store is denominated in so `stockOf` stays pure (F-③'s bridge rides
+ *  the record, not a registry lookup at read time). */
+export interface BandRecord {
+  band: Band;
+  /** The freight GOOD the store is denominated in (trade-rung row key). */
+  good: string;
+  /** Rations-worth per unit of that good (staple ≡ 1 — the anchor). */
+  valueDensity: number;
+}
+
+/** The codec's context — what formation/dispersal need from the civ host. */
+export interface BandFoldCtx extends FoldCtx {
+  grid: CellGrid;
+  wilds: WildSpecies[];
+  /** The founding box radius (gather and disperse both work this box). */
+  radius: number;
+  /** FOUND SMALL cap on a formation (GatherOpts.maxHarvest). */
+  maxHarvest?: number;
+  /** The staple the record's store speaks (default the registry's food). */
+  staple?: { good: string; freight: Freight };
+  /**
+   * ⚖️ F-① AT THE DISPERSAL: a band walking back into the scatter takes
+   * its people WITH it, but a banked store cannot ride — the scatter
+   * keeps no books ("wilderness is the absence of memory"; nature is
+   * nobody's). Dropping it must therefore be a SIGNED decision, never a
+   * silent one: expand REFUSES a store-carrying record unless the caller
+   * sets this flag, owning the waste (the frontier's "walk away — no
+   * store binds you" arm is exactly that owner).
+   */
+  wasteStore?: boolean;
+}
+
+const bandRefusal = (id: ScopeId, blockers: readonly string[], note: string): FoldRefusal =>
+  ({ refused: true, kind: "band", id, blockers, note });
+
+function condenseBandPayload(id: ScopeId, ctx: BandFoldCtx): BandRecord | FoldRefusal {
+  if (!id.startsWith(BAND_PREFIX)) {
+    return bandRefusal(id, [], `not a band id ("${id}")`);
+  }
+  const cell = Number(id.slice(BAND_PREFIX.length));
+  const cells = ctx.grid.cols * ctx.grid.rows;
+  if (!Number.isInteger(cell) || cell < 0 || cell >= cells) {
+    return bandRefusal(id, ["cell"], `"${id}" names no cell on this grid`);
+  }
+  const site: FoundingSite = {
+    x: cell % ctx.grid.cols, y: (cell / ctx.grid.cols) | 0, cell, density: 0, score: 0,
+  };
+  const staple = ctx.staple ?? { good: "food", freight: freightOf("food") };
+  const band = gatherBand(ctx.grid, ctx.wilds, site, {
+    radius: ctx.radius,
+    ...(ctx.maxHarvest !== undefined ? { maxHarvest: ctx.maxHarvest } : {}),
+  });
+  return { band, good: staple.good, valueDensity: staple.freight.valueDensity };
+}
+
+function expandBandPayload(
+  record: FoldRecord<BandRecord>, ctx: BandFoldCtx,
+): ScopeId[] | FoldRefusal {
+  const { band, good } = record.payload;
+  if (band.store > 0 && !ctx.wasteStore) {
+    return bandRefusal(record.id, ["store"],
+      `the band banks ${band.store} rations of ${good} the scatter cannot keep — ` +
+      `settle it, or own the waste (wasteStore)`);
+  }
+  // ⚖️ A REFUSAL MUST NOT HALF-HAPPEN (F4's ordering pin): dispersal
+  // mutates tile by tile, so the room is measured BEFORE the first person
+  // steps off. The dry-run is disperseBandFully's own arithmetic — free =
+  // max − field, summed over the whole grid it escalates to.
+  for (const w of ctx.wilds) {
+    const remaining = band.mix[w.key] ?? 0;
+    if (remaining <= 0) continue;
+    const arr = ctx.grid.fields[w.field];
+    if (!arr) {
+      return bandRefusal(record.id, [w.key],
+        `this grid has no "${w.field}" field to take ${w.key} back`);
+    }
+    const max = ctx.grid.spec.vars?.find(v => v.name === w.field)?.max ?? Infinity;
+    if (max !== Infinity) {
+      let free = 0;
+      for (let i = 0; i < arr.length && free < remaining; i++) free += max - arr[i];
+      if (free < remaining) {
+        return bandRefusal(record.id, [w.key],
+          `the world holds room for ${free} of ${remaining} ${w.key} — full at capacity`);
+      }
+    }
+  }
+  const unplaced = disperseBandFully(ctx.grid, ctx.wilds, band, ctx.radius);
+  if (unplaced > 0) {
+    // Unreachable after the dry-run (same arithmetic) — a bug, not a state.
+    throw new Error(`expandBandPayload: ${unplaced} unplaced after headroom check`);
+  }
+  // The crowd returned to the scatter substrate; no discrete scope stands
+  // (F2's record: expanded-id kinds need not match the record's kind — an
+  // empty answer is the honest one for a dissolution into fields).
+  return [];
+}
+
+/** The counts half of the audit — the `wildAreaCounts` twin: who is in
+ *  the record, by species. Populations are never rows in a glyph sum. */
+export function bandCounts(record: BandRecord): Record<string, number> {
+  return { ...record.band.mix };
+}
+
+function bandRecordStock(record: BandRecord): Record<string, number> {
+  return settledTownStack(record.band.store, record.good, { valueDensity: record.valueDensity });
+}
+
+/**
+ * THE BAND CODEC — registered at module load (importing this module, which
+ * every band consumer already does for `gatherBand`/`settleBand`, makes
+ * `kind: "band"` foldable through the generic dispatch).
+ */
+export const BAND_CODEC: FoldCodec<BandRecord, BandFoldCtx> = {
+  kind: "band",
+  condense: condenseBandPayload,
+  expand: expandBandPayload,
+  stockOf: bandRecordStock,
+};
+
+registerFoldCodec(BAND_CODEC);

@@ -17,7 +17,8 @@
     "scale": {
       "rotation": 360,
       "sleep_fraction": 0.05,
-      "gap_compression": 30,
+      "gap_compression": 10,
+      "resource_compression": 7.5,
       "locomotion": 2
     }
   }

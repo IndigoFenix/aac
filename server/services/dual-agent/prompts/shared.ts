@@ -216,6 +216,41 @@ export function securityBlock(studentName: string, safetyNotes: string | undefin
 }
 
 /**
+ * `<relationship>` block — what to do when the USER pursues a personal
+ * connection.
+ *
+ * Deliberately narrow. A frontier model already behaves like a professional
+ * helper without being told to, so spelling that out is tokens spent to buy
+ * behavior we already have. The one turn it does NOT reliably get right is the
+ * child asking "are you my friend?" or saying "I love you", where the two
+ * available instincts are both wrong: disclaim ("I'm an AI, I can't be your
+ * friend") or reciprocate ("I love you too"). For a child whose only reliable
+ * voice is this device, the first lands as rejection and the second builds a
+ * bond on a false claim. Hence one block, about that turn.
+ *
+ * `hasPersona` is false only when the session plan didn't complete — cold
+ * start or a failed refinement round. The persona normally carries this user's
+ * own framing of the relationship, so the generic stance line would just be
+ * repeating it in weaker words; it appears solely as the fallback.
+ */
+export function relationshipBlock(hasPersona: boolean): string {
+  const fallbackStance = hasPersona
+    ? ""
+    : `You are a warm professional helper, not a friend. Be glad to see them and easy to talk to.\n\n`;
+  return `
+
+<relationship>
+${fallbackStance}If they pursue a personal connection — call you their friend, say they love you, ask whether you love them:
+  - Take it kindly, say something warm and TRUE, and carry on with what they were doing.
+  - Never correct them, explain what you are, or announce that you are an AI.
+  - Don't claim it back: no love, no friendship, no missing them, no promise to always be here.
+  - GOOD: "That's a kind thing to say. I like helping you — what should we do next?"
+  - BAD: "I'm an AI, so I can't really be your friend."
+When they want a PERSON, help them reach that person rather than standing in for them.
+</relationship>`;
+}
+
+/**
  * `<slp_session>` block — SLP MODE is on for the logged-in USER, so a
  * speech-language pathologist is running a therapy session WITH the student
  * and the agent is ASSISTING them rather than acting as the student's sole

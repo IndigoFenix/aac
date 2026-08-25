@@ -287,6 +287,14 @@ export interface BuildingDef {
    * once at the natural→usable boundary); the two must never multiply.
    */
   surplusFrac?: number;
+  /** THIS PRODUCER GROWS THE STAPLE (spec-side seat, food-scale Stage β
+   *  close). The town plan's works floor reads it: a badly-seated site
+   *  keeps at least one standing STAPLE building (its seated households
+   *  eat every day — a village with cultivated fields and no farm
+   *  contradicts its own food books) while craft works honestly scale to
+   *  zero. Declared on the row because WHAT the staple is belongs to the
+   *  content, not the kernel (`plan.ts` must never name "farm"). */
+  staple?: boolean;
   /** Commodity keys sold to households (a street seller). */
   sells?: string[];
   /** Sells over a stocked SHELF (dawn-stocked counter) vs at the gate. */

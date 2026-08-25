@@ -49,4 +49,17 @@ export interface ISpeakerAgent {
   sendConversationHistory(turns: Array<{ role: "user" | "model"; text: string }>): void;
 
   setDebugSessionContext(sessionId: string, debugMode: boolean, agentLabel?: string): void;
+
+  /**
+   * Settle an `open_app` whose functionResponse was HELD while the server
+   * decided (see AppOpenRequestedEvent.toolCallId). Called from routeAppOpen on
+   * every exit path — opened, refused, failed — so the model learns the outcome
+   * BEFORE it composes the sentence announcing it.
+   *
+   * A no-op when `callId` is undefined (student press, Board Manager open) or
+   * when the hold already timed out. Optional on the interface because only the
+   * Live path holds acks; the HTTP Speaker answers tools inline and has nothing
+   * to settle.
+   */
+  resolveAppOpen?(callId: string | undefined, verdict: { opened: boolean; note?: string }): void;
 }

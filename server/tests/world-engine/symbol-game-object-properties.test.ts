@@ -81,11 +81,20 @@ describe("propertiesOf — spec-derived, never board-authored", () => {
     expect(propertiesOf("refrigerator")).toEqual(p); // pure
   });
 
-  it("core engine concepts are EXEMPT — no spec, no properties, by design", () => {
-    for (const core of ["room", "building", "animal", "city", "water", "home"]) {
+  it("core engine concepts are EXEMPT — no spec REQUIRED, by design", () => {
+    // The frame things sit inside: a room is not an object with a function, so
+    // nothing has to tag it and nothing does.
+    for (const core of ["room", "building", "animal", "city", "home"]) {
       expect(CORE_CONCEPTS.has(core)).toBe(true);
       expect(propertiesOf(core)).toEqual([]);
     }
+    // EXEMPT IS NOT FORBIDDEN (2026-08-24). `water` is a core concept — the
+    // simulation models it directly, no goods row — and it is also the first
+    // thing a thirsty child asks for, so the spec's category map calls it a
+    // drink and `propertiesOf` reports one. The law is that a core concept
+    // NEEDS no spec, not that a category may never name it.
+    expect(CORE_CONCEPTS.has("water")).toBe(true);
+    expect(propertiesOf("water")).toEqual(["drink"]);
   });
 });
 

@@ -24,6 +24,19 @@ export interface StructuredRequest {
   useSearch?: boolean;
   searchContextSize?: 1 | 2 | 3;
   vectorStoreId?: string;
+  /**
+   * This work is BACKGROUND: nobody is waiting on a screen for it.
+   *
+   * On Vertex it sends `X-Vertex-AI-LLM-Request-Type: shared`, which keeps the
+   * call on pay-as-you-go and out of any Provisioned Throughput reservation.
+   * The reservation exists for the live path — a child pressing a button and
+   * waiting for a board — and a session summary or a menu extraction must never
+   * consume capacity that a waiting child needs.
+   *
+   * It is also the honest label: these calls can be retried, delayed, or lost
+   * without anyone noticing, which is exactly what shared capacity offers.
+   */
+  background?: boolean;
 }
 
 /**

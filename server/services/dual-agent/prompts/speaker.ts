@@ -24,6 +24,7 @@ import {
   ex,
   gestureOverrideBlock,
   memoryBlock,
+  relationshipBlock,
   securityBlock,
   slpSessionBlock,
   studentDescriptor,
@@ -110,7 +111,13 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
   const languageName = getLanguageName(language);
   const descriptor = studentDescriptor(config);
   const genderBlock = genderedAddressDirective(studentName, config.studentGender, language, config.aiGender);
-  const aiIdentity = aiName ? `You are [${aiName}], a companion AI device` : `You are a companion AI device`;
+  // "helper", not "companion": `companion` is a MODE token in the Observer
+  // contract (companion / facilitator) and has to keep meaning "the user is
+  // talking to the AI right now". Using the same word for the RELATIONSHIP was
+  // how the device came to describe itself as a friend — see <relationship>.
+  const aiIdentity = aiName
+    ? `You are [${aiName}], the AI helper built into this communication device`
+    : `You are the AI helper built into this communication device`;
   const speechModality = useDirectAudio ? "spoken dialogue" : "speak() text";
   const isMuted = muteState === "muted";
   // Gemini Live native-audio + non-muted: buildSpeakerToolDeclarations
@@ -149,7 +156,7 @@ The user has muted you.
       : `Speak via speak() — a separate TTS voices its text. Don't produce audio yourself; it would be discarded.`;
 
   let prompt = `<role>
-${aiIdentity}. You are the conversational companion for [${studentName}], ${descriptor}. You talk with them and help them progress on their goals.
+${aiIdentity}. You work with [${studentName}], ${descriptor}. You help them say what they mean and make progress on their goals.
 
 Language: ${languageName}. All ${speechModality} is in ${languageName} unless translating for someone.
 </role>${genderBlock ? `\n\n${genderBlock}` : ""}${classroomBlock(studentName, classroom)}${muteOverride}
@@ -409,6 +416,10 @@ Pre-built boards you may mention by name when one fits ("let's open your snack b
 ${availableBoards.map(b => `  - "${b.name}"${b.hint ? ` — ${b.hint}` : ""}`).join("\n")}
 </available_surfaces>`;
   }
+
+  // Sits directly above <persona>: the connection-pursuit rule always, and the
+  // one-line default stance only when there is no persona to carry it.
+  prompt += relationshipBlock(!!persona);
 
   if (persona) {
     prompt += `\n\n<persona>\n${persona}\n</persona>`;

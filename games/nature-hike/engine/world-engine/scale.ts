@@ -55,6 +55,28 @@ export const REAL_TIER_EXTENT_M = {
 export type SettlementTier = keyof typeof REAL_TIER_EXTENT_M;
 
 /**
+ * THE TIER CAPACITIES — how many souls a settlement of each tier can HOUSE,
+ * the popCap the founding scan founds TOWARD (`kernel/civ/bands.ts
+ * foundingScan`: the staple catchment prices the settlement the site becomes, not
+ * the founding party).
+ *
+ * These are MEASURED street-tree capacities, not design estimates
+ * (food-scale-round.md LANDING NOTE, step-0 measurement 2026-08-15): headless
+ * `buildTownPlay` at each tier's extent, 4 seeds, mean frontage slots ×
+ * `HOUSEHOLD` 5, at dial `resource_compression 20` / `gap_compression 10`.
+ * The town row is the measured 1 104 (Q3's analytic lower bound was 1 065 —
+ * the ladder is ask-bound above E ~ 300, so the analytic figure survives only
+ * as a floor). `city` is UNMEASURED — carried from the design table until an
+ * extent that large is reachable in play.
+ */
+export const TIER_POP_CAP: Record<SettlementTier, number> = {
+  hamlet: 14,
+  village: 140,
+  town: 1_104,
+  city: 5_000,
+};
+
+/**
  * THE GEOMETRIC FLOOR, stated once so no tier is declared under it by
  * accident: the street tree grows to `gate = extentM − BUILT_MARGIN 46`
  * (`kernel/town/streets.ts`), and below `PLAZA_R 30` plus two lot pitches the
@@ -760,8 +782,8 @@ export function serviceRadiusM(
  * (`metabolism 1`) stay real, so EVERY food-PACED distance is 1/360 of its
  * real self. That is the shrink this function refuses to inherit.
  *
- * BUT FOOD DOES ENTER — THROUGH THE SHED, NEVER THROUGH THE DAY. `popCap`
- * turns the declared lattice into `max(declared, foodShedSpacingM(popCap))`:
+ * BUT FOOD DOES ENTER — THROUGH THE CATCHMENT, NEVER THROUGH THE DAY. `popCap`
+ * turns the declared lattice into `max(declared, catchmentSpacingM(popCap))`:
  * how far apart these settlements must stand for each to have LAND enough to
  * eat. That term is pure AREA — population × acres ÷ arable share — with no
  * clock in it at all, which is exactly why it is allowed in where
@@ -771,12 +793,12 @@ export function serviceRadiusM(
 export function townSpacingM(scale: WorldScale, popCap?: number): number {
   const declared = (REAL_TOWN_SPACING_M * scale.locomotion) / scale.gapCompression;
   if (popCap === undefined || !(popCap > 0)) return declared;
-  return Math.max(declared, foodShedSpacingM(popCap, scale));
+  return Math.max(declared, catchmentSpacingM(popCap, scale));
 }
 
 /**
  * Share of a settlement's territory that is FIELD. The rest is wood, pasture,
- * water and rock — the wilds the resource shed needs, and the reason a town's
+ * water and rock — the wilds the resource catchment needs, and the reason a town's
  * hinterland is not a disc of wheat. Earth-temperate anchor (the F4 pattern);
  * a biome that knows better is the spec's business.
  */
@@ -791,7 +813,7 @@ export const REAL_ARABLE_FRACTION = 0.25;
 export const REAL_FOOD_HEADROOM = 0.3;
 
 /**
- * THE FOOD SHED: metres between neighbouring settlements of `pop` souls at
+ * THE STAPLE CATCHMENT: metres between neighbouring settlements of `pop` souls at
  * which each still has the LAND to feed itself, at this world's conversion
  * dial (food-scale-round.md Q3).
  *
@@ -803,16 +825,21 @@ export const REAL_FOOD_HEADROOM = 0.3;
  * ```
  *
  * ⚖️ THE FAMINE TRAP BECOMES UNREPRESENTABLE. A world that declares a tight gap
- * and a stingy `resource_compression` no longer starves — the shed pushes its
+ * and a stingy `resource_compression` no longer starves — the catchment pushes its
  * towns apart until they can eat. Same inversion `serviceRadiusM` performs one
  * rung down: the need sizes the space, the space is not hand-tuned and then
  * hoped over.
  *
  * ⚖️ σ IS THE PRODUCER'S, NOT A DIAL (`REAL_SURPLUS_FRAC`) — `staple` here,
- * because a settlement's shed is sized by its staple, and `resource_compression`
+ * because a settlement's catchment is sized by its staple, and `resource_compression`
  * is applied ONCE inside `farmAreaPerPersonM2` and never multiplied into σ.
+ *
+ * ⚖️ "SOURCE" AND "CATCHMENT" ARE ROLES, NOT TYPES — the same region that is
+ * a settlement's catchment for its staple is a source when goods are drawn
+ * FROM it (a depot both stores the harvest locally and is the source it is
+ * distributed from).
  */
-export function foodShedSpacingM(
+export function catchmentSpacingM(
   pop: number,
   scale: WorldScale,
   tier: FarmTechTier = "ancient",

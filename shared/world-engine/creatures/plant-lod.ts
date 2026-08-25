@@ -13,7 +13,13 @@
 //    no separately-authored LOD models. LOD1 replaces individual leaf
 //    cards with a few "canopy blob" ellipsoids (the chunky flat-shaded
 //    look survives; the fill rate doesn't care).
-// 3. Beyond LOD1 the kind bakes ONCE into a small unlit texture and
+// 3. Between LOD1 and the billboard sits the STICK tier (stick-lod.ts):
+//    the trunk and main boughs as thick camera-facing lines, the canopy
+//    as a few circles. It is the same prefix truncation taken further —
+//    ~220 verts for an oak against LOD1's ~800 — and unlike a billboard
+//    it still turns, so a tree keeps its parallax while it costs almost
+//    nothing.
+// 4. Beyond the sticks the kind bakes ONCE into a small unlit texture and
 //    becomes a crossed-plane billboard (the exact machinery scatter.ts
 //    already instances by the thousand — this texture simply replaces
 //    the hand-drawn silhouette).
@@ -29,6 +35,7 @@ import { buildSkeleton } from "./skeleton";
 import { buildCreatureMesh } from "./mesh";
 import { MAX_GROWTH_SEGMENTS } from "./growth";
 import { makeCrossedPlanesGeometry } from "./crossed-planes";
+import { buildStickGeometry, creatureSticks, stickMaterial } from "./stick-lod";
 import { litMaterial, surfaceMaterial, type LitMaterial } from "../materials";
 
 /** Default tier budgets (segments). LOD1 is a PREFIX of LOD0. */
@@ -55,7 +62,11 @@ export interface PlantLods {
   lod0: PlantLodGeometry;
   /** Mid: prefix budget, leaves replaced by canopy blobs. */
   lod1: PlantLodGeometry;
-  /** Creature-local AABB (shared by both tiers — LOD1 ⊂ LOD0). */
+  /** Far: the plant as thick lines + canopy circles (stick-lod.ts). Needs
+   *  `plantStickMaterial()`, NOT `plantMaterial()` — the geometry stores
+   *  capsule endpoints, and only the stick shader knows how to expand them. */
+  stick: PlantLodGeometry;
+  /** Creature-local AABB (shared by all tiers — each is a subset of LOD0). */
   bounds: { min: THREE.Vector3; max: THREE.Vector3 };
   dispose(): void;
 }
@@ -238,6 +249,7 @@ export function buildPlantLods(blueprint: Blueprint): PlantLods {
     blobDenseLeaves: true,
   });
   const l1geo = appendCanopyBlobs(blueprint, l1raw.geometry);
+  const stickGeo = buildPlantSticks(blueprint);
   const stats = (g: THREE.BufferGeometry): PlantLodGeometry => ({
     geometry: g,
     vertices: g.getAttribute("position").count,
@@ -246,12 +258,32 @@ export function buildPlantLods(blueprint: Blueprint): PlantLods {
   return {
     lod0: stats(ensureNormals(l0.geometry)),
     lod1: stats(ensureNormals(l1geo)),
+    // NOT run through ensureNormals: the stick builder supplies placeholders
+    // deliberately (the real normal is per-fragment), and computeVertexNormals
+    // over capsule ANCHOR points would derive nonsense from degenerate tris.
+    stick: stats(stickGeo),
     bounds: l0.bounds,
     dispose() {
       l0.geometry.dispose();
       l1geo.dispose();
+      stickGeo.dispose();
     },
   };
+}
+
+/** The plant as thick lines + canopy circles, at the FULL growth budget —
+ *  stick-lod.ts truncates to its own prefix, and taking the full structure
+ *  here keeps the trunk and boughs identical to the ones LOD0 lofts. */
+export function buildPlantSticks(blueprint: Blueprint): THREE.BufferGeometry {
+  const skel = buildSkeleton(blueprint, undefined, undefined, PLANT_LOD_BUDGETS.lod0);
+  return buildStickGeometry(creatureSticks(skel, blueprint));
+}
+
+/** The material a stick-tier plant MUST use (see PlantLods.stick). One shared
+ *  instance serves every kind, exactly as `plantMaterial` does for the lofts —
+ *  but UNLIT, like the impostor below it rather than the lofts above it. */
+export function plantStickMaterial(): THREE.Material {
+  return stickMaterial();
 }
 
 /** One shared material for every static plant (vertex colors carry the

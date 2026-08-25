@@ -15,7 +15,15 @@
  *                growth = birth − death − starvation×(1 − diet fill),
  *                with the same pen-capacity headroom domestic herds use
  *                when the policy declares one. Scarcity self-limits the
- *                town — Malthus needs no artificial cap.
+ *                town — Malthus needs no artificial cap. A host that KNOWS
+ *                its seat count may still declare a crowding ceiling
+ *                (`opts.capacity`), and that number is not artificial
+ *                either: it is derived from the street-tree capacity the
+ *                settlement's tier actually houses (scale.ts
+ *                `TIER_POP_CAP` — measured frontage slots × HOUSEHOLD —
+ *                amplified so equilibrium lands ON the seats;
+ *                food-scale-round.md STAGE β1/β1b). A host that declares
+ *                none gets the pre-β world byte-identically.
  *
  * Everything else IS the compiled economy: the same vars/rules/processes
  * /flow nets the tri settlements run, gated by the same idle-safety
@@ -41,6 +49,23 @@ export interface TownWorldOpts {
   charter: { farmland: number; ore_access: number; timberland?: number; pasture?: number };
   /** Founding population (primary species). */
   startPop: number;
+  /** THE SETTLEMENT'S CROWDING CEILING, in souls (food-scale-round.md STAGE
+   *  β1/β1b) — the population at which births taper to ZERO, which is NOT
+   *  the number the town settles on: the logistic taper
+   *  (`births *= 1 − pop/cap`) equilibrates at
+   *  `capacity × (1 − deathRate/birthRate)`. A caller that wants
+   *  equilibrium ON a seat count therefore passes
+   *  `seats ÷ (1 − death/birth)` — town-play does exactly that from
+   *  `TIER_POP_CAP[config.tier]` (the MEASURED street-tree seats of the
+   *  tier's extent), so population converges to the seats the streets
+   *  actually hold. Present ⇒ the Malthus integrator's `vitals.capacity`
+   *  binds to it through the tri worlds' own ceiling scalar ("pop_ceiling"
+   *  — kernel/civ/tri.ts `ceilings` convention). Absent ⇒ NOTHING is
+   *  declared: no scalar, no vitals.capacity entry — the uncapped world
+   *  stays byte-identical (the dollhouse bench replay and the deliberately
+   *  tierless planet capitals both stand on that; tier-0 capitals are a
+   *  standing design call). */
+  capacity?: number;
   /** Founding building/stock grants (content's call — a world seeded
    *  with nothing that produces its staple starves, honestly; see
    *  grand-dream's villageSeed for the standard founding farm). */
@@ -77,10 +102,19 @@ export interface TownWorld extends TownHost {
   dual: { settlementScalar(siteKey: string, scalar: string): number; entityWorld: EntityWorld };
 }
 
+/** The ceiling anchor's name — the tri worlds' own convention
+ *  (kernel/civ/tri.ts `ceilings`: default "pop_ceiling"; a STRUCTURAL
+ *  scalar in economy.ts, so no compiled economy ever declares it itself
+ *  and the name is free in every TownWorld's namespace). */
+const CAPACITY_SCALAR = "pop_ceiling";
+
 /** The structural vars every settlement carries beside its economy —
  *  the same list the tri worlds declare (population written by the
- *  layer above, charter attrs, the unrest input). */
-function settlementSpec(eco: CompiledEconomy): WorldSpec {
+ *  layer above, charter attrs, the unrest input). `withCapacity` adds
+ *  the ceiling anchor ONLY when the host declared a seat count — an
+ *  undeclared capacity must leave the spec byte-identical, not merely
+ *  equivalent (STAGE β1's absent-path law). */
+function settlementSpec(eco: CompiledEconomy, withCapacity: boolean): WorldSpec {
   const v = (name: string, max: number): { name: string; min: number; max: number; initial: number } =>
     ({ name, min: 0, max, initial: 0 });
   return {
@@ -90,6 +124,7 @@ function settlementSpec(eco: CompiledEconomy): WorldSpec {
       vars: [
         v("population", 1_000_000), v("farmland", 2000), v("ore_access", 2000), v("timberland", 2000),
         v("pasture", 2000),
+        ...(withCapacity ? [v(CAPACITY_SCALAR, 1_000_000)] : []),
         ...eco.vars,
         v("unrest", 1),
       ],
@@ -113,7 +148,8 @@ export function createTownWorld(opts: TownWorldOpts): TownWorld {
   const roadBearings = opts.roadBearings ?? townRoadBearingsOf(key);
   const roadSeeds = opts.roadSeeds ?? townRoadSeedsOf(key);
 
-  const spec = settlementSpec(eco);
+  const capacity = opts.capacity;
+  const spec = settlementSpec(eco, capacity !== undefined);
   const valid = validateWorldSpec(spec);
   if (!valid.ok) {
     throw new Error(`town: settlement spec rejected: ${valid.errors.join("; ")}`);
@@ -137,11 +173,22 @@ export function createTownWorld(opts: TownWorldOpts): TownWorld {
   write("ore_access", charter.ore_access);
   write("timberland", charter.timberland);
   write("pasture", charter.pasture);
+  if (capacity !== undefined) write(CAPACITY_SCALAR, capacity);
   for (const [k, v] of Object.entries(opts.seedScalars ?? {})) write(k, v);
 
   // The primary (civic-first) Malthusian policy and its species' demand
-  // rows — the standalone's whole composition layer.
-  const vitals: VitalsSpec = eco.vitals[0] ?? { birthRate: 0.02, deathRate: 0.01 };
+  // rows — the standalone's whole composition layer. A declared crowding
+  // ceiling binds the policy's births-taper to the ceiling anchor
+  // (`births *= max(0, 1 − pop/cap)`, the pen-capacity headroom domestic
+  // herds already run) — the host's ceiling, derived from its MEASURED
+  // body, outranks whatever the doc may have bound, because the host is
+  // the one that built the streets. Undeclared ⇒ the doc's own vitals
+  // object, untouched (byte-identical absent path; food-scale-round.md
+  // STAGE β1).
+  const docVitals: VitalsSpec = eco.vitals[0] ?? { birthRate: 0.02, deathRate: 0.01 };
+  const vitals: VitalsSpec = capacity !== undefined
+    ? { ...docVitals, capacity: { scalar: CAPACITY_SCALAR, perUnit: 1 } }
+    : docVitals;
   const scalarFor = new Map(eco.demandInputs.map(d => [d.resource, d.scalar] as const));
   const demand = (eco.speciesTraits[0]?.demand ?? []).map(row => ({
     scalar: scalarFor.get(row.resource) ?? `${row.resource}_need`,

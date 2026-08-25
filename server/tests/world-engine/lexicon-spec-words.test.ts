@@ -101,11 +101,19 @@ describe("law 3 — the chain is live end to end", () => {
     }
   });
 
-  it("a locale an item never authored keeps the raw-head fallback", () => {
-    // No spec source may invent a word the old lexicons lacked: for every
-    // spec head, locale coverage must match the snapshot exactly.
+  it("a MOVED item's locale coverage still matches the snapshot exactly", () => {
+    // The migration's guarantee: a spec row may not invent a word for a locale
+    // the item never had, nor drop one it did — for the items that were MOVED.
+    //
+    // NEW spec vocabulary is exempt (2026-08-24), and must be: nouns now come
+    // from the spec by law — a clinician adding one is the point of the design —
+    // so a head the pre-move snapshot has never heard of is new vocabulary, not
+    // a migration slip. Its own coverage is gated by `validate-builder-lexicon`
+    // and builder-lexicon.test.ts, which check every head a board can surface.
+    const known = (head: string) => LOCALES.some((loc) => head in SNAPSHOT[loc]);
     for (const loc of LOCALES) {
       for (const head of specWordHeads()) {
+        if (!known(head)) continue;
         const had = head in SNAPSHOT[loc];
         const has = head in LANGS[loc].lexicon;
         expect({ loc, head, has }).toEqual({ loc, head, has: had });

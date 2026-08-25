@@ -108,7 +108,7 @@ export function runCheat(name: string, arg: string | undefined, ctx: CheatCtx): 
       // lives in the GL boot and a conservation law that can only be
       // exercised in a browser is a law nobody checks. The transcript's CHEAT
       // marker carries the verb, so a reviewer sees exactly what was done.
-      // ⚖️ F5 adds `draw <good>` — order a draw on the offloaded shed and run
+      // ⚖️ F5 adds `draw <good>` — order a draw on the offloaded source and run
       // its first load out to the road (region reach, fold-round.md F5). It
       // MOVES the world exactly as the fold verbs do, and for the same reason:
       // the conservation it has to show (units leave the record, land on the

@@ -56,6 +56,69 @@ export interface AppStartupSpec {
   maxTokens?: number;
 }
 
+/**
+ * WHETHER an AI-initiated open should happen at all — the counterpart to
+ * startup params, which only answer HOW an app should open.
+ *
+ * Declared per app and consulted ONLY when the assistant opened the app of its
+ * own accord. A student press is never second-guessed: pressing the tile, or a
+ * launch button the Board Manager offered, IS the ask.
+ *
+ * 🚨 This exists because prompt text does not hold. The Speaker's tool
+ * description for `restaurant` said, in as many words, that a student naming a
+ * food wants to EAT and that the app is for when the RESTAURANT is the point.
+ * On 2026-08-23 it read that, watched a child press פיצה on a food board in
+ * his own bedroom, and opened the restaurant app anyway — the same shape as an
+ * earlier `picture_search("pizza")` that showed him PHOTOGRAPHS of pizza while
+ * he was trying to ask for lunch. A model reaching for the tool that matches
+ * the noun is not something one more paragraph fixes. A separate model, asked
+ * one question with nothing else to do, is a different proposition.
+ *
+ * The decision FAILS OPEN. A timeout, a missing key or a malformed answer
+ * allows the open, because a resolver outage that silently stopped every app
+ * from opening would be a far worse failure than the one this prevents — and a
+ * much harder one to recognise.
+ */
+export interface AiOpenPolicy {
+  /**
+   * What makes an AI-initiated open right or wrong for this app. Fed ONLY to
+   * the decision model, never to the live agents, so the core prompt does not
+   * grow a paragraph per app.
+   *
+   * Write it as the distinction that actually gets confused — "wanting food is
+   * not wanting a restaurant" — rather than as a list of allowed situations.
+   */
+  guidance: string;
+}
+
+/** The decision model's answer. */
+export interface AiOpenDecision {
+  open: boolean;
+  /** Why not — shown to the Speaker so it can answer what was actually said. */
+  reason?: string;
+  /** True when the model was not consulted or its answer was unusable, so the
+   *  open was allowed by default rather than by judgement. */
+  failedOpen?: boolean;
+}
+
+/** Schema the decision model fills. One question, two fields. */
+export const AI_OPEN_DECISION_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    open: {
+      type: "boolean",
+      description:
+        "true if opening this app right now is what the person actually wants, false if it is not.",
+    },
+    reason: {
+      type: "string",
+      description:
+        "One short sentence. When false, what the person actually wants instead, so the assistant can answer THAT.",
+    },
+  },
+  required: ["open"],
+};
+
 export type StartupParams = Record<string, unknown>;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

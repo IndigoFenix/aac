@@ -26,8 +26,8 @@ import {
   wildAreaPopulation,
   wildAreaStock,
   wildDrawSectorOf,
-  wildShedEndpoint,
-  wildShedPartner,
+  wildSourceEndpoint,
+  wildSourcePartner,
   type WildAreaRecord,
 } from "@shared/world-engine/interaction/quest/wild-area.js";
 import {
@@ -314,17 +314,17 @@ describe("S4 — an unloaded stand still grows", () => {
  * included"* — with the one difference the whole design turns on.
  *
  * A CONDENSED TOWN'S SHELF IS MINTED (closed-form production nobody is
- * simulating); A SHED'S IS DRAWN. Every unit it sells was already standing in
+ * simulating); A SOURCE'S IS DRAWN. Every unit it sells was already standing in
  * the record and leaves it — so these are conservation pins first: what the
  * draw hands out equals what the record lost, to the unit, and the stand's
  * POPULATION follows the timber out of the wood (or the next class climb would
  * grow the sold trees straight back).
  *
- * And it is ONE-WAY, structurally: the endpoint is the shed's own `wild:` scope
+ * And it is ONE-WAY, structurally: the endpoint is the source's own `wild:` scope
  * id, which `scopeReceivesGoods` reads FALSE off, carrying capacity 0 so
  * `putStock` cannot find room for a single unit.
  */
-describe("F5 — the region shed yields, and never receives", () => {
+describe("F5 — the region source yields, and never receives", () => {
   const OAK = naturalSourceOf("oak")!;
   const WOOD = OAK.products.find((p) => p.method === "kill")!;
   const MATURE = OAK.growth!.classes.length - 1;
@@ -441,16 +441,16 @@ describe("F5 — the region shed yields, and never receives", () => {
     expect(drawWildArea(rec, { glyph: "wood", units: 1 }).rec.draw).toEqual(rec.draw);
   });
 
-  it("🚨 ONE-WAY: the shed endpoint cannot RECEIVE, and the units bounce back to the sender", () => {
+  it("🚨 ONE-WAY: the source endpoint cannot RECEIVE, and the units bounce back to the sender", () => {
     const rec = fold(grove());
-    const shed = wildShedPartner(rec, { x: 400, y: 120 });
+    const source = wildSourcePartner(rec, { x: 400, y: 120 });
     // The law is read off the ID, everywhere and by everyone (scope.ts).
-    expect(shed.id).toBe(wildAreaId("home"));
-    expect(scopeReceivesGoods(parseScopeId(shed.id))).toBe(false);
+    expect(source.id).toBe(wildAreaId("home"));
+    expect(scopeReceivesGoods(parseScopeId(source.id))).toBe(false);
     const shelf: Record<string, number> = {};
     // KEYED, not recorded: the shelf outlives the stand it was cut from.
-    const ep = wildShedEndpoint(shed.key, shelf);
-    expect(ep.id).toBe(shed.id);
+    const ep = wildSourceEndpoint(source.key, shelf);
+    expect(ep.id).toBe(source.id);
     expect(ep.capacity).toBe(0);
     expect(ep.stack).toBe(shelf); // the live shelf, never a copy
     // …and it is not merely unused: `putStock` finds no room for a unit.
@@ -469,24 +469,24 @@ describe("F5 — the region shed yields, and never receives", () => {
     expect(stackUnits(shelf, "wood")).toBe(PER_TREE - 2);
   });
 
-  it("🚨 PRICED THROUGH THE ONE LEG SEAT — the shed's road, not a second formula", () => {
+  it("🚨 PRICED THROUGH THE ONE LEG SEAT — the source's road, not a second formula", () => {
     const rec = fold(grove());
     const home = { x: 3000, y: 120 };
-    const shed = wildShedPartner(rec, home);
+    const source = wildSourcePartner(rec, home);
     const centre = wildAreaCenter(rec);
     expect(centre).toEqual({ x: 120, y: 120 });
-    expect(shed.distanceM).toBeCloseTo(Math.hypot(centre.x - home.x, centre.y - home.y), 9);
-    expect(shed.yields).toEqual(wildAreaStock(rec)); // what it has to sell IS the record
+    expect(source.distanceM).toBeCloseTo(Math.hypot(centre.x - home.x, centre.y - home.y), 9);
+    expect(source.yields).toEqual(wildAreaStock(rec)); // what it has to sell IS the record
     // The SAME seat a stub town three kilometres out is priced by — no forest
     // special case, and `transactionDayFrac`'s floor underneath both.
-    const leg = barterLegSeconds(DOLLHOUSE_SCALE, shed.distanceM);
+    const leg = barterLegSeconds(DOLLHOUSE_SCALE, source.distanceM);
     expect(leg).toBeCloseTo(
-      (shed.distanceM! / dailyTravelM(DOLLHOUSE_SCALE)) * DOLLHOUSE_SCALE.dayLengthS, 9,
+      (source.distanceM! / dailyTravelM(DOLLHOUSE_SCALE)) * DOLLHOUSE_SCALE.dayLengthS, 9,
     );
     expect(leg).toBeGreaterThan(barterLegSeconds(DOLLHOUSE_SCALE, null));
-    // A shed nobody measured from takes the flat leg — the same honest null a
+    // A source nobody measured from takes the flat leg — the same honest null a
     // place-less stub takes, and the same anchored fraction of a day.
-    const placeless = wildShedPartner(rec, null);
+    const placeless = wildSourcePartner(rec, null);
     expect(placeless.distanceM).toBeNull();
     expect(barterLegSeconds(DOLLHOUSE_SCALE, placeless.distanceM)).toBeCloseTo(
       FOOD_DAY_SEC * transactionDayFrac({ kind: "shipment-leg" }), 9,

@@ -139,7 +139,7 @@ function parseCommodity(ctx: Ctx, raw: unknown): CommodityDef {
 function parseBuilding(ctx: Ctx, raw: unknown): BuildingDef {
   const o = obj(ctx, raw, [
     "key", "countScalar", "cap", "processes", "vars", "construction",
-    "surplusFrac", "sells", "shelved", "refines", "leansToward", "mapCap", "district",
+    "surplusFrac", "staple", "sells", "shelved", "refines", "leansToward", "mapCap", "district",
     "style", "vignette", "glyph", "title", "info",
   ]);
   const key = str(ctx, o.key, "key");
@@ -214,6 +214,7 @@ function parseBuilding(ctx: Ctx, raw: unknown): BuildingDef {
     // σ — the producer's own declared surplus seat (scale.ts
     // REAL_SURPLUS_FRAC). Absent ⇒ the class anchor, resolved by the reader.
     ...(o.surplusFrac !== undefined ? { surplusFrac: num(ctx, o.surplusFrac, "surplusFrac") } : {}),
+    ...(o.staple !== undefined ? { staple: bool(ctx, o.staple, "staple") } : {}),
     ...(o.sells !== undefined ? { sells: strArr(ctx, o.sells, "sells") } : {}),
     ...(o.shelved !== undefined ? { shelved: bool(ctx, o.shelved, "shelved") } : {}),
     ...(refinesO !== undefined

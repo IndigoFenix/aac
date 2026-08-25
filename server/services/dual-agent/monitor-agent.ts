@@ -551,7 +551,10 @@ export class MonitorAgent {
     const llmConfig = await settingsRepository.getLLMConfig('aac_moderator');
     const provider = llmConfig?.provider || 'claude';
     const model = llmConfig?.model || 'claude-haiku';
-    const gpt = new GPT({ provider, model });
+    // Background: the Monitor runs on a heartbeat and its notes shape the NEXT
+    // board, not the one a child is waiting for. It must never consume
+    // reserved capacity the live path needs.
+    const gpt = new GPT({ provider, model, background: true });
 
     const totals = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheCreationTokens: 0 };
     let anyCallReturned = false;
@@ -902,6 +905,8 @@ ${transcript}`;
       const gpt = new GPT({
         provider: llmConfig?.provider || 'claude',
         model: llmConfig?.model || 'claude-haiku',
+        // Background: moderation of a stored transcript, not a live turn.
+        background: true,
       });
 
       const inputItems: GPTInputItem[] = [{

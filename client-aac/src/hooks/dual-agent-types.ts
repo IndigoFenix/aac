@@ -310,6 +310,15 @@ export interface ProcessingState {
   board: boolean;
   /** A composed sentence (glyph_press) is being interpreted into speech. */
   interpret: boolean;
+  /**
+   * An app open is being resolved on the server (permission + payload).
+   *
+   * The one flag that covers a KNOWN silence rather than a background task: the
+   * Speaker cannot say anything while `open_app` is being decided, so without a
+   * cue a press is followed by ~2s of nothing and reads as a dead button — the
+   * one failure an eyegaze user cannot recover from by asking again.
+   */
+  app: boolean;
 }
 
 /** Data for an active add-on app */

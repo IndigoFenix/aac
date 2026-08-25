@@ -56,6 +56,32 @@ export interface VenueMenuSettings {
     brightData: boolean;
   };
 
+  /**
+   * The STUDENT may browse for somewhere to eat by food type, not just the
+   * caretaker.
+   *
+   * Off by default, and separately switchable from `enabled`, because it moves
+   * who can start an outbound search. Discovery was a caretaker action in the
+   * original design (§3, requirement 5); this makes it the student's too,
+   * which is a decision about a particular child — some can be trusted with a
+   * search button and some will dwell on it forty times.
+   *
+   * It never lets the student BIND anything. Choosing a place here is a want
+   * expressed, not a table sat at; `requireVenueConfirmation` still governs
+   * the step that attaches a menu to a kitchen.
+   */
+  studentBrowse: boolean;
+  /**
+   * Metres for BROWSE searches, as opposed to `searchRadiusM`.
+   *
+   * A separate number because the two questions are different sizes.
+   * `searchRadiusM` answers "which of these tables am I at" and is tuned tight
+   * (max 500 m) so a neighbouring restaurant cannot win. "Where could we go for
+   * pizza" is a walk or a short drive, and at 500 m it would usually answer
+   * "nowhere" in a place the family drove to.
+   */
+  browseRadiusM: number;
+
   // ── Menu sources (independently switchable) ──
   sources: {
     camera: boolean;
@@ -105,6 +131,15 @@ export const MIN_SEARCH_RADIUS_M = 50;
 export const MAX_SEARCH_RADIUS_M = 500;
 
 /**
+ * Browse radius bounds. Wider than the disambiguation radius on purpose — see
+ * `browseRadiusM`. The ceiling is not a privacy limit (the request carries a
+ * position either way, and nothing else); it is a usefulness limit, since a
+ * restaurant an hour away is not an answer to a hungry child.
+ */
+export const MIN_BROWSE_RADIUS_M = 250;
+export const MAX_BROWSE_RADIUS_M = 5000;
+
+/**
  * Age at which prices appear by default. Money work starts around school year
  * 2-3, so 8 is the line. Reasoned, not measured — a one-line constant on
  * purpose, so a clinician can move it once there is real usage to argue from.
@@ -132,6 +167,8 @@ export const DEFAULT_VENUE_MENU_SETTINGS: VenueMenuSettings = {
   searchRadiusM: 150, // NEAR_RADIUS_M from shared/location-matching
   providers: { osm: true, brightData: false },
   sources: { camera: true, web: false, manual: true },
+  studentBrowse: false,
+  browseRadiusM: 1500,
   requireVenueConfirmation: true,
   requireReview: "auto",
   maxMenuAgeDays: 30,
@@ -202,6 +239,9 @@ export function normalizeVenueMenuSettings(raw: unknown): VenueMenuSettings {
       osm: bool(providers.osm, d.providers.osm),
       brightData: bool(providers.brightData, d.providers.brightData),
     },
+
+    studentBrowse: bool(r.studentBrowse, d.studentBrowse),
+    browseRadiusM: clampInt(r.browseRadiusM, MIN_BROWSE_RADIUS_M, MAX_BROWSE_RADIUS_M, d.browseRadiusM),
 
     sources: {
       camera: bool(sources.camera, d.sources.camera),

@@ -1317,7 +1317,7 @@ export function needDormDueIn(
  *  game-day — and that period is what `serviceRadiusM` (and through it every
  *  district, `shopPeriod` and `FOOD_DAY_SEC` schedule) is derived from. The
  *  round that lets a glyph clear a FRACTION of the meter
- *  (`kernel/town/goods-kinds.ts satiationDaysOf`, data-only today) therefore
+ *  (`kernel/town/goods-kinds.ts satiationDaysOf`, live since Phase B) therefore
  *  has the NPC eat a MEAL at the table — as many units as the meter costs, one
  *  arrival, meter to 0 — and only the PLAYER's hand-fed unit moves the meter a
  *  fraction. If the autonomous body ate one unit per firing instead, the eating

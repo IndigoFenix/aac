@@ -4,12 +4,84 @@
 import { GoogleGenAI } from "@google/genai";
 import type { StructuredLLMProvider, StructuredRequest } from "./structured-provider";
 import type { GPTResponse, GPTFunctionToolCall, GPTInputItem } from "../chat/gpt";
+import { vertexClientOptions } from "./vertex-config";
+import { getModelOption } from "@shared/llm-options";
 
 export class GeminiStructuredProvider implements StructuredLLMProvider {
-  private client: GoogleGenAI;
+  /** Vertex client, when a GCP project is configured. */
+  private vertexClient: GoogleGenAI | null;
+  /** AI Studio key client. Built lazily — a Vertex-only deployment has no key
+   *  and must not construct one just to leave it unused. */
+  private keyClient: GoogleGenAI | null = null;
+  /** True when a GCP project is configured at all. */
+  readonly usingVertex: boolean;
 
+  /**
+   * Vertex WHEN IT IS CONFIGURED, the AI Studio key otherwise.
+   *
+   * 🚨 Note the difference from `GeminiChatProvider`, which takes Vertex as an
+   * opt-in argument: here it is the DEFAULT. That asymmetry is deliberate and
+   * is the lesson of the 2026-08-20 incident. Opt-in works when every caller
+   * has session context to thread the flag through — the chat provider's do.
+   * The structured provider's callers are mostly free functions with no session
+   * at all (the caption services, the session summariser, the startup and
+   * open-decision resolvers, the menu extraction and refinement passes), so an
+   * opt-in flag would be forgotten exactly the way it was forgotten before, and
+   * the forgetting is silent: the free key works fine until the day it does
+   * not, and then a feature stops working for a reason that looks nothing like
+   * a quota.
+   *
+   * Defaulting means a deployment with a project configured has ONE billing
+   * path for Gemini, which is what `vertex-config` exists to guarantee.
+   */
   constructor() {
-    this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    const vertex = vertexClientOptions();
+    this.usingVertex = !!vertex;
+    if (vertex) {
+      console.log(
+        `[GeminiStructured] Using Vertex AI (project=${vertex.project}, location=${vertex.location})`,
+      );
+      this.vertexClient = new GoogleGenAI(vertex);
+    } else {
+      // No project configured: a developer machine, or a deployment that is
+      // missing its secrets. Say which, because the second case is broken
+      // rather than merely local — see docs/INFRASTRUCTURE.md.
+      console.warn(
+        "[GeminiStructured] No GOOGLE_CLOUD_PROJECT_ID — using GEMINI_API_KEY (free tier).",
+      );
+      this.vertexClient = null;
+    }
+  }
+
+  private keyed(): GoogleGenAI {
+    if (!this.keyClient) {
+      this.keyClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    }
+    return this.keyClient;
+  }
+
+  /**
+   * Which client answers THIS request.
+   *
+   * Vertex whenever it is configured, EXCEPT for a model the registry says is
+   * not published there — the same test the coordinator applies to the live
+   * Board Manager. Today the only such Gemini model is live-only and cannot do
+   * structured output, so this branch is unreachable; it is here because that
+   * list changes, and a new preview model landing on the public API first would
+   * otherwise fail as an opaque Vertex 404 rather than quietly working.
+   */
+  private clientFor(model: string): GoogleGenAI {
+    if (!this.vertexClient) return this.keyed();
+    const option = getModelOption("gemini", model);
+    if (option && option.availableOnVertex === false) {
+      if (!process.env.GEMINI_API_KEY) {
+        console.warn(
+          `[GeminiStructured] ${model} is not on Vertex and GEMINI_API_KEY is unset — the call will fail.`,
+        );
+      }
+      return this.keyed();
+    }
+    return this.vertexClient;
   }
 
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
@@ -37,7 +109,20 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
       config.tools = [{ functionDeclarations: tools }];
     }
 
-    const response = await this.client.models.generateContent({
+    // Background work rides shared (pay-as-you-go) capacity, never a
+    // Provisioned Throughput reservation. Only meaningful on Vertex; the AI
+    // Studio endpoint ignores it, so it is safe to send either way.
+    if (request.background && this.usingVertex) {
+      config.httpOptions = {
+        ...(config.httpOptions ?? {}),
+        headers: {
+          ...(config.httpOptions?.headers ?? {}),
+          "X-Vertex-AI-LLM-Request-Type": "shared",
+        },
+      };
+    }
+
+    const response = await this.clientFor(request.model).models.generateContent({
       model: request.model,
       config,
       contents,

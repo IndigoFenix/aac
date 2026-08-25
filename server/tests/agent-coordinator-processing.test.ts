@@ -147,4 +147,88 @@ describe("ProcessingIndicators", () => {
       jest.useRealTimers();
     }
   });
+  // The "app" cue is the one that covers a DELIBERATE silence rather than a
+  // background task. The Speaker cannot speak while `open_app`'s
+  // functionResponse is being held (Gemini Live blocks generation for the whole
+  // hold — measured 2026-08-24), so if this cue fails to appear, a press is
+  // followed by ~2s of nothing at all and reads as a dead button.
+  describe("app-open cue", () => {
+    it("lights on markAppBusy and clears on clearAppBusy", () => {
+      const { pi, lastFor } = make();
+      pi.markAppBusy();
+      expect(lastFor("app")).toBe(true);
+      pi.clearAppBusy();
+      expect(lastFor("app")).toBe(false);
+    });
+
+    it("auto-clears on its backstop so it can never outlive the open", () => {
+      jest.useFakeTimers();
+      try {
+        const { pi, lastFor } = make();
+        pi.markAppBusy();
+        expect(lastFor("app")).toBe(true);
+        jest.advanceTimersByTime(10_000);
+        expect(lastFor("app")).toBe(false);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("clears BEFORE the Speaker's own backstop would", () => {
+      // The cue brackets one routeAppOpen, whose slowest leg is a single
+      // startup-resolver call. A cue still burning after the ack has been
+      // force-answered tells the child to keep waiting for a screen that is
+      // never coming.
+      jest.useFakeTimers();
+      try {
+        const { pi, lastFor } = make();
+        pi.markAppBusy();
+        jest.advanceTimersByTime(25_000);
+        expect(lastFor("app")).toBe(false);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("clearAppBusy cancels the backstop — no late emit after a fast open", () => {
+      jest.useFakeTimers();
+      try {
+        const emitted: ProcessingMessage[] = [];
+        const pi = new ProcessingIndicators({ emit: (m) => emitted.push(m) });
+        pi.markAppBusy();
+        pi.clearAppBusy();
+        const count = emitted.length;
+        jest.advanceTimersByTime(60_000);
+        expect(emitted.length).toBe(count);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("clearAll drops the app cue too", () => {
+      jest.useFakeTimers();
+      try {
+        const emitted: ProcessingMessage[] = [];
+        const pi = new ProcessingIndicators({ emit: (m) => emitted.push(m) });
+        pi.markAppBusy();
+        pi.clearAll();
+        expect(emitted.filter((m) => m.activity === "app").at(-1)?.active).toBe(false);
+        const count = emitted.length;
+        jest.advanceTimersByTime(60_000);
+        expect(emitted.length).toBe(count);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("is independent of the other three cues", () => {
+      const { pi, lastFor } = make();
+      pi.markAppBusy();
+      pi.markSpeakerBusy();
+      pi.clearSpeakerBusy();
+      expect(lastFor("app")).toBe(true);   // still opening
+      expect(lastFor("speaker")).toBe(false);
+      pi.clearAll();   // don't leave the backstop timer live for jest
+    });
+  });
 });

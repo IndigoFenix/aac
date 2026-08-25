@@ -151,6 +151,8 @@ export async function extractMenuPage(
     : "";
 
   const response = await provider.structuredComplete({
+    // Background: menu extraction runs once per venue and is reviewed before use.
+    background: true,
     model: options.model ?? DEFAULT_MODEL,
     instructions: EXTRACTION_PROMPT + hint,
     schemaName: "menu_page",

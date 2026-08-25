@@ -65,6 +65,50 @@ import React, {
   }
   
   // ============================================================================
+  // HELPERS: locale resolution + persistence
+  // ============================================================================
+
+  const LANGUAGE_STORAGE_KEY = 'aac-language';
+
+  const isSupported = (code: string | null | undefined): code is LanguageCode =>
+    !!code && SUPPORTED_LANGUAGES.some(l => l.code === code);
+
+  /**
+   * The locale the URL itself names — either the per-locale landing path
+   * (/he, /es, ...) or the ?lang=xx query the prerender crawler uses.
+   * Returns null on every other path, including the English root.
+   */
+  function localeFromUrl(): LanguageCode | null {
+    if (typeof window === 'undefined') return null;
+    // First path segment must exactly match a supported locale code.
+    const firstSegment = window.location.pathname.split('/').filter(Boolean)[0];
+    if (isSupported(firstSegment)) return firstSegment;
+    const queryLang = new URLSearchParams(window.location.search).get('lang');
+    if (isSupported(queryLang)) return queryLang;
+    return null;
+  }
+
+  function readStoredLanguage(): LanguageCode | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      return isSupported(stored) ? stored : null;
+    } catch {
+      // Safari private mode / blocked storage — fall through to detection.
+      return null;
+    }
+  }
+
+  function storeLanguage(code: LanguageCode): void {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, code);
+    } catch {
+      /* storage unavailable — language is still correct for this page load */
+    }
+  }
+
+  // ============================================================================
   // PROVIDER
   // ============================================================================
   
@@ -78,31 +122,30 @@ import React, {
     defaultLanguage = 'en' 
   }: LanguageProviderProps) => {
     const [language, setLanguageState] = useState<LanguageCode>(() => {
+      // URL path/query takes priority — the SEO-prerendered locale pages
+      // (/he, /es, ...) must render in the language their URL advertises.
+      const fromUrl = localeFromUrl();
+      if (fromUrl) return fromUrl;
+      const stored = readStoredLanguage();
+      if (stored) return stored;
       if (typeof window !== 'undefined') {
-        // URL path takes priority — for SEO-prerendered locale pages (/en, /he, /es, ...).
-        // First path segment must exactly match a supported locale code.
-        const firstSegment = window.location.pathname.split('/').filter(Boolean)[0];
-        if (firstSegment && SUPPORTED_LANGUAGES.some(l => l.code === firstSegment)) {
-          return firstSegment as LanguageCode;
-        }
-        // ?lang=xx query param — used by the prerender crawler.
-        const queryLang = new URLSearchParams(window.location.search).get('lang') as LanguageCode | null;
-        if (queryLang && SUPPORTED_LANGUAGES.some(l => l.code === queryLang)) {
-          return queryLang;
-        }
-        // Check localStorage next
-        const stored = localStorage.getItem('aac-language') as LanguageCode;
-        if (stored && SUPPORTED_LANGUAGES.some(l => l.code === stored)) {
-          return stored;
-        }
         // Try to detect from browser
-        const browserLang = navigator.language.split('-')[0] as LanguageCode;
-        if (SUPPORTED_LANGUAGES.some(l => l.code === browserLang)) {
-          return browserLang;
-        }
+        const browserLang = navigator.language.split('-')[0];
+        if (isSupported(browserLang)) return browserLang;
       }
       return defaultLanguage;
     });
+
+    // Landing on a per-locale URL is an explicit language choice, so remember it.
+    // Without this, following the landing page's "Log in" link (a real navigation
+    // to /login, which carries no locale segment) re-resolved the language from
+    // scratch and dropped the visitor back to the browser default.
+    useEffect(() => {
+      const fromUrl = localeFromUrl();
+      if (fromUrl) storeLanguage(fromUrl);
+      // Mount-only: later switches persist through setLanguage below.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
   
     const languageInfo = SUPPORTED_LANGUAGES.find(l => l.code === language) || SUPPORTED_LANGUAGES[0];
     const isRTL = languageInfo.direction === 'rtl';
@@ -126,9 +169,7 @@ import React, {
   
     const setLanguage = useCallback((code: LanguageCode) => {
       setLanguageState(code);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('aac-language', code);
-      }
+      storeLanguage(code);
     }, []);
   
     // Translation function with nested key support and parameter interpolation

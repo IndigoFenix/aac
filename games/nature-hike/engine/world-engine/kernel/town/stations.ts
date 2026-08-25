@@ -845,6 +845,30 @@ export const stationRoomKind = (kind: StationKind): StationRoomKind | undefined 
       : undefined;
 };
 
+/**
+ * WHAT A STATION IS FOR — the verbs its own kind affords, beyond what its
+ * PROPERTIES already imply (a container opens and holds; that is derived, and
+ * is not repeated here).
+ *
+ * The sentence board reads it to answer "what can I do with a bed", and it
+ * lives HERE for the same reason `STATION_PROPERTIES` does: a new furniture
+ * kind should declare what it is and what it is for in ONE place, and both the
+ * simulation and the board follow. A kind with nothing to add authors nothing.
+ */
+export const STATION_ACTS: Partial<Record<StationKind, readonly string[]>> = {
+  bed: ["sleep", "rest"],
+  chair: ["sit"],
+  table: ["eat"],
+  bath: ["wash"],
+  bowl: ["fill", "eat"],
+  oven: ["cook", "heat"],
+  workbench: ["make", "build", "fix"],
+  anvil: ["make", "fix"],
+  loom: ["make"],
+  stonecutter: ["make", "cut"],
+  shelf: ["put"],
+};
+
 // ── THE OCCUPANT PROGRAM ────────────────────────────────────────────────
 // A building's program is derived from WHO occupies it and what their
 // needs demand — not sampled from area. Area still matters, but as the

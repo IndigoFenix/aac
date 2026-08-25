@@ -822,6 +822,9 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
     case "private_note":
     case "remain_silent":
     case "thought_leak":
+    // Recited context — suppressed upstream; it was never speech, so the
+    // board must not be rebuilt from it.
+    case "context_leak":
     case "gesture_recognized":
     // Observer's internal cost decision (live↔passive backend) — not relevant
     // to the Board Manager's view of the conversation.
@@ -1341,12 +1344,26 @@ function buildSetBoardTool(config: BoardManagerToolConfig): FunctionDeclaration 
   const boardList = config.availableBoards
     .map(b => `key="${b.key}" (name: "${b.name}")`)
     .join(", ");
-  const loadedNote = config.loadedBoardKey
-    ? ` Currently loaded: key="${config.loadedBoardKey}"${config.loadedBoardName ? ` (name: "${config.loadedBoardName}")` : ""} — do NOT re-select it.`
-    : "";
+  // 🚨 WHICH BOARD IS LOADED DOES NOT BELONG IN A TOOL DESCRIPTION.
+  //
+  // The provider's prompt cache is keyed on sha256(model + systemPrompt +
+  // tools + toolConfig), so any text that varies session-to-session inside a
+  // tool declaration mints a BRAND NEW CACHE, billed at the full input rate for
+  // the whole ~13.5k-token prompt. Naming the loaded board here made that key
+  // vary with every board and app the student opened — an unbounded number of
+  // cache variants, one per distinct board NAME.
+  //
+  // Measured 2026-08-23: a steady turn cost ~14.2k prompt tokens of which
+  // ~13.4k were cached (~800 fresh). Turns that followed a board/app change
+  // cost ~27.7k — the same turn plus a whole extra prompt for the re-creation.
+  // Three of those in one five-minute session.
+  //
+  // The fact itself is not lost: `renderInvocationContext` reports the loaded
+  // board in the per-turn user message, which is uncached by nature and already
+  // changes every turn. State goes in the turn; only STABLE text goes in a tool.
   return {
     name: "set_board",
-    description: `Switch to a pre-built custom ${T.board}. Pass the KEY, never the display name. Available: ${boardList}.${loadedNote} Prefer this over rebuild_board() when a custom ${T.board} fits the current activity.`,
+    description: `Switch to a pre-built custom ${T.board}. Pass the KEY, never the display name. Available: ${boardList}. Prefer this over rebuild_board() when a custom ${T.board} fits the current activity. The ${T.board} currently loaded (if any) is named in <current_state> — do NOT re-select it.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",

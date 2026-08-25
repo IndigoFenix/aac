@@ -67,8 +67,13 @@ const FLOOR_BUTTONS: FloorButtonDef[] = [
   { glyphKey: "help",     labelEn: "Help",      rationale: "catch-all for everything these eight buttons cannot say" },
 ];
 
-/** The board key used to reference the floor board in availableBoards. */
-export const RESTAURANT_FLOOR_BOARD_KEY = "restaurant_floor";
+// There is deliberately no board KEY here any more. This board was once
+// registered in `availableBoards` as a virtual pre-built board, which put
+// "Restaurant" in the Board Manager's <prebuilt_boards> list beside the boards
+// a clinician actually built for the child — in every session where the
+// feature was on, whether or not anyone was near a restaurant. It is a screen
+// of the restaurant APP, reached through `open_app("restaurant")` in floor
+// mode. See services/venue-menus/restaurant-app-open.ts.
 
 // ---------------------------------------------------------------------------
 // Board builder

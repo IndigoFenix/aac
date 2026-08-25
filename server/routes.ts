@@ -2140,6 +2140,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/venue-menus/nearby", requireAuth, (req, res) =>
     venueMenuController.resolveNearby(req, res)
   );
+  app.post("/api/venue-menus/browse", requireAuth, (req, res) =>
+    venueMenuController.browse(req, res)
+  );
   app.get("/api/students/:studentId/venues", requireAuth, (req, res) =>
     venueMenuController.listStudentVenues(req, res)
   );

@@ -266,16 +266,24 @@ function findDwellElement(x: number, y: number): HTMLElement | null {
 function inCornerCut(el: HTMLElement, x: number, y: number): boolean {
   const cut = cornerCutOf(el);
   if (!cut) return false;
-  return pointInCornerCut(el.getBoundingClientRect(), cut.radius, cut.offset, x, y);
+  return pointInCornerCut(el.getBoundingClientRect(), cut.radius, cut.offset, x, y, cut.skip);
 }
 
 /** The element's resolved corner-cut geometry, or null when it isn't shaped.
  *  Also drives the dwell ring, so the timer traces the button's real outline. */
-export function cornerCutOf(el: HTMLElement): { radius: number; offset: number } | null {
+export function cornerCutOf(
+  el: HTMLElement,
+): { radius: number; offset: number; skip?: { topLeft?: boolean; topRight?: boolean } } | null {
   const spec = el.dataset.cornerCut;
   if (!spec) return null;
-  const [radius, offset] = spec.split(",").map(Number);
-  return radius > 0 ? { radius, offset } : null;
+  // `radius,offset` is the base form. A button wearing a GLYPH MARK badge adds
+  // two flags (`,skipTL,skipTR`) for the top corners it kept SQUARE to make room
+  // for the mark. Those corners are solid surface, so a gaze must be allowed to
+  // land there — treating them as void would make the badge corner a dead zone.
+  const [radius, offset, skipTL, skipTR] = spec.split(",").map(Number);
+  if (!(radius > 0)) return null;
+  const skip = skipTL || skipTR ? { topLeft: !!skipTL, topRight: !!skipTR } : undefined;
+  return { radius, offset, ...(skip ? { skip } : {}) };
 }
 
 /**

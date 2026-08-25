@@ -20,7 +20,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { AACSettingsPackages } from '@/components/AACSettingsPackages';
 import { CollapsibleSection, CollapsibleSubSection } from '@/components/ui/collapsible-section';
+import { BetaBadge } from '@/components/ui/beta-badge';
 import { MenuReviewCard } from '@/components/venue-menus/MenuReviewCard';
+import { VenueMenuSettingsCard } from '@/components/venue-menus/VenueMenuSettingsCard';
+import { normalizeVenueMenuSettings, type VenueMenuSettings } from '@shared/venue-menus';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
@@ -46,6 +49,7 @@ import { tierByKey } from '@shared/aac/budget-tiers';
 import { processVoice } from '@shared/aac/pitch-shifter';
 import { BudgetMeters } from '@/components/BudgetMeters';
 import { type SeizureConfig, type SeizureSensitivity, DEFAULT_SEIZURE_CONFIG, coerceSeizureConfig } from '@shared/aac/seizure-config';
+import { MARKER_KINDS, kindTakesSide, type MarkerKind, type MarkerSide, type SeizureMarker } from '@shared/aac/seizure-markers';
 import { COMPETENCY_LABEL } from '@shared/social-bot/state';
 import {
   parseSmoothingSettings,
@@ -91,7 +95,6 @@ import {
   Crosshair,
   Play,
   Shield,
-  ImageIcon,
   AppWindow,
   Link,
   Unlink,
@@ -107,6 +110,7 @@ import {
   ChevronDown,
   Activity,
   AlertTriangle,
+  MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ratioLevel, labelFontSize, labelLines } from '@shared/button-sizing';
@@ -160,6 +164,12 @@ const GEMINI_VOICE_OPTIONS = [
   { value: 'Orus', label: 'Orus — Steady, reassuring male' },
   { value: 'Zephyr', label: 'Zephyr — Light, neutral' },
 ];
+
+// Seizure detection is built but not yet clinically tuned, so the settings
+// section renders read-only (see the section for why it stays visible at all).
+// Flip this to true — and drop the `disabled`/`checked={false}` props on the
+// controls below — the day the detectors are ready to be switched on.
+const SEIZURE_DETECTION_AVAILABLE = false;
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
@@ -230,11 +240,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [allowNotes, setAllowNotes] = useState(true);
   const [shareMonitorNotesWithInstitute, setShareMonitorNotesWithInstitute] = useState(true);
   const [autoAddContacts, setAutoAddContacts] = useState(true);
-  const [useApprovedSymbols, setUseApprovedSymbols] = useState(false);
-  const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
   const [homeActions, setHomeActions] = useState<HomeAction[]>([]);
+  const [venueMenus, setVenueMenus] = useState<VenueMenuSettings>(() => normalizeVenueMenuSettings(undefined));
   // One settings OBJECT, held whole and edited through setSessionRecording —
   // mirroring how it is stored. See shared/aac/session-recording.ts.
   const [sessionRecording, setSessionRecording] =
@@ -565,11 +574,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
-      setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
-      setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
+      setVenueMenus(normalizeVenueMenuSettings(aac?.venueMenus));
       setSessionRecording(normalizeSessionRecordingSettings(aac?.sessionRecording));
       setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
@@ -624,13 +632,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAllowNotes = aac?.allowNotes ?? true;
       const originalShareMonitorNotesWithInstitute = aac?.shareMonitorNotesWithInstitute ?? true;
       const originalAutoAddContacts = aac?.autoAddContacts ?? true;
-      const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
-      const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
       // Normalized on BOTH sides of this comparison (state is seeded from the same
       // helper), so an untouched list compares equal instead of showing dirty.
       const originalHomeActions = normalizeHomeActions(aac?.homeActions);
+      const originalVenueMenus = normalizeVenueMenuSettings(aac?.venueMenus);
       const originalSessionRecording = normalizeSessionRecordingSettings(aac?.sessionRecording);
       const originalDefinedGestures = Array.isArray(aac?.definedGestures) ? aac.definedGestures : [];
       const originalPermittedYoutubeItems = resolvePermittedYoutubeItems(aac);
@@ -678,11 +685,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         allowNotes !== originalAllowNotes ||
         shareMonitorNotesWithInstitute !== originalShareMonitorNotesWithInstitute ||
         autoAddContacts !== originalAutoAddContacts ||
-        useApprovedSymbols !== originalUseApprovedSymbols ||
-        useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
         JSON.stringify(homeActions) !== JSON.stringify(originalHomeActions) ||
+        JSON.stringify(venueMenus) !== JSON.stringify(originalVenueMenus) ||
         JSON.stringify(sessionRecording) !== JSON.stringify(originalSessionRecording) ||
         JSON.stringify(definedGestures) !== JSON.stringify(originalDefinedGestures) ||
         JSON.stringify(permittedYoutubeItems) !== JSON.stringify(originalPermittedYoutubeItems) ||
@@ -692,7 +698,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, homeActions, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -733,11 +739,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowNotes: boolean;
       shareMonitorNotesWithInstitute: boolean;
       autoAddContacts: boolean;
-      useApprovedSymbols: boolean;
-      useUnapprovedSymbols: boolean;
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
       homeActions?: HomeAction[];
+      venueMenus?: VenueMenuSettings;
       sessionRecording?: SessionRecordingSettings;
       definedGestures?: DefinedGesture[];
       permittedYoutubeItems?: PermittedYoutubeItem[];
@@ -839,13 +844,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowNotes,
       shareMonitorNotesWithInstitute,
       autoAddContacts,
-      useApprovedSymbols,
-      useUnapprovedSymbols,
       appConfig,
       permittedWebsites,
       // Sanitized through the shared chokepoint so half-filled rows (a slot the
       // clinician added but never named) never reach the stored blob.
       homeActions: normalizeHomeActions(homeActions),
+      // Normalized on the way out for the same reason as the others: a value
+      // typed into a number field can never be stored outside its range.
+      venueMenus: normalizeVenueMenuSettings(venueMenus),
       // Clamped through the shared chokepoint on the way out too, so a value
       // typed into a number field can never be stored outside its range.
       sessionRecording: normalizeSessionRecordingSettings(sessionRecording),
@@ -901,11 +907,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
-      setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
-      setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
+      setVenueMenus(normalizeVenueMenuSettings(aac?.venueMenus));
       setSessionRecording(normalizeSessionRecordingSettings(aac?.sessionRecording));
       setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
       setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
@@ -1521,26 +1526,32 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               detectors (when they flag a possible seizure to the AI). Tune per
               student so their usual movements don't trip false warnings. Clinical
               guidance (what their seizures look like, what to do) belongs in the
-              AAC prompt, not here. Opt-in / off by default. */}
+              AAC prompt, not here. Opt-in / off by default.
+
+              LOCKED while the detectors are still being tuned: the section stays
+              visible (clinicians ask for it, and the controls are the spec for
+              what it will do) but every control is disabled so nobody can switch
+              on a feature that isn't ready to be trusted clinically. To ship it,
+              drop the `disabled` props and restore the real description key. */}
           <CollapsibleSection
             icon={<Activity className="w-5 h-5" />}
             title={t('aacSettings.seizureDetection')}
-            description={t('aacSettings.seizureDetectionDesc')}
+            description={t('common.inDevelopment')}
           >
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-6 opacity-60">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="text-base font-medium">{t('aacSettings.seizureDetectionEnable')}</Label>
                   <p className="text-sm text-muted-foreground">{t('aacSettings.seizureDetectionEnableDesc')}</p>
                 </div>
                 <Switch
-                  checked={seizureDetection.enabled}
-                  onCheckedChange={(v) => setSeizureDetection(s => ({ ...s, enabled: v }))}
+                  checked={false}
+                  disabled
                   data-testid="switch-seizure-detection"
                 />
               </div>
 
-              {seizureDetection.enabled && (
+              {SEIZURE_DETECTION_AVAILABLE && seizureDetection.enabled && (
                 <>
                   {/* Rhythmic / convulsive (tonic-clonic) detector sensitivity. */}
                   <div className="space-y-1 pt-4 border-t">
@@ -1550,7 +1561,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       value={seizureDetection.rhythmic}
                       onValueChange={(v) => setSeizureDetection(s => ({ ...s, rhythmic: v as SeizureSensitivity }))}
                     >
-                      <SelectTrigger data-testid="select-seizure-rhythmic"><SelectValue /></SelectTrigger>
+                      <SelectTrigger disabled data-testid="select-seizure-rhythmic"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {(['off', 'low', 'medium', 'high'] as const).map(k => (
                           <SelectItem key={k} value={k}>{t(`aacSettings.seizureSensitivity_${k}`)}</SelectItem>
@@ -1567,7 +1578,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       value={seizureDetection.atonic}
                       onValueChange={(v) => setSeizureDetection(s => ({ ...s, atonic: v as SeizureSensitivity }))}
                     >
-                      <SelectTrigger data-testid="select-seizure-atonic"><SelectValue /></SelectTrigger>
+                      <SelectTrigger disabled data-testid="select-seizure-atonic"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {(['off', 'low', 'medium', 'high'] as const).map(k => (
                           <SelectItem key={k} value={k}>{t(`aacSettings.seizureSensitivity_${k}`)}</SelectItem>
@@ -1587,6 +1598,130 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       onCheckedChange={(v) => setSeizureDetection(s => ({ ...s, audioCorroboration: v }))}
                       data-testid="switch-seizure-audio"
                     />
+                  </div>
+
+                  {/* Per-student motor markers. These are NOT another
+                      sensitivity dial: the generic convulsive detector requires
+                      both sides of the body to move together, so a student whose
+                      seizure is one-sided or is a held posture can never trip it
+                      at ANY sensitivity. A marker gives that student their own
+                      path. See shared/aac/seizure-markers.ts. */}
+                  <div className="pt-4 border-t space-y-3">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">{t('aacSettings.seizureMarkers')}</Label>
+                      <p className="text-sm text-muted-foreground">{t('aacSettings.seizureMarkersDesc')}</p>
+                    </div>
+
+                    {seizureDetection.markers.length === 0 && (
+                      <p className="text-sm text-muted-foreground">{t('aacSettings.seizureMarkersEmpty')}</p>
+                    )}
+
+                    {seizureDetection.markers.map((marker, idx) => {
+                      const update = (patch: Partial<SeizureMarker>) =>
+                        setSeizureDetection(s => ({
+                          ...s,
+                          markers: s.markers.map((m, i) => (i === idx ? { ...m, ...patch } : m)),
+                        }));
+                      return (
+                        <div
+                          key={marker.id}
+                          className={cn(
+                            'rounded-lg border p-3 space-y-2',
+                            isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200',
+                          )}
+                        >
+                          <div className="space-y-1">
+                            <Label className="text-xs">{t('aacSettings.seizureMarkerLabel')}</Label>
+                            <Input
+                              value={marker.label}
+                              onChange={(e) => update({ label: e.target.value })}
+                              placeholder={t('aacSettings.seizureMarkerLabelPlaceholder')}
+                              data-testid={`input-seizure-marker-label-${idx}`}
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">{t('aacSettings.seizureMarkerSign')}</Label>
+                              <Select
+                                value={marker.cue.kind}
+                                onValueChange={(v) => {
+                                  const kind = v as MarkerKind;
+                                  update({
+                                    cue: (kindTakesSide(kind)
+                                      ? { kind, side: (marker.cue as { side?: MarkerSide }).side ?? 'either' }
+                                      : { kind }) as SeizureMarker['cue'],
+                                  });
+                                }}
+                              >
+                                <SelectTrigger data-testid={`select-seizure-marker-kind-${idx}`}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {MARKER_KINDS.map(k => (
+                                    <SelectItem key={k} value={k}>{t(`aacSettings.seizureMarkerKind_${k}`)}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {/* Side is the student's OWN left/right, never the
+                                left of the video image. */}
+                            {kindTakesSide(marker.cue.kind) && (
+                              <div className="space-y-1">
+                                <Label className="text-xs">{t('aacSettings.seizureMarkerSide')}</Label>
+                                <Select
+                                  value={(marker.cue as { side?: MarkerSide }).side ?? 'either'}
+                                  onValueChange={(v) => update({ cue: { ...marker.cue, side: v as MarkerSide } as SeizureMarker['cue'] })}
+                                >
+                                  <SelectTrigger data-testid={`select-seizure-marker-side-${idx}`}><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {(['left', 'right', 'either'] as MarkerSide[]).map(sd => (
+                                      <SelectItem key={sd} value={sd}>{t(`aacSettings.seizureMarkerSide_${sd}`)}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                            <div className="space-y-1">
+                              <Label className="text-xs">{t('aacSettings.seizureMarkerWeight')}</Label>
+                              <Select
+                                value={marker.weight}
+                                onValueChange={(v) => update({ weight: v as SeizureMarker['weight'] })}
+                              >
+                                <SelectTrigger data-testid={`select-seizure-marker-weight-${idx}`}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="supportive">{t('aacSettings.seizureMarkerWeight_supportive')}</SelectItem>
+                                  <SelectItem value="strong">{t('aacSettings.seizureMarkerWeight_strong')}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSeizureDetection(s => ({ ...s, markers: s.markers.filter((_, i) => i !== idx) }))}
+                          >
+                            <Trash2 className="w-3 h-3 me-1" />
+                            {t('aacSettings.seizureMarkerRemove')}
+                          </Button>
+                        </div>
+                      );
+                    })}
+
+                    <Button
+                      variant="outline"
+                      onClick={() => setSeizureDetection(s => ({
+                        ...s,
+                        markers: [...s.markers, {
+                          id: `mk_${Date.now().toString(36)}_${s.markers.length}`,
+                          label: '',
+                          cue: { kind: 'limb_elevation', side: 'either' },
+                          weight: 'supportive',
+                        }],
+                      }))}
+                      data-testid="button-add-seizure-marker"
+                    >
+                      <Plus className="w-4 h-4 me-2" />
+                      {t('aacSettings.seizureMarkerAdd')}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.seizureMarkersHint')}</p>
                   </div>
                 </>
               )}
@@ -2186,44 +2321,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardContent>
           </CollapsibleSection>
 
-          {/* Symbol Generation Settings */}
-          <CollapsibleSection
-            icon={<ImageIcon className="w-5 h-5" />}
-            title={t('aacSettings.symbolGeneration')}
-            description={t('aacSettings.symbolGenerationDesc')}
-          >
-            <CardContent className="space-y-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.useApprovedSymbols')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.useApprovedSymbolsDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={useApprovedSymbols}
-                  onCheckedChange={setUseApprovedSymbols}
-                />
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.useUnapprovedSymbols')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.useUnapprovedSymbolsDesc')}
-                  </p>
-                </div>
-                <Switch
-                  checked={useUnapprovedSymbols}
-                  onCheckedChange={setUseUnapprovedSymbols}
-                />
-              </div>
-            </CardContent>
-          </CollapsibleSection>
-
           {/* Defined Gestures */}
           <CollapsibleSection
             icon={<Hand className="w-5 h-5" />}
@@ -2651,11 +2748,27 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               {/* Captured restaurant menus awaiting a caretaker's confirmation.
                   Self-contained component — see
                   client/src/components/venue-menus/MenuReviewCard.tsx. */}
-              {student?.id && <MenuReviewCard studentId={student.id} />}
+              {/* Location Menus. Controlled by this panel like every other
+                  setting — it feeds `venueMenus` into the shared payload and
+                  the dirty check, so the page's own Save is the only one. */}
+              <CollapsibleSubSection
+                icon={<MapPin className="w-5 h-5" />}
+                title={<span className="flex items-center gap-2">{t('venueMenus.settings.title')}<BetaBadge size="md" /></span>}
+                description={t('venueMenus.settings.description')}
+              >
+                <CardContent className="space-y-4">
+                  <VenueMenuSettingsCard
+                    settings={venueMenus}
+                    onChange={setVenueMenus}
+                    student={student}
+                  />
+                  {student?.id && <MenuReviewCard studentId={student.id} />}
+                </CardContent>
+              </CollapsibleSubSection>
 
               <CollapsibleSubSection
                 icon={<Home className="w-5 h-5" />}
-                title={t('aacSettings.homeActionsTitle')}
+                title={<span className="flex items-center gap-2">{t('aacSettings.homeActionsTitle')}<BetaBadge size="md" /></span>}
                 description={t('aacSettings.homeActionsDescription')}
               >
             <CardContent className="space-y-4">
@@ -2825,7 +2938,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🎧</span>
                   <div>
-                    <Label htmlFor="aac-app-spotify" className="text-sm font-medium">Spotify</Label>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="aac-app-spotify" className="text-sm font-medium">Spotify</Label>
+                      <BetaBadge />
+                    </div>
                     <p className="text-xs text-muted-foreground">{t('aacSettings.appSpotifyDesc')}</p>
                   </div>
                 </div>
@@ -3018,7 +3134,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🥾</span>
                   <div>
-                    <Label className="text-sm font-medium">{t('aacSettings.appNatureHike')}</Label>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-medium">{t('aacSettings.appNatureHike')}</Label>
+                      <BetaBadge />
+                    </div>
                     <p className="text-xs text-muted-foreground">{t('aacSettings.appNatureHikeDesc')}</p>
                   </div>
                 </div>
@@ -3041,7 +3160,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🖼️</span>
                   <div>
-                    <Label className="text-sm font-medium">{t('aacSettings.appPhotos')}</Label>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-medium">{t('aacSettings.appPhotos')}</Label>
+                      <BetaBadge />
+                    </div>
                     <p className="text-xs text-muted-foreground">{t('aacSettings.appPhotosDesc')}</p>
                   </div>
                 </div>
@@ -3062,7 +3184,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🔍</span>
                   <div>
-                    <Label className="text-sm font-medium">{t('aacSettings.appPictureSearch')}</Label>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-medium">{t('aacSettings.appPictureSearch')}</Label>
+                      <BetaBadge />
+                    </div>
                     <p className="text-xs text-muted-foreground">{t('aacSettings.appPictureSearchDesc')}</p>
                   </div>
                 </div>
