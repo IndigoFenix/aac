@@ -1,7 +1,14 @@
 # =============================================================================
 # Bastion Host - Minimal EC2 instance for SSM tunneling to RDS
 # =============================================================================
-# No SSH key needed for SSM, but key pair retained for emergency SSH access.
+# Access is SSM-only, by design and by construction:
+#   - no public IP, private subnet
+#   - aws_security_group.bastion has NO ingress rules (see security.tf)
+#   - IAM (AmazonSSMManagedInstanceCore) is the authentication path
+# There is therefore no reachable SSH port, and the instance carries no key
+# pair. Break-glass shell is `aws ssm start-session --target <instance-id>`;
+# if real SSH is ever needed, use an EC2 Instance Connect Endpoint rather than
+# reintroducing a static key.
 # No public IP — reaches SSM service via NAT gateway.
 # Used for: npm run db-tunnel, database migrations, ad-hoc DB access.
 # Cost: ~$1.50/month (t4g.nano)
@@ -61,7 +68,6 @@ resource "aws_instance" "bastion" {
   subnet_id              = aws_subnet.private[1].id  # il-central-1b
   vpc_security_group_ids = [aws_security_group.bastion.id]
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
-  key_name               = "db-access-keypair"
 
   associate_public_ip_address = false
 
