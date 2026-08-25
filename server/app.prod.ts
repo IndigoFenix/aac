@@ -56,9 +56,11 @@ applyRequestLogger(app);
 // Health check - only returns healthy when app is fully initialized
 app.get('/health', (_req, res) => {
   if (startupError) {
+    // Generic body: the real message is on stderr. Echoing it here would
+    // enumerate which secrets are missing to anyone who can reach /health.
     res.status(503).json({
       status: 'error',
-      error: startupError.message,
+      error: 'startup_failed',
       timestamp: new Date().toISOString()
     });
   } else if (!isReady) {
@@ -215,5 +217,12 @@ process.on("uncaughtException", (err) => {
   console.error("Uncaught exception:", err);
 });
 
-// Start the server
+// Fail CLOSED. If the secret guard threw, serving traffic would mean running
+// on the committed dev-fallback constants: forgeable session cookies and
+// decryptable IdP secrets. A task that exits here is exactly what the ECS
+// circuit breaker exists to catch.
+if (startupError) {
+  console.error('Refusing to start: required secrets are missing or insecure.');
+  process.exit(1);
+}
 startServer();

@@ -85,8 +85,11 @@ export const USE_CASES: Record<UseCaseKey, UseCaseInfo> = {
   clinician: {
     label: "Clinician Chat",
     description: "Main clinician-facing assistant (structured output with tools)",
-    defaultProvider: "openai",
-    defaultModel: "gpt-4o",
+    // PHI-bearing role. The default must match the BAA-covered posture: this
+    // is what production's system_settings row holds, and a settings reset
+    // must not silently re-route clinician memory to a non-covered provider.
+    defaultProvider: "claude",
+    defaultModel: "claude-haiku",
     requiresTools: true,
     requiresStreaming: false,
     requiresStructuredOutput: true,
@@ -104,8 +107,11 @@ export const USE_CASES: Record<UseCaseKey, UseCaseInfo> = {
   aac_moderator: {
     label: "AAC Moderator",
     description: "Background AAC monitor agent (structured output with tools)",
-    defaultProvider: "openai",
-    defaultModel: "gpt-4o",
+    // Receives full AAC session transcripts + student name/age/diagnosis —
+    // the densest PHI flow in the system. Same rule as `clinician`: the
+    // default is the covered provider, never a consumer API.
+    defaultProvider: "claude",
+    defaultModel: "claude-haiku",
     requiresTools: true,
     requiresStreaming: false,
     requiresStructuredOutput: true,

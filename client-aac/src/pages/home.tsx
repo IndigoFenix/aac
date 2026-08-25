@@ -736,7 +736,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
 
   // Use the initialization context for loading state
   const { isComplete: isInitComplete } = useAppInitialization();
-  const [debugMode, setDebugMode] = useState<boolean>(true); // Enable debug mode by default for development
+  // OFF unless the student's server profile turns it on. The debug panel
+  // renders the transcript and named face photos on the child's screen, and
+  // the same flag switches on server-side prompt persistence.
+  const [debugMode, setDebugMode] = useState<boolean>(false);
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
@@ -2269,11 +2272,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           setUserProfile(profile);
           localStorage.setItem('synapse_user_profile', JSON.stringify(profile));
 
-          // Load debug mode from user profile
-          if (profile.debugMode === true) {
-            console.log('Enabling debug mode from user profile');
-            setDebugMode(true);
-          }
+          // The server profile is the only source of truth for debug mode, so
+          // it must be able to turn the panel OFF as well as on.
+          setDebugMode(profile.debugMode === true);
         }
       } catch (error) {
         console.error('Failed to load user profile:', error);

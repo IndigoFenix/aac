@@ -449,38 +449,10 @@ function aacStudentMemoryFields(aacSettings: any): AgentMemoryFieldWithDB[] {
   return fields.map(f => (f.id === 'Student_Contacts' ? contactsField : f));
 }
 
-/**
- * Sensitive field patterns that should NEVER be added to AI memory
- */
-export const SENSITIVE_FIELD_PATTERNS = [
-  /diagnosis/i,
-  /medication/i,
-  /allergy/i,
-  /medical/i,
-  /disability/i,
-  /classification/i,
-  /behavioral.*history/i,
-  /psychiatric/i,
-  /psychological/i,
-  /health.*condition/i,
-  /insurance/i,
-  /ssn/i,
-  /social.*security/i,
-  /custody/i,
-  /abuse/i,
-  /neglect/i,
-  /restraint/i,
-  /incident/i,
-  /hospitalization/i,
-];
-
-/**
- * Check if a field ID contains sensitive information
- */
-export function isSensitiveFieldId(fieldId: string): boolean {
-  return false; // Temporarily disable sensitive field filtering
-  // return SENSITIVE_FIELD_PATTERNS.some(pattern => pattern.test(fieldId));
-}
+// The sensitive-key filter lives in its own pure module so it can be unit
+// tested without this file's DB imports. Re-exported here for existing callers.
+import { SENSITIVE_FIELD_PATTERNS, isSensitiveFieldId } from "./sensitive-fields";
+export { SENSITIVE_FIELD_PATTERNS, isSensitiveFieldId };
 
 /**
  * Filter memory values to remove any sensitive data that might have been
@@ -1555,10 +1527,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       }
     }
   }
-  console.log('[DEBUG] After buildMemoryValues:');
-  console.log('  - context.student?.chatMemory:', JSON.stringify(context.student?.chatMemory));
-  console.log('  - memoryValues keys:', Object.keys(memoryValues));
-  console.log('  - memoryValues:', JSON.stringify(memoryValues, null, 2));
+  // Keys only. The values are the student's clinical memory; stdout goes to
+  // CloudWatch, which sits outside the consent and erasure model.
+  console.log('[DEBUG] After buildMemoryValues — memoryValues keys:', Object.keys(memoryValues));
 
   // For AAC mode, pre-load Student_* fields that have opened: true
   // This ensures the AI sees the actual data instead of stale/empty values
@@ -1607,12 +1578,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       );
       memoryValues = populateResult;
 
-      console.log('[DEBUG] After injectChatContext:');
-      console.log('  - memoryValues keys:', Object.keys(memoryValues));
-      console.log('  - Context_Program:', memoryValues['Context_Program']);
+      console.log('[DEBUG] After injectChatContext — memoryValues keys:', Object.keys(memoryValues));
   }
-
-  console.log('[getMessageManager] Initial memory values:', memoryValues);
 
   // Inject mode-specific context into memory values
   injectModeContext(memoryValues, feature, featureContext, sessionId);
@@ -1780,7 +1747,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   template.corePrompt = enrichCorePrompt(context, template.corePrompt, isAACFeature);
 
-  console.log('[getMessageManager] Final template:', template);
+  // The template's corePrompt is the memory rendered as prose — never log it.
+  console.log(`[getMessageManager] Final template ready (corePrompt=${template.corePrompt?.length ?? 0} chars)`);
 
   // Build agent-like object from template for ChatMessageManager
   const agentFromTemplate: AgentTemplate = {
@@ -2353,14 +2321,12 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       
       // Merge: our injected values + any updates from LLM
       // This ensures Context_Board is included even if memory system doesn't return it
-      console.log('[onMessage] MERGE — injected Context_Board name:', memoryValues?.Context_Board?.name ?? '(none)', 'pages:', memoryValues?.Context_Board?.pages?.length ?? 0);
-      console.log('[onMessage] MERGE — response Context_Board name:', response.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', response.memoryValues?.Context_Board?.pages?.length ?? 0);
+      // (Board names are authored for a student and can carry the student's name — log page counts only.)
+      console.log('[onMessage] MERGE — Context_Board pages: injected', memoryValues?.Context_Board?.pages?.length ?? 0, 'response', response.memoryValues?.Context_Board?.pages?.length ?? 0);
       const mergedMemoryValues = {
         ...memoryValues,
         ...(response.memoryValues || {}),
       };
-
-      console.log('[onMessage] MERGED Context_Board name:', mergedMemoryValues?.Context_Board?.name ?? '(none)', 'pages:', mergedMemoryValues?.Context_Board?.pages?.length ?? 0);
 
       // Resolve imageKeys → symbolPaths on the board (lookup + optional generation)
       await resolveImageKeysOnBoard(mergedMemoryValues?.Context_Board, studentId);
@@ -2446,16 +2412,14 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
     if (replyType) {
       const response = await messageManager.getResponse(replyType);
 
-      // Debug: Log what's in response.memoryValues
-      console.log('[onMessageStreaming] MERGE — injected Context_Board name:', memoryValues?.Context_Board?.name ?? '(none)', 'pages:', memoryValues?.Context_Board?.pages?.length ?? 0);
-      console.log('[onMessageStreaming] MERGE — response Context_Board name:', response.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', response.memoryValues?.Context_Board?.pages?.length ?? 0);
+      // (Board names are authored for a student and can carry the student's name — log page counts only.)
+      console.log('[onMessageStreaming] MERGE — Context_Board pages: injected', memoryValues?.Context_Board?.pages?.length ?? 0, 'response', response.memoryValues?.Context_Board?.pages?.length ?? 0);
 
       // Merge: our injected values + any updates from LLM
       const mergedMemoryValues = {
         ...memoryValues,
         ...(response.memoryValues || {}),
       };
-      console.log('[onMessageStreaming] MERGED Context_Board name:', mergedMemoryValues?.Context_Board?.name ?? '(none)', 'pages:', mergedMemoryValues?.Context_Board?.pages?.length ?? 0);
 
       // Resolve imageKeys → symbolPaths on the board (lookup + optional generation)
       await resolveImageKeysOnBoard(mergedMemoryValues?.Context_Board, studentId);

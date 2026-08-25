@@ -124,6 +124,45 @@ export async function runVertexPreflight(): Promise<void> {
     }
   }
 
+  // Step 2b: Claude on Vertex (Model Garden). The Monitor and clinician chat
+  // default to claude-haiku; ANTHROPIC_USE_VERTEX=1 routes them through the
+  // GCP BAA instead of the direct Anthropic API. Unlike Gemini, Claude models
+  // must be individually ENABLED in Model Garden per project — until then
+  // Vertex answers 404 (model not found) or 429 (no quota). This step makes
+  // that state visible at boot instead of at the first real session.
+  const claudeVertexOn = process.env.ANTHROPIC_USE_VERTEX === "1" || process.env.ANTHROPIC_USE_VERTEX === "true";
+  const claudeRegion = process.env.CLAUDE_VERTEX_REGION || "global";
+  // Keep in sync with CLAUDE_MODEL_MAP in shared/llm-options.ts (Vertex `@` form).
+  const claudeModel = "claude-haiku-4-5@20251001";
+  console.log(`\nClaude on Vertex (ANTHROPIC_USE_VERTEX=${claudeVertexOn ? "on" : "OFF — prod will use the direct Anthropic API"}, region=${claudeRegion}, model=${claudeModel})...`);
+  try {
+    const { AnthropicVertex } = await import("@anthropic-ai/vertex-sdk");
+    const claude = new AnthropicVertex({ projectId: project, region: claudeRegion, googleAuth: auth as any });
+    const r = await claude.messages.create({
+      model: claudeModel,
+      max_tokens: 8,
+      messages: [{ role: "user", content: "ping" }],
+    });
+    const text = r.content.map((c: any) => (c.type === "text" ? c.text : "")).join("").trim();
+    console.log(`>>> Claude on Vertex OK (reply="${text.slice(0, 40)}"). Model Garden is enabled for ${claudeModel} in ${claudeRegion}.`);
+  } catch (e: any) {
+    const status = e?.status ?? e?.statusCode;
+    const msg = e?.message || String(e);
+    console.log(`>>> Claude on Vertex FAILED: HTTP ${status ?? "?"} — ${msg.slice(0, 600)}`);
+    if (status === 404) {
+      console.log(`    404 -> ${claudeModel} is NOT enabled in Model Garden for this project/region.`);
+      console.log(`    Fix: GCP console -> Vertex AI -> Model Garden -> "Claude Haiku 4.5" -> Enable (accept terms), then retry.`);
+      console.log(`    Also enable "Claude Opus 4" — deep_analysis defaults to claude-opus.`);
+    } else if (status === 403) {
+      console.log("    403 -> IAM: the SA needs roles/aiplatform.user on this project (same as Gemini), or a VPC-SC/IP gate is in the way.");
+    } else if (status === 429) {
+      console.log("    429 -> no quota provisioned for this model in this region. Request quota, or set CLAUDE_VERTEX_REGION to a region that has it.");
+    }
+    if (!claudeVertexOn) {
+      console.log("    (Informational only: ANTHROPIC_USE_VERTEX is off, so this failure does not affect prod today.)");
+    }
+  }
+
   // Step 3: is the PUBLIC Gemini API (different host: generativelanguage.googleapis.com)
   // reachable from this environment? If Vertex is IP-blocked at Google's edge but
   // this returns 200, routing the live agents to the public API is the fix.
