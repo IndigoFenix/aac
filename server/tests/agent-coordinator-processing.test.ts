@@ -123,6 +123,72 @@ describe("ProcessingIndicators", () => {
     }
   });
 
+  // The "board" cue is the one that had NO backstop until 2026-08-25. The
+  // Coordinator lights it at Board Manager invoke start and clears it in exactly
+  // one branch of one `finally`, so a rebuild chain that ended anywhere else —
+  // a re-entry hitting the `resting` gate, a teardown, an enterSleep that keeps
+  // the socket open — left the child watching a loading bar with nothing alive
+  // that could ever take it down. The client is a pure mirror with no timeout of
+  // its own, so the stuck bar outlived the failure that caused it.
+  describe("the board cue", () => {
+    it("auto-clears if the rebuild chain never reports a terminal event", () => {
+      jest.useFakeTimers();
+      try {
+        const emitted: ProcessingMessage[] = [];
+        const pi = new ProcessingIndicators({ emit: (m) => emitted.push(m), boardTimeoutMs: 45_000 });
+
+        pi.markBoardBusy();
+        expect(pi.isActive("board")).toBe(true);
+
+        // Nothing else happens — the chain died silently.
+        jest.advanceTimersByTime(45_000);
+        expect(pi.isActive("board")).toBe(false);
+        expect(emitted.at(-1)).toEqual({ type: "processing", activity: "board", active: false });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("re-arms on each link of a chain, so a long rebuild is never cut short", () => {
+      jest.useFakeTimers();
+      try {
+        const pi = new ProcessingIndicators({ emit: () => {}, boardTimeoutMs: 45_000 });
+
+        pi.markBoardBusy();
+        // A retry / queued-trigger re-invocation lands well into the window.
+        jest.advanceTimersByTime(40_000);
+        pi.markBoardBusy();
+        // The ORIGINAL deadline passes; the cue must still be up because the
+        // chain is demonstrably still working.
+        jest.advanceTimersByTime(10_000);
+        expect(pi.isActive("board")).toBe(true);
+
+        // The re-armed deadline then applies from the later mark.
+        jest.advanceTimersByTime(35_000);
+        expect(pi.isActive("board")).toBe(false);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("a delivered board cancels the backstop (no late spurious clear)", () => {
+      jest.useFakeTimers();
+      try {
+        const emitted: ProcessingMessage[] = [];
+        const pi = new ProcessingIndicators({ emit: (m) => emitted.push(m), boardTimeoutMs: 45_000 });
+
+        pi.markBoardBusy();
+        pi.clearBoardBusy();
+        const countAfterClear = emitted.length;
+
+        jest.advanceTimersByTime(120_000);
+        expect(emitted.length).toBe(countAfterClear);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   it("clearAll drops every active cue and cancels timers (teardown / reset)", () => {
     jest.useFakeTimers();
     try {
@@ -130,7 +196,7 @@ describe("ProcessingIndicators", () => {
       const pi = new ProcessingIndicators({ emit: (m) => emitted.push(m) });
 
       pi.markSpeakerBusy();
-      pi.set("board", true);
+      pi.markBoardBusy();   // mark, not set — so clearAll's timer cancellation is actually exercised
       pi.markInterpretBusy();
 
       pi.clearAll();

@@ -49,7 +49,8 @@ describe("validateBoardButtons", () => {
       { label: "Mars", glyph: "i_me+want+generate:planet_mars", imageKey: "planet_mars", iconRef: "fas fa-comment" },
     ]);
     expect(buttons).toHaveLength(0);
-    expect(errors[0]).toMatch(/no fallback/i);
+    expect(errors[0]).toMatch(/glyphFallback/i);
+    expect(errors[0]).toContain("`planet_mars`");
   });
 
   it("rejects a generate: key inside the fallback (rule 2)", () => {
@@ -141,7 +142,13 @@ describe("validateBoardButtons — launch buttons survive the picture rules", ()
     expect(buttons[0].glyph).toBeUndefined();
     // The fa-comment sentinel is cleared too, so the caller's icon refill lands.
     expect(buttons[0].iconRef).toBeUndefined();
-    expect(errors[0]).toMatch(/imageKey but no fallback/i);
+    // The message must NAME the offending slot. Without it the model cannot
+    // tell which of three slots to fix, so it retries and re-fails on the same
+    // word — the loop that turned a few missing keys into 139 rejected rebuilds.
+    expect(errors[0]).toMatch(/not in the registry/i);
+    expect(errors[0]).toContain("`sandbox_game`");
+    expect(errors[0]).not.toContain("`yes`");
+    expect(errors[0]).not.toContain("`play`");
     expect(violations[0].rule).toBe("imagekey_no_fallback");
   });
 

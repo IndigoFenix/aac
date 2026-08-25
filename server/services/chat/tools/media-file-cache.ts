@@ -10,6 +10,8 @@ interface CachedFile {
   mimeType: string;
   filename: string;
   createdAt: number;
+  /** User who uploaded it. Entries stored by server-side tools may have none. */
+  ownerUserId?: string;
 }
 
 const FILE_TTL_MS = 10 * 60 * 1000; // 10 minutes (client can re-send if expired)
@@ -29,17 +31,34 @@ setInterval(() => {
 /**
  * Store a file in the cache and return its ID.
  */
-export function storeFile(buffer: Buffer, mimeType: string, filename: string): string {
+export function storeFile(buffer: Buffer, mimeType: string, filename: string, ownerUserId?: string): string {
   const id = crypto.randomUUID();
-  cache.set(id, { id, buffer, mimeType, filename, createdAt: Date.now() });
+  cache.set(id, { id, buffer, mimeType, filename, createdAt: Date.now(), ownerUserId });
   return id;
 }
 
 /**
  * Re-store a file with the same ID (used when client re-sends an expired file).
+ * Refuses to overwrite a live entry that belongs to a different user — an id
+ * is a capability, and a caller must not be able to swap the content behind
+ * someone else's reference. Returns false when refused.
  */
-export function restoreFile(id: string, buffer: Buffer, mimeType: string, filename: string): void {
-  cache.set(id, { id, buffer, mimeType, filename, createdAt: Date.now() });
+export function restoreFile(
+  id: string,
+  buffer: Buffer,
+  mimeType: string,
+  filename: string,
+  ownerUserId?: string,
+): boolean {
+  const existing = cache.get(id);
+  if (existing?.ownerUserId && existing.ownerUserId !== ownerUserId) return false;
+  cache.set(id, { id, buffer, mimeType, filename, createdAt: Date.now(), ownerUserId });
+  return true;
+}
+
+/** True when `userId` may read or delete the entry (owner, or an ownerless entry). */
+export function fileOwnedBy(file: Pick<CachedFile, "ownerUserId">, userId: string): boolean {
+  return !file.ownerUserId || file.ownerUserId === userId;
 }
 
 /**

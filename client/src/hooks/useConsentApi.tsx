@@ -427,8 +427,8 @@ export function useConsentInvitation(code: string | undefined) {
     enabled: !!code,
     retry: false,
     queryFn: async () => {
-      const params = new URLSearchParams({ code: code! });
-      const res = await apiRequest("GET", `/api/consent/invitations/redeem?${params}`);
+      // POST with the code in the body — it must not appear in a request URL.
+      const res = await apiRequest("POST", "/api/consent/invitations/redeem", { code: code! });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const e = new Error(err.message ?? `Code lookup failed (${res.status})`);

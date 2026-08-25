@@ -228,10 +228,25 @@ export interface BoardManagerInvocationInput {
    *  `systemPromptSuffix` so the base stays explicit-cacheable. */
   systemPrompt: string;
 
-  /** Per-turn system-prompt additions (builder/guessing blocks,
-   *  <retry_feedback>). When present the agent inlines base+suffix and
-   *  skips the prompt cache for that turn. */
+  /** Per-turn system-prompt additions (builder/guessing blocks). When present
+   *  the agent inlines base+suffix and skips the prompt cache for that turn. */
   systemPromptSuffix?: string;
+
+  /**
+   * Validator feedback on the buttons this agent just got rejected, so the
+   * retry can correct them.
+   *
+   * 🚨 Rendered into the per-turn USER message, NOT the system suffix, and that
+   * placement is load-bearing. The prompt cache is keyed on the system prompt,
+   * so anything appended there misses the cache and re-bills the WHOLE prefix
+   * at full input rate — ~13.5k tokens instead of ~800, about 17x a normal
+   * turn. Retries are exactly when that is least affordable: a validator
+   * rejection is already a wasted call, and paying 17x for the correction is
+   * what turned a handful of bad glyphs into enough throughput to draw Vertex
+   * 429s. The turn message is uncached by nature (it differs every turn), so
+   * the feedback rides along for free.
+   */
+  retryFeedback?: string;
 
   /** Tool config — drives which tools are declared (set_board only
    *  appears when availableBoards is non-empty, etc.). */
@@ -338,8 +353,8 @@ export interface BoardManagerInvocationResult {
   /** Provider finish reason (STOP, MAX_TOKENS, etc.) for diagnostics. */
   finishReason?: string;
   /** Fused tool names the model emitted that we silently rewrote.
-   *  Coordinator turns these into a `<retry_feedback>` block on the
-   *  NEXT invocation so the model learns the correct tool name without
+   *  Coordinator feeds these back via `retryFeedback` on the NEXT
+   *  invocation so the model learns the correct tool name without
    *  us telling it we patched the previous call. Empty if none. */
   fusionFeedback?: Array<{ fusedName: string; toolName: string; paramName: string }>;
 }
@@ -558,6 +573,12 @@ export function renderInvocationContext(input: BoardManagerInvocationInput): str
   }
   if (hint) lines.push("", hint);
   lines.push(`</this_invocation>`);
+
+  // LAST, and outside <this_invocation>: a correction outranks the beat's
+  // action hint, and the model attends most to the end of the turn message.
+  if (input.retryFeedback?.trim()) {
+    lines.push("", `<retry_feedback>`, input.retryFeedback.trim(), `</retry_feedback>`);
+  }
 
   return lines.join("\n");
 }
@@ -988,8 +1009,22 @@ export function classifyProviderFailure(message: string): "RATE_LIMITED" | "ERRO
 
 /** How many times a rate-limited call is retried before giving up. */
 export const RATE_LIMIT_RETRIES = 2;
-/** First backoff step. Doubles each attempt, with jitter on top. */
-export const RATE_LIMIT_BASE_DELAY_MS = 400;
+/**
+ * First backoff step. Doubles each attempt, with jitter on top.
+ *
+ * 🚨 Scale this against the CALL, not against intuition. At the original 400ms
+ * the two retries waited an average of 200ms then 400ms — while each Vertex
+ * round-trip to a tight pool was taking ~6s to come back 429. The backoff was
+ * rounding error on the request it was supposed to be spacing out, so all three
+ * attempts landed inside the same congestion window and the "retry with
+ * backoff" was retry-without-backoff in everything but name.
+ *
+ * Kept modest even so, because a child is watching a loading bar for the whole
+ * chain. The in-call retries are the CHEAP recovery; the real one is the
+ * Coordinator's delayed background rebuild, which costs the child no wait at
+ * all because the existing board stays up while it runs.
+ */
+export const RATE_LIMIT_BASE_DELAY_MS = 1_500;
 
 /**
  * Backoff for attempt `n` (0-based): exponential, with FULL jitter.

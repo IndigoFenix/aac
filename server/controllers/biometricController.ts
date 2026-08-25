@@ -486,13 +486,17 @@ export class BiometricController {
       const { studentId } = req.params;
       const currentUser = req.user as any;
 
-      // Verify user has access to this student (if authenticated)
-      if (currentUser?.id) {
-        const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-        if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
-          res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
-          return;
-        }
+      // Fail closed. This payload is face embeddings + names for the child,
+      // parents and clinicians; a caller with NO session must never be trusted
+      // more than one with the wrong session.
+      if (!currentUser?.id) {
+        res.status(401).json({ success: false, message: "Authentication required" });
+        return;
+      }
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
+        return;
       }
 
       const people = await getKnownPeopleForStudent(studentId);
@@ -520,20 +524,23 @@ export class BiometricController {
    * active contact, linked user, and the student. Unlike known-people this
    * is NOT gated on having a face embedding, and carries no embeddings; it
    * just tells the client who can be picked and whether a stored photo
-   * exists. `optionalAuth` so the student kiosk (often unauthenticated) can
-   * read it; the access check only applies when a real user is on the request.
+   * exists. Requires the device's session (the AAC client is always signed in
+   * as a caretaker account) and verifies that account's access to the student.
    */
   async getPeopleDirectory(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
       const currentUser = req.user as any;
 
-      if (currentUser?.id) {
-        const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-        if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
-          res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
-          return;
-        }
+      // Fail closed (see getKnownPeople).
+      if (!currentUser?.id) {
+        res.status(401).json({ success: false, message: "Authentication required" });
+        return;
+      }
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
+        return;
       }
 
       const people = await getPeopleDirectoryForStudent(studentId);
@@ -548,20 +555,23 @@ export class BiometricController {
    * GET /api/aac/students/:studentId/people/:personId/photo
    * Stream a stored face photo for a person who belongs to this student.
    * The (studentId, personId) pairing is enforced in the service so this
-   * can't be used to fetch an arbitrary biometric photo by id. `optionalAuth`
-   * mirrors the directory/known-people endpoints (student kiosk access).
+   * can't be used to fetch an arbitrary biometric photo by id. Session +
+   * student-access check, same as the directory/known-people endpoints.
    */
   async getPersonPhoto(req: Request, res: Response): Promise<void> {
     try {
       const { studentId, personId } = req.params;
       const currentUser = req.user as any;
 
-      if (currentUser?.id) {
-        const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-        if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
-          res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
-          return;
-        }
+      // Fail closed (see getKnownPeople).
+      if (!currentUser?.id) {
+        res.status(401).json({ success: false, message: "Authentication required" });
+        return;
+      }
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
+        return;
       }
 
       const faceImageUrl = await getPersonFaceImageUrlForStudent(studentId, personId);

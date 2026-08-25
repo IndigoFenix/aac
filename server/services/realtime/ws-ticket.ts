@@ -24,6 +24,10 @@
 //   - HMAC-signed with a key derived from SESSION_SECRET; unforgeable.
 //   - 60-second TTL — expired well before any log retention matters.
 //   - Single use — redeeming consumes the nonce, so a replayed URL is dead.
+//     The consumed set lives behind `NonceStore`: in production that is a
+//     Postgres table shared by every ECS task (ws-ticket-store-pg.ts); the
+//     in-process default here is for tests and single-task dev. An in-process
+//     set alone is NOT single-use once there are two tasks behind the ALB.
 //   - Carries only a user id; no PHI, no session id, and it cannot be exchanged
 //     back into a session cookie.
 
@@ -32,6 +36,15 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 /** How long a freshly minted ticket stays valid. Deliberately tiny — the
  *  client mints one immediately before calling `new WebSocket(...)`. */
 export const TICKET_TTL_MS = 60_000;
+
+/**
+ * Where redeemed nonces are remembered until they would have expired anyway.
+ * `consume` must be atomic: it returns true exactly once per nonce across
+ * every process that shares the store.
+ */
+export interface NonceStore {
+  consume(nonce: string, expiresAt: number, now: number): Promise<boolean>;
+}
 
 /** Derive a dedicated key rather than signing with SESSION_SECRET directly, so
  *  a leaked ticket signature can never be replayed against session cookies. */
@@ -44,8 +57,8 @@ function sign(payload: string): string {
   return createHmac("sha256", ticketKey()).update(payload).digest("base64url");
 }
 
-// Nonces already redeemed, held until they expire anyway. Bounded by
-// (tickets minted per TTL window), which is one per WS connection attempt.
+// ── In-process store (tests, single-task dev) ─────────────────────────────
+
 const consumed = new Map<string, number>();
 
 function pruneConsumed(now: number): void {
@@ -54,6 +67,17 @@ function pruneConsumed(now: number): void {
     if (expiresAt <= now) consumed.delete(nonce);
   }
 }
+
+export const memoryNonceStore: NonceStore = {
+  async consume(nonce, expiresAt, now) {
+    if (consumed.has(nonce)) return false;
+    consumed.set(nonce, expiresAt);
+    pruneConsumed(now);
+    return true;
+  },
+};
+
+// ── Tickets ───────────────────────────────────────────────────────────────
 
 /**
  * Mint a ticket for an authenticated user. Call only from a route that has
@@ -69,9 +93,13 @@ export function mintWsTicket(userId: string, now: number = Date.now()): string {
 
 /**
  * Verify and CONSUME a ticket. Returns the user id it was minted for, or null
- * if it is malformed, forged, expired, or already used.
+ * if it is malformed, forged, expired, or already used (per `store`).
  */
-export function redeemWsTicket(ticket: string, now: number = Date.now()): string | null {
+export async function redeemWsTicket(
+  ticket: string,
+  now: number = Date.now(),
+  store: NonceStore = memoryNonceStore,
+): Promise<string | null> {
   if (!ticket || ticket.length > 512) return null;
 
   const parts = ticket.split(".");
@@ -89,15 +117,15 @@ export function redeemWsTicket(ticket: string, now: number = Date.now()): string
   const expiresAt = Number(expiresAtRaw);
   if (!Number.isFinite(expiresAt) || expiresAt <= now) return null;
 
-  if (consumed.has(nonce)) return null; // replay
-  consumed.set(nonce, expiresAt);
-  pruneConsumed(now);
+  // Only a SIGNED, UNEXPIRED nonce reaches the store, so the store never
+  // fills with attacker-chosen garbage.
+  if (!(await store.consume(nonce, expiresAt, now))) return null; // replay
 
   const userId = Buffer.from(encodedUserId, "base64url").toString("utf8");
   return userId || null;
 }
 
-/** Test-only: drop the replay set so cases don't leak into each other. */
+/** Test-only: drop the in-process replay set so cases don't leak into each other. */
 export function __resetWsTicketsForTests(): void {
   consumed.clear();
 }

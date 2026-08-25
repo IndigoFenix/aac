@@ -571,6 +571,7 @@ export const ru: Translations = {
       please:"\u041f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430",
       again: "\u0421\u043d\u043e\u0432\u0430",
       more: "\u0411\u043e\u043b\u044c\u0448\u0435",
+      other: "Другой",
       nurse: "\u041c\u0435\u0434\u0441\u0435\u0441\u0442\u0440\u0430",
       grandma: "\u0411\u0430\u0431\u0443\u0448\u043a\u0430",
       grandpa: "\u0414\u0435\u0434\u0443\u0448\u043a\u0430",

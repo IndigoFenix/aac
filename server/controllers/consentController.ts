@@ -689,14 +689,18 @@ class ConsentController {
   }
 
   /**
-   * GET /api/consent/invitations/redeem?code=
+   * POST /api/consent/invitations/redeem  { code }
    * Public endpoint (no session required) — the magic-link page calls it
    * when the parent arrives. Validates the token and returns the wizard
    * context. Does NOT consume the token.
+   *
+   * The code is taken from the BODY, never the query string, so it does not
+   * land in access logs. The response is deliberately minimal (see
+   * consentInvitationService.redeemContext) because it precedes verification.
    */
   async redeemInvitation(req: Request, res: Response): Promise<void> {
     try {
-      const code = String(req.query.code ?? "").trim();
+      const code = String(req.body?.code ?? "").trim();
       if (!code) { res.status(400).json({ success: false, message: "code is required" }); return; }
       const ctx = await consentInvitationService.redeemContext(code);
       res.json({ success: true, ...ctx });

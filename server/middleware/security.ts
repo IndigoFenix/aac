@@ -99,6 +99,26 @@ export function resolveAllowedOrigins(): string[] {
 }
 
 /**
+ * Origin policy for a WebSocket UPGRADE request.
+ *
+ * The `'upgrade'` event bypasses Express, so `validateCSRF` never runs on a
+ * handshake — and with the session cookie at `SameSite=None`, any web page a
+ * clinician visits could otherwise open `wss://…/ws/live` with their cookies
+ * and stream a student's session (cross-site WebSocket hijacking).
+ *
+ * Rule: a browser ALWAYS sends `Origin` on a WebSocket handshake, so a present
+ * Origin must be on the CORS allowlist (which includes the packaged clients'
+ * `app://` / `capacitor://` origins). An ABSENT Origin means a non-browser
+ * client (Node, curl, tests); it cannot carry a victim's ambient cookies
+ * cross-site, so it is allowed through to the cookie/ticket check.
+ */
+export function isAllowedUpgradeOrigin(origin: string | string[] | undefined): boolean {
+  const value = (Array.isArray(origin) ? origin[0] : origin)?.trim();
+  if (!value) return true;
+  return resolveAllowedOrigins().includes(value);
+}
+
+/**
  * Apply security headers via helmet. CSP is disabled by default — turning
  * it on requires per-page directive tuning (Vite dev HMR, Google AI domains,
  * S3 image origins, WebSocket targets) and is tracked separately. Other

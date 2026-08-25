@@ -337,32 +337,28 @@ class PhotoController {
    * The STUDENT-facing library, for the AAC device: their own photos plus their
    * institutes', hidden ones already filtered out server-side.
    *
-   * ⚠️ AUTH — this follows the established AAC device pattern (`optionalAuth`
-   * plus a studentId), the same one `/api/aac/spotify/token` and the other
-   * device endpoints use: the AAC is a kiosk provisioned for one student and
-   * does not reliably carry a user session (see the iPad WS-cookie gap). When a
-   * user IS authenticated the full access check runs, so a clinician cannot use
-   * this route to read a student they have no rights to.
+   * AUTH — `requireAuth` plus `verifyStudentAccess`, like every other device
+   * endpoint since 2026-08-25. The AAC device is signed in as a caretaker
+   * account with a long-lived session cookie, and HTTP requests from both the
+   * desktop and iPad shells carry it; the "iPad WS-cookie gap" is specific to
+   * the WebSocket upgrade (handled by the ws-ticket) and never applied here.
    *
-   * What that leaves: an unauthenticated caller who KNOWS a studentId can obtain
-   * presigned URLs for that student's photos. That is the same exposure every
-   * other AAC endpoint already carries, but the payload here is family
-   * photographs rather than a track id, so it is called out in the plan as an
-   * open item rather than quietly inherited. Do not widen this route further
-   * (no institute-wide listing, no id enumeration) while it stands.
+   * Closed 2026-08-25: the route now requires a session AND verified access to
+   * the student. A studentId alone is no longer sufficient. Do not widen this
+   * route (no institute-wide listing, no id enumeration).
    */
   async listForStudent(req: Request, res: Response) {
     try {
       const studentId = (req.query.studentId as string | undefined)?.trim();
       if (!studentId) return res.status(400).json({ error: "STUDENT_ID_REQUIRED" });
 
-      // A logged-in caller is held to the normal standard; a device session
-      // (no user) falls back to the platform's AAC pattern.
+      // Fail closed: family photographs of a child. The AAC device is always
+      // signed in as a caretaker account, so there is no anonymous caller to
+      // accommodate — a request with no session gets 401, not the photos.
       const userId = currentUserId(req);
-      if (userId) {
-        const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
-        if (!hasAccess) return res.status(403).json({ error: "STUDENT_ACCESS_DENIED" });
-      }
+      if (!userId) return res.status(401).json({ error: "AUTH_REQUIRED" });
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
+      if (!hasAccess) return res.status(403).json({ error: "STUDENT_ACCESS_DENIED" });
 
       const enrollments = await instituteRepository.getInstitutesByStudentId(studentId);
       const instituteIds = enrollments

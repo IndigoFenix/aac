@@ -82,6 +82,19 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
+// Redeemed WebSocket-upgrade ticket nonces (server/services/realtime/ws-ticket.ts).
+// A ticket must be single-use ACROSS ECS tasks — an in-process set only holds
+// per task, so a leaked ticket could be replayed once on every task behind the
+// ALB. Rows are tiny, live ~60s, and carry no PHI (an opaque nonce + expiry).
+export const wsTicketNonces = pgTable(
+  "ws_ticket_nonces",
+  {
+    nonce: varchar("nonce", { length: 64 }).primaryKey(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => [index("IDX_ws_ticket_nonces_expires").on(table.expiresAt)],
+);
+
 // Admin users table for backoffice access
 // `permissions` is a list of admin-section keys this admin can access; the
 // wildcard `"*"` grants every section. Migrated legacy system admins land

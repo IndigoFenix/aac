@@ -66,7 +66,6 @@ import {
 
 import {
   requireAuth,
-  optionalAuth,
   requireAdmin,
   requireSystemAdmin,
   requireSLPPlan,
@@ -310,7 +309,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Validate reset token (check if valid before showing form)
   app.get("/auth/reset-password/:token", (req, res) => authController.validateResetToken(req, res));
   
-  app.get("/auth/user", optionalAuth, (req, res) => authController.getCurrentUser(req, res));
+  // Public by design: answers "who am I" for both signed-in and anonymous
+  // callers. No middleware — the controller handles the anonymous case.
+  app.get("/auth/user", (req, res) => authController.getCurrentUser(req, res));
 
   // Google OAuth routes (only if credentials are configured)
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -717,10 +718,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/consent/students/:studentId/invitations", requireAuth, (req, res) =>
     consentController.listPendingInvitations(req, res)
   );
-  app.get("/api/consent/invitations/redeem", (req, res) =>
+  // Both endpoints are PUBLIC BY DESIGN (no auth middleware): the magic-link
+  // token is the credential, and a parent typically has no account. The code
+  // therefore travels in a POST body (never a URL) and both are rate-limited.
+  app.post("/api/consent/invitations/redeem", authRateLimiter, (req, res) =>
     consentController.redeemInvitation(req, res)
   );
-  app.post("/api/consent/invitations/sign", (req, res) =>
+  app.post("/api/consent/invitations/sign", authRateLimiter, (req, res) =>
     consentController.signInvitation(req, res)
   );
   app.post("/api/consent/invitations/request-otp", (req, res) =>
@@ -1501,11 +1505,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= CHAT ROUTES =============
   // Chat endpoint with optional image upload for multimodal context
-  app.post("/api/chat", optionalAuth, aacUpload.single("image"), (req, res) =>
+  app.post("/api/chat", requireAuth, aacUpload.single("image"), (req, res) =>
     chatController.onMessage(req, res)
   );
   // Streaming chat endpoint with real-time thinking updates (SSE)
-  app.post("/api/chat/stream", optionalAuth, (req, res) =>
+  app.post("/api/chat/stream", requireAuth, (req, res) =>
     chatStreamController.onMessage(req, res)
   );
 
@@ -1530,16 +1534,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Upload a file for use in chat context (stored in temporary server cache)
   app.post(
     "/api/chat/files/upload",
-    optionalAuth,
+    requireAuth,
     chatFileUpload.single("file"),
     (req, res) => fileUploadController.uploadFile(req, res)
   );
   // Get a cached file (generated images, extracted frames, etc.)
-  app.get("/api/chat/files/:fileId", optionalAuth, (req, res) =>
+  app.get("/api/chat/files/:fileId", requireAuth, (req, res) =>
     fileUploadController.getFileHandler(req, res)
   );
   // Delete a cached file
-  app.delete("/api/chat/files/:fileId", optionalAuth, (req, res) =>
+  app.delete("/api/chat/files/:fileId", requireAuth, (req, res) =>
     fileUploadController.deleteFileHandler(req, res)
   );
 
@@ -1567,19 +1571,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= VOICE ROUTES (AAC) =============
   // Transcribe audio to text using Whisper
-  app.post("/api/aac/voice/transcribe", optionalAuth, aacUpload.single("audio"), (req, res) =>
+  app.post("/api/aac/voice/transcribe", requireAuth, aacUpload.single("audio"), (req, res) =>
     voiceController.transcribe(req, res)
   );
   // Text-to-speech using Google TTS (returns audio blob directly)
-  app.post("/api/aac/voice/synthesize", optionalAuth, (req, res) =>
+  app.post("/api/aac/voice/synthesize", requireAuth, (req, res) =>
     voiceController.synthesize(req, res)
   );
   // Text-to-speech using Google TTS (streaming via SSE)
-  app.post("/api/aac/voice/speak", optionalAuth, (req, res) =>
+  app.post("/api/aac/voice/speak", requireAuth, (req, res) =>
     voiceController.speak(req, res)
   );
   // Full voice chat: audio in → transcription + AI response + audio out (streaming)
-  app.post("/api/aac/voice/chat", optionalAuth, aacUpload.single("audio"), (req, res) =>
+  app.post("/api/aac/voice/chat", requireAuth, aacUpload.single("audio"), (req, res) =>
     voiceController.voiceChat(req, res)
   );
 
@@ -1590,7 +1594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // list of options and the AI returns the best `id`. Called by the trusted host
   // (GameEmbed), not the app directly. No license required — the surface is
   // narrow (constrained to app-provided ids), metered, and rate-limited.
-  app.post("/api/aac/app-ai/select", optionalAuth, async (req, res) => {
+  app.post("/api/aac/app-ai/select", requireAuth, async (req, res) => {
     try {
       const { normalizeSelectRequest, selectFromOptions, allowAppAiSelect } = await import(
         "./services/appAiService"
@@ -1639,7 +1643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Resolve a YouTube video URL / videoId to a canonical 11-char videoId AND
   // fetch its display title + description + thumbnail. No API key required
   // (public watch-page scrape). Used by the pinned-videos clinician UI.
-  app.post("/api/aac/youtube/resolve-video", optionalAuth, async (req, res) => {
+  app.post("/api/aac/youtube/resolve-video", requireAuth, async (req, res) => {
     try {
       const { input } = req.body || {};
       if (typeof input !== "string" || !input.trim()) {
@@ -1666,7 +1670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List recent videos from a YouTube channel (RSS-backed). Public data;
   // the client already knows the channelId because the server sent the
   // permitted-channels list to it.
-  app.get("/api/aac/youtube/channel-videos", optionalAuth, async (req, res) => {
+  app.get("/api/aac/youtube/channel-videos", requireAuth, async (req, res) => {
     try {
       const channelId = req.query.channelId;
       if (typeof channelId !== "string" || !/^UC[A-Za-z0-9_-]{20,}$/.test(channelId)) {
@@ -1784,7 +1788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List videos in a YouTube playlist (RSS-backed). Public data; the client
   // already knows the playlistId because the server sent the permitted-items
   // list to it.
-  app.get("/api/aac/youtube/playlist-videos", optionalAuth, async (req, res) => {
+  app.get("/api/aac/youtube/playlist-videos", requireAuth, async (req, res) => {
     try {
       const playlistId = req.query.playlistId;
       if (typeof playlistId !== "string" || !/^(PL|UU|OL|LL|FL)[A-Za-z0-9_-]{10,}$/.test(playlistId)) {
@@ -1800,16 +1804,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============= SPOTIFY OAUTH ROUTES =============
-  app.get("/api/aac/spotify/auth-url", optionalAuth, (req, res) =>
+  app.get("/api/aac/spotify/auth-url", requireAuth, (req, res) =>
     spotifyController.getAuthUrl(req, res)
   );
   app.get("/api/aac/spotify/callback", (req, res) =>
     spotifyController.callback(req, res)
   );
-  app.get("/api/aac/spotify/token", optionalAuth, (req, res) =>
+  app.get("/api/aac/spotify/token", requireAuth, (req, res) =>
     spotifyController.getToken(req, res)
   );
-  app.delete("/api/aac/spotify/disconnect", optionalAuth, (req, res) =>
+  app.delete("/api/aac/spotify/disconnect", requireAuth, (req, res) =>
     spotifyController.disconnect(req, res)
   );
 
@@ -1827,7 +1831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= DUAL-AGENT AAC SESSION ROUTE =============
   // Get session state
-  app.get("/api/aac/dual/session/:sessionId", optionalAuth, (req, res) =>
+  app.get("/api/aac/dual/session/:sessionId", requireAuth, (req, res) =>
     dualAgentController.getSession(req, res)
   );
 
@@ -1837,9 +1841,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // caller's rights to the named student/institute before touching the data
   // layer, which makes no access decision of its own. Named routes come before
   // parameterized ones, matching the custom-symbol block below.
-  // The AAC device's read-only view. optionalAuth matches the other
-  // /api/aac/* endpoints — see the note on listForStudent.
-  app.get("/api/aac/photos", optionalAuth, (req, res) =>
+  // The AAC device's read-only view. Session + verified student access, like
+  // every other /api/aac/* endpoint — see the note on listForStudent.
+  app.get("/api/aac/photos", requireAuth, (req, res) =>
     photoController.listForStudent(req, res)
   );
   app.post("/api/photos/reorder", requireAuth, (req, res) =>
@@ -2029,17 +2033,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     biometricController.matchVoice(req, res)
   );
 
-  // Known people for AAC frontend identification (uses optionalAuth for AAC client)
-  app.get("/api/aac/students/:studentId/known-people", optionalAuth, (req, res) =>
+  // Known people for AAC frontend identification (session + verified student access)
+  app.get("/api/aac/students/:studentId/known-people", requireAuth, (req, res) =>
     biometricController.getKnownPeople(req, res)
   );
 
   // Full selectable-people directory + stored photos for the AAC sentence
-  // builder (optionalAuth for the student kiosk; access enforced per-student).
-  app.get("/api/aac/students/:studentId/people-directory", optionalAuth, (req, res) =>
+  // builder (session required; access verified per-student).
+  app.get("/api/aac/students/:studentId/people-directory", requireAuth, (req, res) =>
     biometricController.getPeopleDirectory(req, res)
   );
-  app.get("/api/aac/students/:studentId/people/:personId/photo", optionalAuth, (req, res) =>
+  app.get("/api/aac/students/:studentId/people/:personId/photo", requireAuth, (req, res) =>
     biometricController.getPersonPhoto(req, res)
   );
 

@@ -15,6 +15,7 @@
 
 import type { Request, Response } from "express";
 import { aacSettingsRepository } from "../repositories";
+import { studentService } from "../services";
 import {
   chooseTokenSource,
   deleteConnection,
@@ -181,6 +182,12 @@ class SpotifyController {
       if (!studentId) {
         return res.status(400).json({ error: "studentId required" });
       }
+      // This hands out a live token for the FAMILY's Spotify account — the
+      // caller must be signed in and allowed to act for this student.
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: "Authentication required" });
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
+      if (!hasAccess) return res.status(403).json({ error: "Not authorized for this student" });
 
       // Vault first; the plaintext appConfig token is a legacy fallback only.
       const vault = await getDecryptedTokens(studentId, "spotify");
@@ -255,6 +262,10 @@ class SpotifyController {
       if (!studentId) {
         return res.status(400).json({ error: "studentId required" });
       }
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: "Authentication required" });
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
+      if (!hasAccess) return res.status(403).json({ error: "Not authorized for this student" });
 
       // Drop the vault row, then clear the display state and any plaintext
       // remnant a pre-vault connection left behind.

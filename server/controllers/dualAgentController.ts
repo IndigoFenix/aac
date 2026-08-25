@@ -3,6 +3,7 @@
 
 import type { Request, Response } from "express";
 import { dualAgentService } from "../services/dual-agent";
+import { studentService } from "../services";
 
 /**
  * Dual Agent Controller
@@ -13,7 +14,12 @@ import { dualAgentService } from "../services/dual-agent";
 export class DualAgentController {
   /**
    * GET /api/aac/dual/session/:sessionId
-   * Get current session state
+   * Get current session state.
+   *
+   * Requires a session AND verified access to the student: with
+   * `debugMode=true` the response carries the transcript and the interactive
+   * prompt (name, age, diagnosis, memory), and `initializeSession` will CREATE
+   * a billed session for the given student if none exists.
    */
   async getSession(req: Request, res: Response): Promise<void> {
     try {
@@ -25,9 +31,20 @@ export class DualAgentController {
         return;
       }
 
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: "error:AUTH_REQUIRED" });
+        return;
+      }
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
+      if (!hasAccess) {
+        res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
+        return;
+      }
+
       const state = await dualAgentService.initializeSession(
         studentId,
-        req.user?.id,
+        userId,
         sessionId
       );
 

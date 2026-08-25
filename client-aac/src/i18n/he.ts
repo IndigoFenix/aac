@@ -571,6 +571,7 @@ export const he: Translations = {
       please:"בבקשה",
       again: "שוב",
       more: "עוד",
+      other: "אחר",
       nurse: "אחות",
       grandma: "סבתא",
       grandpa: "סבא",

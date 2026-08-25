@@ -13,8 +13,13 @@
 
 import { preloadSileroVad } from "./sileroVad";
 import { getFaceLandmarkerLoader } from "@/hooks/useFaceTracking";
+import { preloadKokoroTts } from "@/services/kokoroTts";
 
 export function preloadClientModels(): void {
   preloadSileroVad();
   getFaceLandmarkerLoader().preload();
+  // Kokoro (local neural voice, ~92 MB) self-gates on the weights being staged
+  // — on a build that didn't run `npm run kokoro:model` this is a no-op and the
+  // client keeps using speechSynthesis. See services/kokoroTts.ts.
+  preloadKokoroTts();
 }

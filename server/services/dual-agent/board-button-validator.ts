@@ -245,14 +245,33 @@ export function validateBoardButtons<T extends ValidatableButton>(
     }
 
     // (1) imageKey without fallback.
+    //
+    // 🚨 NAME THE OFFENDING TOKENS. This message used to say only "contains an
+    // imageKey", leaving the model to guess WHICH slot of `what+there+question`
+    // was at fault — so it retried and re-failed on the same word. In one
+    // session log that turned four missing vocabulary words into 139 rejected
+    // rebuilds, and each retry rides the system suffix (uncached, ~17x a normal
+    // turn), which is what pushed the project into Vertex 429s. Rule (2) below
+    // has always listed its offenders; this one now matches it.
+    //
+    // The remedy is also two-sided on purpose. A bare snake_case word trips
+    // this rule whether the model MEANT to generate art or simply reached for a
+    // word that has no registry entry — and the second case is by far the
+    // common one, so "wrap it in []" alone sends the model the wrong way.
     if (btn.glyph && glyphHasImageKey(btn.glyph) && !btn.glyphFallback) {
-      errors.push(
-        `Button "${btn.label}" — glyph "${btn.glyph}" contains an imageKey but no fallback was provided. ` +
-        `Wrap imageKeys in [] AND supply a fallback built from emojis or canonical registry keys.`
-      );
       const offending = new Set<string>();
       collectGlyphImageKeys(btn.glyph, offending);
-      violations.push({ rule: "imagekey_no_fallback", tokens: [...offending] });
+      const offenders = [...offending];
+      errors.push(
+        `Button "${btn.label}" — glyph "${btn.glyph}" contains ${offenders.length === 1 ? "a key that is" : "keys that are"} ` +
+        `not in the registry and would route to image generation: ${offenders.map(k => `\`${k}\``).join(", ")}. ` +
+        `Fix ONLY ${offenders.length === 1 ? "that slot" : "those slots"} — the rest of the glyph is fine. ` +
+        `Either (a) you wanted a real word: replace it with a canonical registry key, an emoji, or drop the slot ` +
+        `(interrogation is carried by the \`#question\` TAG — never by a \`question\` slot); or ` +
+        `(b) you genuinely want generated art: wrap the key in [] AND supply a glyphFallback built from ` +
+        `emojis or canonical registry keys that renders immediately.`
+      );
+      violations.push({ rule: "imagekey_no_fallback", tokens: offenders });
       if (rescueLaunchButton(btn)) kept.push(btn);
       continue;
     }

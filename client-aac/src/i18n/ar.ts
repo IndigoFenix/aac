@@ -571,6 +571,7 @@ export const ar: Translations = {
       please:"\u0645\u0646 \u0641\u0636\u0644\u0643",
       again: "\u0645\u0631\u0629 \u0623\u062e\u0631\u0649",
       more: "\u0627\u0644\u0645\u0632\u064a\u062f",
+      other: "آخر",
       nurse: "\u0645\u0645\u0631\u0636\u0629",
       grandma: "\u062c\u062f\u0629",
       grandpa: "\u062c\u062f",

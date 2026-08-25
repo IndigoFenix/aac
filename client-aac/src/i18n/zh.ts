@@ -571,6 +571,7 @@ export const zh: Translations = {
       please:"请",
       again: "再",
       more: "更多",
+      other: "其他",
       nurse: "护士",
       grandma: "奶奶",
       grandpa: "爷爷",

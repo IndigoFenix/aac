@@ -1,9 +1,15 @@
 // server/controllers/incidentController.ts
 // REST endpoints for student incidents.
+//
+// Incidents are behavioural / medical events — PHI. Every verb verifies the
+// caller's access to the STUDENT the incident belongs to (`verifyStudentAccess`),
+// not merely that a session exists. For update/delete the student is resolved
+// from the incident row first, so an id alone is never sufficient.
 
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { incidentRepository } from "../repositories";
+import { studentService } from "../services";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 
 const createIncidentSchema = z.object({
@@ -25,10 +31,30 @@ const updateIncidentSchema = z.object({
   collectedBy: z.string().optional().nullable(),
 });
 
+/**
+ * 401 / 403 as appropriate; returns the userId when the caller may act on the
+ * student, or undefined after having written the error response.
+ */
+async function requireStudentAccess(req: Request, res: Response, studentId: string): Promise<string | undefined> {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ success: false, message: "Authentication required" });
+    return undefined;
+  }
+  const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
+  if (!hasAccess) {
+    res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
+    return undefined;
+  }
+  return userId;
+}
+
 class IncidentController {
   async list(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
+      if (!(await requireStudentAccess(req, res, studentId))) return;
+
       const { startDate, endDate, offset, limit } = req.query;
       const ctx = await buildClinicianCtx(req, studentId);
       const items = await incidentRepository.listByStudent(
@@ -48,10 +74,11 @@ class IncidentController {
     }
   }
 
-
   async create(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
+      if (!(await requireStudentAccess(req, res, studentId))) return;
+
       const parsed = createIncidentSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ success: false, message: "Invalid input", errors: parsed.error.flatten() });
@@ -74,6 +101,14 @@ class IncidentController {
 
   async update(req: Request, res: Response): Promise<void> {
     try {
+      const existing = await incidentRepository.getById(req.params.id);
+      // Same 404 for missing and not-yours: don't confirm the id exists.
+      if (!existing) {
+        res.status(404).json({ success: false, message: "Incident not found" });
+        return;
+      }
+      if (!(await requireStudentAccess(req, res, existing.studentId))) return;
+
       const parsed = updateIncidentSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ success: false, message: "Invalid input", errors: parsed.error.flatten() });
@@ -93,6 +128,13 @@ class IncidentController {
 
   async delete(req: Request, res: Response): Promise<void> {
     try {
+      const existing = await incidentRepository.getById(req.params.id);
+      if (!existing) {
+        res.status(404).json({ success: false, message: "Incident not found" });
+        return;
+      }
+      if (!(await requireStudentAccess(req, res, existing.studentId))) return;
+
       const ok = await incidentRepository.delete(req.params.id);
       if (!ok) {
         res.status(404).json({ success: false, message: "Incident not found" });

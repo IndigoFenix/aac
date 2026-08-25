@@ -171,7 +171,11 @@ class ConsentInvitationService {
     });
 
     const baseUrl = args.appBaseUrl ?? process.env.APP_URL ?? "https://aivota.ai";
-    const redemptionUrl = `${baseUrl}/consent/sign?code=${encodeURIComponent(code)}`;
+    // The code rides in the URL FRAGMENT, not the query string: a fragment is
+    // never sent to the server, so it stays out of CloudFront/ALB access logs,
+    // proxy logs and Referer headers. The page reads it from location.hash and
+    // POSTs it. (The page still accepts ?code= for links sent before this change.)
+    const redemptionUrl = `${baseUrl}/consent/sign#code=${encodeURIComponent(code)}`;
 
     // Dispatch — non-fatal on send failure; clinician can re-issue or share manually.
     if (args.channel === "email") {
@@ -244,7 +248,9 @@ class ConsentInvitationService {
     contactPhoneMasked: string | null;
     student: { id: string; name: string; firstName: string | null; lastName: string | null; birthDate: string | null; country: string | null; primaryLanguage: string | null };
     // Null for self-consent invitations — the student signs for themselves.
-    contact: { id: string; name: string; relationship: string | null; contactEmail: string | null; contactPhone: string | null; governmentIdNumber: string | null; governmentIdType: string | null; governmentIdCountry: string | null; isLegalGuardian: boolean; coGuardianAcknowledged: boolean } | null;
+    // Deliberately no email / phone / government ID: this is pre-verification
+    // context handed to whoever holds the link. Phone is exposed masked above.
+    contact: { id: string; name: string; relationship: string | null; isLegalGuardian: boolean; coGuardianAcknowledged: boolean } | null;
     expiresAt: string;
   }> {
     const inv = await this.loadActiveByCode(code);
@@ -292,16 +298,16 @@ class ConsentInvitationService {
         country: student.country,
         primaryLanguage: student.primaryLanguage,
       },
+      // Pre-verification context: whoever holds the link sees this BEFORE any
+      // OTP or child-ID check, and the link travels by email/SMS and can be
+      // forwarded. So: name and relationship only. The guardian's phone is
+      // exposed masked (above), the email and government ID not at all — the
+      // wizard collects the ID from the signer, it never needs ours.
       contact: contact
         ? {
             id: contact.id,
             name: contact.name,
             relationship: contact.relationship,
-            contactEmail: contact.contactEmail,
-            contactPhone: contact.contactPhone,
-            governmentIdNumber: contact.governmentIdNumber,
-            governmentIdType: contact.governmentIdType,
-            governmentIdCountry: contact.governmentIdCountry,
             isLegalGuardian: contact.isLegalGuardian,
             coGuardianAcknowledged: contact.coGuardianAcknowledged,
           }

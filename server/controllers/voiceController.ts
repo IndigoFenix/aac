@@ -7,6 +7,7 @@ import { whisperService } from "../services/voice/whisper-service";
 import { type VoiceType } from "../services/voice/google-tts-service";
 import { ttsFacade, type ResolvedVoice } from "../services/voice/tts-facade";
 import { onMessage, FeatureType } from "../services/sessionService";
+import { studentService } from "../services";
 import { studentRepository } from "../repositories";
 import { voiceRecordRepository } from "../repositories/voiceRecordRepository";
 import { ChatPersona } from "@shared/schema";
@@ -49,6 +50,34 @@ function sendSSEEvent(res: Response, event: string, data: any): void {
  * - POST /api/aac/voice/chat - Full voice chat (audio in → text + audio out)
  */
 export class VoiceController {
+  /**
+   * Fail-closed access check for a student-scoped voice request. Writes the
+   * 401/403 response and returns false when the caller may not proceed. A
+   * request with no studentId (generic TTS) still requires a session.
+   *
+   * Why: `speak`/`synthesize` resolve the STUDENT's cloned voice and spend the
+   * student's ElevenLabs quota; `voiceChat` loads the student's memory into a
+   * prompt. None of that may hinge on a studentId alone.
+   */
+  private async assertStudentAccess(
+    req: Request,
+    res: Response,
+    studentId: string | undefined,
+  ): Promise<boolean> {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "error:AUTH_REQUIRED" });
+      return false;
+    }
+    if (!studentId) return true;
+    const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
+    if (!hasAccess) {
+      res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
+      return false;
+    }
+    return true;
+  }
+
   /**
    * POST /api/aac/voice/transcribe
    * Convert audio to text using Whisper
@@ -101,6 +130,7 @@ export class VoiceController {
   async synthesize(req: Request, res: Response): Promise<void> {
     try {
       const { text, studentId, language, voiceType } = speakSchema.parse(req.body);
+      if (!(await this.assertStudentAccess(req, res, studentId))) return;
 
       // Resolve voice settings from student if provided
       const resolvedVoice = await this.resolveVoiceFromStudent(studentId, language, voiceType);
@@ -134,6 +164,7 @@ export class VoiceController {
   async speak(req: Request, res: Response): Promise<void> {
     try {
       const { text, studentId, language, voiceType } = speakSchema.parse(req.body);
+      if (!(await this.assertStudentAccess(req, res, studentId))) return;
 
       // Resolve voice settings from student if provided
       const resolvedVoice = await this.resolveVoiceFromStudent(studentId, language, voiceType);
@@ -187,7 +218,13 @@ export class VoiceController {
     const startTime = Date.now();
 
     try {
-      const userId = req.user!.id;
+      // Was `req.user!.id` — an anonymous caller got a TypeError → 500 rather
+      // than a 401, and a signed-in caller was never checked against studentId.
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: "error:AUTH_REQUIRED" });
+        return;
+      }
       const audioFile = (req as any).file as Express.Multer.File | undefined;
 
       if (!audioFile) {
@@ -209,6 +246,9 @@ export class VoiceController {
 
       const { studentId, sessionId, featureContext, languageHint, formSchema, formValues } =
         voiceChatSchema.parse(body);
+      // The student's memory enters the prompt below — same IDOR the chat
+      // controller already guards against (chatController.ts verifyStudentAccess).
+      if (!(await this.assertStudentAccess(req, res, studentId))) return;
 
       console.log(
         `[VoiceController] Voice chat: ${audioFile.size} bytes, student: ${studentId}`

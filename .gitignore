@@ -9,6 +9,8 @@ client-aac/public/models/Xenova
 client-aac/public/ort
 client-aac/public/mediapipe
 client-aac/public/models/mediapipe
+# Kokoro local neural TTS voice (~94 MB) — scripts/fetch-kokoro-model.mjs
+client-aac/public/models/onnx-community
 release
 # Generated iOS native project — emitted by `npx cap add ios` on a macOS
 # runner during release. Everything we customize about it lives in

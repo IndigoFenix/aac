@@ -532,14 +532,16 @@ export function buildGlyphSyntax({ singleGlyphButtons }: { singleGlyphButtons: b
 ${singleGlyphButtons
   ? `  SENTENCE: one GLYPH per ${T.button}. Each ${T.button}'s \`sentence\` field is a single GLYPH (head + optional MODIFIER SYMBOLs).
 
-  OPERATOR: sentence-level tag appended with \`#\`. \`#past\`, \`#future\`, \`#question\` modify the WHOLE sentence — they never add a second GLYPH. Conjugate the spoken \`speech\` accordingly; the visual stays the same.`
+  OPERATOR: sentence-level tag appended with \`#\`. \`#past\`, \`#future\`, \`#question\` modify the WHOLE sentence — they never add a second GLYPH. Conjugate the spoken \`speech\` accordingly; the visual stays the same.
+    - There is no \`question\`/\`past\`/\`future\` HEAD. ✅ \`what+there#question\`  ❌ \`what+there+question\``
   : `  SENTENCE: up to 3 GLYPHs joined with \`+\`:
     - 1-glyph: \`😴\`, \`🍎.color_red\`
     - 2-glyph: \`i_me+🤒\`, \`have+💧\`
     - 3-glyph: \`i_me+want+🍌\`, \`you+give+i_me\`
   Match SENTENCE shape to meaning — don't pad. One-word answers are 1-glyph; full subject+verb+object thoughts are 3-glyph.
 
-  OPERATOR: sentence-level tag via \`#\` — \`#past\`, \`#future\`, \`#question\`. They modify the WHOLE sentence — never substitute for a GLYPH. Conjugate \`speech\` accordingly.`}
+  OPERATOR: sentence-level tag via \`#\` — \`#past\`, \`#future\`, \`#question\`. They modify the WHOLE sentence — never substitute for a GLYPH. Conjugate \`speech\` accordingly.
+    - There is no \`question\`/\`past\`/\`future\` HEAD. ✅ \`what+there#question\`  ❌ \`what+there+question\``}
 </grammar>
 
 <generation_rules>

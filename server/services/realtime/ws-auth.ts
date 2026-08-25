@@ -5,6 +5,7 @@ import { storage } from "../../storage";
 import { adminUserRepository } from "../../repositories/adminUserRepository";
 import { adaptAdminAsUser } from "../../services/adminAuthService";
 import { redeemWsTicket } from "./ws-ticket";
+import { isAllowedUpgradeOrigin } from "../../middleware/security";
 import type { User } from "@shared/schema";
 
 // Reuse the same express-session middleware used by HTTP routes. Running it
@@ -40,7 +41,11 @@ async function authenticateTicket(req: IncomingMessage): Promise<User | null> {
   }
   if (!ticket) return null;
 
-  const userId = redeemWsTicket(ticket);
+  // The replay set is shared across ECS tasks (Postgres) in production; the
+  // in-process default is for tests and single-task dev. Without the shared
+  // store, "single use" only held per task — a leaked ticket could be
+  // redeemed once on every task behind the ALB.
+  const userId = await redeemWsTicket(ticket, Date.now(), ticketNonceStore());
   if (!userId) return null;
 
   try {
@@ -54,7 +59,20 @@ async function authenticateTicket(req: IncomingMessage): Promise<User | null> {
   }
 }
 
+function ticketNonceStore() {
+  return process.env.NODE_ENV === "test" ? memoryNonceStore : pgNonceStore;
+}
+
 export async function authenticateUpgrade(req: IncomingMessage): Promise<User | null> {
+  // Origin first, before any credential is even looked at. The upgrade event
+  // bypasses Express, so this is the ONLY place the CSRF-equivalent check for
+  // WebSockets can live. A browser page from a foreign origin carrying a
+  // clinician's SameSite=None cookie is refused here, whatever it presents.
+  if (!isAllowedUpgradeOrigin(req.headers.origin)) {
+    console.warn(`[ws-auth] upgrade refused: origin not allowed (${String(req.headers.origin).slice(0, 120)})`);
+    return null;
+  }
+
   const viaTicket = await authenticateTicket(req);
   if (viaTicket) return viaTicket;
 

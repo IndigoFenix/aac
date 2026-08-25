@@ -102,7 +102,7 @@ describe("BoardManagerAgent prompt cache", () => {
   it("inlines base+suffix and skips the cache on a suffix turn", async () => {
     const agent = new BoardManagerAgent("gemini");
     await agent.invoke(baseInput({
-      systemPromptSuffix: "<retry_feedback>\ntry again\n</retry_feedback>",
+      systemPromptSuffix: "<builder_mode>\nsuggest words\n</builder_mode>",
     }));
 
     expect(fakeProvider.ensureCalls).toHaveLength(0);
@@ -112,7 +112,31 @@ describe("BoardManagerAgent prompt cache", () => {
     expect(req.toolChoice).toBe("required");
     const system = req.messages.find((m) => m.role === "system");
     expect(system?.content).toContain("BASE SYSTEM PROMPT");
-    expect(system?.content).toContain("<retry_feedback>");
+    expect(system?.content).toContain("<builder_mode>");
+  });
+
+  // 🚨 Retry feedback must NOT go through the suffix. A suffix turn re-bills the
+  // whole prefix at the uncached rate — ~13.5k tokens instead of ~800, roughly
+  // 17x a normal turn — and a retry is precisely when that is least affordable:
+  // the rejected call was already wasted. Paying 17x for each correction is what
+  // let a handful of un-renderable glyphs generate enough throughput to draw
+  // Vertex 429s, which then read as "the Board Manager is broken since Vertex".
+  it("keeps the prompt cache on a retry turn and puts the feedback in the TURN message", async () => {
+    const agent = new BoardManagerAgent("gemini");
+    await agent.invoke(baseInput({
+      retryFeedback: 'Button "X" — glyph "a+b" contains a key that is not in the registry: `b`.',
+    }));
+
+    // The cache is still used — this is the whole point.
+    expect(fakeProvider.ensureCalls).toHaveLength(1);
+    const req = fakeProvider.completeCalls[0];
+    expect(req.cachedContent).toBe("cachedContents/test");
+    expect(req.messages.some((m) => m.role === "system")).toBe(false);
+
+    // ...and the correction still reaches the model, on the user turn.
+    const user = req.messages.find((m) => m.role === "user");
+    expect(user?.content).toContain("<retry_feedback>");
+    expect(user?.content).toContain("`b`");
   });
 
   it("folds cache-create tokens into promptTokens exactly once", async () => {

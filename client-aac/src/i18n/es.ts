@@ -571,6 +571,7 @@ export const es: Translations = {
       please:"Por favor",
       again: "Otra vez",
       more: "Más",
+      other: "Otro",
       nurse: "Enfermera",
       grandma: "Abuela",
       grandpa: "Abuelo",

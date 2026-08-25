@@ -571,6 +571,7 @@ export const en = {
       please: "Please",
       again: "Again",
       more: "More",
+      other: "Other",
       nurse: "Nurse",
       grandma: "Grandma",
       grandpa: "Grandpa",

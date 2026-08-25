@@ -264,11 +264,6 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   res.status(401).json({ message: "Authentication required" });
 };
 
-export const optionalAuth: RequestHandler = (req, res, next) => {
-  // Always proceed, but user info will be available if authenticated
-  next();
-};
-
 export const requireSLPPlan: RequestHandler = (req, res, next) => {
   if (!req.isAuthenticated() || !req.user) {
     return res.status(401).json({ 

@@ -88,7 +88,7 @@ describe('Consent invitation API', () => {
     });
   });
 
-  describe('GET /api/consent/invitations/redeem', () => {
+  describe('POST /api/consent/invitations/redeem', () => {
     it('returns wizard context for a valid code (no auth)', async () => {
       const { clinician, institute, student, contact } = await setup();
       // Create the invitation
@@ -101,7 +101,7 @@ describe('Consent invitation API', () => {
       const code = (c1.jsonBody as any).code;
 
       // Redeem with no user
-      const req = makeReq({ user: null, query: { code } });
+      const req = makeReq({ user: null, body: { code } });
       const { res, capture } = makeRes();
       await consentController.redeemInvitation(req, res);
       expect(capture.statusCode).toBe(200);
@@ -112,7 +112,7 @@ describe('Consent invitation API', () => {
     });
 
     it('rejects 404 for an unknown code', async () => {
-      const req = makeReq({ user: null, query: { code: 'NOTAREALCODE' } });
+      const req = makeReq({ user: null, body: { code: 'NOTAREALCODE' } });
       const { res, capture } = makeRes();
       await consentController.redeemInvitation(req, res);
       expect(capture.statusCode).toBe(404);

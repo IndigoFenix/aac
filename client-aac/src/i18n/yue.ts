@@ -571,6 +571,7 @@ export const yue: Translations = {
       please:"唔該",
       again: "再",
       more: "多啲",
+      other: "其他",
       nurse: "護士",
       grandma: "嫲嫲",
       grandpa: "爺爺",

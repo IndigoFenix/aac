@@ -1,14 +1,19 @@
 // client/src/pages/ConsentSignPage.tsx
 //
-// Public landing page for the magic-link consent flow. Reads ?code= from
+// Public landing page for the magic-link consent flow. Reads the code from
 // the URL, looks the invitation up via the public redeem endpoint, and
 // renders the wizard in token-mode. No session required — the token IS
 // the auth.
 //
+// The code arrives in the URL FRAGMENT (`#code=`): a fragment is never sent
+// to the server, so it stays out of CDN/ALB access logs and Referer headers.
+// `?code=` is still accepted for links sent before the fragment change. In
+// both cases the code is removed from the address bar once read, so it does
+// not sit in browser history or get copied along with the URL.
+//
 // See planning-docs/student-consent-onboarding-plan.md.
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearch } from "wouter";
+import { useEffect, useState } from "react";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useConsentInvitation } from "@/hooks/useConsentApi";
@@ -18,13 +23,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldCheck, AlertCircle, CheckCircle2 } from "lucide-react";
 
-function useCodeFromQuery(): string | undefined {
-  const search = useSearch();
-  return useMemo(() => {
-    const params = new URLSearchParams(search);
-    const code = params.get("code");
-    return code ? code.trim() : undefined;
-  }, [search]);
+/** Read the magic-link code once, fragment first, then scrub it from the URL. */
+function readCodeFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const { hash, search, pathname } = window.location;
+  const fromHash = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash).get("code");
+  const fromQuery = new URLSearchParams(search).get("code");
+  const code = (fromHash ?? fromQuery)?.trim();
+  if (code) {
+    // Leave the path, drop the code (and any legacy query) from what the
+    // browser records and displays.
+    window.history.replaceState(window.history.state, "", pathname);
+  }
+  return code || undefined;
+}
+
+function useCodeFromUrl(): string | undefined {
+  const [code] = useState<string | undefined>(readCodeFromUrl);
+  return code;
 }
 
 /**
@@ -47,7 +63,7 @@ function useNoIndex() {
 
 export function ConsentSignPage() {
   const { t } = useLanguage();
-  const code = useCodeFromQuery();
+  const code = useCodeFromUrl();
   const invitationQuery = useConsentInvitation(code);
   const [signed, setSigned] = useState(false);
 

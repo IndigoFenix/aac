@@ -43,17 +43,13 @@ export const supportContext: RequestHandler = (
   }
 };
 
-/**
- * Middleware that allows optional authentication
- */
-export const optionalAuth: RequestHandler = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  // Just pass through - authentication state is checked in handler
-  next();
-};
+// `optionalAuth` was removed 2026-08-25. It was a pure pass-through, and every
+// handler behind it gated on `if (currentUser?.id) { verifyStudentAccess }` —
+// so a request with NO session was trusted more than one with the wrong
+// session, and a bare studentId unlocked face embeddings, family photos and
+// session transcripts. Routes are either `requireAuth` or, when genuinely
+// public (`/auth/user`, the consent magic-link endpoints), carry no auth
+// middleware at all and say so at the route.
 
 /**
  * Middleware that requires admin privileges

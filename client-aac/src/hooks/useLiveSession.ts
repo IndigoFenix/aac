@@ -59,6 +59,7 @@ import {
   cleanupOldSessions,
 } from "@/services/aac-local-storage";
 import { registerSymbolPath } from "@/lib/glyph-images";
+import { speak as kokoroSpeak } from "@/services/kokoroTts";
 import type {
   AacLocalStorageConfig,
   AacSessionSnapshot,
@@ -366,6 +367,43 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // processing indicators.
   const [processing, setProcessing] = useState<ProcessingState>({ speaker: false, board: false, interpret: false, app: false });
 
+  // Client-side last resort for a busy cue the server never clears.
+  //
+  // 🚨 This hook is a PURE MIRROR of the server's `processing` envelopes — it
+  // has no idea what any agent is doing, so a lost `active:false` used to leave
+  // an indicator lit until the socket dropped. The server now backstops each
+  // cue itself; this is the layer below that, for the cases the server cannot
+  // reach at all (its timer cancelled by a teardown, an envelope lost on a
+  // half-open socket). Deliberately LONGER than every server backstop so the
+  // server always wins in the normal case and this only ever catches a cue that
+  // is genuinely orphaned. Clearing is always safe: the next real transition
+  // re-lights it.
+  // Timers are PER FLAG and armed only on a false→true edge. A single shared
+  // timer keyed on the whole object would be re-armed every time any OTHER flag
+  // moved — and `speaker` toggles on every turn — so a stuck `board` would have
+  // its deadline pushed forward forever in exactly the busy session where it
+  // matters.
+  const processingTimers = useRef<Partial<Record<keyof ProcessingState, ReturnType<typeof setTimeout>>>>({});
+  useEffect(() => {
+    const timers = processingTimers.current;
+    for (const key of Object.keys(processing) as (keyof ProcessingState)[]) {
+      if (processing[key] && !timers[key]) {
+        timers[key] = setTimeout(() => {
+          delete timers[key];
+          setProcessing((prev) => (prev[key] ? { ...prev, [key]: false } : prev));
+        }, 60_000);
+      } else if (!processing[key] && timers[key]) {
+        clearTimeout(timers[key]!);
+        delete timers[key];
+      }
+    }
+  }, [processing]);
+  // Drop any armed backstops when the hook unmounts.
+  useEffect(() => () => {
+    for (const t of Object.values(processingTimers.current)) if (t) clearTimeout(t);
+    processingTimers.current = {};
+  }, []);
+
   // Binary-choice overlay state — non-null array of two options shows the
   // overlay. Yes/No questions go through this same path now (the canonical
   // `yes` / `no` SYMBOLs render with animated icons and auto-color the
@@ -536,8 +574,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       || null;
   }, []);
 
-  /** Speak text using browser speechSynthesis, returns a promise that resolves when done */
-  const speakLocal = useCallback((text: string, lang: string, role: "ai" | "student"): Promise<void> => {
+  /** Speak text with the browser's own voice — the last rung of the TTS ladder,
+   *  reached when every cloud provider has failed (server: sendClientLocalTts).
+   *
+   *  Tries the local NEURAL voice first (Kokoro, English only) and falls back to
+   *  speechSynthesis when it declines: wrong language, model not staged, model
+   *  still loading, or synthesis failed. The fallback is the ORIGINAL behaviour
+   *  untouched, so the worst case here is exactly what shipped before. */
+  const speakLocal = useCallback(async (text: string, lang: string, role: "ai" | "student"): Promise<void> => {
+    if (await kokoroSpeak(text, lang, role)) return;
     return new Promise((resolve) => {
       if (!window.speechSynthesis || !text.trim()) { resolve(); return; }
       const utterance = new SpeechSynthesisUtterance(text);

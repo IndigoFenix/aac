@@ -142,7 +142,7 @@ import {
   type DefinedGesture,
 } from "./defined-gestures";
 
-import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities, ProcessingActivity } from "./live-relay";
+import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities } from "./live-relay";
 import { ProcessingIndicators } from "./processing-indicators";
 import {
   decideWordFinderOpen,
@@ -1684,6 +1684,15 @@ export class AgentCoordinator {
   private deferredBoardMgrTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly DEFERRED_BM_PRESS_MS = 4_000;
 
+  /** Pending background rebuild for a beat a 429 refused. See
+   *  scheduleRateLimitedBoardRebuild. */
+  private rateLimitedBoardRebuildTimer: ReturnType<typeof setTimeout> | null = null;
+  /** How long to let a tight Vertex pool recover before re-running a refused
+   *  beat. Long enough to be past the congestion that caused the 429, short
+   *  enough that a child who pressed something is not left on a stale board.
+   *  Nothing waits on this — the previous board stays interactive. */
+  private static readonly RATE_LIMITED_REBUILD_DELAY_MS = 8_000;
+
   /** Validator-error feedback to fold into the NEXT BoardManager
    *  invocation's prompt. When set, the next invoke uses this as a
    *  retry context so the model can correct the rejected buttons.
@@ -1989,6 +1998,7 @@ export class AgentCoordinator {
     if (this.speakerAudioFlushTimer) clearTimeout(this.speakerAudioFlushTimer);
     if (this.pendingRestTimer) { clearTimeout(this.pendingRestTimer); this.pendingRestTimer = null; }
     if (this.deferredBoardMgrTimer) { clearTimeout(this.deferredBoardMgrTimer); this.deferredBoardMgrTimer = null; this.deferredBoardMgrTrigger = null; }
+    this.clearRateLimitedBoardRebuild();
     if (this.peerPreviewTimer) { clearTimeout(this.peerPreviewTimer); this.peerPreviewTimer = null; }
     // Drop any lingering processing indicators + their backstop timers so
     // nothing sticks (the send is a no-op on a closed socket, but this also
@@ -6699,6 +6709,7 @@ export class AgentCoordinator {
     }
     this.flushRepeatBurst();
     this.clearDeferredBoardMgr("entering sleep");
+    this.clearRateLimitedBoardRebuild();
     this.speakerSpeaking = false;
     this.abortSttStreams();
     try { this.observer?.close(); } catch {}
@@ -6708,6 +6719,11 @@ export class AgentCoordinator {
     try { this.boardManager?.close?.(); } catch {}
     this.observer = null;
     this.speaker = null;
+    // Drop every ambient busy cue. Unlike detach/cleanup this path KEEPS THE
+    // SOCKET OPEN, so a cue left lit here is one the client goes on rendering
+    // with nothing alive to ever clear it — a Board Manager rebuild in flight
+    // when the therapist hits sleep left the loading bar up indefinitely.
+    this.clearAllProcessing();
     this.asleep = true;
   }
 
@@ -9968,6 +9984,54 @@ ${customDetail}` : ""));
     this.takeDeferredBoardMgrTrigger(reason);
   }
 
+  /**
+   * Re-run a beat that a 429 ate, once, after a pause.
+   *
+   * Separate from `scheduleDeferredBoardMgr` on purpose: that timer means "wait
+   * and see whether Speaker replies first", and `onSpeakerSpeechTextFinalized`
+   * treats its presence as something to supersede. This one means "the API
+   * refused; try again when the pool has had a moment", which must NOT be
+   * cancelled by a Speaker turn and carries no wait-for-Speaker semantics.
+   *
+   * Single-shot by construction: the rescheduled invocation is an ordinary
+   * rebuild, so if IT is rate-limited too, this same branch schedules the next
+   * one — spacing is enforced by the delay, and the chain ends the moment a
+   * rebuild succeeds or the session goes away.
+   *
+   * The `board` cue is DOWN across the wait (the refused beat's own `finally`
+   * already cleared it) and comes back up only when the rescheduled invocation
+   * actually starts — so the child sees a usable board during the pause rather
+   * than a loading bar counting out someone else's rate limit.
+   */
+  private scheduleRateLimitedBoardRebuild(triggeringEvents: AgentEvent[]): void {
+    if (this.rateLimitedBoardRebuildTimer) {
+      flowNote("BOARD_MGR", "Rate limited — a recovery rebuild is already scheduled; not stacking another.");
+      return;
+    }
+    const delay = AgentCoordinator.RATE_LIMITED_REBUILD_DELAY_MS;
+    flowNote("BOARD_MGR", `Rate limited — scheduling a background rebuild in ${delay}ms (the board stays up meanwhile).`);
+    // Carry the beat's triggers so the retry rebuilds for the SAME moment that
+    // was refused, not for whatever happens to be current when it fires.
+    const carried = triggeringEvents.slice();
+    this.rateLimitedBoardRebuildTimer = setTimeout(() => {
+      this.rateLimitedBoardRebuildTimer = null;
+      if (this.asleep || this.sessionProfile === "resting" || !this.boardManager) {
+        flowNote("BOARD_MGR", "Rate-limit recovery rebuild dropped — session is no longer taking board updates.");
+        return;
+      }
+      flowNote("BOARD_MGR", "Rate-limit recovery rebuild firing.");
+      void this.invokeBoardManager(carried);
+    }, delay);
+  }
+
+  /** Cancel a pending rate-limit recovery rebuild (teardown / sleep / reset). */
+  private clearRateLimitedBoardRebuild(): void {
+    if (this.rateLimitedBoardRebuildTimer) {
+      clearTimeout(this.rateLimitedBoardRebuildTimer);
+      this.rateLimitedBoardRebuildTimer = null;
+    }
+  }
+
   /** The register the BoardManager should shape its palette for. A live social-
    *  training session means the user is talking to a PEER — the same legitimate
    *  "a peer is present" signal a real peer contact carries (we feed only the
@@ -10000,7 +10064,11 @@ ${customDetail}` : ""));
     // in-flight guards, so a resting session never lights it up. Cleared in
     // the finally, but only when nothing is queued to re-invoke (so a
     // retry / queued-trigger chain reads as one continuous rebuild, no flicker).
-    this.emitProcessing("board", true);
+    // markBoardBusy (not a bare set) so the cue carries its own backstop: the
+    // clear below is reachable only when the chain ENDS here, and a chain that
+    // instead re-enters onto the `resting` / no-boardManager gate never reaches
+    // any clear at all. The timer is what makes that survivable.
+    this.processing.markBoardBusy();
     // Drain any pending retry triggers (paired with pendingFeedback by
     // queueBoardMgrEmptyResponseRetry / queueBoardMgrFeedback) into the
     // effective triggers. Without this, a new event arriving between a
@@ -10089,12 +10157,13 @@ ${customDetail}` : ""));
       // a different home press arrives).
       const forceRebuildDirective = this.pendingForceRebuildDirective;
 
-      if (pendingFeedback) {
-        promptSuffixParts.push(`<retry_feedback>\n${pendingFeedback}\n</retry_feedback>`);
-      }
+      // Retry feedback rides the TURN message, not the system suffix — a suffix
+      // would cost the whole prompt again at the uncached rate on exactly the
+      // turns we can least afford it. See BoardManagerInvocationInput.retryFeedback.
       const input: BoardManagerInvocationInput = {
         systemPrompt: this.boardManagerPromptBase,
         systemPromptSuffix: promptSuffixParts.length > 0 ? promptSuffixParts.join("\n\n") : undefined,
+        retryFeedback: pendingFeedback ?? undefined,
         toolConfig: dynamicToolConfig,
         triggeringEvents,
         recentEvents: [...this.recentEvents],
@@ -10251,17 +10320,25 @@ ${customDetail}` : ""));
         && onlyNoChange
         && !isMalformedOrEmpty;
 
-      // A 429 is not a fumbled response — it is the API refusing, and the
-      // immediate retry below is the one action guaranteed to earn another one.
-      // Observed 2026-08-20: the AI Studio key hit its DAILY cap, so every
-      // rebuild returned RESOURCE_EXHAUSTED and each failure instantly fired a
-      // second request, roughly doubling the load against a quota that was
-      // already gone. Retrying cannot help — a rate limit is not something the
-      // model can get right on the second try. Skip it and let the next real
-      // event drive the board.
+      // A 429 is not a fumbled response — it is the API refusing, so the
+      // IMMEDIATE retry below (which exists to give the model another shot at a
+      // malformed answer) is exactly the wrong tool: there is nothing for the
+      // model to get right on the second try, and by the time we see
+      // RATE_LIMITED the agent has already spent its own backoff retries. Firing
+      // a no-delay rebuild on top of that just adds load to a pool that already
+      // said no.
+      //
+      // But "don't retry immediately" is not the same as "don't recover", and
+      // this branch used to conflate them — it dropped the beat entirely and
+      // left a note saying the next event would rebuild. If no next event came
+      // (the child is waiting for the board before acting — which is the whole
+      // point of the board) the surface just stayed stale. Vertex runs on
+      // dynamic shared quota, where capacity moves second to second, so a beat
+      // lost to a 429 is worth re-running shortly; schedule it in the
+      // background instead of making the child produce an event to earn it.
       const rateLimited = result.finishReason === "RATE_LIMITED";
       if (rateLimited) {
-        flowNote("BOARD_MGR", "Rate limited — NOT retrying; the next event will rebuild.");
+        this.scheduleRateLimitedBoardRebuild(triggeringEvents);
       }
 
       if (!rateLimited
@@ -10318,7 +10395,7 @@ ${customDetail}` : ""));
       } else {
         // Chain settled with nothing queued — make sure the veil is down even
         // if this beat produced no delivery event (abort / caught error).
-        this.emitProcessing("board", false);
+        this.processing.clearBoardBusy();
       }
     }
   }
@@ -12440,10 +12517,12 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
   // Thin delegators onto the ProcessingIndicators state machine, kept as
   // named methods so the many call sites read clearly.
 
-  /** Mirror a backend-busy transition to the client (deduped). */
-  private emitProcessing(activity: ProcessingActivity, active: boolean): void {
-    this.processing.set(activity, active);
-  }
+  // (There is deliberately no raw `emitProcessing(activity, active)` passthrough
+  // any more. `board` was the one cue set through it rather than through a
+  // mark/clear pair, and that is exactly how it ended up as the only activity
+  // with no backstop timer — a lit cue with no armed net, clearable from a
+  // single code path. Every activity now goes through its own markXBusy /
+  // clearXBusy, so a new cue cannot be added without one.)
 
   /** Route a turn to the Speaker that expects a spoken (or explicitly
    *  silent) reply, marking the Speaker busy until it resolves. ALL

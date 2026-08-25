@@ -15,6 +15,12 @@ export interface RealtimeHandler {
   // Called once per new authenticated connection. Handler may subscribe the
   // socket to initial topics (e.g. user:${id} + all their room topics).
   onConnect: (socket: AuthenticatedSocket, user: User) => void | Promise<void>;
+  // Authorization for a CLIENT-requested `subscribe`. Topics are deterministic
+  // (`personChat:room:<id>`, `call:person:<id>`), so without this check any
+  // authenticated user who knows or guesses a UUID receives that topic's
+  // fanout. Absent → every client subscribe is refused (fail closed); the
+  // handler can still subscribe sockets itself from onConnect/onCommand.
+  canSubscribe?: (socket: AuthenticatedSocket, user: User, topic: string) => boolean | Promise<boolean>;
   // Optional — additional command types beyond subscribe/unsubscribe/ping.
   onCommand?: (socket: AuthenticatedSocket, user: User, message: unknown) => void | Promise<void>;
   // Optional — called when the socket closes (for handler-specific cleanup,
@@ -62,9 +68,21 @@ export function setupRealtimeServer(server: Server): void {
         if (parsed && typeof parsed === "object" && "type" in parsed) {
           const cmd = parsed as ClientRealtimeCommand;
           if (cmd.type === "ping") return ws.send(JSON.stringify({ type: "pong" }));
-          // Subscribe/unsubscribe are client-controlled but server validates
-          // topic access via handler.onCommand if needed.
+          // A client-requested subscribe is authorized by the handler, and
+          // refused when the handler has no rule for it. (The old comment
+          // here claimed onCommand validated topic access; the `return`
+          // below made onCommand unreachable for subscribe, so it never did.)
           if (cmd.type === "subscribe" && typeof cmd.topic === "string") {
+            let allowed = false;
+            try {
+              allowed = handler.canSubscribe ? await handler.canSubscribe(authed, user, cmd.topic) : false;
+            } catch (err) {
+              console.error(`[realtime] canSubscribe error for ${url.pathname}:`, err);
+            }
+            if (!allowed) {
+              ws.send(JSON.stringify({ type: "error", payload: { code: "forbidden", message: "Not allowed to subscribe to this topic" } }));
+              return;
+            }
             subscribe(ws, cmd.topic);
             return;
           }

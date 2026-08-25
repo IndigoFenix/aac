@@ -571,6 +571,7 @@ export const ko: Translations = {
       please:"부탁",
       again: "다시",
       more: "더",
+      other: "다른",
       nurse: "간호사",
       grandma: "할머니",
       grandpa: "할아버지",
