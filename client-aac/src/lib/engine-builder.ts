@@ -21,6 +21,7 @@
 // the AAC bundle. This module is the engine's pure, dependency-light surfacer.
 import { builderSurfaceFor, defaultBuilderNouns } from "@shared/world-engine/interaction/intent/builder-surface";
 import type { IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
+import { BUILDER_ITEMS_WITH_MORE } from "@shared/aac-builder-paging";
 import type { EngineBuilderBackend } from "@client-shared/game/engine-builder";
 
 export {
@@ -62,6 +63,13 @@ export function createLocalBuilderBackend(opts?: { locale?: string }): EngineBui
             category,
             group,
             capacity: req?.capacity ?? BUILDER_SURFACE_CAPACITY,
+            // THE PAGE, not the budget: the grid shows 17 of the 54 it asks
+            // for, and the surfacer drops a group chip whose members are all
+            // already on the grid. Measured against the budget that rule hid
+            // the chips on every board whose library fits in three pages —
+            // including the places board, which is exactly where a child needs
+            // them (2026-08-25).
+            page: BUILDER_ITEMS_WITH_MORE,
             // The learned layer and the type-chip seed travel the same route
             // in-game (over `builder_state`) and out — the caller keeps them,
             // the surfacer reads them, this backend only hands them over.

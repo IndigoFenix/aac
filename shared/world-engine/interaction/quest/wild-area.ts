@@ -760,6 +760,237 @@ export function drawWildArea(rec: WildAreaRecord, input: WildDrawInput): WildDra
   return { rec: { ...rec, at: input.now ?? rec.at, stands, draw }, taken };
 }
 
+// ── Cultivation (food-scale E-round, E-b) ─────────────────────────────────
+//
+// ⚖️ A FIELD IS ONE MORE EXPRESSION OF A SOURCE REGION (the user's 2026-08-15
+// ruling: "Farmland should really be handled in the same way that forests
+// are"). The record, the draw, the shelf, the standing haul — all the forest
+// machinery above, unchanged. What cultivation adds is exactly two things:
+//   • a BUILDER that mints a farm record sized from the town's own field
+//     area (the caller derives capUnits via `scale.ts yieldPerM2Daily` —
+//     the scale lives outside this module, as for every pure calculator
+//     here), and
+//   • a SOW arm — a forest reseeds itself; a field's population moves only
+//     when somebody plants it. A field left unsown is a field that stops
+//     yielding (population 0 bears nothing — the draw already scales cap
+//     and regrowth down with the stand).
+//
+// ⚖️ GROWTH TIMING RIDES `generation`, NEVER `resourceCompression`
+// (scale.ts's dial law): the caller's `regrowPeriodS` must divide by the
+// life-acceleration dial only. Yield per act reads the conversion dial —
+// which happened upstream, inside the capUnits the caller derived.
+//
+// 🔤 KEY GRAMMAR: the ledger spec wrote `farm:<siteKey>`, but a colon inside
+// the key would nest separators in `wild:area:<key>` — the key here is
+// `farm-<siteKey>` (`farmAreaKey`), same meaning, grammar-safe.
+
+/** The wild-area key of a town's farm region. */
+export const farmAreaKey = (siteKey: string): string => `farm-${siteKey}`;
+
+/** Per-plant bearing of one HARVEST product at class `cls` — the same
+ *  arithmetic the draw and the growth walk speak. */
+function harvestYieldOf(src: NaturalSource, p: NaturalProduct, cls: number): number {
+  return sourceYieldOf(src, p, cls);
+}
+
+export interface FarmAreaOpts {
+  /** Record key (`farmAreaKey(siteKey)` by convention). */
+  key: string;
+  /** The field slabs' bbox, session coordinates (plan.fieldRegion). */
+  area: { x: number; y: number; w: number; h: number };
+  /** Placement seed (plan.fieldRegion.seed) — the renderer's determinism. */
+  seed: number;
+  /** The crop species (a CATALOGUE plant with harvest products, e.g.
+   *  `carrot_plant`). */
+  species: string;
+  /** Standing units the region holds and re-ripens, by glyph — the caller's
+   *  `round(areaM2 × yieldPerM2Daily(tier, scale, satiationDaysOf(glyph)))`.
+   *  This is where the old `farmYieldPerAcreDaily` book identity becomes the
+   *  region's real dimension instead of a phantom (E-f). */
+  capUnits: Record<string, number>;
+  /** Clock the record is founded at. */
+  now: number;
+}
+
+/**
+ * MINT A FARM RECORD — a fully sown, fully ripe source region (a working
+ * farm mid-season: the first haul finds goods, so the famine check never
+ * flickers at the cutover). Population is derived from the cap through the
+ * per-plant bearing, stock starts AT cap (full ⇒ no regrow clock runs —
+ * expand's own rule), and the sow arm below is what refills a stand that
+ * later loses plants.
+ */
+export function farmAreaRecord(opts: FarmAreaOpts): WildAreaRecord {
+  const src = naturalSourceOf(opts.species);
+  if (!src) throw new Error(`farmAreaRecord: unknown species '${opts.species}'`);
+  const classes = classCountOf(opts.species);
+  const mature = classes - 1;
+  // Plants needed so the stand's bearing covers the cap: per-plant bearing
+  // is the Σ of its harvest products' yields at the mature class.
+  let perPlant = 0;
+  for (const p of src.products) {
+    if (p.method === "harvest" && (opts.capUnits[p.glyph] ?? 0) > 0) {
+      perPlant += harvestYieldOf(src, p, mature);
+    }
+  }
+  const capTotal = Object.values(opts.capUnits).reduce((a, b) => a + Math.max(0, b), 0);
+  const plants = perPlant > 0 ? Math.max(1, Math.ceil(capTotal / perPlant)) : 0;
+  const byClass = new Array<number>(classes).fill(0);
+  byClass[mature] = plants;
+  const stock: Record<string, number> = {};
+  const cap: Record<string, number> = {};
+  for (const [g, n] of Object.entries(opts.capUnits)) {
+    if (!(n > 0)) continue;
+    stock[g] = Math.round(n);
+    cap[g] = Math.round(n);
+  }
+  return {
+    key: opts.key,
+    area: { ...opts.area },
+    seed: opts.seed,
+    at: opts.now,
+    stands: [{ species: opts.species, byClass, stock, cap, climbAt: [], regrowAt: {} }],
+    draw: new Array<number>(WILD_DRAW_SECTORS).fill(0),
+  };
+}
+
+/**
+ * ⚖️ THE SOW ARM — plant `plants` new sources into a stand's class-0 bucket
+ * and arm their clocks. Pure (a NEW record where anything moved), exactly as
+ * the draw and the growth walk are.
+ *
+ * What sowing arms: a young plant BEARS NOTHING YET — each sown plant adds
+ * one regrow deadline per harvest glyph at `now + regrowPeriodS(glyph)` (its
+ * first ripening) and lifts the stand's cap by its bearing; a species with
+ * growth classes additionally arms a class climb at `now +
+ * classPeriodS(species)`. Stock is NOT touched — production arrives when the
+ * clocks fire, never at the act.
+ */
+export function sowWildArea(
+  rec: WildAreaRecord,
+  species: string,
+  plants: number,
+  now: number,
+  regrowPeriodS: (glyph: string) => number,
+  classPeriodS?: (species: string) => number,
+): WildAreaRecord {
+  const n = Math.max(0, Math.floor(plants));
+  if (n <= 0) return rec;
+  const src = naturalSourceOf(species);
+  if (!src) return rec;
+  const classes = classCountOf(species);
+  const mature = classes - 1;
+
+  const idx = rec.stands.findIndex((s) => s.species === species);
+  const st = idx >= 0
+    ? cloneStand(rec.stands[idx]!)
+    : {
+        species,
+        byClass: new Array<number>(classes).fill(0),
+        stock: {},
+        cap: {},
+        climbAt: [],
+        regrowAt: {},
+      };
+
+  st.byClass[0] = (st.byClass[0] ?? 0) + n;
+  // Bearing rises with the planting: cap grows by what the new plants will
+  // carry AT MATURITY (the draw's scale-down read forward), and each plant
+  // queues its first ripening.
+  for (const p of src.products) {
+    if (p.method !== "harvest") continue;
+    const bear = harvestYieldOf(src, p, mature);
+    if (bear <= 0) continue;
+    st.cap[p.glyph] = (st.cap[p.glyph] ?? 0) + bear * n;
+    const list = st.regrowAt[p.glyph] ?? (st.regrowAt[p.glyph] = []);
+    const due = now + Math.max(1e-3, regrowPeriodS(p.glyph));
+    for (let i = 0; i < n; i++) list.push(due);
+    list.sort((a, b) => a - b);
+  }
+  // A species with growth classes climbs from 0; a single-class crop is
+  // born mature and needs no climb entry.
+  if (classes > 1 && classPeriodS) {
+    const due = now + Math.max(1e-3, classPeriodS(species));
+    for (let i = 0; i < n; i++) st.climbAt.push({ cls: 0, at: due });
+    st.climbAt.sort((a, b) => a.cls - b.cls || a.at - b.at);
+  }
+
+  const stands = idx >= 0 ? rec.stands.map((s, i) => (i === idx ? st : s)) : [...rec.stands, st];
+  return { ...rec, at: now, stands };
+}
+
+/**
+ * ⚖️ THE RIPENING WALK — regrowth for a record that is DRAWN while folded.
+ *
+ * Forests defer harvest regrowth to expand (`advanceWildArea`'s tail note:
+ * the deadlines survive the fold and the live stack catches up) — correct
+ * for a wood you eventually walk into. A FARM record is different: the
+ * standing haul draws on it every day and it may never expand at all, so
+ * its fruit must come back on the record itself. Callers apply this to
+ * farm records; forest records keep the recorded resume-on-expand law
+ * (calling it on one would be a behavior change, not a bug fix — decide,
+ * don't drift).
+ *
+ * The model is the FIELD PULSE (E2's own reading: the region "re-ripens
+ * daily"): one due deadline refills the stand's stock TO CAP — everything
+ * picked since the last pulse is ripe again — clocks retire at cap
+ * (expand's "full: no clock runs" rule), and the walk HEALS: a stand below
+ * cap with no clock queued arms one at `now + regrowPeriodS(glyph)`, so a
+ * draw that emptied a full stand needs no special re-arm path. Timestamps
+ * only, exact at the date (the destiny law); pure — a NEW record where
+ * anything moved.
+ */
+export function ripenWildArea(
+  rec: WildAreaRecord,
+  now: number,
+  regrowPeriodS: (species: string, glyph: string) => number,
+): WildAreaRecord {
+  let moved = false;
+  const stands = rec.stands.map((st) => {
+    const src = naturalSourceOf(st.species);
+    if (!src || standPopulation(st) <= 0) return st;
+    let touched = false;
+    const next = cloneStand(st);
+    for (const p of src.products) {
+      if (p.method !== "harvest") continue;
+      const g = p.glyph;
+      const cap = next.cap[g] ?? 0;
+      if (cap <= 0) continue;
+      const per = Math.max(1e-3, regrowPeriodS(st.species, g));
+      const list = next.regrowAt[g] ?? [];
+      const kept: number[] = [];
+      for (const at of list) {
+        if (at <= now && (next.stock[g] ?? 0) < cap) {
+          next.stock[g] = cap; // the pulse: the whole field bears again
+          touched = true;
+        } else if ((next.stock[g] ?? 0) < cap && kept.length === 0) {
+          kept.push(at); // one live clock is all the pulse needs
+        } else if (at > now && (next.stock[g] ?? 0) < cap) {
+          // extra queued clocks collapse into the one kept above
+          touched = true;
+        } else {
+          touched = true; // at cap: the clock retires
+        }
+      }
+      // HEAL: below cap with no clock queued (a draw emptied a full stand,
+      // or the pulse just fired and the stand was immediately drawn) — arm.
+      if ((next.stock[g] ?? 0) < cap && kept.length === 0) {
+        kept.push(now + per);
+        touched = true;
+      }
+      if (touched || kept.length !== list.length) {
+        if (kept.length) next.regrowAt[g] = kept;
+        else delete next.regrowAt[g];
+      }
+    }
+    if (!touched) return st;
+    moved = true;
+    return next;
+  });
+  if (!moved) return rec;
+  return { ...rec, at: now, stands };
+}
+
 // ── ⚖️ F5 — THE SOURCE AS A TRADE ENDPOINT (one-way) ──────────────────────
 
 /** Where the source stands: its own ground's centre, and the point a road to it

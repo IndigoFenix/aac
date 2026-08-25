@@ -56,8 +56,10 @@ import {
   type RoomProgramDef,
   type StructureProgramDef,
 } from "../../kernel/town/programs.js";
-import { buildConcepts } from "../content/concepts.js";
+import { AFFORDANCE_VERBS, buildConcepts } from "../content/concepts.js";
+import { listSpecies } from "../../creatures/species.js";
 import { PLACE_STUBS } from "../content/words.js";
+import { placeGroupOf } from "../content/vocab-order.js";
 import { CORE_PEOPLE } from "../../object-properties.js";
 import { FURNITURE_ITEMS, STATION_ACTS } from "../../kernel/town/stations.js";
 import { fixtureWord } from "../../types.js";
@@ -197,6 +199,9 @@ export interface BuilderSurfaceOpts {
   group?: string;
   /** Main-grid budget (the surfacer default is 16). */
   capacity?: number;
+  /** How many of those the child sees before More — the chip rule's measure
+   *  (surface-next `SurfaceContext.page`). Absent ⇒ `capacity`. */
+  page?: number;
   /**
    * THE LEARNED LAYER (surface-next `RecencyMemory`): what this speaker has
    * actually said — recently-mentioned nouns, per-word use counts, adjacent
@@ -282,11 +287,21 @@ function propertyAffords(props: readonly string[]): string[] {
  *  a thing you hand to somebody, and a board that thought otherwise led "you
  *  give ___" with the kitchen. */
 const ITEM_BASELINE = ["want", "get", "give"] as const;
+/** The verbs that only a BODY affords (the receptive-npc row). */
+const SOCIAL_VERBS = new Set(AFFORDANCE_VERBS["receptive-npc"]);
 const FIXTURE_BASELINE = ["want"] as const;
 
-/** Pools whose members are BODIES rather than objects — the one thing the
- *  concept join cannot tell us from the symbol alone. */
-const CREATURE_AFFORDANCES = new Set(["receptive-npc"]);
+/**
+ * A BODY is a species the world builds or a member of the animal pool — both
+ * are creatures, and a dog is genuinely somebody you follow and play with.
+ *
+ * WHETHER A BODY IS A PERSON is a different question, and the one that was
+ * wrong: `receptive-npc` made `bear`, `rabbit` and `frog` people (a fossil of
+ * the edition whose townsfolk WERE animal people), so a frog stood in every
+ * band meaning "somebody" — greet, the company link, `help`, the desire board.
+ * `isAnimal` (content/properties.ts) answers that question now, and the bands
+ * rank people ahead of animals rather than pretending an animal is furniture.
+ */
 
 const entry = (
   symbol: string,
@@ -326,18 +341,22 @@ function walkDefaultNouns(): BuilderNounEntry[] {
   // 1. The taught vocabulary, affordances and all.
   for (const c of buildConcepts().values()) {
     const creature =
-      c.species?.kind === "creature" ||
-      (c.pools ?? []).some((p) => CREATURE_AFFORDANCES.has(p.affordance));
+      c.species?.kind === "creature" || (c.pools ?? []).some((p) => p.affordance === "receptive-npc");
     const props = c.properties ?? [];
+    // A thing that is NOT a body does not talk, hug or follow, whatever pool it
+    // sits in: the `friend` pool hands its members the social verbs, and with
+    // the animal-people gone those verbs would have left a teddy bear offering
+    // to have a conversation.
+    const affords = creature ? c.affords : c.affords.filter((v) => !SOCIAL_VERBS.has(v));
     push(
       entry(
         c.symbol,
         creature ? "creature" : "item",
         creature
-          ? c.affords
+          ? affords
           : [
               ...(props.includes("furniture") ? FIXTURE_BASELINE : ITEM_BASELINE),
-              ...c.affords,
+              ...affords,
               ...propertyAffords(props),
             ],
         props,
@@ -345,13 +364,21 @@ function walkDefaultNouns(): BuilderNounEntry[] {
     );
   }
 
-  // 2. The people a child names. Frame words with no spec row by law, so they
+  // 2. The animals the world actually builds. A species row with `words` is a
+  //    creature a sentence can name (`cat`, `horse`); one without them is a body
+  //    the builder makes, not a word a child says.
+  for (const sp of listSpecies()) {
+    if (sp.kind !== "creature" || !sp.words) continue;
+    push(entry(sp.id, "creature", ["see", "want", "play", "follow", "help"], []));
+  }
+
+  // 3. The people a child names. Frame words with no spec row by law, so they
   //    are the one group this walk cannot read off a registry.
   for (const person of CORE_PEOPLE) {
     push(entry(person, "creature", ["talk", "help", "hug", "give", "see", "want"], []));
   }
 
-  // 3. The built world. A station is spoken as its `fixtureWord` (the chest row
+  // 4. The built world. A station is spoken as its `fixtureWord` (the chest row
   //    speaks "box"), and what it is FOR rides its own registry row.
   for (const f of FURNITURE_ITEMS) {
     const word = fixtureWord(f.kind);
@@ -360,7 +387,7 @@ function walkDefaultNouns(): BuilderNounEntry[] {
     push(entry(word, "item", [...baseline, ...(STATION_ACTS[f.kind] ?? []), ...propertyAffords(props)], props));
   }
 
-  // 4. Places.
+  // 5. Places.
   for (const place of placeBuilderNouns()) push(place);
 
   return out;
@@ -529,6 +556,7 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
   const suggestion = surfaceNext(tokens, {
     nouns: surfaceNouns,
     ...(opts.capacity !== undefined ? { capacity: opts.capacity } : {}),
+    ...(opts.page !== undefined ? { page: opts.page } : {}),
     // The learned layer and the type-chip seed ride straight through: the
     // surfacer owns what they mean, the adapter only carries them. Both
     // omitted when absent, so a caller that passes neither gets exactly the
@@ -617,6 +645,10 @@ export const GROUP_LABEL_HEAD: Record<string, string> = {
   creatures: "person",
   places: "place",
   things: "thing",
+  // The place split (2026-08-25) — each id is already a lang-layer word.
+  room: "room",
+  building: "building",
+  outside: "outside",
 };
 
 /** The surfacer's own noun clustering (surface-next buildGroups), applied to
@@ -633,7 +665,7 @@ function thingClusters(nouns: BuilderNounEntry[]): Map<string, BuilderNounEntry[
   for (const n of nouns) {
     for (const p of n.properties ?? []) push(p, n);
     if (n.kind === "creature") push("creatures", n);
-    else if (n.kind === "place") push("places", n);
+    else if (n.kind === "place") push(placeGroupOf(n.symbol), n);
     else if (n.kind === "item" && !(n.properties ?? []).length) push("things", n);
   }
   return clusters;

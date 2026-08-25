@@ -175,7 +175,12 @@ describe("roomDisplayGlyph — the icon marks", () => {
     expect(roomKindDisplayGlyph("kitchen")).toBe("room(oven)");
     expect(roomKindDisplayGlyph("bath")).toBe("room(toilet)"); // the FLOOR, not the tub
     expect(roomKindDisplayGlyph("workshop")).toBe("room(workbench)");
-    expect(roomKindDisplayGlyph("living")).toBe("room(table)");
+    // THE HOUSEHOLD'S ROOM (user decision 2026-08-25): a living room is drawn by
+    // who is in it — the same symbol the dwelling wears — not by the table it
+    // happens to share with the DINING room, which is a separate concept the
+    // default culture folds into it.
+    expect(roomKindDisplayGlyph("living")).toBe("room(family)");
+    expect(roomKindDisplayGlyph("dining")).toBe("room(food)");
     expect(roomKindDisplayGlyph("store")).toBe("room(box)");
   });
 

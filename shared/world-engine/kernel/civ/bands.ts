@@ -321,6 +321,32 @@ export function stepBandDay(grid: CellGrid, band: Band, opts: BandDayOpts): Band
   return { need, yield: dayYield, banked, shortfall };
 }
 
+/**
+ * The band's day arm in ELAPSED form — the destiny convention (states
+ * round S0, §4 law 3: decay must be addressable by elapsed time, never by
+ * call count; `stepBandDay` was the engine's one per-call decay). Steps
+ * `days` whole days (fractions ignored — the day EDGE is the unit, the
+ * clock-warp doctrine) and returns the summed report; pinned ≡ N single
+ * calls in destiny.test.ts. Honest only across a constant-conditions
+ * span: a caller that varies `yieldFactor` per day (seasons — tri.ts)
+ * owns its own loop. The closed-form jump over long spans is the recorded
+ * upgrade path (the gateACarryRatio plateau algebra), not this wrapper.
+ */
+export function stepBandDays(
+  grid: CellGrid, band: Band, days: number, opts: BandDayOpts,
+): BandDayReport {
+  const n = Math.max(0, Math.floor(days));
+  const total: BandDayReport = { need: 0, yield: 0, banked: 0, shortfall: 0 };
+  for (let d = 0; d < n; d++) {
+    const r = stepBandDay(grid, band, opts);
+    total.need += r.need;
+    total.yield += r.yield;
+    total.banked += r.banked;
+    total.shortfall += r.shortfall;
+  }
+  return total;
+}
+
 // ------------------------------------------------------------ Gate A (④)
 
 export interface CarryOpts {

@@ -62,7 +62,19 @@ describe("Speaker <apps> catalogue — live native audio (the default)", () => {
   test("states the unprompted-open bans it kept breaking", () => {
     const prompt = buildSpeakerPrompt({ ...live, enabledApps: apps });
     expect(prompt).toContain("A topic coming up is not a request");
-    expect(prompt).toContain("NEVER OPEN during the Word Finder");
+    expect(prompt).toContain("NEVER OPEN while they are talking to someone else");
+  });
+
+  test("the Word Finder is a QUESTION, not a ban", () => {
+    // It used to read "NEVER OPEN during the Word Finder". That inverted the
+    // feature: a child who used the Word Finder to reach a picture or a
+    // restaurant was refused at the moment the search succeeded (2026-08-25),
+    // and the Word Finder does not close itself. The open is held and put back
+    // to the model instead, so the prompt has to teach the answer.
+    const prompt = buildSpeakerPrompt({ ...live, enabledApps: apps });
+    expect(prompt).not.toContain("NEVER OPEN during the Word Finder");
+    expect(prompt).toContain("DURING THE WORD FINDER");
+    expect(prompt).toContain("Repeat the same call to say yes");
   });
 
   test("websites are mention-only here, and never a spoken URL", () => {

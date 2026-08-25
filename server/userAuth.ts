@@ -13,6 +13,7 @@ import { identityProviderRepository } from "./repositories/identityProviderRepos
 import { adminUserRepository } from "./repositories/adminUserRepository";
 import { identityService } from "./services/identityService";
 import { adaptAdminAsUser, ensureAdminShellUser, resolveLoginIdentity, type SessionIdentity } from "./services/adminAuthService";
+import { refreshAacSession } from "./session-lifetime";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -51,6 +52,10 @@ export async function setupUserAuth(app: Express) {
   app.use(getUserSession());
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // AAC devices stay signed in indefinitely: slide their cookie's expiry
+  // forward (throttled to once a day). No-op for every other session.
+  app.use(refreshAacSession);
 
   // Propagate customer support context via AsyncLocalStorage
   const { supportContext } = await import("./middleware/auth");

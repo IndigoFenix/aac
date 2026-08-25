@@ -35,6 +35,10 @@ import {
   type LedgerWarpArms,
 } from "@shared/world-engine/interaction/quest/clock-warp.js";
 import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
+import {
+  drawWildArea, farmAreaKey, ripenWildArea, wildAreaStock,
+} from "@shared/world-engine/interaction/quest/wild-area.js";
+import { satiationDaysOf } from "@shared/world-engine/kernel/town/goods-kinds.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ① THE ENUMERATION — pure, over a recording arms table
@@ -259,15 +263,40 @@ describe("② the twin doctrine — a warped span and a ticked span leave the SA
     expect(bookDigest(warped)).toEqual(bookDigest(ticked));
   });
 
-  it("🚨 CONSERVATION: a warp mints nothing and loses nothing", () => {
+  it("🚨 CONSERVATION: a warp mints nothing and loses nothing — except the days' eating", () => {
     // The session stock audit is the repo's standing conservation probe (the
     // same reading the S4 fold has to keep identical across an LOD transition).
-    // An unobserved town has no caravan landing and no body taking anything, so
-    // a warp must leave it byte-identical.
+    // EVOLVED by the food-scale E-round: the town's FIELD REGION is audited
+    // stock now, and each crossed day's modelled consumption leaves it (eaten
+    // food — the one legal sink; `stepFarmSource`). Everything else stays
+    // byte-identical, and the expected carrot line is computed by the PURE
+    // TWIN of the sweep's own arms (law ⑤'s pattern): ripen + draw at exactly
+    // the clocks the warp's sweeps run — prime at t₀, each edge, the landing.
+    const t = warped.session.town!;
+    const key = farmAreaKey(t.plan.key);
     const before = warped.host.stockAudit();
+    let rec = warped.session.wildAreas.get(key)!;
+    expect(rec).toBeDefined();
+    const pop = t.town.scalar("population");
+    const seated = t.plan.popCap > 0 ? Math.min(pop, t.plan.popCap) : pop;
+    const perDay = Math.max(0, Math.round(seated / satiationDaysOf("carrot")));
+    const t0 = warped.session.taskClock;
+    const day0 = Math.floor(warped.session.townClock / FOOD_DAY_SEC);
+    const startStock = wildAreaStock(rec).carrot ?? 0;
+    const sweepAt = (clock: number, draws: boolean): void => {
+      rec = ripenWildArea(rec, clock, () => FOOD_DAY_SEC);
+      if (draws && perDay > 0) {
+        rec = drawWildArea(rec, { glyph: "carrot", units: perDay, now: clock }).rec;
+      }
+    };
+    sweepAt(t0, false); // the warp PRIMES before it jumps (law ⑤)
+    for (let d = 1; d <= 3; d++) sweepAt((day0 + d) * FOOD_DAY_SEC, true);
+    sweepAt(t0 + 3 * FOOD_DAY_SEC, false); // the landing sweep, same day as edge 3
+    const expectedCarrot = (before.carrot ?? 0) + (wildAreaStock(rec).carrot ?? 0) - startStock;
+
     const r = warped.host.advanceLedgerDays(3);
     expect(r.ok).toBe(true);
-    expect(warped.host.stockAudit()).toEqual(before);
+    expect(warped.host.stockAudit()).toEqual({ ...before, carrot: expectedCarrot });
   });
 
   it("🔒 THE SLICING LAW, live: warp(N) leaves the same books as N × warp(1)", () => {

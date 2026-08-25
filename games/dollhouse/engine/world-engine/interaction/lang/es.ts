@@ -95,6 +95,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // Creature SPECIES words (reference resolution: "hablo con el/la {especie}").
   person: { w: "persona", g: "f", plw: "personas" },
   // KINSHIP AND ROLE WORDS (2026-08-24) — see en.ts.
+  outside: { w: "afuera", g: "m" },
   mom: { w: "mamá", g: "f" },
   dad: { w: "papá", g: "m" },
   baby: { w: "bebé", g: "m", plw: "bebés" },
@@ -188,6 +189,7 @@ const CENTRAL: Record<string, Lexeme> = {
   make: { w: "hago", v2: "haces", v3: "hace", v3p: "hacen", v1p: "hacemos", inf: "hacer" },
   bring: { w: "traigo", v2: "traes", v3: "trae", v3p: "traen", v1p: "traemos", inf: "traer" },
   carry: { w: "llevo", v2: "llevas", v3: "lleva", v3p: "llevan", v1p: "llevamos", inf: "llevar" },
+  use: { w: "uso", v2: "usas", v3: "usa", v3p: "usan", v1p: "usamos", inf: "usar" },
   cut: { w: "corto", v2: "cortas", v3: "corta", v3p: "cortan", v1p: "cortamos", inf: "cortar" },
   // The completion state ("la casa está terminada").
   finished: { w: "terminado", f: "terminada" },
@@ -409,7 +411,13 @@ export const es = makeRomance({
     obj.kind === "quality"
       ? `Me gusta el ${obj.word}.`
       : `Me gusta${obj.plural ? "n" : ""} ${obj.text}.`,
-  wantTo: (inf) => `Quiero ${inf}.`,
+  // "Quiero comer." / "Necesito comer una galleta." / "Me gusta comer." —
+  // `like` is a dative construction in Spanish, which is exactly why the three
+  // desires cannot share one template.
+  wantTo: (modal, inf, obj) => {
+    const head = modal === "need" ? "Necesito" : modal === "like" ? "Me gusta" : "Quiero";
+    return `${head} ${inf}${obj ? ` ${obj}` : ""}.`;
+  },
   cantPut: (obj) => (obj ? `No puedo poner ${obj} ahí.` : "No puedo ponerlo ahí."),
   going: {
     i: (dest) => `Voy ${dest}.`,

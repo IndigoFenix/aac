@@ -43,7 +43,7 @@ export interface ConceptDef {
 }
 
 /** Verbs an AFFORDANCE implies (LEXICON verb ids — parse-intent.ts). */
-const AFFORDANCE_VERBS: Record<AffordanceTag, string[]> = {
+export const AFFORDANCE_VERBS: Record<AffordanceTag, string[]> = {
   "repeatable": ["want"],
   "repeatable-edible": ["eat", "want", "get", "give"],
   "repeatable-effect": ["play", "want"],

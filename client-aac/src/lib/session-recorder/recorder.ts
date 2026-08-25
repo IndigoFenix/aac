@@ -1,8 +1,11 @@
 // client-aac/src/lib/session-recorder/recorder.ts
 //
 // The encoder side of session recording. Owns two MediaRecorders — the student
-// on camera (with the room mic) and the app's own window — and streams their
-// chunks to the Electron store, which is the only thing that touches disk.
+// on camera (with the room mic) and the app's own window (with the app's own
+// sound) — and streams their chunks to the Electron store, which is the only
+// thing that touches disk.
+//
+// The split of sound between the two files is deliberate: see `captureScreen`.
 //
 // ── The pre-roll problem ───────────────────────────────────────────────────
 // "Also capture the moments when they start to interact" cannot be done by
@@ -43,6 +46,7 @@ import {
   SCREEN_BITRATE_BPS,
   cameraBitrateFor,
   cameraConstraintsFor,
+  type RecordingAudioSource,
   type RecordingManifest,
   type RecordingTrack,
   type SessionRecordingSettings,
@@ -60,6 +64,19 @@ import { makeClipId, randomClipSuffix } from "./clip-id";
 
 /** How often the gate is advanced, and how often each encoder emits a chunk. */
 const TICK_MS = 1000;
+
+/**
+ * How often each encoder is asked for a key frame.
+ *
+ * Left alone, Chromium's VP9 encoder emits one at the start and then almost
+ * none — an eighteen-second clip came back with a single key frame in it. A
+ * WebM cluster can only begin at one, so that clip was also a single cluster:
+ * nothing to index, nothing to seek to, and an editor scrubbing it has to
+ * decode from the beginning every time. Asking for one every couple of seconds
+ * costs a little bitrate on footage that is already generously encoded, and
+ * buys a file that can be cut.
+ */
+const KEY_FRAME_INTERVAL_MS = 2000;
 
 /**
  * Pre-roll pairs restart at twice the pre-roll, staggered by one pre-roll, so
@@ -140,7 +157,14 @@ class Generation {
     audioBps: number | undefined,
     private readonly onChunk: (gen: Generation, blob: Blob, atMs: number) => void,
   ) {
-    const opts: MediaRecorderOptions = { mimeType, videoBitsPerSecond: videoBps };
+    // `videoKeyFrameIntervalDuration` is Chromium's, not the standard's, so it
+    // is not in lib.dom — an older engine simply ignores it and we get the
+    // long-GOP file we would have got anyway.
+    const opts: MediaRecorderOptions & { videoKeyFrameIntervalDuration?: number } = {
+      mimeType,
+      videoBitsPerSecond: videoBps,
+      videoKeyFrameIntervalDuration: KEY_FRAME_INTERVAL_MS,
+    };
     if (audioBps) opts.audioBitsPerSecond = audioBps;
     this.recorder = new MediaRecorder(stream, opts);
     this.recorder.ondataavailable = (ev) => {
@@ -194,6 +218,9 @@ class TrackPipeline {
     private readonly audioBps: number | undefined,
     private readonly preRollMs: number,
     private readonly appendChunk: (track: RecordingTrack, data: Uint8Array) => Promise<boolean>,
+    /** What this file's sound is, for the manifest — the two files carry
+     *  different audio on purpose, and an editor has to be told which is which. */
+    readonly audioSource: RecordingAudioSource,
   ) {
     const settings = stream.getVideoTracks()[0]?.getSettings();
     this.width = settings?.width ?? null;
@@ -449,7 +476,10 @@ export class SessionRecorder {
       });
       audioTracks = this.micStream.getAudioTracks();
     } catch {
-      // Recording silent video beats not recording.
+      // Recording silent video beats not recording — but say so, because a
+      // camera file that turns out to have no room sound in it is only
+      // discovered at edit time, long after the session it was meant to show.
+      this.setStatus({ error: "microphone unavailable — the camera file will be silent" });
     }
 
     const combined = new MediaStream([videoTrack, ...audioTracks]);
@@ -459,24 +489,55 @@ export class SessionRecorder {
       audioTracks.length ? AUDIO_BITRATE_BPS : undefined,
       settings.preRollSeconds * 1000,
       (track, data) => this.append(track, data),
+      audioTracks.length ? "mic" : null,
     );
     this.cameraPipeline.startIdle();
     return true;
   }
 
+  /**
+   * Capture the app's own window, with the app's own SOUND.
+   *
+   * The two files carry deliberately different audio. The camera file gets the
+   * room: the child, the caretaker, whatever is going on around the device.
+   * This one gets only what the device itself is playing — the voice a button
+   * press speaks, and the AI's replies — because that is the half of a session
+   * a promotional cut needs clean, without a room mic's noise, echo or
+   * background conversation over it. An editor with both files can mix either.
+   *
+   * "What the device is playing" is loopback audio, which the browser has no
+   * API for: `getDisplayMedia({audio:true})` gets it because the Electron
+   * display-media handler answers with `audio: 'loopback'` (see
+   * electron/main.ts). Where the host cannot do that at all the request is
+   * retried without sound, since a silent screen file still beats none.
+   */
+  private async captureScreen(): Promise<MediaStream | null> {
+    const video = { frameRate: { ideal: 30 } };
+    try {
+      return await navigator.mediaDevices.getDisplayMedia({ video, audio: true });
+    } catch (err) {
+      const withAudio = String(err);
+      try {
+        return await navigator.mediaDevices.getDisplayMedia({ video, audio: false });
+      } catch {
+        this.setStatus({ error: `screen capture unavailable: ${withAudio}` });
+        return null;
+      }
+    }
+  }
+
   private async setupScreen(): Promise<boolean> {
     const { settings } = this.opts;
-    try {
-      // The Electron main process answers this with the app's own window and
-      // no picker (see the display-media handler in electron/main.ts), so there
-      // is nothing for a student to dismiss and nothing off-app in the frame.
-      this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30 } },
-        audio: false,
-      });
-    } catch (err) {
-      this.setStatus({ error: `screen capture unavailable: ${String(err)}` });
-      return false;
+    // The Electron main process answers this with the app's own window and no
+    // picker (see the display-media handler in electron/main.ts), so there is
+    // nothing for a student to dismiss and nothing off-app in the frame.
+    this.screenStream = await this.captureScreen();
+    if (!this.screenStream) return false;
+    const screenAudio = this.screenStream.getAudioTracks();
+    if (!screenAudio.length) {
+      // Worth saying out loud: a screen file that turns out to be silent is
+      // exactly the surprise this feature cannot afford at edit time.
+      this.setStatus({ error: "no system audio — the screen file will be silent" });
     }
 
     // A capture that dies mid-session (the window closes and reopens, the OS
@@ -489,10 +550,11 @@ export class SessionRecorder {
     }
 
     this.screenPipeline = new TrackPipeline(
-      "screen", this.screenStream, pickMimeType(false),
-      SCREEN_BITRATE_BPS, undefined,
+      "screen", this.screenStream, pickMimeType(screenAudio.length > 0),
+      SCREEN_BITRATE_BPS, screenAudio.length ? AUDIO_BITRATE_BPS : undefined,
       settings.preRollSeconds * 1000,
       (track, data) => this.append(track, data),
+      screenAudio.length ? "system" : null,
     );
     this.screenPipeline.startIdle();
     return true;
@@ -589,6 +651,7 @@ export class SessionRecorder {
         bytes: camera.bytes,
         width: this.cameraPipeline.width,
         height: this.cameraPipeline.height,
+        audio: this.cameraPipeline.audioSource,
         syncMarks: camera.syncMarks,
       };
     }
@@ -599,6 +662,7 @@ export class SessionRecorder {
         bytes: screen.bytes,
         width: this.screenPipeline.width,
         height: this.screenPipeline.height,
+        audio: this.screenPipeline.audioSource,
         syncMarks: screen.syncMarks,
       };
     }
@@ -619,6 +683,14 @@ export class SessionRecorder {
     this.clipId = null;
     this.setStatus({ clipOpen: false });
 
+    // Back to idle pre-roll BEFORE the store is asked to finish: `finish`
+    // rewrites both files into seekable ones, which is a pass over every byte
+    // of the clip, and the next interaction must not have to wait for it.
+    if (reason !== "stopped") {
+      this.cameraPipeline?.startIdle();
+      this.screenPipeline?.startIdle();
+    }
+
     const done = await this.opts.bridge.finish({
       clipId, manifest, maxStorageMb: this.opts.settings.maxStorageMb,
     });
@@ -633,12 +705,6 @@ export class SessionRecorder {
           ? "storage budget is too small for one clip"
           : this.status.error,
       });
-    }
-
-    // Back to idle pre-roll, ready for the next interaction.
-    if (reason !== "stopped") {
-      this.cameraPipeline?.startIdle();
-      this.screenPipeline?.startIdle();
     }
   }
 

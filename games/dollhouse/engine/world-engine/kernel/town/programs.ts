@@ -233,12 +233,41 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
     kind: "living",
     requires: ["table", "chair"],
     signature: ["table", "chair"],
-    symbol: "table",
+    // THE DEFAULT ROOM OF A HOUSE, drawn by WHO IS IN IT (user decision
+    // 2026-08-25) — the same symbol the dwelling itself wears, since a living
+    // room is the household's room. `room(table)` said "dining room", which is
+    // a DIFFERENT concept that happens to share the fixture in this culture
+    // (see the `dining` program below).
+    symbol: "family",
     words: {
       en: { w: "living room", plw: "living rooms" },
       he: { w: "סלון", g: "m" },
       es: { w: "sala", g: "f", plw: "salas" },
       pt: { w: "sala", g: "f" },
+    },
+  },
+  // ── THE FOOD ROOM (user decision 2026-08-25) ──────────────────────────────
+  // A dining room and a living room are separate CONCEPTS that share a fixture:
+  // in the default culture one room does both jobs, and the household eats at
+  // the same table it sits around. So this row sits BELOW `living` and never
+  // claims a floor here — precedence is semantics, and the shared room wins by
+  // being first. A culture with room to spare splits them (the overlap-until-
+  // there-is-space mechanism), and that split is the low-priority follow-up this
+  // row exists to make possible.
+  //
+  // `symbol: "food"` — a food room, drawn as `room(food)`. No new artwork: the
+  // container frame composes the category's own icon, exactly as the restaurant
+  // (a food BUILDING) does one level up.
+  {
+    kind: "dining",
+    requires: ["table"],
+    signature: ["table"],
+    symbol: "food",
+    words: {
+      en: { w: "dining room", plw: "dining rooms" },
+      he: { w: "חדר אוכל", g: "m", defw: "חדר האוכל" },
+      es: { w: "comedor", g: "m", plw: "comedores" },
+      pt: { w: "sala de jantar", g: "f" },
     },
   },
   // `box` for the store room, not `chest`: the station kind is a chest, but the
@@ -329,6 +358,23 @@ export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
       he: { w: "אריגה", g: "f" },
       es: { w: "tejeduría", g: "f", plw: "tejedurías" },
       pt: { w: "tecelagem", g: "f" },
+    },
+  },
+  // THE RESTAURANT (user decision 2026-08-25): a FOOD BUILDING — the place you
+  // go to eat that is not your own kitchen, and the first place-word a child
+  // needs that the town has never modelled. Its room is the `dining` program,
+  // which the default culture folds into the living room, so no building derives
+  // as a restaurant here yet; the word, the icon and the relation to `eat` are
+  // real from today. `symbol: "food"` draws it as `building(food)` — no new art.
+  {
+    type: "restaurant",
+    rooms: ["dining"],
+    symbol: "food",
+    words: {
+      en: { w: "restaurant" },
+      he: { w: "מסעדה", g: "f" },
+      es: { w: "restaurante", g: "m", plw: "restaurantes" },
+      pt: { w: "restaurante", g: "m" },
     },
   },
   // `book`, where the STUDY room keeps `shelf`: the shelf is what derives the

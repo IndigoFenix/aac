@@ -110,8 +110,13 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
       const toasts = toastTap(run);
 
       // ── ② A LIVE STAND: the trees are standing, so this is an ERRAND ──────
+      // (E-round evolution: the town's own FARM record legitimately lives in
+      // `wildAreas` from the first sweep — the "nothing folded" premise reads
+      // the FOREST records only.)
+      const foldedForests = () =>
+        [...s.wildAreas.keys()].filter((k) => !k.startsWith("farm-")).length;
       expect(s.wilderness?.features.length ?? 0).toBeGreaterThan(0);
-      expect(s.wildAreas.size).toBe(0);
+      expect(foldedForests()).toBe(0);
       const mark0 = toasts.all.length;
       run.speak("get + wood + from + forest");
       // No shipment: not one row against the source exists, and the wild was not
@@ -119,7 +124,7 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
       // a sentence that could fold the world would pop the stand the player is
       // looking at straight out of existence.
       expect(drawRows(run)).toHaveLength(0);
-      expect(s.wildAreas.size).toBe(0);
+      expect(foldedForests()).toBe(0);
       expect(s.wilderness?.features.length ?? 0).toBeGreaterThan(0);
       // …and the ordinary pooled-errand answer still lands (never silence).
       expect(toasts.since(mark0)).toContain("get + wood + from + forest");

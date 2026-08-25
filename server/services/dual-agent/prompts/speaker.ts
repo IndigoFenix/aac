@@ -359,7 +359,8 @@ Every app that exists. Each line IS the call that opens it — copy the id exact
 ${appRows.join("\n")}
 
 OPEN ONLY WHEN they asked for that app, or agreed to one you just offered, THIS turn. A topic coming up is not a request.
-NEVER OPEN during the Word Finder, while they are talking to someone else, or to fill a silence.
+NEVER OPEN while they are talking to someone else, or to fill a silence.
+DURING THE WORD FINDER an open is held and you are asked whether this is the thing they were searching for. Repeat the same call to say yes; leave it alone to say no.
 NOTHING FITS? Say you can't, then talk about the thing itself. Never open the nearest-sounding app instead — it takes over their screen and costs them the thread.
 SAY what you are opening as you open it. Never promise an app without calling open_app.
 </apps>`;

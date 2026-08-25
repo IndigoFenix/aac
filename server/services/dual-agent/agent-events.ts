@@ -467,6 +467,18 @@ export interface AppOpenRequestedEvent extends BaseEvent {
    * taking the context-injection route.
    */
   toolCallId?: string;
+  /**
+   * Short reason the open was REFUSED, stamped by `routeAppOpen`'s settle when
+   * the verdict is "not opened". Absent means the app opened.
+   *
+   * 🚨 The event is recorded BEFORE it is routed, and the recorded object is
+   * the same reference, so this stamp is what keeps a refusal from reading as
+   * a success in the Board Manager's `recent_events` tail. Without it a blocked
+   * `picture_search` rendered as plain `[APP OPEN] picture_search (jungle)` and
+   * the board grew "more pictures" buttons for pictures that never appeared
+   * (observed 2026-08-25).
+   */
+  blocked?: string;
 }
 
 /** Speaker requested closing the active app. */

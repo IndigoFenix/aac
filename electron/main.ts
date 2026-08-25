@@ -245,7 +245,19 @@ app.on("ready", async () => {
           const chosen = own ?? screen;
           if (!chosen) { callback({}); return; }
           if (!own) log.warn("[recording] own window source not found — using primary display");
-          callback({ video: chosen });
+          // ── System audio ──
+          // A caller that asks for audio with the picture wants what the DEVICE
+          // is playing — the voice a button press speaks, the AI's replies —
+          // and not the room, which the camera's own microphone already has.
+          // The web platform has no API for that; `loopback` is Electron's, and
+          // it is the only reason the screen recording can have sound at all.
+          // `loopbackWithMute` is the wrong neighbour: it would silence the
+          // speakers, which is to say silence the app for the child using it.
+          // Electron offers loopback on Windows only; elsewhere the caller is
+          // answered with picture alone and records a silent screen file.
+          const audio: "loopback" | undefined =
+            request.audioRequested && process.platform === "win32" ? "loopback" : undefined;
+          callback(audio ? { video: chosen, audio } : { video: chosen });
         })
         .catch((err) => {
           log.error(`[recording] desktopCapturer failed: ${String(err)}`);

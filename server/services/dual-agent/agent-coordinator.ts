@@ -144,6 +144,11 @@ import {
 
 import type { ClientMessage, ServerMessage, IdentifiedFaceWire, IdentifiedVoiceWire, ClientCapabilities, ProcessingActivity } from "./live-relay";
 import { ProcessingIndicators } from "./processing-indicators";
+import {
+  decideWordFinderOpen,
+  wordFinderOpenAskNote,
+  type PendingWordFinderOpen,
+} from "./word-finder-open-gate";
 import { isCapabilityActive } from "./capability-gate";
 import { buildHeardSpeechTurn, clarityTag, confidenceLabel, describeSttConfidence, matchHeardSpeechTurn, type HeardSpeechTurn } from "./speech-text";
 import { decideGuessingEnter } from "./guessing-enter-policy";
@@ -1743,6 +1748,24 @@ export class AgentCoordinator {
    *  builder-origin resolution can feed the concept back into the active
    *  slot when guessing ends. */
   private guessingOrigin: "conversation" | "builder" = "conversation";
+  /**
+   * An AI open_app that arrived while the Word Finder was open, and was
+   * answered with "is this what they were looking for?" rather than a flat
+   * refusal. A second open of the SAME app inside
+   * `WORD_FINDER_OPEN_CONFIRM_MS` is the AI's yes: the Word Finder closes and
+   * the app opens.
+   *
+   * Cleared on any Word Finder exit — a confirm may only follow its own ask.
+   */
+  private pendingWordFinderOpen: PendingWordFinderOpen | null = null;
+  /**
+   * Word Finder exit owed to an app open that is settling right now. Run only
+   * AFTER the held functionResponse is answered: `clearGuessingState` pushes a
+   * context injection, and pushing content while the Speaker is blocked on an
+   * outstanding tool call is the shape that produced permanent silence
+   * (measured 2026-08-24 — scripts/test-live-toolcall-blocking.ts).
+   */
+  private guessingExitAfterOpen: string | null = null;
   private guessingBuilderContext: { targetSlot: number | null; partialGlyph: string; category: string } | null = null;
   /** When the word-finder entry opener was last voiced (epoch ms). Drives the
    *  re-entry cooldown in `decideGuessingEnter` so dwell-toggle bursts don't
@@ -4918,7 +4941,15 @@ export class AgentCoordinator {
     if (!this.guessingState) return;
     flowNote("COORDINATOR", `Clearing guessing state: ${reason}`);
     const aiInitiated = reason.startsWith("ai_exit:");
+    // The Word Finder closed to make way for an app the AI confirmed was what
+    // the user had been searching for. Different exit, different framing: it
+    // did not converge on a word, it landed on a SCREEN.
+    const openedApp = reason.startsWith("ai_exit:app_open:")
+      ? reason.slice("ai_exit:app_open:".length)
+      : null;
     this.guessingState = null;
+    // A confirm may only follow its own ask — never a later, unrelated open.
+    this.pendingWordFinderOpen = null;
     this.guessingEngineState = null;
     this.guessingOrigin = "conversation";
     this.guessingBuilderContext = null;
@@ -4927,9 +4958,11 @@ export class AgentCoordinator {
     // conversation framing on its next turn. Skip raw [GUESSING] tags in
     // the directive — native-audio models echo those.
     this.speaker?.sendContextInjection(
-      aiInitiated
-        ? `The Word Finder is over — you ended it because narrowing converged. Continue the conversation normally about whatever was just resolved. No more narrowing questions.`
-        : `The user closed the word-finder. Return to normal conversation — no more narrowing questions.`,
+      openedApp
+        ? `The Word Finder is over — you closed it to open ${openedApp}, which is what the user was searching for. Talk about what is on their screen now. No more narrowing questions.`
+        : aiInitiated
+          ? `The Word Finder is over — you ended it because narrowing converged. Continue the conversation normally about whatever was just resolved. No more narrowing questions.`
+          : `The user closed the word-finder. Return to normal conversation — no more narrowing questions.`,
     );
     this.observer?.sendContextInjection(`[GUESSING] Word-finder closed.`);
     this.emitClientEvent({
@@ -4950,7 +4983,9 @@ export class AgentCoordinator {
       timestamp: Date.now(),
       updateType: "other",
       key: "guessing_just_ended",
-      description: aiInitiated
+      description: openedApp
+        ? `The Word Finder was just closed to open the ${openedApp} app — that app is what the user had been searching for. Rebuild the USER RESPONSE BOARD for what is now ON SCREEN: reactions to it, what to do with it, how to leave it. Do NOT include suggestion:/[NARROW:]/[GUESS] SENTENCE BUTTONs; those are for active narrowing only.`
+        : aiInitiated
         ? `The Word Finder narrowing session just ended (you called exit_guessing: ${reason.replace(/^ai_exit:/, "")}). The user's word/concept has been identified. Rebuild the USER RESPONSE BOARD with a FRESH set of normal SENTENCE BUTTONs for talking about what was just resolved — reactions to the topic, follow-up questions, related things the user might want to say. Do NOT include suggestion:/[NARROW:]/[GUESS] buttons; those are for active narrowing only.`
         : `The Word Finder was just closed by the user (no AI-initiated exit). Rebuild the USER RESPONSE BOARD with a FRESH set of normal SENTENCE BUTTONs appropriate to the current conversation. Do NOT include suggestion:/[NARROW:]/[GUESS] buttons; those are for active narrowing only.`,
     };
@@ -8408,6 +8443,8 @@ export class AgentCoordinator {
    */
   private async routeAppOpen(event: AppOpenRequestedEvent): Promise<void> {
     let settled = false;
+    /** The verdict `settle` recorded — did a screen actually appear? */
+    let opened = true;
     /**
      * Hand the model the verdict. On the Live path this answers the held
      * functionResponse BEFORE the model composes its sentence, so a refusal
@@ -8415,10 +8452,18 @@ export class AgentCoordinator {
      * press and a Board Manager open held nothing, so they keep taking the
      * after-the-fact context-injection route.
      */
-    const settle = (opened: boolean, note?: string): void => {
+    const settle = (didOpen: boolean, note?: string, blockedReason?: string): void => {
       if (settled) return;
       settled = true;
+      opened = didOpen;
       this.clearAppOpenCue();
+      // Stamp the REFUSAL on the event itself. `recordEvent` already pushed
+      // this exact object into `recentEvents`, so the stamp rewrites history
+      // too — otherwise the Board Manager reads a blocked open as an open both
+      // in the trigger below AND in its recent-events tail for the next
+      // several turns (observed 2026-08-25: five refused picture_search calls,
+      // every one of them reported as `[APP OPEN] picture_search`).
+      if (!opened) event.blocked = blockedReason ?? "refused";
       if (event.toolCallId) {
         this.speaker?.resolveAppOpen?.(event.toolCallId, { opened, note });
       } else if (note) {
@@ -8452,6 +8497,18 @@ export class AgentCoordinator {
       // above). Allow the open rather than stranding the turn: a held ack that
       // never settles is a Speaker that never speaks again.
       settle(true);
+      // The confirmed Word-Finder-closing open, run only now that the ack is
+      // answered and the Speaker can receive content again — and only if a
+      // screen actually appeared. A downstream refusal (an aiOpenPolicy
+      // decision, a restaurant with no menu) means nothing opened, and tearing
+      // down the narrowing session for an app that never arrived would leave
+      // the child with neither.
+      if (!opened) this.guessingExitAfterOpen = null;
+      if (this.guessingExitAfterOpen) {
+        const reason = this.guessingExitAfterOpen;
+        this.guessingExitAfterOpen = null;
+        this.clearGuessingState(reason);
+      }
     }
   }
 
@@ -8478,19 +8535,45 @@ export class AgentCoordinator {
 
   private async routeAppOpenInner(
     event: AppOpenRequestedEvent,
-    settle: (opened: boolean, note?: string) => void,
+    /** `blockedReason` is a SHORT phrase for the board-facing refusal line;
+     *  `note` is the full instruction handed to the Speaker. */
+    settle: (opened: boolean, note?: string, blockedReason?: string) => void,
   ): Promise<void> {
     const appId = event.appId;
     const triggerSource: "ai" | "student" = event.source === "client" ? "student" : "ai";
-    // The Word Finder owns the screen while it is open. Prompt guidance alone
-    // did not hold (observed 2026-08-19: [GUESSING ENTERED] → the Speaker
-    // opened picture_search on a topic from three turns earlier), so this is a
-    // hard gate: an AI-initiated open during guessing is refused. A STUDENT
-    // press still opens — their press is them leaving the Word Finder.
+    // The Word Finder owns the screen while it is open, and prompt guidance
+    // alone did not hold (observed 2026-08-19: [GUESSING ENTERED] → the Speaker
+    // opened picture_search on a topic from three turns earlier). But a flat
+    // refusal was worse: the Word Finder does not close itself, so a child who
+    // used it to reach "restaurant" or a picture then found the very app they
+    // had been searching for silently refused, five times in a row
+    // (2026-08-25). Searching for a thing and being denied the thing is the
+    // opposite of what the Word Finder is for.
+    //
+    // So the gate ASKS instead of refusing: the first open is answered with
+    // "is this what they were looking for?", and an immediate second open of
+    // the same app is the AI's yes — the Word Finder closes and the app opens.
+    // A model that reached for the tool matching a stale noun does not repeat
+    // it against an explicit "don't"; a model finishing the search does.
+    //
+    // A STUDENT press is never asked — their press IS the ask.
     if (triggerSource === "ai" && this.guessingState) {
-      flowNote("COORDINATOR", `Blocked AI open_app("${appId}") — Word Finder active.`);
-      settle(false, `[APP OPEN BLOCKED] The Word Finder is open — help the user find their word first. Open apps only after it closes.`);
-      return;
+      const verdict = decideWordFinderOpen(this.pendingWordFinderOpen, appId, Date.now());
+      if (verdict.kind === "ask") {
+        this.pendingWordFinderOpen = { appId, at: Date.now() };
+        flowNote("COORDINATOR", `Held AI open_app("${appId}") — Word Finder active; asked to confirm.`);
+        settle(
+          false,
+          wordFinderOpenAskNote(appId),
+          "the Word Finder was open and this open was not confirmed",
+        );
+        return;
+      }
+      this.pendingWordFinderOpen = null;
+      flowNote("COORDINATOR", `Confirmed AI open_app("${appId}") — closing Word Finder.`);
+      // Deferred: clearGuessingState talks to the Speaker, which is still
+      // blocked on this open's held ack. routeAppOpen runs it after settle.
+      this.guessingExitAfterOpen = `ai_exit:app_open:${appId}`;
     }
     if (appId === "social_trainer") {
       // Not a client-rendered app: the social trainer replaces the
@@ -8540,6 +8623,7 @@ export class AgentCoordinator {
             `[APP OPEN DECLINED] ${builtIn.name} is not what they are asking for.` +
               (decision.reason ? ` ${decision.reason}` : "") +
               ` Answer what they actually said instead — do not mention the app, and do not try to open it again this turn.`,
+            `it is not what the user is asking for${decision.reason ? ` (${decision.reason})` : ""}`,
           );
           return;
         }
@@ -8620,7 +8704,9 @@ export class AgentCoordinator {
         // read that, watched Daniel press פיצה on a food board in his own
         // bedroom, and called open_app("restaurant", "pizza") regardless. A
         // model reaching for the tool that matches the noun is not something
-        // one more paragraph fixes. Same shape as the Word Finder gate above.
+        // one more paragraph fixes. Deterministic, like the Word Finder ask
+        // above: "the app has nothing for this student" is a fact, not a
+        // judgement, so it needs no model and no confirmation hop.
         //
         // A STUDENT press is never refused: pressing the tile IS the ask, and
         // the caretaker screen is a legitimate place for an adult to land.
@@ -8631,6 +8717,7 @@ export class AgentCoordinator {
             `[APP OPEN BLOCKED] The restaurant app has nothing to show the user right now — ` +
               `they are not at a restaurant and cannot look for one. Naming a food is not asking ` +
               `to go out: answer what they actually said instead, and talk about the food itself.`,
+            `the restaurant app has nothing to show this student (${payload.reason ?? "no_menu"})`,
           );
           return;
         }

@@ -28,6 +28,7 @@ import {
   type PronounHead,
   type SpeakOpts,
   type Token,
+  KINSHIP_NAMES,
 } from "./core.js";
 
 /** Inherent qualities take ser; transient states/feelings/device-toggles take
@@ -110,7 +111,11 @@ export interface RomanceConfig {
    *  ("el rojo" / "vermelho"). */
   like(obj: { kind: "np"; text: string; plural: boolean } | { kind: "quality"; word: string }): string;
   /** Want + infinitive ("Quiero jugar." / "Quero brincar."). */
-  wantTo(inf: string): string;
+  /** A DESIRE TO ACT: the modal head (`want` · `need` · `like`), the
+   *  infinitive, and what the acting is done to when the child named it.
+   *  Per-ruleset because the three verbs are not one pattern — Spanish `like`
+   *  is a dative ("me gusta comer") and Portuguese `like` governs `de`. */
+  wantTo(modal: string, inf: string, obj: string | null): string;
   /** Placement INABILITY (construction v1): "No puedo poner X ahí." /
    *  "Não posso pôr X aí." — a negated `put` reads as can't, not habit. */
   cantPut(obj: string): string;
@@ -167,6 +172,8 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
   }
 
   function npText(np: NP, def: boolean): string {
+    // "mamá" / "mamãe" — a kinship word is a name here and stays bare.
+    if (KINSHIP_NAMES.has(np.noun.head)) return lex(np.noun.head).w;
     // A pronoun is never an articled NP — the tonic form stands alone / under
     // a preposition ("a ti", "para mim"), never "el tú".
     if (isPronoun(np.noun.head)) return cfg.tonic(np.noun.head as PronounHead);
@@ -494,7 +501,15 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
         }
         case "wantTo": {
           const v = lex(frame.verb.head);
-          const c = cfg.wantTo(v.inf ?? v.w);
+          // The inner verb keeps its comitative ("jugar CON la pelota") — the
+          // same joint the finite arm applies, so the two readings agree.
+          const objNp = frame.object ? npText(frame.object, false) : null;
+          const comit = frame.verb.head === "play" || frame.verb.head === "talk";
+          const c = cfg.wantTo(
+            frame.modal,
+            v.inf ?? v.w,
+            objNp === null ? null : comit ? `${cfg.withWord} ${objNp}` : objNp,
+          );
           // Negation is preverbal on the whole construction ("No quiero jugar").
           return frame.neg ? cap(`${cfg.notWord} ${c.charAt(0).toLowerCase()}${c.slice(1)}`) : c;
         }

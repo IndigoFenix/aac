@@ -324,6 +324,11 @@ export function isQuality(head: string): boolean {
 
 /** A noun phrase: the noun token (its mods carry descriptors/states/my) plus
  *  an optional MORE quantifier peeled off a preceding token. */
+/** The desire words that open a WANT-TO reading — the board's one desire
+ *  channel (`MODAL_VERBS` in parse-intent), so all three render as the
+ *  construction they are rather than as a verb-shaped noun. */
+const DESIRE_HEADS: ReadonlySet<string> = new Set(["want", "need", "like"]);
+
 export interface NP {
   noun: Token;
   more?: boolean;
@@ -385,9 +390,17 @@ export type Frame =
   | { kind: "why"; thing?: NP }
   /** Device-state resultative want ("I want the lamp on / the window open"). */
   | { kind: "device"; subject?: Token; device: Token; state: Token; question: boolean }
-  /** Want + INFINITIVE ("i_me + want + play" — "I want to play"). `neg` =
-   *  want carries `.not` ("I don't want to play" — the play-command refusal). */
-  | { kind: "wantTo"; verb: Token; subject?: Token; neg: boolean }
+  /**
+   * A DESIRE TO ACT ("i_me + want + play" — "I want to play"), optionally with
+   * what the acting is done to ("i_me + want + eat + cookie").
+   *
+   * `modal` is which desire was composed: the board offers want, need and like
+   * as one channel (`MODAL_VERBS`), and only `want` used to reach this frame —
+   * the other two fell through to the general verb reading and came out as
+   * "I need the eat" / "Necesito el como", a noun sentence built from a verb.
+   * `neg` = the modal carries `.not` ("I don't want to play" — the refusal).
+   */
+  | { kind: "wantTo"; modal: string; verb: Token; subject?: Token; neg: boolean; object?: NP }
   /** Movement ("[subj +] go [+ to] + {dest}" / "[subj +] go + get + {thing}"):
    *  the where-going ANSWER and travel commands. No subject / i_me = the
    *  speaker en route ("I'm going home"); a "you" subject = the imperative
@@ -508,23 +521,30 @@ export function classify(tokens: Token[]): Frame {
     return { kind: "pp", np: { noun: t0 }, join: tokens[1]!.head, comp: tokens[2]! };
   }
 
-  // -- want + INFINITIVE ("[i_me +] want + play") -----------------------------
+  // -- desire + INFINITIVE ("[i_me +] want|need|like + play [+ cookie]") ------
   // Must run before the general verb frame — npAt would read the verb as a
-  // noun object ("I want a play").
+  // noun object ("I want a play", and worse: "I need the eat").
+  //
+  // ALL THREE DESIRE WORDS, and an optional OBJECT (2026-08-25). The board has
+  // offered "want + eat + cookie" since the modal action path shipped, and this
+  // frame took only a bare `want`, so every desire-to-act sentence with a thing
+  // in it fell through to a word list.
   {
-    const wi = tokens.findIndex((t) => t.head === "want");
-    if (
-      wi >= 0 &&
-      wi <= 1 &&
-      wi + 2 === tokens.length &&
-      posOf(tokens[wi + 1]!.head) === "verb"
-    ) {
-      return {
-        kind: "wantTo",
-        verb: tokens[wi + 1]!,
-        neg: tokens[wi]!.mods.includes("not"),
-        ...(wi === 1 ? { subject: tokens[0] } : {}),
-      };
+    const wi = tokens.findIndex((t) => DESIRE_HEADS.has(t.head));
+    const verb = wi >= 0 ? tokens[wi + 1] : undefined;
+    const rest = tokens.length - (wi + 2);
+    if (wi >= 0 && wi <= 1 && verb && posOf(verb.head) === "verb" && rest >= 0 && rest <= 1) {
+      const object = rest === 1 ? tokens[wi + 2]! : undefined;
+      if (!object || posOf(object.head) === "noun") {
+        return {
+          kind: "wantTo",
+          modal: tokens[wi]!.head,
+          verb,
+          neg: tokens[wi]!.mods.includes("not"),
+          ...(object ? { object: { noun: object } } : {}),
+          ...(wi === 1 ? { subject: tokens[0] } : {}),
+        };
+      }
     }
   }
 
@@ -679,6 +699,18 @@ export interface SpeakOpts {
 }
 
 /** The empty name book (default — no proper nouns in play). */
+/**
+ * KINSHIP WORDS USED AS NAMES (2026-08-25). "Mom" and "Dad" are what a child
+ * CALLS a parent, not a description of one: English capitalizes them and drops
+ * the article, Hebrew takes no ה, and the romance rulesets leave them bare
+ * ("hablar con mamá"). Without this every ruleset articled them — "I want to
+ * talk to a mom", "עם האמא" — which reads as a stranger's mother.
+ *
+ * Only the two: `teacher`, `friend`, `baby`, `girl` and `boy` are ordinary
+ * common nouns and take their articles like any other word.
+ */
+export const KINSHIP_NAMES: ReadonlySet<string> = new Set(["mom", "dad"]);
+
 export const NO_NAMES: ReadonlyMap<string, Gender> = new Map();
 
 /**

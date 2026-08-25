@@ -78,14 +78,17 @@ export interface RecordingBridge {
     shortfallBytes: number;
   }>;
   begin: (opts: { clipId: string }) => Promise<
-    { ok: true; clipId: string; folder: string } | { ok: false; error: string }
+    // `dir` is the clip's own folder inside `folder` — each clip's camera file,
+    // screen file and manifest live together in one.
+    { ok: true; clipId: string; folder: string; dir?: string }
+    | { ok: false; error: string }
   >;
   append: (opts: { clipId: string; track: "camera" | "screen"; data: Uint8Array }) => Promise<
     { ok: true; bytes: number } | { ok: false; error: string; bytes?: number }
   >;
   finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number }) => Promise<
-    | { ok: true; clipId: string; folder: string; totalBytes: number; clipCount: number;
-        deletedIds: string[]; shortfallBytes: number }
+    | { ok: true; clipId: string; folder: string; dir?: string; totalBytes: number;
+        clipCount: number; deletedIds: string[]; shortfallBytes: number }
     | { ok: false; error: string }
   >;
   abort: (opts: { clipId: string }) => Promise<{ ok: boolean; error?: string }>;

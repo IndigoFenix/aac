@@ -29,6 +29,9 @@ import type { PlanetStates } from "./states.js";
 import type { PlanetCity } from "./cities.js";
 import type { PlanetPolities } from "./polities.js";
 import type { DisputeChannelId } from "../kernel/civ/dual.js";
+// The draw moved to the destiny module (states round S0) — one definition
+// of the coordinate-keyed hash for every rung; this court re-imports it.
+import { hash01 } from "../kernel/destiny.js";
 
 /** One relabel with its cause. `year` is whole game-years since founding
  *  (deep history runs above the one canonical day — playback maps years
@@ -106,19 +109,13 @@ export interface SimulateHistoryOpts {
    *  prestige and union only, fission through strain. */
   taboos?: readonly DisputeChannelId[];
   /** Per-state strength weight. Default: the founding capital's
-   *  `startPop` (floor 1) — bigger cities anchor stronger crowns. */
-  stateWeight?: (stateIdx: number) => number;
+   *  `startPop` (floor 1) — bigger cities anchor stronger crowns. The
+   *  YEAR is passed so political strength can ride the state's BOOKS
+   *  (state-books.ts `StateEconomy.stateWeight` plugs in directly —
+   *  states round S1); a year-blind function still typechecks and the
+   *  default path is byte-identical to before the parameter existed. */
+  stateWeight?: (stateIdx: number, year: number) => number;
   tuning?: Partial<HistoryTuning>;
-}
-
-/** SplitMix32 — the deterministic draw. One hash per (salt, coordinates)
- *  tuple; no sequential RNG state, so evaluation order never matters. */
-function hash01(seed: number, a: number, b: number, c: number, salt: number): number {
-  let h = (seed ^ (a * 0x9e3779b9) ^ (b * 0x85ebca6b) ^ (c * 0xc2b2ae35) ^ (salt * 0x27d4eb2f)) >>> 0;
-  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad) >>> 0;
-  h = Math.imul(h ^ (h >>> 15), 0x735a2d97) >>> 0;
-  h = (h ^ (h >>> 15)) >>> 0;
-  return h / 0x1_0000_0000;
 }
 
 /** Per-state neighbor lists from the derived `states.adjacency` pairs
@@ -171,8 +168,8 @@ export function simulateHistory(opts: SimulateHistoryOpts): PoliticalHistory {
   const tune: HistoryTuning = { ...HISTORY_TUNING, ...(opts.tuning ?? {}) };
   const taboo = new Set(opts.taboos ?? []);
   const n = cities.length;
-  const weight = (s: number): number =>
-    opts.stateWeight ? opts.stateWeight(s) : Math.max(1, cities[s]?.startPop ?? 1);
+  const weight = (s: number, year: number): number =>
+    opts.stateWeight ? opts.stateWeight(s, year) : Math.max(1, cities[s]?.startPop ?? 1);
   const adj = stateAdjacency(states, n);
 
   const events: PolityEvent[] = [];
@@ -225,7 +222,7 @@ export function simulateHistory(opts: SimulateHistoryOpts): PoliticalHistory {
   for (let year = 1; year <= years; year++) {
     // Crown strengths this year (Σ state weights over the holding).
     const strength = new Map<number, number>();
-    for (let s = 0; s < n; s++) strength.set(owner[s]!, (strength.get(owner[s]!) ?? 0) + weight(s));
+    for (let s = 0; s < n; s++) strength.set(owner[s]!, (strength.get(owner[s]!) ?? 0) + weight(s, year));
 
     // Adjacent crown pairs, canonical order, deterministic scan.
     const pairs: Array<[number, number]> = [];
@@ -296,8 +293,8 @@ export function simulateHistory(opts: SimulateHistoryOpts): PoliticalHistory {
         if (s >= 0) {
           events.push({ year, kind: "cede", channel: "war", state: s, from: loser, to: winner });
           owner[s] = winner;
-          strength.set(winner, strength.get(winner)! + weight(s));
-          strength.set(loser, strength.get(loser)! - weight(s));
+          strength.set(winner, strength.get(winner)! + weight(s, year));
+          strength.set(loser, strength.get(loser)! - weight(s, year));
           if (strength.get(loser)! <= 0) strength.delete(loser);
           hostility.delete(key);
           continue;
@@ -314,8 +311,8 @@ export function simulateHistory(opts: SimulateHistoryOpts): PoliticalHistory {
           if (s >= 0) {
             events.push({ year, kind: "cede", channel: "prestige", state: s, from: loser, to: winner });
             owner[s] = winner;
-            strength.set(winner, strength.get(winner)! + weight(s));
-            strength.set(loser, strength.get(loser)! - weight(s));
+            strength.set(winner, strength.get(winner)! + weight(s, year));
+            strength.set(loser, strength.get(loser)! - weight(s, year));
             if (strength.get(loser)! <= 0) strength.delete(loser);
             hostility.delete(key);
             continue;

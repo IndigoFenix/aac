@@ -193,6 +193,13 @@ export interface TownPlan {
   plaza?: Vec2;
   /** Cultivated patches beyond the houses (farmland biome). */
   fields: TownField[];
+  /** THE FIELD REGION (food-scale E-round, E-d): the patches' bbox + a
+   *  region seed — what the farm SOURCE record is founded from
+   *  (`wild-area.ts farmAreaRecord`; the slabs become the region's render
+   *  footprint, E2). Additive: the render path reads `fields` exactly as
+   *  before; this is the same ground read as one rect. Absent when the
+   *  biome lays no fields. */
+  fieldRegion?: { x: number; y: number; w: number; h: number; seed: number };
   /** NEIGHBORHOOD WELLS (needs-aware construction): town-local verge
    *  points founded by the thirst-cycle service pass, beyond the plaza
    *  well the host always digs. Only a scale-aware plan lays any —
@@ -1151,6 +1158,21 @@ export function* townPlanSteps(
       });
     }
   }
+  // E-d: the patches' bbox, as one region rect (the farm source's ground).
+  let fieldRegion: TownPlan["fieldRegion"];
+  if (fields.length) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const f of fields) {
+      x0 = Math.min(x0, f.dx);
+      y0 = Math.min(y0, f.dy);
+      x1 = Math.max(x1, f.dx + f.w);
+      y1 = Math.max(y1, f.dy + f.h);
+    }
+    fieldRegion = {
+      x: x0, y: y0, w: x1 - x0, h: y1 - y0,
+      seed: hashSeed(seed, `${siteKey}:field-region`),
+    };
+  }
 
   // The constructing species rides on every row (rooms/furniture/placement
   // read it off the house they're given — no side channel). Stamped only
@@ -1170,6 +1192,7 @@ export function* townPlanSteps(
     // storeys — the growth governor's "can a replan change anything".
     want: houseCount, built: count + extraFloors, popCap, popSpill,
     houses: homes, works, plaza, fields, streets: net,
+    ...(fieldRegion ? { fieldRegion } : {}),
     ...(civicSlots.length ? { civicSlots: civicSlots.slice().sort((a, b) => a - b) } : {}),
     ...(scale ? { wells } : {}),
     ...(servicePoints.length ? { services: servicePoints } : {}),

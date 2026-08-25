@@ -212,7 +212,8 @@ export function cameraBitrateFor(quality: RecordingQuality): number {
  */
 export const SCREEN_BITRATE_BPS = 8_000_000;
 
-/** Audio bitrate for the room mic on the camera file. */
+/** Audio bitrate, for the room mic on the camera file and the app's own sound
+ *  on the screen file alike. */
 export const AUDIO_BITRATE_BPS = 128_000;
 
 // ---------------------------------------------------------------------------
@@ -286,6 +287,19 @@ export function planEviction(
 export type RecordingTrack = "camera" | "screen";
 
 /**
+ * Where a file's sound came from.
+ *
+ * `mic` is the room — the child, the caretaker, everything around the device,
+ * captured with the processing chain off. `system` is what the device itself
+ * played: the voice a button press speaks and the AI's replies, taken as
+ * loopback audio so no room noise, echo or bystander conversation rides along
+ * with it. The camera file gets the first and the screen file the second, so a
+ * promotional cut can use either or mix both. `null` means that source could
+ * not be opened and the file is silent.
+ */
+export type RecordingAudioSource = "mic" | "system" | null;
+
+/**
  * A point where both timelines are known simultaneously: `t` is the offset
  * into the file's own media timeline, `wall` the wall clock at that instant.
  *
@@ -303,7 +317,15 @@ export interface SyncMark {
   wall: number;
 }
 
-/** The `.json` sidecar written next to each clip's two video files. */
+/**
+ * The `.json` sidecar written next to each clip's two video files.
+ *
+ * A clip is a FOLDER: `<recordings>/<clipId>/` holds the camera file, the
+ * screen file and this manifest, and nothing else. Three loose files per clip
+ * sharing a name prefix is technically the same information, but a caretaker
+ * looking for "the video of that session" has to reassemble it by eye every
+ * time, and copying one out without its partner is the easiest mistake to make.
+ */
 export interface RecordingManifest {
   clipId: string;
   /** Schema version, so a later reader can tell old sidecars apart. */
@@ -326,6 +348,11 @@ export interface RecordingManifest {
     bytes: number;
     width: number | null;
     height: number | null;
+    /** What this file's sound is. See {@link RecordingAudioSource}. */
+    audio?: RecordingAudioSource;
+    /** Playing length once the file was made seekable, in milliseconds. Absent
+     *  when the finalizing pass could not read the file back. */
+    durationMs?: number | null;
     syncMarks: SyncMark[];
   }>>;
 }

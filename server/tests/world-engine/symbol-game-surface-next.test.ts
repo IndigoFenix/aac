@@ -51,7 +51,12 @@ describe("surfaceNext — continuations", () => {
   it("after a verb, objects are ranked by AFFORDANCE (eat → apple first)", () => {
     const syms = symbols(["you", "eat"]);
     expect(syms[0]).toBe("apple"); // the only noun that affords eat
-    expect(syms).toContain("ball"); // everything else still reachable, lower
+    // …and NOTHING else (user decision 2026-08-25). The universal band used to
+    // dump every remaining noun under the verb; with a derived library that is
+    // seventy buttons of noise, so a verb that knows what it takes offers only
+    // that. A ball stays reachable through the things TAB, which is the escape
+    // hatch the band was really providing.
+    expect(syms).not.toContain("ball");
   });
 
   it("after a movement verb, PLACES are the destinations", () => {
@@ -407,7 +412,7 @@ describe("surfaceNext — group chips", () => {
     const s = surfaceNext([], { nouns: MANY });
     const ids = s.groups.map((g) => g.id);
     expect(ids).toContain("food");
-    expect(ids).toContain("places");
+    expect(ids).toContain("outside"); // the place chips split by kind of place
   });
 
   it("NOUN chips vanish when the grid already holds every member", () => {

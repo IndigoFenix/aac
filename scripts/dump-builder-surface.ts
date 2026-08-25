@@ -38,7 +38,8 @@ const surfNouns: SurfaceNoun[] = nouns.map((n) => ({
 }));
 
 function show(sentence: string): void {
-  const s = surfaceNext(tokenizeSentence(sentence), { nouns: surfNouns, capacity });
+  // The AAC shows 17 of the 54 it asks for; the chip rule measures against that.
+  const s = surfaceNext(tokenizeSentence(sentence), { nouns: surfNouns, capacity, page: 17 });
   console.log(`\n--- "${sentence || "(empty board)"}" cap=${capacity} complete=${s.complete} open=[${s.open.join(",")}] subTab=${s.subTab ?? "-"}`);
   console.log("  buttons: " + s.buttons.map((b) => `${b.symbol}(${b.role[0]}${b.weight})`).join(" "));
   console.log("  groups:  " + s.groups.map((g) => `[${g.id}:${g.kind}:${g.weight.toFixed(1)}×${g.members.length}]`).join(" "));

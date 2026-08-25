@@ -168,7 +168,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   // Hide Workspace entirely if user has no institutes AND maxStudents=0
   const showWorkspace = hasInstitute || hasStudentAccess;
 
-  // ── Section 2: AAC Boards ──
+  // ── Section 2: AAC ──
   const boardsEnabled = !!perms?.boardMakerEnabled;
   const aacEnabled = !!perms?.aacEnabled;
   const customAppsEnabled = !!perms?.customAppsEnabled;
@@ -219,7 +219,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
     }] : []),
     // AAC Settings — requires aacEnabled AND maxStudents > 0
     ...(aacEnabled && hasStudentAccess ? [{
-      icon: MessageSquare,
+      icon: Settings,
       labelKey: 'nav.aacSettings',
       feature: 'aacsettings' as FeatureType,
       testId: 'nav-aacsettings',
@@ -526,7 +526,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
         </>
       )}
 
-      {/* AAC Boards */}
+      {/* AAC */}
       {showAacSection && (
         <>
           <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>

@@ -45,16 +45,29 @@ export interface PlanetStates {
   borderCells: Array<[number, number]>;
 }
 
+export interface PlanetStatesOpts {
+  /** THE LOCALITY CAP (states round §2 / ruling §14-①): land costlier than
+   *  this many flat-equivalent metres from EVERY capital stays UNCLAIMED
+   *  (stateOf −1) — the frontier, where the band/herd rung materializes on
+   *  LoD demand and history is naturally coarser. Absent = uncapped,
+   *  byte-identical to the pre-cap claim map. A CONTENT dial: turning it
+   *  on for the demo worlds is an eyeball-batch decision, not a default. */
+  maxClaimCostM?: number;
+}
+
 /**
  * Claim the planet for its capitals. One multi-source Dijkstra over the
  * tier-0 substrate plus one adjacency scan — PURE (the grid is never
- * written) and deterministic in (built, cities).
+ * written) and deterministic in (built, cities, opts).
  */
-export function planetStates(built: BuiltPlanet, cities: readonly PlanetCity[]): PlanetStates {
+export function planetStates(
+  built: BuiltPlanet, cities: readonly PlanetCity[], opts: PlanetStatesOpts = {},
+): PlanetStates {
   const grid = built.grid;
   const travel = planetTravelOpts(built);
   const mpc = travel.metresPerCell ?? 1000;
-  const { owner, dist } = costClaims(grid, cities.map(c => c.cell), travel);
+  const cap = opts.maxClaimCostM !== undefined ? opts.maxClaimCostM / mpc : Infinity;
+  const { owner, dist } = costClaims(grid, cities.map(c => c.cell), travel, cap);
 
   const costM = new Float64Array(dist.length);
   for (let i = 0; i < dist.length; i++) costM[i] = dist[i]! * mpc;
@@ -98,14 +111,80 @@ export interface StatePairOpts {
 
 /** The road topology the states imply: every adjacent capital pair a cart
  *  could actually reach (untraversable borders — sea-locked seeds — drop),
- *  capped by relative cost. City-index pairs — planetRoutes' `pairs` option. */
-export function statePairs(states: PlanetStates, opts: StatePairOpts = {}): Array<[number, number]> {
+ *  capped by relative cost. City-index pairs — planetRoutes' `pairs` option.
+ *  (Narrow input: only the adjacency is read — state-books passes a
+ *  hand-built claim map in tests, so the trade net and the road net can
+ *  never diverge on WHO pairs.) */
+export function statePairs(states: Pick<PlanetStates, "adjacency">, opts: StatePairOpts = {}): Array<[number, number]> {
   const factor = opts.maxCostFactor ?? 3;
   const passable = states.adjacency.filter(x => Number.isFinite(x.costM));
   if (!passable.length) return [];
   const costs = passable.map(x => x.costM).sort((p, q) => p - q);
   const cap = costs[costs.length >> 1]! * factor;
   return passable.filter(x => x.costM <= cap).map(x => [x.a, x.b]);
+}
+
+// ── The point claim read (states round S2) ──────────────────────────────────
+
+/** What `claimAt` needs of a topology — `BuiltPlanet.grid.topo` satisfies
+ *  it structurally; tests hand-build one. */
+export interface ClaimPointTopo {
+  maxDegree: number;
+  pos3?(cell: number): readonly [number, number, number];
+  cellAt?(dir: readonly [number, number, number]): number;
+  neighbours?(cell: number, out: number[]): number;
+}
+
+/**
+ * WHICH STATE CLAIMS A POINT — the catchment read at sub-cell grain
+ * (states round §9: meaning re-points to the claim; identity never moves).
+ *
+ * The tier-0 claim map is exact at cell CENTERS; a settlement inside a
+ * border-crossed cell can really stand on the other side of the true cost
+ * border. This read completes the multi-source Dijkstra from the centers
+ * to the point: over the containing cell and its ring, it minimizes
+ * `claimCost(center) + flatArcMetres(center → point)` — a FLAT last hop
+ * (sub-cell terrain isn't loaded; the recorded upgrade path is re-running
+ * costClaims on the refined child chart, seeded from these same parent
+ * claims — the stitch pattern). Interior cells agree with the plain cell
+ * label by construction; only cells a border crosses refine. Deterministic
+ * and observer-independent: a pure symmetric function of (states, point) —
+ * nothing is negotiated, there is no edge to disagree about (§2).
+ *
+ * `maxClaimCostM` mirrors the planetStates cap: a completed total beyond
+ * it reads UNCLAIMED (−1) — so a point can be claimed inside an unclaimed
+ * CELL when the border genuinely cuts through it (its near side is within
+ * reach), and the deep frontier still answers nobody's.
+ */
+export function claimAt(
+  topo: ClaimPointTopo,
+  radiusM: number,
+  states: Pick<PlanetStates, "stateOf" | "costM">,
+  dir: readonly [number, number, number],
+  maxClaimCostM = Infinity,
+): number {
+  if (!topo.cellAt) return -1;
+  const c = topo.cellAt(dir);
+  if (c < 0 || c >= states.stateOf.length) return -1;
+  if (!topo.pos3 || !topo.neighbours) return states.stateOf[c] ?? -1;
+  const pos3 = topo.pos3;
+
+  let best = -1;
+  let bestTotal = Infinity;
+  const consider = (cell: number): void => {
+    if (cell < 0 || cell >= states.stateOf.length) return;
+    const base = states.costM[cell];
+    if (base === undefined || !Number.isFinite(base)) return; // unclaimed center
+    const p = pos3(cell);
+    const dp = Math.max(-1, Math.min(1, dir[0] * p[0] + dir[1] * p[1] + dir[2] * p[2]));
+    const total = base + Math.acos(dp) * radiusM;
+    if (total < bestTotal) { bestTotal = total; best = states.stateOf[cell]!; }
+  };
+  consider(c);
+  const nb: number[] = new Array(Math.max(1, topo.maxDegree)).fill(0);
+  const k = topo.neighbours(c, nb);
+  for (let j = 0; j < k; j++) consider(nb[j]!);
+  return bestTotal <= maxClaimCostM ? best : -1;
 }
 
 // ── Borders: the claim map drawn as lines ───────────────────────────────────

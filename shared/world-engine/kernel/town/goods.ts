@@ -192,6 +192,26 @@ export interface ImportDepotReading {
 }
 /** The reader itself: good key → its depot reading, or null. */
 export type ImportDepotReader = (goodKey: string) => ImportDepotReading | null;
+/** THE FARM-HAUL READER (food-scale E-round, E-f): what the town's own
+ *  FIELD REGION delivers per street day for a good — the farm source
+ *  record's live answer, read by the host that owns it (quest-host's
+ *  `stepFarmSource`). When present for a good, the stall sawtooth's
+ *  AMPLITUDE is this delivery and the catchment formula survives only as
+ *  the stalls' share weights — deleting the field patches finally changes
+ *  the shelf. Absent (legacy worlds, non-staple goods) ⇒ the formula,
+ *  byte for byte. */
+export type FarmHaulReader = (goodKey: string) => { dailyUnits: number } | null;
+
+/** THE PROVIDER REGISTRY for farm-haul readers, keyed by town key — the
+ *  `provideTownRoadBearings` pattern: the stage's goods are built before
+ *  the host that owns the farm record exists, so the goods close over a
+ *  LAZY registry lookup and the host registers its live reader afterwards
+ *  (idempotent — a re-provide overwrites; a session rebuild re-provides
+ *  the same key). An explicitly-passed reader outranks the registry. */
+const farmHaulProviders = new Map<string, FarmHaulReader>();
+export function provideFarmHaul(townKey: string, reader: FarmHaulReader): void {
+  farmHaulProviders.set(townKey, reader);
+}
 /** The pre-genericization name — food was the first good. */
 export type FoodSource = GoodSource;
 
@@ -432,6 +452,7 @@ export function createTownGoods(
   good: GoodSpec,
   roads?: TownStreets,
   imports?: ImportDepotReader,
+  farmHaul?: FarmHaulReader,
 ): TownGoods {
   const { key, center, plan } = town;
   const net = roads ?? plan.streets;
@@ -758,6 +779,16 @@ export function createTownGoods(
   const stallDaily = (src: FoodSource): number => {
     if (src.depot) return 0; // ⚖️ T3a: a lane's allotment, not a catchment's draw
     if (!good.shelved.includes(src.kind)) return 0;
+    // ⚖️ E-f (food-scale E-round): when the town's FIELD REGION feeds this
+    // good, the amplitude is WHAT THE HAUL DELIVERS — the catchment formula
+    // survives only as each stall's SHARE weight (servedBy/served), thinned
+    // by the district fill like everything else. No region ⇒ no reader ⇒
+    // the formula, byte for byte.
+    const farm = (farmHaul ?? farmHaulProviders.get(town.key))?.(good.key) ?? null;
+    if (farm) {
+      const share = (servedBy.get(src) ?? 0) / Math.max(1, served);
+      return farm.dailyUnits * share * srcFill(src);
+    }
     return (servedBy.get(src) ?? 0) * HOUSEHOLD * good.perCapitaDaily * srcFill(src);
   };
 
@@ -1004,10 +1035,11 @@ export function streetGoods(
   seed: number,
   roads?: TownStreets,
   imports?: ImportDepotReader,
+  farmHaul?: FarmHaulReader,
 ): TownGoods[] {
   return eco.goods
     .filter(spec => spec.slot === 0 || hasLedger(tri, spec))
-    .map(spec => createTownGoods(tri, eco, town, seed, spec, roads, imports));
+    .map(spec => createTownGoods(tri, eco, town, seed, spec, roads, imports, farmHaul));
 }
 
 /**

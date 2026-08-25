@@ -40,7 +40,7 @@
 import { POOLS } from "./pools.js";
 import { ITEM_WORDS } from "./words.js";
 import { DEFAULT_ROOM_PROGRAMS, DEFAULT_STRUCTURE_PROGRAMS } from "../../kernel/town/programs.js";
-import { FURNITURE_ITEMS } from "../../kernel/town/stations.js";
+import { FURNITURE_ITEMS, NEED_STATIONS, type StationKind } from "../../kernel/town/stations.js";
 import { listSpecies } from "../../creatures/species.js";
 import { CORE_CONCEPTS, OBJECT_PROPERTIES } from "../../object-properties.js";
 import { fixtureWord } from "../../types.js";
@@ -103,6 +103,34 @@ const RANK: ReadonlyMap<string, number> = new Map(SPEC_NOUN_ORDER.map((h, i) => 
  */
 export const nounRank = (head: string): number =>
   RANK.get(headOf(head)) ?? Number.MAX_SAFE_INTEGER;
+
+/**
+ * THE WORDS A BODILY NEED IS ASKED FOR BY — the stations `NEED_STATIONS` names,
+ * spoken as the words the board uses. A desire board keeps these one press away
+ * whatever else it is withholding: "I need the toilet" is a complete sentence,
+ * and the one a child cannot afford to page for.
+ */
+export const NEED_NOUNS: ReadonlySet<string> = new Set(
+  Object.keys(NEED_STATIONS).map((kind) => headOf(fixtureWord(kind as StationKind))),
+);
+
+/**
+ * WHICH KIND OF PLACE — the sub-category a place word belongs to, read off the
+ * repository that declares it: a ROOM program makes a room, a STRUCTURE program
+ * a building, and a place word with neither (the `PLACE_STUBS`: school, park,
+ * playground) is somewhere you go OUTSIDE both.
+ *
+ * The `go` board is the one board that is all places and nothing else — 22 of
+ * them — and "rooms · buildings · outside" is the split a child can actually
+ * navigate. Ids are lang-layer words already (`room`, `building`, `outside` are
+ * core concepts), so the chips localize with no new vocabulary.
+ */
+export function placeGroupOf(head: string): "room" | "building" | "outside" {
+  const h = headOf(head);
+  if (DEFAULT_STRUCTURE_PROGRAMS.some((b) => headOf(b.word ?? b.type) === h)) return "building";
+  if (DEFAULT_ROOM_PROGRAMS.some((r) => headOf(r.word ?? r.kind) === h)) return "room";
+  return "outside";
+}
 
 /** Does the spec define this noun at all? (The conformance question, separate
  *  from the ranking one.) */

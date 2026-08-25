@@ -192,6 +192,16 @@ function cityName(rng: () => number): string {
   return `${head}${mid}${tail}`;
 }
 
+/** THE NAME CHAIN, one definition (states round §9: identity is
+ *  cell-derived, forever — a border moving must never rename a town):
+ *  exactly the recipe `foundCitiesFromSites` mints with, exported so the
+ *  state reveal (S3) names its internal towns through the identical
+ *  chain. Collision fallbacks stay the CALLER's (they are order-dependent
+ *  by design, which is why every founding list is append-only). */
+export function settlementNameOf(seedBase: number, key: number): string {
+  return cityName(mulberry32((seedBase ^ Math.imul(key, 0x9e3779b1)) >>> 0));
+}
+
 /** The charter box a founding reads: radius-3 sums around the site. */
 function charterBox(grid: SubstrateGrid, cell: number) {
   const box = (field: string): number => {
@@ -248,8 +258,7 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
     if (charter.farmland < minFarmland) continue;
 
     const key = cellKey(site.cell);
-    const rng = mulberry32((opts.seedBase ^ Math.imul(key, 0x9e3779b1)) >>> 0);
-    let name = cityName(rng);
+    let name = settlementNameOf(opts.seedBase, key);
     if (taken.has(name)) name = `${name} ${cities.length + 1}`;
     taken.add(name);
 

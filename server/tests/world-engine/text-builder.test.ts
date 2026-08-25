@@ -109,7 +109,7 @@ describe("text builder — the screen is the engine's own surface (law ④)", ()
   it("prints [glyph] only where the DRAWN face differs from the pressed key", () => {
     const b = builder();
     b.setTab("things");
-    b.setGroup("places");
+    b.setGroup("building");
     const lines = screen(b);
     // A place is ONE word that draws as a composed shell+symbol icon — and a
     // DWELLING is drawn by who lives in it, not by a plate around a house icon.

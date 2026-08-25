@@ -30,6 +30,7 @@ import {
   type NP,
   type SpeakOpts,
   type Token,
+  KINSHIP_NAMES,
 } from "./core.js";
 import { specWords } from "../content/words.js";
 
@@ -156,6 +157,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // Creature SPECIES words (reference resolution: "אני מדבר עם ה{מין}").
   person: { w: "אדם", g: "m", plw: "אנשים" },
   // KINSHIP AND ROLE WORDS (2026-08-24) — see en.ts.
+  outside: { w: "בחוץ", g: "m" },
   mom: { w: "אמא", g: "f" },
   dad: { w: "אבא", g: "m" },
   baby: { w: "תינוק", g: "m" },
@@ -259,6 +261,7 @@ const CENTRAL: Record<string, Lexeme> = {
   make: { w: "מכין", f: "מכינה", vmpl: "מכינים", vfpl: "מכינות", inf: "להכין" },
   bring: { w: "מביא", f: "מביאה", vmpl: "מביאים", vfpl: "מביאות", inf: "להביא" },
   carry: { w: "נושא", f: "נושאת", vmpl: "נושאים", vfpl: "נושאות", inf: "לשאת" },
+  use: { w: "משתמש", f: "משתמשת", vmpl: "משתמשים", vfpl: "משתמשות", inf: "להשתמש" },
   cut: { w: "כורת", f: "כורתת", vmpl: "כורתים", vfpl: "כורתות", inf: "לכרות" },
   // The completion state ("הבית מוכן").
   finished: { w: "מוכן", f: "מוכנה", mpl: "מוכנים", fpl: "מוכנות" },
@@ -464,6 +467,8 @@ const COM_PRON: Record<string, string> = {
 const subjPlural = (t: Token | undefined): boolean => !!t && isPluralPronoun(t.head);
 
 function npText(np: NP, def: boolean): string {
+  // אמא / אבא — a kinship word is a name here, and takes no ה.
+  if (KINSHIP_NAMES.has(np.noun.head)) return lex(np.noun.head).w;
   // A pronoun is never an articled NP — masculine subject form as the safe
   // fallback (gendered/object positions branch before reaching here).
   if (isPronoun(np.noun.head)) return SUBJ_PRON[np.noun.head] ?? "אתה";
@@ -637,7 +642,10 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
   const objDef = (f.verb.head !== "want" || f.neg || !!f.tail) && !f.object?.more;
   const obj = f.object
     ? ` ${
-        f.verb.head === "play" && !isPronoun(f.object.noun.head)
+        // ב־ governs both PLAYING and USING in Hebrew ("משחק בכדור",
+        // "משתמש בתנור") — the object rides the preposition, unlike English,
+        // where only `play` does.
+        (f.verb.head === "play" || f.verb.head === "use") && !isPronoun(f.object.noun.head)
           ? fuse("ב", f.object)
           : f.verb.head === "talk"
             ? (isPronoun(f.object.noun.head)
@@ -776,10 +784,23 @@ export const he: GlyphLanguage = {
         return `אני רוצה ש${dev} ${st}.`;
       }
       case "wantTo": {
-        // "אני רוצה לשחק" — want + infinitive, the finite verb agreeing;
-        // negated: "אני לא רוצה לשחק".
+        // "אני רוצה לשחק" — desire + infinitive, the finite verb agreeing;
+        // negated: "אני לא רוצה לשחק". With a thing: "אני רוצה לאכול עוגייה" —
+        // the complement's object is INDEFINITE (a cookie, not the cookie).
         const inf = lex(frame.verb.head).inf ?? lex(frame.verb.head).w;
-        return `אני ${frame.neg ? "לא " : ""}${verbForm("want", opts.speaker)} ${inf}.`;
+        // The inner verb keeps the preposition it governs: לשחק ב־, להשתמש ב־,
+        // לדבר עם — the same joints the finite arm applies.
+        const j = frame.verb.head;
+        const obj = frame.object
+          ? ` ${
+              (j === "play" || j === "use") && !isPronoun(frame.object.noun.head)
+                ? fuse("ב", frame.object)
+                : j === "talk"
+                  ? `עם ${npText(frame.object, true)}`
+                  : npText(frame.object, false)
+            }`
+          : "";
+        return `אני ${frame.neg ? "לא " : ""}${verbForm(frame.modal, opts.speaker)} ${inf}${obj}.`;
       }
       case "going": {
         // Movement: "אני הולך הביתה" / "אני הולכת לשוק" / imperative "לך הביתה."

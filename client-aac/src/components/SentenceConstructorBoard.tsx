@@ -49,6 +49,7 @@ import { placeArt } from "@shared/glyph-place-art";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveEmoji, rtlMirrorStyle } from "@shared/emoji-registry";
+import { ArrowBack } from "@/components/ui/directional-icons";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { forwardTriangle } from "@/components/ui/directional-icons";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
@@ -150,8 +151,46 @@ const ENGINE_TAB_ICON: Record<string, string> = {
   social: "💬",
 };
 const ENGINE_ALL_TAB_ICON = "⭐";
-/** Engine category tabs shown per page below the pinned "all" tab. */
-const ENGINE_TABS_PER_PAGE = 6;
+/**
+ * HOW MANY BUTTONS A SIDEBAR COLUMN MAY SHOW AT ONCE (user, 2026-08-25).
+ *
+ * The columns are `flex-col` inside a fixed height, so every extra button
+ * squeezes all of them: with the engine's five noun chips, four action chips,
+ * an "all" and a "photos", the column held eleven and each was a sliver with a
+ * clipped label. Six is the cap for the WHOLE column — the pinned entries and
+ * the pager count against it, not just the categories.
+ */
+const SIDEBAR_MAX_BUTTONS = 6;
+
+/**
+ * One page of a sidebar column: how many ITEMS fit beside the fixed buttons,
+ * and whether a pager is needed at all. The pager takes a slot of its own, so
+ * asking for it costs an item.
+ */
+function sidebarPage<T>(items: readonly T[], fixed: number, page: number): { items: T[]; needsMore: boolean } {
+  const room = Math.max(1, SIDEBAR_MAX_BUTTONS - fixed);
+  if (items.length <= room) return { items: [...items], needsMore: false };
+  const perPage = Math.max(1, room - 1);
+  const start = (((page * perPage) % items.length) + items.length) % items.length;
+  return { items: [...items.slice(start), ...items.slice(0, start)].slice(0, perPage), needsMore: true };
+}
+
+/**
+ * COMPRESS BEFORE YOU CLIP. A column of two buttons can afford a big icon and a
+ * roomy label; a column of six cannot, and squashing them equally is what made
+ * the labels unreadable. The classes step down together so the button keeps its
+ * shape — icon, gap and label — instead of the label being cut off.
+ */
+function sidebarDensity(count: number) {
+  const tight = count >= 5;
+  const snug = count === 4;
+  return {
+    pad: tight ? "py-1 gap-0.5" : snug ? "py-1.5 gap-1" : "py-2 gap-1",
+    icon: tight ? "text-lg" : snug ? "text-xl" : "text-2xl",
+    label: tight ? "text-[10px] leading-tight" : "text-xs",
+    face: tight ? "w-8 h-8" : snug ? "w-10 h-10" : "w-12 h-12",
+  };
+}
 /** Client-side chip id for the person-directory list under the engine's
  *  "person" tab (real people with photos — content the engine can't serve). */
 const ENGINE_PHOTOS_CHIP = "photos";
@@ -416,7 +455,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   // Mode-chip sidebar pagination.
   const [chipPage, setChipPage] = useState(0);
-  const CHIPS_PER_PAGE = 7;
+  const [engineChipPage, setEngineChipPage] = useState(0);
 
   // Main grid pagination. The grid is a fixed 9×2 = 18 cells — wider
   // than tall per cell, since each button's label sits BELOW a square
@@ -562,14 +601,13 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   // Engine category tabs: "all" pinned first, then the advertised categories
   // (paged with a "…" tab when they overflow the column).
-  const engineTabsNeedMore = (engineCategories?.length ?? 0) > ENGINE_TABS_PER_PAGE;
-  const visibleEngineTabs = useMemo(() => {
-    const ids = engineCategories ?? [];
-    if (ids.length <= ENGINE_TABS_PER_PAGE) return ids;
-    const start = (engineTabPage * ENGINE_TABS_PER_PAGE) % ids.length;
-    const wrapped = [...ids.slice(start), ...ids.slice(0, start)];
-    return wrapped.slice(0, ENGINE_TABS_PER_PAGE);
-  }, [engineCategories, engineTabPage]);
+  // …budgeted against the whole column: the "all" tab is one of the six.
+  const engineTabPageView = useMemo(
+    () => sidebarPage(engineCategories ?? [], 1, engineTabPage),
+    [engineCategories, engineTabPage],
+  );
+  const engineTabsNeedMore = engineTabPageView.needsMore;
+  const visibleEngineTabs = engineTabPageView.items;
 
   // Sub-category chips for the active view — the ENGINE's own groups (its
   // vocabulary-menu hierarchy), localized engine-side. The photos view borrows
@@ -579,6 +617,16 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     () => (engineUiActive && !enginePhotos ? engineSurface?.groups ?? [] : []),
     [engineUiActive, enginePhotos, engineSurface]
   );
+  /** The engine can serve nine chips (five noun clusters + four action
+   *  categories) and this column never paged them — it drew all nine. Budgeted
+   *  against the pinned "all" chip and the person tab's "photos" chip. */
+  const engineChipsFixed = 1 + (engineUiActive && engineCategory === "person" ? 1 : 0);
+  const engineChipPageView = useMemo(
+    () => sidebarPage(engineGroupChips, engineChipsFixed, engineChipPage),
+    [engineGroupChips, engineChipsFixed, engineChipPage],
+  );
+  const visibleEngineChips = engineChipPageView.items;
+  const engineChipsNeedMore = engineChipPageView.needsMore;
 
   // Sentence-type CONTROL chips. The engine sends them on the empty board and
   // only there, so the row appears when a sentence is about to start and
@@ -651,11 +699,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     ];
   }, [engineBuilder, enginePersonWords, orderedPeople, presentPersonIds]);
   const whoTilesNeedMore = (mergedWhoTiles?.length ?? 0) > GRID_CELLS;
+  // Both controls take a cell here too (`GRID_ITEMS_WITH_MORE` counts them).
   const whoTilesPerPage = whoTilesNeedMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
   const pagedWhoTiles = useMemo<WhoTile[]>(() => {
     if (!mergedWhoTiles) return [];
     if (!whoTilesNeedMore) return mergedWhoTiles.slice(0, GRID_CELLS);
-    const start = (gridPage * whoTilesPerPage) % mergedWhoTiles.length;
+    // Negative pages wrap: Back decrements `gridPage`, and JS `%` keeps the
+    // sign (the same normalisation `pageBuilderGrid` does).
+    const len = mergedWhoTiles.length;
+    const start = (((gridPage * whoTilesPerPage) % len) + len) % len;
     const wrapped = [...mergedWhoTiles.slice(start), ...mergedWhoTiles.slice(0, start)];
     return wrapped.slice(0, whoTilesPerPage);
   }, [mergedWhoTiles, gridPage, whoTilesNeedMore, whoTilesPerPage]);
@@ -1202,12 +1254,22 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     ];
   }, [activeTab, constructionMemoryChips, t]);
 
-  const visibleChips = useMemo(() => {
-    if (allChips.length <= CHIPS_PER_PAGE) return allChips;
-    const start = (chipPage * CHIPS_PER_PAGE) % allChips.length;
-    const wrapped = [...allChips.slice(start), ...allChips.slice(0, start)];
-    return wrapped.slice(0, CHIPS_PER_PAGE);
-  }, [allChips, chipPage]);
+  const chipPageView = useMemo(() => sidebarPage(allChips, 0, chipPage), [allChips, chipPage]);
+  const visibleChips = chipPageView.items;
+  const chipsNeedMore = chipPageView.needsMore;
+
+  // How tight each sidebar column has to draw itself — the count includes the
+  // pinned buttons and the pager, because they take the same room a category
+  // does (see `sidebarDensity`).
+  const tabDensity = sidebarDensity(
+    engineUiActive ? 1 + visibleEngineTabs.length + (engineTabsNeedMore ? 1 : 0) : TABS.length,
+  );
+  const chipDensity = sidebarDensity(
+    engineUiActive
+      ? engineChipsFixed + visibleEngineChips.length + (engineChipsNeedMore ? 1 : 0)
+      : visibleChips.length + (chipsNeedMore ? 1 : 0),
+  );
+
 
   const handleModifierPress = useCallback(
     (mod: VocabularyItem) => {
@@ -1404,17 +1466,20 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => handleEngineTabSelect(null)}
               whileTap={{ scale: 0.96 }}
               className={[
-                "flex flex-col items-center justify-center gap-1 rounded-xl py-2",
+                "flex flex-col items-center justify-center rounded-xl min-h-0 overflow-hidden",
+                tabDensity.pad,
                 "border-2 transition-colors",
                 engineCategory == null
                   ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
                   : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
               ].join(" ")}
             >
-              <span className="text-2xl" aria-hidden>
+              <span className={`${tabDensity.icon} leading-none`} aria-hidden>
                 {ENGINE_ALL_TAB_ICON}
               </span>
-              <span className="text-xs font-medium">{engineTabLabel("all")}</span>
+              <span className={`${tabDensity.label} font-medium truncate w-full text-center`}>
+                {engineTabLabel("all")}
+              </span>
             </motion.button>
             {visibleEngineTabs.map((cat) => {
               const active = cat === engineCategory;
@@ -1429,17 +1494,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   onClick={() => handleEngineTabSelect(cat)}
                   whileTap={{ scale: 0.96 }}
                   className={[
-                    "flex flex-col items-center justify-center gap-1 rounded-xl py-2",
+                    "flex flex-col items-center justify-center rounded-xl min-h-0 overflow-hidden",
+                    tabDensity.pad,
                     "border-2 transition-colors",
                     active
                       ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
                       : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
                   ].join(" ")}
                 >
-                  <span className="text-2xl" aria-hidden>
+                  <span className={`${tabDensity.icon} leading-none`} aria-hidden>
                     {ENGINE_TAB_ICON[cat] ?? "🔤"}
                   </span>
-                  <span className="text-xs font-medium truncate w-full text-center">
+                  <span className={`${tabDensity.label} font-medium truncate w-full text-center`}>
                     {engineTabLabel(cat)}
                   </span>
                 </motion.button>
@@ -1471,17 +1537,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onKeyDown={(e) => onTabKey(e, tab)}
                 whileTap={{ scale: 0.96 }}
                 className={[
-                  "flex flex-col items-center justify-center gap-1 rounded-xl py-3",
+                  "flex flex-col items-center justify-center rounded-xl min-h-0 overflow-hidden",
+                  tabDensity.pad,
                   "border-2 transition-colors",
                   active
                     ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
                     : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
                 ].join(" ")}
               >
-                <span className="text-3xl" aria-hidden>
+                <span className={`${tabDensity.icon} leading-none`} aria-hidden>
                   {TAB_ICON[tab]}
                 </span>
-                <span className="text-xs font-medium">
+                <span className={`${tabDensity.label} font-medium truncate w-full text-center`}>
                   {t(`construction.tabs.${tab}`)}
                 </span>
               </motion.button>
@@ -1508,18 +1575,20 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => handleEngineChipSelect(null)}
               whileTap={{ scale: 0.95 }}
               className={[
-                "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                  chipDensity.pad,
+                  chipDensity.label,
                 engineChip == null
                   ? "bg-blue-600 border-blue-700 text-white"
                   : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
               ].join(" ")}
             >
-              <span className="text-2xl leading-none" aria-hidden>
+              <span className={`${chipDensity.icon} leading-none`} aria-hidden>
                 🔠
               </span>
               <span className="truncate w-full text-center">{t("construction.chips.all")}</span>
             </motion.button>
-            {engineGroupChips.map((chip) => {
+            {visibleEngineChips.map((chip) => {
               const active = chip.id === engineChip;
               return (
                 <motion.button
@@ -1529,7 +1598,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   onClick={() => handleEngineChipSelect(chip.id)}
                   whileTap={{ scale: 0.95 }}
                   className={[
-                    "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                    "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                  chipDensity.pad,
+                  chipDensity.label,
                     active
                       ? "bg-blue-600 border-blue-700 text-white"
                       : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
@@ -1539,7 +1610,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                     // The chip wears THREE of its members (best examples first,
                     // engine-ranked) rather than one word standing in for the
                     // whole category — see GlyphTriad.
-                    <span className="w-12 h-12 flex items-center justify-center" aria-hidden>
+                    <span className={`${chipDensity.face} flex items-center justify-center`} aria-hidden>
                       <GlyphTriad
                         glyphs={chip.glyphs ?? (chip.glyph ? [chip.glyph] : [])}
                         GlyphComponent={Glyph}
@@ -1548,7 +1619,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                       />
                     </span>
                   ) : (
-                    <span className="text-2xl leading-none" aria-hidden>
+                    <span className={`${chipDensity.icon} leading-none`} aria-hidden>
                       📂
                     </span>
                   )}
@@ -1556,6 +1627,22 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 </motion.button>
               );
             })}
+            {engineChipsNeedMore && (
+              <motion.button
+                data-dwell
+                data-testid="engine-chip-more"
+                onClick={() => setEngineChipPage((p) => p + 1)}
+                whileTap={{ scale: 0.95 }}
+                className={[
+                  "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 px-2 flex items-center justify-center min-h-0",
+                  chipDensity.pad,
+                  chipDensity.label,
+                  "font-medium",
+                ].join(" ")}
+              >
+                …
+              </motion.button>
+            )}
             {engineCategory === "person" && (
               <motion.button
                 data-dwell
@@ -1563,13 +1650,15 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onClick={() => handleEngineChipSelect(ENGINE_PHOTOS_CHIP)}
                 whileTap={{ scale: 0.95 }}
                 className={[
-                  "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                  "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                  chipDensity.pad,
+                  chipDensity.label,
                   engineChip === ENGINE_PHOTOS_CHIP
                     ? "bg-blue-600 border-blue-700 text-white"
                     : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
                 ].join(" ")}
               >
-                <span className="text-2xl leading-none" aria-hidden>
+                <span className={`${chipDensity.icon} leading-none`} aria-hidden>
                   📷
                 </span>
                 <span className="truncate w-full text-center">{t("construction.chips.photos")}</span>
@@ -1595,12 +1684,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => handleModeChipSelect(chip.key)}
               whileTap={{ scale: 0.95 }}
               className={[
-                "rounded-xl border-2 text-xs font-medium py-2 px-2 flex flex-col items-center justify-center gap-1",
+                "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                  chipDensity.pad,
+                  chipDensity.label,
                 baseStyle,
               ].join(" ")}
             >
               {icon && (
-                <span className="text-2xl leading-none" aria-hidden>
+                <span className={`${chipDensity.icon} leading-none`} aria-hidden>
                   {icon}
                 </span>
               )}
@@ -1608,7 +1699,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             </motion.button>
           );
         })}
-        {allChips.length > CHIPS_PER_PAGE && (
+        {chipsNeedMore && (
           <motion.button
             data-dwell
             data-testid="chip-more"
@@ -2155,10 +2246,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                       )
                     )}
                     {whoTilesNeedMore && (
-                      <MoreButton
-                        onPress={() => setGridPage((p) => p + 1)}
-                        testId="who-more"
-                      />
+                      <>
+                        <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="who-back" />
+                        <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="who-more" />
+                      </>
                     )}
                   </>
                 )
@@ -2198,10 +2289,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 />
               ))}
               {engineNeedsMore && (
-                <MoreButton
-                  onPress={() => setGridPage((p) => p + 1)}
-                  testId="grid-more"
-                />
+                <>
+                  <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
+                  <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
+                </>
               )}
             </div>
           ) : (
@@ -2219,16 +2310,18 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onPress={() => handleGridPress(item)}
               />
             ))}
-            {/* Trailing More button — only rendered when the current
-                mode-chip has more items than fit in one page. It occupies
-                the last cell (cell 18 of the 6×3 grid); without the
-                conditional it would always push the grid onto an implicit
-                4th row and compress the visible buttons. */}
+            {/* Trailing paging controls — only rendered when the current
+                mode-chip has more items than fit in one page. They occupy the
+                last TWO cells; without the conditional they would always push
+                the grid onto an implicit extra row and compress the visible
+                buttons. BACK as well as More (user, 2026-08-25): forward-only
+                paging made a word you scrolled past cost a full lap of the
+                list, which on a 54-word budget is two more dwells. */}
             {gridNeedsMore && (
-              <MoreButton
-                onPress={() => setGridPage((p) => p + 1)}
-                testId="grid-more"
-              />
+              <>
+                <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
+                <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
+              </>
             )}
           </div>
           )}
@@ -2789,6 +2882,32 @@ function isLightColor(hex: string): boolean {
   // ITU-R BT.709 luminance approximation.
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return lum > 160;
+}
+
+/**
+ * PAGE BACK — More's twin, and the reason the grid reserves two cells rather
+ * than one.
+ */
+function PageBackButton(props: { onPress: () => void; testId?: string; disabled?: boolean }) {
+  const { t } = useLanguage();
+  return (
+    <motion.button
+      data-dwell
+      data-testid={props.testId}
+      onClick={props.onPress}
+      disabled={props.disabled}
+      whileTap={{ scale: 0.95 }}
+      className={[
+        "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 flex flex-col items-center justify-center gap-1 p-2 min-h-0 min-w-[64px]",
+        props.disabled ? "opacity-40 cursor-not-allowed" : "",
+      ].join(" ")}
+    >
+      {/* LOGICAL, never left/right: `ArrowBack` points at the start edge of the
+          reading direction, so a Hebrew board's Back points the Hebrew way. */}
+      <ArrowBack className="w-6 h-6" />
+      <span className="text-xs font-medium">{t("common.back")}</span>
+    </motion.button>
+  );
 }
 
 function MoreButton(props: { onPress: () => void; testId?: string; disabled?: boolean }) {

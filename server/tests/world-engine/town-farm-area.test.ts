@@ -333,5 +333,33 @@ describe("kernel/town/plan.ts — field GEOMETRY sums to the same honest acreage
     });
     const plan = townPlan(town, eco, "empty", 11);
     expect(plan.fields).toHaveLength(0);
+    expect(plan.fieldRegion).toBeUndefined(); // E-d: no ground, no region
+  });
+
+  it("E-d: fieldRegion is the patches' exact bbox, deterministic, additive", () => {
+    const build = () => {
+      const town = createTownWorld({
+        economy: eco, charter: { farmland: 420, ore_access: 0 },
+        startPop: 900, seedScalars: { farms: 2 }, key: "regionfield",
+      });
+      town.step(200);
+      return townPlan(town, eco, "regionfield", 11);
+    };
+    const plan = build();
+    expect(plan.fields.length).toBeGreaterThan(0);
+    const r = plan.fieldRegion!;
+    expect(r).toBeDefined();
+    // The bbox is EXACTLY the patches' extremes — the same ground read as
+    // one rect, nothing invented.
+    const x0 = Math.min(...plan.fields.map(f => f.dx));
+    const y0 = Math.min(...plan.fields.map(f => f.dy));
+    const x1 = Math.max(...plan.fields.map(f => f.dx + f.w));
+    const y1 = Math.max(...plan.fields.map(f => f.dy + f.h));
+    expect(r.x).toBe(x0);
+    expect(r.y).toBe(y0);
+    expect(r.w).toBeCloseTo(x1 - x0, 9);
+    expect(r.h).toBeCloseTo(y1 - y0, 9);
+    // Deterministic: the same town builds the same region, seed included.
+    expect(build().fieldRegion).toEqual(r);
   });
 });

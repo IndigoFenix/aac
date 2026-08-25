@@ -176,7 +176,7 @@ export const es: Translations = {
     agentConversationStyle: "Estilo de conversaci\u00f3n del agente",
 
     apps: "Aplicaciones",
-    appsDescription: "Habilitar o deshabilitar aplicaciones complementarias disponibles durante sesiones AAC",
+    appsDescription: "Habilitar o deshabilitar aplicaciones complementarias disponibles durante sesiones CAA",
     appYoutubeDesc: "Ver videos seguros para ni\u00f1os",
     appSpotifyDesc: "Escuchar m\u00fasica en Spotify",
     appDrawing: "Dibujo",

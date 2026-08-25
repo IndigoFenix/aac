@@ -832,8 +832,14 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
       return "";
     // App / website opens — context that buttons may need to reflect
     // (an open app may want app-specific response buttons).
-    case "app_open_requested":
-      return `[APP OPEN] ${event.appId}${event.data ? ` (${event.data})` : ""}`;
+    case "app_open_requested": {
+      const what = `${event.appId}${event.data ? ` (${event.data})` : ""}`;
+      // A refused open is NOT an open. Same event, opposite fact — render the
+      // refusal so the board is never built for a screen that never appeared.
+      return event.blocked
+        ? `[APP OPEN REFUSED] ${what} — ${event.blocked}. Nothing opened; the screen is unchanged.`
+        : `[APP OPEN] ${what}`;
+    }
     case "app_close_requested":
       return `[APP CLOSE]`;
     case "website_open_requested":

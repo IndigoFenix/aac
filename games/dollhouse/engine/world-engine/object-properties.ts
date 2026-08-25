@@ -169,10 +169,9 @@ export type NounClass = ObjectProperty | "creature" | "place" | "item" | "ownabl
  * board — with a wide library, an `item` tier is fifty-odd nouns and nothing
  * under it is ever reached.
  *
- * Two rows in the user's table are missing on purpose. `use` is not in the
- * LEXICON at all, and `toilet` is a noun; both need vocabulary work before a
- * board may offer them (planning-docs §7.2, W5). `help` is here, but only with
- * its creature half — see the note on that row.
+ * `toilet` is not here because it is not a verb: "I need the toilet" is a whole
+ * sentence with a noun object (user decision 2026-08-25). `help` is here, but
+ * only with its creature half — see the note on that row.
  */
 export const VERB_OBJECT_CLASSES: Readonly<Record<string, readonly (readonly NounClass[])[]>> = {
   // Things changing hands: what moves is what a hand can hold, never the room.
@@ -192,6 +191,9 @@ export const VERB_OBJECT_CLASSES: Readonly<Record<string, readonly (readonly Nou
   build: [["structure"], ["ownable"]],
   break: [["structure"], ["ownable"]],
   fix: [["structure"], ["ownable"]],
+  // USING takes a station: the thing you operate is the thing that has a job.
+  // (`STATION_ACTS` is what says which job, and intent-compile borrows it.)
+  use: [["appliance", "device"], ["furniture"]],
   // Looking takes anything there is: a person, a thing, or a place.
   see: [["creature"], ["place"]],
   // Doing things WITH people.

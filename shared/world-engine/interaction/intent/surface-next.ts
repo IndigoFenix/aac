@@ -55,7 +55,9 @@ import {
 } from "../../object-properties.js";
 import { headOf } from "../../variations.js";
 import { isMakeable } from "../content/makeable.js";
-import { nounRank } from "../content/vocab-order.js";
+import { isAnimal } from "../content/properties.js";
+import { relatesToVerb, verbDistance } from "../content/relations.js";
+import { NEED_NOUNS, nounRank, placeGroupOf } from "../content/vocab-order.js";
 import { SELF_NEEDS } from "./intent-compile.js";
 
 // ---------------------------------------------------------------------------
@@ -213,6 +215,15 @@ export function noteUtterance(mem: RecencyMemory, frame: IntentFrame): RecencyMe
 
 export interface SurfaceContext {
   nouns: SurfaceNoun[];
+  /**
+   * HOW MANY BUTTONS THE CHILD ACTUALLY SEES before pressing More. The board
+   * asks for three pages' worth (`capacity`) and shows one, and a chip is
+   * dropped when everything it holds is already on the grid — measured against
+   * the whole capacity, that rule silently removed the chips from every board
+   * whose library fits in 54, including the 22-place `go` board. Absent ⇒
+   * `capacity`, which is exactly the old behaviour.
+   */
+  page?: number;
   recency?: RecencyMemory;
   /** A sentence-type chip was tapped — constrain the openers to that move. */
   seedKind?: IntentKind;
@@ -280,14 +291,13 @@ const OBJECT_OPTIONAL = new Set([
  * basic", which is a different question with a different answer (`get` is not a
  * high-frequency word, but it is the most primitive transfer there is).
  *
- * TWO ENTRIES ARE MISSING BECAUSE THEY ARE NOT VERBS YET: `toilet` (a one-press
- * shorthand for "use toilet" — the builder has no button that composes two
- * words) and `use` (absent from the LEXICON entirely, and it needs a compile
- * target before the board may offer it). Both are specified in
- * planning-docs/sentence-builder-default-vocabulary.md §7.2 and land with W5.
+ * `toilet` is absent because it is not a verb: "I need the toilet" is a whole
+ * sentence with a noun object, and the desire board keeps that noun inline
+ * (`NEED_NOUNS`). `use` joined the LEXICON on 2026-08-25 and borrows the
+ * station's own act when it compiles.
  */
 const ACTION_PRIMITIVES: readonly string[] = [
-  "get", "give", "go", "help", "eat", "drink", "play", "wear", "see",
+  "get", "give", "go", "help", "eat", "drink", "use", "play", "wear", "see",
   "bring", "trade", "make", "build", "break", "throw",
 ];
 const PRIMITIVE = new Map(ACTION_PRIMITIVES.map((v, i) => [v, i] as const));
@@ -308,10 +318,10 @@ const PRIMITIVE = new Map(ACTION_PRIMITIVES.map((v, i) => [v, i] as const));
  * a family shares one row.
  */
 const CONTEXT_PRIORITY: Readonly<Record<string, readonly string[]>> = {
-  // The resting poses take a station each, and which one is the whole question.
-  sleep: ["bed"],
-  rest: ["bed", "chair"],
-  sit: ["chair", "bed"],
+  // The resting poses USED to be listed here (sleep→bed, sit→chair). They are
+  // derived now: a station declares what it is for (`STATION_ACTS`) and the
+  // object band leads with what the verb is done on, so the table that named
+  // them by hand would only be a second place to state the same fact.
   // Where a child actually goes, home outward. Heads the running world has no
   // instance of are simply inert.
   go: ["home", "school", "outside", "park", "playground", "store", "bathroom", "kitchen", "bedroom", "yard"],
@@ -349,7 +359,7 @@ const OPENER_VERBS = ["want", ...ACTION_PRIMITIVES.slice(0, 9)];
  */
 const ACTION_CATEGORIES: readonly { id: string; verbs: readonly string[] }[] = [
   // Everyday activities of one's own body — the self-care set plus movement.
-  { id: "do", verbs: ["eat", "drink", "sleep", "rest", "sit", "wake_up", "brush_teeth", "wear", "wash", "tidy", "go", "stay", "turn", "return", "see"] },
+  { id: "do", verbs: ["eat", "drink", "use", "sleep", "rest", "sit", "wake_up", "brush_teeth", "wear", "wash", "tidy", "go", "stay", "turn", "return", "see"] },
   // Doing things WITH people.
   { id: "play", verbs: ["play", "talk", "help", "hug", "show", "share", "teach", "follow", "fight"] },
   // Making and working.
@@ -743,6 +753,19 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     const trading = !!frame?.verb && canonicalVerb(frame.verb) === "trade";
     const tiers = [...((trading ? TRADE_LINK_TARGETS[rel] : undefined) ?? LINK_TARGETS[rel] ?? [])];
     if (rel === "to" && frame?.verb && TRANSPORT_VERBS.has(frame.verb)) tiers.push(["container", "place"]);
+    // NEAREST TO WHAT WE ARE DOING FIRST: "eat + in + ___" wants the dining room
+    // before the smithy, and the spec already knows which is which
+    // (content/relations.ts — a room is related by the stations it requires).
+    if (frame?.verb) {
+      const v = frame.verb;
+      // The relation ranks WITHIN the link's own classes, never around them: a
+      // `with` still wants a body, so a dining room does not lead it just for
+      // being related to eating.
+      const linkable = (n: SurfaceNoun) => tiers.some((cs) => cs.some((c) => isClass(n, c)));
+      for (const hops of [0, 1, 2]) {
+        addNouns("relation-noun", (n) => linkable(n) && verbDistance(n.symbol, v) === hops, 8 - hops);
+      }
+    }
     tiers.forEach((classes, i) => {
       addNouns("relation-noun", (n) => classes.some((c) => isClass(n, c)), Math.max(1, 5 - 2 * i));
     });
@@ -824,7 +847,11 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
 
   // ── Stage: a social opener addresses SOMEONE ("hi + mara") ────────────────
   if ((frame.kind === "greet" || frame.kind === "farewell") && !frame.verb && !frame.object) {
-    addNouns("addressee", (nn) => nn.kind === "creature", 5);
+    // PEOPLE FIRST (user, 2026-08-25): an animal is a body, not somebody you
+    // hail by name, and the pool that called a frog an NPC used to fill this
+    // band with the farmyard.
+    addNouns("addressee", (nn) => nn.kind === "creature" && !isAnimal(nn.symbol), 5);
+    addNouns("addressee", (nn) => nn.kind === "creature", 2);
     add("you", "addressee", 3);
     return finalize();
   }
@@ -926,9 +953,37 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       // the tiers say what the grid offers and in what order. A tier is a rank,
       // never a filter — the universal band below still carries everything.
       subTab = PROPERTY_FOR_VERB[verb];
-      objectClassesFor(verb).forEach((tier, i) => {
-        addNouns("object", (nn) => tier.some((c) => isClass(nn, c)), Math.max(1, 7 - 2 * i));
+      const tiers = objectClassesFor(verb);
+      // WHAT THIS VERB IS DONE WITH leads its class: a bed is furniture and so
+      // is an anvil, and only one of them is for sleeping (`STATION_ACTS`, read
+      // through content/relations.ts). Derived, so a new station with
+      // `acts: ["sleep"]` leads the sleep board without anyone listing it.
+      tiers.forEach((tier, i) => {
+        addNouns(
+          "object",
+          (nn) => tier.some((c) => isClass(nn, c)) && verbDistance(nn.symbol, verb) === 0,
+          Math.max(2, 8 - 2 * i),
+        );
       });
+      tiers.forEach((tier, i) => {
+        const base = Math.max(1, 7 - 2 * i);
+        // WITHIN a creature tier, people lead: "you help ___" means a person
+        // before it means the cat, though both are bodies. Inside the tier, so a
+        // verb whose creatures are its SECOND thought (`play` — toys first) is
+        // not turned into a social verb by the flip.
+        if (tier.includes("creature")) {
+          addNouns("object", (nn) => nn.kind === "creature" && !isAnimal(nn.symbol), base + 1);
+        }
+        addNouns("object", (nn) => tier.some((c) => isClass(nn, c)), base);
+      });
+      /** Does the verb's own class table claim this noun? */
+      const isObjectClass = (nn: SurfaceNoun) => tiers.some((t) => t.some((c) => isClass(nn, c)));
+      /** RELATED IS NOT EDIBLE (user decision 2026-08-25). A table affords `eat`
+       *  — that is what a table is FOR — but the sentence it belongs to is "eat
+       *  AT the table", never "eat the table". A noun whose only tie to the verb
+       *  is that relation is kept out of the OBJECT band and offered through its
+       *  link instead (the bands below). */
+      const relatedOnly = (nn: SurfaceNoun) => !isObjectClass(nn) && relatesToVerb(nn.symbol, verb);
       // MAKE vs BUILD (user law, 2026-07-28): the two verbs are interchangeable,
       // so each surfaces BOTH lists — they differ only in which leads. `make`
       // puts MOBILE items (toys, dolls of the animals and vehicles on the board,
@@ -960,6 +1015,12 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
         // anyway ("i_me + want + drink" is a wish to drink, not a request for a
         // noun), so offering it twice would only lie about what it does.
         for (const p of WANTABLE_PROPERTIES) if (present.has(p) && !LEXICON[p]) add(p, "object", 6);
+        // THE BODILY NEEDS, always one press away (user decision 2026-08-25).
+        // "I need the toilet" is ONE symbol and a whole sentence — it must never
+        // sit two presses down behind a [furniture] chip beside the anvil, which
+        // is exactly where a toilet's properties would file it. Ranked ABOVE the
+        // categories: the child who needs this needs it now.
+        addNouns("object", (nn) => NEED_NOUNS.has(headOf(nn.symbol)), 7);
         // "Previously selected" in the three senses the memory records.
         addNouns(
           "object",
@@ -994,7 +1055,11 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
         // `want` and only `want`, so a noun wantable under "want" leads under
         // "need"/"like" too — otherwise the need board demoted every noun and
         // read backwards from the want board beside it.
-        addNouns("object", (nn) => affordsVerb(nn, MODAL_VERBS.has(verb) ? "want" : verb), 6);
+        addNouns(
+          "object",
+          (nn) => affordsVerb(nn, MODAL_VERBS.has(verb) ? "want" : verb) && !relatedOnly(nn),
+          6,
+        );
       }
       if (verb === "play") addNouns("object", (nn) => nn.kind === "creature", 3); // play WITH someone
       if (!desiring) {
@@ -1006,7 +1071,14 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       // and posture verbs never arrive here at all, since their own destination
       // bands return above, and the guard says so rather than relying on it.
       const placeObjects = verb === "see" || MOVEMENT.has(verb) || canonicalVerb(verb) === "stay";
-        addNouns("object", (nn) => placeObjects || nn.kind !== "place");
+        // THE UNIVERSAL BAND RETIRES where the verb knows what it takes (user
+        // decision 2026-08-25). It was a safety net for a nineteen-word library;
+        // with a derived one it is seventy buttons of noise under every verb —
+        // a puzzle and a frog on an eat board — and it seeds the chip row with
+        // the same irrelevance ([furniture] led "what do you want to eat"). The
+        // things TAB still lists the whole library, which is the escape hatch it
+        // was really providing.
+        if (!tiers.length) addNouns("object", (nn) => placeObjects || nn.kind !== "place");
       }
       if (verb === "help" || verb === "hug" || verb === "talk") {
         // WHOM — read off the subject, the same flip the user's table asks for.
@@ -1018,6 +1090,23 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
         // deixis has to outrank the nouns or "you help ___" answers with mom.
         add("i_me", "object", listener ? 9 : 2);
         add("you", "object", speaker ? 8 : 2);
+      }
+      // ── THE LINKS THIS DOING TAKES (user decision 2026-08-25) ─────────────
+      // The nouns that are related-but-not-objects reach the board through the
+      // words that make them sayable: WHO WITH (`with`, a body) and WHERE
+      // (`in` a room, `near` a piece of furniture — `at` is the word a child
+      // means and the LEXICON has no such relation; deferred by decision, and
+      // `near` carries it meanwhile). Offered only when the library holds
+      // something the link could bind, so a board never promises an empty press.
+      if (!desiring) {
+        const relatedNouns = ctx.nouns.filter((nn) => relatesToVerb(nn.symbol, verb));
+        const relatedPlace = relatedNouns.some((nn) => nn.kind === "place");
+        const relatedThing = relatedNouns.some((nn) => nn.kind !== "place");
+        // Below the object band (76) and above everything else: what you eat is
+        // still the question, where and with whom is the next one.
+        if (relatedPlace) add("in", "destination", -5);
+        if (relatedThing) add("near", "destination", -6);
+        addCompanyJoins(verb);
       }
       // THE ACTION PATH (user decision 2026-08-12): after a BARE desire verb
       // ("i_me + want + ___") DOING is offered as readily as having — the
@@ -1243,6 +1332,7 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       seen.add(b.symbol);
       roleCount.set(b.role, (roleCount.get(b.role) ?? 0) + 1);
     };
+    const page = Math.max(1, Math.min(ctx.page ?? capacity, capacity));
     for (const role of open) {
       const rep = ranked.find((b) => b.role === role && !seen.has(b.symbol));
       if (rep && chosen.length < capacity) take(rep);
@@ -1257,6 +1347,9 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       take(b);
     }
     chosen.sort(byRank);
+    // What a chip must open something NEW relative to: the FIRST PAGE, not the
+    // whole three-page budget.
+    const visible = new Set(chosen.slice(0, page).map((b) => b.symbol));
     const categories = openCategories();
     return {
       buttons: chosen,
@@ -1264,7 +1357,10 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       // the action band rides behind them as its OWN band — it never competes
       // for the noun chips' MAX_GROUPS budget, so [food] and [do] can stand
       // on one board.
-      groups: [...buildGroups(seen, poolAllNouns, clusterBySize, byRank), ...buildActionGroups(seen, byRank)],
+      groups: [
+        ...buildGroups(visible, poolAllNouns, clusterBySize, byRank),
+        ...buildActionGroups(visible, byRank),
+      ],
       typeChips: showTypeChips ? [...TYPE_CHIPS] : [],
       categories,
       complete: isComplete(),
@@ -1312,7 +1408,9 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       const n = nounBy.get(b.symbol)!;
       for (const p of n.properties ?? []) push(p, "property", b);
       if (n.kind === "creature") push("creatures", "kind", b);
-      else if (n.kind === "place") push("places", "kind", b);
+      // PLACES SPLIT (2026-08-25): rooms · buildings · outside. One chip for
+      // twenty-two places is a chip that opens another paging problem.
+      else if (n.kind === "place") push(placeGroupOf(n.symbol), "kind", b);
       else if (n.kind === "item" && !(n.properties ?? []).length) push("things", "kind", b);
     }
     const groups: SurfaceGroup[] = [];
@@ -1320,15 +1418,20 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       if (c.members.length < 2) continue;
       if (c.members.every((m) => chosen.has(m.symbol))) continue;
       const members = [...c.members].sort(byRank);
-      // Bigger clusters lead — EXCEPT when the whole library is pooled, where
-      // every member carries the same weight and cluster size would then decide
-      // the row by an accident of how much furniture a world happens to own.
-      // Pooled, the property vocabulary's display order decides (see the sort
+      // A POOLED row is ranked as a pool: every cluster from the library's
+      // baseline, never from whichever member happens to be inline as well. The
+      // bodily-need words (`toilet`, `bed`) are inline on a desire board, and
+      // read as candidates they lifted [furniture] to the head of a chip row
+      // that is supposed to be the CATEGORY entry points — a toilet earns its
+      // button there, not a cupboard chip behind it.
+      //
+      // Bigger clusters lead only where the WHOLE library pools (the empty
+      // board, where "what is this world made of" is a fair first question);
+      // otherwise the property vocabulary's display order decides (the sort
       // below): food and toys before the cupboards.
-      const weight =
-        members[0]!.weight +
-        (poolAllNouns && !clusterBySize ? 0 : Math.min(2, members.length * 0.1)) +
-        (subTab === id ? 8 : 0);
+      const weight = poolAllNouns
+        ? TIER.opener - 1 + (clusterBySize ? Math.min(2, members.length * 0.1) : 0) + (subTab === id ? 8 : 0)
+        : members[0]!.weight + Math.min(2, members.length * 0.1) + (subTab === id ? 8 : 0);
       // The FACE is picked from the ranked members but ordered by a different
       // question (what represents the cluster) — the expansion order is
       // untouched, so opening the chip still offers what to say next.

@@ -41,7 +41,7 @@ import { townPorts } from "@shared/world-engine/kernel/town/streets.js";
 import {
   ERRAND_WALK, FOOD_DAY_SEC, HOUSEHOLD, doorTransit, hasLedger, houseDoorstep, streetGoods,
   workDoorstep,
-  type ImportDepotReading, type TownGoods,
+  type FarmHaulReader, type ImportDepotReading, type TownGoods,
 } from "@shared/world-engine/kernel/town/goods.js";
 import {
   annexWorldRect,
@@ -108,6 +108,11 @@ export const INTERIOR_UNLOAD_R = 60;
 
 export interface TownStageOpts {
   seed: number;
+  /** E-f (food-scale E-round): the host's live reader of what the town's
+   *  own field region delivers per street day — threaded into the stall
+   *  sawtooth as its amplitude (`goods.ts FarmHaulReader`). Absent =
+   *  the catchment formula, byte for byte. */
+  farmHaul?: FarmHaulReader;
   /** Resident-body budget (defaults to the shared STREET_NPCS — these
    *  are pure steering bodies; pass the same number to
    *  `runWorldHost({ maxNpcs })` plus the cast's own count). */
@@ -627,6 +632,7 @@ export function* createTownStageSteps(
   };
   const goods: TownGoods[] = streetGoods(
     town, eco, { key: siteKey, center, plan }, opts.seed, undefined, importsOf,
+    opts.farmHaul,
   );
   streetGoodsRef = goods; // ⚖️ G2: the export scale's books, now that they exist
   // The cast holds its NPC-budget share whether it ships in the spec or

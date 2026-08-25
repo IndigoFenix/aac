@@ -3,15 +3,30 @@
  *
  * The renderer owns the encoders (two MediaRecorders — camera and app window)
  * and streams their chunks here; this module is the only thing that touches
- * the disk. It keeps one folder of CLIPS, where a clip is three files sharing
- * an id:
+ * the disk. It keeps one folder of CLIPS, where a clip is its OWN FOLDER
+ * holding three files:
  *
- *   20260820-141233-a4f1.camera.webm
- *   20260820-141233-a4f1.screen.webm
- *   20260820-141233-a4f1.json          ← manifest, incl. the sync marks
+ *   20260820-141233-a4f1/
+ *     20260820-141233-a4f1.camera.webm    ← the student, with the room mic
+ *     20260820-141233-a4f1.screen.webm    ← the app window, with the app's sound
+ *     20260820-141233-a4f1.json           ← manifest, incl. the sync marks
  *
  * A clip is the unit of everything: it is written whole, deleted whole, and
- * counted whole against the disk budget.
+ * counted whole against the disk budget — so it is one directory, and the three
+ * files that only make sense together cannot be separated by a careless copy.
+ * The id stays on each filename anyway, because files DO get copied out into an
+ * editor's bin where the folder that explained them is gone.
+ *
+ * Clips written before that layout existed sit loose in the root; they are
+ * still inventoried, listed and evicted, just never created any more.
+ *
+ * ── Finalizing ──
+ * A MediaRecorder's WebM has no duration, no cluster sizes and no cue index —
+ * it cannot, since it is written as it goes. Most players respond by refusing
+ * to seek and showing a dead timer bar. So a finished clip is rewritten once,
+ * by webm-finalize.ts, before its manifest is written. That is a full pass over
+ * the clip and is deliberately NOT on the path of anything the child is doing:
+ * the renderer restarts its pre-roll encoders before it asks for a finish.
  *
  * The renderer cannot be trusted to close what it opens — a crashed or reloaded
  * renderer leaves streams dangling — so every open handle is closed on
@@ -27,6 +42,7 @@ import { app, ipcMain, shell } from "electron";
 import fs from "fs";
 import path from "path";
 import log from "electron-log";
+import { finalizeWebmFile } from "./webm-finalize.js";
 import {
   planEviction,
   type RecordingManifest,
@@ -35,6 +51,9 @@ import {
 } from "../../shared/aac/session-recording.js";
 
 const TRACKS: readonly RecordingTrack[] = ["camera", "screen"];
+
+/** Ids we generate. Anything else is refused — the id names a directory. */
+const CLIP_ID_PATTERN = /^[0-9]{8}-[0-9]{6}-[a-z0-9]{4}$/;
 
 /**
  * Default recording folder. `videos` rather than `userData` on purpose: the
@@ -86,28 +105,33 @@ interface OpenTrack {
 
 interface OpenClip {
   id: string;
+  /** The recordings root. */
   folder: string;
+  /** This clip's own directory inside it. */
+  dir: string;
   openedAtMs: number;
   tracks: Map<RecordingTrack, OpenTrack>;
 }
 
 const openClips = new Map<string, OpenClip>();
 
-function clipFile(folder: string, id: string, track: RecordingTrack): string {
-  return path.join(folder, `${id}.${track}.webm`);
+/** The clip's own directory under the recordings root. */
+function clipDir(folder: string, id: string): string {
+  return path.join(folder, id);
 }
 
-function manifestFile(folder: string, id: string): string {
-  return path.join(folder, `${id}.json`);
+function clipFile(dir: string, id: string, track: RecordingTrack): string {
+  return path.join(dir, `${id}.${track}.webm`);
 }
 
-/** Ids we generate. Anything else is refused — the id names a file path. */
-const CLIP_ID_PATTERN = /^[0-9]{8}-[0-9]{6}-[a-z0-9]{4}$/;
+function manifestFile(dir: string, id: string): string {
+  return path.join(dir, `${id}.json`);
+}
 
 function openTrack(clip: OpenClip, track: RecordingTrack): OpenTrack | null {
   const existing = clip.tracks.get(track);
   if (existing) return existing;
-  const file = clipFile(clip.folder, clip.id, track);
+  const file = clipFile(clip.dir, clip.id, track);
   try {
     const stream = fs.createWriteStream(file, { flags: "w" });
     const entry: OpenTrack = { stream, file, bytes: 0, failed: false };
@@ -141,32 +165,37 @@ async function closeClip(clip: OpenClip): Promise<void> {
 
 interface InventoryEntry extends StoredClip {
   files: string[];
+  /** The clip's own directory, or null for a clip from the old flat layout. */
+  dir: string | null;
   hasManifest: boolean;
 }
+
+/** A clip's video file, wherever it lives. */
+const CLIP_VIDEO_NAME = /^(\d{8}-\d{6}-[a-z0-9]{4})\.(camera|screen)\.webm$/;
+const CLIP_MANIFEST_NAME = /^(\d{8}-\d{6}-[a-z0-9]{4})\.json$/;
 
 /**
  * Everything in the folder, grouped into clips.
  *
- * Grouping is by FILENAME, not by manifest, so a clip whose manifest never got
+ * Grouping is by NAME, not by manifest, so a clip whose manifest never got
  * written (renderer crash, power loss) is still counted against the budget and
  * still evictable. Otherwise a run of crashes would leave orphaned gigabytes
  * that the sweep could never see.
+ *
+ * Both layouts are read: a clip directory, and the loose files clips used to be
+ * written as. The old ones are never created again, but they are somebody's
+ * footage and must keep being listed and evicted like any other.
  */
 async function inventory(folder: string): Promise<InventoryEntry[]> {
-  let names: string[];
+  let entries: fs.Dirent[];
   try {
-    names = await fs.promises.readdir(folder);
+    entries = await fs.promises.readdir(folder, { withFileTypes: true });
   } catch {
     return [];
   }
 
   const byId = new Map<string, InventoryEntry>();
-  for (const name of names) {
-    const m = /^(\d{8}-\d{6}-[a-z0-9]{4})\.(camera|screen)\.webm$/.exec(name)
-      ?? /^(\d{8}-\d{6}-[a-z0-9]{4})\.(json)$/.exec(name);
-    if (!m) continue;
-    const id = m[1];
-    const full = path.join(folder, name);
+  const note = async (id: string, full: string, dir: string | null): Promise<void> => {
     let size = 0;
     let mtimeMs = 0;
     try {
@@ -174,7 +203,7 @@ async function inventory(folder: string): Promise<InventoryEntry[]> {
       size = st.size;
       mtimeMs = st.mtimeMs;
     } catch {
-      continue;
+      return;
     }
     const entry = byId.get(id) ?? {
       id,
@@ -183,12 +212,34 @@ async function inventory(folder: string): Promise<InventoryEntry[]> {
       startedAtMs: parseClipIdTime(id) ?? mtimeMs,
       bytes: 0,
       files: [],
+      dir,
       hasManifest: false,
     };
     entry.bytes += size;
     entry.files.push(full);
-    if (name.endsWith(".json")) entry.hasManifest = true;
+    if (full.endsWith(".json")) entry.hasManifest = true;
     byId.set(id, entry);
+  };
+
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (!CLIP_ID_PATTERN.test(entry.name)) continue;
+      const dir = path.join(folder, entry.name);
+      let names: string[];
+      try {
+        names = await fs.promises.readdir(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (!CLIP_VIDEO_NAME.test(name) && !CLIP_MANIFEST_NAME.test(name)) continue;
+        await note(entry.name, path.join(dir, name), dir);
+      }
+      continue;
+    }
+    const m = CLIP_VIDEO_NAME.exec(entry.name) ?? CLIP_MANIFEST_NAME.exec(entry.name);
+    if (!m) continue;
+    await note(m[1], path.join(folder, entry.name), null);
   }
   return [...byId.values()];
 }
@@ -233,6 +284,16 @@ async function sweep(folder: string, maxStorageMb: number): Promise<SweepResult>
         log.warn(`[recording] could not delete ${file}: ${String(err)}`);
       }
     }
+    // The clip's own directory goes with it — but only if emptying it worked,
+    // and only non-recursively, so anything a person put in there themselves
+    // survives instead of being swept away with the footage.
+    if (ok && entry.dir) {
+      try {
+        await fs.promises.rmdir(entry.dir);
+      } catch (err) {
+        log.warn(`[recording] could not remove ${entry.dir}: ${String(err)}`);
+      }
+    }
     if (ok) deleted.push(id);
   }
   if (deleted.length) {
@@ -249,6 +310,37 @@ async function sweep(folder: string, maxStorageMb: number): Promise<SweepResult>
 }
 
 /**
+ * Delete half-written finalizer temp files.
+ *
+ * The finalizer cleans up after itself, but it cannot if the process is killed
+ * mid-rewrite. What is left is a partial copy of a clip that nothing counts
+ * against the disk budget — the original is untouched and still the real file,
+ * so the copy is pure waste.
+ */
+async function removeStaleTempFiles(folder: string): Promise<void> {
+  const sweepDir = async (dir: string): Promise<void> => {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && dir === folder && CLIP_ID_PATTERN.test(entry.name)) {
+        await sweepDir(path.join(dir, entry.name));
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".finalizing")) continue;
+      try {
+        await fs.promises.unlink(path.join(dir, entry.name));
+        log.info(`[recording] removed stale ${entry.name}`);
+      } catch { /* someone else's, or already gone */ }
+    }
+  };
+  await sweepDir(folder);
+}
+
+/**
  * Reconstruct manifests for clips a previous run left without one, so they can
  * still be identified in an editor. The video files are kept: a webm truncated
  * mid-cluster still plays up to its last complete one, and this footage is not
@@ -259,9 +351,19 @@ async function recoverOrphans(folder: string): Promise<number> {
   let recovered = 0;
   for (const clip of clips) {
     if (clip.hasManifest) continue;
+    const dir = clip.dir ?? folder;
     const tracks: RecordingManifest["tracks"] = {};
     for (const track of TRACKS) {
-      const file = clipFile(folder, clip.id, track);
+      const file = clipFile(dir, clip.id, track);
+      try {
+        await fs.promises.stat(file);
+      } catch {
+        continue; // Track absent — a clip can legitimately have only one.
+      }
+      // These files were cut off mid-write by whatever ended the last run, so
+      // this is also where they get their duration and cue index. The finalizer
+      // drops the incomplete tail and keeps everything before it.
+      const finalized = await finalizeWebmFile(file);
       try {
         const st = await fs.promises.stat(file);
         tracks[track] = {
@@ -270,10 +372,11 @@ async function recoverOrphans(folder: string): Promise<number> {
           bytes: st.size,
           width: null,
           height: null,
+          durationMs: finalized.durationMs ?? null,
           syncMarks: [],
         };
       } catch {
-        // Track absent — a clip can legitimately have only one.
+        // Vanished between the two stats — nothing to record.
       }
     }
     if (!Object.keys(tracks).length) continue;
@@ -291,7 +394,7 @@ async function recoverOrphans(folder: string): Promise<number> {
     };
     try {
       await fs.promises.writeFile(
-        manifestFile(folder, clip.id), JSON.stringify(manifest, null, 2), "utf8",
+        manifestFile(clip.dir ?? folder, clip.id), JSON.stringify(manifest, null, 2), "utf8",
       );
       recovered++;
     } catch (err) {
@@ -313,6 +416,7 @@ export function setupRecordingStore(): void {
   ipcMain.handle("recording:prepare", async (_e, opts: unknown) => {
     const o = (opts ?? {}) as { folder?: unknown; maxStorageMb?: unknown };
     const folder = resolveFolder(o.folder);
+    await removeStaleTempFiles(folder);
     await recoverOrphans(folder);
     const maxStorageMb = typeof o.maxStorageMb === "number" ? o.maxStorageMb : 20480;
     const result = await sweep(folder, maxStorageMb);
@@ -327,9 +431,16 @@ export function setupRecordingStore(): void {
     if (openClips.has(clipId)) return { ok: false, error: "already-open" };
 
     const folder = activeFolder ?? resolveFolder(null);
-    const clip: OpenClip = { id: clipId, folder, openedAtMs: Date.now(), tracks: new Map() };
+    const dir = clipDir(folder, clipId);
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+    } catch (err) {
+      log.error(`[recording] cannot create ${dir}: ${String(err)}`);
+      return { ok: false, error: "folder-failed" };
+    }
+    const clip: OpenClip = { id: clipId, folder, dir, openedAtMs: Date.now(), tracks: new Map() };
     openClips.set(clipId, clip);
-    return { ok: true, clipId, folder };
+    return { ok: true, clipId, folder, dir };
   });
 
   /**
@@ -377,12 +488,27 @@ export function setupRecordingStore(): void {
     const tracks: RecordingManifest["tracks"] = {};
     for (const [track, entry] of clip.tracks) {
       const fromRenderer = manifest.tracks?.[track];
+      // Make the file seekable before anyone can open it. This is the only
+      // moment the numbers a player wants — the length, and where each moment
+      // sits — are knowable at all.
+      const finalized = await finalizeWebmFile(entry.file);
+      if (!finalized.ok) {
+        log.warn(`[recording] ${path.basename(entry.file)} left as-is (${finalized.reason})`);
+      }
+      let bytes = entry.bytes;
+      try {
+        bytes = (await fs.promises.stat(entry.file)).size;
+      } catch {
+        // Keep the write count; the sweep below reads the real sizes anyway.
+      }
       tracks[track] = {
         file: path.basename(entry.file),
         mimeType: fromRenderer?.mimeType ?? "video/webm",
-        bytes: entry.bytes,
+        bytes,
         width: fromRenderer?.width ?? null,
         height: fromRenderer?.height ?? null,
+        audio: fromRenderer?.audio ?? null,
+        durationMs: finalized.durationMs ?? null,
         syncMarks: Array.isArray(fromRenderer?.syncMarks) ? fromRenderer.syncMarks : [],
       };
     }
@@ -405,7 +531,7 @@ export function setupRecordingStore(): void {
 
     try {
       await fs.promises.writeFile(
-        manifestFile(clip.folder, clipId), JSON.stringify(full, null, 2), "utf8",
+        manifestFile(clip.dir, clipId), JSON.stringify(full, null, 2), "utf8",
       );
     } catch (err) {
       log.warn(`[recording] manifest write failed for ${clipId}: ${String(err)}`);
@@ -413,7 +539,7 @@ export function setupRecordingStore(): void {
 
     const maxStorageMb = typeof o.maxStorageMb === "number" ? o.maxStorageMb : 20480;
     const swept = await sweep(clip.folder, maxStorageMb);
-    return { ok: true, clipId, folder: clip.folder, ...swept };
+    return { ok: true, clipId, folder: clip.folder, dir: clip.dir, ...swept };
   });
 
   /** Close and DELETE a clip — used when a clip turns out to be empty. */
@@ -429,6 +555,9 @@ export function setupRecordingStore(): void {
         await fs.promises.unlink(entry.file);
       } catch { /* already gone */ }
     }
+    try {
+      await fs.promises.rmdir(clip.dir);
+    } catch { /* not empty, or never created */ }
     return { ok: true };
   });
 

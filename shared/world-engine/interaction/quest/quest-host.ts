@@ -58,6 +58,7 @@ import {
   addStoreConsumption,
   goodBoxAt,
   houseDoorstep,
+  provideFarmHaul,
   storeUnitsLeft,
   workDoorstep,
   type StoreConsumption,
@@ -285,6 +286,9 @@ import {
   condenseWildArea,
   drawWildArea,
   expandWildArea,
+  farmAreaKey,
+  farmAreaRecord,
+  ripenWildArea,
   wildAreaCounts,
   wildAreaPopulation,
   wildAreaStock,
@@ -958,6 +962,7 @@ import {
   walkSpeedMps,
   constructionGameDays,
   serviceRadiusM,
+  yieldPerM2Daily,
   REAL_SCALE,
   type NeedKey,
   type WorldScale,
@@ -1807,6 +1812,10 @@ export interface QuestSession {
    *  until the first sweep observes a day: the edge INTO a day is a day's
    *  eating, and "the session just started looking" is not one. */
   driftDrainDay: number | null;
+  /** ⚖️ E-e (food-scale E-round) — the farm haul's day latch, `driftDrainDay`'s
+   *  exact shape (first sight is not a day's eating; a warped week hauls
+   *  seven times because the sweeps run per day edge). */
+  farmHaulDay: number | null;
   /** TEMP: one-shot debug log keys (hand-over diagnostics). */
   dlogged: Set<string>;
   /** WILDERNESS session (founding flow): the deterministic resource/creature
@@ -3702,6 +3711,7 @@ export function makeQuestSession(
     tradeExportConsumed: null,
     tradeCargoDay: null,
     driftDrainDay: null,
+    farmHaulDay: null,
     dlogged: new Set(),
     wilderness: null,
     wildAreas: new Map(),
@@ -16931,10 +16941,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *
    *  A word has to be in BOTH this set and `PLACE_NOUNS` above to arrive as a
    *  place at all — the classifier decides the channel, this set decides the
-   *  meaning. ONE word, because one is what the shipped lexicon carries
-   *  (glyph-registry.ts `forest`, pos "place", categories ["where"]) — a
-   *  synonym would need a registry entry and this round adds none. */
-  const WILD_PLACE_WORDS = new Set(["forest"]);
+   *  meaning. `forest` is what the shipped lexicon carries (glyph-registry.ts,
+   *  pos "place", categories ["where"]); `field`/`farm` joined with the
+   *  food-scale E-round (E-e — "get carrots from the field" must reach the
+   *  draw arm; the two-channel defence below means they work even before a
+   *  registry entry classifies them as places). */
+  const WILD_PLACE_WORDS = new Set(["forest", "field", "farm"]);
 
   /**
    * Does this goal source name the wild?
@@ -29155,6 +29167,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** THE LEDGER SWEEPS the task pool runs every sweep. Order is load-bearing
    *  and documented at each arm; a warp runs this block per day bucket. */
   function stepLedgerSweeps(session: QuestSession) {
+    // ⚖️ E-e — the town's own field feeds it FIRST: register/ripen the farm
+    // source and run the day's haul before any leg draws on the region, so
+    // a due draw never races the pulse that would have served it.
+    stepFarmSource(session);
     // STANDING transfer agreements (②): run any DUE scheduled legs over the
     // live endpoints — deterministic given the clock (creation order).
     // A TRIBUTE pull (E5) from a STUB partner draws from its synthetic
@@ -29343,6 +29359,101 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * replays `units !== 0`), because a drain nobody recorded would be undone by
    * the next reload, which is the very hole this closes.
    */
+  /**
+   * ⚖️ E-e/E-f (food-scale E-round) — THE TOWN'S OWN FIELD, AS A SOURCE.
+   *
+   * Registers the farm region record from `plan.fieldRegion` on first sweep
+   * (fully sown, fully ripe — the famine check never flickers at cutover),
+   * provides the market's live haul reader (the stall sawtooth's amplitude,
+   * goods.ts E-f), ripens the record on its own clocks (the FIELD PULSE —
+   * regrowth for a record drawn while folded), and runs the day-latched
+   * haul: the day's eaten units leave the region.
+   *
+   * ⚖️ WHERE THE UNITS GO — the STREET story only. The town BOOKS already
+   * close their food loop (the compiled farm process' boot fixpoint, fill
+   * ≈ 1) — crediting the granary here would double-count production the
+   * books already assert. The dawn cart was always the street display's
+   * fiction; what changes is its SOURCE: the shelf shows what the region
+   * can serve, and the day's modelled consumption comes OUT of the region
+   * — drawn units exit the world as eaten food, the one legal sink.
+   * Deleting the field patches finally empties the shelf.
+   *
+   * Regrow rides the LIVE arm's convention (`regrowDays × FOOD_DAY_SEC`,
+   * flat — armHarvestRegrow's own expression; carrot's catalogue row is
+   * 1 day, so the pulse period is one street day). Day latch =
+   * `driftDrainDay`'s exact shape: first sight hauls nothing, and a warp
+   * hauls once per crossed edge because the sweeps run per edge.
+   */
+  const FARM_CROP_SPECIES = "carrot_plant";
+  const FARM_CROP_GLYPH = "carrot";
+  function farmHaulPerDay(session: QuestSession): number {
+    const t = session.town;
+    if (!t) return 0;
+    const pop = t.town.scalar("population");
+    const seated = t.plan.popCap > 0 ? Math.min(pop, t.plan.popCap) : pop;
+    return Math.max(0, Math.round(seated / satiationDaysOf(FARM_CROP_GLYPH)));
+  }
+  function stepFarmSource(session: QuestSession) {
+    const t = session.town;
+    const fr = t?.plan.fieldRegion;
+    if (!t || !fr) return;
+    const key = farmAreaKey(t.plan.key);
+    let rec = session.wildAreas.get(key);
+    if (!rec) {
+      // Cap from the CULTIVATED ground (Σ patch rects — the bbox is only
+      // the render footprint), through the one closed form (scale.ts E-c).
+      const areaM2 = t.plan.fields.reduce((s, f) => s + f.w * f.h, 0);
+      const cap = Math.round(
+        areaM2 * yieldPerM2Daily("ancient", session.scale, satiationDaysOf(FARM_CROP_GLYPH)),
+      );
+      if (!(cap > 0)) return;
+      rec = farmAreaRecord({
+        key,
+        area: { x: fr.x, y: fr.y, w: fr.w, h: fr.h },
+        seed: fr.seed,
+        species: FARM_CROP_SPECIES,
+        capUnits: { [FARM_CROP_GLYPH]: cap },
+        now: session.taskClock,
+      });
+      session.wildAreas.set(key, rec);
+      // E-f — the market's amplitude reads the region, live (the goods
+      // layer keeps the catchment formula only where no field region
+      // exists; the provider registry is the road-bearings handoff shape).
+      provideFarmHaul(t.plan.key, (goodKey) => {
+        if (goodKey !== "food") return null;
+        const r = session.wildAreas.get(key);
+        if (!r) return null;
+        const stock = wildAreaStock(r)[FARM_CROP_GLYPH] ?? 0;
+        return { dailyUnits: Math.min(farmHaulPerDay(session), stock) };
+      });
+    }
+    // The field pulse, on the record's own clocks.
+    const ripe = ripenWildArea(rec, session.taskClock, () => FOOD_DAY_SEC);
+    if (ripe !== rec) {
+      session.wildAreas.set(key, ripe);
+      rec = ripe;
+    }
+    // The day-latched haul — the day's modelled consumption leaves the
+    // region. `taken` is deliberately unhoused: eaten food is the sink.
+    const day = Math.floor(session.townClock / FOOD_DAY_SEC);
+    const last = session.farmHaulDay;
+    if (last === null || day < last) {
+      session.farmHaulDay = day;
+      return;
+    }
+    if (day === last) return;
+    const days = day - last;
+    session.farmHaulDay = day;
+    const want = farmHaulPerDay(session) * days;
+    if (!(want > 0)) return;
+    const drawn = drawWildArea(rec, {
+      glyph: FARM_CROP_GLYPH,
+      units: want,
+      now: session.taskClock,
+    });
+    if (drawn.rec !== rec) session.wildAreas.set(key, drawn.rec);
+  }
+
   function stepDriftDrain(session: QuestSession) {
     const t = session.town;
     if (!t) return;

@@ -84,7 +84,11 @@ export const POOLS: Record<string, PoolDef> = {
   // that head (one definition per head, words.ts).
   drink: {
     id: "drink",
-    affordance: "repeatable-edible",
+    // NOT `repeatable-edible` (2026-08-25): that tag means "you EAT it", and it
+    // put every drink on the eat board. A drink's verbs come from its CATEGORY
+    // (drink · want · get · give · fill — concepts.ts), which is the row that
+    // knows the difference; this tag only says the thing can be had again.
+    affordance: "repeatable",
     members: [
       { id: "water", label: "Water", iconRef: "💧", symbol: "water" },
       {

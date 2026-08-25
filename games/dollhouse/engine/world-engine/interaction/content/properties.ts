@@ -163,6 +163,29 @@ export function isLivingThing(symbol: string): boolean {
 }
 
 /**
+ * AN ANIMAL, not a person (user, 2026-08-25). Both are BODIES — the engine's
+ * `creature` kind is right about that, and a dog is somebody you can go to,
+ * follow and play with. But an animal is not somebody you GREET by name, ask
+ * for help, or address in a crowd, and the board had no way to tell: the
+ * `friend` pool's `receptive-npc` affordance made `bear`, `rabbit` and `frog`
+ * people outright — a fossil of the edition whose townsfolk WERE animal people
+ * (the `bear_person` / `frog_person` species are the other half of it) — so a
+ * frog stood in every band that means "somebody".
+ *
+ * Read off the two registries that know: a SPECIES the world builds, or a
+ * member of the animal pool. A name the host pushes (`mara`) is neither, and is
+ * therefore a person — which is the right default for a creature nobody has
+ * classified.
+ */
+export function isAnimal(symbol: string): boolean {
+  const h = head(symbol);
+  if (getSpecies(h)?.kind === "creature") return true;
+  return Object.values(POOLS).some(
+    (p) => p.affordance === "receptive-npc" && p.members.some((m) => m.symbol === h),
+  );
+}
+
+/**
  * THE CONFORMANCE HELPER (user law: concrete nouns get their properties from
  * the spec side): of the given noun symbols, which are neither core engine
  * concepts, nor living things, nor spec-derived? Each one is a thing the board

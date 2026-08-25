@@ -855,6 +855,23 @@ export const stationRoomKind = (kind: StationKind): StationRoomKind | undefined 
  * kind should declare what it is and what it is for in ONE place, and both the
  * simulation and the board follow. A kind with nothing to add authors nothing.
  */
+/**
+ * THE STATION THAT ANSWERS A BODILY NEED — the need's key, on the row of the
+ * fixture that settles it (`needs.ts`: waste is seen to at the toilet, hygiene
+ * at the bath, sleep in the bed; food and drink are goods, not stations, and
+ * reach a board through their own categories).
+ *
+ * The sentence board reads it for ONE purpose: these words are always a single
+ * press away on a desire board. "I need the toilet" is a whole sentence and the
+ * most urgent one a child has — it cannot be two presses down behind a
+ * [furniture] chip, next to the anvil, because a toilet is furniture.
+ */
+export const NEED_STATIONS: Partial<Record<StationKind, string>> = {
+  toilet: "waste",
+  bath: "hygiene",
+  bed: "energy",
+};
+
 export const STATION_ACTS: Partial<Record<StationKind, readonly string[]>> = {
   bed: ["sleep", "rest"],
   chair: ["sit"],

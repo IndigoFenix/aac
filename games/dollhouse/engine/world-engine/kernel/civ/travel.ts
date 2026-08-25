@@ -164,7 +164,7 @@ export function edgeCost(grid: CellGrid, a: number, b: number, opts?: TravelOpts
  *  the index (into `froms`) of the seed that reached each cell cheapest.
  *  Stops early once every `until` cell is settled. */
 function dijkstra(
-  grid: CellGrid, r: Resolved, froms: number[], until?: Set<number>,
+  grid: CellGrid, r: Resolved, froms: number[], until?: Set<number>, maxCost = Infinity,
 ): { dist: Float64Array; prev: Int32Array; owner: Int32Array } {
   const n = grid.topo.n;
   const dist = new Float64Array(n).fill(Infinity);
@@ -223,7 +223,7 @@ function dijkstra(
       const w = stepCost(grid, r, c, t);
       if (!Number.isFinite(w)) continue;
       const nd = dist[c] + w;
-      if (nd < dist[t]) { dist[t] = nd; prev[t] = c; owner[t] = owner[c]; push(nd, t); }
+      if (nd < dist[t] && nd <= maxCost) { dist[t] = nd; prev[t] = c; owner[t] = owner[c]; push(nd, t); }
     }
   }
   return { dist, prev, owner };
@@ -255,12 +255,18 @@ export function leastCostRoute(
  *  seed INDEX per cell (-1 = unreachable: open sea and what it isolates),
  *  `dist` the claim cost. Deterministic: seeds seed in array order, ties
  *  resolve by the heap's (cost, cell) order, owners move only on strict
- *  improvement. */
+ *  improvement.
+ *
+ *  `maxCost` is THE LOCALITY CAP (states round §2 / ruling §14-①): land
+ *  costlier than this from EVERY seed stays unclaimed (owner −1, dist
+ *  Infinity) — the frontier, where the band/herd rung lives. Same unit as
+ *  the returned dist (a caller's metres arrive divided by metresPerCell).
+ *  Default Infinity = the uncapped map, byte-identical to before the cap. */
 export function costClaims(
-  grid: CellGrid, seeds: number[], opts?: TravelOpts,
+  grid: CellGrid, seeds: number[], opts?: TravelOpts, maxCost = Infinity,
 ): { owner: Int32Array; dist: Float64Array } {
   const r = resolve(grid, opts);
-  const { dist, owner } = dijkstra(grid, r, seeds);
+  const { dist, owner } = dijkstra(grid, r, seeds, undefined, maxCost);
   return { owner, dist };
 }
 

@@ -22,6 +22,7 @@ import {
   type NP,
   type SpeakOpts,
   type Token,
+  KINSHIP_NAMES,
 } from "./core.js";
 import { specWords } from "../content/words.js";
 
@@ -121,6 +122,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // CONCEPTS by law (they are frame words, not spec'd objects), so their lexemes
   // live here rather than on any registry row; the student's OWN people arrive
   // separately, as named creatures from the people directory.
+  outside: { w: "outside" },
   mom: { w: "mom" },
   dad: { w: "dad" },
   baby: { w: "baby", plw: "babies" },
@@ -253,6 +255,7 @@ const CENTRAL: Record<string, Lexeme> = {
   make: { w: "make", inf: "make" },
   bring: { w: "bring", inf: "bring" },
   carry: { w: "carry", v3: "carries", inf: "carry" },
+  use: { w: "use", v3: "uses", inf: "use" },
   cut: { w: "cut", inf: "cut" },
   // The completion state ("the house is finished").
   finished: { w: "finished" },
@@ -433,8 +436,17 @@ const SUBJ_PRON: Record<string, string> = {
 let NAMES: ReadonlyMap<string, Gender> = NO_NAMES;
 const nameWord = (head: string): string => head.charAt(0).toUpperCase() + head.slice(1);
 
+/** The preposition a verb governs on its object ("play WITH the ball", "talk TO
+ *  Mara"). One owner: the finite arm and the want-to arm both read it, so a
+ *  desire cannot say "I want to play a ball" while the plain sentence says
+ *  "you play with the ball". */
+const objJoin = (verb: string): string | null =>
+  verb === "play" ? "with" : verb === "talk" ? "to" : null;
+
 function npText(np: NP, art: Art): string {
   if (isPronoun(np.noun.head)) return OBJ_PRON[np.noun.head]!;
+  // "Mom", never "a mom" — a kinship word is what the child CALLS them.
+  if (KINSHIP_NAMES.has(np.noun.head)) return cap(lex(np.noun.head).w);
   if (NAMES.has(np.noun.head)) return nameWord(np.noun.head);
   // A bare QUALITY want ("something hot", "something red") — the object isn't a
   // specific thing, only a property (motive-driven-needs.md: non-specific wants
@@ -566,8 +578,8 @@ function renderSvo(f: Extract<Frame, { kind: "svo" }>, opts: Required<SpeakOpts>
 
   // Verbs whose object rides a preposition ("play WITH the ball", "talk TO
   // Mara") — the glyph line stays verb+object, the surface adds the joint.
-  if ((f.verb.head === "play" || f.verb.head === "talk") && f.object && !f.tail) {
-    const joint = f.verb.head === "play" ? "with" : "to";
+  if (objJoin(f.verb.head) && f.object && !f.tail) {
+    const joint = objJoin(f.verb.head)!;
     const subj0 = f.subject ? subjWord(f.subject) : "I";
     const s0 = `${subj0} ${conj(f.verb, f.subject ?? { head: "i_me", mods: [], q: false }, f.neg)} ${joint} ${npText(f.object, "the")}`;
     return `${cap(s0)}${f.question ? "?" : "."}`;
@@ -704,10 +716,15 @@ export const en: GlyphLanguage = {
       case "device":
         // Resultative want: "I want the lamp on." / "I want the window open."
         return `I want ${npText({ noun: frame.device }, "the")} ${lex(frame.state.head).w}.`;
-      case "wantTo":
-        // Want + infinitive: "I want to play." / negated, the play-command
-        // refusal: "I don't want to play."
-        return `I ${frame.neg ? "don't want" : "want"} to ${lex(frame.verb.head).inf ?? lex(frame.verb.head).w}.`;
+      case "wantTo": {
+        // Desire + infinitive: "I want to play." / "I need to eat a cookie." /
+        // negated, the play-command refusal: "I don't want to play."
+        const inf = lex(frame.verb.head).inf ?? lex(frame.verb.head).w;
+        const modal = lex(frame.modal).w;
+        const join = objJoin(frame.verb.head);
+        const obj = frame.object ? ` ${join ? `${join} ` : ""}${npText(frame.object, "a")}` : "";
+        return `I ${frame.neg ? `don't ${modal}` : modal} to ${inf}${obj}.`;
+      }
       case "going": {
         const dest = frame.fetch ? `to get ${npText(frame.fetch, "a")}` : goDest(frame.dest!);
         const s = frame.subject;

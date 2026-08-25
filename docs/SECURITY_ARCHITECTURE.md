@@ -256,7 +256,8 @@ Terraform supports **Lean** (current; cost-optimized) and **HIPAA-compliant** pa
 ### 5.1 Local authentication
 
 - Email + password, password hashed with `bcrypt` (`bcryptjs`); registration uses cost 12, password reset currently uses cost 10 — **open item:** unify on cost 12 minimum or migrate to `argon2id`. Password reset via `passwordResetTokens` (single-use, short-TTL, hashed at rest).
-- Session cookies (`express-session`), `Secure` + `HttpOnly` + `SameSite=Lax`. Session table in Postgres.
+- Session cookies (`express-session`), `Secure` + `HttpOnly` + `SameSite=Lax` (`SameSite=None` in production, required for the packaged clients' `app://` / `capacitor://` origins; CORS credential policy still gates which origins may send them). Session table in Postgres.
+- **Lifetimes are per client** (`server/session-lifetime.ts`). Clinician sessions expire ABSOLUTELY: 1 day, or 30 with "remember me". An AAC device gets a 1-year cookie that slides forward while the app is in use (re-stamped at most once a day) — the device is an appliance a child cannot re-authenticate, so it stays signed in until someone signs it out, a device slot is revoked, or the account is disabled. The sliding refresh is opt-in per session, NOT `rolling: true`, so clinician expiry stays absolute.
 
 ### 5.2 SSO
 

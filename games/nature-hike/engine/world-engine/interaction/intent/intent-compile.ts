@@ -26,6 +26,9 @@ import type {
 import { DEFAULT_RULE_PRIORITY } from "@shared/world-engine/interaction/behavior/rules.js";
 import type { IntentFrame, Ref } from "@shared/world-engine/interaction/intent/parse-intent.js";
 import { makeableGlyph } from "@shared/world-engine/interaction/content/makeable.js";
+import { STATION_ACTS, type StationKind } from "@shared/world-engine/kernel/town/stations.js";
+import { fixtureKindForWord } from "@shared/world-engine/types.js";
+import { headOf } from "@shared/world-engine/variations.js";
 
 // ---------------------------------------------------------------------------
 // Binder — the world's salience resolver (the one impure input)
@@ -284,6 +287,15 @@ function companionsOf(frame: IntentFrame, binder: IntentBinder): CompanionSpec |
  * is still the ordinary need, and the host routes a marked one through the
  * gathering machinery rather than the solo path.
  */
+/** The verb a station is FOR — the first act its registry row declares. Null for
+ *  anything that is not a station, or one that declares none. */
+function stationActOf(ref: Ref | undefined): string | null {
+  if (ref?.kind !== "entity" && ref?.kind !== "unresolved") return null;
+  const kind = fixtureKindForWord(headOf(ref.symbol));
+  const acts = kind ? STATION_ACTS[kind as StationKind] : undefined;
+  return acts?.[0] ?? null;
+}
+
 export function compileAction(frame: IntentFrame, binder: IntentBinder): GoalSpec | null {
   const goal = compileBareAction(frame, binder);
   if (goal?.kind !== "satisfy") return goal;
@@ -298,6 +310,17 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
   // "stop" compiles to (the goal vocabulary has no per-activity cancel yet;
   // the phase rides the frame so the echo can still say "stop eating").
   if (frame.phase === "stop") return { kind: "stay" };
+  // USE BORROWS THE STATION'S OWN VERB (2026-08-25). `use` names no act: what
+  // "use the oven" means is what an oven is FOR, and the station registry
+  // already says (`STATION_ACTS`: oven → cook, bed → sleep, chair → sit). So the
+  // frame is rewritten to that verb and compiled as if the child had said it —
+  // one meaning, stated once, on the row that owns it. A thing with no acts row
+  // (a ball) has nothing to be "used" for, and the order is refused in words
+  // rather than compiled into a guess.
+  if (v === "use") {
+    const act = stationActOf(frame.object);
+    return act ? compileBareAction({ ...frame, verb: act }, binder) : null;
+  }
   const item = () => binder.item(frame.object);
   const destRef = frame.target ?? frame.object; // movement: object doubles as destination
 

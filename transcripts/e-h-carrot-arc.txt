@@ -1,0 +1,62 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=7e9f877c+dirty
+# started=2026-08-25T10:45:58.192Z
+# ─────────────────────────────────────────
+> wait 20
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 20.0s.
+> say get carrots from the field
+OK     said: get + carrots + from + the + field
+TOAST  🪧 get + carrots + from + the + field — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 10
+TICK   waited 10.0s.
+> say get carrot from field
+OK     said: get + carrot + from + field
+TOAST  🌲 draw: 1 carrot each day from wild:area:farm-brookmill — 922m, first load in 607s (feedback)
+TICK   quiet after 0.8s.
+> wait 60
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view here south.
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   orrin left view there south.
+EXIT   mara left view there west.
+EXIT   biscuit left view here south.
+EXIT   pip left view here north.
+ENTER  pip came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view here south.
+EXIT   mara left view there west.
+EXIT   orrin left view there south.
+TOAST  💬 no one can do that: "get + carrots + from + the + field" (feedback)
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=6  presses=0  screens=1  sim=92.4s
+# events: EXIT 12  ENTER 10  TICK 6  SAY 4  TOAST 3  NOTE 2  OK 2  BOARD 1  SCENE 1

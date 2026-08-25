@@ -317,6 +317,13 @@ export const LEXICON: Record<string, Lex> = {
   // lifts into the hands, carry holds-and-moves (a bare 2nd noun is the
   // destination), drop sets down (in a container, or bare = release here).
   pick_up: V("pick_up", true), carry: V("carry", true, false, "to"),
+  // USE — the verb for operating the thing in front of you ("use the oven",
+  // "use the toilet"). It names no act of its own: a station declares what it is
+  // FOR (`STATION_ACTS`), and intent-compile rewrites `use + X` to that verb, so
+  // this row is the WORD and the station rows stay the one place the meaning
+  // lives. Directive (it is something you tell someone to do), no implied
+  // relation — its object is the thing operated.
+  use: V("use", true),
   // Verbs — making (directive)
   make: V("make", true), build: V("build", true), break: V("break", true), fix: V("fix", true),
   dig: V("dig", true), plant: V("plant", true), cut: V("cut", true),

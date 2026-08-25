@@ -198,7 +198,11 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
     const s = builderSurfaceFor("", { nouns: NOUNS, defaults: false, capacity: 4 });
     const ids = (s.groups ?? []).map((g) => g.id);
     expect(ids).toContain("creatures");
-    expect(ids).toContain("places");
+    // PLACES SPLIT (2026-08-25): rooms · buildings · outside, so one chip does
+    // not open a second paging problem. This library holds one place of each
+    // kind, and a chip needs two members, so no place chip stands here — the
+    // rule doing its job, not the split failing.
+    expect(ids).not.toContain("places");
     for (const g of s.groups!) {
       expect(g.label.length).toBeGreaterThan(0);
       expect(typeof g.glyph).toBe("string");
@@ -225,11 +229,11 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
     const s = builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "things" });
     const ids = (s.groups ?? []).map((g) => g.id);
     // ≥2-member clusters only (a chip must open a real subset).
-    expect(ids).toEqual(["creatures", "places"]);
+    expect(ids).toEqual(["creatures"]); // one place per kind — no chip clears the ≥2 rule
     const creatures = builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "things", group: "creatures" });
     expect(keys(creatures)).toEqual(["mara", "papa"]);
-    const places = builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "things", group: "places" });
-    expect(keys(places)).toEqual(["bed", "home"]);
+    const places = builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "things", group: "building" });
+    expect(keys(places)).toEqual(["home"]);
     // A stale group id shows the full listing, never an empty board.
     const stale = builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "things", group: "gone" });
     expect(keys(stale)).toEqual(NOUNS.map((n) => n.symbol));
@@ -266,7 +270,7 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
 
   it("the chip's faces are the members' DISPLAY glyphs, so places draw their icon", () => {
     const places = (builderSurfaceFor("", { nouns: defaultBuilderNouns(), category: "things" }).groups ?? [])
-      .find((g) => g.id === "places")!;
+      .find((g) => g.id === "building")!;
     // home leads (a place is home outward), and every face is the composed
     // shell+symbol icon — the bare word would render nothing.
     expect(places.glyphs![0]).toBe("building(family)");
@@ -455,10 +459,12 @@ describe("placeBuilderNouns — every room and building the spec knows", () => {
     expect(bath.glyph).toBe("building(bath)");
   });
 
-  it("groups under the `places` chip, apart from the objects", () => {
+  it("groups under the place chips, apart from the objects", () => {
     const s = builderSurfaceFor("", { nouns: defaultBuilderNouns(), category: "things" });
     const ids = (s.groups ?? []).map((g) => g.id);
-    expect(ids).toContain("places");
+    // Three of them now (2026-08-25): a room, a building, and somewhere outside
+    // both — the `go` board is 22 places and one chip could not navigate it.
+    for (const id of ["room", "building", "outside"]) expect(ids).toContain(id);
   });
 });
 

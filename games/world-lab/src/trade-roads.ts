@@ -32,7 +32,7 @@ import {
   planetRoutes, routeFromDirs, caravanArc, caravanCount, type PlanetRoute,
 } from "@shared/world-engine/planet/routes";
 import {
-  planetStates, statePairs, stateBorders,
+  planetStates, statePairs, stateBorders, claimAt,
 } from "@shared/world-engine/planet/states";
 import {
   createPolities, claimReader, type PlanetPolities, type PolityRow,
@@ -1038,9 +1038,14 @@ export function createTradeRoads(
       return nationsLit;
     },
     polityAt(dir) {
-      const cell = built.grid.topo.cellAt?.([dir[0], dir[1], dir[2]]) ?? -1;
-      if (cell < 0) return null;
-      const id = claimOf(cell);
+      // S2 (states round §9): the MEANING read resolves by the claim at the
+      // POINT — a settlement in a border-crossed cell answers for the side
+      // of the true cost border it stands on, not its cell's label. The
+      // fill wash stays cellwise (that is its own resolution), so claimOf
+      // keeps painting; only who-a-point-belongs-to refined.
+      const s = claimAt(built.topo, built.spec.radius, states, [dir[0], dir[1], dir[2]]);
+      if (s < 0) return null;
+      const id = polities.polityOfState(s);
       return id < 0 ? null : polities.get(id) ?? null;
     },
     update(tSec, playerWorld) {

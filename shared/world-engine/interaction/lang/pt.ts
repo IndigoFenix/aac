@@ -96,6 +96,7 @@ const CENTRAL: Record<string, Lexeme> = {
   // Creature SPECIES words (reference resolution: "falo com o/a {espécie}").
   person: { w: "pessoa", g: "f", plw: "pessoas" },
   // KINSHIP AND ROLE WORDS (2026-08-24) — see en.ts.
+  outside: { w: "fora", g: "m" },
   mom: { w: "mamãe", g: "f" },
   dad: { w: "papai", g: "m" },
   baby: { w: "bebê", g: "m", plw: "bebês" },
@@ -188,6 +189,7 @@ const CENTRAL: Record<string, Lexeme> = {
   make: { w: "faço", v2: "fazes", v3: "faz", v3p: "fazem", v1p: "fazemos", inf: "fazer" },
   bring: { w: "trago", v2: "trazes", v3: "traz", v3p: "trazem", v1p: "trazemos", inf: "trazer" },
   carry: { w: "levo", v2: "levas", v3: "leva", v3p: "levam", v1p: "levamos", inf: "levar" },
+  use: { w: "uso", v2: "usas", v3: "usa", v3p: "usam", v1p: "usamos", inf: "usar" },
   cut: { w: "corto", v2: "cortas", v3: "corta", v3p: "cortam", v1p: "cortamos", inf: "cortar" },
   // The completion state ("a casa está pronta").
   finished: { w: "pronto", f: "pronta" },
@@ -441,7 +443,12 @@ export const pt = makeRomance({
             : `de ${t}`;
     return `Eu gosto ${de}.`;
   },
-  wantTo: (inf) => `Quero ${inf}.`,
+  // "Quero comer." / "Preciso comer um biscoito." / "Gosto de comer." —
+  // `like` governs `de` before the infinitive.
+  wantTo: (modal, inf, obj) => {
+    const head = modal === "need" ? "Preciso" : modal === "like" ? "Gosto de" : "Quero";
+    return `${head} ${inf}${obj ? ` ${obj}` : ""}.`;
+  },
   cantPut: (obj) => (obj ? `Não posso pôr ${obj} aí.` : "Não posso pôr isso aí."),
   going: {
     i: (dest) => `Vou ${dest}.`,

@@ -21,11 +21,17 @@
  * measuring "how many presses did that word take" is only meaningful if every
  * surface pages the same way.
  *
- * PAGING WRAPS, deliberately. The More button cycles: past the last page it
- * returns to the start rather than stopping or greying out. A student who keeps
- * pressing More keeps getting words, and never lands on a dead control they have
- * to recognise as dead — but it also means there is no "last page", so a caller
- * counting screens must count presses, not pages.
+ * PAGING WRAPS, deliberately. The controls cycle: past the last page More
+ * returns to the start, and Back from the first page lands on the last, rather
+ * than stopping or greying out. A student who keeps pressing keeps getting
+ * words, and never lands on a dead control they have to recognise as dead — but
+ * it also means there is no "last page", so a caller counting screens must count
+ * presses, not pages.
+ *
+ * BOTH DIRECTIONS (user, 2026-08-25). The grid used to page FORWARD only, so a
+ * word the student scrolled past cost a full lap of the list to see again — on a
+ * 54-word budget that is two more presses, each of them a dwell. Two cells go to
+ * the controls whenever the list overflows.
  *
  * ⚠️ This is NOT how the world-engine's TEXT-MODE builder pages
  * (`shared/world-engine/interaction/text/builder.ts` slices cleanly and refuses
@@ -39,15 +45,19 @@
  *  one-line hint, so the cell can afford to be narrow. */
 export const BUILDER_GRID_CELLS = 18;
 
-/** With overflow, one cell goes to the More button. */
-export const BUILDER_ITEMS_WITH_MORE = BUILDER_GRID_CELLS - 1;
+/** Cells the PAGING CONTROLS take when the list overflows: Back and More. */
+export const BUILDER_PAGE_CONTROLS = 2;
+
+/** Words a page can hold once the controls have their cells. */
+export const BUILDER_ITEMS_WITH_MORE = BUILDER_GRID_CELLS - BUILDER_PAGE_CONTROLS;
 
 export interface BuilderGridPage<T> {
   /** The items to draw in this page's cells. */
   items: T[];
-  /** Whether the More button takes a cell (i.e. the list overflows the grid). */
+  /** Whether the paging controls take their cells (the list overflows the grid). */
   needsMore: boolean;
-  /** Cells available to WORDS on this page — one fewer when More is shown. */
+  /** Cells available to WORDS on this page — `BUILDER_PAGE_CONTROLS` fewer when
+   *  the controls are shown. */
   perPage: number;
 }
 
@@ -65,11 +75,13 @@ export function pageBuilderGrid<T>(
   cells: number = BUILDER_GRID_CELLS,
 ): BuilderGridPage<T> {
   const needsMore = items.length > cells;
-  const perPage = needsMore ? cells - 1 : cells;
+  const perPage = needsMore ? cells - BUILDER_PAGE_CONTROLS : cells;
   if (items.length === 0) return { items: [], needsMore: false, perPage };
   if (!needsMore) return { items: items.slice(0, cells), needsMore, perPage };
 
-  const start = (page * perPage) % items.length;
+  // `page` may go NEGATIVE: Back decrements it, and JS `%` keeps the sign, so
+  // normalise before slicing or the first Back press would read past the start.
+  const start = (((page * perPage) % items.length) + items.length) % items.length;
   const wrapped = [...items.slice(start), ...items.slice(0, start)];
   return { items: wrapped.slice(0, perPage), needsMore, perPage };
 }

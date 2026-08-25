@@ -9,6 +9,7 @@ import { activityLogService } from "../services/activityLogService";
 import { registerSchema, loginSchema, validatePassword } from "@shared/schema";
 import { isCustomerSupport, type SupportSession } from "../services/customerSupportService";
 import { resolveLoginIdentity } from "../services/adminAuthService";
+import { markAacSession } from "../session-lifetime";
 import { instituteRepository } from "../repositories/instituteRepository";
 import { licenseRepository } from "../repositories/licenseRepository";
 
@@ -154,12 +155,14 @@ export class AuthController {
           }
 
           const { rememberMe, aacClient } = req.body;
-          if (!aacClient) {
+          if (aacClient) {
+            // An AAC device stays signed in until someone signs it out.
+            markAacSession(req.session);
+          } else {
             req.session.cookie.maxAge = rememberMe
               ? 30 * 24 * 60 * 60 * 1000 // 30 days
               : 24 * 60 * 60 * 1000;      // 1 day
           }
-          // aacClient: no maxAge → session cookie, no timeout
 
           activityLogService.log({
             userId: identity.id,
@@ -671,7 +674,9 @@ export class AuthController {
           });
         }
 
-        if (!aacClient) {
+        if (aacClient) {
+          markAacSession(req.session);
+        } else {
           req.session.cookie.maxAge = rememberMe
             ? 30 * 24 * 60 * 60 * 1000
             : 24 * 60 * 60 * 1000;
@@ -831,7 +836,9 @@ export class AuthController {
           });
         }
 
-        if (!aacClient) {
+        if (aacClient) {
+          markAacSession(req.session);
+        } else {
           req.session.cookie.maxAge = rememberMe
             ? 30 * 24 * 60 * 60 * 1000
             : 24 * 60 * 60 * 1000;
@@ -1026,7 +1033,9 @@ export class AuthController {
           });
         }
 
-        if (!req.body.aacClient) {
+        if (req.body.aacClient) {
+          markAacSession(req.session);
+        } else {
           req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
         }
 
