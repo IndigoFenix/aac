@@ -539,31 +539,7 @@ export class BoardController {
    * Export board as gridset format
    */
   async exportGridset(req: Request, res: Response): Promise<void> {
-    try {
-      const { boardData, promptId } = req.body;
-
-      // Track download analytics if promptId is provided
-      if (promptId) {
-        try {
-
-          await analyticsService.trackEvent(
-            "board_downloaded",
-            req.user!.id,
-            promptId,
-            {
-              format: "gridset",
-              boardName: boardData.name,
-            }
-          );
-        } catch (analyticsError) {
-          console.error("Failed to track download analytics:", analyticsError);
-        }
-      }
-
-      res.json({ success: true, data: boardData });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+    return this.exportBoard(req, res, "gridset");
   }
 
   /**
@@ -571,26 +547,40 @@ export class BoardController {
    * Export board as snap package format
    */
   async exportSnappkg(req: Request, res: Response): Promise<void> {
+    return this.exportBoard(req, res, "snappkg");
+  }
+
+  /**
+   * A board authored for a student is PHI, and an export is that PHI leaving
+   * the system as a file — so every export is an `export` audit row (with the
+   * student when the board names one), in addition to the product analytics.
+   */
+  private async exportBoard(req: Request, res: Response, format: "gridset" | "snappkg"): Promise<void> {
     try {
       const { boardData, promptId } = req.body;
 
       // Track download analytics if promptId is provided
       if (promptId) {
         try {
-
-          await analyticsService.trackEvent(
-            "board_downloaded",
-            req.user!.id,
-            promptId,
-            {
-              format: "snappkg",
-              boardName: boardData.name,
-            }
-          );
+          await analyticsService.trackEvent("board_downloaded", req.user!.id, promptId, {
+            format,
+            boardName: boardData.name,
+          });
         } catch (analyticsError) {
           console.error("Failed to track download analytics:", analyticsError);
         }
       }
+
+      const studentId: string | null = typeof boardData?.studentId === "string" ? boardData.studentId : null;
+      activityLogService.log({
+        userId: req.user!.id,
+        eventType: "export",
+        subjectType1: "board",
+        subjectId1: typeof boardData?.id === "string" ? boardData.id : null,
+        subjectType2: studentId ? "student" : null,
+        subjectId2: studentId,
+        details: { format },
+      });
 
       res.json({ success: true, data: boardData });
     } catch (error: any) {

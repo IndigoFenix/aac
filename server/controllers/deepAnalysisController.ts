@@ -213,6 +213,18 @@ export class DeepAnalysisController {
         .limit(1);
       if (!row) { res.status(404).json({ error: "Not found" }); return; }
       res.json({ success: true, data: row });
+      // A backoffice admin reading a student's full clinical analysis — the
+      // reader owns nothing here, so every such read is audited.
+      activityLogService.log({
+        userId: req.user?.id ?? null,
+        instituteId: (row as any).instituteId ?? null,
+        eventType: "view",
+        subjectType1: "deep_analysis",
+        subjectId1: row.id,
+        subjectType2: "student",
+        subjectId2: row.studentId,
+        details: { viaAdmin: true },
+      });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message });
     }

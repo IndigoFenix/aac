@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { userRepository, studentRepository } from "../repositories";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { runWithSupportContext } from "../services/customerSupportService";
+import { activityLogService } from "../services/activityLogService";
 import { resolveAllowedOrigins, resolveDeclaredNativeOrigin } from "./security";
 import { hasAdminSection, type AdminSection } from "@shared/admin-sections";
 import { isAdminIdentity } from "../services/adminAuthService";
@@ -35,13 +36,36 @@ export const supportContext: RequestHandler = (
   res: Response,
   next: NextFunction
 ): void => {
-  const supportInstituteId = (req.session as any)?.support?.instituteId;
-  if (supportInstituteId) {
-    runWithSupportContext(supportInstituteId, () => next());
-  } else {
+  const support = (req.session as any)?.support as { instituteId?: string; startedAt?: string } | undefined;
+  const supportInstituteId = support?.instituteId;
+  if (!supportInstituteId) {
     next();
+    return;
   }
+
+  // A support session is break-glass access into an institute's PHI. It
+  // used to live as long as the admin's cookie (up to 30 days); now it lapses
+  // on its own, and the lapse is an audit event like the entry and the exit.
+  const startedAt = Date.parse(support?.startedAt ?? "");
+  if (!Number.isFinite(startedAt) || Date.now() - startedAt > SUPPORT_SESSION_MAX_MS) {
+    delete (req.session as any).support;
+    activityLogService.log({
+      userId: (req.user as any)?.id ?? null,
+      instituteId: supportInstituteId,
+      eventType: "support_session_ended",
+      subjectType1: "institute",
+      subjectId1: supportInstituteId,
+      details: { reason: "expired", durationMs: Number.isFinite(startedAt) ? Date.now() - startedAt : null },
+    });
+    next();
+    return;
+  }
+
+  runWithSupportContext(supportInstituteId, () => next());
 };
+
+/** How long a customer-support (impersonation) session may last before it lapses. */
+export const SUPPORT_SESSION_MAX_MS = 60 * 60 * 1000;
 
 // `optionalAuth` was removed 2026-08-25. It was a pure pass-through, and every
 // handler behind it gated on `if (currentUser?.id) { verifyStudentAccess }` —

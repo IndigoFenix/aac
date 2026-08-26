@@ -239,6 +239,10 @@ export class ReportController {
         eventType: "view",
         subjectType1: "medical_record",
         subjectId1: id,
+        // Name the student too: once the record is hard-deleted, an audit row
+        // that only names the record id resolves to nothing.
+        subjectType2: "student",
+        subjectId2: (result.record as any).studentId ?? null,
       });
     } catch (error: any) {
       console.error("Error fetching medical record:", error);
@@ -698,6 +702,8 @@ export class ReportController {
         eventType: "view",
         subjectType1: "functional_report",
         subjectId1: id,
+        subjectType2: "student",
+        subjectId2: (result.report as any).studentId ?? null,
       });
     } catch (error: any) {
       console.error("Error fetching functional report:", error);
@@ -1153,6 +1159,8 @@ export class ReportController {
         eventType: "view",
         subjectType1: "educational_report",
         subjectId1: id,
+        subjectType2: "student",
+        subjectId2: (result.report as any).studentId ?? null,
       });
     } catch (error: any) {
       console.error("Error fetching educational report:", error);

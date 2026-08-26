@@ -1,18 +1,22 @@
 // server/services/sharing/audit.ts
 //
-// Read-access logging for the cross-institute share model. Fires `view` activity
-// log entries when an institute principal sees rows that aren't their own —
-// i.e. rows visible only because of a per-object or standing share. Same idea
-// as the HIPAA "access log" requirement: every cross-institute read of PHI is
-// recorded for audit.
+// Read-access logging for PHI reads that are NOT covered by ownership.
 //
-// We log only **share-derived** rows (rows whose `instituteId` differs from
-// `ctx.instituteId`). Owned-row reads aren't audit-relevant under the share
-// model — the owning institute always has access by ownership, not by grant.
+// Two principals fire `view` rows here:
 //
-// Student and admin principals don't fire log entries: the student principal is
-// the subject, and admin reads are tracked separately in the system-admin
-// audit (out of scope here).
+//   - An INSTITUTE principal seeing rows that aren't its own — rows visible
+//     only because of a per-object or standing share. Owned-row reads are
+//     covered separately by the per-request read audit
+//     (server/middleware/phi-read-audit.ts), which is what makes "who looked
+//     at this student" answerable at all.
+//
+//   - An ADMIN principal (system admin / backoffice). Admins own nothing, so
+//     EVERY row they read is a cross-boundary read and is logged with
+//     `details.viaAdmin`. Until 2026-08-26 this function returned early for
+//     admin principals under a comment promising a "separate system-admin
+//     audit" — which did not exist. The most privileged reader left no trail.
+//
+// A student principal is the subject and does not fire entries.
 //
 // Fire-and-forget: never await, never throw — matches activityLogService.log.
 
@@ -27,17 +31,17 @@ export interface AuditableRow {
 }
 
 /**
- * Fire `view` activity-log entries for any share-derived rows in `rows`.
+ * Fire `view` activity-log entries for the rows in `rows` that the principal
+ * does not own: share-derived rows for an institute principal, all rows for an
+ * admin principal.
  *
  * Caller passes the rows actually returned to the user/AI after the visibility
- * filter has run. We partition them by `instituteId === ctx.instituteId` and
- * log only the cross-institute reads.
+ * filter has run.
  *
  * @param ctx - the access principal making the read
- * @param subjectType - the activity-log subject type (must be one of the
- *   enum values in `activity_subject_type`). Note: `incident`, `monitor_note`,
- *   and `custom_app_assignment` are NOT yet in that enum — callers for those
- *   types should be deferred until a follow-up migration extends the enum.
+ * @param subjectType - the activity-log subject type (one of the
+ *   `activity_subject_type` enum values; `incident`, `monitor_note` and
+ *   `custom_app_assignment` are all in the enum).
  * @param rows - the rows that were returned. Empty array is a no-op.
  */
 export function recordShareDerivedView(
@@ -45,7 +49,25 @@ export function recordShareDerivedView(
   subjectType: ActivitySubjectType,
   rows: AuditableRow[],
 ): void {
-  if (ctx.kind !== "institute" || rows.length === 0) return;
+  if (rows.length === 0) return;
+
+  if (ctx.kind === "admin") {
+    for (const row of rows) {
+      activityLogService.log({
+        userId: ctx.userId ?? null,
+        instituteId: row.instituteId,
+        eventType: "view",
+        subjectType1: subjectType,
+        subjectId1: row.id,
+        subjectType2: "student",
+        subjectId2: row.studentId,
+        details: { viaAdmin: true },
+      });
+    }
+    return;
+  }
+
+  if (ctx.kind !== "institute") return;
 
   for (const row of rows) {
     if (row.instituteId === ctx.instituteId) continue;

@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { chatRepository } from "../repositories/chatRepository";
+import { activityLogService } from "../services/activityLogService";
 
 class SessionHistoryController {
   async getAACSessions(req: Request, res: Response): Promise<void> {
@@ -79,6 +80,17 @@ class SessionHistoryController {
         title: session.title,
         summary: session.summary,
         importance: session.importance,
+      });
+      // A backoffice admin reading a child's full session transcript — the
+      // reader owns nothing here, so every such read is audited.
+      activityLogService.log({
+        userId: req.user?.id ?? null,
+        eventType: "view",
+        subjectType1: "chat_session",
+        subjectId1: id,
+        subjectType2: session.studentId ? "student" : null,
+        subjectId2: session.studentId,
+        details: { viaAdmin: true },
       });
     } catch (error: any) {
       console.error("Error fetching AAC session log:", error);

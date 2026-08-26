@@ -338,6 +338,17 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "package_unpublished",
   "package_approved",
   "package_rejected",
+  // Customer-support impersonation (a system admin acting inside an institute).
+  // Subject is the institute. `started` carries `{ licenseId }`; `ended`
+  // carries `{ reason: "logout" | "expired", durationMs }`. Every activity row
+  // written while a support session is active additionally carries
+  // `details.viaSupportInstituteId` (activityLogService adds it), so an
+  // impersonated action is distinguishable from the admin's own.
+  "support_session_started",
+  "support_session_ended",
+  // PHI leaving the system as a file (board export, CSV, backup). Subject is
+  // the exported object; subject2 the student. Details carry `{ format }`.
+  "export",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -356,6 +367,11 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   // Family photos (planning-docs/aac-photos-plan.md). The subject is the PHOTO
   // ASSET; the owning student/institute rides along as subject 2.
   "photo",
+  // An AAC/clinician chat session record (its transcript is PHI). Subject 2 is
+  // the student.
+  "chat_session",
+  // The audit log itself: reading it is a privileged act and is recorded.
+  "activity_log",
 ]);
 
 // =============================================================================

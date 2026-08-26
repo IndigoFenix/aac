@@ -1127,7 +1127,17 @@ export class AuthController {
         startedAt: new Date().toISOString(),
       };
 
-      console.log(`[CustomerSupport] User ${user.email} entered support mode for institute "${institute.name}" (${license.instituteId})`);
+      // Break-glass access into an institute's PHI must be auditable
+      // (§164.312(a)(2)(ii), §164.312(b)). A console line is not an audit row.
+      activityLogService.log({
+        userId: user.id,
+        instituteId: license.instituteId,
+        eventType: "support_session_started",
+        subjectType1: "institute",
+        subjectId1: license.instituteId,
+        details: { licenseId },
+      });
+      console.log(`[CustomerSupport] User ${user.id} entered support mode for institute ${license.instituteId}`);
 
       res.json({
         success: true,
@@ -1148,12 +1158,24 @@ export class AuthController {
   async supportLogout(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user as any;
-      const wasInSupport = !!req.session?.support;
+      const support = req.session?.support;
 
       delete req.session.support;
 
-      if (wasInSupport) {
-        console.log(`[CustomerSupport] User ${user?.email} exited support mode`);
+      if (support) {
+        const startedAt = Date.parse(support.startedAt);
+        activityLogService.log({
+          userId: user?.id ?? null,
+          instituteId: support.instituteId,
+          eventType: "support_session_ended",
+          subjectType1: "institute",
+          subjectId1: support.instituteId,
+          details: {
+            reason: "logout",
+            durationMs: Number.isFinite(startedAt) ? Date.now() - startedAt : null,
+          },
+        });
+        console.log(`[CustomerSupport] User ${user?.id} exited support mode for institute ${support.instituteId}`);
       }
 
       res.json({ success: true, message: "Exited support mode" });

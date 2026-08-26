@@ -74,6 +74,7 @@ import {
   requireAdminSection,
 } from "./middleware";
 import { authRateLimiter, passwordResetRateLimiter } from "./middleware/security";
+import { phiReadAudit } from "./middleware/phi-read-audit";
 
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { apiProviderRepository } from "./repositories";
@@ -254,6 +255,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.path === "/api/smart-home/alexa/directives") return next();
     return validateCSRF(req, res, next);
   });
+
+  // ============= PHI READ AUDIT =============
+  // One `view` row per authenticated 2xx GET of a student-scoped route,
+  // coalesced per (user, route, student) — see middleware/phi-read-audit.ts.
+  // Mounted before any route so it observes every handler.
+  app.use(phiReadAudit());
 
   // ============ HEALTH CHECK =============
   app.get("/health", (req, res) => {
@@ -1237,15 +1244,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     upload.single("photo"),
     (req, res) => interpretationController.interpret(req as any, res)
   );
-  app.get("/api/interpretations", requireAuth, (req, res) =>
-    interpretationController.getInterpretations(req, res)
-  );
-  app.get("/api/interpretations/:id", requireAuth, (req, res) =>
-    interpretationController.getInterpretation(req, res)
-  );
-  app.delete("/api/interpretations/:id", requireAuth, (req, res) =>
-    interpretationController.deleteInterpretation(req, res)
-  );
+  // The interpretation read/delete routes were removed 2026-08-26: the
+  // `interpretations` table no longer exists (interpretationRepository stubs
+  // it as null), so they answered 500 — while still being an unscoped,
+  // unaudited path to what used to be per-student clinical data.
 
   // ============= AAC APP DOWNLOAD ROUTES =============
   // What the release feeds currently offer (version, size, availability).
@@ -1286,17 +1288,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= SLP CLINICAL DATA ROUTES =============
-  app.get("/api/slp/clinical-log", requireSLPPlan, (req, res) =>
-    slpClinicalController.getClinicalLog(req, res)
-  );
-
-  app.get("/api/slp/clinical-metrics", requireSLPPlan, (req, res) =>
-    slpClinicalController.getClinicalMetrics(req, res)
-  );
-
-  app.get("/api/slp/export-csv", requireSLPPlan, (req, res) =>
-    slpClinicalController.exportCsv(req, res)
-  );
+  // Removed 2026-08-26. All three (/api/slp/clinical-log, clinical-metrics,
+  // export-csv) read the deleted `interpretations` table and answered 500 —
+  // and export-csv was an unscoped, unaudited, unthrottled CSV of student
+  // names + interpreted utterances waiting to be "fixed". If a clinical export
+  // returns, it goes through the `export` audit event and verifyStudentAccess.
 
   // ============= BOARD GENERATION ROUTES =============
   app.post("/api/boards", requireAuth, (req, res) =>

@@ -8,6 +8,7 @@ import {
   type ActivitySubjectType,
   type ActivityLog,
 } from "@shared/schema";
+import { getActiveSupportInstituteId } from "./customerSupportService";
 
 export interface ActivityLogEntry {
   instituteId?: string | null;
@@ -26,6 +27,8 @@ export interface ActivityLogFilters {
   userId?: string;
   eventType?: ActivityEventType;
   subjectType?: ActivitySubjectType;
+  /** Narrow to one subject id (either position) — "every event about student X". */
+  subjectId?: string;
   startDate?: string;
   endDate?: string;
   isAiInitiated?: boolean;
@@ -39,12 +42,31 @@ export interface ActivityLogRow extends ActivityLog {
   instituteName?: string | null;
 }
 
+/**
+ * Stable marker for a lost audit row. Written to stderr (→ CloudWatch) so a
+ * metric filter can alarm on it; an audit write that fails silently is the
+ * one failure mode this service must not have.
+ */
+export const ACTIVITY_LOG_WRITE_FAILED = "[ActivityLog] WRITE_FAILED";
+
 class ActivityLogService {
   /**
    * Fire-and-forget activity log insert.
-   * Never throws — errors go to stderr.
+   * Never throws — errors go to stderr under ACTIVITY_LOG_WRITE_FAILED.
+   *
+   * If the caller is executing inside a customer-support session (a system
+   * admin impersonating an institute — see customerSupportService), the row
+   * is tagged with `details.viaSupportInstituteId`. Every call site inherits
+   * this: an impersonated action is never indistinguishable from the admin's
+   * own, and a support session's whole footprint is one query away.
    */
   log(entry: ActivityLogEntry): void {
+    const supportInstituteId = getActiveSupportInstituteId();
+    const details =
+      supportInstituteId
+        ? { ...(entry.details ?? {}), viaSupportInstituteId: supportInstituteId }
+        : entry.details ?? null;
+
     db.insert(activityLogs)
       .values({
         instituteId: entry.instituteId ?? null,
@@ -54,12 +76,15 @@ class ActivityLogService {
         subjectId1: entry.subjectId1 ?? null,
         subjectType2: entry.subjectType2 ?? null,
         subjectId2: entry.subjectId2 ?? null,
-        details: entry.details ?? null,
+        details,
         isAiInitiated: entry.isAiInitiated ?? false,
       })
       .execute()
       .catch((err) => {
-        console.error("[ActivityLog] Failed to write log:", err);
+        console.error(
+          `${ACTIVITY_LOG_WRITE_FAILED} event=${entry.eventType} subject=${entry.subjectType1}:${entry.subjectId1 ?? "-"}:`,
+          err?.message ?? err,
+        );
       });
   }
 
@@ -77,6 +102,11 @@ class ActivityLogService {
     }
     if (filters.subjectType) {
       conditions.push(eq(activityLogs.subjectType1, filters.subjectType));
+    }
+    if (filters.subjectId) {
+      conditions.push(
+        sql`(${activityLogs.subjectId1} = ${filters.subjectId} OR ${activityLogs.subjectId2} = ${filters.subjectId})`,
+      );
     }
     if (filters.startDate) {
       conditions.push(gte(activityLogs.createdAt, new Date(filters.startDate)));

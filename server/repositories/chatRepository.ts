@@ -713,6 +713,8 @@ export class ChatRepository {
         title: string | null;
         summary: string | null;
         importance: number | null;
+        /** Whose transcript this is — needed to audit the read. */
+        studentId: string | null;
       }
     | undefined
   > {
@@ -722,6 +724,7 @@ export class ChatRepository {
         title: chatSessions.title,
         summary: chatSessions.summary,
         importance: chatSessions.importance,
+        studentId: chatSessions.studentId,
       })
       .from(chatSessions)
       .where(and(eq(chatSessions.id, id), isNull(chatSessions.deletedAt)));
@@ -731,6 +734,7 @@ export class ChatRepository {
       title: result.title ?? null,
       summary: result.summary ?? null,
       importance: result.importance ?? null,
+      studentId: result.studentId ?? null,
     };
   }
 

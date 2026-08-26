@@ -44,7 +44,9 @@ export async function buildSessionAccessCtx(
   }
 
   if (isSystemAdmin) {
-    return { kind: "admin" };
+    // Carry the admin's id: their reads are audited (sharing/audit.ts) and an
+    // anonymous "admin" row would defeat the point.
+    return { kind: "admin", userId: userId ?? undefined };
   }
 
   if (!userId || !instituteId) return undefined;

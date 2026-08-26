@@ -25,7 +25,30 @@ class ActivityLogController {
         filters.isAiInitiated = false;
       }
 
+      if (typeof req.query.subjectId === "string" && req.query.subjectId) {
+        filters.subjectId = req.query.subjectId;
+      }
+
       const { data, total } = await activityLogService.query(filters);
+
+      // Reading the audit trail is itself a privileged act: record who
+      // queried what (filters only — never the rows returned).
+      activityLogService.log({
+        userId: req.user?.id ?? null,
+        instituteId: filters.instituteId ?? null,
+        eventType: "view",
+        subjectType1: "activity_log",
+        details: {
+          instituteId: filters.instituteId ?? null,
+          userId: filters.userId ?? null,
+          eventType: filters.eventType ?? null,
+          subjectType: filters.subjectType ?? null,
+          subjectId: filters.subjectId ?? null,
+          startDate: filters.startDate ?? null,
+          endDate: filters.endDate ?? null,
+          rows: data.length,
+        },
+      });
 
       res.json({
         success: true,

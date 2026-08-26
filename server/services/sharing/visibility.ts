@@ -35,7 +35,9 @@ import { db } from "../../db";
 export type AccessCtx =
   | { kind: "institute"; instituteId: string; userId: string }
   | { kind: "student"; studentId: string }
-  | { kind: "admin" };
+  // `userId` names the admin for the read audit (sharing/audit.ts). Optional
+  // only for legacy call sites; new producers must set it.
+  | { kind: "admin"; userId?: string };
 
 /**
  * Reusable predicate: a share row is currently active (not revoked, not expired).
