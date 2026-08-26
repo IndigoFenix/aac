@@ -4,7 +4,8 @@ import { getUserSession } from "../../userAuth";
 import { storage } from "../../storage";
 import { adminUserRepository } from "../../repositories/adminUserRepository";
 import { adaptAdminAsUser } from "../../services/adminAuthService";
-import { redeemWsTicket } from "./ws-ticket";
+import { redeemWsTicket, memoryNonceStore } from "./ws-ticket";
+import { pgNonceStore } from "./ws-ticket-store-pg";
 import { isAllowedUpgradeOrigin } from "../../middleware/security";
 import type { User } from "@shared/schema";
 
