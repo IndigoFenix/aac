@@ -6,7 +6,7 @@
  * then writing an investigation → update → report markdown document.
  *
  * Key design points:
- * - Uses Claude (Anthropic SDK) directly with extended thinking enabled.
+ * - Uses Claude (Anthropic SDK) directly with adaptive thinking (Opus 4.8).
  * - Run state (messages, scratch, step count) is persisted after every turn
  *   so an interrupted run can be resumed from the last checkpoint.
  * - Writes are locked down to a small allowlist: Student_* fields and the
@@ -65,8 +65,9 @@ function log(analysisId: string, msg: string, obj?: unknown) {
 // ---------------------------------------------------------------------------
 
 const MAX_STEPS = 40;
-const MAX_OUTPUT_TOKENS = 16000;
-const THINKING_BUDGET_TOKENS = 10000;
+// Adaptive thinking spends from this same budget (was 16k + a separate 10k
+// thinking budget under the manual mode). Opus 4.8 allows up to 128k.
+const MAX_OUTPUT_TOKENS = 32000;
 const RESUME_STALE_MINUTES = 5;
 
 const WRITABLE_FIELD_IDS = new Set<string>([
@@ -384,11 +385,17 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
       // plus tool-call round trips. We don't forward stream chunks anywhere; we
       // just wait for the final aggregated Message, which has the same shape as
       // messages.create() would have returned.
+      // Adaptive thinking: the model decides when and how deeply to think.
+      // Opus 4.6+ (the `claude-opus` alias is Opus 4.8) no longer accepts the
+      // manual `{type:"enabled", budget_tokens}` form; thinking tokens now
+      // count against max_tokens, hence the roomier MAX_OUTPUT_TOKENS. The
+      // cast is only because @anthropic-ai/sdk 0.72 predates the `adaptive`
+      // type — the API accepts it as-is.
       const stream = client.messages.stream({
         model: modelId,
         max_tokens: MAX_OUTPUT_TOKENS,
         system: buildSystemPrompt(row.specialInstructions || undefined),
-        thinking: { type: "enabled", budget_tokens: THINKING_BUDGET_TOKENS },
+        thinking: { type: "adaptive" } as any,
         messages,
         tools: tools as any,
       });

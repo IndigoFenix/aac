@@ -292,14 +292,17 @@ export const MODEL_OPTIONS: ModelOption[] = [
     supportsStructuredOutput: true,
   },
   // Claude
+  // Prices are the Anthropic list prices (identical on Vertex global
+  // endpoints; regional endpoints add 10%). These feed credit accounting
+  // (cost-helpers.ts) — keep them honest when the alias moves generation.
   {
     provider: "claude",
     modelId: "claude-haiku",
-    displayName: "Claude Haiku",
-    description: "Anthropic's fastest model. Good for real-time AAC.",
+    displayName: "Claude Haiku 4.5",
+    description: "Anthropic's fastest model. Good for real-time AAC. 200K context.",
     tier: "economy",
-    inputCostPer1M: 0.80,
-    outputCostPer1M: 4.00,
+    inputCostPer1M: 1.00,
+    outputCostPer1M: 5.00,
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: false,
@@ -307,11 +310,11 @@ export const MODEL_OPTIONS: ModelOption[] = [
   {
     provider: "claude",
     modelId: "claude-sonnet",
-    displayName: "Claude Sonnet",
-    description: "Anthropic's balanced model. Strong at structured tasks.",
+    displayName: "Claude Sonnet 5",
+    description: "Anthropic's balanced model. Strong at structured tasks. 1M context.",
     tier: "standard",
-    inputCostPer1M: 3.00,
-    outputCostPer1M: 15.00,
+    inputCostPer1M: 2.00,
+    outputCostPer1M: 10.00,
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: false,
@@ -319,11 +322,11 @@ export const MODEL_OPTIONS: ModelOption[] = [
   {
     provider: "claude",
     modelId: "claude-opus",
-    displayName: "Claude Opus",
-    description: "Anthropic's most capable model. Best quality.",
+    displayName: "Claude Opus 4.8",
+    description: "Anthropic's large-context frontier model (1M tokens). Used for deep analysis reports.",
     tier: "premium",
-    inputCostPer1M: 15.00,
-    outputCostPer1M: 75.00,
+    inputCostPer1M: 5.00,
+    outputCostPer1M: 25.00,
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: false,
@@ -409,10 +412,18 @@ export function resolveModelId(provider: LLMProviderKey, modelId: string): strin
       (process.env?.ANTHROPIC_USE_VERTEX === "1" ||
         process.env?.ANTHROPIC_USE_VERTEX === "true");
     const sep = useVertex ? "@" : "-";
+    // Haiku 4.5 still carries a dated snapshot (and Vertex spells the date
+    // with `@`). From the 4.6 generation on, Anthropic model IDs are dateless
+    // and IDENTICAL on the direct API and on Vertex, so no separator swap.
+    // Opus 4 / Sonnet 4 (May 2025) are deprecated on Vertex and are not
+    // offered as Model Garden options any more — Model Garden lists each
+    // point release separately, so the IDs here must match what was enabled
+    // there ("Claude Opus 4.8", "Claude Haiku 4.5"). Keep in sync with
+    // server/scripts/vertex-preflight.ts.
     const CLAUDE_MODEL_MAP: Record<string, string> = {
       "claude-haiku":  `claude-haiku-4-5${sep}20251001`,
-      "claude-sonnet": `claude-sonnet-4${sep}20250514`,
-      "claude-opus":   `claude-opus-4${sep}20250514`,
+      "claude-sonnet": "claude-sonnet-5",
+      "claude-opus":   "claude-opus-4-8",
     };
     return CLAUDE_MODEL_MAP[modelId] || modelId;
   }

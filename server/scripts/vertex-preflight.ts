@@ -152,7 +152,9 @@ export async function runVertexPreflight(): Promise<void> {
     if (status === 404) {
       console.log(`    404 -> ${claudeModel} is NOT enabled in Model Garden for this project/region.`);
       console.log(`    Fix: GCP console -> Vertex AI -> Model Garden -> "Claude Haiku 4.5" -> Enable (accept terms), then retry.`);
-      console.log(`    Also enable "Claude Opus 4" — deep_analysis defaults to claude-opus.`);
+      console.log(`    Also enable "Claude Opus 4.8" (claude-opus-4-8) — deep_analysis defaults to claude-opus —`);
+      console.log(`    and "Claude Sonnet 5" (claude-sonnet-5) if anyone selects claude-sonnet. Model Garden lists`);
+      console.log(`    each point release separately; the IDs in shared/llm-options.ts must match what is enabled.`);
     } else if (status === 403) {
       console.log("    403 -> IAM: the SA needs roles/aiplatform.user on this project (same as Gemini), or a VPC-SC/IP gate is in the way.");
     } else if (status === 429) {

@@ -17,9 +17,9 @@ import {
 } from "../services/chat/cost-helpers.js";
 
 // Catalog rates (shared/llm-options.ts) used for the expectations below:
-//   claude-haiku: in $0.80 / out $4.00 per 1M
-//   gpt-4o:       in $2.50 / out $10.00 per 1M
-const HAIKU_IN = 0.8 / 1e6, HAIKU_OUT = 4.0 / 1e6;
+//   claude-haiku (Haiku 4.5): in $1.00 / out $5.00 per 1M
+//   gpt-4o:                   in $2.50 / out $10.00 per 1M
+const HAIKU_IN = 1.0 / 1e6, HAIKU_OUT = 5.0 / 1e6;
 const GPT4O_IN = 2.5 / 1e6, GPT4O_OUT = 10.0 / 1e6;
 
 describe("creditsForModelUsage — Claude cache accounting", () => {
@@ -69,7 +69,7 @@ describe("creditsForModelUsage — OpenAI cache accounting", () => {
 
 describe("creditsForModelUsage — unknown model fallback", () => {
   it("falls back to Claude-Haiku rates (not gpt-4o-mini) for an unrecognized model", () => {
-    // Unknown id → fallback. Expect Haiku ($0.80/$4.00), NOT the old $0.15/$0.60.
+    // Unknown id → fallback. Expect the catalog's Haiku rate, NOT the old gpt-4o-mini $0.15/$0.60.
     const cost = creditsForModelUsage("claude", "claude-haiku-4-5-20251001", 1000, 100, 0, 0);
     expect(cost).toBeCloseTo(1000 * HAIKU_IN + 100 * HAIKU_OUT, 10);
   });

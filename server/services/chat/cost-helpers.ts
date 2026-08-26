@@ -26,8 +26,10 @@ const ChargeToCredits = (charge: number) => {
 // or pricier). We default to Claude Haiku rates instead so an unrecognized model
 // at least produces a figure in the right ballpark. A miss is still a BUG — the
 // catalog and the configured model id must be kept in sync — so we log loudly.
-const FALLBACK_INPUT_PER_1M  = 0.80;  // Claude Haiku input
-const FALLBACK_OUTPUT_PER_1M = 4.00;  // Claude Haiku output
+// Derived from the catalog's claude-haiku row so a Haiku generation bump
+// (3.5 → 4.5 moved $0.80/$4 to $1/$5) cannot leave the fallback stale.
+const FALLBACK_INPUT_PER_1M  = getModelOption("claude", "claude-haiku")?.inputCostPer1M  ?? 1.00;
+const FALLBACK_OUTPUT_PER_1M = getModelOption("claude", "claude-haiku")?.outputCostPer1M ?? 5.00;
 
 /**
  * Look up a model's catalog entry. When it is missing, log a loud warning
