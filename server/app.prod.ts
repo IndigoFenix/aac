@@ -5,7 +5,10 @@
 // Unlike app.lambda.ts there is no freeze to work around: the process boots
 // once, runs migrations under an advisory lock, then serves HTTP + WebSockets
 // from the same http.Server that registerRoutes() attaches them to. Interval
-// crons (session sweeper, activity-log retention, erasure) fire normally here.
+// crons CAN fire here — but only if this file arms them. It calls
+// scheduleMaintenanceCrons() below (session sweeper is armed by registerRoutes);
+// an earlier version of this comment asserted they "fire normally" while the
+// file armed none of them, and no erasure ever completed on ECS.
 
 import express, { type Request, Response, NextFunction } from "express";
 import fs from "fs";
@@ -156,6 +159,14 @@ async function startServer(): Promise<void> {
       // can leak file paths / library versions useful to an attacker.
       console.error(`Request error [${status}]: ${message}`);
     });
+
+    // Daily maintenance crons — erasure hard-delete, audit-log retention,
+    // consent thresholds, spend alerts, package-link reconcile. ONE call,
+    // shared with index.ts; server/tests/maintenance-crons-wiring.test.ts
+    // fails if either entrypoint drops it. (This file shipped without any of
+    // them until 2026-08-26, so no erasure request ever completed on ECS.)
+    const { scheduleMaintenanceCrons } = await import("./services/maintenanceCrons");
+    scheduleMaintenanceCrons();
 
     // Static files (built by Vite). In the AWS deployment the frontends ship
     // to S3 + CloudFront and the image is API-only, so every bundle here is

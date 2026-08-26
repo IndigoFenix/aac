@@ -43,35 +43,11 @@ app.get('/health', (_req, res) => {
     console.error("Request error:", err);
   });
 
-  // Start the daily minor-threshold check. No-op in tests; deferred 30s
-  // after boot for the first run.
-  const { scheduleMinorThresholdCheck } = await import("./services/consent/consentThresholdCron");
-  scheduleMinorThresholdCheck();
-
-  // Start the daily activity-log retention prune. Per-institute retention
-  // comes from the regime registry; orphan rows use the strictest known
-  // window. No-op in tests; deferred 60s after boot.
-  const { scheduleActivityLogRetention } = await import("./services/activityLogRetentionCron");
-  scheduleActivityLogRetention();
-
-  // Start the daily right-to-erasure sweep. Hard-deletes students whose
-  // 30-day cancellation window has elapsed. No-op in tests; deferred 90s
-  // after boot to stagger from the retention cron above.
-  const { scheduleStudentErasureSweep } = await import("./services/studentErasureCron");
-  scheduleStudentErasureSweep();
-
-  // Start the daily LLM provider spend-threshold check. Emails support when a
-  // provider (Google / Anthropic / OpenAI) passes its configured monthly cap.
-  // No-op when no caps are configured, and in tests. Deferred 120s after boot.
-  const { scheduleSpendThresholdCheck } = await import("./services/providerAlertService");
-  scheduleSpendThresholdCheck();
-
-  // Start the daily package link-count reconcile. A backstop only: the live
-  // attach/detach paths keep the counter correct, and drift can strand a
-  // deleted package but never remove one still in use. No-op in tests;
-  // deferred 150s after boot.
-  const { schedulePackageLinkReconcile } = await import("./services/packages/packageLinkCron");
-  schedulePackageLinkReconcile();
+  // Daily maintenance crons (consent thresholds, activity-log retention,
+  // right-to-erasure sweep, spend alerts, package-link reconcile). ONE call
+  // shared with app.prod.ts — see services/maintenanceCrons.ts for why.
+  const { scheduleMaintenanceCrons } = await import("./services/maintenanceCrons");
+  scheduleMaintenanceCrons();
 
   const isDevelopment = process.env.NODE_ENV === "development";
 

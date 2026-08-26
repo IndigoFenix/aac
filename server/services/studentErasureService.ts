@@ -65,6 +65,8 @@ import {
   standingShares,
   studentSymbolAssociations,
   inviteCodeRedemptions,
+  inviteCodes,
+  consentForms,
   aacUtteranceEvents,
   lettersOfMedicalNecessity,
   clinicianActivityIntervals,
@@ -363,16 +365,42 @@ export class StudentErasureService {
       const boardIds = boardRows.map((r) => r.id);
 
       // -------- Leaves first --------
+      // Order matters: every table below is deleted BEFORE the rows it
+      // references, or the FK rejects the parent delete and the whole
+      // transaction rolls back — leaving the student tombstoned forever
+      // (which is exactly what happened before 2026-08-26; the erasure test
+      // seeded none of these shapes, so it stayed green).
       if (objectiveIds.length) {
         await tx.delete(userObjectives).where(inArray(userObjectives.objectiveId, objectiveIds));
+      }
+      // data_points reference goals, objectives AND goal_progress_entries (any of
+      // the three may be null), so they go first, reached by every path.
+      if (goalIds.length) {
+        await tx.delete(dataPoints).where(inArray(dataPoints.goalId, goalIds));
+        await tx.delete(dataPoints).where(
+          inArray(
+            dataPoints.goalProgressEntryId,
+            tx.select({ id: goalProgressEntries.id }).from(goalProgressEntries).where(inArray(goalProgressEntries.goalId, goalIds)),
+          ),
+        );
+      }
+      if (objectiveIds.length) {
+        await tx.delete(dataPoints).where(inArray(dataPoints.objectiveId, objectiveIds));
       }
       if (goalIds.length) {
         await tx.delete(userGoals).where(inArray(userGoals.goalId, goalIds));
         await tx.delete(goalProgressEntries).where(inArray(goalProgressEntries.goalId, goalIds));
-        await tx.delete(dataPoints).where(inArray(dataPoints.goalId, goalIds));
       }
       if (objectiveIds.length) {
         await tx.delete(objectives).where(inArray(objectives.id, objectiveIds));
+      }
+      // accommodations reference services (nullable) — delete them before the
+      // services they hang off, not after.
+      if (serviceIds.length) {
+        await tx.delete(accommodations).where(inArray(accommodations.serviceId, serviceIds));
+      }
+      if (programIds.length) {
+        await tx.delete(accommodations).where(inArray(accommodations.programId, programIds));
       }
       if (serviceIds.length) {
         await tx.delete(serviceGoals).where(inArray(serviceGoals.serviceId, serviceIds));
@@ -380,10 +408,12 @@ export class StudentErasureService {
         await tx.delete(services).where(inArray(services.id, serviceIds));
       }
       if (programIds.length) {
-        await tx.delete(accommodations).where(inArray(accommodations.programId, programIds));
         await tx.delete(progressReports).where(inArray(progressReports.programId, programIds));
         await tx.delete(programContacts).where(inArray(programContacts.programId, programIds));
         await tx.delete(meetings).where(inArray(meetings.programId, programIds));
+        // consent_forms.program_id is NOT NULL with no cascade; never deleted
+        // before, so any program with a consent form blocked the whole erasure.
+        await tx.delete(consentForms).where(inArray(consentForms.programId, programIds));
       }
       if (profileDomainIds.length) {
         // assessment_sources.profileDomainId / baseline_measurements.profileDomainId.
@@ -432,7 +462,17 @@ export class StudentErasureService {
       await tx.delete(objectShares).where(eq(objectShares.studentId, studentId));
       await tx.delete(standingShares).where(eq(standingShares.studentId, studentId));
       await tx.delete(studentSymbolAssociations).where(eq(studentSymbolAssociations.studentId, studentId));
+      // invite_codes.student_id is NOT NULL with no cascade and was never
+      // deleted, so any student who had ever been shared by code could not be
+      // erased. Redemptions reference the code AND the student; clear both paths.
+      await tx.delete(inviteCodeRedemptions).where(
+        inArray(
+          inviteCodeRedemptions.inviteCodeId,
+          tx.select({ id: inviteCodes.id }).from(inviteCodes).where(eq(inviteCodes.studentId, studentId)),
+        ),
+      );
       await tx.delete(inviteCodeRedemptions).where(eq(inviteCodeRedemptions.studentId, studentId));
+      await tx.delete(inviteCodes).where(eq(inviteCodes.studentId, studentId));
       await tx.delete(studentClassrooms).where(eq(studentClassrooms.studentId, studentId));
       // Contacts carry their OWN biometric_data row (face embedding + photo)
       // unless they're linked to a user/student, in which case they share that
@@ -540,6 +580,19 @@ export class StudentErasureService {
           .where(eq(biometricData.id, biometricDataId));
         if (bio?.faceImageUrl) s3KeysToDelete.push(bio.faceImageUrl);
       }
+
+      // -------- Other students' contacts that claim to be this student --------
+      // student_contacts.linked_student_id (no cascade) on a DIFFERENT
+      // student's contact row blocks the delete below; and a linked contact
+      // shares this student's biometric_data row, which would block that
+      // delete too. Clear both: the contact survives for its own student, but
+      // it is no longer "the same person as" a record that is about to cease
+      // to exist. (Clearing a link nulls the shared biometric id — the same
+      // rule updateContact applies, see SECURITY_ARCHITECTURE §12.3.)
+      await tx
+        .update(studentContacts)
+        .set({ linkedStudentId: null, biometricDataId: null })
+        .where(eq(studentContacts.linkedStudentId, studentId));
 
       // -------- The student row itself --------
       await tx.delete(students).where(eq(students.id, studentId));
