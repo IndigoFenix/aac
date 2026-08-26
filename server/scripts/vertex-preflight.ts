@@ -132,36 +132,48 @@ export async function runVertexPreflight(): Promise<void> {
   // that state visible at boot instead of at the first real session.
   const claudeVertexOn = process.env.ANTHROPIC_USE_VERTEX === "1" || process.env.ANTHROPIC_USE_VERTEX === "true";
   const claudeRegion = process.env.CLAUDE_VERTEX_REGION || "global";
-  // Keep in sync with CLAUDE_MODEL_MAP in shared/llm-options.ts (Vertex `@` form).
-  const claudeModel = "claude-haiku-4-5@20251001";
-  console.log(`\nClaude on Vertex (ANTHROPIC_USE_VERTEX=${claudeVertexOn ? "on" : "OFF — prod will use the direct Anthropic API"}, region=${claudeRegion}, model=${claudeModel})...`);
-  try {
-    const { AnthropicVertex } = await import("@anthropic-ai/vertex-sdk");
-    const claude = new AnthropicVertex({ projectId: project, region: claudeRegion, googleAuth: auth as any });
-    const r = await claude.messages.create({
-      model: claudeModel,
-      max_tokens: 8,
-      messages: [{ role: "user", content: "ping" }],
-    });
-    const text = r.content.map((c: any) => (c.type === "text" ? c.text : "")).join("").trim();
-    console.log(`>>> Claude on Vertex OK (reply="${text.slice(0, 40)}"). Model Garden is enabled for ${claudeModel} in ${claudeRegion}.`);
-  } catch (e: any) {
-    const status = e?.status ?? e?.statusCode;
-    const msg = e?.message || String(e);
-    console.log(`>>> Claude on Vertex FAILED: HTTP ${status ?? "?"} — ${msg.slice(0, 600)}`);
-    if (status === 404) {
-      console.log(`    404 -> ${claudeModel} is NOT enabled in Model Garden for this project/region.`);
-      console.log(`    Fix: GCP console -> Vertex AI -> Model Garden -> "Claude Haiku 4.5" -> Enable (accept terms), then retry.`);
-      console.log(`    Also enable "Claude Opus 4.8" (claude-opus-4-8) — deep_analysis defaults to claude-opus —`);
-      console.log(`    and "Claude Sonnet 5" (claude-sonnet-5) if anyone selects claude-sonnet. Model Garden lists`);
-      console.log(`    each point release separately; the IDs in shared/llm-options.ts must match what is enabled.`);
-    } else if (status === 403) {
-      console.log("    403 -> IAM: the SA needs roles/aiplatform.user on this project (same as Gemini), or a VPC-SC/IP gate is in the way.");
-    } else if (status === 429) {
-      console.log("    429 -> no quota provisioned for this model in this region. Request quota, or set CLAUDE_VERTEX_REGION to a region that has it.");
-    }
-    if (!claudeVertexOn) {
-      console.log("    (Informational only: ANTHROPIC_USE_VERTEX is off, so this failure does not affect prod today.)");
+  // Keep in sync with CLAUDE_MODEL_MAP in shared/llm-options.ts. Each row is
+  // one Model Garden entry (they are enabled individually) and is exercised
+  // the way the app uses it: Haiku as the Monitor / clinician-chat default,
+  // Opus with ADAPTIVE thinking exactly as deepAnalysisService sends it — a
+  // 400 here means the thinking parameter, not the enablement.
+  const claudeChecks: Array<{ model: string; garden: string; role: string; thinking?: unknown }> = [
+    { model: "claude-haiku-4-5@20251001", garden: "Claude Haiku 4.5", role: "Monitor + clinician chat default" },
+    { model: "claude-opus-4-8", garden: "Claude Opus 4.8", role: "deep_analysis (adaptive thinking)", thinking: { type: "adaptive" } },
+  ];
+  console.log(`\nClaude on Vertex (ANTHROPIC_USE_VERTEX=${claudeVertexOn ? "on" : "OFF — prod will use the direct Anthropic API"}, region=${claudeRegion})...`);
+  for (const check of claudeChecks) {
+    console.log(`  ${check.model} [${check.role}]`);
+    try {
+      const { AnthropicVertex } = await import("@anthropic-ai/vertex-sdk");
+      const claude = new AnthropicVertex({ projectId: project, region: claudeRegion, googleAuth: auth as any });
+      const r = await claude.messages.create({
+        model: check.model,
+        max_tokens: check.thinking ? 256 : 8,
+        messages: [{ role: "user", content: "Reply with the single word: pong" }],
+        ...(check.thinking ? { thinking: check.thinking as any } : {}),
+      });
+      const text = r.content.map((c: any) => (c.type === "text" ? c.text : "")).join("").trim();
+      const thought = r.content.some((c: any) => c.type === "thinking" || c.type === "redacted_thinking");
+      console.log(`>>> ${check.model} OK (reply="${text.slice(0, 40)}"${check.thinking ? `, thinking block=${thought ? "yes" : "none (model chose not to think — fine)"}` : ""}). Model Garden has "${check.garden}" enabled in ${claudeRegion}.`);
+    } catch (e: any) {
+      const status = e?.status ?? e?.statusCode;
+      const msg = e?.message || String(e);
+      console.log(`>>> ${check.model} FAILED: HTTP ${status ?? "?"} — ${msg.slice(0, 600)}`);
+      if (status === 404) {
+        console.log(`    404 -> "${check.garden}" is NOT enabled in Model Garden for this project/region.`);
+        console.log(`    Fix: GCP console -> Vertex AI -> Model Garden -> "${check.garden}" -> Enable (accept terms), then retry.`);
+        console.log(`    Model Garden lists each point release separately; the IDs in shared/llm-options.ts must match what is enabled.`);
+      } else if (status === 403) {
+        console.log("    403 -> IAM: the SA needs roles/aiplatform.user on this project (same as Gemini), or a VPC-SC/IP gate is in the way.");
+      } else if (status === 429) {
+        console.log("    429 -> no quota provisioned for this model in this region. Request quota, or set CLAUDE_VERTEX_REGION to a region that has it.");
+      } else if (status === 400 && check.thinking) {
+        console.log("    400 -> the request shape is rejected; the message above names the parameter (thinking / max_tokens).");
+      }
+      if (!claudeVertexOn) {
+        console.log("    (Informational only: ANTHROPIC_USE_VERTEX is off, so this failure does not affect prod today.)");
+      }
     }
   }
 
