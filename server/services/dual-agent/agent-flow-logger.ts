@@ -22,6 +22,7 @@ import { fileURLToPath } from "url";
 import { db } from "../../db";
 import { sessionDebugLogs } from "../../../shared/schema-private";
 import { sessionContextStore } from "./dual-agent-logger";
+import { fileDebugLoggingEnabled, sessionDebugPersistenceEnabled } from "../file-debug-log";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -62,6 +63,12 @@ function ensureSize(): void {
  * relay or the flow log.
  */
 function persistFlowToDb(section: string, content: string): void {
+  // `ctx.debugMode` comes from the client's `initialize` message — any
+  // WebSocket client can set it. On its own that would let a client switch
+  // on permanent persistence of untruncated prompts and transcripts (no
+  // retention policy on this table), so production additionally requires
+  // the server-side SESSION_DEBUG_LOGS=true opt-in.
+  if (!sessionDebugPersistenceEnabled) return;
   const ctx = sessionContextStore.getStore();
   if (!ctx || !ctx.debugMode) return;
   if (DB_NOISY_SECTIONS.has(section)) return;
@@ -75,6 +82,9 @@ function ts(): string {
 }
 
 function appendLine(line: string): void {
+  // Full system prompts, student name, every utterance and press. This file
+  // had NO production gate at all (its sibling dual-agent-logger.ts did).
+  if (!fileDebugLoggingEnabled) return;
   try {
     ensureSize();
     fs.appendFileSync(FLOW_LOG_FILE, line + "\n");

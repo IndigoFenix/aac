@@ -42,9 +42,8 @@ export async function synthesize(
   const apiKey = options.apiKeyOverride || getApiKey();
   const modelId = resolveModel(options);
 
-  console.log(
-    `[ElevenLabsTTS] Synthesizing: "${text.substring(0, 50)}..." (voice: ${options.voiceId}, model: ${modelId})`
-  );
+  // Text is the utterance (PHI) — log its size, never its content.
+  console.log(`[ElevenLabsTTS] Synthesizing: ${text.length} chars (voice: ${options.voiceId}, model: ${modelId})`);
 
   const response = await fetch(
     `${ELEVENLABS_API_BASE}/text-to-speech/${options.voiceId}`,

@@ -28,7 +28,9 @@ export async function webSearch(
 
     const response = await fetch(url);
     const data = await response.json() as any;
-    console.log("Search data:", data);
+    // The response echoes the query (model-authored, from the student's
+    // context) and the result bodies — log the count only.
+    console.log("Search results:", Array.isArray((data as any)?.items) ? (data as any).items.length : 0);
     const items: SearchItem[] = (data.items || []).map((i: any) => ({
       title: i.title,
       snippet: i.snippet,

@@ -245,7 +245,8 @@ export async function extractCaptionIdeas(
     try {
       parsed = JSON.parse(parsed);
     } catch {
-      console.error("[captionIdeaService] content was not valid JSON:", String(parsed).slice(0, 200));
+      // The model output is built over the video transcript — size only on stdout.
+      console.error("[captionIdeaService] content was not valid JSON:", String(parsed).length, "chars");
       return [];
     }
   }

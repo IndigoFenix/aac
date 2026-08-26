@@ -39,6 +39,14 @@ export default defineConfig({
       : process.env.NODE_ENV === "production"
         ? "/aac/"
         : "/",
+  // Production bundles ship no console.log/debug/info. The AAC client logged
+  // button presses, transcripts, contact names and board JSON, and on-device
+  // that reaches the exportable debug buffer (lib/debug-log.ts) and, on iPad,
+  // the iOS unified log. warn/error stay for genuine faults.
+  esbuild:
+    process.env.NODE_ENV === "production"
+      ? { pure: ["console.log", "console.debug", "console.info"] }
+      : undefined,
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public-aac"),
     emptyOutDir: true,

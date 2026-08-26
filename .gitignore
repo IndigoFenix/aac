@@ -32,11 +32,33 @@ planning-docs
 *.log
 *-debug.json
 hila-session-debug.json
+# The whole logs/ tree, not just *.log: migration/consolidation runs drop
+# per-student artifacts here under other extensions.
+logs/
+log.txt
+# Session recordings (electron/hardware/recording-store.ts) — video+audio of a
+# child. They live outside the repo by design; this guards a stray `git add .`.
+recordings/
+*.webm
+# Timing/profiling scratch that once carried a full server bundle into a commit.
+.tmp-timing/
+# Editor backups of source files ship dead code (and its log statements).
+*.bak
 
 # Private keys / credentials. Never commit.
 # (rds-ca-bundle.pem is the PUBLIC AWS RDS CA bundle and is intentionally kept.)
 *.pem
 !rds-ca-bundle.pem
+*.key
+*.p12
+*.pfx
+*.tfstate
+*.tfstate.*
+# Every .env variant, not only the bare file. The two packaged-client files
+# hold nothing but a public backend URL and are kept on purpose.
+.env.*
+!client-aac/.env.electron
+!client-aac/.env.ios
 
 # Star-flash trap output (games/world-lab/DEBUG-STAR-FLASH.md)
 games/world-lab/flash-out/

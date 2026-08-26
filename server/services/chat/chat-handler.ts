@@ -402,7 +402,12 @@ import {
                   message
               });
               const loggedMessage = isProd ? 'REDACTED' : (message ? JSON.stringify(message) : undefined);
-              console.log('Message published', loggedMessage, this.session?.id);
+              // Never the message body (clinician/AI text) — id-level only.
+              console.log('Message published', {
+                sessionId: this.session?.id,
+                role: (loggedMessage as any)?.role,
+                contentChars: String((loggedMessage as any)?.content ?? '').length,
+              });
           } catch (error) {
               console.error('Message failed to publish', error);
           }
@@ -1082,7 +1087,7 @@ import {
                       parsedResponse = { text: trimmed };
                   } else {
                       const loggedMessage = isProd ? 'REDACTED' : response;
-                      console.log('Error parsing response:', e, loggedMessage);
+                      console.log('Error parsing response:', (e as any)?.message ?? e, { sessionId: this.session?.id });
                       return {
                           role: 'system',
                           timestamp: new Date().getTime(),

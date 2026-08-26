@@ -1580,7 +1580,8 @@ export class DualAgentService {
         state.messages.push(contextMessage);
 
         // Live API hook: forward context injection to Gemini session
-        console.log(`[DualAgentService] Injecting context (${response.contextInjection.length} chars): "${response.contextInjection.substring(0, 120)}..."`);
+        // The injection is the Monitor's digest of the student's memory — size only.
+        console.log(`[DualAgentService] Injecting context (${response.contextInjection.length} chars)`);
         state.onContextInjection?.(response.contextInjection);
       }
 

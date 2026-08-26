@@ -266,7 +266,8 @@ async function runGlyphModel(
     try {
       parsed = JSON.parse(parsed);
     } catch {
-      console.error("[captionGlyphService] content was not valid JSON:", String(parsed).slice(0, 200));
+      // The model output is built over the video transcript — size only on stdout.
+      console.error("[captionGlyphService] content was not valid JSON:", String(parsed).length, "chars");
       return [];
     }
   }

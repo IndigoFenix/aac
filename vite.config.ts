@@ -29,6 +29,14 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  // Production bundles ship no console.log/debug/info: the clinician client
+  // logs board contents, program data and call transcripts on the way through,
+  // and a shared clinic PC's DevTools is not a private place. warn/error stay
+  // for genuine faults — and must not carry PHI payloads.
+  esbuild:
+    process.env.NODE_ENV === "production"
+      ? { pure: ["console.log", "console.debug", "console.info"] }
+      : undefined,
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,

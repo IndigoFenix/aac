@@ -44,13 +44,16 @@ import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
 import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
 import { ANALYSIS_MEMORY_FIELDS } from "./memory-schema/analysis-memory-schema";
 import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
+import { fileDebugLoggingEnabled } from "./file-debug-log";
 
 // ---------------------------------------------------------------------------
-// Logging
+// Logging — development only. Lines carry the report title + summary of a
+// named student's clinical analysis; see file-debug-log.ts.
 // ---------------------------------------------------------------------------
 
 const LOG_FILE = path.resolve(process.cwd(), "server", "deep-analysis-debug.log");
 function log(analysisId: string, msg: string, obj?: unknown) {
+  if (!fileDebugLoggingEnabled) return;
   try {
     const line = obj !== undefined ? `${msg} ${JSON.stringify(obj).slice(0, 2000)}` : msg;
     fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] [${analysisId}] ${line}\n`);

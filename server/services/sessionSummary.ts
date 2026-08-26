@@ -42,9 +42,12 @@ import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-set
 import { buildSessionAccessCtx } from "./sharing/sessionCtx";
 import fs from "fs";
 import path from "path";
+import { fileDebugLoggingEnabled } from "./file-debug-log";
 
+// Development-only file log (raw LLM session-summary text) — see file-debug-log.ts.
 const LOG_FILE = path.resolve(process.cwd(), "server", "session-summary-debug.log");
 function log(msg: string) {
+  if (!fileDebugLoggingEnabled) return;
   try {
     fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
   } catch {}

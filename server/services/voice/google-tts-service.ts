@@ -200,7 +200,8 @@ export async function synthesize(
     if (chirpLang) {
       const chirpName = `${chirpLang}-Chirp3-HD-${options.voiceName}`;
       try {
-        console.log(`[GoogleTTSService] Synthesizing (Chirp3-HD): "${text.substring(0, 50)}..." (voice: ${chirpName}${options.prompt ? `, prompt="${options.prompt}"` : ""})`);
+        // Text is the utterance (PHI) — log its size, never its content.
+        console.log(`[GoogleTTSService] Synthesizing (Chirp3-HD): ${text.length} chars (voice: ${chirpName}${options.prompt ? ", with prompt" : ""})`);
         const input: protos.google.cloud.texttospeech.v1.ISynthesisInput = options.prompt
           ? { text, prompt: options.prompt }
           : { text };
@@ -224,7 +225,7 @@ export async function synthesize(
     }
   }
 
-  console.log(`[GoogleTTSService] Synthesizing: "${text.substring(0, 50)}..." (lang: ${language}, voice: ${fallbackVoice.name})`);
+  console.log(`[GoogleTTSService] Synthesizing: ${text.length} chars (lang: ${language}, voice: ${fallbackVoice.name})`);
 
   const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
     input: { text },

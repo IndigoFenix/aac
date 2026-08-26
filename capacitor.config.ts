@@ -27,6 +27,11 @@ const config: CapacitorConfig = {
   appId: "com.aivota.aac",
   appName: "Aivota AAC",
 
+  // Do not mirror WKWebView console output into the iOS unified log. The
+  // default ("debug") puts every console line — transcripts, names — into
+  // os_log, where Console.app and sysdiagnose bundles can read it.
+  loggingBehavior: "production",
+
   // The Vite output, identical to what electron-builder ships as
   // dist/public-aac. Built with NATIVE_BUILD=1 so `base` is relative — an
   // absolute /aac/ base would 404 under the capacitor:// scheme.

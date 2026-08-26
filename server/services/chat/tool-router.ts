@@ -658,7 +658,8 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       const recipientAllowed =
         allowedRecipients.includes(to) || (toDomain && allowedDomains.includes(toDomain));
       if (!recipientAllowed) {
-        console.warn(`[sendEmail] Refused recipient "${to}" — not in allowlist`);
+        // Log the domain only; the local part identifies a person.
+        console.warn(`[sendEmail] Refused recipient at "${String(to).split("@")[1] ?? "?"}" — not in allowlist`);
         throw new Error(`Email tool: recipient ${to} is not on the agent's allowlist`);
       }
 

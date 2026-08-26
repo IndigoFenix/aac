@@ -220,12 +220,21 @@ async function startServer(): Promise<void> {
 }
 
 // Prevent unhandled errors from crashing the server
+// Process-level handlers log name + message only. A rejected value can be a
+// Drizzle error carrying the failing row, an SDK error carrying the request
+// body (i.e. the prompt), or a fetch error carrying a response — the same
+// reasoning as the request-scoped handler above.
+function describeFault(value: unknown): string {
+  if (value instanceof Error) return `${value.name}: ${value.message}`;
+  return typeof value === "string" ? value.slice(0, 500) : `non-error value (${typeof value})`;
+}
+
 process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled promise rejection:", reason);
+  console.error("Unhandled promise rejection:", describeFault(reason));
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught exception:", err);
+  console.error("Uncaught exception:", describeFault(err));
 });
 
 // Fail CLOSED. If the secret guard threw, serving traffic would mean running

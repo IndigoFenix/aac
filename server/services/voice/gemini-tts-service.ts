@@ -76,9 +76,8 @@ export async function synthesize(
 ): Promise<Buffer> {
   const voiceName = getVoiceName(options);
 
-  console.log(
-    `[GeminiTTS] Synthesizing: "${text.substring(0, 50)}..." (voice: ${voiceName}, lang: ${language})`
-  );
+  // Text is the utterance (PHI) — log its size, never its content.
+  console.log(`[GeminiTTS] Synthesizing: ${text.length} chars (voice: ${voiceName}, lang: ${language})`);
 
   const ai = getClient();
   const contents = buildContents(text, language, options.prompt);
@@ -122,9 +121,7 @@ export async function* synthesizeStream(
 ): AsyncGenerator<Buffer> {
   const voiceName = getVoiceName(options);
 
-  console.log(
-    `[GeminiTTS] Streaming: "${text.substring(0, 50)}..." (voice: ${voiceName}, lang: ${language})`
-  );
+  console.log(`[GeminiTTS] Streaming: ${text.length} chars (voice: ${voiceName}, lang: ${language})`);
 
   const ai = getClient();
   const t0 = Date.now();

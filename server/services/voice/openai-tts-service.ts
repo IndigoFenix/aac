@@ -69,9 +69,8 @@ export async function synthesize(
   const model = options.model || "tts-1"; // Use faster model by default
   const speed = options.speed || 1.0;
 
-  console.log(
-    `[OpenAITTSService] Synthesizing: "${text.substring(0, 50)}..." (voice: ${voice}, model: ${model})`
-  );
+  // Text is the utterance (PHI) — log its size, never its content.
+  console.log(`[OpenAITTSService] Synthesizing: ${text.length} chars (voice: ${voice}, model: ${model})`);
 
   const response = await openai.audio.speech.create({
     model,

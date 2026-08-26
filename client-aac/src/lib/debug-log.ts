@@ -137,6 +137,15 @@ export function pushLog(level: LogLevel, parts: unknown[]): void {
  */
 export function install(): void {
   if (installed || typeof window === "undefined") return;
+  // Off in production unless a caretaker opts in on the device. The buffer
+  // mirrors every console line and exports to the clipboard on a four-finger
+  // tap — a gesture a student can make — so it must not be armed by default
+  // on a device that handles the child's conversation.
+  if (!import.meta.env.DEV) {
+    let optedIn = false;
+    try { optedIn = localStorage.getItem("aac.debugConsole") === "1"; } catch { /* ignore */ }
+    if (!optedIn) return;
+  }
   installed = true;
 
   const levels: LogLevel[] = ["log", "info", "warn", "error", "debug"];

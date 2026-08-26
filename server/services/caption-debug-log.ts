@@ -1,8 +1,11 @@
 /**
  * Caption Studio debug logger — logs the full LLM prompts + raw responses for
- * the video-caption pipeline (idea pass + glyph pass) to a file in development,
- * no-ops on Lambda. TEMPORARY diagnostic for the glyph-generation work; safe to
- * remove once the `gen:` flow is confirmed.
+ * the video-caption pipeline (idea pass + glyph pass) to a file in development
+ * only. TEMPORARY diagnostic for the glyph-generation work; safe to remove once
+ * the `gen:` flow is confirmed.
+ *
+ * The prompts embed the video transcript. Gated by the shared predicate in
+ * ./file-debug-log.ts (formerly gated on isLambda alone, which is false on ECS).
  *
  * Writes to `<repo>/server/caption-debug.log`, fresh per server start, capped.
  */
@@ -10,11 +13,11 @@
 import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { fileDebugLoggingEnabled } from "./file-debug-log";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const isLambda = !!process.env.AWS_LAMBDA_EXEC_WRAPPER;
 const LOG_FILE = join(__dirname, "..", "caption-debug.log");
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -29,7 +32,7 @@ function ensureSize(): void {
 }
 
 export function captionDebug(label: string, data?: unknown): void {
-  if (isLambda) return;
+  if (!fileDebugLoggingEnabled) return;
   try {
     if (!sessionStarted) {
       sessionStarted = true;
@@ -49,7 +52,7 @@ export function captionDebug(label: string, data?: unknown): void {
 }
 
 export function captionDebugSeparator(title?: string): void {
-  if (isLambda) return;
+  if (!fileDebugLoggingEnabled) return;
   try {
     const line = title
       ? `\n${"=".repeat(70)}\n  ${title}\n${"=".repeat(70)}\n`

@@ -907,9 +907,10 @@ export async function findMatchingFace(
     if (hasObserved) {
       const v = attributeVeto(observed!, p);
       if (v.veto) {
+        // Ids only — a person's name next to a face-match distance is PHI.
         console.log(
-          `[Recognition] ATTRIBUTE VETO for student ${studentId}: excluded ${p.name} ` +
-            `(${p.type}:${p.id}) at d=${distance.toFixed(4)} — ${v.reason}`,
+          `[Recognition] ATTRIBUTE VETO for student ${studentId}: excluded ` +
+            `${p.type}:${p.id} at d=${distance.toFixed(4)} — ${v.reason}`,
         );
         continue;
       }
@@ -957,9 +958,10 @@ export async function findMatchingFace(
       distance: second.distance,
     };
     match.runnerUpDistance = second.distance;
+    // Ids only — two named people plus their face-match distances is PHI.
     console.log(
-      `[Recognition] AMBIGUOUS face for student ${studentId}: ${p.name} (d=${distance.toFixed(4)}) vs ` +
-        `${r.name} (d=${second.distance.toFixed(4)}) — separation ` +
+      `[Recognition] AMBIGUOUS face for student ${studentId}: ${p.type}:${p.id} (d=${distance.toFixed(4)}) vs ` +
+        `${r.type}:${r.id} (d=${second.distance.toFixed(4)}) — separation ` +
         `${(second.distance - distance).toFixed(4)} < ${FACE_AMBIGUITY_MARGIN}. ` +
         `Must NOT be presented as a confident identification.`,
     );
@@ -1916,7 +1918,7 @@ async function applyLinkInvariants<
 export async function createContact(data: InsertStudentContact): Promise<StudentContact> {
   const validated = await applyLinkInvariants(data);
   const [contact] = await db.insert(studentContacts).values(validated).returning();
-  console.log(`[Recognition] Created contact "${contact.name}" for student ${data.studentId}`);
+  console.log(`[Recognition] Created contact ${contact.id} for student ${data.studentId}`);
   return contact;
 }
 

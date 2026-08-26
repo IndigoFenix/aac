@@ -666,11 +666,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // which leak patterns arrive is a CLIENT concern.
           const chunk = applyAiTextChunk(textAccumRef.current, msg.data ?? "");
 
+          // These guards exist to keep the model's PRIVATE notes off the
+          // child's screen — so the one thing the log line must never carry
+          // is the dropped text itself. Reason + sizes only.
           if (chunk.kind === "ignore") {
             if (chunk.reason === "private-note") {
-              console.warn("[LEAK] private-note prefix dropped:", JSON.stringify(msg.data));
+              console.warn("[LEAK] private-note prefix dropped:", String(msg.data ?? "").length, "chars");
             } else if (chunk.reason === "artifact-only") {
-              console.warn("[LEAK] tag-artifact-only chunk dropped:", JSON.stringify(msg.data));
+              console.warn("[LEAK] tag-artifact-only chunk dropped:", String(msg.data ?? "").length, "chars");
             }
             break;
           }
@@ -679,10 +682,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             // Everything accumulated so far was scaffold too — see the module.
             console.warn(
               "[LEAK] ctrl-token scaffold detected → discarded prefix + accumulated.",
-              "Tokens:", chunk.tokens.join(", "),
-              "| Full original:", JSON.stringify(msg.data),
-              "| Accumulated so far (also discarded):", JSON.stringify(textAccumRef.current),
-              "| Kept (after last ctrl):", JSON.stringify(chunk.text),
+              "Tokens:", chunk.tokens.length,
+              "| original:", String(msg.data ?? "").length, "chars",
+              "| accumulated (discarded):", textAccumRef.current.length, "chars",
+              "| kept:", chunk.text.length, "chars",
             );
             textAccumRef.current = "";
             showCaption({ source: "ai-restart" });

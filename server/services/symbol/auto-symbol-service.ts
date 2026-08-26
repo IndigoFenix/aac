@@ -32,12 +32,16 @@ symbolEvents.setMaxListeners(50);
 // Debug file logger — writes to server/symbol-generation-debug.log
 // ---------------------------------------------------------------------------
 
+import { fileDebugLoggingEnabled } from "../file-debug-log";
+
 const __filename_local = fileURLToPath(import.meta.url);
 const __dirname_local = dirname(__filename_local);
 const LOG_FILE = join(__dirname_local, "..", "..", "symbol-generation-debug.log");
 const MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
 
+// Development only (image prompts can describe people) — see file-debug-log.ts.
 function debugLog(section: string, message: string): void {
+  if (!fileDebugLoggingEnabled) return;
   try {
     if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_LOG_SIZE) {
       fs.writeFileSync(LOG_FILE, "");
@@ -253,7 +257,8 @@ async function processQueue(): Promise<void> {
       debugLog("processQueue", `Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
       debugLog("processQueue", `FULL REFINED PROMPT for "${job.imageKey}": ${result.refinedPrompt}`);
       console.log(`[AutoSymbolService] Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
-      console.log(`[AutoSymbolService] Refined prompt for "${job.imageKey}": ${result.refinedPrompt}`);
+      // The refined prompt can describe a person (peer/contact symbols) — size only on stdout.
+      console.log(`[AutoSymbolService] Refined prompt for "${job.imageKey}": ${result.refinedPrompt.length} chars`);
       job.onReady?.(job.imageKey, symbol);
       symbolEvents.emit("symbol:ready", {
         imageKey: job.imageKey,

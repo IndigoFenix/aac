@@ -136,7 +136,7 @@ export class VoiceController {
       const resolvedVoice = await this.resolveVoiceFromStudent(studentId, language, voiceType);
 
       console.log(
-        `[VoiceController] Synthesizing: "${text.substring(0, 50)}..." (lang: ${resolvedVoice.language}, voice: ${resolvedVoice.fallbackType}, custom: ${resolvedVoice.customVoice?.name || "none"})`
+        `[VoiceController] Synthesizing: ${text.length} chars (lang: ${resolvedVoice.language}, voice: ${resolvedVoice.fallbackType}, custom: ${resolvedVoice.customVoice ? "yes" : "none"})`
       );
 
       // Synthesize full audio (not streaming)
@@ -170,7 +170,7 @@ export class VoiceController {
       const resolvedVoice = await this.resolveVoiceFromStudent(studentId, language, voiceType);
 
       console.log(
-        `[VoiceController] Speaking: "${text.substring(0, 50)}..." (lang: ${resolvedVoice.language}, voice: ${resolvedVoice.fallbackType}, custom: ${resolvedVoice.customVoice?.name || "none"})`
+        `[VoiceController] Speaking: ${text.length} chars (lang: ${resolvedVoice.language}, voice: ${resolvedVoice.fallbackType}, custom: ${resolvedVoice.customVoice ? "yes" : "none"})`
       );
 
       // Set up SSE headers

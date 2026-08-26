@@ -26,6 +26,16 @@ const DEFAULT_FROM = "Aivota <noreply@aivota.ai>";
 const DEFAULT_REPLY_TO = "cs@aivota.ai";
 
 /**
+ * What a log line may say about a recipient: the domain, never the local part.
+ * An address names a clinician or a guardian, and paired with a consent
+ * subject line it is PHI in CloudWatch for 90 days.
+ */
+function recipientDomain(address: string): string {
+  const at = String(address ?? "").lastIndexOf("@");
+  return at === -1 ? "?" : address.slice(at + 1);
+}
+
+/**
  * Settings from retired transports (Gmail SMTP, then briefly Resend). The
  * From address used to fall back through SMTP_FROM → SMTP_USER, which meant a
  * stale credential silently *became* the platform's sender identity. Nothing
@@ -222,8 +232,10 @@ export class EmailService {
         })
       );
 
+      // Recipient logged as domain only: the address names a user or guardian,
+      // and for consent mail the pairing with the subject is itself PHI.
       console.log(
-        `Email sent successfully to ${options.to} in ${Date.now() - start}ms, messageId: ${result.MessageId}`
+        `Email sent successfully to @${recipientDomain(options.to)} in ${Date.now() - start}ms, messageId: ${result.MessageId}`
       );
       return { success: true, messageId: result.MessageId };
     } catch (error: any) {
@@ -240,7 +252,7 @@ export class EmailService {
           ? ` (unverified identity or SES sandbox — see docs/EMAIL.md)`
           : "";
       console.error(
-        `Email service: Failed to send email to ${options.to} after ${Date.now() - start}ms: ${errorMsg}${hint}`
+        `Email service: Failed to send email to @${recipientDomain(options.to)} after ${Date.now() - start}ms: ${errorMsg}${hint}`
       );
       return { success: false, error: errorMsg };
     }

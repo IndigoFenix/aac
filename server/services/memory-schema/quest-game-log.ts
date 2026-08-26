@@ -17,7 +17,10 @@ import fs from "fs";
 import path from "path";
 import { certifyGoalTreeGame } from "@shared/world-engine/solver/index";
 import type { MemoryProcessor } from "../chat/tool-router";
+import { fileDebugLoggingEnabled } from "../file-debug-log";
 
+// Development only: the memory-op lines carry raw memory write values (up to
+// 800 chars) from the clinician chat — see file-debug-log.ts.
 const LOG_FILE = path.resolve(process.cwd(), "server", "quest-game-debug.log");
 const QUEST_FIELD = "Context_QuestGame";
 

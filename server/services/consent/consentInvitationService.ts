@@ -203,7 +203,7 @@ class ConsentInvitationService {
           // Log it explicitly so the clinician can diagnose — the invitation
           // row stays in place and can be re-sent.
           console.error(
-            `[consentInvitationService] SMS send returned failure to=${sentTo} error=${result.error ?? "unknown"}`,
+            `[consentInvitationService] SMS send returned failure invitation=${invitation.id} to=${maskPhone(sentTo)} error=${result.error ?? "unknown"}`,
           );
         }
       } catch (err) {

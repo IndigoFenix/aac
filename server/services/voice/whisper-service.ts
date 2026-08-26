@@ -72,7 +72,8 @@ export async function transcribe(
     prompt: options.prompt,
   });
 
-  console.log(`[WhisperService] Transcription complete: "${response.text.substring(0, 100)}..." (lang: ${response.language})`);
+  // The transcript is what a student or bystander said — log its size only.
+  console.log(`[WhisperService] Transcription complete: ${response.text.length} chars (lang: ${response.language})`);
 
   return {
     text: response.text,

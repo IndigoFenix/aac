@@ -1,16 +1,19 @@
 /**
- * Memory debug logger — logs to a file in development, no-ops on Lambda.
- * Captures all memory system interactions for debugging.
+ * Memory debug logger — logs to a file in development only.
+ * Captures all memory system interactions for debugging: the whole Student_*
+ * memory object, the rendered memory prompt, manageMemory payloads. PHI.
+ * Gated by the shared predicate in ../file-debug-log.ts (formerly gated on
+ * isLambda alone, which is false on ECS — so it wrote in production).
  */
 
 import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { fileDebugLoggingEnabled } from "../file-debug-log";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const isLambda = !!process.env.AWS_LAMBDA_EXEC_WRAPPER;
 const LOG_FILE = join(__dirname, "..", "..", "memory-debug.log");
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -25,7 +28,7 @@ function ensureSize(): void {
 }
 
 export function memDebug(label: string, data?: any) {
-  if (isLambda) return;
+  if (!fileDebugLoggingEnabled) return;
   try {
     if (!sessionStarted) {
       sessionStarted = true;
@@ -42,7 +45,7 @@ export function memDebug(label: string, data?: any) {
 }
 
 export function memDebugSeparator(title?: string) {
-  if (isLambda) return;
+  if (!fileDebugLoggingEnabled) return;
   try {
     const line = title
       ? `\n${"=".repeat(60)}\n  ${title}\n${"=".repeat(60)}\n`

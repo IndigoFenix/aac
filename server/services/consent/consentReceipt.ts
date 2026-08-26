@@ -89,8 +89,9 @@ export async function sendConsentReceipt(args: {
 
     const result = await emailService.sendEmail({ to, subject, text, html });
     if (!result.success) {
+      // Domain only — the address identifies the guardian.
       console.error(
-        `[consentReceipt] Receipt send returned failure to=${to} consent=${consent.id} error=${result.error ?? "unknown"}`,
+        `[consentReceipt] Receipt send returned failure to=@${String(to).split("@")[1] ?? "?"} consent=${consent.id} error=${result.error ?? "unknown"}`,
       );
     }
   } catch (err) {
