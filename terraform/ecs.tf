@@ -126,6 +126,13 @@ resource "aws_ecs_task_definition" "main" {
             name  = "AWS_SECRETS_REGION"
             value = var.aws_region
           },
+          # Automatic logoff for clinician/admin sessions (server/session-lifetime.ts).
+          # `session_timeout_minutes` was declared in every tfvars and read by
+          # nothing until 2026-08-26.
+          {
+            name  = "SESSION_IDLE_TIMEOUT_MINUTES"
+            value = tostring(var.session_timeout_minutes)
+          },
           # The container loads the WHOLE app-secrets JSON into process.env at
           # boot (server/config/aws-secrets.ts) — same as Lambda, so adding a
           # key to the secret needs no Terraform change. Unlike Lambda, values

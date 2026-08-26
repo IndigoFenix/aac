@@ -1576,4 +1576,14 @@ export const ar: Translations = {
     titleFor: "صور عن {query}",
     untitled: "صورة",
   },
+  caretakerPin: {
+    cancel: "إلغاء",
+    confirm: "موافق",
+    delete: "حذف الرقم الأخير",
+    error: "تعذر التحقق من رمز PIN. حاول مرة أخرى.",
+    locked: "محاولات كثيرة جدًا. حاول مرة أخرى بعد 15 دقيقة.",
+    prompt: "أدخل رمز PIN لمقدم الرعاية للمتابعة.",
+    title: "رمز PIN لمقدم الرعاية",
+    wrong: "رمز PIN غير صحيح.",
+  },
 };

@@ -32,6 +32,7 @@ import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useSessionRecording } from "@/hooks/useSessionRecording";
 import { RecordingIndicator } from "@/components/RecordingIndicator";
 import { useCamera } from "@/hooks/useCamera";
+import { useCaretakerGate } from "@/hooks/useCaretakerGate";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { useVoiceIdentification } from "@/hooks/useVoiceIdentification";
 import { useSpeechTranscription } from "@/hooks/useSpeechTranscription";
@@ -741,6 +742,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // the same flag switches on server-side prompt persistence.
   const [debugMode, setDebugMode] = useState<boolean>(false);
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
+  // Caretaker PIN gate for switch-student / manage-devices / sign-out.
+  const caretakerGate = useCaretakerGate(studentId);
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
@@ -3598,6 +3601,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onConstructionMemoryChipsChange={setConstructionMemoryChipsState}
             onSocialFaceChange={setSocialFace}
           />
+          {caretakerGate.prompt}
           <DualAgentConversationBox
             isVisible={showConversation && !gameActive && !appViewportActive}
             glyphStripActive={glyphStripActive}
@@ -3612,9 +3616,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             onBoardModeChange={setBoardMode}
             recentButtonPresses={recentButtonPresses}
             onVoice={handleVoice}
-            onExitStudent={onExitStudent}
-            onLogout={() => onLogout()}
-            onManageDevices={() => setShowDeviceManager(true)}
+            // Caretaker surfaces sit behind the caretaker PIN when one is set
+            // for this student — the device itself never signs out.
+            onExitStudent={() => caretakerGate.gate(onExitStudent)}
+            onLogout={() => caretakerGate.gate(() => onLogout())}
+            onManageDevices={() => caretakerGate.gate(() => setShowDeviceManager(true))}
             onFullScreen={handleFullScreen}
             debugMode={debugMode}
             showDebugPanel={showDebugPanel}

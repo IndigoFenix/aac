@@ -49,6 +49,7 @@ import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiRequest } from "@/lib/queryClient";
 import { IS_PACKAGED_APP } from "@/lib/api-base";
+import { useCaretakerGate } from "@/hooks/useCaretakerGate";
 import {
   computePhase,
   initialStageFor,
@@ -220,6 +221,9 @@ export function FullscreenAvatarOverlay() {
 // eye-gaze can't reach it — only a deliberate physical press works.
 function HoldToLogoutButton() {
   const { t, isRTL } = useLanguage();
+  // The overlay has no student prop; the active student is the one the
+  // device was last opened for. A missing id means no PIN lookup → open gate.
+  const caretakerGate = useCaretakerGate(localStorage.getItem("synapse_student_id"));
   const [holding, setHolding] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -254,13 +258,16 @@ function HoldToLogoutButton() {
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       setHolding(false);
-      doLogout();
+      // Behind the caretaker PIN when the student has one.
+      caretakerGate.gate(doLogout);
     }, LOGOUT_HOLD_MS);
   };
 
   useEffect(() => () => cancel(), []);
 
   return (
+    <>
+    {caretakerGate.prompt}
     <button
       type="button"
       aria-label={t("common.logout")}
@@ -286,6 +293,7 @@ function HoldToLogoutButton() {
       <LogOut className="w-6 h-6 relative" />
       <span className="sr-only">{t("common.holdToLogout")}</span>
     </button>
+    </>
   );
 }
 

@@ -245,6 +245,21 @@ export const passwordResetRateLimiter = rateLimit({
 });
 
 /**
+ * Caretaker-PIN verification on the AAC device. A PIN is 4–8 digits, so the
+ * only thing standing between a child at the keyboard and the caretaker
+ * surfaces is this limiter: 5 tries per 15 minutes per (client, student).
+ */
+export const caretakerPinRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === "test",
+  keyGenerator: (req) => `${req.ip}|${req.params?.id ?? ""}`,
+  message: { success: false, error: "error:PIN_LOCKED" },
+});
+
+/**
  * Apply the request logger. Logs `method path status duration` for /api/*
  * paths only. **Does not capture response bodies** — those can contain PHI
  * and would be retained for the lifetime of CloudWatch logs (planning-docs/

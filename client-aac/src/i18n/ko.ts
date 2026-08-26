@@ -1576,4 +1576,14 @@ export const ko: Translations = {
     titleFor: "{query} 그림",
     untitled: "그림",
   },
+  caretakerPin: {
+    cancel: "취소",
+    confirm: "확인",
+    delete: "마지막 숫자 삭제",
+    error: "PIN을 확인할 수 없습니다. 다시 시도하세요.",
+    locked: "시도 횟수가 너무 많습니다. 15분 후에 다시 시도하세요.",
+    prompt: "계속하려면 보호자 PIN을 입력하세요.",
+    title: "보호자 PIN",
+    wrong: "PIN이 잘못되었습니다.",
+  },
 };

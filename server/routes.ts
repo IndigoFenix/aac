@@ -62,6 +62,7 @@ import {
   crmChatController,
   adminUsersController,
   adminAuthController,
+  caretakerPinController,
 } from "./controllers";
 
 import {
@@ -73,7 +74,7 @@ import {
   validateCSRF,
   requireAdminSection,
 } from "./middleware";
-import { authRateLimiter, passwordResetRateLimiter } from "./middleware/security";
+import { authRateLimiter, passwordResetRateLimiter, caretakerPinRateLimiter } from "./middleware/security";
 import { phiReadAudit } from "./middleware/phi-read-audit";
 
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
@@ -994,6 +995,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/students/:id/devices/:recordId", requireAuth, (req, res) =>
     studentDeviceController.deregisterDevice(req, res)
+  );
+
+  // Caretaker PIN — gates the caretaker surfaces on the (permanently signed-in)
+  // AAC device. Set from the clinician panel; the device asks only "is one
+  // set" and "does this guess match", the latter rate-limited per client +
+  // student. The hash never leaves the server. See caretakerPinService.ts.
+  app.put("/api/students/:id/caretaker-pin", requireAuth, (req, res) =>
+    caretakerPinController.set(req, res)
+  );
+  app.get("/api/aac/students/:id/caretaker-pin", requireAuth, (req, res) =>
+    caretakerPinController.status(req, res)
+  );
+  app.post("/api/aac/students/:id/caretaker-pin/verify", requireAuth, caretakerPinRateLimiter, (req, res) =>
+    caretakerPinController.verify(req, res)
   );
 
   // ==========================================================================

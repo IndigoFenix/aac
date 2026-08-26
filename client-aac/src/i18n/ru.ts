@@ -1576,4 +1576,14 @@ export const ru: Translations = {
     titleFor: "Картинки: {query}",
     untitled: "Картинка",
   },
+  caretakerPin: {
+    cancel: "Отмена",
+    confirm: "ОК",
+    delete: "Удалить последнюю цифру",
+    error: "Не удалось проверить PIN-код. Попробуйте ещё раз.",
+    locked: "Слишком много попыток. Повторите через 15 минут.",
+    prompt: "Введите PIN-код опекуна, чтобы продолжить.",
+    title: "PIN-код опекуна",
+    wrong: "Неверный PIN-код.",
+  },
 };

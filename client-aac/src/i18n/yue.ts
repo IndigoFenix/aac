@@ -1576,4 +1576,14 @@ export const yue: Translations = {
     titleFor: "{query} 嘅圖片",
     untitled: "一張圖片",
   },
+  caretakerPin: {
+    cancel: "取消",
+    confirm: "確定",
+    delete: "刪除最後一位",
+    error: "無法核對 PIN，請再試一次。",
+    locked: "嘗試次數太多，請 15 分鐘後再試。",
+    prompt: "請輸入照顧者 PIN 以繼續。",
+    title: "照顧者 PIN",
+    wrong: "PIN 唔正確。",
+  },
 };

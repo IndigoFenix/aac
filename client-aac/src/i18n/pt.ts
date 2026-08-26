@@ -1576,4 +1576,14 @@ export const pt: Translations = {
     titleFor: "Imagens de {query}",
     untitled: "Uma imagem",
   },
+  caretakerPin: {
+    cancel: "Cancelar",
+    confirm: "OK",
+    delete: "Apagar o último dígito",
+    error: "Não foi possível verificar o PIN. Tente novamente.",
+    locked: "Demasiadas tentativas. Tente novamente em 15 minutos.",
+    prompt: "Introduza o PIN do cuidador para continuar.",
+    title: "PIN do cuidador",
+    wrong: "PIN incorreto.",
+  },
 };

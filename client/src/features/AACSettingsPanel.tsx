@@ -19,6 +19,7 @@ import { useStudent } from '@/hooks/useStudent';
 import { useAuth } from '@/hooks/useAuth';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { AACSettingsPackages } from '@/components/AACSettingsPackages';
+import { AACSettingsCaretakerPin } from '@/components/AACSettingsCaretakerPin';
 import { CollapsibleSection, CollapsibleSubSection } from '@/components/ui/collapsible-section';
 import { BetaBadge } from '@/components/ui/beta-badge';
 import { MenuReviewCard } from '@/components/venue-menus/MenuReviewCard';
@@ -113,6 +114,7 @@ import {
   Activity,
   AlertTriangle,
   MapPin,
+  Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ratioLevel, labelFontSize, labelLines } from '@shared/button-sizing';
@@ -3555,6 +3557,21 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   )}
                 </CardContent>
               </CollapsibleSubSection>
+
+              {/* Caretaker PIN — the AAC device stays signed in for a year;
+                  this is what keeps switch-student / manage-devices / sign-out
+                  away from the child at the keyboard. */}
+              {student?.id && (
+                <CollapsibleSubSection
+                  icon={<Lock className="w-5 h-5" />}
+                  title={t('aacSettings.caretakerPinTitle')}
+                  description={t('aacSettings.caretakerPinDesc')}
+                >
+                  <CardContent className="space-y-4">
+                    <AACSettingsCaretakerPin studentId={student.id} />
+                  </CardContent>
+                </CollapsibleSubSection>
+              )}
 
               {/* AI Learning — what the AI is allowed to record about the
                   people and world around the student, on its own initiative. */}

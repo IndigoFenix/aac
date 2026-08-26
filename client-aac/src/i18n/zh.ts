@@ -1576,4 +1576,14 @@ export const zh: Translations = {
     titleFor: "{query} 的图片",
     untitled: "一张图片",
   },
+  caretakerPin: {
+    cancel: "取消",
+    confirm: "确定",
+    delete: "删除最后一位",
+    error: "无法验证 PIN，请重试。",
+    locked: "尝试次数过多，请 15 分钟后重试。",
+    prompt: "请输入照护者 PIN 以继续。",
+    title: "照护者 PIN",
+    wrong: "PIN 错误。",
+  },
 };

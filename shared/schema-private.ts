@@ -1059,6 +1059,23 @@ export const studentDevices = pgTable("student_devices", {
   uniqueIndex("idx_student_devices_student_device").on(table.studentId, table.deviceId),
 ]);
 
+/**
+ * Caretaker PIN for the AAC device (server/services/caretakerPinService.ts).
+ *
+ * The device stays signed in for a year by design; this PIN is what separates
+ * the child-facing board from the caretaker surfaces on the same session
+ * (switch student, manage devices, sign out). Its OWN table, not a column on
+ * aac_settings: aac_settings is serialized to clients in several places and a
+ * hash must never ride along. bcrypt hash; null row = no PIN set.
+ */
+export const studentCaretakerPins = pgTable("student_caretaker_pins", {
+  studentId: varchar("student_id").primaryKey().references(() => students.id, { onDelete: "cascade" }),
+  pinHash: text("pin_hash").notNull(),
+  // Cross-schema FK: users.id lives in schema.ts — no constraint, like student_devices.
+  updatedByUserId: varchar("updated_by_user_id"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // =============================================================================
 // MEDICAL / REPORTS TABLES (Private)
 // =============================================================================

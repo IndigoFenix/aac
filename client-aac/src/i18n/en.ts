@@ -1576,6 +1576,16 @@ export const en = {
     titleFor: "Pictures of {query}",
     untitled: "A picture",
   },
+  caretakerPin: {
+    cancel: "Cancel",
+    confirm: "OK",
+    delete: "Delete last digit",
+    error: "Could not check the PIN. Try again.",
+    locked: "Too many attempts. Try again in 15 minutes.",
+    prompt: "Enter the caretaker PIN to continue.",
+    title: "Caretaker PIN",
+    wrong: "Wrong PIN.",
+  },
 };
 
 export type Translations = typeof en;

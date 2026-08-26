@@ -1576,4 +1576,14 @@ export const he: Translations = {
     titleFor: "תמונות של {query}",
     untitled: "תמונה",
   },
+  caretakerPin: {
+    cancel: "ביטול",
+    confirm: "אישור",
+    delete: "מחיקת הספרה האחרונה",
+    error: "לא ניתן לבדוק את הקוד. נסו שוב.",
+    locked: "יותר מדי ניסיונות. נסו שוב בעוד 15 דקות.",
+    prompt: "הזינו את קוד המטפל כדי להמשיך.",
+    title: "קוד מטפל",
+    wrong: "קוד שגוי.",
+  },
 };
