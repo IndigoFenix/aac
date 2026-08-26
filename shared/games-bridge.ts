@@ -439,12 +439,27 @@ export type GameMessageInput = DistributiveOmit<GameMessage, "__aivotaGameBridge
  *  messages aren't broadcast to whatever document occupies the frame. Falls
  *  back to "*" only when the referrer is unavailable (e.g. no-referrer policy). */
 function parentTargetOrigin(): string {
+  const origins = defaultParentOrigins();
+  return origins ? origins[0] : "*";
+}
+
+/** The embedding parent's origin as the browser reports it — `ancestorOrigins`
+ *  where supported (Chromium, WebKit: the Electron and iPad shells), else the
+ *  referrer. `undefined` when neither is available, in which case the caller
+ *  falls back to the `event.source === window.parent` check alone. */
+function defaultParentOrigins(): string[] | undefined {
   try {
+    if (typeof window !== "undefined") {
+      const ancestors = window.location.ancestorOrigins;
+      if (ancestors && ancestors.length > 0 && ancestors[0] && ancestors[0] !== "null") {
+        return [ancestors[0]];
+      }
+    }
     if (typeof document !== "undefined" && document.referrer) {
-      return new URL(document.referrer).origin;
+      return [new URL(document.referrer).origin];
     }
   } catch { /* ignore */ }
-  return "*";
+  return undefined;
 }
 
 /** The iframe's own origin, used as the default targetOrigin / inbound origin
@@ -491,8 +506,15 @@ export function onPlatformMessage(
   cb: (msg: PlatformMessage) => void,
   allowedOrigins?: string[],
 ): () => void {
+  // Only the embedding parent may drive a game. Without this, any document
+  // that can obtain a handle to the game window (a popup it opened, a sibling
+  // frame) could inject `init` / `ai_text` payloads just by stamping the tag.
+  // The origin allowlist defaults to the parent's origin when the browser
+  // tells us what it is; a game can still pass an explicit list.
   const handler = (event: MessageEvent) => {
-    if (allowedOrigins && !allowedOrigins.includes(event.origin)) return;
+    if (typeof window !== "undefined" && window.parent !== window && event.source !== window.parent) return;
+    const origins = allowedOrigins ?? defaultParentOrigins();
+    if (origins && !origins.includes(event.origin)) return;
     if (!isBridgeMessage(event.data)) return;
     cb(event.data as PlatformMessage);
   };

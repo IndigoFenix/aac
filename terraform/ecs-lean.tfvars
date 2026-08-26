@@ -53,6 +53,10 @@ enable_cloudtrail          = false
 enable_vpc_flow_logs       = false
 enable_cloudfront_logging  = true
 app_log_retention_days     = 14
+audit_log_retention_days   = 30    # RDS PostgreSQL log; the other audit groups are off in this profile
+
+# Alarm / GuardDuty delivery. Empty = alarms fire with nobody subscribed.
+alert_email = "security@aivota.ai"
 
 # =============================================================================
 # Network - REDUCED for cost savings

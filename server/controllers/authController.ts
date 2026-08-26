@@ -104,6 +104,10 @@ export class AuthController {
             reason: info?.message ?? "invalid_credentials",
           }),
         });
+        // Bare marker for the CloudWatch metric filter behind the
+        // failed-logins alarm (terraform/alerting.tf). No identifier on
+        // purpose — the activity log above carries the who.
+        console.warn("[auth] login_failed");
         return res.status(401).json({
           success: false,
           message: info?.message || "Invalid login credentials",
@@ -819,6 +823,7 @@ export class AuthController {
           subjectId1: user.id,
           details: authDetails(req),
         });
+        console.warn("[auth] login_failed"); // metric marker, see terraform/alerting.tf
         res.status(400).json({
           success: false,
           message: "Invalid verification code",

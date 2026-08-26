@@ -50,6 +50,55 @@ resource "aws_s3_bucket_logging" "uploads" {
   target_prefix = "s3-access-logs/uploads/"
 }
 
+# Transmission + at-rest guarantees enforced by the bucket itself, not just by
+# the clients we happen to have written (§164.312(e)(1), §164.312(a)(2)(iv)):
+#  - every request must arrive over TLS (presigned URLs included);
+#  - a PUT that names an encryption method must name our CMK — an explicit
+#    AES256 / none is refused. A PUT with NO header still passes and picks up
+#    the bucket default (SSE-KMS above), so presigned browser uploads keep
+#    working.
+resource "aws_s3_bucket_policy" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.uploads.arn,
+          "${aws_s3_bucket.uploads.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
+      {
+        Sid       = "DenyNonKmsEncryptionHeader"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.uploads.arn}/*"
+        Condition = {
+          StringNotEqualsIfExists = {
+            "s3:x-amz-server-side-encryption" = "aws:kms"
+          }
+          Null = {
+            "s3:x-amz-server-side-encryption" = "false"
+          }
+        }
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.uploads]
+}
+
 # Prune old versions. Versioning is on for HIPAA recovery (above), but nothing
 # expired the superseded copies, so every replaced or deleted object stayed
 # billed indefinitely. That is a RETENTION problem before it is a cost one: a
@@ -146,6 +195,22 @@ resource "aws_s3_bucket_policy" "logs" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        # Audit material must not be readable or writable over plaintext.
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.logs.arn,
+          "${aws_s3_bucket.logs.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
       {
         Sid    = "AllowALBLogs"
         Effect = "Allow"

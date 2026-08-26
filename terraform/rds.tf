@@ -52,6 +52,22 @@ resource "aws_db_parameter_group" "main" {
     value = "ddl"  # Only log DDL statements, not data queries
   }
 
+  # `log_statement = ddl` keeps successful queries out of the log, but the
+  # default `log_min_error_statement = error` still writes every FAILED
+  # statement in full — literal values included — into the exported
+  # PostgreSQL log. A failed INSERT into student_notes is PHI in CloudWatch.
+  # `panic` disables that; `terse` drops the DETAIL/HINT lines that echo
+  # offending values on constraint violations.
+  parameter {
+    name  = "log_min_error_statement"
+    value = "panic"
+  }
+
+  parameter {
+    name  = "log_error_verbosity"
+    value = "terse"
+  }
+
   tags = {
     Name = "${local.name_prefix}-pg-params"
   }
@@ -131,6 +147,47 @@ resource "aws_db_instance" "main" {
     # Terraform try to reconcile engine_version back down — RDS rejects that as a
     # downgrade and fails the apply. Let auto-upgrade manage minor versions.
     ignore_changes = [engine_version]
+  }
+
+  # The exported log groups must exist BEFORE the instance so RDS adopts ours
+  # (CMK, retention) instead of auto-creating unencrypted, never-expiring ones.
+  depends_on = [
+    aws_cloudwatch_log_group.rds_postgresql,
+    aws_cloudwatch_log_group.rds_upgrade,
+  ]
+}
+
+# =============================================================================
+# RDS log groups — pre-created so they carry the CMK and an audit retention.
+# =============================================================================
+# RDS names these groups itself (/aws/rds/instance/<id>/<log>). When it finds
+# no group it creates one with NO KMS key and NO expiry — which is what
+# happened on the first apply. On an account where the instance already
+# exists, adopt the auto-created groups before applying:
+#   terraform import 'aws_cloudwatch_log_group.rds_postgresql' \
+#     /aws/rds/instance/<name_prefix>-postgres/postgresql
+#   terraform import 'aws_cloudwatch_log_group.rds_upgrade' \
+#     /aws/rds/instance/<name_prefix>-postgres/upgrade
+# Applying without the import fails with ResourceAlreadyExistsException —
+# it does not silently duplicate anything.
+resource "aws_cloudwatch_log_group" "rds_postgresql" {
+  name              = "/aws/rds/instance/${local.name_prefix}-postgres/postgresql"
+  retention_in_days = var.audit_log_retention_days
+  kms_key_id        = aws_kms_key.main.arn
+
+  tags = {
+    Name      = "${local.name_prefix}-rds-postgresql-log"
+    DataClass = "PHI" # error text can echo statement values; see parameter group
+  }
+}
+
+resource "aws_cloudwatch_log_group" "rds_upgrade" {
+  name              = "/aws/rds/instance/${local.name_prefix}-postgres/upgrade"
+  retention_in_days = var.audit_log_retention_days
+  kms_key_id        = aws_kms_key.main.arn
+
+  tags = {
+    Name = "${local.name_prefix}-rds-upgrade-log"
   }
 }
 

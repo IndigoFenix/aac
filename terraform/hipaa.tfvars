@@ -57,7 +57,15 @@ enable_guardduty = true   # expects the account-level detector to exist (data so
 enable_cloudtrail         = true
 enable_vpc_flow_logs      = true
 enable_cloudfront_logging = true
-app_log_retention_days    = 90    # hot tier; S3 logs bucket holds the 6-year archive
+app_log_retention_days    = 90    # application / debug logs (hot tier)
+audit_log_retention_days  = 2192  # 6 years: CloudTrail, VPC flow, RDS, WAF log groups stay in CloudWatch
+                                  # (there is no CloudWatch→S3 export path; the S3 logs bucket only
+                                  # holds ALB / S3-access / CloudTrail files)
+
+# Where alarms and GuardDuty findings go. REQUIRED for the alerting pipeline
+# to reach a human — an empty value leaves the SNS topic with no subscriber.
+# The address gets a one-time SNS confirmation email after apply.
+alert_email = "security@aivota.ai"
 
 # =============================================================================
 # Network - full isolation

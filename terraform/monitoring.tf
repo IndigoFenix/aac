@@ -20,9 +20,17 @@ resource "aws_cloudtrail" "main" {
     read_write_type           = "All"
     include_management_events = true
 
+    # Object-level audit on the PHI bucket AND on the AAC update bucket — its
+    # `latest-backend.json` manifest re-points every deployed tablet's API
+    # base, so a write there is a fleet-wide change worth a CloudTrail record.
+    # The logs bucket is deliberately NOT here: it is write-only log delivery
+    # at high volume, and data events are billed per event.
     data_resource {
-      type   = "AWS::S3::Object"
-      values = ["${aws_s3_bucket.uploads.arn}/"]
+      type = "AWS::S3::Object"
+      values = [
+        "${aws_s3_bucket.uploads.arn}/",
+        "${aws_s3_bucket.aac_updates.arn}/",
+      ]
     }
   }
 
@@ -39,7 +47,7 @@ resource "aws_cloudwatch_log_group" "cloudtrail" {
   count = var.enable_cloudtrail ? 1 : 0
 
   name              = "/aws/cloudtrail/${local.name_prefix}"
-  retention_in_days = var.app_log_retention_days
+  retention_in_days = var.audit_log_retention_days
   kms_key_id        = aws_kms_key.main.arn
 
   tags = {
@@ -289,7 +297,9 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   tags = { Name = "${local.name_prefix}-5xx-alarm" }
 }
 
-# Failed login attempts alarm (works for both modes)
+# Failed login attempts alarm. The metric is produced by the log metric filter
+# in alerting.tf from the app's `[auth] login_failed` stdout marker — before
+# 2026-08-26 nothing emitted it and this alarm could never fire.
 resource "aws_cloudwatch_metric_alarm" "failed_logins" {
   alarm_name          = "${local.name_prefix}-failed-logins"
   comparison_operator = "GreaterThanThreshold"

@@ -246,6 +246,15 @@ function IframeBrowserApp({
           </div>
         )}
 
+        {/* Sandbox note: `allow-same-origin` here grants the framed site ITS OWN
+            origin (cookies, storage — most sites are unusable without it), not
+            ours: the site is cross-origin to this document, so it can never
+            reach our storage, the session cookie (httpOnly, API origin) or
+            `window.parent`. What the sandbox deliberately withholds is
+            popups, top-navigation, downloads and modals — the ways a page could
+            escape the kiosk. Never add `allow-popups` / `allow-top-navigation`.
+            The one thing this cannot do is police a permitted site's own
+            behaviour; the allowlist is the clinician's decision. */}
         <iframe
           ref={iframeRef}
           src={iframeSrc}

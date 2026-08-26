@@ -69,6 +69,45 @@ resource "aws_kms_key" "main" {
             "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${data.aws_caller_identity.current.account_id}:trail/*"
           }
         }
+      },
+      # The alerts SNS topic is encrypted with this key. CloudWatch alarms and
+      # EventBridge (GuardDuty findings) publish to it as SERVICE principals,
+      # so without these grants every publish fails with KMS AccessDenied and
+      # the topic is silent — which is exactly how the alerting pipeline was
+      # dead until 2026-08-26. Scoped to this account via aws:SourceAccount.
+      {
+        Sid    = "Allow CloudWatch Alarms to publish to the encrypted SNS topic"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudwatch.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey*"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      },
+      {
+        Sid    = "Allow EventBridge to publish to the encrypted SNS topic"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey*"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
       }
     ]
   })

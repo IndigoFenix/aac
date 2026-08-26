@@ -11,6 +11,7 @@
 import express, { type Request, type Response, type NextFunction, type Express } from "express";
 import path from "node:path";
 import fs from "node:fs";
+import { randomBytes } from "node:crypto";
 
 const GATED_PERMISSION = "aacEnabled" as const;
 
@@ -23,7 +24,53 @@ function safeReturnTo(req: Request): string {
   return raw;
 }
 
-function renderLoginPage(returnTo: string, error?: string): string {
+/**
+ * Content-Security-Policy for everything served under /games/.
+ *
+ * The games are first-party bundles built from this repo, but they are served
+ * from the SAME origin as /api and run with the user's session cookie, and the
+ * embeds need `allow-same-origin` (workers, storage, WebGL asset loads) — so
+ * the iframe sandbox cannot isolate them. What isolates them is this header:
+ * a game script may only talk to the game assets themselves, the symbol
+ * images the glyph compositor renders, the social-trainer relay and the login
+ * endpoint the /games/_login page uses. `fetch('/api/students/…')` from a
+ * compromised or mis-built game bundle is refused by the browser.
+ *
+ * Path-scoped sources need an absolute origin; `'self'` would re-open /api.
+ * The origin is taken from the request (behind the ALB `trust proxy` makes
+ * req.protocol https). If no Host header is present the directive still
+ * carries the non-origin sources, which is a deny for the API.
+ */
+export function buildGamesCsp(req: Request, nonce: string, frameAncestors: string): string {
+  const host = req.get("host");
+  const origin = host ? `${req.protocol}://${host}` : null;
+  const wsScheme = req.protocol === "https" ? "wss" : "ws";
+  const connect = [
+    origin ? `${origin}/games/` : "",
+    origin ? `${origin}/api/custom-symbols/` : "",
+    origin ? `${origin}/auth/login` : "",
+    host ? `${wsScheme}://${host}/ws/social-bot` : "",
+    "blob:",
+    "data:",
+  ].filter(Boolean).join(" ");
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval' blob:`,
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src ${connect}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    frameAncestors,
+  ].join("; ");
+}
+
+function renderLoginPage(returnTo: string, nonce: string, error?: string): string {
   const safeReturn = JSON.stringify(returnTo); // safe to embed in JS
   const errorBlock = error
     ? `<div class="error">${error.replace(/[<>&]/g, "")}</div>`
@@ -58,7 +105,7 @@ function renderLoginPage(returnTo: string, error?: string): string {
       <input id="password" name="password" type="password" required autocomplete="current-password" />
       <button id="b" type="submit">Sign in</button>
     </form>
-    <script>
+    <script nonce="${nonce}">
       const RETURN_TO = ${safeReturn};
       const form = document.getElementById('f');
       const button = document.getElementById('b');
@@ -114,16 +161,19 @@ export function mountGamesStatic(app: Express, distPathGames: string): void {
   // origin). Replace it on this namespace with an explicit CSP ancestor
   // allowlist: same-origin + the Electron app:// origin, plus localhost dev
   // servers outside production. frame-ancestors takes precedence over
-  // X-Frame-Options in browsers that support both.
+  // X-Frame-Options in browsers that support both. The rest of the policy
+  // (buildGamesCsp) is what keeps a game script off /api.
   const devAncestors =
     process.env.NODE_ENV === "production"
       ? ""
       : " http://localhost:* http://127.0.0.1:*";
   app.use("/games", (req: Request, res: Response, next: NextFunction) => {
     res.removeHeader("X-Frame-Options");
+    const nonce = randomBytes(16).toString("base64");
+    res.locals.cspNonce = nonce;
     res.setHeader(
       "Content-Security-Policy",
-      `frame-ancestors 'self' app:${devAncestors}`,
+      buildGamesCsp(req, nonce, `frame-ancestors 'self' app:${devAncestors}`),
     );
     // ENTRY DOCUMENTS ARE NEVER CONDITIONALLY CACHED. The games dir is
     // rebuilt in place while the server runs; a fetch landing mid-write can
@@ -149,7 +199,7 @@ export function mountGamesStatic(app: Express, distPathGames: string): void {
       ? returnTo
       : "/games/";
     res.set("Cache-Control", "no-store");
-    res.type("html").send(renderLoginPage(safe));
+    res.type("html").send(renderLoginPage(safe, String(res.locals.cspNonce ?? "")));
   });
 
   // Auth gate for everything else under /games/.

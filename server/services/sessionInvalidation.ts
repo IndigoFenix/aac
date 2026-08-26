@@ -22,15 +22,36 @@ import { pool } from "../db";
  * change that triggered it, so errors are logged and swallowed.
  */
 export async function deleteUserSessions(userId: string): Promise<number> {
+  let evicted = 0;
   try {
     const result = await pool.query(
       `DELETE FROM sessions WHERE sess->'passport'->'user'->>'id' = $1`,
       [userId],
     );
-    return result.rowCount ?? 0;
+    evicted = result.rowCount ?? 0;
   } catch (err) {
     console.error("Failed to evict user sessions:", err);
-    return 0;
+  }
+  await closeLiveSockets(userId);
+  return evicted;
+}
+
+/**
+ * A deleted session row only stops the NEXT request. A realtime socket that
+ * authenticated earlier keeps streaming until it drops on its own, so
+ * termination also closes every live socket the user holds on this task.
+ * (The room registry is per-process; under several ECS tasks the other tasks'
+ * sockets end at their next auth-bearing request. The AAC live relays are
+ * per-student sessions and are not user-indexed here.)
+ */
+async function closeLiveSockets(userId: string): Promise<void> {
+  try {
+    const { socketsForUser } = await import("./realtime/room-registry");
+    for (const socket of socketsForUser(userId)) {
+      try { socket.close(4001, "session_revoked"); } catch { /* already gone */ }
+    }
+  } catch (err) {
+    console.error("Failed to close live sockets for revoked user:", err);
   }
 }
 

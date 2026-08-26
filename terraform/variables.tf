@@ -156,9 +156,21 @@ variable "enable_guardduty" {
 }
 
 variable "session_timeout_minutes" {
-  description = "Session timeout in minutes"
+  description = "Clinician/admin idle timeout in minutes — fed to the ECS task as SESSION_IDLE_TIMEOUT_MINUTES (server/session-lifetime.ts)"
   type        = number
   default     = 30
+}
+
+variable "alert_email" {
+  description = "Email address subscribed to the alerts SNS topic (alarms, GuardDuty findings). Empty = no subscription, i.e. alarms fire into the void. The address must confirm the SNS subscription email once."
+  type        = string
+  default     = ""
+}
+
+variable "audit_log_retention_days" {
+  description = "CloudWatch retention for AUDIT log groups (CloudTrail, VPC flow logs, RDS PostgreSQL, WAF). HIPAA §164.316(b)(2) wants 6 years = 2192; the hipaa profile sets that. App/debug logs use app_log_retention_days."
+  type        = number
+  default     = 90
 }
 
 # =============================================================================

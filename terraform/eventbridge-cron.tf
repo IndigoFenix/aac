@@ -19,8 +19,12 @@
 #   3. terraform apply.
 #
 # This is the Lambda-path remediation for the deferred item in
-# docs/SECURITY_ARCHITECTURE.md §12.1. The ECS path runs the long-lived
-# index.ts scheduler instead and does not need this.
+# docs/SECURITY_ARCHITECTURE.md §12.1. The ECS path does not need it: both
+# server entrypoints (index.ts and app.prod.ts) call
+# server/services/maintenanceCrons.ts at boot, which runs the sweeps on a
+# setInterval under a Postgres advisory lock (cron-lock.ts) so several tasks
+# never run the same sweep twice. `local.cron_enabled` below is deliberately
+# `&&`-gated on use_lambda for that reason.
 
 variable "enable_cron_scheduler" {
   description = "Enable the EventBridge schedule that drives /internal/run-crons (Lambda path only)."
