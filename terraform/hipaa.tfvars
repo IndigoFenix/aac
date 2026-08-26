@@ -63,9 +63,11 @@ audit_log_retention_days  = 2192  # 6 years: CloudTrail, VPC flow, RDS, WAF log 
                                   # holds ALB / S3-access / CloudTrail files)
 
 # Where alarms and GuardDuty findings go. REQUIRED for the alerting pipeline
-# to reach a human — an empty value leaves the SNS topic with no subscriber.
-# The address gets a one-time SNS confirmation email after apply.
-alert_email = "security@aivota.ai"
+# to reach a human — an empty value leaves the SNS topic with no subscriber,
+# which is the state the 2026-08 audit found. Use a mailbox that EXISTS and
+# is read (a shared security alias is ideal); SNS sends a one-time
+# confirmation email after apply and delivers nothing until it is clicked.
+alert_email = ""   # TODO: set before the next apply
 
 # =============================================================================
 # Network - full isolation

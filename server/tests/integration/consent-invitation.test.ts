@@ -149,7 +149,12 @@ describe('Consent invitation service', () => {
       const ctx = await consentInvitationService.redeemContext(code);
       expect(ctx.student.id).toBe(student.id);
       expect(ctx.contact.id).toBe(contact.id);
-      expect(ctx.contact.contactEmail).toBe('parent@test.local');
+      // The redeem context is served to whoever holds the code, BEFORE the
+      // guardian has proven who they are — so it must not echo the guardian's
+      // contact channels back (2026-08 audit). The wizard uses the signing
+      // user's own email, not this field.
+      expect(ctx.contact).not.toHaveProperty('contactEmail');
+      expect(ctx.contact).not.toHaveProperty('contactPhone');
       expect(ctx.invitationId).toBeDefined();
     });
 

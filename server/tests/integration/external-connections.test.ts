@@ -32,9 +32,14 @@ import {
 import { aacSettingsRepository } from '../../repositories/aacSettingsRepository.js';
 import { spotifyController } from '../../controllers/spotifyController.js';
 
+/** Owner of the most recently created student — the Spotify controller now
+ *  verifies student access, so its fake requests carry this user. */
+let ownerId = "";
+
 async function newStudentId(): Promise<string> {
   const owner = await makeUser();
   const { student } = await makeStudent(owner.id);
+  ownerId = owner.id;
   return student.id;
 }
 
@@ -194,7 +199,7 @@ describe('Spotify controller — lazy migration off the plaintext blob', () => {
     const studentId = await legacyStudent();
 
     const { res, capture } = makeRes();
-    await spotifyController.getToken(makeReq({ query: { studentId } }), res);
+    await spotifyController.getToken(makeReq({ user: { id: ownerId }, query: { studentId } }), res);
 
     expect(capture.statusCode).toBe(200);
     expect(capture.jsonBody).toEqual({ accessToken: 'fresh-access', expiresIn: 3600 });
@@ -213,7 +218,7 @@ describe('Spotify controller — lazy migration off the plaintext blob', () => {
     const studentId = await legacyStudent();
 
     const { res } = makeRes();
-    await spotifyController.getToken(makeReq({ query: { studentId } }), res);
+    await spotifyController.getToken(makeReq({ user: { id: ownerId }, query: { studentId } }), res);
 
     const settings = await aacSettingsRepository.getByStudentId(studentId);
     const appConfig = settings!.appConfig as Record<string, any>;
@@ -236,7 +241,7 @@ describe('Spotify controller — lazy migration off the plaintext blob', () => {
     await upsertConnection(studentId, 'spotify', { refreshToken: 'vault-token' });
 
     const { res, capture } = makeRes();
-    await spotifyController.getToken(makeReq({ query: { studentId } }), res);
+    await spotifyController.getToken(makeReq({ user: { id: ownerId }, query: { studentId } }), res);
 
     expect(capture.statusCode).toBe(200);
     expect(spotifyTokenCallBody()).toContain('vault-token');
@@ -251,7 +256,7 @@ describe('Spotify controller — lazy migration off the plaintext blob', () => {
     refreshResponse = { access_token: 'fresh-access', expires_in: 3600, refresh_token: 'new-token' };
 
     const { res, capture } = makeRes();
-    await spotifyController.getToken(makeReq({ query: { studentId } }), res);
+    await spotifyController.getToken(makeReq({ user: { id: ownerId }, query: { studentId } }), res);
 
     expect(capture.statusCode).toBe(200);
     expect((await getDecryptedTokens(studentId, 'spotify'))!.refreshToken).toBe('new-token');
@@ -263,7 +268,7 @@ describe('Spotify controller — lazy migration off the plaintext blob', () => {
   it('404s when neither store has a token', async () => {
     const studentId = await newStudentId();
     const { res, capture } = makeRes();
-    await spotifyController.getToken(makeReq({ query: { studentId } }), res);
+    await spotifyController.getToken(makeReq({ user: { id: ownerId }, query: { studentId } }), res);
     expect(capture.statusCode).toBe(404);
     expect(capture.jsonBody).toEqual({ error: 'No Spotify account connected' });
   });
@@ -273,7 +278,7 @@ describe('Spotify controller — lazy migration off the plaintext blob', () => {
     await upsertConnection(studentId, 'spotify', { refreshToken: 'vault-token' });
 
     const { res, capture } = makeRes();
-    await spotifyController.disconnect(makeReq({ query: { studentId } }), res);
+    await spotifyController.disconnect(makeReq({ user: { id: ownerId }, query: { studentId } }), res);
 
     expect(capture.statusCode).toBe(200);
     expect(capture.jsonBody).toEqual({ success: true });

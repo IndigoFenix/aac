@@ -365,7 +365,17 @@ describe("adding a {{student}}'s board to a package", () => {
   });
 
   it('REFUSES to move a board off a child the caller cannot reach', async () => {
-    const { institute, pkg, board } = await scenario();
+    // A child on the owner's PERSONAL caseload — not enrolled in the
+    // institute. An admin of the package's institute may edit the package,
+    // but institute admins reach ENROLLED students only
+    // (studentService.verifyStudentAccess), so this child is out of reach.
+    // (The shared scenario() enrolls the child, which would legitimately let
+    // an institute admin through.)
+    const owner = await makeUser();
+    const { institute } = await makeInstitute(owner.id);
+    const { student } = await makeStudent(owner.id);
+    const pkg = await makePackage(institute.id, owner.id);
+    const board = await makeBoard({ userId: owner.id, studentId: student.id, name: 'Mealtime' });
     const outsider = await makeUser();
     await addUserToInstitute(institute.id, outsider.id, { isAdmin: true });
 

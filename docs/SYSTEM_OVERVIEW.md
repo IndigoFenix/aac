@@ -80,11 +80,23 @@ Because the Student Platform is always-on and multimodally observant, the system
 
 - The Clinician AI may read and write the full clinical record.
 - The Monitor Agent may **read** the clinical record but writes only to a non-clinical journal (session notes, incident reports).
-- The Observer / Speaker / Board Manager agents receive only an AI-curated, redacted prompt — never raw clinical data — automatically prepared by the Monitor Agent and reviewable by clinicians.
-- Sensitive identifiers (e.g. government ID numbers) are write-only at the database layer, returned as redacted placeholders on read.
-- Cross-institute sharing of student records is gated through an explicit consent and invitation flow; cross-institute reads are audit-logged separately from owned reads.
+- The Observer / Speaker / Board Manager agents work from an AI-curated prompt prepared by the Monitor Agent and reviewable by clinicians, rather than from the clinical record directly.
+- Sensitive identifiers (e.g. government ID numbers) are treated as write-only on the AI/memory-schema path: the value is replaced with a `[REDACTED]` placeholder on read, and that placeholder is ignored on write, so no ID number reaches a prompt. This is an API-response mask, not database-level encryption, and it is applied on the AI path — the clinician-facing REST endpoints still return the raw value to an authorized user.
+- Cross-institute sharing of student records is gated through an explicit consent and invitation flow. Cross-institute and system-admin reads are audit-logged as such; owned reads are logged too, by a per-request read audit over the student-scoped GET surface.
 
-This division allows the AAC agent to behave with full situational awareness without ever exposing diagnostic or medical detail to the student or to a bystander.
+This division is what lets the AAC agents behave with full situational awareness while working from a curated view rather than the clinical record.
+
+> **Known gap (2026-08, tracked).** One field currently breaks the rule above:
+> `medical_records.primary_diagnosis` is fetched ungated — no `allowReadReports`
+> toggle, no `status='final'` filter, no institute-visibility join, no audit — and
+> rendered into the shared descriptor block of the Observer, Speaker **and** Board
+> Manager system prompts ("a 12 year old girl with \<diagnosis\>"). The Speaker is
+> a native-audio agent that talks out loud in a room that may contain bystanders,
+> and its only disclosure control there is a soft prompt instruction. The
+> diagnosis has no evident function for the Board Manager (a button-layout
+> generator) or the Observer (perception). Until this is gated, do not read this
+> section as a guarantee that no diagnostic detail can reach the live agents. See
+> `docs/SECURITY_ARCHITECTURE.md` §12.1 item 17.
 
 ## 7. Multimodal Context Pipeline
 

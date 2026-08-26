@@ -48,6 +48,16 @@ export const DEFAULT_RECIPIENTS: ReadonlyArray<ConsentRecipientCategory> = [
     purpose: "Speech synthesis for AAC voice output.",
   },
   {
+    category: "sub_processor",
+    name: "Pixabay (picture search)",
+    purpose:
+      "Stock-image search for the AAC picture app. Receives only the short " +
+      "English search words for the requested picture (e.g. 'owl'); results " +
+      "are fetched server-side and re-served from Aivota, so the student's " +
+      "device never contacts Pixabay. No audio, video, names or conversation " +
+      "content is sent.",
+  },
+  {
     category: "auth_provider",
     name: "Google OAuth (when used)",
     purpose: "Authentication for users who sign in with Google.",

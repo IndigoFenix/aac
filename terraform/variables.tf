@@ -138,9 +138,9 @@ variable "existing_rds_security_group_id" {
 # Application Variables
 # =============================================================================
 variable "app_log_retention_days" {
-  description = "CloudWatch log retention in days"
+  description = "CloudWatch retention for APPLICATION log groups (ECS app, Redis). Audit groups use audit_log_retention_days, which is where the 6-year requirement is met."
   type        = number
-  default     = 90  # HIPAA requires minimum 6 years, but CloudWatch can be expensive
+  default     = 90
 }
 
 variable "enable_waf" {

@@ -113,7 +113,7 @@ describe("photo assignments", () => {
       );
       expect(result).toBeNull();
       expect(await photoRepository.countAssignments(scope)).toBe(PHOTO_CAP_PER_STUDENT);
-    });
+    }, 120_000); // 2 × cap sequential round trips — exceeds 30 s on a loaded box
 
     it("admits exactly one of two concurrent writers to the last slot", async () => {
       const user = await makeUser();

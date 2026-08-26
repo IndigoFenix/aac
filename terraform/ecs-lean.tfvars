@@ -56,7 +56,8 @@ app_log_retention_days     = 14
 audit_log_retention_days   = 30    # RDS PostgreSQL log; the other audit groups are off in this profile
 
 # Alarm / GuardDuty delivery. Empty = alarms fire with nobody subscribed.
-alert_email = "security@aivota.ai"
+# Use a mailbox that exists and is read; SNS sends a one-time confirmation.
+alert_email = ""   # TODO: set before the next apply
 
 # =============================================================================
 # Network - REDUCED for cost savings
