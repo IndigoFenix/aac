@@ -2630,6 +2630,8 @@ export const pt = {
     sessionRecordingMaxClipDesc: "Um período longo de brincadeira torna-se vários ficheiros que consegue mesmo editar, em vez de um único par enorme.",
     sessionRecordingStorage: "Espaço em disco (MB)",
     sessionRecordingStorageDesc: "Cerca de {gb} GB. Quando a pasta ultrapassa este limite, os clipes mais antigos são apagados para abrir espaço — por isso copie tudo o que quiser guardar.",
+    sessionRecordingMaxAge: "Manter gravações por (dias)",
+    sessionRecordingMaxAgeDesc: "Clipes com mais de {days} dias são apagados do dispositivo na próxima varredura, independentemente do espaço em disco. Padrão: 30.",
     sessionRecordingFolder: "Guardar na pasta",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "Deixe em branco para usar a pasta de vídeos do próprio dispositivo. Indique um caminho completo para gravar num disco externo — útil quando o espaço em disco acima é pequeno demais.",

@@ -2630,6 +2630,8 @@ export const en = {
     sessionRecordingMaxClipDesc: "A long stretch of play becomes several files you can actually edit, instead of one enormous pair.",
     sessionRecordingStorage: "Disk budget (MB)",
     sessionRecordingStorageDesc: "About {gb} GB. Once the folder passes this, the oldest clips are deleted to make room — so copy anything you want to keep.",
+    sessionRecordingMaxAge: "Keep recordings for (days)",
+    sessionRecordingMaxAgeDesc: "Clips older than {days} days are deleted from the device on the next sweep, regardless of the disk budget. Default 30.",
     sessionRecordingFolder: "Save to folder",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "Leave blank to use the device's own Videos folder. Give a full path to record onto an external drive instead — useful when the disk budget above is too small for what you need.",

@@ -69,7 +69,7 @@ export interface InstancesBridge {
  * Electron only (capabilities.sessionRecording).
  */
 export interface RecordingBridge {
-  prepare: (opts: { folder: string | null; maxStorageMb: number }) => Promise<{
+  prepare: (opts: { folder: string | null; maxStorageMb: number; maxAgeDays?: number }) => Promise<{
     folder: string;
     isDefault: boolean;
     totalBytes: number;
@@ -86,7 +86,7 @@ export interface RecordingBridge {
   append: (opts: { clipId: string; track: "camera" | "screen"; data: Uint8Array }) => Promise<
     { ok: true; bytes: number } | { ok: false; error: string; bytes?: number }
   >;
-  finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number }) => Promise<
+  finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number; maxAgeDays?: number }) => Promise<
     | { ok: true; clipId: string; folder: string; dir?: string; totalBytes: number;
         clipCount: number; deletedIds: string[]; shortfallBytes: number }
     | { ok: false; error: string }

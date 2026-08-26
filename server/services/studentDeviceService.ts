@@ -13,6 +13,7 @@ import { instituteRepository } from "../repositories";
 import { studentDeviceRepository } from "../repositories/studentDeviceRepository";
 import { licenseService } from "./licenseService";
 import { activityLogService } from "./activityLogService";
+import { deleteSessionsForDevice } from "./sessionInvalidation";
 import { deviceExpiryCutoff, evaluateDeviceRegistration, sumDeviceLimits } from "./student-device-logic";
 
 export interface DeviceRegistrationResult {
@@ -100,7 +101,13 @@ export class StudentDeviceService {
   /** De-register by row id (clinician client / AAC device manager). */
   async deregisterByRecordId(studentId: string, recordId: string, userId?: string | null): Promise<boolean> {
     const removed = await studentDeviceRepository.deleteDeviceByRecordId(studentId, recordId);
-    if (removed) this.logDeregistration(studentId, removed, userId);
+    if (removed) {
+      this.logDeregistration(studentId, removed, userId);
+      // Revoking the slot must revoke ACCESS: the AAC session bound to this
+      // device lives a year and slides, so without this a lost or retired
+      // tablet kept a working cookie after its slot was taken away.
+      await deleteSessionsForDevice(removed.deviceId);
+    }
     return !!removed;
   }
 
@@ -108,6 +115,8 @@ export class StudentDeviceService {
   async deregisterByDeviceId(studentId: string, deviceId: string, userId?: string | null): Promise<boolean> {
     const removed = await studentDeviceRepository.deleteDeviceByDeviceId(studentId, deviceId);
     if (removed) this.logDeregistration(studentId, removed, userId);
+    // Not a session purge here: this is the device's own "switch student"
+    // path, and the caller's session is what it is about to reuse.
     return !!removed;
   }
 

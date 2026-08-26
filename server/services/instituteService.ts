@@ -193,6 +193,13 @@ export class InstituteService {
       instituteId,
       targetUserId
     );
+    if (removed) {
+      // Termination must end access NOW, not when the cookie expires (up to
+      // 30 days): evict every live session the removed member holds. They
+      // re-authenticate; the removed institute is simply no longer theirs.
+      const { deleteUserSessions } = await import("./sessionInvalidation");
+      await deleteUserSessions(targetUserId);
+    }
     return { success: removed, error: removed ? undefined : "Failed to remove member" };
   }
 

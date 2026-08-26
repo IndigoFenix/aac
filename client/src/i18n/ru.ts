@@ -2630,6 +2630,8 @@ export const ru = {
     sessionRecordingMaxClipDesc: "Долгая игра превращается в несколько файлов, которые действительно можно монтировать, а не в одну огромную пару.",
     sessionRecordingStorage: "Лимит на диске (МБ)",
     sessionRecordingStorageDesc: "Примерно {gb} ГБ. Когда папка превышает этот объём, самые старые клипы удаляются, чтобы освободить место, — поэтому скопируйте всё, что хотите сохранить.",
+    sessionRecordingMaxAge: "Хранить записи (дней)",
+    sessionRecordingMaxAgeDesc: "Записи старше {days} дней удаляются с устройства при следующей очистке независимо от лимита диска. По умолчанию: 30.",
     sessionRecordingFolder: "Сохранять в папку",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "Оставьте пустым, чтобы использовать папку «Видео» самого устройства. Укажите полный путь, чтобы записывать на внешний диск, — удобно, когда указанного выше лимита не хватает.",

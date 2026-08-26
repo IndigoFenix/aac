@@ -45,6 +45,12 @@ export class StudentDeviceController {
         userId: currentUser.id,
       });
 
+      // Bind this session to the device it registered, so revoking the slot
+      // can find and destroy it (sessionInvalidation.deleteSessionsForDevice).
+      if (result.isRegistered && req.session) {
+        req.session.aacDeviceId = deviceId;
+      }
+
       res.json({ success: true, ...result });
     } catch (error: any) {
       console.error("Error registering student device:", error);

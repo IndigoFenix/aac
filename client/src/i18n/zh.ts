@@ -2630,6 +2630,8 @@ export const zh = {
     sessionRecordingMaxClipDesc: "长时间的游玩会拆成几个真正能剪辑的文件，而不是一对超大的文件。",
     sessionRecordingStorage: "磁盘配额（MB）",
     sessionRecordingStorageDesc: "约 {gb} GB。文件夹超出后，最旧的片段会被删除以腾出空间，所以想保留的请及时复制出来。",
+    sessionRecordingMaxAge: "录像保留天数",
+    sessionRecordingMaxAgeDesc: "超过 {days} 天的片段会在下次清理时从设备中删除，与磁盘配额无关。默认 30。",
     sessionRecordingFolder: "保存到文件夹",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "留空则使用设备自己的视频文件夹。填写完整路径可改为录制到外接硬盘——当上面的磁盘配额不够用时很有用。",

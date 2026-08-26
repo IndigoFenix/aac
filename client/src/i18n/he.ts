@@ -2630,6 +2630,8 @@ export const he = {
     sessionRecordingMaxClipDesc: "רצף משחק ארוך הופך לכמה קבצים שאפשר באמת לערוך, במקום זוג קבצים ענק אחד.",
     sessionRecordingStorage: "מכסת שטח בדיסק (MB)",
     sessionRecordingStorageDesc: "כ-{gb} ג׳יגה-בייט. כשהתיקייה חורגת מכך, הקטעים הישנים ביותר נמחקים כדי לפנות מקום — לכן העתיקו כל מה שברצונכם לשמור.",
+    sessionRecordingMaxAge: "שמירת הקלטות (ימים)",
+    sessionRecordingMaxAgeDesc: "קטעים ישנים מ-{days} ימים נמחקים מהמכשיר בסריקה הבאה, ללא קשר לתקציב הדיסק. ברירת מחדל: 30.",
     sessionRecordingFolder: "שמירה בתיקייה",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "השאירו ריק כדי להשתמש בתיקיית הווידאו של המכשיר. הזינו נתיב מלא כדי להקליט לכונן חיצוני — שימושי כשמכסת השטח שלמעלה קטנה מדי לצרכים שלכם.",

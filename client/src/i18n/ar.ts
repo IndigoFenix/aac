@@ -2630,6 +2630,8 @@ export const ar = {
     sessionRecordingMaxClipDesc: "تتحول فترة لعب طويلة إلى عدة ملفات يمكنك تحريرها فعلًا، بدلًا من زوج ضخم واحد.",
     sessionRecordingStorage: "حصة القرص (ميغابايت)",
     sessionRecordingStorageDesc: "نحو {gb} غيغابايت. عندما يتجاوز المجلد هذا الحد، تُحذف أقدم المقاطع لإفساح المجال — لذا انسخ كل ما تريد الاحتفاظ به.",
+    sessionRecordingMaxAge: "الاحتفاظ بالتسجيلات لمدة (أيام)",
+    sessionRecordingMaxAgeDesc: "تُحذف المقاطع الأقدم من {days} يومًا من الجهاز في عملية التنظيف التالية، بغض النظر عن مساحة القرص. الافتراضي: 30.",
     sessionRecordingFolder: "الحفظ في مجلد",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "اتركه فارغًا لاستخدام مجلد الفيديو الخاص بالجهاز. أدخل مسارًا كاملًا للتسجيل على قرص خارجي بدلًا من ذلك — وهو مفيد عندما تكون حصة القرص أعلاه أصغر مما تحتاج.",

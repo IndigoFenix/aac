@@ -2630,6 +2630,8 @@ export const fr = {
     sessionRecordingMaxClipDesc: "Une longue séance de jeu devient plusieurs fichiers réellement exploitables, au lieu d'une seule paire énorme.",
     sessionRecordingStorage: "Espace disque (Mo)",
     sessionRecordingStorageDesc: "Environ {gb} Go. Lorsque le dossier dépasse cette limite, les extraits les plus anciens sont supprimés pour faire de la place : copiez donc ce que vous souhaitez conserver.",
+    sessionRecordingMaxAge: "Conserver les enregistrements pendant (jours)",
+    sessionRecordingMaxAgeDesc: "Les clips de plus de {days} jours sont supprimés de l'appareil au prochain nettoyage, quel que soit l'espace disque. Par défaut : 30.",
     sessionRecordingFolder: "Enregistrer dans le dossier",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "Laissez vide pour utiliser le dossier Vidéos de l'appareil. Indiquez un chemin complet pour enregistrer sur un disque externe : pratique lorsque l'espace disque ci-dessus est insuffisant.",

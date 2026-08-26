@@ -47,6 +47,8 @@ import { useAvatarSprite } from "@/contexts/AvatarSpriteContext";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { apiRequest } from "@/lib/queryClient";
+import { IS_PACKAGED_APP } from "@/lib/api-base";
 import {
   computePhase,
   initialStageFor,
@@ -226,7 +228,16 @@ function HoldToLogoutButton() {
     localStorage.removeItem("synapse_user_id");
     localStorage.removeItem("synapse_student_id");
     localStorage.setItem("aac_signed_out", "true");
-    window.location.reload();
+    // Packaged shell: the session cookie is this device's alone — end it on
+    // the server too, otherwise "signed out" is a localStorage flag over a
+    // live year-long session. (Web build shares the browser session with the
+    // clinician client; see App.tsx handleLogout.)
+    const finish = () => window.location.reload();
+    if (IS_PACKAGED_APP) {
+      void apiRequest("POST", "/auth/logout").catch(() => undefined).finally(finish);
+    } else {
+      finish();
+    }
   };
 
   const cancel = () => {

@@ -2630,6 +2630,8 @@ export const ko = {
     sessionRecordingMaxClipDesc: "오래 이어진 놀이가 실제로 편집할 수 있는 여러 파일로 나뉩니다. 거대한 파일 한 쌍이 아니라요.",
     sessionRecordingStorage: "디스크 할당량 (MB)",
     sessionRecordingStorageDesc: "약 {gb} GB입니다. 폴더가 이 용량을 넘으면 오래된 클립부터 삭제되어 공간을 만드니, 보관할 파일은 미리 복사해 두세요.",
+    sessionRecordingMaxAge: "녹화 보관 기간(일)",
+    sessionRecordingMaxAgeDesc: "{days}일이 지난 클립은 디스크 용량과 관계없이 다음 정리 시 기기에서 삭제됩니다. 기본값 30.",
     sessionRecordingFolder: "저장 폴더",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "비워 두면 기기의 비디오 폴더를 사용합니다. 전체 경로를 입력하면 외장 드라이브에 녹화합니다. 위의 디스크 할당량이 부족할 때 유용합니다.",

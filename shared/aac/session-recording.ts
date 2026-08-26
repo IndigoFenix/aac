@@ -84,10 +84,21 @@ export interface SessionRecordingSettings {
   maxStorageMb: number;
 
   /**
+   * Maximum age of a clip, in days. Footage older than this is deleted on the
+   * next sweep regardless of the disk budget — a recording of a child is not
+   * something that should sit on a device until newer footage happens to
+   * displace it. Per student, so a clinician can lengthen it for a case under
+   * active review; the default is 30 days.
+   */
+  maxAgeDays: number;
+
+  /**
    * Absolute folder the clips are written to. Null means the shell default (a
    * `recordings` folder under the app's user-data directory). Pointing this at
    * an external drive is the expected way to keep more than the local disk
-   * budget allows.
+   * budget allows. Network shares and cloud-sync folders (OneDrive, Dropbox,
+   * Google Drive, iCloud) are refused by the shell: they would turn
+   * "device-only" recordings into a continuous upload.
    */
   folder: string | null;
 }
@@ -113,6 +124,12 @@ export const MAX_STORAGE_MB_MIN = 1024;
 export const MAX_STORAGE_MB_MAX = 1024 * 500; // 500 GB
 export const MAX_STORAGE_MB_DEFAULT = 1024 * 20; // 20 GB
 
+/** Time-based retention, days. The floor is one day so "keep nothing" is still
+ *  expressed by turning the feature off, not by a zero that deletes mid-session. */
+export const MAX_AGE_DAYS_MIN = 1;
+export const MAX_AGE_DAYS_MAX = 365;
+export const MAX_AGE_DAYS_DEFAULT = 30;
+
 const QUALITIES: readonly RecordingQuality[] = ["720p", "1080p", "max"];
 
 export const DEFAULT_SESSION_RECORDING: SessionRecordingSettings = {
@@ -122,6 +139,7 @@ export const DEFAULT_SESSION_RECORDING: SessionRecordingSettings = {
   idleTailSeconds: IDLE_TAIL_SECONDS_DEFAULT,
   maxClipMinutes: MAX_CLIP_MINUTES_DEFAULT,
   maxStorageMb: MAX_STORAGE_MB_DEFAULT,
+  maxAgeDays: MAX_AGE_DAYS_DEFAULT,
   folder: null,
 };
 
@@ -172,6 +190,9 @@ export function normalizeSessionRecordingSettings(raw: unknown): SessionRecordin
     ),
     maxStorageMb: clampInt(
       o.maxStorageMb, MAX_STORAGE_MB_MIN, MAX_STORAGE_MB_MAX, MAX_STORAGE_MB_DEFAULT,
+    ),
+    maxAgeDays: clampInt(
+      o.maxAgeDays, MAX_AGE_DAYS_MIN, MAX_AGE_DAYS_MAX, MAX_AGE_DAYS_DEFAULT,
     ),
     folder: folderRaw ? folderRaw : null,
   };

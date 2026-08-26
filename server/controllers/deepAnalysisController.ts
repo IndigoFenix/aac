@@ -106,7 +106,17 @@ export class DeepAnalysisController {
         res.status(400).json({ error: "studentId required" });
         return;
       }
+      // Same guard as `get`: with no usable institute context the service
+      // degraded to an unfiltered WHERE student_id = $1, so any licensed
+      // user could list any student's analyses by omitting ?instituteId.
       const ctx = await buildClinicianCtx(req, studentId);
+      if (!ctx) {
+        const access = await studentService.verifyStudentAccess(studentId, req.user!.id);
+        if (!access.hasAccess) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+      }
       const rows = await listDeepAnalysesForStudent(studentId, ctx);
       res.json(rows);
     } catch (error: any) {
@@ -117,6 +127,17 @@ export class DeepAnalysisController {
   /** DELETE /api/deep-analysis/:id */
   async delete(req: Request, res: Response): Promise<void> {
     try {
+      // Ownership before deletion — the id alone was enough before.
+      const baseline = await getDeepAnalysis(req.params.id);
+      if (!baseline) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      const access = await studentService.verifyStudentAccess(baseline.studentId, req.user!.id);
+      if (!access.hasAccess) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
       const ok = await deleteDeepAnalysis(req.params.id);
       if (!ok) {
         res.status(404).json({ error: "Not found" });

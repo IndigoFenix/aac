@@ -423,6 +423,7 @@ export class SessionRecorder {
       const prepared = await bridge.prepare({
         folder: settings.folder,
         maxStorageMb: settings.maxStorageMb,
+        maxAgeDays: settings.maxAgeDays,
       });
       this.setStatus({
         folder: prepared.folder,
@@ -692,7 +693,9 @@ export class SessionRecorder {
     }
 
     const done = await this.opts.bridge.finish({
-      clipId, manifest, maxStorageMb: this.opts.settings.maxStorageMb,
+      clipId, manifest,
+      maxStorageMb: this.opts.settings.maxStorageMb,
+      maxAgeDays: this.opts.settings.maxAgeDays,
     });
     if (done.ok) {
       this.setStatus({

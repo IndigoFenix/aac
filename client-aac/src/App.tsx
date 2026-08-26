@@ -1,4 +1,5 @@
-import { queryClient } from "./lib/queryClient";
+import { queryClient, apiRequest } from "./lib/queryClient";
+import { IS_PACKAGED_APP } from "./lib/api-base";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -193,8 +194,15 @@ function MainApp() {
     localStorage.removeItem('synapse_classroom_id');
     localStorage.removeItem('synapse_student_owner_id');
     localStorage.removeItem('synapse_user_profile');
-    // Mark as signed out locally — do NOT call server /auth/logout
-    // so the admin client's session stays alive
+    // In a PACKAGED shell (Electron / iPad) the session cookie belongs to this
+    // device alone, and "signed out" must mean the cookie is dead on the
+    // server — otherwise clearing one localStorage flag put anyone at the
+    // keyboard back inside a live year-long session. In the WEB build the
+    // session is shared with the clinician client on the same origin, so we
+    // only mark this app signed out and leave the browser session to them.
+    if (IS_PACKAGED_APP) {
+      void apiRequest("POST", "/auth/logout").catch(() => { /* offline: cookie dies with its TTL */ });
+    }
     localStorage.setItem('aac_signed_out', 'true');
     clearUserScopedCache();
     queryClient.setQueryData(["/auth/user"], null);

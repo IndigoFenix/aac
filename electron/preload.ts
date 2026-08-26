@@ -46,12 +46,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Nothing here uploads: the files never leave the device by this path.
   recording: {
     /** Create/validate the folder, recover interrupted clips, sweep the budget. */
-    prepare: (opts: { folder: string | null; maxStorageMb: number }) =>
+    prepare: (opts: { folder: string | null; maxStorageMb: number; maxAgeDays?: number }) =>
       ipcRenderer.invoke("recording:prepare", opts),
     begin: (opts: { clipId: string }) => ipcRenderer.invoke("recording:begin", opts),
     append: (opts: { clipId: string; track: "camera" | "screen"; data: Uint8Array }) =>
       ipcRenderer.invoke("recording:append", opts),
-    finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number }) =>
+    finish: (opts: { clipId: string; manifest: unknown; maxStorageMb: number; maxAgeDays?: number }) =>
       ipcRenderer.invoke("recording:finish", opts),
     abort: (opts: { clipId: string }) => ipcRenderer.invoke("recording:abort", opts),
     list: () => ipcRenderer.invoke("recording:list"),

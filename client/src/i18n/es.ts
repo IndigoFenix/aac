@@ -2630,6 +2630,8 @@ export const es = {
     sessionRecordingMaxClipDesc: "Un rato largo de juego se convierte en varios archivos que sí puede editar, en lugar de un único par enorme.",
     sessionRecordingStorage: "Espacio en disco (MB)",
     sessionRecordingStorageDesc: "Unos {gb} GB. Cuando la carpeta supera ese límite, los clips más antiguos se eliminan para hacer sitio, así que copie lo que quiera conservar.",
+    sessionRecordingMaxAge: "Conservar grabaciones durante (días)",
+    sessionRecordingMaxAgeDesc: "Los clips con más de {days} días se eliminan del dispositivo en la siguiente limpieza, independientemente del espacio en disco. Predeterminado: 30.",
     sessionRecordingFolder: "Guardar en la carpeta",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "Déjelo en blanco para usar la carpeta de vídeos del propio dispositivo. Indique una ruta completa para grabar en una unidad externa: útil cuando el espacio en disco de arriba se le queda corto.",

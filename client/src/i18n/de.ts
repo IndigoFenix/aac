@@ -2630,6 +2630,8 @@ export const de = {
     sessionRecordingMaxClipDesc: "Eine lange Spielphase wird zu mehreren Dateien, die sich wirklich bearbeiten lassen, statt zu einem einzigen riesigen Paar.",
     sessionRecordingStorage: "Speicherbudget (MB)",
     sessionRecordingStorageDesc: "Etwa {gb} GB. Sobald der Ordner diese Grenze überschreitet, werden die ältesten Clips gelöscht, um Platz zu schaffen — kopieren Sie also alles, was Sie behalten möchten.",
+    sessionRecordingMaxAge: "Aufnahmen aufbewahren für (Tage)",
+    sessionRecordingMaxAgeDesc: "Clips, die älter als {days} Tage sind, werden beim nächsten Durchlauf vom Gerät gelöscht, unabhängig vom Speicherbudget. Standard: 30.",
     sessionRecordingFolder: "In Ordner speichern",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "Leer lassen, um den Videos-Ordner des Geräts zu verwenden. Geben Sie einen vollständigen Pfad an, um stattdessen auf eine externe Festplatte aufzuzeichnen — hilfreich, wenn das Speicherbudget oben zu klein ist.",

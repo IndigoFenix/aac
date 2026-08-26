@@ -13,7 +13,8 @@ import { identityProviderRepository } from "./repositories/identityProviderRepos
 import { adminUserRepository } from "./repositories/adminUserRepository";
 import { identityService } from "./services/identityService";
 import { adaptAdminAsUser, ensureAdminShellUser, resolveLoginIdentity, type SessionIdentity } from "./services/adminAuthService";
-import { refreshAacSession } from "./session-lifetime";
+import { refreshAacSession, enforceClinicianIdleTimeout } from "./session-lifetime";
+import { activityLogService } from "./services/activityLogService";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -56,6 +57,21 @@ export async function setupUserAuth(app: Express) {
   // AAC devices stay signed in indefinitely: slide their cookie's expiry
   // forward (throttled to once a day). No-op for every other session.
   app.use(refreshAacSession);
+
+  // Every OTHER session lapses after CLINICIAN_IDLE_TIMEOUT_MS of silence
+  // (automatic logoff). The lapse is audited as a logout.
+  app.use(
+    enforceClinicianIdleTimeout((userId) => {
+      if (!userId) return;
+      activityLogService.log({
+        userId,
+        eventType: "auth_logout",
+        subjectType1: "user",
+        subjectId1: userId,
+        details: { reason: "idle_timeout" },
+      });
+    }),
+  );
 
   // Propagate customer support context via AsyncLocalStorage
   const { supportContext } = await import("./middleware/auth");

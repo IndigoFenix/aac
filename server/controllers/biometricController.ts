@@ -75,7 +75,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       // Only allow users to enroll their own face, or admins to enroll any
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to enroll this user's face" });
         return;
       }
@@ -104,7 +104,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       // Only allow users to check their own status, or admins
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -126,7 +126,7 @@ export class BiometricController {
       const { userId } = req.params;
       const currentUser = req.user as any;
 
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -154,7 +154,7 @@ export class BiometricController {
 
       // Verify user has access to this student
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to enroll this student's face" });
         return;
       }
@@ -183,7 +183,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -206,7 +206,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -232,7 +232,7 @@ export class BiometricController {
       const { userId } = req.params;
       const currentUser = req.user as any;
 
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to enroll this user's voice" });
         return;
       }
@@ -260,7 +260,7 @@ export class BiometricController {
       const { userId } = req.params;
       const currentUser = req.user as any;
 
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -282,7 +282,7 @@ export class BiometricController {
       const { userId } = req.params;
       const currentUser = req.user as any;
 
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -309,7 +309,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to enroll this student's voice" });
         return;
       }
@@ -338,7 +338,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -361,7 +361,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -399,7 +399,7 @@ export class BiometricController {
       // authorized for the student (prevents a cross-tenant identification oracle).
       const currentUser = req.user as any;
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
         return;
       }
@@ -445,7 +445,7 @@ export class BiometricController {
 
       const currentUser = req.user as any;
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
         return;
       }
@@ -494,7 +494,7 @@ export class BiometricController {
         return;
       }
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
         return;
       }
@@ -538,7 +538,7 @@ export class BiometricController {
         return;
       }
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
         return;
       }
@@ -569,7 +569,7 @@ export class BiometricController {
         return;
       }
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
         return;
       }
@@ -632,7 +632,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -670,7 +670,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -693,7 +693,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -720,7 +720,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -764,7 +764,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -793,7 +793,7 @@ export class BiometricController {
       const { studentId } = req.params;
       const currentUser = req.user as any;
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -815,7 +815,7 @@ export class BiometricController {
       const currentUser = req.user as any;
 
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -907,7 +907,7 @@ export class BiometricController {
     try {
       const { userId } = req.params;
       const currentUser = req.user as any;
-      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (userId !== currentUser.id && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -923,7 +923,7 @@ export class BiometricController {
       const { studentId } = req.params;
       const currentUser = req.user as any;
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }
@@ -939,7 +939,7 @@ export class BiometricController {
       const { studentId, id } = req.params;
       const currentUser = req.user as any;
       const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+      if (!hasAccess && !currentUser.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not authorized" });
         return;
       }

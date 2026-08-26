@@ -1,7 +1,10 @@
 // Session lifetimes, split by CLIENT.
 //
 // The clinician client is a browser someone signs in and out of, so its
-// session is deliberately short-lived (1 day, or 30 with "remember me").
+// session is deliberately short-lived (1 day, or 30 with "remember me") AND
+// lapses after CLINICIAN_IDLE_TIMEOUT_MS without a request (§164.312(a)(2)(iii)
+// automatic logoff — an unattended browser on a shared clinic workstation
+// must not stay open to PHI).
 //
 // The AAC client is not a browser — it is an appliance on a student's desk,
 // often driven by eye gaze, by a child who cannot type a password. Once a
@@ -26,6 +29,10 @@
 // global: it would silently turn the clinician client's absolute 1-day/30-day
 // expiry into a sliding one. Keeping the refresh opt-in per session leaves
 // clinician (and support) lifetimes exactly as they were.
+//
+// The AAC session is exempt from the idle timeout by design (the device is an
+// appliance); what protects a stolen device is the device-slot revocation,
+// which purges the session bound to that device (sessionInvalidation.ts).
 
 import type { RequestHandler } from "express";
 
@@ -40,12 +47,34 @@ export const AAC_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
  */
 export const AAC_SESSION_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Idle timeout for every NON-AAC session (clinician, admin, support). Read
+ * from SESSION_IDLE_TIMEOUT_MINUTES (terraform's `session_timeout_minutes`
+ * feeds it); 30 minutes when unset.
+ */
+export const CLINICIAN_IDLE_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.SESSION_IDLE_TIMEOUT_MINUTES);
+  const minutes = Number.isFinite(raw) && raw > 0 ? raw : 30;
+  return minutes * 60 * 1000;
+})();
+
+/**
+ * How often the activity stamp is rewritten. Each stamp is a session write, so
+ * a busy clinician tab costs one UPDATE a minute instead of one per request;
+ * the idle check is correspondingly granular to the minute.
+ */
+export const CLINICIAN_ACTIVITY_STAMP_INTERVAL_MS = 60 * 1000;
+
 declare module "express-session" {
   interface SessionData {
     /** Set at login by the AAC client; drives the long, sliding lifetime. */
     aacClient?: true;
     /** Epoch ms of the last cookie re-stamp. */
     aacRefreshedAt?: number;
+    /** The registered device this AAC session belongs to (studentDeviceController). */
+    aacDeviceId?: string;
+    /** Epoch ms of the last request on a non-AAC session; drives the idle timeout. */
+    lastActivityAt?: number;
   }
 }
 
@@ -57,6 +86,8 @@ declare module "express-session" {
 export interface AacSessionLike {
   aacClient?: true;
   aacRefreshedAt?: number;
+  aacDeviceId?: string;
+  lastActivityAt?: number;
   cookie: { maxAge?: number | null };
 }
 
@@ -95,3 +126,56 @@ export const refreshAacSession: RequestHandler = (req, _res, next) => {
   refreshAacSessionLifetime(req.session as AacSessionLike | undefined);
   next();
 };
+
+/**
+ * Idle-timeout check for a non-AAC session.
+ *
+ * Returns "expired" when the session has been silent longer than the idle
+ * timeout; "active" otherwise. A session with no stamp yet (first request
+ * after login, or one predating this check) is treated as active and stamped.
+ * The stamp is rewritten at most once per CLINICIAN_ACTIVITY_STAMP_INTERVAL_MS.
+ */
+export function touchClinicianActivity(
+  session: AacSessionLike | undefined | null,
+  now: number = Date.now(),
+  idleTimeoutMs: number = CLINICIAN_IDLE_TIMEOUT_MS,
+): "active" | "expired" | "not-applicable" {
+  if (!session) return "not-applicable";
+  if (session.aacClient) return "not-applicable";
+  const last = session.lastActivityAt;
+  if (last !== undefined && now - last > idleTimeoutMs) return "expired";
+  if (last === undefined || now - last >= CLINICIAN_ACTIVITY_STAMP_INTERVAL_MS) {
+    session.lastActivityAt = now;
+  }
+  return "active";
+}
+
+/**
+ * Express wiring for {@link touchClinicianActivity}. On expiry the session is
+ * destroyed and the request continues UNAUTHENTICATED, so `requireAuth`
+ * answers 401 like any signed-out request; the client shows its usual sign-in.
+ * Only sessions that actually hold a login are examined.
+ */
+export function enforceClinicianIdleTimeout(
+  onExpired?: (userId: string | null) => void,
+): RequestHandler {
+  return (req, _res, next) => {
+    const session = req.session as (AacSessionLike & { passport?: { user?: unknown }; destroy?: (cb: (err?: unknown) => void) => void }) | undefined;
+    if (!session?.passport?.user) {
+      next();
+      return;
+    }
+    if (touchClinicianActivity(session) !== "expired") {
+      next();
+      return;
+    }
+    const raw = session.passport.user as { id?: string } | string | undefined;
+    const userId = typeof raw === "string" ? raw : raw?.id ?? null;
+    try { onExpired?.(userId); } catch { /* never block the request on audit */ }
+    if (typeof session.destroy === "function") {
+      session.destroy(() => next());
+    } else {
+      next();
+    }
+  };
+}

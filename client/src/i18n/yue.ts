@@ -2630,6 +2630,8 @@ export const yue = {
     sessionRecordingMaxClipDesc: "玩得耐嘅片會拆成幾個真係剪得郁嘅檔案，而唔係得一對超大嘅檔。",
     sessionRecordingStorage: "硬碟配額（MB）",
     sessionRecordingStorageDesc: "大約 {gb} GB。個資料夾一超出，最舊嘅片段就會被刪走騰位，所以想留低嘅記得快啲複製走。",
+    sessionRecordingMaxAge: "錄影保留日數",
+    sessionRecordingMaxAgeDesc: "超過 {days} 日嘅片段會喺下次清理時由裝置刪除，與磁碟配額無關。預設 30。",
     sessionRecordingFolder: "儲存去資料夾",
     sessionRecordingFolderPlaceholder: "Videos\\Aivota AAC Recordings",
     sessionRecordingFolderDesc: "留空就會用部機自己嘅影片資料夾。填完整路徑就可以改為錄落外置硬碟——上面個硬碟配額唔夠用嗰陣就啱使。",

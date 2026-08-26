@@ -73,10 +73,30 @@ function defaultFolder(): string {
  *  the default when the configured path is blank or unusable. */
 let activeFolder: string | null = null;
 
+/**
+ * Folders that would silently turn "device-only" footage into an upload: UNC
+ * network shares, and the sync roots of the usual cloud drives. A clinician
+ * pasting `C:\Users\me\OneDrive\Recordings` into the settings box is exactly
+ * the mistake this exists to catch.
+ */
+const SYNC_FOLDER_SEGMENT = /^(onedrive|onedrive - .*|dropbox|google drive|googledrive|my drive|icloud drive|icloudrive|box|box sync|nextcloud|sync)$/i;
+
+export function isDisallowedRecordingFolder(folder: string): string | null {
+  if (/^\\\\/.test(folder) || /^\/\//.test(folder)) return "network-share";
+  const segments = folder.split(/[\\/]+/).filter(Boolean);
+  if (segments.some((s) => SYNC_FOLDER_SEGMENT.test(s.trim()))) return "cloud-sync";
+  return null;
+}
+
 function resolveFolder(configured: unknown): string {
-  const wanted = typeof configured === "string" && configured.trim()
+  let wanted = typeof configured === "string" && configured.trim()
     ? configured.trim()
     : defaultFolder();
+  const disallowed = isDisallowedRecordingFolder(wanted);
+  if (disallowed) {
+    log.warn(`[recording] configured folder refused (${disallowed}) — falling back to the default`);
+    wanted = defaultFolder();
+  }
   try {
     fs.mkdirSync(wanted, { recursive: true });
     activeFolder = wanted;
@@ -266,13 +286,26 @@ export interface SweepResult {
  * Clips currently being written are protected, as is the newest clip — see
  * `planEviction`.
  */
-async function sweep(folder: string, maxStorageMb: number): Promise<SweepResult> {
+async function sweep(folder: string, maxStorageMb: number, maxAgeDays?: number): Promise<SweepResult> {
   const clips = await inventory(folder);
   const maxBytes = Math.max(0, Math.round(maxStorageMb)) * 1024 * 1024;
   const plan = planEviction(clips, maxBytes, [...openClips.keys()]);
 
+  // Age-based retention runs BEFORE the budget and is not subject to the
+  // "keep the newest clip" protection: a recording of a child older than the
+  // retention window goes, full stop. Clips still being written are never
+  // touched (they are, by definition, not old).
+  const deleteIds = new Set(plan.deleteIds);
+  if (maxAgeDays && Number.isFinite(maxAgeDays) && maxAgeDays > 0) {
+    const cutoff = Date.now() - Math.round(maxAgeDays) * 24 * 60 * 60 * 1000;
+    for (const c of clips) {
+      if (openClips.has(c.id)) continue;
+      if (c.startedAtMs < cutoff) deleteIds.add(c.id);
+    }
+  }
+
   const deleted: string[] = [];
-  for (const id of plan.deleteIds) {
+  for (const id of deleteIds) {
     const entry = clips.find((c) => c.id === id);
     if (!entry) continue;
     let ok = true;
@@ -414,12 +447,15 @@ export function setupRecordingStore(): void {
   /** Prepare (and report on) the folder. The renderer calls this before it
    *  starts encoding, so a bad path fails loudly at setup rather than mid-clip. */
   ipcMain.handle("recording:prepare", async (_e, opts: unknown) => {
-    const o = (opts ?? {}) as { folder?: unknown; maxStorageMb?: unknown };
+    const o = (opts ?? {}) as { folder?: unknown; maxStorageMb?: unknown; maxAgeDays?: unknown };
     const folder = resolveFolder(o.folder);
     await removeStaleTempFiles(folder);
     await recoverOrphans(folder);
     const maxStorageMb = typeof o.maxStorageMb === "number" ? o.maxStorageMb : 20480;
-    const result = await sweep(folder, maxStorageMb);
+    // A renderer that predates the setting sends no maxAgeDays; fall back to
+    // the shared default rather than to "keep forever".
+    const maxAgeDays = typeof o.maxAgeDays === "number" ? o.maxAgeDays : 30;
+    const result = await sweep(folder, maxStorageMb, maxAgeDays);
     return { folder, isDefault: folder === defaultFolder(), ...result };
   });
 
@@ -474,7 +510,7 @@ export function setupRecordingStore(): void {
 
   /** Close a clip, write its manifest, and re-run the disk budget. */
   ipcMain.handle("recording:finish", async (_e, opts: unknown) => {
-    const o = (opts ?? {}) as { clipId?: unknown; manifest?: unknown; maxStorageMb?: unknown };
+    const o = (opts ?? {}) as { clipId?: unknown; manifest?: unknown; maxStorageMb?: unknown; maxAgeDays?: unknown };
     const clipId = typeof o.clipId === "string" ? o.clipId : "";
     const clip = openClips.get(clipId);
     if (!clip) return { ok: false, error: "no-clip" };
@@ -538,7 +574,8 @@ export function setupRecordingStore(): void {
     }
 
     const maxStorageMb = typeof o.maxStorageMb === "number" ? o.maxStorageMb : 20480;
-    const swept = await sweep(clip.folder, maxStorageMb);
+    const maxAgeDays = typeof o.maxAgeDays === "number" ? o.maxAgeDays : 30;
+    const swept = await sweep(clip.folder, maxStorageMb, maxAgeDays);
     return { ok: true, clipId, folder: clip.folder, dir: clip.dir, ...swept };
   });
 

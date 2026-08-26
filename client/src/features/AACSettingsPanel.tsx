@@ -34,6 +34,8 @@ import {
   DEFAULT_SESSION_RECORDING,
   IDLE_TAIL_SECONDS_MAX,
   IDLE_TAIL_SECONDS_MIN,
+  MAX_AGE_DAYS_MAX,
+  MAX_AGE_DAYS_MIN,
   MAX_CLIP_MINUTES_MAX,
   MAX_CLIP_MINUTES_MIN,
   MAX_STORAGE_MB_MAX,
@@ -3508,6 +3510,27 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           <p className="text-xs text-muted-foreground">
                             {t('aacSettings.sessionRecordingStorageDesc')
                               .replace('{gb}', String(Math.round(sessionRecording.maxStorageMb / 1024)))}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingMaxAge')}
+                          </Label>
+                          <Input
+                            type="number"
+                            min={MAX_AGE_DAYS_MIN}
+                            max={MAX_AGE_DAYS_MAX}
+                            step={1}
+                            value={sessionRecording.maxAgeDays}
+                            onChange={(e) => setSessionRecording((prev) => ({
+                              ...prev, maxAgeDays: Number(e.target.value),
+                            }))}
+                            data-testid="input-session-recording-max-age"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingMaxAgeDesc')
+                              .replace('{days}', String(sessionRecording.maxAgeDays))}
                           </p>
                         </div>
                       </div>
