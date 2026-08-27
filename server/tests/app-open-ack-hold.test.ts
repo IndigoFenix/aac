@@ -212,11 +212,15 @@ describe("the backstop", () => {
     expect(provider.sent).toHaveLength(1);
   });
 
-  test("it is short enough that a child does not decide the device is broken", () => {
-    // The hold is silence on the device — no voice, no board change, no screen
-    // change. It brackets one startup-resolver call (~1.5s observed).
-    expect(APP_OPEN_ACK_TIMEOUT_MS).toBeGreaterThanOrEqual(1500);
-    expect(APP_OPEN_ACK_TIMEOUT_MS).toBeLessThanOrEqual(4000);
+  test("it covers a REAL routeAppOpen, measured — a backstop that always fires is not a backstop", () => {
+    // 2026-08-27: three consecutive restaurant opens took 2.84s, 3.95s and
+    // 3.91s end to end (AI-open decision ~2.4s, then the app's own resolution).
+    // At the old 2500ms every single one timed out, so the model was handed
+    // "ok" before the verdict existed and promised a child an app that never
+    // opened. The lower bound here is the measured worst case.
+    expect(APP_OPEN_ACK_TIMEOUT_MS).toBeGreaterThanOrEqual(4000);
+    // And still short enough that the silence reads as work, not a dead device.
+    expect(APP_OPEN_ACK_TIMEOUT_MS).toBeLessThanOrEqual(6000);
   });
 
   test("closing the session cancels held timers", () => {

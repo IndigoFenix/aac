@@ -61,16 +61,6 @@ export interface RestaurantOpenInput {
   gps?: GeoPoint | null;
   /** Whatever the AI passed as `data`: the food the student named. */
   data?: string | null;
-  /**
-   * Who asked. A STUDENT press is the child tapping the app themselves; "ai" is
-   * the Speaker or Board Manager choosing to open it.
-   *
-   * It changes only ONE thing — where a student lands when they may not search
-   * for venues (see the studentBrowse note below). Defaults to "ai", the
-   * conservative side: an unmarked caller gets the old gated behaviour rather
-   * than silently handing a screen to a child.
-   */
-  trigger?: "ai" | "student";
 }
 
 /**
@@ -133,23 +123,28 @@ export async function resolveRestaurantOpen(
     // spending an outbound venue lookup and revealing where the child is, not
     // about whether they are allowed to say "I want pizza".
     //
-    // It used to return the caretaker lane here, so a child who pressed the app
-    // tile with browsing off got an adult text screen: a paragraph they cannot
-    // read, a button that starts a camera, and nothing they can say. That is
-    // the worst outcome an AAC surface can produce — a dead press for someone
-    // who cannot ask what went wrong — and it was the DEFAULT, because
-    // `studentBrowse` ships false.
+    // It used to return the caretaker lane here, so anyone who reached the app
+    // with browsing off got an adult text screen: a paragraph they cannot read,
+    // a button that starts a camera, and nothing they can say. That was the
+    // DEFAULT, because `studentBrowse` ships false.
     //
-    // So a student press always gets the grid. `canSearch: false` means it is
-    // purely a vocabulary board: every button still speaks, nothing goes out to
-    // the network. An AI-initiated open still lands on the caretaker lane and
-    // is refused by routeAppOpen's gate — the AI wanting a restaurant on the
-    // child's behalf is exactly the case that gate exists for, and the child
-    // pressing the tile is exactly the case it must not touch.
+    // `canSearch: false` means the grid is purely a vocabulary board: every
+    // button still speaks, nothing goes out to the network.
+    //
+    // ⚖️ THIS DOES NOT DEPEND ON WHO ASKED. It briefly did — student presses got
+    // the grid, AI opens still got the caretaker lane and were refused by
+    // routeAppOpen's gate. Observed 2026-08-27, that was wrong in the case it
+    // most needed to be right: the student composed "I want to go to a
+    // restaurant" in the sentence builder, picked a hamburger off the board the
+    // AI offered, and got nothing three times running — because an utterance
+    // reaches the app through the Speaker's open_app, which is an "ai" trigger.
+    // A child asking to go to a restaurant is the clearest possible case FOR
+    // opening it.
+    //
+    // Whether the AI should be opening this app at all is `aiOpenPolicy`'s
+    // question, asked by a dedicated model that had already said yes. A second,
+    // blunter gate keyed on an unrelated setting was overruling it.
     if (!settings.studentBrowse) {
-      if (input.trigger !== "student") {
-        return { mode: "caretaker", reason: "browse_off" };
-      }
       return {
         mode: "search",
         canSearch: false,

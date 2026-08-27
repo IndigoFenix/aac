@@ -163,13 +163,26 @@ export interface SpeakerStartConfig {
  * How long an `open_app` functionResponse may be withheld before we answer
  * "ok" anyway.
  *
- * Sized against what is actually being waited on: the slowest leg of
- * routeAppOpen is one startup-resolver call (~1.5s observed). 2.5s clears
- * that with headroom while staying under the point where a child decides the
- * device is broken. Erring long is the dangerous direction — Live blocks
- * generation for the whole hold.
+ * 🚨 SIZED FROM MEASUREMENT, NOT FROM A GUESS. It was 2500ms, justified as
+ * "the slowest leg is one startup-resolver call (~1.5s observed)". That was
+ * wrong, and the failure was silent: on 2026-08-27 three consecutive
+ * `open_app("restaurant")` calls took 2.84s, 3.95s and 3.91s end to end — the
+ * AI-open decision alone runs ~2.4s and the app's own resolution follows it.
+ * Every one of them blew the budget, so the model was handed "ok" a second
+ * before the real answer arrived and told a child "opening the restaurant app"
+ * when nothing was going to open. A timeout that always fires is not a backstop,
+ * it IS the behaviour.
+ *
+ * 4500ms covers the measured worst case with headroom. It is a long time to be
+ * silent, and that is the trade: Live blocks generation for the whole hold, so
+ * the cost of erring long is dead air and the cost of erring short is a broken
+ * promise nobody can retract. The "opening…" cue (ProcessingActivity "app",
+ * armed at 250ms) exists to make that silence read as work rather than failure.
+ *
+ * If this needs raising again, fix the LATENCY instead — the decision call and
+ * the app's own resolution do not depend on each other and run in series today.
  */
-export const APP_OPEN_ACK_TIMEOUT_MS = 2500;
+export const APP_OPEN_ACK_TIMEOUT_MS = 4500;
 
 export class SpeakerAgent implements ISpeakerAgent {
   private provider: LiveProvider | null = null;

@@ -126,68 +126,38 @@ describe("mode resolution", () => {
     expect(payload.mode).toBe("search");
   });
 
-  test("browsing NOT allowed, AI-initiated → CARETAKER mode", async () => {
-    // Unchanged for the AI: it wanting a restaurant on the child's behalf is
-    // precisely what routeAppOpen's caretaker gate exists to refuse.
-    const payload = await resolveRestaurantOpen(
-      { student: student({ enabled: true, studentBrowse: false }), gps: GPS, trigger: "ai" },
-      NOW,
-    );
-    expect(payload.mode).toBe("caretaker");
-    expect(payload.reason).toBe("browse_off");
-    expect(browse).not.toHaveBeenCalled();
-  });
-
-  test("browsing NOT allowed, STUDENT press → the food grid, not the adult lane", async () => {
-    // 🚨 The bug this pins. `studentBrowse` ships FALSE, so a child who pressed
-    // the app tile used to land on the caretaker lane BY DEFAULT: a paragraph
-    // of text they cannot read, a button that opens a camera, and nothing they
-    // could say. A dead press is the one failure an AAC user cannot recover
-    // from by asking again.
+  test("browsing NOT allowed → the food grid, whoever asked", async () => {
+    // 🚨 The bug this pins, and it bit twice. `studentBrowse` ships FALSE, so
+    // with no venue bound this was the DEFAULT path.
     //
-    // The setting is labelled "Student can look for somewhere to eat" — it
-    // governs the outbound venue lookup, not whether the child may name a food.
-    const payload = await resolveRestaurantOpen(
-      { student: student({ enabled: true, studentBrowse: false }), gps: GPS, trigger: "student" },
-      NOW,
-    );
-    expect(payload.mode).toBe("search");
-    expect(payload.canSearch).toBe(false);
-    // The vocabulary is free; the SEARCH is what was withheld.
-    expect(browse).not.toHaveBeenCalled();
-  });
-
-  test("a student press with browsing off still carries the food the AI named", async () => {
-    const payload = await resolveRestaurantOpen(
-      {
-        student: student({ enabled: true, studentBrowse: false }),
-        gps: GPS,
-        data: "pizza",
-        trigger: "student",
-      },
-      NOW,
-    );
-    expect(payload.food).toBe("pizza");
-    expect(payload.canSearch).toBe(false);
+    // First it sent everyone to the caretaker lane: a paragraph of text a child
+    // cannot read, a button that opens a camera, nothing sayable. Then it was
+    // narrowed to student presses only — and on 2026-08-27 a student composed
+    // "I want to go to a restaurant", picked a hamburger off the board the AI
+    // offered, and still got nothing three times running, because an utterance
+    // reaches the app through the Speaker's open_app and counts as "ai".
+    //
+    // The setting is labelled "Student can look for somewhere to eat". It
+    // governs the outbound venue lookup, not whether a child may name a food,
+    // and not who is allowed to ask.
+    for (const trigger of ["ai", "student"] as const) {
+      browse.mockClear();
+      const payload = await resolveRestaurantOpen(
+        { student: student({ enabled: true, studentBrowse: false }), gps: GPS, data: "pizza", trigger },
+        NOW,
+      );
+      expect(payload.mode).toBe("search");
+      expect(payload.canSearch).toBe(false);
+      expect(payload.food).toBe("pizza");
+      // The vocabulary is free; the SEARCH is what was withheld.
+      expect(browse).not.toHaveBeenCalled();
+    }
   });
 
   test("browsing ON marks the payload searchable", async () => {
-    const payload = await resolveRestaurantOpen(
-      { student: student(), gps: GPS, trigger: "student" },
-      NOW,
-    );
+    const payload = await resolveRestaurantOpen({ student: student(), gps: GPS }, NOW);
     expect(payload.mode).toBe("search");
     expect(payload.canSearch).toBe(true);
-  });
-
-  test("an UNMARKED trigger is treated as the AI — the conservative side", async () => {
-    // A caller that forgets to say who asked must not silently hand a screen to
-    // a child; it gets the old gated behaviour instead.
-    const payload = await resolveRestaurantOpen(
-      { student: student({ enabled: true, studentBrowse: false }), gps: GPS },
-      NOW,
-    );
-    expect(payload.mode).toBe("caretaker");
   });
 
   test("the whole feature off → CARETAKER mode, even for a student press", async () => {
@@ -265,17 +235,17 @@ describe("the caretaker lane is where an AI open must NOT land", () => {
   // entry already said in as many words that naming a food is not asking for a
   // restaurant, and the Speaker watched a student press "פיצה" on a food board
   // in his own bedroom and called open_app("restaurant", "pizza") anyway.
-  test("no venue and no browsing is caretaker for an AI open — the gate's trigger", async () => {
+  test("no venue and no browsing is NOT caretaker — the gate must not fire here", async () => {
+    // This used to be the gate's headline trigger. It is now the case the gate
+    // must stay out of: there IS something for the student (the vocabulary
+    // grid), so refusing the open leaves a child who asked to go to a
+    // restaurant with nothing. Whether the AI should have asked is
+    // aiOpenPolicy's question, not this one's.
     const payload = await resolveRestaurantOpen(
-      {
-        student: student({ enabled: true, studentBrowse: false }),
-        gps: GPS,
-        data: "pizza",
-        trigger: "ai",
-      },
+      { student: student({ enabled: true, studentBrowse: false }), gps: GPS, data: "pizza", trigger: "ai" },
       NOW,
     );
-    expect(payload.mode).toBe("caretaker");
+    expect(payload.mode).not.toBe("caretaker");
   });
 
   test("browsing ON is NOT caretaker, so the same press is allowed through", async () => {

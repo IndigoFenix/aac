@@ -8840,7 +8840,7 @@ export class AgentCoordinator {
         // review, whether a clinician allowed the student to browse, and what
         // the child is allergic to. A model choosing the mode would be a model
         // opening a menu that does not exist.
-        const payload = await this.resolveRestaurantOpen(event.data, triggerSource);
+        const payload = await this.resolveRestaurantOpen(event.data);
         // 🚨 HARD GATE on AI-initiated opens that land nowhere.
         //
         // `caretaker` means the app has NOTHING for the student: no venue
@@ -10686,12 +10686,12 @@ ${customDetail}` : ""));
    * cannot reach on its own — which student this is, and where the device last
    * reported being — so this gathers them and delegates everything else.
    */
-  private async resolveRestaurantOpen(data?: string | null, trigger: "ai" | "student" = "ai") {
+  private async resolveRestaurantOpen(data?: string | null) {
     const monitor = this.sessionId
       ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent
       : undefined;
     const gps = monitor?.getGps?.() ?? null;
-    return resolveRestaurantOpen({ student: this.venueBoardStudent(), gps, data, trigger });
+    return resolveRestaurantOpen({ student: this.venueBoardStudent(), gps, data });
   }
 
   /**

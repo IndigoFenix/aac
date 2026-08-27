@@ -1,6 +1,6 @@
 {
   "name": "aivota-aac",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "type": "module",
   "main": "dist-electron/main.js",
   "license": "MIT",
