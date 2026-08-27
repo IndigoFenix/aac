@@ -803,7 +803,11 @@ export type ServerMessage =
   | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button
   | { type: "context_button_add"; data: any }                 // Add one button to context sidebar (scrolls oldest out)
   | { type: "context_button_remove"; data: { label: string } } // Remove a button from the context sidebar by label
-  | { type: "guessing_mode"; active: boolean }              // Guessing mode entered/exited
+  // Guessing mode entered/exited. `offeredKeys` carries the registry keys the
+  // CURRENT narrowing question offers, so the client can repair a board where
+  // BoardManager hand-authored their localized labels instead of emitting the
+  // keys (see `repairGuessingBoard`) — the server has no t(), the client does.
+  | { type: "guessing_mode"; active: boolean; offeredKeys?: string[] }
   | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
   | { type: "voices_identified"; data: IdentifiedVoiceWire[] } // Server-side voice matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change

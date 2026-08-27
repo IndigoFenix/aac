@@ -81,7 +81,10 @@ const STT_LANGUAGE_MAP: Record<string, string> = {
   ko: "ko-KR",
 };
 
-function toBcp47(hint?: string): string {
+/** Exported for tests: the language a hint actually recognises as. An unknown
+ *  or missing hint silently becomes en-US, which is worth asserting rather than
+ *  assuming. */
+export function toBcp47(hint?: string): string {
   if (!hint) return "en-US";
   if (hint.includes("-")) return hint;
   return STT_LANGUAGE_MAP[hint] || "en-US";

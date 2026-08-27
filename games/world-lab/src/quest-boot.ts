@@ -1005,6 +1005,9 @@ export function bootWildernessQuest(
       key: string; seed: number; at: { x: number; y: number }; stock: Record<string, number>;
     }) => void;
     onSiteAbandoned?: (key: string) => void;
+    /** Settlement keep-clear discs in chunk-SIM coords — the scatter must
+     *  not put features through a bordering village's streets. */
+    clears?: ReadonlyArray<{ x: number; y: number; r: number }>;
   },
 ): EmbeddedWildQuest {
   // QUESTLESS SESSION (Shape B): no goal-tree shell at all — `host.start(null)`
@@ -1091,6 +1094,9 @@ export function bootWildernessQuest(
       side: WILD_SIDE,
       bounded: false,
       ...(opts.wildMix ? { mix: opts.wildMix } : {}),
+      // Settlement footprints the scatter must keep clear of (see the opts
+      // doc) — absent = the scatter's classic byte-identical behavior.
+      ...(opts.clears?.length ? { clears: opts.clears } : {}),
     },
     ...(opts.spirit ? { spirit: true } : {}),
     // WALKER: no `spirit` flag ⇒ the host's own spec-driven switch resolves

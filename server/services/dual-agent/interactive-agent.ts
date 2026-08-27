@@ -700,6 +700,16 @@ export function expandSuggestionKey(key: string): SuggestionButton | null {
  * order: (1) `suggestion:<narrowDimension>:<narrowValue>` when that's a real key,
  * then (2) the offered key whose value equals the button's narrowValue / label.
  * Returns the recovered key, or null when nothing matches (a genuine AI guess).
+ *
+ * ENGLISH ONLY, and necessarily so: this compares against the key's raw value,
+ * because the registry's translations live in `client-aac/src/i18n/*` which the
+ * server tsconfig cannot reach. A Hebrew session where BoardManager writes
+ * "לבד" instead of `suggestion:actions.who:alone` slips straight past it — that
+ * is the 2026-08-27 stall. The localized half of this recovery therefore runs
+ * on the client (`client-aac/src/lib/guessing-board-repair.ts`), and the
+ * coordinator's rebuild_board backstop injects the offered keys outright when a
+ * narrowing board carries none. Widening THIS function needs the i18n tables
+ * moved into `shared/` first.
  */
 export function recoverOfferedSuggestionKey(
   button: { label?: string; narrowDimension?: string; narrowValue?: string },

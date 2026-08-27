@@ -694,7 +694,22 @@ export function useStreamingAudioPlayer(
     if (masterGainRef.current) masterGainRef.current.gain.value = muted ? 0 : 1;
   }, []);
 
-  const getCallStream = useCallback((): MediaStream | null => callDestRef.current?.stream ?? null, []);
+  // The call tap. Resumes the context on the way out: a SUSPENDED AudioContext
+  // renders silence, so handing a call a track from one would transmit nothing
+  // and look exactly like the two-track bug it replaced — the student pressing
+  // buttons and nobody hearing them. Cheap to do here, and this is the moment
+  // we know the track is about to be used.
+  const getCallStream = useCallback((): MediaStream | null => {
+    const ctx = audioContextRef.current;
+    if (ctx && ctx.state === "suspended") {
+      void ctx.resume().catch(() => { /* best effort */ });
+    }
+    if (!callDestRef.current) {
+      console.error("[StreamingAudioPlayer] no call tap — the student's voice cannot reach a call (AudioContext failed to initialise?)");
+      return null;
+    }
+    return callDestRef.current.stream;
+  }, []);
 
   return {
     isPlaying,

@@ -343,7 +343,7 @@ describe("F2 — condense/expand dispatch through the cohort codec", () => {
     // The SAME arc through the generic dispatch: condense the household in,
     // expand it back out — repeat. `expand` is PURE (it reads a clone, never
     // the record itself), so — exactly like `unfoldWildArea` deleting
-    // `session.wildAreas.get(key)` after a successful expand — a host stays
+    // `session.areaRecords.get(key)` after a successful expand — a host stays
     // in sync by applying `promoteHousehold` itself to what `expand` named,
     // which is what computes the next cycle's `prev` here.
     let rec = condense<CohortRow>(ID, {

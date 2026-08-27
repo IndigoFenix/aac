@@ -132,6 +132,10 @@ const CENTRAL: Record<string, Lexeme> = {
   teacher: { w: "teacher" },
   street: { w: "street" },
   animal: { w: "animal" },
+  // The plant CATEGORY word — the head is `plants`, not `plant`, because
+  // `plant` is the VERB (he שותל, es planto): one head, one lexeme, and the
+  // builder's [plants] chip must not wear a conjugated verb.
+  plants: { w: "plant", plw: "plants" },
   creature: { w: "creature" },
   water: { w: "water", mass: true },
   fire: { w: "fire", mass: true },

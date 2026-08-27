@@ -22,7 +22,11 @@ import {
   tierByKey,
   BUDGET_TIERS,
   defaultTierKey,
+  monthlyBound,
+  maxSpendOverHours,
+  MONTH_HOURS,
 } from "../../shared/aac/budget-tiers.js";
+import { regenerate } from "../../shared/aac/energy-meter.js";
 
 const HOUR = 3_600_000;
 
@@ -135,9 +139,67 @@ describe("budget-tiers", () => {
     const premium = windowsForTier(tierByKey("premium"));
     const demo14 = demo.find(w => w.key === "14d")!;
     const prem14 = premium.find(w => w.key === "14d")!;
-    expect(prem14.cfg.ceiling).toBe(demo14.cfg.ceiling * 8);
+    // Scale = price ÷ Demo price (250/30), not a hand-picked 8.
+    expect(prem14.cfg.ceiling).toBeCloseTo(demo14.cfg.ceiling * (250 / 30), 9);
     // Span is preserved: ceiling/perHour ratio (= hours) is identical across tiers.
     expect(prem14.cfg.ceiling / prem14.cfg.perHour).toBeCloseTo(demo14.cfg.ceiling / demo14.cfg.perHour, 9);
+  });
+
+  // The invariant the tiers exist for. A leaky bucket admits ceiling + regen×span
+  // over a span, so the anchor ceiling is derived from the price, not chosen.
+  it("no tier admits more than its monthly price over any 31-day span", () => {
+    for (const t of Object.values(BUDGET_TIERS)) {
+      const bound = monthlyBound(windowsForTier(t));
+      expect(bound).toBeLessThanOrEqual(t.priceMonthly + 1e-9);
+      // Tight, not merely under: the whole price is available to a steady user.
+      expect(bound).toBeGreaterThan(t.priceMonthly * 0.999);
+    }
+  });
+
+  it("the old hand-picked anchor ($120/14d at Premium) admitted $386 in a month — the bug", () => {
+    const old: BudgetWindow = { key: "14d", cfg: { ceiling: 120, perHour: 120 / 336 } };
+    expect(maxSpendOverHours(old, MONTH_HOURS)).toBeCloseTo(120 * (1 + 744 / 336), 6);
+    expect(maxSpendOverHours(old, MONTH_HOURS)).toBeGreaterThan(250);
+  });
+
+  it("a greedy spender draining every window to 0% for 31 days cannot exceed the price (mechanism check)", () => {
+    // Runs the REAL meter: each hour, spend exactly the headroom of the
+    // tightest window (never letting any window go below 0%), then regen.
+    for (const t of Object.values(BUDGET_TIERS)) {
+      const ws = windowsForTier(t);
+      const t0 = 1_700_000_000_000;
+      let s = initBudget(ws, t0);
+      let spent = 0;
+      for (let h = 0; h <= MONTH_HOURS; h++) {
+        const now = t0 + h * HOUR;
+        const headroom = Math.min(...ws.map(w => {
+          const r = regenerate(s[w.key], now, w.cfg.perHour);
+          return Math.max(0, w.cfg.ceiling - r.drain);
+        }));
+        if (headroom > 0) {
+          s = applyBudgetCharge(s, ws, headroom, now);
+          spent += headroom;
+        }
+        expect(bindingEnergy(s, ws, now).percent).toBe(0);
+      }
+      // Slightly over the month's span (h = 0..744 inclusive spends one extra
+      // hour of regen), so allow one hour of anchor regen of slack.
+      const anchor = ws.find(w => w.key === "14d")!;
+      expect(spent).toBeLessThanOrEqual(t.priceMonthly + anchor.cfg.perHour + 1e-6);
+      expect(spent).toBeGreaterThan(t.priceMonthly * 0.99);
+    }
+  });
+
+  it("an env override can tighten the anchor but never loosen it past the bound", () => {
+    const bound = baseWindows().find(w => w.key === "14d")!.ceiling;
+    process.env.AAC_BUDGET_14D_CEILING = "999";
+    try {
+      expect(baseWindows().find(w => w.key === "14d")!.ceiling).toBeCloseTo(bound, 9);
+      process.env.AAC_BUDGET_14D_CEILING = "5";
+      expect(baseWindows().find(w => w.key === "14d")!.ceiling).toBe(5);
+    } finally {
+      delete process.env.AAC_BUDGET_14D_CEILING;
+    }
   });
 
   it("derives regen as cap ÷ span hours", () => {
@@ -152,7 +214,7 @@ describe("budget-tiers", () => {
     // worst case is bounded by ~3h of spend = ~$4.5, well under the scaled cap.
     const premium = windowsForTier(tierByKey("premium"));
     const w3h = premium.find(w => w.key === "3h")!;
-    expect(w3h.cfg.ceiling).toBe(16); // 2 × 8
+    expect(w3h.cfg.ceiling).toBeCloseTo(2 * (250 / 30), 9); // 2 × (price ÷ Demo price)
     const spend3h = 1.5 * 3; // credits accrued within the rolling 3h span
     expect(spend3h).toBeLessThan(w3h.cfg.ceiling);
   });

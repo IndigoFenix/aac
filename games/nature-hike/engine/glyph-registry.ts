@@ -1735,6 +1735,16 @@ const VOCAB: VocabularyItem[] = [
   { key: "more", tKey: "aac.glyph.more", pos: "modifier", categories: ["do", "chat"],
     modeChips: { do: ["relation"], chat: ["all", "turn"] }, tone: "request", emoji: "➕", exposeToAi: true,
     modifier: { appliesTo: ["noun", "verb"], transform: "badge", order: 3 } },
+  // "a DIFFERENT one" — distinct from `more` ("another one of the same"), which
+  // is why both earn a button. The Board Manager reached for this constantly
+  // (`animal+other`, `thing+other`) and, with no entry here, every such glyph
+  // was rejected as an un-fallbacked imageKey and the button silently dropped —
+  // 19 distinct glyphs in a single session log. `else` is deliberately NOT a
+  // second key: "something else" and "another one" are the same button, and a
+  // category tab lists its whole category, so a synonym IS a duplicate.
+  { key: "other", tKey: "aac.glyph.other", pos: "modifier", categories: ["do", "chat"],
+    modeChips: { do: ["relation"], chat: ["all", "turn"] }, tone: "request", emoji: "🔀", exposeToAi: true,
+    modifier: { appliesTo: ["noun", "verb"], transform: "badge", order: 4 } },
 
   // ── CHAT — conversational expressions (new HEAD SYMBOLs) ─────────────────
   // Short utterance-level acts the student reaches for constantly: greetings,

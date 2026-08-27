@@ -67,8 +67,12 @@ const CLAUDE_CACHE_WRITE_MULT = 1.25;
 const CLAUDE_CACHE_READ_MULT  = 0.10;
 // OpenAI bills cached input reads at 0.50x base.
 const OPENAI_CACHE_READ_MULT  = 0.50;
-// Gemini implicit cache reads bill at 0.25x base (Gemini 2.5 Flash/Pro).
-const GEMINI_CACHE_READ_MULT  = 0.25;
+// Gemini cached-input reads: the 2.5 Flash cached-token price is $0.03/1M
+// against $0.30/1M standard input (ai.google.dev/gemini-api/docs/pricing,
+// 2026-08-27), and implicit caching "automatically passes on" that same
+// saving (ai.google.dev/gemini-api/docs/caching) — so 0.10x, not the 0.25x
+// this carried from the 2.5 launch pricing.
+const GEMINI_CACHE_READ_MULT  = 0.10;
 
 /**
  * Calculate credits for a specific provider+model using the MODEL_OPTIONS catalog.
@@ -168,7 +172,12 @@ export const creditsForLiveUsageByModality = (
         ChargeToCredits((rate / MILLION) * tokens);
 
     const cached = usage.cachedInputTokens ?? 0;
-    const cacheDiscount = provider === "claude" ? 0.1 : 0.5;
+    // Same per-provider read discount as creditsForModelUsage — the two
+    // paths used to disagree (0.5x here vs 0.25x there for Gemini).
+    const cacheDiscount =
+        provider === "claude" ? CLAUDE_CACHE_READ_MULT
+        : provider === "gemini" ? GEMINI_CACHE_READ_MULT
+        : OPENAI_CACHE_READ_MULT;
     const textInputBillable = Math.max(0, usage.textInputTokens - cached);
 
     return {
@@ -211,7 +220,10 @@ export const creditsForLiveUsage = (
 export type TtsProvider = "elevenlabs" | "gemini-live" | "gemini" | "google" | "openai";
 
 const TTS_USD_PER_1K_CHARS: Record<TtsProvider, number> = {
-    "elevenlabs":  0.30,
+    // ElevenLabs runs on the STUDENT'S OWN account (aac_settings.elevenlabsApiKey,
+    // see sanitizeElevenLabsApiKey) — we never pay for it, so it must not land
+    // in our cost ledger. A zero charge is dropped by chargeCreditsToLedger.
+    "elevenlabs":  0,
     "gemini-live": 0.10,
     "gemini":      0.10,
     "google":      0.004,

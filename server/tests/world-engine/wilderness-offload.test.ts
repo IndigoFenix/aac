@@ -21,11 +21,16 @@ import {
   dealUnits,
   drawWildArea,
   expandWildArea,
+  readWildRecord,
+  shiftWildAreaClock,
+  WILD_AREA_CODEC,
   wildAreaCenter,
   wildAreaCounts,
   wildAreaPopulation,
+  wildAreaQuote,
   wildAreaStock,
   wildDrawSectorOf,
+  wildKeepChance,
   wildSourceEndpoint,
   wildSourcePartner,
   type WildAreaRecord,
@@ -281,6 +286,135 @@ describe("S4 — the harvest-direction gradient", () => {
     expect(wildDrawSectorOf(0, 1)).toBe(2);
     expect(wildDrawSectorOf(-1, 0)).toBe(4);
     expect(wildDrawSectorOf(0, -1)).toBe(6);
+  });
+});
+
+describe("bridge R0 — the density law, one exported definition", () => {
+  // An east-harvested record: sector 0 (+x) carries all the weight.
+  const rec = {
+    area: AREA,
+    draw: [100, 0, 0, 0, 0, 0, 0, 0],
+  };
+
+  it("an untouched record keeps everything; a harvested edge thins to the floor", () => {
+    const flat = { area: AREA, draw: new Array<number>(8).fill(0) };
+    expect(wildKeepChance(flat, 10, 10)).toBe(1);
+    expect(wildKeepChance(rec, 120, 120)).toBe(1); // dead centre names nothing
+    // Deep in the harvested sector the keep chance drops; the far (west)
+    // edge stands untouched.
+    expect(wildKeepChance(rec, 230, 120)).toBeLessThan(wildKeepChance(rec, 10, 120));
+    expect(wildKeepChance(rec, 10, 120)).toBe(1);
+    // Floored, never a hard-edged clearing.
+    expect(wildKeepChance(rec, 239, 120)).toBeGreaterThanOrEqual(0.05);
+  });
+
+  it("⚖️ the difficulty seam: hard-to-reach ground keeps its trees", () => {
+    // Cost climbs toward the east edge (a slope the harvesters won't climb).
+    const reach = { cost: (x: number) => Math.max(0, x - 120), ref: 120 };
+    const east = { x: 220, y: 120 };
+    expect(wildKeepChance(rec, east.x, east.y, reach))
+      .toBeGreaterThan(wildKeepChance(rec, east.x, east.y));
+    // Fully shielded at cost ≥ ref: the gradient cannot bite at all.
+    expect(wildKeepChance(rec, 240, 120, reach)).toBe(1);
+    // A zero-cost spot is byte-identical to the plain law.
+    expect(wildKeepChance(rec, 60, 120, reach)).toBe(wildKeepChance(rec, 60, 120));
+  });
+
+  it("expand with a reach field stays deterministic and conserving", () => {
+    const content = buildWilderness({ seed: 7, side: 240, mix: [{ species: "oak", count: 24 }] });
+    const live = new Map<string, Record<string, number>>();
+    for (const f of content.features) {
+      live.set(wildFeatureContainerId(f), f.x > 120 ? { wood: 0 } : { ...f.stock });
+    }
+    const harvested = condenseWildArea({
+      features: content.features,
+      liveStock: (id) => live.get(id),
+      now: 10, area: AREA, seed: 11, key: "home",
+    });
+    const reach = { cost: (x: number) => Math.max(0, x - 120), ref: 60 };
+    const a = expandWildArea({ rec: harvested, reach });
+    const b = expandWildArea({ rec: harvested, reach });
+    expect(b).toEqual(a);
+    expect(sumStocks(a)).toEqual(sumStocks(expandWildArea({ rec: harvested })));
+  });
+});
+
+describe("persistence P0 — rest/wake (the clock shift) and the read arm", () => {
+  /** A record with every stamp kind armed: quote clock, climbs, regrows. */
+  const stamped = (): WildAreaRecord => {
+    const content = buildWilderness({ seed: 5, side: 240, mix: [{ species: "oak", count: 8 }] });
+    const rec = fold(content.features, 730);
+    rec.stands[0]!.climbAt.push({ cls: 0, at: 900 });
+    rec.stands[0]!.regrowAt["apple"] = [850, 1200];
+    return rec;
+  };
+
+  it("⚖️ shift∘shift⁻¹ ≡ id, byte for byte; zero shift returns the SAME object", () => {
+    const rec = stamped();
+    expect(shiftWildAreaClock(rec, 0)).toBe(rec);
+    const away = shiftWildAreaClock(rec, -730);   // rest at the fold clock
+    const back = shiftWildAreaClock(away, 730);   // wake at the same clock
+    expect(back).toEqual(rec);
+    // Every stamp moved by exactly the shift; nothing else did.
+    expect(away.at).toBe(0);
+    expect(away.stands[0]!.climbAt.at(-1)!.at).toBe(170);
+    expect(away.stands[0]!.regrowAt["apple"]).toEqual([120, 470]);
+    expect(wildAreaStock(away)).toEqual(wildAreaStock(rec)); // conservation
+    expect(wildAreaCounts(away)).toEqual(wildAreaCounts(rec));
+    expect(away.draw).toEqual(rec.draw);
+  });
+
+  it("the codec's rest/wake arms ARE the shift, and compose to identity", () => {
+    const rec = stamped();
+    const rested = WILD_AREA_CODEC.rest!(rec, 730);
+    expect(rested).toEqual(shiftWildAreaClock(rec, -730));
+    // Wake on a LATER boot's clock: every deadline sits the same distance
+    // ahead of the new clock as it sat ahead of the old one.
+    const woken = WILD_AREA_CODEC.wake!(rested, 50);
+    expect(woken.stands[0]!.climbAt.at(-1)!.at).toBe(220);
+    expect(WILD_AREA_CODEC.wake!(rested, 730)).toEqual(rec);
+  });
+
+  it("the read arm accepts a JSON round-trip as a deep copy, and refuses non-shapes", () => {
+    const rec = stamped();
+    const wire = JSON.parse(JSON.stringify(rec)) as unknown;
+    const got = readWildRecord(wire);
+    expect(got).toEqual(rec);
+    expect(got).not.toBe(wire); // a copy, never a reference into the wire
+    got!.stands[0]!.stock["wood"] = 0;
+    expect((wire as WildAreaRecord).stands[0]!.stock["wood"]).not.toBe(0);
+    // Refusals: not-an-object, missing key, NaN smuggled into a stamp.
+    expect(readWildRecord(null)).toBeNull();
+    expect(readWildRecord({ ...rec, key: 7 })).toBeNull();
+    expect(readWildRecord({ ...rec, at: Number.NaN })).toBeNull();
+    expect(WILD_AREA_CODEC.read).toBe(readWildRecord); // the codec's own arm
+  });
+});
+
+describe("bridge Ⓓ — the render quote", () => {
+  it("quotes populations, harvest state, gradient, seed — deep-copied and serializable", () => {
+    const content = buildWilderness({ seed: 9, side: 240, mix: [{ species: "oak", count: 6 }] });
+    const rec = fold(content.features, 25);
+    rec.draw[3] = 17;
+    rec.stands[0]!.regrowAt["apple"] = [400, 900];
+    const q = wildAreaQuote(rec);
+    expect(q.key).toBe("home");
+    expect(q.at).toBe(25);
+    expect(q.seed).toBe(rec.seed);
+    expect(q.area).toEqual(AREA);
+    expect(q.draw[3]).toBe(17);
+    expect(q.stands[0]!.byClass).toEqual(rec.stands[0]!.byClass);
+    expect(q.stands[0]!.stock).toEqual(rec.stands[0]!.stock);
+    expect(q.stands[0]!.nextRegrowAt["apple"]).toBe(400); // earliest deadline only
+    // Deep copies: mutating the quote never reaches the record.
+    q.draw[0] = 999;
+    q.stands[0]!.stock["wood"] = 0;
+    q.area.x = -1;
+    expect(rec.draw[0]).not.toBe(999);
+    expect(rec.area.x).toBe(0);
+    expect(wildAreaStock(rec)["wood"] ?? 0).toBeGreaterThan(0);
+    // Serializable whole: a JSON round-trip is identity.
+    expect(JSON.parse(JSON.stringify(q))).toEqual(q);
   });
 });
 

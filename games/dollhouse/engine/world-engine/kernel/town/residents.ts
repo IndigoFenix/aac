@@ -381,6 +381,27 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     // signal supplied ⇒ fall back to the raw footprint test.
     const isHouseVisible = (h: TownHouse): boolean =>
       isVisible ? isVisible(h.index) : inHouseRect(p, h);
+    // THE ORBIT SHORT-CIRCUIT (large-city perf, 2026-08-25): budget 0 with no
+    // body standing and no interior on show is the streamer's OFF state — the
+    // candidate walk below (goods.errand + creatureActivityAt per member, the
+    // whole plan, every step) can then neither spawn (the budget and the
+    // family lock are both zero) nor cull (nothing embodied). An orbit camera
+    // over a 195-house town paid ~1000 heavy iterations per step for that
+    // empty decision. Guarded on `primed` so the town's FIRST frame still
+    // walks — the populated-start exemption is consumed at mount, exactly as
+    // before — and headless callers (no pushed crowd budget) never take this
+    // branch: their budget is the stage default, > 0.
+    if (primed && budget <= 0 && bodies.size === 0) {
+      let watched = false;
+      for (const h of plan.houses) {
+        if (isHouseVisible(h)) { watched = true; break; }
+      }
+      if (!watched) {
+        lastNow = now;
+        lastVisible.clear();
+        return { spawn: [], despawn: [], trips: [] };
+      }
+    }
     // CANDIDACY MUST COVER THE SPAWN RING (spirit-view churn, 2026-07-23): the
     // view guard relocates open-ground spawns to `visibleR + 8`, and a spirit
     // camera's whole-town visibleR exceeds street-level PEOPLE_R — a body

@@ -39,6 +39,15 @@ import { voiceRecordRepository } from "../../repositories/voiceRecordRepository"
 
 import { ObserverAgent, type ObserverOutputEvent, type ObserverCallbacks, type ObserverStartConfig } from "./observer-agent";
 import { HttpObserverAgent } from "./http-observer-agent";
+import { SplitObserverAgent } from "./split-observer-agent";
+import {
+  budgetFloor,
+  paidServiceAllowed,
+  BUDGET_SHUTDOWN_PERCENT,
+  BUDGET_SPEAKER_SLEEP_PERCENT,
+  type BudgetFloor,
+  type PaidService,
+} from "./budget-floors";
 import type { IObserverAgent } from "./observer-interface";
 import { shouldSuppressEmergency, DEFAULT_EMERGENCY_ALARM_FRAME_WINDOW_MS } from "./alarm-gate";
 import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
@@ -1199,6 +1208,9 @@ export class AgentCoordinator {
    *  is deferred to the next idle boundary (onSpeakerSpeechEnd) so it never cuts
    *  a sentence, then lands the moment it's not busy. */
   private economySwitchPendingIdle = false;
+  /** Set when the ≤0% hard floor hit while the AI was speaking; applied at
+   *  the next idle boundary (onSpeakerSpeechEnd) — never mid-sentence. */
+  private allStopPendingIdle = false;
   /** A backend switch request that arrived while it couldn't be applied
    *  (coordinator still initializing, or another switch in flight). Queued and
    *  drained at ready / switch-completion instead of silently dropped — a
@@ -1248,8 +1260,10 @@ export class AgentCoordinator {
    *  LLM stop entirely (nothing but the budget regenerating while idle). The
    *  low band (<25%, energyBand "low") additionally forces the Observer to its
    *  cheap HTTP backend + the budget-scaled sleep timer + a tired Speaker. */
-  private static readonly BUDGET_SPEAKER_SLEEP_PERCENT = 10;
-  private static readonly BUDGET_SHUTDOWN_PERCENT = 0;
+  // The ladder itself lives in budget-floors.ts (pure, tested); these aliases
+  // keep the existing call sites readable.
+  private static readonly BUDGET_SPEAKER_SLEEP_PERCENT = BUDGET_SPEAKER_SLEEP_PERCENT;
+  private static readonly BUDGET_SHUTDOWN_PERCENT = BUDGET_SHUTDOWN_PERCENT;
   /** The meter ACCUMULATES + PERSISTS for EVERY session — full-attention
    *  included (recordBudgetDrain / maybePersistBudget / maybePushBudget carry
    *  no mode gate). Full attention changes what the system DOES about the
@@ -1337,6 +1351,20 @@ export class AgentCoordinator {
       && bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).band === "low";
   }
 
+  /** The budget floor this session is under right now — "none" whenever the
+   *  throttle is off (full-attention, or AAC_BUDGET_METER off). */
+  private budgetFloorNow(): BudgetFloor {
+    if (!this.budgetThrottleEnabled) return "none";
+    return budgetFloor(bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).percent);
+  }
+
+  /** One question for every paid choke point (Board Manager invoke, Monitor
+   *  heartbeat, server STT, close-time plan refresh): may `service` spend under
+   *  the current floor? See budget-floors.ts for the ladder. */
+  private paidAllowed(service: PaidService): boolean {
+    return paidServiceAllowed(service, this.budgetFloorNow());
+  }
+
   /** The model id the CURRENT Observer backend runs on — the native-audio
    *  Live model in "live" mode, the cheap text model in "economy" mode. Used
    *  for cost attribution so each turn bills at the backend's real rates. */
@@ -1361,6 +1389,19 @@ export class AgentCoordinator {
    *  its <energy> lines are omitted and the backend is pinned to economy. */
   private get observerModeSwitchable(): boolean {
     return this.economyObserverEnabled && this.observerPolicy.allowLive;
+  }
+
+  /** Vision split (2026-08-27): while the Observer is on the LIVE backend,
+   *  camera frames go to a stateless HTTP vision pass instead of the Live
+   *  context (see split-observer-agent.ts — a frame in the Live context is
+   *  re-billed on every later turn, ~$0.11/frame measured). Part of the
+   *  cost-saving system, so it inherits its master gate and the
+   *  full-attention gate; AAC_OBSERVER_VISION_SPLIT="false"/"0"/"off" turns
+   *  just this lever off. */
+  private get visionSplitEnabled(): boolean {
+    if (!this.economyObserverEnabled || !this.economize) return false;
+    const v = process.env.AAC_OBSERVER_VISION_SPLIT?.toLowerCase();
+    return !(v === "false" || v === "0" || v === "off");
   }
 
   /** True when cost-saving substitutions are allowed (full-attention OFF). */
@@ -2181,7 +2222,10 @@ export class AgentCoordinator {
     // gating lives inside thoroughStartup's cache READ; the refresh always
     // writes so a startupMode flip starts warm.
     const monitor = cache?.monitorAgent;
-    if (monitor?.refreshSessionPlanAfterWrapup && this.studentId) {
+    // Hard floor: this is cache-warming for the NEXT session — the one
+    // close-time LLM call that isn't the record of this one — so it's skipped
+    // at ≤0% (the final Monitor pass + summary above are kept deliberately).
+    if (monitor?.refreshSessionPlanAfterWrapup && this.studentId && this.paidAllowed("session-plan-refresh")) {
       try {
         const usage = await monitor.refreshSessionPlanAfterWrapup(cache?.state?.sessionSummary);
         if (usage) {
@@ -3235,9 +3279,15 @@ export class AgentCoordinator {
         flowNote("COORDINATOR", `Observer backend restored from session state: ${persisted} (policy default was ${backend.mode}).`);
       }
     }
-    this.observer = this.createObserverAgent();
+    // ≤0% — all-stop at startup: build NO paid agent. The post-ready floor
+    // check (applyBudgetFloors → enforceAllStop) puts the session to sleep
+    // right away; the wake path holds the line until regen lifts the level.
+    const startupAllStop = startupBudgetPct <= AgentCoordinator.BUDGET_SHUTDOWN_PERCENT;
+    this.observer = startupAllStop ? null : this.createObserverAgent();
     this.speaker = startupBoardOnly ? null : this.createSpeakerAgent();
-    if (startupBoardOnly) {
+    if (startupAllStop) {
+      flowNote("COORDINATOR", `Startup at ${startupBudgetPct}% (≤0%) — all-stop: no Observer, no Speaker, no board LLM.`);
+    } else if (startupBoardOnly) {
       flowNote("COORDINATOR", `Startup at ${startupBudgetPct}% (<10%) — board-only: economy Observer, no Speaker, no greeting.`);
     }
     // Board Manager backend selection (mirrors the Speaker live/http pattern):
@@ -3254,8 +3304,9 @@ export class AgentCoordinator {
     }
     this.boardManager = this.createBoardManager(boardMgrMode);
     // Open the Live session ahead of the first invoke so the first board
-    // build doesn't pay connect latency (no-op on the HTTP path).
-    this.boardManager.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
+    // build doesn't pay connect latency (no-op on the HTTP path). Not under
+    // all-stop — nothing will invoke it.
+    if (!startupAllStop) this.boardManager.prewarm?.(this.boardManagerPromptBase, this.boardManagerToolConfig);
 
     // 7. Connect Observer + Speaker in parallel. If either fails, tear down.
     //    This is the final pre-ready wait (Live WS handshakes) → "wakingUp".
@@ -4925,10 +4976,16 @@ export class AgentCoordinator {
         source: "client",
         timestamp: Date.now(),
       });
-      this.send({ type: "guessing_mode", active: true });
+      this.send({ type: "guessing_mode", active: true, offeredKeys: inj.suggestionKeys });
       this.broadcastGuessingStateToAgents(opts);
       return;
     }
+
+    // Keep the client's copy of the offered keys in step with the engine. It
+    // needs the CURRENT question's keys to repair a board where BoardManager
+    // wrote their localized labels as plain buttons instead of the keys; stale
+    // keys from the previous question would re-tag the wrong buttons.
+    this.send({ type: "guessing_mode", active: true, offeredKeys: inj.suggestionKeys });
 
     // Subsequent state refresh (a press / reject / narrow). Broadcast
     // the new state to the live agents and defer BoardMgr so its
@@ -5490,6 +5547,11 @@ export class AgentCoordinator {
    */
   private async handleSpeechAudio(msg: Extract<ClientMessage, { type: "speech_audio" }>): Promise<void> {
     if (!msg.data) return;
+    // Hard floor: the clip path bills Google STT too.
+    if (!this.paidAllowed("stt")) {
+      flowNote("COORDINATOR", "speech_audio dropped — budget exhausted (all-stop).");
+      return;
+    }
     const buf = Buffer.from(msg.data, "base64");
     const seconds = estimateWavSeconds(buf);
     // Record EVERY clip that arrives for STT in the flow log — even when STT
@@ -5769,10 +5831,14 @@ export class AgentCoordinator {
     // VAD burst, all night if need be (the 07-20 runaway billed ~4h of STT per
     // session AFTER the agents were torn down). Refuse the stream instead;
     // deliberate input wakes the session and streams resume.
-    if (this.asleep || this.superseded) {
+    // Hard floor: a Google stream is billed per second; at ≤0% it's refused
+    // like an asleep one (the client is also told sttActive:false).
+    const budgetBlocked = !this.paidAllowed("stt");
+    if (this.asleep || this.superseded || budgetBlocked) {
       this.sttRefusedWhileAsleep++;
       if (this.sttRefusedWhileAsleep === 1) {
-        flowNote("COORDINATOR", `STT stream refused while ${this.superseded ? "superseded" : "asleep"} — further refusals counted, summarized on wake.`);
+        const why = budgetBlocked ? "budget exhausted (all-stop)" : this.superseded ? "superseded" : "asleep";
+        flowNote("COORDINATOR", `STT stream refused while ${why} — further refusals counted, summarized on wake.`);
       }
       return;
     }
@@ -7138,7 +7204,24 @@ export class AgentCoordinator {
       return new HttpObserverAgent(BOARD_MANAGER_DEFAULT_PROVIDER, callbacks, this.useVertex);
     }
     flowNote("COORDINATOR", `Observer mode=live (Gemini Live ${this.observerModel})`);
-    return new ObserverAgent("gemini", callbacks);
+    const live = new ObserverAgent("gemini", callbacks);
+    if (!this.visionSplitEnabled) return live;
+    // Vision split: the Live half keeps hearing/continuity; every frame goes
+    // to a stateless HTTP pass on the economy model, billed under its own
+    // label so the saving is measurable against `observer:<live model>`.
+    const visionModel = this.observerHttpModel;
+    const vision = new HttpObserverAgent(
+      BOARD_MANAGER_DEFAULT_PROVIDER,
+      {
+        onEvent: callbacks.onEvent,
+        onError: (err) => console.error("[AgentCoordinator] Observer vision pass error:", err),
+        onClose: () => console.log("[AgentCoordinator] Observer vision pass closed"),
+        onUsage: (usage) => this.trackLiveUsage("observer-vision", BOARD_MANAGER_DEFAULT_PROVIDER, visionModel, usage),
+      },
+      this.useVertex,
+    );
+    flowNote("COORDINATOR", `Observer vision split: frames → HTTP ${visionModel} (never the Live context)`);
+    return new SplitObserverAgent(live, vision, visionModel);
   }
 
   /** Build the ObserverStartConfig for the CURRENT backend (active model +
@@ -7620,15 +7703,52 @@ export class AgentCoordinator {
       this.takeDeferredBoardMgrTrigger("speech_text_finalized supersedes it"),
       event,
     );
-    // If a BM call is already running, its in-flight context is older
-    // than the speech that just landed. Abort it: the queued invocation
-    // we're about to fire will run with this new speech as trigger, so
-    // the result of the in-flight one would only paint stale buttons.
-    if (this.boardMgrInFlight && this.boardMgrAbortController) {
-      flowNote("BOARD_MGR", "Aborting in-flight invocation — newer speech_text_finalized supersedes.");
-      this.boardMgrAbortController.abort();
+    // DEBOUNCE (2026-08-27). The Speaker often lands two or three short
+    // utterances 1–3s apart (a streamed multi-sentence reply). Firing a
+    // ~7.5s board build on each one and aborting the previous meant 12 of 45
+    // builds in one session were discarded — and the abort does not stop
+    // Google from billing the generation. Hold the reply build briefly; a
+    // further finalized utterance inside the window merges into the same
+    // build (all speech events reach BM in ONE invocation, so nothing is
+    // lost) and the build starts from the LAST one — which in a burst is
+    // sooner than abort-and-restart got it there.
+    for (const t of triggers) {
+      if (!this.pendingSpeechReplyTriggers.includes(t)) this.pendingSpeechReplyTriggers.push(t);
     }
-    this.invokeBoardManager(triggers);
+    if (this.speechReplyDebounceTimer) clearTimeout(this.speechReplyDebounceTimer);
+    this.speechReplyDebounceTimer = setTimeout(() => {
+      this.speechReplyDebounceTimer = null;
+      const merged = this.pendingSpeechReplyTriggers;
+      this.pendingSpeechReplyTriggers = [];
+      if (merged.length === 0 || this.state !== "ready" || this.asleep) return;
+      // If a BM call is already running, its in-flight context is older
+      // than the speech that just landed. Abort it: the invocation we're
+      // about to fire runs with this new speech as trigger, so the result of
+      // the in-flight one would only paint stale buttons.
+      if (this.boardMgrInFlight && this.boardMgrAbortController) {
+        flowNote("BOARD_MGR", "Aborting in-flight invocation — newer speech_text_finalized supersedes.");
+        this.boardMgrAbortController.abort();
+      }
+      if (merged.length > 2) flowNote("BOARD_MGR", `Reply build debounced — ${merged.length} speech events merged into one invocation.`);
+      void this.invokeBoardManager(merged);
+    }, AgentCoordinator.SPEECH_REPLY_DEBOUNCE_MS);
+  }
+
+  /** How long a Speaker-reply board build waits for a follow-on utterance
+   *  before starting. Short against the ~7.5s build; long enough to absorb
+   *  the 1–3s gaps a streamed multi-sentence reply produces. */
+  private static readonly SPEECH_REPLY_DEBOUNCE_MS = 1_200;
+  private speechReplyDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingSpeechReplyTriggers: AgentEvent[] = [];
+
+  /** Drop a pending reply build (barge-in, sleep): the speech it would answer
+   *  has been superseded or the session is going down. */
+  private clearSpeechReplyDebounce(reason: string): void {
+    if (!this.speechReplyDebounceTimer) return;
+    clearTimeout(this.speechReplyDebounceTimer);
+    this.speechReplyDebounceTimer = null;
+    this.pendingSpeechReplyTriggers = [];
+    flowNote("BOARD_MGR", `Pending reply build dropped: ${reason}`);
   }
 
   private onSpeakerSpeechEnd(event: SpeechEndEvent): void {
@@ -7718,13 +7838,27 @@ export class AgentCoordinator {
     // awake heartbeat (or the session summary) — deferred, never lost.
     // Incidents still flush immediately via explicit monitor_call_requested.
     const skipMonitorHeartbeat = this.economize && this.sessionProfile === "resting";
-    if (this.sessionId && !skipMonitorHeartbeat) {
+    // Hard floor: the Monitor is the largest line on the bill and had no
+    // budget gate; pending messages simply wait for the final close pass.
+    const budgetBlocksMonitor = !this.paidAllowed("monitor-heartbeat");
+    if (this.sessionId && !skipMonitorHeartbeat && !budgetBlocksMonitor) {
       flowNote("MONITOR", "turn-end heartbeat — triggerMonitor(force=false)");
       dualAgentService.triggerMonitor(this.sessionId, false).catch(err => {
         console.warn("[AgentCoordinator] triggerMonitor failed:", (err as Error).message);
       });
+    } else if (budgetBlocksMonitor) {
+      flowNote("MONITOR", "turn-end heartbeat skipped — budget exhausted (all-stop); pending messages ride the final pass.");
     } else if (skipMonitorHeartbeat) {
       flowNote("MONITOR", "turn-end heartbeat skipped (economize + resting)");
+    }
+
+    // A hard all-stop deferred while the AI was speaking lands here, at the
+    // first idle boundary. It supersedes the deferred economy switch below.
+    if (this.allStopPendingIdle) {
+      this.allStopPendingIdle = false;
+      this.economySwitchPendingIdle = false;
+      this.enforceAllStop();
+      return;
     }
 
     // Apply a low-band economy-backend switch that was deferred while the AI was
@@ -9982,6 +10116,9 @@ ${customDetail}` : ""));
    *  nowhere to go. */
   private clearDeferredBoardMgr(reason: string): void {
     this.takeDeferredBoardMgrTrigger(reason);
+    // A debounced Speaker-reply build is superseded by the same events
+    // (barge-in press, sleep) that clear a deferred press build.
+    this.clearSpeechReplyDebounce(reason);
   }
 
   /**
@@ -10053,6 +10190,13 @@ ${customDetail}` : ""));
     // nobody is at the device.
     if (this.sessionProfile === "resting") {
       flowNote("BOARD_MGR", "Skipped invocation — session is resting.");
+      return;
+    }
+    // Hard floor: no board LLM at ≤0%. Covers the window before the all-stop
+    // sleep lands (deferred mid-sentence) and presses routed after a refused
+    // wake — the last emitted board stays on screen.
+    if (!this.paidAllowed("board-manager")) {
+      flowNote("BOARD_MGR", "Skipped invocation — budget exhausted (all-stop).");
       return;
     }
     if (this.boardMgrInFlight) {
@@ -10217,6 +10361,19 @@ ${customDetail}` : ""));
       // (unlikely but possible), drop the stale result.
       if (controller.signal.aborted) {
         flowNote("BOARD_MGR", "In-flight invocation aborted after resolution — result discarded.");
+        // Not "unlikely" in practice: the SDK does not cancel an in-flight
+        // generateContent on abort, so the generation completes and Google
+        // bills it — 12 of 45 builds in session c47784c0 ended here. Record
+        // the spend even though the result is dropped, or the ledger
+        // under-counts the Board Manager by every superseded build.
+        if (result.usage) {
+          this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, this.boardManagerHttpModel, {
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            cachedTokens: result.usage.cachedTokens ?? 0,
+            cacheCreationTokens: result.usage.cacheCreationTokens ?? 0,
+          });
+        }
         return;
       }
       // (Retry counter is reset at invocation start — see the pendingFeedback
@@ -10748,7 +10905,48 @@ ${customDetail}` : ""));
         if (!(b as any).buttonType) (b as any).buttonType = "guess";
       }
     }
-    const merged = [...kept, ...specialButtons, ...suggestionExpanded].slice(0, 8);
+    // BACKSTOP: a narrowing question is live and the rebuild carried NONE of
+    // the offered registry keys. Seen on 2026-08-27 (11:34:11) — BoardManager
+    // hand-authored the Hebrew labels of `actions.who` ("לבד"/"עם אחרים"/"ביחד")
+    // as plain buttons instead of emitting the keys, so the press routed as an
+    // ordinary utterance, never reached the engine, and narrowing stalled at
+    // `pace` for four minutes while the AI improvised its own dimensions.
+    // The offered keys are SYSTEM content (registry icon + client-localized
+    // label), so we append them ourselves rather than burning a retry round
+    // trip on the model. The client collapses any hand-authored duplicates —
+    // see `repairGuessingBoard` in client-aac.
+    //
+    // An AI-authored `[NARROW:]` button is NOT this failure: the prompt lets
+    // the model pick its own dimension when the registry's doesn't fit the
+    // live conversation, and a board carrying those still puts a narrowing
+    // question in front of the user. Only step in when the question has
+    // vanished from the board entirely.
+    const hasAuthoredNarrowing = kept.some((b) => (b as any).narrowDimension && (b as any).narrowValue);
+    if (
+      this.guessingState &&
+      offeredKeys.length > 0 &&
+      suggestionExpanded.length === 0 &&
+      !hasAuthoredNarrowing
+    ) {
+      const injected = offeredKeys
+        .map((k) => expandSuggestionKey(k))
+        .filter((b): b is NonNullable<typeof b> => b !== null);
+      if (injected.length > 0) {
+        suggestionExpanded.push(...injected);
+        flowNote(
+          "COORDINATOR",
+          `rebuild_board carried no offered suggestion keys while narrowing — injected ${injected.length} (${offeredKeys.join(", ")}).`,
+        );
+      }
+    }
+    // Suggestion buttons ARE the narrowing question — the 8-slot cap must
+    // never drop them in favour of the AI's free-form guesses. Trim `kept`
+    // instead, keeping the on-screen order (guesses first, then helpers, then
+    // the registry answers) that the board has always used.
+    // Reserve against the SUGGESTIONS only: outside guessing that list is
+    // empty, so `keptRoom` is 8 and this is byte-for-byte the old behaviour.
+    const keptRoom = Math.max(0, 8 - suggestionExpanded.length);
+    const merged = [...kept.slice(0, keptRoom), ...specialButtons, ...suggestionExpanded].slice(0, 8);
     if (merged.length === 0) {
       // Nothing renderable in the rebuild — leave the current surface
       // intact rather than wipe the board to empty.
@@ -11203,6 +11401,11 @@ ${customDetail}` : ""));
 
   private async flushMonitorCall(): Promise<void> {
     if (!this.sessionId || this.pendingMonitorCalls.length === 0) return;
+    // Hard floor: hold the reasons (not cleared) — they ride the final pass.
+    if (!this.paidAllowed("monitor-heartbeat")) {
+      flowNote("MONITOR", `Monitor call held — budget exhausted (all-stop); ${this.pendingMonitorCalls.length} reason(s) kept for the final pass.`);
+      return;
+    }
     const calls = this.pendingMonitorCalls;
     this.pendingMonitorCalls = [];
     const combinedReason = calls
@@ -11475,7 +11678,9 @@ ${customDetail}` : ""));
   /** Fire-and-forget credit charge per agent turn. Failures are logged
    *  inside dualAgentService and must not interrupt the session. */
   private trackLiveUsage(
-    agent: "observer" | "speaker" | "board-manager",
+    // "observer-vision" = the Live Observer's HTTP vision pass; it drains the
+    // Observer's share of the per-transcript note like any Observer turn.
+    agent: "observer" | "observer-vision" | "speaker" | "board-manager",
     provider: string,
     model: string,
     usage: import("./live-provider").LiveUsage,
@@ -11635,10 +11840,49 @@ ${customDetail}` : ""));
     if (bandChanged) this.lastEnergyBand = band;
 
     // Apply the mechanical throttle: low band (<25%) forces the cheap HTTP
-    // Observer + tired Speaker; the budget-scaled sleep timer + <10%/<0% floors
-    // live in maybeIdleTransition / doWakeFromSleep.
-    this.applyEnergyThrottle(band);
+    // Observer + tired Speaker; the budget-scaled sleep timer + <10% floor
+    // live in maybeIdleTransition / doWakeFromSleep. At ≤0% the hard floor
+    // (applyBudgetFloors → enforceAllStop) supersedes the low-band levers —
+    // no point starting an economy switch on agents about to be torn down.
+    if (this.budgetFloorNow() !== "all-stop") this.applyEnergyThrottle(band);
     this.applyBudgetFloors(now);
+  }
+
+  /**
+   * HARD FLOOR (2026-08-27): at ≤0% an AWAKE session stops spending, not only
+   * a sleeping one. Before this the all-stop lived solely in doWakeFromSleep,
+   * so a device in continuous use — every press and Observer observation
+   * resetting the low-band sleep timer — never reached it, and the Monitor /
+   * Board Manager / STT had no budget gate at all: a Premium month came in at
+   * $270+ against the $250 tier while the meter read 0%.
+   *
+   * Tears the paid agents down via enterSleep (the WS and board stay alive; a
+   * press still voices the student's own TTS), tells the client to stop
+   * streaming, and leaves doWakeFromSleep's existing ≤0% refusal to hold the
+   * line until regen lifts the level. Never mid-sentence: while the AI is
+   * speaking it's deferred to onSpeakerSpeechEnd, like the economy switch.
+   * Idempotent — re-checks the level, so a stale schedule is harmless.
+   */
+  private enforceAllStop(): void {
+    if (this.asleep || this.state !== "ready") return;
+    const pct = bindingEnergy(this.budgetState, this.budgetWindows, Date.now()).percent;
+    if (pct > AgentCoordinator.BUDGET_SHUTDOWN_PERCENT) return; // regenerated past the floor meanwhile
+    if (this.isAiSpeaking()) {
+      if (!this.allStopPendingIdle) {
+        this.allStopPendingIdle = true;
+        flowNote("COORDINATOR", `Budget exhausted (${pct}%) — all-stop deferred until the AI finishes speaking.`);
+      }
+      return;
+    }
+    this.allStopPendingIdle = false;
+    this.economySwitchPendingIdle = false;
+    flowNote("COORDINATOR", `Budget exhausted (${pct}%) — all-stop: tearing the paid agents down; sleeping until the budget regenerates.`);
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      logLiveSession("ALL_STOP", `budget ${pct}% (≤${AgentCoordinator.BUDGET_SHUTDOWN_PERCENT}%) while awake`);
+    });
+    this.send({ type: "client_config_update", config: { sttActive: false, sceneStateActive: false, pcmContinuous: false } });
+    this.send({ type: "sleep_state_change", data: { state: "asleep", source: "system" } });
+    this.enterSleep();
   }
 
   /** Enforce the economy-backend floor. Force the cheap HTTP Observer as soon
@@ -11686,6 +11930,13 @@ ${customDetail}` : ""));
   private applyBudgetFloors(now: number): void {
     if (!this.budgetThrottleEnabled || this.asleep || this.state !== "ready") return;
     const b = bindingEnergy(this.budgetState, this.budgetWindows, now);
+    // ≤0% — the hard floor. Scheduled rather than run inline: this is reached
+    // from the ledger's charge listener, i.e. possibly inside an agent's own
+    // usage callback, and enterSleep closes that agent.
+    if (b.percent <= AgentCoordinator.BUDGET_SHUTDOWN_PERCENT) {
+      void Promise.resolve().then(() => this.enforceAllStop());
+      return;
+    }
     const wantTired = b.band === "low";
     if (wantTired && !this.budgetSpeakerTiredActive) {
       this.budgetSpeakerTiredActive = true;
@@ -11713,9 +11964,40 @@ ${customDetail}` : ""));
         // bar refresh runs for every session.
         this.reportEnergy(now, { fromCharge: false });
         this.maybePushBudget(now);
+        this.maybeSpeakerlessMonitorHeartbeat(now);
       },
       AgentCoordinator.ENERGY_TICK_MS,
     );
+  }
+
+  /** Min gap between speakerless heartbeats. The service's own 2-minute
+   *  throttle still governs; this just keeps the tick from re-asking (and
+   *  re-logging) every 15s while it's throttled. */
+  private static readonly SPEAKERLESS_HEARTBEAT_MS = 120_000;
+  private lastSpeakerlessHeartbeatAt = 0;
+
+  /**
+   * Monitor heartbeat for sessions WITHOUT a Speaker (board-only: <10% budget,
+   * or a startup that refused the Speaker). The regular heartbeat hangs off
+   * onSpeakerSpeechEnd, so with no Speaker there is no turn end and the
+   * Monitor never ran — 38 pending messages sat untouched for a whole
+   * board-only session on 2026-08-27, though the ladder allows the Monitor
+   * down to 0%. Runs from the 15s energy tick, only while there is something
+   * pending, at the same cadence and under the same gates as the turn-end
+   * heartbeat (throttle, resting skip, budget floor).
+   */
+  private maybeSpeakerlessMonitorHeartbeat(now: number): void {
+    if (this.speaker || this.asleep || this.state !== "ready" || !this.sessionId) return;
+    if (this.economize && this.sessionProfile === "resting") return; // same skip as the turn-end path
+    if (!this.paidAllowed("monitor-heartbeat")) return;
+    if (now - this.lastSpeakerlessHeartbeatAt < AgentCoordinator.SPEAKERLESS_HEARTBEAT_MS) return;
+    const pending = dualAgentService.getSessionCache(this.sessionId)?.state.pendingMessages?.length ?? 0;
+    if (pending === 0) return;
+    this.lastSpeakerlessHeartbeatAt = now;
+    flowNote("MONITOR", `speakerless heartbeat — ${pending} pending, no Speaker to end a turn; triggerMonitor(force=false)`);
+    dualAgentService.triggerMonitor(this.sessionId, false).catch(err => {
+      console.warn("[AgentCoordinator] speakerless triggerMonitor failed:", (err as Error).message);
+    });
   }
 
   private stopEnergyTimer(): void {

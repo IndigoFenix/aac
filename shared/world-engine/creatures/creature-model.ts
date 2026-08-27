@@ -230,6 +230,14 @@ function buildSpeciesAssets(
       `creature-model: species "${species.id}" is bodiless — it renders as a light, not a mesh`,
     );
   }
+  // A VOCABULARY STUB has the same empty blueprint for a different reason: the
+  // word ships ahead of the body. Clamping it would stand a default quadruped
+  // in the world and call it a lion, which is worse than not building it.
+  if (species.stub) {
+    throw new Error(
+      `creature-model: species "${species.id}" is a vocabulary stub — no body plan is authored yet`,
+    );
+  }
   // NOT `!!look.toon` — an unset `toon` means "follow the engine-wide shading
   // mode", and coercing it to false would FORCE standard on every creature
   // while the rest of the world cel-shades.

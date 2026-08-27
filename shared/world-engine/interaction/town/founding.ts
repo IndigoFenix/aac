@@ -31,6 +31,7 @@ import {
   deltaIsEmpty,
   mergeHerd,
   type HerdRow,
+  type SerializedTownDeltas,
   type TownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
 import type { TownPlayConfig } from "./town-play.js";
@@ -97,6 +98,71 @@ export interface FoundedSite {
    *  fourth sibling beside stock, buildings and residents. Absent =
    *  none. */
   herd?: Record<string, HerdRow>;
+}
+
+/**
+ * ⚖️ THE FOUNDED SITE'S DURABLE FORM (record-persistence round P0 — the
+ * TownDeltas pattern: `toJSON` copies out, `createFoundedSite` copies in,
+ * restore-is-found). Plain JSON throughout; the live record's ONE
+ * non-plain member (`deltas`) rides as its own serialized form. What is
+ * deliberately NOT here: the stock ALIAS — the live host wires
+ * `site.stock` as the stock container's stack map at boot, and a restored
+ * site hands the boot a fresh object to wire the same way. `foundedDay`
+ * is a town-clock day and survives verbatim (day 0 is the no-clock null).
+ */
+export interface SerializedFoundedSite {
+  key: string;
+  seed: number;
+  at: { x: number; y: number };
+  foundedDay: number;
+  stock: Record<string, number>;
+  deltas: SerializedTownDeltas;
+  buildings: number;
+  residents: string[];
+  herd?: Record<string, HerdRow>;
+}
+
+/** Copy a live site OUT — deep copies everywhere (the payload must never
+ *  alias the live record; the stock alias in particular must not leak). */
+export function foundedSiteToJSON(site: FoundedSite): SerializedFoundedSite {
+  const out: SerializedFoundedSite = {
+    key: site.key,
+    seed: site.seed,
+    at: { ...site.at },
+    foundedDay: site.foundedDay,
+    stock: { ...site.stock },
+    deltas: site.deltas.toJSON(),
+    buildings: site.buildings,
+    residents: [...site.residents],
+  };
+  if (site.herd) {
+    out.herd = Object.fromEntries(
+      Object.entries(site.herd).map(([sp, row]) => [sp, { n: row.n, stock: { ...row.stock } }]),
+    );
+  }
+  return out;
+}
+
+/** Restore a site from its durable form — deep copies IN (the store owns
+ *  its state; the caller's JSON is never aliased), deltas through
+ *  `createTownDeltas(json)` so every ledger rides its own restore. */
+export function createFoundedSite(json: SerializedFoundedSite): FoundedSite {
+  const site: FoundedSite = {
+    key: json.key,
+    seed: json.seed,
+    at: { ...json.at },
+    foundedDay: json.foundedDay,
+    stock: { ...json.stock },
+    deltas: createTownDeltas(json.deltas),
+    buildings: json.buildings,
+    residents: [...json.residents],
+  };
+  if (json.herd) {
+    site.herd = Object.fromEntries(
+      Object.entries(json.herd).map(([sp, row]) => [sp, { n: row.n, stock: { ...row.stock } }]),
+    );
+  }
+  return site;
 }
 
 export interface FoundSiteOpts {
@@ -573,6 +639,10 @@ export function siteTownConfig(
     // The site WAS open country — its town keeps the gatherable
     // surroundings (explicit, not the founding-age default).
     wilderness: true,
+    // …and open country it remains: a founded site lives ON the planet, so
+    // its town rect is content, never the world's edge (unbounded manifold —
+    // town-stage `onPlanet`; the round-2 invisible-wall defect).
+    terrain: "planet",
     deltas,
     ...(opts?.scale ? { scale: opts.scale } : {}),
   };

@@ -54,7 +54,7 @@ import {
   wildFeatureContainerId, type WildernessFeature,
 } from "./wilderness.js";
 import {
-  registerFoldCodec,
+  finiteOrNull, readNumList, readNumMap, registerFoldCodec,
   type FoldCodec, type FoldCtx, type FoldRecord, type FoldRefusal,
 } from "../../kernel/town/fold.js";
 // ⚖️ F5 — the draw runs on the ONE take primitive every other endpoint uses
@@ -144,6 +144,58 @@ export function wildAreaCounts(rec: WildAreaRecord): Record<string, number[]> {
 /** How many sources stand in the whole area. */
 export function wildAreaPopulation(rec: WildAreaRecord): number {
   return rec.stands.reduce((n, s) => n + s.byClass.reduce((a, b) => a + b, 0), 0);
+}
+
+/**
+ * ⚖️ THE RENDER QUOTE (depletion↔render bridge Ⓓ, multiplayer rider): a
+ * plain-data, deep-copied, SERIALIZABLE snapshot of one record — everything
+ * a renderer may read (populations, harvest state, ripeness, the gradient,
+ * the placement seed) and nothing it may write. A remote client reads the
+ * identical shape over a wire later; the transport is the multiplayer
+ * arc's. Growth/regrow clocks are summarized to the earliest pending
+ * deadline per glyph (the next FIELD PULSE) — a renderer needs "when does
+ * this field refill", never the whole ledger.
+ */
+export interface WildAreaQuote {
+  key: string;
+  area: { x: number; y: number; w: number; h: number };
+  /** Clock the record's state is quoted at (absolute, caller's clock). */
+  at: number;
+  /** The placement seed — the renderer's determinism handle. */
+  seed: number;
+  draw: number[];
+  stands: Array<{
+    species: string;
+    byClass: number[];
+    stock: Record<string, number>;
+    cap: Record<string, number>;
+    /** Earliest pending regrow deadline per glyph, when one is armed. */
+    nextRegrowAt: Record<string, number>;
+  }>;
+}
+
+/** Build the quote — pure, fresh objects every call. */
+export function wildAreaQuote(rec: WildAreaRecord): WildAreaQuote {
+  return {
+    key: rec.key,
+    area: { ...rec.area },
+    at: rec.at,
+    seed: rec.seed,
+    draw: [...rec.draw],
+    stands: rec.stands.map((s) => {
+      const nextRegrowAt: Record<string, number> = {};
+      for (const [g, list] of Object.entries(s.regrowAt)) {
+        if (list.length) nextRegrowAt[g] = list[0]!;
+      }
+      return {
+        species: s.species,
+        byClass: [...s.byClass],
+        stock: { ...s.stock },
+        cap: { ...s.cap },
+        nextRegrowAt,
+      };
+    }),
+  };
 }
 
 // ── Fold ──────────────────────────────────────────────────────────────────
@@ -358,12 +410,64 @@ export interface WildUnfoldInput {
   /** Keep-clear disc (a town's plaza — the scatter's own `clearAt`/`clearR`). */
   clearAt?: { x: number; y: number };
   clearR?: number;
+  /** THE DIFFICULTY SEAM (bridge round ruling Ⓑ+, 2026-08-26): hard-to-reach
+   *  ground keeps its trees. Deterministic caller-supplied cost field;
+   *  absent ⇒ the shipped Euclidean law, byte-identical. */
+  reach?: WildReachCost;
 }
 
 /** How hard the gradient bites: at full weight, the harvested edge of the
  *  stand keeps ~1/4 of the density the far edge does. Not zero — a logged
  *  wood is thinner, never a clearing with a hard line through it. */
 const WILD_GRADIENT_STRENGTH = 0.75;
+
+/** A deterministic reach-cost field over the area (the DIFFICULTY term of
+ *  the density law): `cost(x, y)` in the caller's own units; `ref` is the
+ *  cost at which difficulty fully shields a spot — at `cost ≥ ref` the
+ *  gradient cannot bite there at all. */
+export interface WildReachCost {
+  cost(x: number, y: number): number;
+  ref: number;
+}
+
+/**
+ * ⚖️ THE DENSITY LAW, ONE DEFINITION (depletion↔render bridge R0): the
+ * chance a source still stands at (x, y) given the record's harvest
+ * gradient — sector weight (`draw`) × depth from the area's centre, floored
+ * at 0.05 so a logged wood is thinner, never a clearing with a hard line
+ * through it. The area's middle is barely touched either way, because the
+ * harvesters reached the near edge first. `expandWildArea` accepts
+ * positions against THIS function, and any scenery renderer that thins for
+ * depletion must thin by it too — a second gradient story must never exist.
+ *
+ * The optional `reach` term (user ruling Ⓑ+): the bite scales by how CHEAP
+ * the spot is to get to — cost ≥ `ref` shields fully, so the trees that
+ * survive a logging era are the ones on the hard ground. Absent ⇒
+ * byte-identical to the shipped Euclidean law.
+ */
+export function wildKeepChance(
+  rec: Pick<WildAreaRecord, "area" | "draw">,
+  x: number,
+  y: number,
+  reach?: WildReachCost,
+): number {
+  const maxDraw = rec.draw.reduce((a, b) => Math.max(a, b), 0);
+  if (maxDraw <= 0) return 1;
+  const cx = rec.area.x + rec.area.w / 2;
+  const cy = rec.area.y + rec.area.h / 2;
+  const dx = x - cx;
+  const dy = y - cy;
+  const r = Math.hypot(dx, dy);
+  if (r <= 1e-6) return 1;
+  const halfSpan = Math.max(1e-3, Math.hypot(rec.area.w, rec.area.h) / 2);
+  const w = (rec.draw[wildDrawSectorOf(dx, dy)] ?? 0) / maxDraw;
+  const depth = Math.min(1, r / halfSpan);
+  let bite = WILD_GRADIENT_STRENGTH * w * depth;
+  if (reach && reach.ref > 0) {
+    bite *= 1 - Math.min(1, Math.max(0, reach.cost(x, y)) / reach.ref);
+  }
+  return Math.max(0.05, 1 - bite);
+}
 
 /**
  * ⚖️ UNFOLD — the record deals its sources back out, THINNER TOWARD THE
@@ -376,27 +480,14 @@ const WILD_GRADIENT_STRENGTH = 0.75;
 export function expandWildArea(input: WildUnfoldInput): WildernessFeature[] {
   const { rec } = input;
   const out: WildernessFeature[] = [];
-  const maxDraw = rec.draw.reduce((a, b) => Math.max(a, b), 0);
-  const cx = rec.area.x + rec.area.w / 2;
-  const cy = rec.area.y + rec.area.h / 2;
-  const halfSpan = Math.max(1e-3, Math.hypot(rec.area.w, rec.area.h) / 2);
   const clearR = Math.max(0, input.clearR ?? 0);
   const clearAt = input.clearAt;
 
-  /** THE GRADIENT, as an acceptance probability. A candidate deep in a heavily
-   *  harvested sector is the least likely place a tree is still standing; the
-   *  area's middle is barely touched either way, because the harvesters
-   *  reached the near edge first. */
-  const keepChance = (x: number, y: number): number => {
-    if (maxDraw <= 0) return 1;
-    const dx = x - cx;
-    const dy = y - cy;
-    const r = Math.hypot(dx, dy);
-    if (r <= 1e-6) return 1;
-    const w = (rec.draw[wildDrawSectorOf(dx, dy)] ?? 0) / maxDraw;
-    const depth = Math.min(1, r / halfSpan);
-    return Math.max(0.05, 1 - WILD_GRADIENT_STRENGTH * w * depth);
-  };
+  // THE GRADIENT, as an acceptance probability — `wildKeepChance`, the one
+  // exported density law, shared with every renderer that thins for
+  // depletion (a second gradient story must never exist).
+  const keepChance = (x: number, y: number): number =>
+    wildKeepChance(rec, x, y, input.reach);
 
   for (const st of rec.stands) {
     const pop = st.byClass.reduce((a, b) => a + b, 0);
@@ -1113,6 +1204,89 @@ export interface WildFoldCtx extends FoldCtx {
   place?(feature: WildernessFeature): void;
 }
 
+/**
+ * ⚖️ TIME TRAVEL FOR A RECORD (persistence round P0 — the fingerprint's
+ * shiftBy idiom, made the record's own): every sim-clock-ABSOLUTE stamp
+ * (`at`, climb deadlines, regrow deadlines) moves by `byS`; populations,
+ * stocks, caps and the gradient never move — conservation is untouched by
+ * time travel. `byS === 0` returns the SAME object (`advanceWildArea`'s
+ * convention). The codec's rest arm is `shift(rec, −now)` and its wake arm
+ * is `shift(rec, +now)`; `shift(shift(rec, d), −d) ≡ rec` byte for byte is
+ * the pinned identity.
+ */
+export function shiftWildAreaClock(rec: WildAreaRecord, byS: number): WildAreaRecord {
+  if (byS === 0) return rec;
+  return {
+    ...rec,
+    at: rec.at + byS,
+    stands: rec.stands.map((s) => ({
+      ...s,
+      climbAt: s.climbAt.map((c) => ({ cls: c.cls, at: c.at + byS })),
+      regrowAt: Object.fromEntries(
+        Object.entries(s.regrowAt).map(([g, list]) => [g, list.map((t) => t + byS)]),
+      ),
+    })),
+  };
+}
+
+/**
+ * THE WILD RECORD'S PLAIN-DATA SHAPE, in ONE place — used BOTH to copy a
+ * record out of a session on the way into a payload AND to validate one
+ * arriving from a peer or a save. Deliberately the same function for both
+ * directions: a shape the sender cannot express is a shape the receiver
+ * must not accept, and two hand-written copies of `WildAreaRecord` would
+ * be two chances to disagree about it. (Moved VERBATIM from quest-host's
+ * handover validator at P0 — it is the wild codec's `read` arm.)
+ *
+ * Returns a DEEP COPY (never an alias of the caller's record, in either
+ * direction — the donor's live record must not be mutable through the
+ * payload, and a wire-decoded object must not be trusted by reference), or
+ * null when the value is not a wild-area record.
+ */
+export function readWildRecord(x: unknown): WildAreaRecord | null {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+  const r = x as Record<string, unknown>;
+  if (typeof r.key !== "string") return null;
+  const a = r.area as Record<string, unknown> | undefined;
+  if (!a || typeof a !== "object") return null;
+  const ax = finiteOrNull(a.x), ay = finiteOrNull(a.y);
+  const aw = finiteOrNull(a.w), ah = finiteOrNull(a.h);
+  if (ax === null || ay === null || aw === null || ah === null) return null;
+  const seed = finiteOrNull(r.seed), at = finiteOrNull(r.at);
+  if (seed === null || at === null) return null;
+  const draw = readNumList(r.draw);
+  if (!draw) return null;
+  if (!Array.isArray(r.stands)) return null;
+  const stands: WildAreaRecord["stands"] = [];
+  for (const raw of r.stands) {
+    if (!raw || typeof raw !== "object") return null;
+    const s = raw as Record<string, unknown>;
+    if (typeof s.species !== "string") return null;
+    const byClass = readNumList(s.byClass);
+    const stock = readNumMap(s.stock);
+    const cap = readNumMap(s.cap);
+    if (!byClass || !stock || !cap) return null;
+    if (!Array.isArray(s.climbAt)) return null;
+    const climbAt: WildAreaRecord["stands"][number]["climbAt"] = [];
+    for (const rawC of s.climbAt) {
+      if (!rawC || typeof rawC !== "object") return null;
+      const c = rawC as Record<string, unknown>;
+      const cls = finiteOrNull(c.cls), cAt = finiteOrNull(c.at);
+      if (cls === null || cAt === null) return null;
+      climbAt.push({ cls, at: cAt });
+    }
+    if (!s.regrowAt || typeof s.regrowAt !== "object" || Array.isArray(s.regrowAt)) return null;
+    const regrowAt: Record<string, number[]> = {};
+    for (const [g, v] of Object.entries(s.regrowAt as Record<string, unknown>)) {
+      const list = readNumList(v);
+      if (!list) return null;
+      regrowAt[g] = list;
+    }
+    stands.push({ species: s.species, byClass, stock, cap, climbAt, regrowAt });
+  }
+  return { key: r.key, area: { x: ax, y: ay, w: aw, h: ah }, seed, at, stands, draw };
+}
+
 function condenseWildAreaPayload(id: ScopeId, ctx: WildFoldCtx): WildAreaRecord | FoldRefusal {
   const ref = parseScopeId(id);
   if (ref.kind !== "wild" || ref.form !== "area") {
@@ -1161,6 +1335,12 @@ export const WILD_AREA_CODEC: FoldCodec<WildAreaRecord, WildFoldCtx> = {
   // STANDING FEATURE (`wild:oak_3`) is not covered and refuses: that endpoint
   // is precisely what stops existing at this fold.
   services: standingLegServiced,
+  // ⚖️ PERSISTENCE ARMS (P0): rest/wake are the one clock shift in both
+  // directions; read is the one plain-data gate both the handover and the
+  // save go through.
+  rest: (payload, now) => shiftWildAreaClock(payload, -now),
+  wake: (payload, now) => shiftWildAreaClock(payload, now),
+  read: readWildRecord,
 };
 
 registerFoldCodec(WILD_AREA_CODEC);

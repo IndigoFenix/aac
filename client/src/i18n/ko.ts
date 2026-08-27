@@ -3896,6 +3896,20 @@ export const ko = {
     everyone: "모두",
     speakTo: "대화 상대",
     isTalkingToYou: "당신에게 말하고 있어요",
+    studentView: {
+      board: "화면",
+      label: "학생 화면",
+      resize: "카메라 크기 조절",
+      split: "둘 다",
+      video: "영상",
+      noCamera: "카메라가 꺼져 있습니다",
+    },
+    surface: {
+      app: "앱",
+      board: "보드",
+      builder: "문장 만들기",
+      game: "게임",
+    },
   },
 
   personChat: {

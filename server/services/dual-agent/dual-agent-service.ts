@@ -47,6 +47,7 @@ import { logLiveSession } from "./dual-agent-logger";
 import { buildBoardKeys } from "@shared/board-keys";
 import { HOME_BOARD_KEY } from "./default-home-board";
 import { flowCost } from "./agent-flow-logger";
+import { buildMonitorChatState } from "./monitor-chat-state";
 
 /**
  * Simple promise-based mutex for per-session concurrency control.
@@ -137,6 +138,8 @@ interface SessionCache {
   lastAccess: number;
   monitorMutex: SessionMutex;
   monitorRerunRequested?: boolean;
+  /** A rerun scheduled for the throttle boundary (see doMonitorProcessing). */
+  monitorRerunTimer?: ReturnType<typeof setTimeout>;
   /** Promise for the currently-running doMonitorProcessing pass (if any).
    *  Lets a caller (notably the session-close final pass) await the
    *  pending→log drain to completion instead of firing-and-forgetting. */
@@ -158,7 +161,13 @@ const CACHE_TTL = 30 * 60 * 1000;
 const MONITOR_TIMEOUT_MS = 60_000;
 
 // Monitor throttle: minimum interval between monitor calls (unless forced by [CALL_MONITOR])
-const MONITOR_THROTTLE_MS = 120_000; // 2 minutes
+// Minimum gap between Monitor runs. Env-tunable (AAC_MONITOR_THROTTLE_MS): each
+// run re-sends the Monitor's ~17k-token prefix, so the interval is the single
+// biggest lever on the Monitor's cost — the largest line on the AAC bill.
+const MONITOR_THROTTLE_MS = (() => {
+  const v = Number(process.env.AAC_MONITOR_THROTTLE_MS);
+  return Number.isFinite(v) && v >= 10_000 ? v : 120_000; // default 2 minutes
+})();
 
 /**
  * Clean up stale sessions from cache
@@ -1140,24 +1149,12 @@ export class DualAgentService {
       // (written below); loadSessionFromDB and loadHistoryForReconnect read
       // that, not `state.history`.
       //
-      // `openedTopics` / `memoryState` stay reset: the Monitor prompt assumes
-      // non-static memory mode (it tells the agent the writable fields are
-      // already rendered in the prompt), and persisting opened paths would
-      // grow that prompt cycle over cycle. Flipping to static mode is a
-      // deliberate, separate change — it needs the prompt updated too.
+      // `openedTopics` stays reset. `memoryState` runs the Monitor in STATIC
+      // PROMPT MODE (2026-08-27) so its system prompt is byte-identical across
+      // rounds and runs and the prompt cache hits — see monitor-chat-state.ts
+      // (pure, unit-tested; do not inline this object again).
       const priorState = (existingSession[0]?.state ?? {}) as Record<string, unknown>;
-
-      const chatState = {
-        history: priorState.history ?? [],
-        conversationSummary: priorState.conversationSummary ?? "",
-        openedTopics: [],
-        memoryState: {},
-        muteState: state.muteState,
-        memoryContext: state.memoryContext,
-        enhancedSections: state.enhancedSections,
-        sessionSummary: state.sessionSummary,
-        summarizedMsgCount: state.summarizedMsgCount,
-      };
+      const chatState = buildMonitorChatState(priorState, state);
 
       if (existingSession.length > 0) {
         // Update existing session
@@ -1714,14 +1711,25 @@ export class DualAgentService {
         console.error("[DualAgentService] Failed to clear monitorBusy in DB:", (err as Error).message);
       }
 
-      // Check rerun flag — another trigger arrived while we were busy
+      // Check rerun flag — another trigger arrived while we were busy. Re-run
+      // AT THE THROTTLE BOUNDARY, not immediately: a forced immediate rerun
+      // turned every busy conversation into back-to-back Monitor runs (the
+      // median gap between charges was 17s against a 2-minute throttle), each
+      // re-paying the full prefix for a handful of new messages. Nothing is
+      // lost — the pending messages simply batch into the next run.
       const cached = sessionCache.get(state.sessionId);
       if (cached?.monitorRerunRequested) {
         cached.monitorRerunRequested = false;
-        console.log("[DualAgentService] Monitor rerun requested — re-triggering");
-        this.triggerMonitor(state.sessionId, true).catch(err => {
-          console.error("[DualAgentService] Monitor rerun failed:", err);
-        });
+        if (!cached.monitorRerunTimer) {
+          const wait = Math.max(0, MONITOR_THROTTLE_MS - (Date.now() - state.lastMonitorActivity));
+          console.log(`[DualAgentService] Monitor rerun requested — scheduled in ${Math.round(wait / 1000)}s (throttle boundary)`);
+          cached.monitorRerunTimer = setTimeout(() => {
+            cached.monitorRerunTimer = undefined;
+            this.triggerMonitor(state.sessionId, false).catch(err => {
+              console.error("[DualAgentService] Monitor rerun failed:", err);
+            });
+          }, wait);
+        }
       }
     }
   }

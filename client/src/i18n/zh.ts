@@ -3896,6 +3896,20 @@ export const zh = {
     everyone: "所有人",
     speakTo: "对话对象",
     isTalkingToYou: "正在和你说话",
+    studentView: {
+      board: "屏幕",
+      label: "他们的屏幕",
+      resize: "调整摄像头大小",
+      split: "两者",
+      video: "视频",
+      noCamera: "对方的摄像头已关闭",
+    },
+    surface: {
+      app: "应用",
+      board: "沟通板",
+      builder: "造句板",
+      game: "游戏",
+    },
   },
 
   personChat: {

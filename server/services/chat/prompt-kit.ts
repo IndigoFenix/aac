@@ -663,6 +663,17 @@ export interface NlpSchema {
   }
 
   
+/**
+ * The "current date" line for a system prompt, at DAY granularity so it can
+ * sit inside the cached prefix. Anything finer (an ISO timestamp, a clock)
+ * busts Claude's prompt cache on every new manager — the system block must be
+ * byte-identical between requests to read at 0.1x instead of writing at 1.25x.
+ * Rolls once per UTC day; pair with printUserTimeSection for the local date.
+ */
+export function printCurrentDateLine(now: Date = new Date()): string {
+  return `Current date (UTC): ${now.toISOString().slice(0, 10)}`;
+}
+
 function printUserTimeSection(timezone: string): string {
   // Cache-safe: only include stable-for-the-day data. Claude's prompt cache
   // invalidates on any system-prompt change, so minute-level "current time"

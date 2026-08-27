@@ -289,11 +289,14 @@ import {
   farmAreaKey,
   farmAreaRecord,
   ripenWildArea,
+  readWildRecord,
   wildAreaCounts,
   wildAreaPopulation,
+  wildAreaQuote,
   wildAreaStock,
   wildSourceEndpoint,
   wildSourcePartner,
+  type WildAreaQuote,
   type WildAreaRecord,
   type WildFoldCtx,
   type WildSourcePartner,
@@ -309,7 +312,8 @@ import {
 // wild slice with the audit pinned around it (`sessionStockAudit`), so a
 // handover can never ship a payload that lost units on the way out.
 import {
-  condense, foldedStock, isFoldRefusal, withFoldConservation,
+  condense, finiteOrNull, foldedStock, isFoldRefusal, readNumList, readNumMap,
+  withFoldConservation,
   type FoldBooks, type FoldCommitment, type FoldRecord, type FoldRefusal,
 } from "@shared/world-engine/kernel/town/fold.js";
 import {
@@ -1751,6 +1755,17 @@ export interface QuestSession {
    *  drive the looked-at member directly — all commands obeyed (the compliance
    *  gate stays in the code path for other scopes). */
   dollhouse: number | null;
+  /** May a FORMLESS spirit gaze-carry here? Decided ONCE at start, fail-closed:
+   *  true only for a bare authored world — the boot handed in no generated
+   *  scope content at all — where moving pieces by gaze IS the game. A world
+   *  with any inhabited scope never grants it (a bodiless spirit has nothing
+   *  to hang an item from, and stationary mode skips the reach test, so an
+   *  open grab affordance means hover-loot-anywhere). INTERIM SHAPE (user
+   *  ruling 2026-08-25): a capability of the session's world, not a scope-type
+   *  test at the use site — when sessions grow a real scope stack
+   *  (scope-unification), this becomes a question the containing scope
+   *  answers, and the flag dissolves. */
+  spiritGazeCarry: boolean;
   /** The world's space-time compression (space-time-compression.md): paces the
    *  live need meters, the sleep dwell, and construction. REALISM unless the
    *  document's `game.scale` declared otherwise (town demos declare the
@@ -1821,13 +1836,19 @@ export interface QuestSession {
   /** WILDERNESS session (founding flow): the deterministic resource/creature
    *  scatter laid over the open ground, or null. */
   wilderness: WildernessContent | null;
-  /** ⚖️ S&D S4 — OFFLOADED WILD AREAS, by area key: the closed-form record a
-   *  stand folds to when it stops being simulated (`wild-area.ts`), keyed the
-   *  way its endpoint id spells it (`wild:area:<key>`). The scattered features
-   *  above are the RENDERER of whatever is NOT in here; an area is in exactly
-   *  one of the two forms at a time, which is what makes the fold conserving.
-   *  Empty in every session that has never folded one. */
-  wildAreas: Map<string, WildAreaRecord>;
+  /** ⚖️ THE SESSION'S FOLDED AREA RECORDS (scope-agnostic INDEX, ruling ⑦
+   *  of the persistence round 2026-08-27): every offloaded source-region
+   *  record of ANY kind — forests AND farms today, further kinds as their
+   *  codecs land — keyed the way its endpoint id spells it. The id grammar
+   *  keeps its historical `wild:area:<key>` spelling FOREVER (pinned by the
+   *  scope-grammar suite, and durable once saves exist — re-spelling it is
+   *  a save migration, never a rename). The scattered features above are
+   *  the RENDERER of whatever is NOT in here; an area is in exactly one of
+   *  the two forms at a time, which is what makes the fold conserving.
+   *  Empty in every session that has never folded one. This map is what
+   *  the persistence envelope serializes per scope (record-persistence.md
+   *  §3b). */
+  areaRecords: Map<string, WildAreaRecord>;
   /** The ONE site a wilderness session may found (a spoken "build"), or null.
    *  Its `stock` object IS the site stockpile container's stack map (aliased
    *  into `containerStock`), so ordinary container puts/takes keep it true. */
@@ -2419,7 +2440,7 @@ interface ConvoView {
 export const SESSION_HANDOVER_V = 1;
 
 /** One wild area, condensed. `rec` is the travelling form (the same record
- *  `session.wildAreas` holds and `unfoldWildArea` re-lays).
+ *  `session.areaRecords` holds and `unfoldWildArea` re-lays).
  *
  *  `commitments` / `serviced` are the F-④ DISCLOSURE from the `condense` that
  *  gated this fold, carried verbatim so the receiver can read what was in
@@ -2650,6 +2671,13 @@ export interface QuestHost3D {
    *  dresses the same replicated bodies at its own fidelity. Existing bodies
    *  rebuild a few per frame on change. */
   setCreatureTier(t: CreatureTier): void;
+  /** VIEW-DISTANCE LOD (the [LOD per-camera] law): the LOCAL camera's position
+   *  in this session's SIM coords, fed per frame by an embedding driver. The
+   *  per-body tier bands measure from THIS point when set — the parked
+   *  gaze-walker / plaza spawn the fallback measures from can sit across town
+   *  from the camera, which inverts LOD (full detail far, sticks near). null
+   *  (or never called — every standalone host) = the old fallback chain. */
+  setViewPoint(pt: { x: number; y: number } | null): void;
   /** SPIRIT LADDER: the cursor target the view computed on its last render
    *  while the external-cursor opt-out is on — WORLD coords into `out`, null
    *  when there is none (no gaze, opt-out off, or no 3D view yet). */
@@ -2666,6 +2694,12 @@ export interface QuestHost3D {
    *  record. False when no such feature stands (e.g. already felled — the
    *  caller keeps its scenery instance hidden then). */
   removeWildFeature(id: string): boolean;
+  /** ⚖️ THE RENDER QUOTES (depletion↔render bridge Ⓓ): plain-data,
+   *  serializable snapshots of every offloaded source region on this
+   *  session (forests AND farm records), sorted by key — a renderer's
+   *  READ, never a write path (`wild:` scopes refuse goods structurally).
+   *  A remote client reads the identical shape over a wire later. */
+  areaQuotes(): WildAreaQuote[];
   /** SPIRIT LADDER: the render camera (null before the session starts). */
   readonly camera: THREE.PerspectiveCamera | null;
   /** DIAGNOSTICS: one-line snapshot — the view's cutaway pass + this
@@ -3272,7 +3306,13 @@ function makeNaturalBodyFactory(
       f = createCreatureAvatarFactory({
         speciesFor: () => species,
         heightM: src?.bodyHeightM ?? 0.95,
-        ...(src?.kind === "animal" && detailFor ? { detailFor } : {}),
+        // Plants tier like animals ([LOD per-camera]; round-2 GL defects):
+        // the animal-only guard built every orchard `flora:` body FULL —
+        // a 4254-vert oak bake per species inside the mount frame, at
+        // orbit, where its tier is stick at best. (Capsule never replaces
+        // a tree — the dispatch arm below excludes flora by law — but the
+        // BUILD detail must still follow the band.)
+        ...(detailFor ? { detailFor } : {}),
       });
       cache.set(species, f);
     }
@@ -3380,33 +3420,35 @@ function makeTownModelFactory(
   // far bodies cheap while its near ones stay full). Absent = full.
   tierFor?: (id: string) => CreatureTier,
 ): AvatarModelFactory {
-  // Warm the shared bakes once so no hitch lands mid-play: the bare species and
-  // the ACTIVE-dress wardrobe the town wears (one bake per head × palette colour,
-  // shared — bounded by the culture palette, not the whole vocabulary).
-  getSpeciesAssets(species);
-  for (const head of dress.heads) {
-    for (const color of dress.colors) {
-      getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)));
-    }
-  }
-  // The far-tier bakes warm too, but STAGGERED off the critical path (one bake
-  // per macrotask): a body's first drop into a far band must not pay its
-  // 55-70 ms main-thread bake mid-play (the readouts' recurring
-  // `[bake-probe] …|lod:s` hitches), and warming them synchronously would
-  // double the mount hitch instead.
+  // Warm the shared bakes STAGGERED off the critical path — ALL of them now
+  // (round-2 GL defects): the FULL-detail wardrobe used to warm synchronously
+  // right here — one ~160 ms bake per head × palette colour ≈ 1.4 s of main
+  // thread inside the town MOUNT, kilometres up, crowd budget 0, where every
+  // body would render stick/capsule anyway. getSpeciesAssets is a lazy
+  // cache, so a cold miss self-heals: the worst case is ONE bake hitch on a
+  // first close-up instead of nine at the mount.
   //
   // STICK GOES FIRST, and it is ONE entry for the whole town: the tier is
   // outfit-blind (creature-model.ts's outfitForDetail), so the wardrobe that
   // costs `simple` one bake per head × palette colour costs stick a single
   // bake — and it is also the band bodies cross into FIRST on any approach.
+  // Then simple, then the bare full species, then the dressed wardrobe at
+  // simple before full — cheap tiers ready before expensive ones, one bake
+  // per 100 ms macrotask.
   if (typeof setTimeout !== "undefined") {
     const warm: Array<() => void> = [
       () => getSpeciesAssets(species, {}, undefined, "stick"),
       () => getSpeciesAssets(species, {}, undefined, "simple"),
+      () => getSpeciesAssets(species),
     ];
     for (const head of dress.heads) {
       for (const color of dress.colors) {
         warm.push(() => getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color)), "simple"));
+      }
+    }
+    for (const head of dress.heads) {
+      for (const color of dress.colors) {
+        warm.push(() => getSpeciesAssets(species, {}, outfitPresetFor(outfitIndexOf(head, color))));
       }
     }
     const next = () => {
@@ -3696,6 +3738,7 @@ export function makeQuestSession(
     dress: DEFAULT_DRESS_PALETTE,
     houseShown: new Set(),
     dollhouse: null,
+    spiritGazeCarry: false, // fail-closed; start() grants it to bare worlds only
     scale: REAL_SCALE,
     addressedFamily: null,
     familyHudSig: "",
@@ -3714,7 +3757,7 @@ export function makeQuestSession(
     farmHaulDay: null,
     dlogged: new Set(),
     wilderness: null,
-    wildAreas: new Map(),
+    areaRecords: new Map(),
     foundedSite: null,
     taskPool: createTaskPool(),
     taskClock: 0,
@@ -4288,8 +4331,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const seedBodyTier = (d: number): CreatureTier => seedTier(TIER_BANDS, d);
   const bandedBodyTier = (prev: CreatureTier, d: number): CreatureTier =>
     steppedTier(TIER_BANDS, prev, d, BODY_TIER_HYST_M);
+  /** The LOCAL CAMERA's sim-coords position, when an embedding driver feeds it
+   *  (setViewPoint, per frame — the planet client does on every rung). This is
+   *  the [LOD per-camera] law made literal: with it set, per-body tiers measure
+   *  from the ACTUAL camera, not a proxy. */
+  let viewPoint: { x: number; y: number } | null = null;
   /** The LOCAL CAMERA focus the per-body LOD measures from ([LOD per-camera]
-   *  LAW: render chrome from the camera, NEVER a sim body). In spirit /
+   *  LAW: render chrome from the camera, NEVER a sim body). The driver-fed
+   *  viewPoint wins outright — it IS the camera. Failing that, in spirit /
    *  dollhouse mode the camera frames `spiritFrame` — the observed house, which
    *  can sit far from the formless spark's PLAYER_ID body — so tier by distance
    *  from THAT rect's centre. Keying off PLAYER_ID instead demoted the very
@@ -4297,6 +4346,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  anchor), so they posed on the floor in front of their beds/chairs instead
    *  of sitting/sleeping on them. Off the dollhouse the walker IS the focus. */
   const cameraFocus = (): { x: number; y: number } | null => {
+    if (viewPoint) return viewPoint;
     if (spiritFrame) return { x: spiritFrame.x + spiritFrame.w / 2, y: spiritFrame.y + spiritFrame.h / 2 };
     return playerBody() ?? null;
   };
@@ -23026,13 +23076,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // pick-dwell on it is DENIED (❌ + the owner's "mine!" bubble) until the
       // dialogue grants it.
       carry: {
-        // A DOLLHOUSE SPIRIT is a formless observer: the world offers it no
-        // grab affordance at all (pre-gate — no dwell ring, no tease). The one
-        // exception is a GIFT already pending transfer to the player — but
-        // that lands through the gaze AUTO-TAKE, not a pick-dwell, so nothing
-        // is pickable here. Puzzle-world spirits (structure scope) keep the
-        // gaze-carry — moving pieces IS their game.
-        pickable: () => !(spirit && session.dollhouse !== null),
+        // A FORMLESS SPIRIT is an observer unless this world granted it
+        // gaze-carry at boot (spiritGazeCarry — bare piece-moving worlds
+        // only, fail-closed): no grab affordance at all (pre-gate — no dwell
+        // ring, no tease). The spirit has no body, so nothing may hang from
+        // it; and stationary mode skips the reach test entirely, so an open
+        // gate here means hover-pickable-anywhere (the planet-glide loot
+        // defect). The one exception is a GIFT already pending transfer to
+        // the player — that lands through the gaze AUTO-TAKE, not a
+        // pick-dwell. A POSSESSED creature picks with its own body
+        // (spiritNow, not the raw session flag).
+        pickable: () => session.spiritGazeCarry || !spiritNow(),
         canPick: (objectId) => {
           const item = session.convItems.get(objectId);
           if (!item) return true;
@@ -24688,6 +24742,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             h: focusHouse.h,
           }
         : null;
+    // GAZE-CARRY CAPABILITY (fail-closed): only a bare authored world — no
+    // town, no village, no wilderness, no dollhouse focus — grants the
+    // formless spirit its piece-moving hands. Derived HERE, once, from what
+    // this boot actually handed in; the carry gate reads the capability and
+    // never asks scope types again.
+    sess.spiritGazeCarry =
+      !sess.town && !sess.village && !sess.wilderness && opts.dollhouse === undefined;
     buildTownPlaceFacts(sess); // the town's common knowledge of places (no-op off a town)
     isWon = false;
     choice = null;
@@ -24957,7 +25018,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       area: ground.area,
       seed: wildAreaSeedOf(session),
       key,
-      prev: session.wildAreas.get(key) ?? null,
+      prev: session.areaRecords.get(key) ?? null,
     });
     // Take the renderer down AFTER the fold has read it — same teardown
     // `removeWildFeature` does, and for the same reason (this is a release
@@ -24970,7 +25031,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       deleteContainerRecord(session, objId);
     }
     w.features.length = 0;
-    session.wildAreas.set(key, rec);
+    session.areaRecords.set(key, rec);
     return rec;
   }
 
@@ -24990,7 +25051,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * never both (that is the whole of the conservation argument).
    */
   function unfoldWildArea(session: QuestSession, key = HOME_WILD_AREA): boolean {
-    const rec = session.wildAreas.get(key);
+    const rec = session.areaRecords.get(key);
     if (!rec || !world) return false;
     const ground = wildAreaGround(session);
     // AN UNLOADED STAND KEPT GROWING while nobody watched — the same class
@@ -25024,7 +25085,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       else failed.push(f);
     }
     if (failed.length) {
-      session.wildAreas.set(
+      session.areaRecords.set(
         key,
         condenseWildArea({
           features: failed,
@@ -25036,7 +25097,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }),
       );
     } else {
-      session.wildAreas.delete(key);
+      session.areaRecords.delete(key);
     }
     return true;
   }
@@ -25074,7 +25135,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       liveStock: (id) => session.containerRecords.get(id)?.stock,
       area: ground.area,
       seed: wildAreaSeedOf(session),
-      prev: session.wildAreas.get(key) ?? null,
+      prev: session.areaRecords.get(key) ?? null,
     };
     return condense<WildAreaRecord>(wildAreaId(key), ctx);
   }
@@ -25191,11 +25252,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // Keys nobody here folded are dropped first (see `wildLodFolded`): the
     // driver reverses its own housekeeping and never anybody else's decision.
     for (const key of [...wildLodFolded].sort()) {
-      if (!session.wildAreas.has(key)) {
+      if (!session.areaRecords.has(key)) {
         wildLodFolded.delete(key); // somebody else expanded it — no longer ours
         continue;
       }
-      const rec = session.wildAreas.get(key);
+      const rec = session.areaRecords.get(key);
       // ⚖️ A REMOTE SHED NEVER UNFOLDS HERE. It is a DRAW PARTNER — a region
       // somewhere else that this town ships from — not scenery anybody is
       // walking up to, and the band says nothing about ground the camera can
@@ -25238,92 +25299,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return out;
   }
 
-  /** A finite number, or null — the one numeric gate every field below goes
-   *  through, so a NaN can never enter a record from the wire. */
-  function finiteOrNull(x: unknown): number | null {
-    return typeof x === "number" && Number.isFinite(x) ? x : null;
-  }
+  // (finiteOrNull / readNumMap / readNumList moved VERBATIM to
+  // kernel/town/fold.ts at persistence P0 — the record layer owns how
+  // untrusted plain data is read; imported above.)
 
-  /** A plain glyph→count map, COPIED, or null when it is not one. */
-  function readNumMap(x: unknown): Record<string, number> | null {
-    if (!x || typeof x !== "object" || Array.isArray(x)) return null;
-    const out: Record<string, number> = {};
-    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
-      const n = finiteOrNull(v);
-      if (n === null) return null;
-      out[k] = n;
-    }
-    return out;
-  }
-
-  /** An array of finite numbers, COPIED, or null. */
-  function readNumList(x: unknown): number[] | null {
-    if (!Array.isArray(x)) return null;
-    const out: number[] = [];
-    for (const v of x) {
-      const n = finiteOrNull(v);
-      if (n === null) return null;
-      out.push(n);
-    }
-    return out;
-  }
-
-  /**
-   * THE WILD RECORD'S PLAIN-DATA SHAPE, in ONE place — used BOTH to copy a
-   * record out of this session on the way into a payload AND to validate one
-   * arriving from a peer. Deliberately the same function for both directions:
-   * a shape the sender cannot express is a shape the receiver must not accept,
-   * and two hand-written copies of `WildAreaRecord` would be two chances to
-   * disagree about it.
-   *
-   * Returns a DEEP COPY (never an alias of the caller's record, in either
-   * direction — the donor's live record must not be mutable through the
-   * payload, and a wire-decoded object must not be trusted by reference), or
-   * null when the value is not a wild-area record.
-   */
-  function readWildRecord(x: unknown): WildAreaRecord | null {
-    if (!x || typeof x !== "object" || Array.isArray(x)) return null;
-    const r = x as Record<string, unknown>;
-    if (typeof r.key !== "string") return null;
-    const a = r.area as Record<string, unknown> | undefined;
-    if (!a || typeof a !== "object") return null;
-    const ax = finiteOrNull(a.x), ay = finiteOrNull(a.y);
-    const aw = finiteOrNull(a.w), ah = finiteOrNull(a.h);
-    if (ax === null || ay === null || aw === null || ah === null) return null;
-    const seed = finiteOrNull(r.seed), at = finiteOrNull(r.at);
-    if (seed === null || at === null) return null;
-    const draw = readNumList(r.draw);
-    if (!draw) return null;
-    if (!Array.isArray(r.stands)) return null;
-    const stands: WildAreaRecord["stands"] = [];
-    for (const raw of r.stands) {
-      if (!raw || typeof raw !== "object") return null;
-      const s = raw as Record<string, unknown>;
-      if (typeof s.species !== "string") return null;
-      const byClass = readNumList(s.byClass);
-      const stock = readNumMap(s.stock);
-      const cap = readNumMap(s.cap);
-      if (!byClass || !stock || !cap) return null;
-      if (!Array.isArray(s.climbAt)) return null;
-      const climbAt: WildAreaRecord["stands"][number]["climbAt"] = [];
-      for (const rawC of s.climbAt) {
-        if (!rawC || typeof rawC !== "object") return null;
-        const c = rawC as Record<string, unknown>;
-        const cls = finiteOrNull(c.cls), cAt = finiteOrNull(c.at);
-        if (cls === null || cAt === null) return null;
-        climbAt.push({ cls, at: cAt });
-      }
-      if (!s.regrowAt || typeof s.regrowAt !== "object" || Array.isArray(s.regrowAt)) return null;
-      const regrowAt: Record<string, number[]> = {};
-      for (const [g, v] of Object.entries(s.regrowAt as Record<string, unknown>)) {
-        const list = readNumList(v);
-        if (!list) return null;
-        regrowAt[g] = list;
-      }
-      stands.push({ species: s.species, byClass, stock, cap, climbAt, regrowAt });
-    }
-    return { key: r.key, area: { x: ax, y: ay, w: aw, h: ah }, seed, at, stands, draw };
-  }
+  // (readWildRecord moved VERBATIM to wild-area.ts at persistence P0 —
+  // it is the wild codec's `read` arm now; imported above. The one-place
+  // law it carries — the same function copies OUT and validates IN —
+  // stands unchanged.)
 
   /**
    * THE ENDPOINTS THAT STOP EXISTING AT A WILD FOLD — every standing feature's
@@ -25427,7 +25410,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // THE COMPLETE WILD STATE, not just the slice we just folded: an area that
     // was already condensed (never loaded, or folded long ago) is state the
     // receiver must have too, or those units simply stop existing at the split.
-    for (const [key, rec] of session.wildAreas) {
+    for (const [key, rec] of session.areaRecords) {
       const copy = readWildRecord(rec);
       if (!copy) {
         // Unreachable in practice (the record came from this engine's own
@@ -25572,7 +25555,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // fold the first record's freshly-laid stand back up under another key.
     const firstKey = payload.wild[0]?.key ?? HOME_WILD_AREA;
     foldWildArea(session, firstKey);
-    for (const entry of payload.wild) session.wildAreas.set(entry.key, entry.rec);
+    for (const entry of payload.wild) session.areaRecords.set(entry.key, entry.rec);
     for (const entry of payload.wild) unfoldWildArea(session, entry.key);
   }
 
@@ -25597,7 +25580,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       bySpecies.set(f.species, (bySpecies.get(f.species) ?? 0) + 1);
     }
     const counts = [...bySpecies].map(([s, n]) => `${s}×${n}`).join(" ");
-    const folded = [...session.wildAreas.values()].map((rec) => {
+    const folded = [...session.areaRecords.values()].map((rec) => {
       const classes = Object.entries(wildAreaCounts(rec))
         .map(([s, list]) => `${s}[${list.join("/")}]`)
         .join(" ");
@@ -27290,7 +27273,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // founded site draws on the region too — and the SHELF is listed even
         // where the record is gone (the stand loaded back in), because cut
         // timber does not stop existing when the trees come back.
-        for (const key of session.wildAreas.keys()) out.add(wildAreaId(key));
+        for (const key of session.areaRecords.keys()) out.add(wildAreaId(key));
         for (const id of Object.keys(session.partnerStock)) {
           const ref = parseScopeId(id);
           if (ref.kind === "wild" && ref.form === "area") out.add(id);
@@ -27422,7 +27405,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // formula inlined here — the dissolution F1 promised: a future kind's own
     // offloaded collection plugs into this SAME call, by its own kind, and
     // never needs a second copy of this loop.
-    for (const [glyph, n] of Object.entries(foldedStock("wild", session.wildAreas.values()))) {
+    for (const [glyph, n] of Object.entries(foldedStock("wild", session.areaRecords.values()))) {
       if (n > 0) totals[glyph] = (totals[glyph] ?? 0) + n;
     }
     // 🚨 AND NOT THE TOWN KIND (F3), for the structural reason F2 recorded for
@@ -27564,7 +27547,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // at the road is not standing timber, so an area that loads its stand back
     // in leaves the shelf (and any leg still owed against it) alone.
     if (ref.kind === "wild" && ref.form === "area") {
-      if (!session.wildAreas.has(ref.tag) && !session.partnerStock[id]) return null;
+      if (!session.areaRecords.has(ref.tag) && !session.partnerStock[id]) return null;
       return wildSourceEndpoint(ref.tag, sourceShelf(session, ref.tag));
     }
     // A CONSTRUCTION ORDER's PILE (phase 2): `orderpile:<ord>` aliases the
@@ -28442,13 +28425,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  forest does none of those; putting one in it would let "trade wood with
    *  the city" resolve to a stand of oaks. */
   function sourcePartnerOf(session: QuestSession, key: string): WildSourcePartner | null {
-    const rec = session.wildAreas.get(key);
+    const rec = session.areaRecords.get(key);
     return rec ? wildSourcePartner(rec, sourceDrawOrigin(session)) : null;
   }
 
   /**
    * ⚖️ H2 — EVERY CONDENSED AREA, CHEAPEST ROAD FIRST. v1 folds one stand per
-   * session, but `session.wildAreas` has ALWAYS been a keyed map and the
+   * session, but `session.areaRecords` has ALWAYS been a keyed map and the
    * world-size round mints a region of many — so the spoken route reads the
    * whole map rather than the `home` key, and does it in an order that cannot
    * drift: cheapest `partnerLegSeconds` (the same ONE seat the order is priced
@@ -28458,7 +28441,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    */
   function sourcesByLeg(session: QuestSession): WildSourcePartner[] {
     const out: WildSourcePartner[] = [];
-    for (const key of [...session.wildAreas.keys()].sort()) {
+    for (const key of [...session.areaRecords.keys()].sort()) {
       const source = sourcePartnerOf(session, key);
       if (source) out.push(source);
     }
@@ -28503,7 +28486,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     key: string,
     goods: Readonly<Record<string, number>>,
   ): void {
-    let rec = session.wildAreas.get(key);
+    let rec = session.areaRecords.get(key);
     if (!rec) return;
     const shelf = sourceShelf(session, key);
     const from = sourceDrawOrigin(session);
@@ -28519,7 +28502,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       for (const [g, n] of Object.entries(out.taken)) shelf[g] = (shelf[g] ?? 0) + n;
       rec = out.rec;
     }
-    session.wildAreas.set(key, rec);
+    session.areaRecords.set(key, rec);
   }
 
   /**
@@ -29398,7 +29381,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const fr = t?.plan.fieldRegion;
     if (!t || !fr) return;
     const key = farmAreaKey(t.plan.key);
-    let rec = session.wildAreas.get(key);
+    let rec = session.areaRecords.get(key);
     if (!rec) {
       // Cap from the CULTIVATED ground (Σ patch rects — the bbox is only
       // the render footprint), through the one closed form (scale.ts E-c).
@@ -29415,13 +29398,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         capUnits: { [FARM_CROP_GLYPH]: cap },
         now: session.taskClock,
       });
-      session.wildAreas.set(key, rec);
+      session.areaRecords.set(key, rec);
       // E-f — the market's amplitude reads the region, live (the goods
       // layer keeps the catchment formula only where no field region
       // exists; the provider registry is the road-bearings handoff shape).
       provideFarmHaul(t.plan.key, (goodKey) => {
         if (goodKey !== "food") return null;
-        const r = session.wildAreas.get(key);
+        const r = session.areaRecords.get(key);
         if (!r) return null;
         const stock = wildAreaStock(r)[FARM_CROP_GLYPH] ?? 0;
         return { dailyUnits: Math.min(farmHaulPerDay(session), stock) };
@@ -29430,7 +29413,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // The field pulse, on the record's own clocks.
     const ripe = ripenWildArea(rec, session.taskClock, () => FOOD_DAY_SEC);
     if (ripe !== rec) {
-      session.wildAreas.set(key, ripe);
+      session.areaRecords.set(key, ripe);
       rec = ripe;
     }
     // The day-latched haul — the day's modelled consumption leaves the
@@ -29451,7 +29434,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       units: want,
       now: session.taskClock,
     });
-    if (drawn.rec !== rec) session.wildAreas.set(key, drawn.rec);
+    if (drawn.rec !== rec) session.areaRecords.set(key, drawn.rec);
   }
 
   function stepDriftDrain(session: QuestSession) {
@@ -30458,6 +30441,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * sweep is a single early return: the village stays byte-identical.
    */
   const COHORT_SWEEP_S = 2;
+  /** Over-cap demotions drained per sweep (the convergence budget below) —
+   *  16 houses ≈ 80 souls per 2 s brings a 975-soul city under its 150-soul
+   *  cap in ~20 s instead of 5.5 minutes. */
+  const COHORT_DEMOTE_BATCH = 16;
   let cohortSweepT = 0;
   function stepCohortTier(session: QuestSession, dt: number, shown: (hi: number) => boolean) {
     const t = session.town;
@@ -30478,7 +30465,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return;
     }
     const fam = familyOf(session);
-    const focus = playerWorldPos(session) ?? session.spiritPos ?? t.stage.center;
+    // THE CAMERA IS THE SCOPE ANCHOR (round-2 GL defects, 2026-08-26): the
+    // driver-fed view point first ([LOD per-camera], same seam the render
+    // tiers use) — the parked plaza body kept the live set centred on the
+    // spawn while the player walked the far districts. Fallbacks unchanged
+    // for standalone hosts (no driver → cameraFocus falls through to the
+    // player body itself).
+    const focus = cameraFocus() ?? playerWorldPos(session) ?? session.spiritPos ?? t.stage.center;
     const busy = busyResidentHouses(session);
     const castHouses = new Set<number>();
     for (const entry of t.bundle.cast) {
@@ -30499,12 +30492,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         pooled: session.pooledHouses.has(h.index),
       };
     });
-    const plan = planCohortTransition(cap, candidates);
-    if (plan?.kind === "demote") demoteHouse(session, plan.index);
-    else if (plan?.kind === "promote") promoteHouse(session, plan.index);
-    else if (plan?.kind === "swap") {
-      demoteHouse(session, plan.demote);
-      promoteHouse(session, plan.promote);
+    // THE CONVERGENCE BUDGET (round-2 GL defects, 2026-08-26): the kernel
+    // planner stays at-most-one — the HOST loops it while the town is OVER
+    // cap. At one demotion per 2 s sweep, a 975-soul city ran fully live for
+    // ~5.5 minutes after entry (165 demotions × 2 s) — the measured
+    // inside-city lag. Over-cap demotions now drain in batches (each through
+    // the full ordered demoteHouse fold — never a bulk shortcut, the
+    // conservation law); swap and promote keep the single-transition
+    // anti-flap law exactly (COHORT_SWAP_MARGIN is the no-flap band, and a
+    // swap pair must never trade places twice in one sweep).
+    for (let i = 0; i < COHORT_DEMOTE_BATCH; i++) {
+      const plan = planCohortTransition(cap, candidates);
+      if (!plan) break;
+      if (plan.kind === "demote") {
+        demoteHouse(session, plan.index);
+        const c = candidates.find((x) => x.index === plan.index);
+        if (c) c.pooled = true;
+        continue; // still over cap? keep draining this sweep
+      }
+      if (plan.kind === "promote") promoteHouse(session, plan.index);
+      else {
+        demoteHouse(session, plan.demote);
+        promoteHouse(session, plan.promote);
+      }
+      break; // swap/promote: one per sweep, the anti-flap law
     }
     pushCityHud(session);
   }
@@ -30516,7 +30527,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stepCohortWalkers(session: QuestSession) {
     const t = session.town;
     if (!t || !world) return;
-    const me = playerWorldPos(session) ?? session.spiritPos;
+    // Same camera-first anchor as the tier sweep: the walkers must spawn
+    // outside what the CAMERA can reach, not outside the parked body's reach.
+    const me = cameraFocus() ?? playerWorldPos(session) ?? session.spiritPos;
     if (!me) return;
     const day = Math.floor(session.townClock / FOOD_DAY_SEC);
     const want = new Map<string, { x: number; y: number }>();
@@ -32004,6 +32017,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     setCrowdBudget(n) {
       crowdBudget = n;
     },
+    setViewPoint(pt) {
+      viewPoint = pt;
+    },
     setCreatureTier(t) {
       if (t === creatureTier) return;
       const prevTown = creatureTier;
@@ -32064,6 +32080,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       w.features.splice(fi, 1);
       deleteContainerRecord(s, key);
       return true;
+    },
+    areaQuotes() {
+      const s = sess;
+      if (!s) return [];
+      return [...s.areaRecords.keys()].sort().map((k) => wildAreaQuote(s.areaRecords.get(k)!));
     },
     get camera() {
       return questView?.camera ?? null;

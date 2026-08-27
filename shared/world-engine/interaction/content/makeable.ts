@@ -73,7 +73,10 @@ export function depictableHeads(): string[] {
     if (pool.affordance !== "receptive-npc" && pool.affordance !== "startable-movable") continue;
     for (const m of pool.members) add(m.symbol);
   }
-  for (const s of listSpecies()) if (s.kind === "creature" && !s.bodiless) add(s.id);
+  // `stub` excluded with `bodiless`: a doll is a depiction of a BODY, and a
+  // vocabulary stub has none yet — "make lion" would promise a toy the world
+  // cannot shape.
+  for (const s of listSpecies()) if (s.kind === "creature" && !s.bodiless && !s.stub) add(s.id);
   return out;
 }
 

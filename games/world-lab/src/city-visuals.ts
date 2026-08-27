@@ -157,16 +157,11 @@ export function buildTownMesh(
   const streets = roadMesh(roads, center, ground);
   if (streets) group.add(streets);
 
-  // Fields are GROUND PAINT, not volumes — a raised slab reads as a building
-  // from the approach; the live town draws farm plots flat on the terrain.
-  const fields = instancedBoxes(
-    plan.fields.map(f => ({
-      cx: f.dx + f.w / 2, cz: f.dy + f.h / 2, w: f.w, d: f.h, h: SINK + 0.06, color: "#8aa356",
-    })),
-    ground,
-    1,
-  );
-  if (fields) group.add(fields);
+  // Fields draw NOTHING here any more (bridge round R1a): they are TERRAIN
+  // VERTEX PAINT now — main.ts paintTownFields sets the plan's rects on the
+  // body's field-paint index (planet/field-paint.ts, the route-paint family)
+  // and repaints the standing chunks. The old instanced slab z-hovered the
+  // ground and read as a green coin from the approach.
 
   const buildings = instancedBoxes(
     [

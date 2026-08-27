@@ -34,7 +34,8 @@ const MAX_SIZE = 50 * 1024 * 1024;
  *  CLIENT is for raw client WS messages reaching the Coordinator — gives
  *  operators a "did the press reach the server?" trail without having to
  *  cross-reference the live-session-debug log. */
-export type FlowAgent = "OBSERVER" | "SPEAKER" | "BOARD_MGR" | "MONITOR" | "COORDINATOR" | "CLIENT";
+// VISION = the Observer's stateless per-frame vision pass (split-observer-agent.ts).
+export type FlowAgent = "OBSERVER" | "VISION" | "SPEAKER" | "BOARD_MGR" | "MONITOR" | "COORDINATOR" | "CLIENT";
 
 /**
  * Sections to keep out of the DB. Skipped only at the DB-persistence
@@ -45,6 +46,7 @@ export type FlowAgent = "OBSERVER" | "SPEAKER" | "BOARD_MGR" | "MONITOR" | "COOR
  */
 const DB_NOISY_SECTIONS = new Set<string>([
   "OBSERVER:IN:image_frame",
+  "VISION:IN:image_frame",
 ]);
 
 function ensureSize(): void {

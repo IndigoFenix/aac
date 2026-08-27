@@ -44,12 +44,33 @@ export interface ClusterTemplate {
 }
 
 export interface InstantiateOptions {
-  /** Cross-cluster gate AND-ed into every dimension (e.g. parent value dominant). */
-  baseApplicable?: (s: GuessingModeState) => boolean;
+  /**
+   * Cross-cluster gate AND-ed into every dimension (e.g. parent value
+   * dominant). Receives the dim's LOCAL id, so an instance can stand down
+   * per-dimension rather than wholesale — needed when suppressing a redundant
+   * instance must not also hide a dim the user already answered.
+   */
+  baseApplicable?: (s: GuessingModeState, local: string) => boolean;
   /** Added to every dimension's priority (lets a context raise/lower a cluster). */
   priorityBoost?: number;
-  /** Overrides the focus label shown for this whole instance. */
+  /**
+   * DEFAULT subquestion label for dims in this instance that declare none of
+   * their own. It is NOT a blanket override: a cluster's dims ask genuinely
+   * different questions ("who does it" vs "where it happens"), and flattening
+   * them all to one instance-wide label is what shipped the actions bug —
+   * every narrowing turn announced itself as "what kind of action", so Speaker
+   * re-asked the same vague question and BoardManager stopped recognising the
+   * offered keys as fitting it. To override ONE dim's question for this
+   * instance, use `labelOverrides`.
+   */
   focusLabel?: string;
+  /**
+   * Per-dimension label overrides for this instance, keyed by LOCAL id. Use
+   * when a context genuinely renames one question — the `place` cluster's
+   * entry question becomes "where this animal lives" under `animal` — while
+   * the cluster's other dims keep asking their own ("which room").
+   */
+  labelOverrides?: Record<string, string>;
 }
 
 const nsId = (ns: string, local: string) => `${ns}.${local}`;
@@ -60,7 +81,7 @@ export function instantiate(
   ns: string,
   opts: InstantiateOptions = {},
 ): DimensionDef[] {
-  const { baseApplicable, priorityBoost = 0, focusLabel } = opts;
+  const { baseApplicable, priorityBoost = 0, focusLabel, labelOverrides } = opts;
 
   return tpl.dims.map((spec): DimensionDef => {
     const id = nsId(ns, spec.local);
@@ -72,7 +93,7 @@ export function instantiate(
     if (localGate || baseApplicable) {
       const siblingId = localGate ? nsId(ns, localGate.dim) : undefined;
       applicableWhen = (s: GuessingModeState): boolean => {
-        if (baseApplicable && !baseApplicable(s)) return false;
+        if (baseApplicable && !baseApplicable(s, spec.local)) return false;
         if (localGate && siblingId) {
           return localGate.valueIn.some((v) => isDominant(s, siblingId!, v));
         }
@@ -88,7 +109,11 @@ export function instantiate(
       values: spec.values,
       priority: spec.priority + priorityBoost,
       applicableWhen,
-      subquestionLabel: focusLabel ?? spec.subquestionLabel,
+      // Precedence: an explicit per-dim override for THIS instance, then the
+      // dim's own question, then the instance-wide default. The dim's own
+      // question must outrank `focusLabel` — it is the one that actually
+      // describes the buttons being offered.
+      subquestionLabel: labelOverrides?.[spec.local] ?? spec.subquestionLabel ?? focusLabel,
     };
   });
 }
@@ -221,6 +246,7 @@ export const FEELING_CLUSTER: ClusterTemplate = {
       role: "descriptive",
       priority: 3,
       values: ["strong", "small"],
+      subquestionLabel: "how strong the feeling is",
     },
   ],
 };
@@ -299,6 +325,7 @@ export const ACTION_CLUSTER: ClusterTemplate = {
       role: "descriptive",
       priority: 3,
       values: ["fun", "work"],
+      subquestionLabel: "for fun or a job to do",
     },
   ],
 };

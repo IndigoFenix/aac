@@ -73,7 +73,7 @@ function allDrawRows(run: TextQuestRun): TransferAgreement[] {
 
 /**
  * A SECOND CONDENSED AREA, cloned off the first. v1 folds exactly one stand per
- * session (`HOME_WILD_AREA`), but `session.wildAreas` has always been a keyed
+ * session (`HOME_WILD_AREA`), but `session.areaRecords` has always been a keyed
  * MAP and H2's law is about the map — so the map is what the pin populates,
  * rather than waiting for the world-size round to mint a real region. The clone
  * keeps the stock and moves the GROUND, which is the only input the leg price
@@ -84,19 +84,19 @@ function cloneSource(
   key: string,
   area: { x: number; y: number; w: number; h: number },
 ): void {
-  const src = run.session.wildAreas.get("home");
+  const src = run.session.areaRecords.get("home");
   if (!src) throw new Error("cloneSource: nothing folded to clone");
   const copy = structuredClone(src) as WildAreaRecord;
   copy.key = key;
   copy.area = area;
-  run.session.wildAreas.set(key, copy);
+  run.session.areaRecords.set(key, copy);
 }
 
 /** What the source still owns, standing or cut: record stock + boundary shelf.
  *  The conservation reading — a draw moves units between these two and the
  *  yard, and creates none. */
 function sourceHolds(run: TextQuestRun, glyph: string): number {
-  const rec = run.session.wildAreas.get("home");
+  const rec = run.session.areaRecords.get("home");
   const standing = rec ? wildAreaStock(rec)[glyph] ?? 0 : 0;
   return standing + stackUnits(run.session.partnerStock[wildAreaId("home")] ?? {}, glyph);
 }
@@ -111,10 +111,10 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
 
       // ── ② A LIVE STAND: the trees are standing, so this is an ERRAND ──────
       // (E-round evolution: the town's own FARM record legitimately lives in
-      // `wildAreas` from the first sweep — the "nothing folded" premise reads
+      // `areaRecords` from the first sweep — the "nothing folded" premise reads
       // the FOREST records only.)
       const foldedForests = () =>
-        [...s.wildAreas.keys()].filter((k) => !k.startsWith("farm-")).length;
+        [...s.areaRecords.keys()].filter((k) => !k.startsWith("farm-")).length;
       expect(s.wilderness?.features.length ?? 0).toBeGreaterThan(0);
       expect(foldedForests()).toBe(0);
       const mark0 = toasts.all.length;
@@ -131,7 +131,7 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
 
       // ── ① A FOLDED STAND: the same sentence is a SHIPMENT ─────────────────
       run.host.wildProbe("fold");
-      const rec = s.wildAreas.get("home");
+      const rec = s.areaRecords.get("home");
       expect(rec).toBeDefined();
       const held0 = sourceHolds(run, "wood");
       expect(held0).toBeGreaterThan(0);
@@ -197,7 +197,7 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
       // The home area sits AT the town centre (distance 0), so every injected
       // rival is farther or exactly level — which is precisely the two cases
       // the law distinguishes.
-      const homeArea = s.wildAreas.get("home")!.area;
+      const homeArea = s.areaRecords.get("home")!.area;
 
       // ── CHEAPEST ROAD BEATS KEY ORDER ─────────────────────────────────────
       // `aaa-far` sorts FIRST alphabetically and is a kilometre out. If the
@@ -235,7 +235,7 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
       // own ("they + give.not + meat") and NOT A ROW: a posted row would ship
       // nothing, every day, forever — the exact silent failure a source's
       // one-way ledger makes so easy to write.
-      for (const source of [...s.wildAreas.values()]) {
+      for (const source of [...s.areaRecords.values()]) {
         expect(wildAreaStock(source).meat ?? 0).toBe(0);
       }
       const mark6 = allDrawRows(run).length;
@@ -251,13 +251,13 @@ describe("H1/H2 — the spoken region draw and which source answers it", () => {
       const spoke = Object.values(run.state.bubbles).some((b) => (b.text ?? "").includes("meat"));
       expect(refused.includes("the forest has no meat") || spoke).toBe(true);
 
-      s.wildAreas.delete("aaa-far");
-      s.wildAreas.delete("aaa-tie");
+      s.areaRecords.delete("aaa-far");
+      s.areaRecords.delete("aaa-tie");
 
       // ── ③ NEITHER STAND NOR RECORD ⇒ REFUSED ALOUD ────────────────────────
       // The wild is gone entirely (an area is loaded or condensed — here it is
       // neither, which is the honest "there is no forest here").
-      s.wildAreas.clear();
+      s.areaRecords.clear();
       s.wilderness!.features.length = 0;
       const rowsBefore = drawRows(run).length;
       const mark2 = toasts.all.length;
@@ -314,7 +314,7 @@ function moveCamera(run: TextQuestRun, x: number, y: number): void {
   p.vy = 0;
 }
 
-const isFolded = (run: TextQuestRun): boolean => run.session.wildAreas.has("home");
+const isFolded = (run: TextQuestRun): boolean => run.session.areaRecords.has("home");
 const isLive = (run: TextQuestRun): boolean => (run.session.wilderness?.features.length ?? 0) > 0;
 
 /** Distance from a point to a rect, 0 inside — the driver's own measure,
@@ -445,7 +445,7 @@ describe("H3 — a stand folds only where nobody can see it", () => {
       expect(isLive(run)).toBe(false);
       // ⚖️ F-① — NOTHING EVAPORATES AT A FOLD. Every standing unit is in the
       // record (no draw has run, so the boundary shelf is untouched).
-      const inRecord = Object.values(wildAreaStock(s.wildAreas.get("home")!)).reduce(
+      const inRecord = Object.values(wildAreaStock(s.areaRecords.get("home")!)).reduce(
         (a, b) => a + b,
         0,
       );
@@ -468,7 +468,7 @@ describe("H3 — a stand folds only where nobody can see it", () => {
       // overrule it. Measured before this rule existed: `/wild fold` was undone
       // within one sweep, turning F5b's own live proofs from `folded
       // wild:area:home` into `loaded: oak×8 …`.
-      const homeArea = s.wildAreas.get("home")!.area;
+      const homeArea = s.areaRecords.get("home")!.area;
       cloneSource(run, "zzz-remote", { ...homeArea, x: homeArea.x + 4000 });
 
       // ── PHASE B — THE BAND COMES BACK, THE STAND STANDS ───────────────────
@@ -476,8 +476,8 @@ describe("H3 — a stand folds only where nobody can see it", () => {
       run.advanceS(16);
       expect(isLive(run)).toBe(true);
       expect(isFolded(run)).toBe(false); // the driver's own record retired
-      expect(s.wildAreas.has("zzz-remote")).toBe(true); // …and nobody else's did
-      s.wildAreas.delete("zzz-remote");
+      expect(s.areaRecords.has("zzz-remote")).toBe(true); // …and nobody else's did
+      s.areaRecords.delete("zzz-remote");
     } finally {
       run.dispose();
     }

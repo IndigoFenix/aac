@@ -9,7 +9,16 @@ import {
   type ReactNode,
 } from "react";
 import { CallClient, type CallClientEvent, type CallState, type IncomingCall } from "@shared/call/call-client";
-import { parseCallDataMessage, type CallDataMessage, type MirrorQuickButton, type WorldCommandMessage } from "@shared/call/call-data-messages";
+import {
+  parseCallDataMessage,
+  type CallDataMessage,
+  type MirrorHudSections,
+  type MirrorQuickButton,
+  type MirrorStripItem,
+  type MirrorSurface,
+  type WorldCommandMessage,
+} from "@shared/call/call-data-messages";
+import type { BuilderTarget } from "@shared/call/builder-mirror";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
 import type { BoardButton, ParsedBoardData } from "@shared/schema";
 import type { WorldNetMessage } from "@shared/world-engine/index";
@@ -24,6 +33,7 @@ import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { fetchIceServers, type CallParticipantInfo, type InviteSelection } from "./api";
 import { streamMicPcm } from "./micPcm";
+import CallAudioSinks from "@shared/call/CallAudioSinks";
 import { createRoom, type PersonChatContact } from "@/features/personChat/api";
 
 /** Build the ws(s):// URL for a server path, mirroring usePersonChatSocket. */
@@ -54,14 +64,6 @@ function sameGains(a: Map<string, number>, b: Map<string, number>): boolean {
   return true;
 }
 
-/** App language code → BCP-47 tag for the Web Speech API (mirrors the
- *  regular-chat dictation hook, useSpeechToText). */
-const SPEECH_LANG: Record<string, string> = {
-  en: "en-US", he: "he-IL", ar: "ar-SA", es: "es-ES", fr: "fr-FR", de: "de-DE",
-  ru: "ru-RU", zh: "zh-CN", ko: "ko-KR", yue: "zh-HK", pt: "pt-BR",
-};
-
-
 interface CallContextValue {
   callState: CallState;
   incoming: IncomingCall | null;
@@ -76,6 +78,11 @@ interface CallContextValue {
   videoEnabled: boolean;
   /** Other room participants (personId + name) — for the in-call addressee picker. */
   participants: CallParticipantInfo[];
+  /** Local output mute — silences every remote participant for this listener.
+   *  Lives at call scope, not in a view: CallAudioSinks owns the audio for the
+   *  whole call, so the control over it has to outlive any one panel. */
+  outputMuted: boolean;
+  setOutputMuted: (muted: boolean) => void;
   /** personId the clinician has marked they're addressing, or null (everyone). */
   addressee: string | null;
   /** Declare who the clinician is speaking to (or null to clear). */
@@ -133,6 +140,9 @@ interface CallContextValue {
   /** Send a typed message over the call's reliable data channel (e.g. a
    *  facilitator press on the mirrored board). */
   sendData: (message: CallDataMessage) => void;
+  /** Facilitate a press on the mirrored SENTENCE BUILDER (consent-gated on the
+   *  AAC side, like every other facilitator press). */
+  sendBuilderPress: (target: BuilderTarget) => void;
   /** Inbound screen-share streams (getDisplayMedia), keyed by personId. */
   screenStreams: Map<string, MediaStream>;
   /** Whether a screen-share has been requested/active for this call. */
@@ -172,6 +182,16 @@ export interface MirroredBoardState {
   contextButtons?: BoardButton[];
   /** Bottom quick-action row the student sees. */
   quickButtons?: MirrorQuickButton[];
+  /** The SPECIFIC surface — absent from AAC builds older than the split view. */
+  surface?: MirrorSurface;
+  /** The app's or game's own localized title. */
+  title?: string;
+  /** The sentence builder's composed sentence + its controls. */
+  strip?: MirrorStripItem[];
+  /** The builder's mode-chip rail (distinct from `quickButtons`). */
+  chips?: MirrorQuickButton[];
+  /** An embedded world-engine game's ambient HUD. */
+  hud?: MirrorHudSections;
   at: number;
 }
 
@@ -209,6 +229,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [selfPersonId, setSelfPersonId] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [outputMuted, setOutputMuted] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const [remoteMedia, setRemoteMedia] = useState<Map<string, CallMediaFlags>>(new Map());
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -364,8 +385,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setAddressedBy({ fromPersonId: event.fromPersonId, fromName: event.fromName });
         break;
       case "transcript":
-        // Live STT of our own speech — rolling self-caption.
+        // Live STT of our own speech — rolling self-caption. On a FINAL phrase
+        // it also drives the in-game speech bubble over this caller's avatar.
+        // (That used to be set by the Web Speech branch; when server STT became
+        // the only path the bubble had to move with it.)
         setSelfTranscript(event.text);
+        if (event.isFinal && event.text.trim()) {
+          setLastSelfSpeech({ text: event.text.trim(), at: Date.now() });
+        }
         break;
       case "game":
         // A participant attached/detached a social game on the call.
@@ -400,7 +427,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
         const m = parseCallDataMessage(event.message);
         if (!m) break;
         if (m.k === "board-mirror") {
-          setMirroredBoard({ fromPersonId: event.personId, board: m.board, pageId: m.pageId, mode: m.mode, appKind: m.appKind, rtl: m.rtl, contextButtons: m.contextButtons, quickButtons: m.quickButtons, at: m.at });
+          setMirroredBoard({
+            fromPersonId: event.personId,
+            board: m.board, pageId: m.pageId, mode: m.mode, appKind: m.appKind, rtl: m.rtl,
+            contextButtons: m.contextButtons, quickButtons: m.quickButtons,
+            surface: m.surface, title: m.title, strip: m.strip, chips: m.chips, hud: m.hud,
+            at: m.at,
+          });
         } else if (m.k === "board-dwell") {
           setMirroredDwell(m.buttonId);
         } else if (m.k === "board-selection") {
@@ -622,6 +655,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
     clientRef.current?.sendData(message);
   }, []);
 
+  // Facilitated press on the mirrored SENTENCE BUILDER. Separate from the board's
+  // `facilitator-press` because the two are different acts: a board button is a
+  // whole utterance, a builder press is one move in composing one.
+  const sendBuilderPress = useCallback((target: BuilderTarget) => {
+    clientRef.current?.sendData({ k: "facilitator-builder", target, at: Date.now() });
+  }, []);
+
   const requestScreenShare = useCallback((on: boolean) => {
     setScreenRequested(on);
     clientRef.current?.requestScreenShare(on);
@@ -683,18 +723,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, [circlesOn, selfPersonId]);
 
-  // Per-peer audio activity (shared detector). Drives BOTH the active-speaker
-  // spotlight (the "auto" video layout) AND the Web Speech echo guard: while any
-  // remote stream is making sound (the student talking / button-press TTS) we
-  // mark a short "active" window so self-transcripts that are really our mic
-  // hearing the speakers get dropped.
-  const remoteActiveUntilRef = useRef(0);
+  // Per-peer audio activity (shared detector) — drives the active-speaker
+  // spotlight in the "auto" video layout.
+  //
+  // It used to ALSO arm a 1500ms "remote audio was just heard" window that the
+  // Web Speech echo guard used to discard self-transcripts. Both are gone: echo
+  // is now handled where it belongs (AEC on the capture the server transcribes),
+  // not by guessing which of our own transcripts were really the far end.
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   useEffect(() => {
     if (callState !== "active" || remoteStreams.size === 0) { setActiveSpeakerId(null); return; }
     const detector = createActiveSpeakerDetector({
       onActiveSpeaker: setActiveSpeakerId,
-      onAnyActive: (any) => { if (any) remoteActiveUntilRef.current = Date.now() + 1500; },
     });
     if (!detector) return;
     detector.setStreams(remoteStreams);
@@ -703,79 +743,37 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   // While the call is active, transcribe the clinician's OWN speech and publish
   // it into the conversation room — so AAC students' Observers + Board Managers
-  // perceive what's said (the student hears the raw audio, but the AI can't
-  // transcribe a remote stream). PRIMARY: the browser Web Speech API — the same
-  // recognizer the regular-chat mic uses; it captures the mic CLEANLY itself
-  // (far better than raw PCM off the WebRTC call stream). FALLBACK (no Web
-  // Speech, e.g. Firefox): stream PCM to the server's Google Cloud STT.
+  // perceive what is said (the student hears the raw audio, but their AI cannot
+  // transcribe a remote stream).
+  //
+  // IN-REGION SERVER STT IS THE ONLY PATH. This used to PREFER the browser's Web
+  // Speech API, which was wrong twice over:
+  //
+  //   • PHI. Web Speech routes audio through Google's CONSUMER service, outside
+  //     the platform's GCP/BAA region — a data-residency regression against the
+  //     locked decision that clinical audio stays in-region.
+  //   • Echo, and this is why the reported bug existed. Web Speech opens its OWN
+  //     capture of the raw microphone, so it hears the far end coming out of
+  //     these speakers. An "echo guard" was bolted on to drop self-transcripts
+  //     heard during remote audio — and it could not work: a Web Speech final
+  //     only fires after 1200ms of silence, while the guard suppressed anything
+  //     within 1500ms of remote audio. Any remote sound in the last 300ms of a
+  //     sentence, or after it, discarded that sentence. The clinician could only
+  //     be heard by staying quiet for 300ms AFTER the far end went quiet.
+  //
+  // streamMicPcm reads `localStream`, whose audio track is the getUserMedia
+  // capture with echoCancellation ON (see call-client acquireLocalMedia). So the
+  // echo is REMOVED from the signal before recognition rather than guessed at
+  // afterwards, and no guard is needed.
   const { language } = useLanguage();
   useEffect(() => {
-    if (callState !== "active" || !audioEnabled) return;
-
-    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SR) {
-      const recognition = new SR();
-      recognition.lang = SPEECH_LANG[language] ?? "en-US";
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      let stopped = false;
-      // In continuous mode Chrome often never emits a `final` on its own — it
-      // just keeps streaming interims. So we detect a speech PAUSE (~1.2s with
-      // no new interim) and call stop(), which forces the recognizer to finalize
-      // the phrase → a `final` result fires → we send it → onend restarts us.
-      const SILENCE_MS = 1200;
-      let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-      const clearSilence = () => { if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; } };
-      recognition.onresult = (event: any) => {
-        let interim = "";
-        let final = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const r = event.results[i];
-          if (r.isFinal) final += r[0].transcript;
-          else interim += r[0].transcript;
-        }
-        if (final.trim()) {
-          clearSilence();
-          setSelfTranscript(final.trim());
-          // Echo guard: if remote call audio was just playing (e.g. the AAC
-          // student's button-press TTS), this "phrase" is most likely our mic
-          // hearing the speakers, not the clinician — don't publish it.
-          if (Date.now() >= remoteActiveUntilRef.current) {
-            clientRef.current?.sendUtterance(final.trim());
-            // Surface it as the clinician's in-game speech bubble too.
-            setLastSelfSpeech({ text: final.trim(), at: Date.now() });
-          } else {
-            console.log("[CallContext] suppressed likely echo of remote audio:", final.trim());
-          }
-        } else if (interim) {
-          setSelfTranscript(interim);
-          clearSilence();
-          silenceTimer = setTimeout(() => {
-            silenceTimer = null;
-            try { recognition.stop(); } catch { /* will restart via onend */ }
-          }, SILENCE_MS);
-        }
-      };
-      // Web Speech stops itself periodically (and on our pause-stop); restart
-      // while the call is up so the next phrase is captured.
-      recognition.onend = () => { if (!stopped) { try { recognition.start(); } catch { /* already running */ } } };
-      recognition.onerror = (e: any) => {
-        if (e?.error && e.error !== "no-speech" && e.error !== "aborted") {
-          console.warn("[CallContext] speech recognition error:", e.error);
-        }
-      };
-      try { recognition.start(); } catch { /* ignore */ }
-      console.log("[CallContext] clinician speech via Web Speech API (lang=" + recognition.lang + ")");
-      return () => { stopped = true; clearSilence(); try { recognition.stop(); } catch { /* ignore */ } };
-    }
-
-    // Fallback: server-side STT over streamed PCM.
-    if (!localStream) return;
-    console.log("[CallContext] Web Speech unavailable — falling back to server STT (call:audio)");
-    const stop = streamMicPcm(localStream, (chunk, sampleRate) => {
+    if (callState !== "active" || !audioEnabled || !localStream) return;
+    // NOTE: `language` is still the clinician's UI language, which is not
+    // necessarily the language they SPEAK. Replaced by an explicit
+    // per-participant spoken language in C1 — see the rework design §D6.
+    return streamMicPcm(localStream, (chunk, sampleRate) => {
       clientRef.current?.sendAudioChunk(chunk, sampleRate, language);
     });
-    return stop;
   }, [callState, audioEnabled, localStream, language]);
 
   const value: CallContextValue = useMemo(() => ({
@@ -787,6 +785,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     remoteMedia,
     error,
     activeContactName,
+    outputMuted,
+    setOutputMuted,
     audioEnabled,
     videoEnabled,
     participants,
@@ -812,6 +812,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     mirroredDwell,
     mirroredSelection,
     sendData,
+    sendBuilderPress,
     screenStreams,
     screenRequested,
     requestScreenShare,
@@ -826,14 +827,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
     toggleAudio,
     toggleVideo,
   }), [
-    callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia,
+    callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia, outputMuted,
     error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech,
     game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains, activeSpeakerId,
-    mirroredBoard, mirroredDwell, mirroredSelection, sendData, screenStreams, screenRequested, requestScreenShare,
+    mirroredBoard, mirroredDwell, mirroredSelection, sendData, sendBuilderPress, screenStreams, screenRequested, requestScreenShare,
     startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);
 
-  return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
+  return (
+    <CallContext.Provider value={value}>
+      {children}
+      {/* THE call's audio output. Mounted here, not in a view, so every
+          participant stays audible regardless of which panel is showing and
+          whether their camera is on. */}
+      <CallAudioSinks streams={remoteStreams} gains={peerGains} muted={outputMuted} />
+    </CallContext.Provider>
+  );
 }
 
 export function useCall(): CallContextValue {

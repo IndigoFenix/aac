@@ -15,6 +15,9 @@ const STRUCTURED_TOOL_NAME = "_structured_response";
 
 export class ClaudeStructuredProvider implements StructuredLLMProvider {
   private client = getAnthropicClient();
+  /** CLAUDE_CACHE_DEBUG only: the previous request's cacheable blocks, so the
+   *  dump can name the first character that broke the prefix between calls. */
+  private static lastPrefix: { system: string; tools: string } | null = null;
 
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
     const model = resolveModelId("claude", request.model);
@@ -117,7 +120,31 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
         if (Array.isArray(logParams.system) && logParams.system[0]?.text?.length > 200) {
           logParams.system[0].text = logParams.system[0].text.slice(0, 100) + `... [${logParams.system[0].text.length} chars] ...` + logParams.system[0].text.slice(-100);
         }
-        fs.appendFileSync(logFile, `\n${'='.repeat(80)}\n[${new Date().toISOString()}]\n${'='.repeat(80)}\n${JSON.stringify(logParams, null, 2)}\n${'─'.repeat(80)}\n`);
+        // Cache-prefix forensics: hash the two cacheable blocks and, when the
+        // system text differs from the PREVIOUS request in this process, name
+        // the first differing character with context. The truncated dump above
+        // can't answer "what busted the cache" — this line can.
+        const { createHash } = await import('crypto');
+        const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 12);
+        const sysText: string = params.system?.[0]?.text ?? '';
+        const toolsText = JSON.stringify(params.tools ?? []);
+        let prefixNote = `PREFIX: system=${sysText.length}ch sha=${sha(sysText)} tools=${toolsText.length}ch sha=${sha(toolsText)}`;
+        const prev = ClaudeStructuredProvider.lastPrefix;
+        if (prev) {
+          const diffAt = (a: string, b: string) => { let i = 0; const n = Math.min(a.length, b.length); while (i < n && a[i] === b[i]) i++; return i; };
+          if (prev.system !== sysText) {
+            const i = diffAt(prev.system, sysText);
+            prefixNote += `\n  SYSTEM DIFFERS from previous request at ${i}/${prev.system.length}` +
+              `\n    prev: ${JSON.stringify(prev.system.slice(Math.max(0, i - 60), i + 80))}` +
+              `\n    now:  ${JSON.stringify(sysText.slice(Math.max(0, i - 60), i + 80))}`;
+          } else prefixNote += '\n  system identical to previous request';
+          if (prev.tools !== toolsText) {
+            const i = diffAt(prev.tools, toolsText);
+            prefixNote += `\n  TOOLS DIFFER from previous request at ${i}/${prev.tools.length}: ${JSON.stringify(toolsText.slice(Math.max(0, i - 40), i + 60))}`;
+          } else prefixNote += '\n  tools identical to previous request';
+        }
+        ClaudeStructuredProvider.lastPrefix = { system: sysText, tools: toolsText };
+        fs.appendFileSync(logFile, `\n${'='.repeat(80)}\n[${new Date().toISOString()}]\n${'='.repeat(80)}\n${prefixNote}\n${JSON.stringify(logParams, null, 2)}\n${'─'.repeat(80)}\n`);
       } catch {}
     }
 

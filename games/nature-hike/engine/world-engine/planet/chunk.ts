@@ -230,6 +230,10 @@ export function buildChunkGeometry(params: ChunkParams): ChunkGeometryData {
       let riverDepth = 0;
       flowT[0] = 0; flowT[1] = 0; flowT[2] = 0;
       if (!isOcean) {
+        // Fields paint FIRST (under rivers and roads): a channel or a lane
+        // crossing a farm rect reads as the crossing. Same true-extent +
+        // coverage-fade law as both.
+        if (surface.fieldTintAt) surface.fieldTintAt(dir, vertSpanM, rgb);
         if (surface.riverSampleAt) {
           riverDepth = surface.riverSampleAt(dir, vertSpanM, rgb, flowT);
         } else if (surface.riverTintAt) {

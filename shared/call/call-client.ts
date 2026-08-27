@@ -16,6 +16,7 @@
 import type { CallGame, CallMediaFlags, CallSignal } from "../realtime-events";
 import type { WorldPresence } from "../social-world/world-presence";
 import { PeerMesh } from "../rtc/peer-mesh";
+import { createCallAudioMixer, type CallAudioMixer } from "./audio-mixer";
 
 export type CallState =
   | "idle"
@@ -82,11 +83,11 @@ export interface CallClientOptions {
   emit: (event: CallClientEvent) => void;
   /** AAC only: act as the student being fronted, rather than the logged-in user. */
   actAsStudentId?: string;
-  /** AAC only: the student's "voice" is synthesized (TTS), not a microphone. Return
-   *  an audio track carrying that synthesized voice and it's mixed into the outgoing
-   *  stream as an extra audio track, so it travels every channel a mic would (sent
-   *  to peers, gated by the same controls). Pulled lazily when local media is
-   *  acquired. Return null when there's nothing to add. */
+  /** AAC only: the student's "voice" is synthesized (TTS), not a microphone.
+   *  Return an audio track carrying that synthesized voice and it is MIXED with
+   *  the microphone into the single outgoing audio track (see audio-mixer.ts) —
+   *  never added as a second track, which receivers silently drop. Pulled lazily
+   *  when local media is acquired. Return null when there's nothing to mix. */
   getAppAudioTrack?: () => MediaStreamTrack | null;
 }
 
@@ -104,6 +105,11 @@ export class CallClient {
   private incoming: IncomingCall | null = null;
   private mesh: PeerMesh;
   private localStream: MediaStream | null = null;
+  /** The raw getUserMedia capture. When a mixer is in play `localStream` is a
+   *  COMPOSED stream (camera + one mixed audio track), so the capture is kept
+   *  separately — it is what teardown has to stop. */
+  private capturedStream: MediaStream | null = null;
+  private audioMixer: CallAudioMixer | null = null;
   private screenStream: MediaStream | null = null;
   private currentGame: CallGame | null = null;
   private ringTimer: ReturnType<typeof setTimeout> | null = null;
@@ -251,6 +257,10 @@ export class CallClient {
     this.teardownCall("ended");
   }
 
+  /** The call MICROPHONE — the room this participant is in. Never touches the
+   *  student's synthesized voice: a child whose only channel is TTS must not be
+   *  silenceable by a control labelled "mic" (the mixer keeps the two on
+   *  separate gains precisely so this stays true). */
   toggleAudio(enabled: boolean): void { this.setTrackEnabled("audio", enabled); }
   toggleVideo(enabled: boolean): void { this.setTrackEnabled("video", enabled); }
 
@@ -261,26 +271,45 @@ export class CallClient {
     if (this.call) this.send({ type: "call:focus", callId: this.call.callId, to: toPersonId });
   }
 
-  /** Publish this caller's transcribed speech (from the browser's Web Speech
-   *  API) into the conversation room so AAC students' AIs perceive it. The
-   *  primary path — the browser recognizer captures the mic cleanly itself.
-   *  Non-student callers only. */
-  sendUtterance(text: string): void {
-    const t = text.trim();
-    if (this.call && t) this.send({ type: "call:utterance", callId: this.call.callId, text: t });
-  }
-
-  /** FALLBACK (browsers without Web Speech, e.g. Firefox): stream this caller's
-   *  mic PCM (base64 LINEAR16 mono @ sampleRate) to the server, which
-   *  transcribes it via in-region Google Cloud STT and publishes the result. */
+  /** Stream this caller's mic PCM (base64 LINEAR16 mono @ sampleRate) to the
+   *  server, which transcribes it with in-region Google Cloud STT and publishes
+   *  each phrase into the conversation room.
+   *
+   *  THE ONLY transcription path for a non-student caller. The browser's Web
+   *  Speech API used to be preferred and was removed: it routes clinical audio
+   *  through Google's consumer service (a PHI/data-residency regression) and it
+   *  recognises its OWN raw capture, so it hears the far end through the
+   *  speakers — which is what the unwinnable "echo guard" existed to paper over.
+   *  What we send here is the AEC-processed call track. */
   sendAudioChunk(chunk: string, sampleRate: number, lang?: string): void {
-    if (this.call && chunk) this.send({ type: "call:audio", callId: this.call.callId, chunk, sampleRate, ...(lang ? { lang } : {}) });
+    // `t` is OUR clock at the moment the chunk was produced. The server compares
+    // successive t's (deltas only, so clock skew is irrelevant) against its own
+    // arrival times, which is the only way to tell "the client stopped producing
+    // audio" apart from "the audio was produced but reached us late". Without
+    // it a stalled stream is indistinguishable from a silent one.
+    if (this.call && chunk) {
+      this.send({
+        type: "call:audio",
+        callId: this.call.callId,
+        chunk,
+        sampleRate,
+        t: Date.now(),
+        ...(lang ? { lang } : {}),
+      });
+    }
   }
 
   private setTrackEnabled(kind: "audio" | "video", enabled: boolean): void {
     if (!this.localStream || !this.call) return;
-    const tracks = kind === "audio" ? this.localStream.getAudioTracks() : this.localStream.getVideoTracks();
-    for (const t of tracks) t.enabled = enabled;
+    if (kind === "audio" && this.audioMixer) {
+      // Mixed path: mute the MIC SOURCE, not the outgoing track. Disabling the
+      // outgoing track here would silence the student's voice along with the
+      // room — the exact conflation this rework removes.
+      this.audioMixer.setMicEnabled(enabled);
+    } else {
+      const tracks = kind === "audio" ? this.localStream.getAudioTracks() : this.localStream.getVideoTracks();
+      for (const t of tracks) t.enabled = enabled;
+    }
     const media = this.call.media;
     const next: CallMediaFlags = {
       audio: kind === "audio" ? enabled : media.audio,
@@ -434,18 +463,58 @@ export class CallClient {
 
   private async acquireLocalMedia(media: CallMediaFlags): Promise<void> {
     if (this.localStream) return;
-    const constraints: MediaStreamConstraints = { audio: media.audio, video: media.video };
     if (!media.audio && !media.video) return;
+    // Echo cancellation stated explicitly rather than left to the browser
+    // default: the far end's audio coming back out of these speakers is the
+    // single biggest source of noise on an AAC call.
+    // NOTE: noiseSuppression is deliberately NOT set here. For this population
+    // the non-speech vocalisations it strips are clinically meaningful signal —
+    // it belongs in per-student settings, not a hardcoded default.
+    const constraints: MediaStreamConstraints = {
+      audio: media.audio ? { echoCancellation: true } : false,
+      video: media.video,
+    };
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-      // Mix the AAC's synthesized voice in as an EXTRA outgoing audio track (its TTS
-      // is how the student speaks). Cloned so call teardown can stop the call's copy
-      // without killing the player's live output. Added BEFORE peers connect, so no
-      // mid-call renegotiation. No-op for the clinician (no getAppAudioTrack).
-      const appTrack = this.opts.getAppAudioTrack?.();
-      if (appTrack) {
-        try { this.localStream.addTrack(appTrack.clone()); } catch { /* ignore — best effort */ }
+      const captured = await navigator.mediaDevices.getUserMedia(constraints);
+      this.capturedStream = captured;
+
+      const micTrack = captured.getAudioTracks()[0] ?? null;
+      // The AAC's synthesized voice — how the student actually speaks.
+      const voiceTrack = this.opts.getAppAudioTrack?.() ?? null;
+
+      let outgoingAudio: MediaStreamTrack | null = micTrack;
+      if (!voiceTrack && this.opts.getAppAudioTrack) {
+        // This client declared it HAS a synthesized voice (only the AAC does)
+        // and then produced no track for it. Silently sending mic-only here is
+        // precisely the reported bug — the student presses buttons and the far
+        // end hears nothing — so it must never be silent again.
+        console.error("[call-client] AAC has NO voice track for this call — button presses will NOT be heard by the other side");
+        this.opts.emit({
+          type: "error",
+          code: "no_voice_track",
+          message: "The student's voice is not being sent on this call",
+        });
       }
+      if (voiceTrack) {
+        // Two sources → ONE track. Adding the voice as a second track means the
+        // receiver renders only one of them, picked by random track id.
+        this.audioMixer = createCallAudioMixer({ micTrack, voiceTrack });
+        if (this.audioMixer) {
+          outgoingAudio = this.audioMixer.track;
+        } else {
+          // Web Audio missing (should be unreachable anywhere WebRTC runs).
+          // Degrade to the VOICE, not the mic: a student who cannot be heard
+          // speaking has lost the point of the device. Never fall back to
+          // sending both as separate tracks — that is the original defect.
+          console.warn("[call-client] audio mixer unavailable — sending the student's voice only");
+          outgoingAudio = voiceTrack;
+        }
+      }
+
+      this.localStream = new MediaStream([
+        ...captured.getVideoTracks(),
+        ...(outgoingAudio ? [outgoingAudio] : []),
+      ]);
       this.mesh.setLocalStream(this.localStream);
       this.opts.emit({ type: "localStream", stream: this.localStream });
     } catch (err: any) {
@@ -595,9 +664,19 @@ export class CallClient {
       for (const t of this.screenStream.getTracks()) t.stop();
       this.screenStream = null;
     }
+    // Order matters: close the mixer first (it stops its own voice clone and the
+    // mixed output track), then stop the raw capture. `localStream` may be a
+    // COMPOSED stream whose audio track the mixer already owns, so stopping it
+    // alone would leave the microphone running.
+    this.audioMixer?.close();
+    this.audioMixer = null;
     if (this.localStream) {
       for (const t of this.localStream.getTracks()) t.stop();
       this.localStream = null;
+    }
+    if (this.capturedStream) {
+      for (const t of this.capturedStream.getTracks()) t.stop();
+      this.capturedStream = null;
     }
     this.mesh.setLocalStream(null);
     this.call = null;

@@ -3896,6 +3896,20 @@ export const yue = {
     everyone: "所有人",
     speakTo: "同邊個講",
     isTalkingToYou: "同緊你講嘢",
+    studentView: {
+      board: "畫面",
+      label: "佢哋嘅畫面",
+      resize: "調整鏡頭大細",
+      split: "兩樣",
+      video: "影片",
+      noCamera: "佢哋部鏡頭閂咗",
+    },
+    surface: {
+      app: "應用程式",
+      board: "溝通板",
+      builder: "砌句板",
+      game: "遊戲",
+    },
   },
 
   personChat: {

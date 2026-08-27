@@ -275,7 +275,7 @@ describe("② the twin doctrine — a warped span and a ticked span leave the SA
     const t = warped.session.town!;
     const key = farmAreaKey(t.plan.key);
     const before = warped.host.stockAudit();
-    let rec = warped.session.wildAreas.get(key)!;
+    let rec = warped.session.areaRecords.get(key)!;
     expect(rec).toBeDefined();
     const pop = t.town.scalar("population");
     const seated = t.plan.popCap > 0 ? Math.min(pop, t.plan.popCap) : pop;

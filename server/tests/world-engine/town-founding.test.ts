@@ -7,8 +7,10 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   abandonSite,
+  createFoundedSite,
   depositSiteStock,
   foundSite,
+  foundedSiteToJSON,
   isSiteMaterial,
   noteSiteBuilding,
   noteSiteResident,
@@ -39,6 +41,54 @@ describe("foundSite", () => {
       foundSite({ seed: 42, at: { x: 0, y: 0 } }).key,
     );
     expect(foundSite({ seed: 1, at: { x: 0, y: 0 }, key: "riverbend" }).key).toBe("riverbend");
+  });
+});
+
+describe("the durable form — foundedSiteToJSON / createFoundedSite (persistence P0)", () => {
+  const mutated = () => {
+    const site = foundSite({ seed: 7, at: { x: 4, y: 9 }, day: 12 });
+    depositSiteStock(site, { wood: 8 });
+    noteSiteBuilding(site);
+    noteSiteResident(site, "creature:elm");
+    site.herd = { goat: { n: 3, stock: { milk: 2 } } };
+    return site;
+  };
+
+  it("round-trips through JSON, restore-is-found, and the ledgers ride their own restores", () => {
+    const site = mutated();
+    const json = foundedSiteToJSON(site);
+    // The durable form is genuinely plain: a JSON round-trip is identity.
+    const wire = JSON.parse(JSON.stringify(json)) as typeof json;
+    expect(wire).toEqual(json);
+    const back = createFoundedSite(wire);
+    expect(back.key).toBe(site.key);
+    expect(back.seed).toBe(site.seed);
+    expect(back.at).toEqual(site.at);
+    expect(back.foundedDay).toBe(12);
+    expect(back.stock).toEqual({ wood: 8 });
+    expect(back.buildings).toBe(1);
+    expect(back.residents).toEqual(["creature:elm"]);
+    expect(back.herd).toEqual(site.herd);
+    // The overlay restored through its own pair: serializing again agrees.
+    expect(back.deltas.toJSON()).toEqual(site.deltas.toJSON());
+  });
+
+  it("aliases nothing, in either direction", () => {
+    const site = mutated();
+    const json = foundedSiteToJSON(site);
+    // Mutating the live site after the copy never reaches the payload…
+    depositSiteStock(site, { wood: 100 });
+    site.residents.push("creature:oak");
+    expect(json.stock).toEqual({ wood: 8 });
+    expect(json.residents).toEqual(["creature:elm"]);
+    // …and a restored site never aliases the caller's JSON.
+    const back = createFoundedSite(json);
+    back.stock["stone"] = 5;
+    back.residents.push("creature:fir");
+    back.herd!["goat"]!.stock["milk"] = 99;
+    expect(json.stock["stone"]).toBeUndefined();
+    expect(json.residents).toEqual(["creature:elm"]);
+    expect(json.herd!["goat"]!.stock["milk"]).toBe(2);
   });
 });
 

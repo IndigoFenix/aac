@@ -1003,3 +1003,153 @@ describe("contradiction prevention", () => {
     expect(inj.text).not.toMatch(/Rejected.*kind=animal/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Regression cover for the 2026-08-27 Word Finder stall. Three separate
+// defects conspired: every action dimension announced itself as "what kind of
+// action" (so Speaker re-asked the same vague question and BoardManager
+// stopped recognising the offered keys as fitting it), the generic `things`
+// place cluster double-asked once an animal was in play, and nothing caught a
+// narrowing board that carried none of the offered keys.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("cluster instantiation — per-dimension questions survive", () => {
+  /** Every dimension the narrowing engine can suggest must describe the
+   *  buttons it is actually offering. `buildSpeakerGuessingDirective` lifts
+   *  this label verbatim into "Voice ONE short, warm question helping the user
+   *  narrow down: <label>", so a label shared across a cluster's dims makes
+   *  the AI ask the same question every turn. */
+  it("gives every dimension a subquestionLabel", () => {
+    const unlabelled = ALL_DIMENSIONS.filter((d) => !d.subquestionLabel);
+    expect(unlabelled.map((d) => d.id)).toEqual([]);
+  });
+
+  /** Within ONE cluster instance the dims are all live together, so a shared
+   *  label means consecutive turns ask the identical question — the actual
+   *  bug. (Two INSTANCES may reuse a label: `things.home_room` and
+   *  `animal.home_room` both ask "which room", but never at the same time —
+   *  the generic instance stands down once `things.kind` leans animal.) */
+  it("never reuses one label inside a single cluster instance", () => {
+    const byNamespace = new Map<string, string[]>();
+    for (const d of ALL_DIMENSIONS) {
+      const ns = d.id.slice(0, d.id.indexOf("."));
+      const list = byNamespace.get(ns) ?? [];
+      list.push(d.subquestionLabel!);
+      byNamespace.set(ns, list);
+    }
+    for (const [ns, labels] of byNamespace) {
+      const dupes = labels.filter((l, i) => labels.indexOf(l) !== i);
+      expect({ ns, dupes }).toEqual({ ns, dupes: [] });
+    }
+  });
+
+  it("keeps each action dimension's own question instead of the instance label", () => {
+    expect(DIMENSION_BY_ID["actions.pace"].subquestionLabel).toBe("fast or slow");
+    expect(DIMENSION_BY_ID["actions.who"].subquestionLabel).toBe("who does it");
+    expect(DIMENSION_BY_ID["actions.where"].subquestionLabel).toBe("where it happens");
+    expect(DIMENSION_BY_ID["actions.uses_tool"].subquestionLabel).toBe("uses something or not");
+  });
+
+  it("asks about the body part, not the feeling, once 'hurt' is chosen", () => {
+    // The clobber shipped "Now figuring out: which feeling" alongside
+    // head/chest/belly buttons — a question its own answers don't fit.
+    expect(DIMENSION_BY_ID["feelings.where_hurts"].subquestionLabel).toBe("where it hurts");
+    expect(DIMENSION_BY_ID["feelings.pain_scale"].subquestionLabel).toBe("how much it hurts");
+    expect(DIMENSION_BY_ID["feelings.valence"].subquestionLabel).toBe("good or bad feeling");
+  });
+
+  it("still lets a context rename the cluster's ENTRY question only", () => {
+    expect(DIMENSION_BY_ID["animal.where_found"].subquestionLabel).toBe("where this animal lives");
+    // …while the nested follow-ups keep asking their own.
+    expect(DIMENSION_BY_ID["animal.home_room"].subquestionLabel).toBe("which room");
+    expect(DIMENSION_BY_ID["places.where_found"].subquestionLabel).toBe("which place");
+    expect(DIMENSION_BY_ID["places.natural_kind"].subquestionLabel).toBe("which kind of nature place");
+  });
+
+  it("names the suggested dimension's real question in the injection", () => {
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "actions");
+    s = applyPress(s, "actions.pace", "fast");
+    const text = buildStateInjection(s).text;
+    expect(text).toContain("Suggested next dimension: who — who does it");
+    expect(text).not.toContain("what kind of action");
+  });
+});
+
+describe("things — one place question, asked once", () => {
+  it("stands the generic place cluster down once the kind has its own", () => {
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "things");
+    s = applyPress(s, "things.kind", "animal");
+    const asked: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const next = suggestNextDimension(s);
+      if (!next.def) break;
+      asked.push(next.def.id);
+      s = applyPress(s, next.def.id, next.def.values[0]);
+    }
+    // Before the fix: things.where_found → animal.where_found (identical five
+    // buttons, back to back), then things.home_room → animal.home_room.
+    expect(asked).toContain("animal.where_found");
+    expect(asked).not.toContain("things.where_found");
+    expect(asked).not.toContain("things.home_room");
+  });
+
+  it("keeps the generic place cluster for a kind that has none of its own", () => {
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "things");
+    s = applyPress(s, "things.kind", "toy");
+    const asked: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const next = suggestNextDimension(s);
+      if (!next.def) break;
+      asked.push(next.def.id);
+      s = applyPress(s, next.def.id, next.def.values[0]);
+    }
+    expect(asked).toContain("things.where_found");
+  });
+
+  it("keeps a place fact the user already gave when the cluster stands down", () => {
+    // Answering the generic place question BEFORE narrowing to an animal must
+    // not lose the fact: standing the cluster down is about not ASKING twice.
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "things");
+    s = applyPress(s, "things.where_found", "at_home");
+    s = applyPress(s, "things.kind", "animal");
+    expect(buildStateInjection(s).text).toContain("where_found=at_home");
+
+    // …and the generic follow-ups still stand down, so "which room" is asked once.
+    const asked: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const next = suggestNextDimension(s);
+      if (!next.def) break;
+      asked.push(next.def.id);
+      s = applyPress(s, next.def.id, next.def.values[0]);
+    }
+    expect(asked).not.toContain("things.home_room");
+  });
+});
+
+describe("readiness in a shallow category", () => {
+  it("is ready once nothing is left to ask", () => {
+    // `time` has ONE dimension, so neither counter (2 confident steering dims,
+    // 5 presses) can ever trip. The injection used to say "No more narrowing
+    // dimensions — offer [GUESS] buttons now" directly above "Ready for
+    // guesses: not yet (still broad)".
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "time");
+    s = applyPress(s, "time.when", "now");
+    expect(suggestNextDimension(s).def).toBeNull();
+    expect(readyForGuesses(s)).toBe(true);
+    const text = buildStateInjection(s).text;
+    expect(text).toContain("No more narrowing dimensions");
+    expect(text).toContain("Ready for guesses: yes");
+  });
+
+  it("still withholds readiness while a question is outstanding", () => {
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "actions");
+    s = applyPress(s, "actions.pace", "fast");
+    expect(readyForGuesses(s)).toBe(false);
+  });
+});

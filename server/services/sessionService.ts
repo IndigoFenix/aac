@@ -41,7 +41,7 @@ import { personaRepository } from "../repositories/personaRepository";
 import { chargeCreditsToLedger } from "./credit-ledger";
 import { notifyProviderCreditFailure } from "./providerAlertService";
 import { ChatMessageManager, AgentTemplate, CurrentImage, MdStreamEvent } from "./chat/chat-handler";
-import { AgentLike } from "./chat/prompt-kit";
+import { AgentLike, printCurrentDateLine } from "./chat/prompt-kit";
 import {
   ParsedBoardData,
   createFallbackBoard,
@@ -1659,8 +1659,16 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   const enrichCorePrompt = (context: MemoryContext, corePrompt: string, isAACFeature: boolean) => {
     // Add any additional instructions or context to the core prompt if needed
+    // Day-granular ONLY. This line used to be `new Date().toISOString()` —
+    // a millisecond timestamp baked into the cached system block, so every
+    // new ChatMessageManager (= every Monitor run, every clinician turn)
+    // re-wrote the whole prompt-cache prefix at 1.25x and read nothing back.
+    // Within one manager the rounds shared the stamp and hit; across managers
+    // they never did — exactly the pattern measured on 2026-08-27. The
+    // "User Local Time" section already carries the local date; this keeps
+    // the UTC calendar date for the same reason, and nothing finer.
     let prefix = "";
-    prefix = `Current datetime: ${new Date().toISOString()}\n`;
+    prefix = `${printCurrentDateLine()}\n`;
     if (isAACFeature) {
       prefix += `You are speaking with the student.\n`;
     } else {
@@ -1716,18 +1724,24 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     await updateSession(session.id, update);
   };
 
-  const onCreditsUsed = async (creditsUsed: number, breakdown?: Record<string, number>) => {
+  const onCreditsUsed = async (
+    creditsUsed: number,
+    breakdown?: Record<string, number>,
+    tokenUsage?: { model?: string; promptTokens?: number; completionTokens?: number; cachedTokens?: number; cacheCreationTokens?: number },
+  ) => {
     await spendCredits(context, creditsUsed);
     if (session) {
       // Session-row update (creditsUsed + per-function-type cost_breakdown)
       // goes through the shared ledger; user/student rows are handled by
-      // spendCredits above.
+      // spendCredits above. Token detail (summed across the turn's tool
+      // rounds) lands on the session_cost_events row.
       await chargeCreditsToLedger({
         sessionId: session.id,
         credits: creditsUsed,
         breakdown,
         category: "chat",
-        label: "clinician-chat",
+        label: input.creditCategory ? `${input.creditCategory} turn` : "clinician-chat",
+        tokenUsage,
       });
     }
   };

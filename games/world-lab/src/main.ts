@@ -42,7 +42,10 @@ import { OWNS_MATERIAL_STATE } from "@shared/world-engine/space/space-sky";
 import { bootLivingTown, bootStructure, bootTownEmbedded, bootWildernessQuest, type QuestBoot, type EmbeddedTown, type SharedBoard, type BoardHandlers } from "./quest-boot";
 import { bootWilderness, faunaForBiome, wildMixForBiome, WILD_SIDE, type WildernessGround } from "./wilderness-boot";
 import { createFloraField, floraTreesNear, FLORA_TREE_SPECIES, type FloraField } from "./flora-field";
-import { makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
+import { growthClassPeriodS, makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
+import { naturalSourceOf } from "@shared/world-engine/products";
+import type { FieldRect } from "@shared/world-engine/planet/field-paint";
+import { createFarmCrops, type FarmCrops } from "./farm-crops";
 import { createTradeRoads, type TradeRoads, type TownSpliceSpec } from "./trade-roads";
 import { createRiverRibbons, type RiverRibbons } from "./river-ribbons";
 import {
@@ -57,9 +60,14 @@ import {
 } from "@shared/world-engine/planet/growth";
 import type { TownPlay } from "@shared/world-engine/interaction/town/town-play";
 import {
+  createFoundedSite, foundedSiteToJSON,
   siteTownConfig, clusterSites, clusterRadiusM, mergeSites, CLUSTER_MIN_SITES,
-  type FoundedSite,
+  type FoundedSite, type SerializedFoundedSite,
 } from "@shared/world-engine/interaction/town/founding";
+import {
+  deleteWorldSave, loadWorldSave, putWorldSave, WORLD_SAVE_V,
+  type FelledMarksPayload, type FoundedSitePayload, type WorldSave, type WorldSaveRecord,
+} from "./world-saves";
 import { bankOwnedHerd } from "@shared/world-engine/interaction/quest/herd";
 import type { PlanetCity } from "@shared/world-engine/planet/cities";
 import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
@@ -77,17 +85,20 @@ import { HdrProbePass } from "./hdr-probe";
 import type { QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
 // The tier ladder from its own pure module, not through the host.
 import { steppedTier, type CreatureTier } from "@shared/world-engine/creatures/view-tiers";
+import { probesOn } from "@shared/world-engine/perf-probes";
 
-// LAG HUNT (perf-probes.ts): the dollhouse still stutters with the attention
-// system ruled out — the lab boots with every dormant probe LIVE by default
-// ([sim-blocks]/[frame-phase]/[render-blocks]/[trip-emit]/…). Silence them at
-// runtime with `globalThis.__perfProbes = false` in the console.
-(globalThis as { __perfProbes?: boolean }).__perfProbes = true;
+// LAG HUNT (perf-probes.ts): the dormant probes ([sim-blocks]/[frame-phase]/
+// [render-blocks]/[trip-emit]/…) light at runtime with
+// `globalThis.__perfProbes = true` in the console — no rebuild. The lab used
+// to force them ON at boot (the 2026-07 hunt) and never reverted; per-frame
+// console traffic on a 195-house town was itself a measurable slice of the
+// big-city crawl. Default OFF like everywhere else.
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const select = $<HTMLSelectElement>("world-select");
 const langSelect = $<HTMLSelectElement>("lang-select");
 const reloadBtn = $<HTMLButtonElement>("reload");
+const resetSaveBtn = $<HTMLButtonElement>("reset-save");
 const pathsBtn = $<HTMLButtonElement>("paths");
 const nationsBtn = $<HTMLButtonElement>("nations");
 const statusEl = $<HTMLSpanElement>("status");
@@ -501,6 +512,9 @@ const liveCenter = { x: 0, y: 0 };
 let liveAnchor: THREE.Group | null = null;
 /** Terrain height at town-SIM (x, y) — viz.ground re-centred on the origin. */
 let liveGround: ((x: number, y: number) => number) | null = null;
+/** The mounted town's live crop layer (bridge R1b) — record-driven, ~1 Hz. */
+let farmCrops: FarmCrops | null = null;
+let farmCropsAcc = 0;
 
 /** The mounted live town's stage — its streamer's `loadedLots()` is THE
  *  single variable driving the static↔live handoff (below). */
@@ -614,6 +628,19 @@ function liveFoundedSiteCell(): number | null {
   return key ? foundedPlanetSites.get(key)?.cell ?? null : null;
 }
 
+/** The beacon row a founded site stands as — ONE literal for the live
+ *  registration and the save restore (persistence P1). */
+function foundedPlanetCity(cell: number, name: string, dir: [number, number, number]): PlanetCity {
+  return {
+    cell,
+    name,
+    dir,
+    density: 0, // no wild crowd founded this — the player did
+    charter: { farmland: 60, ore_access: 0, timberland: 0 },
+    startPop: 0, // zero-building growth: settlers raise everything (①b)
+  };
+}
+
 function registerFoundedPlanetSite(site: {
   key: string; seed: number; at: { x: number; y: number }; stock: Record<string, number>;
 }): void {
@@ -627,15 +654,7 @@ function registerFoundedPlanetSite(site: {
   if (r < 1e-6) return;
   const dir: [number, number, number] = [local.x / r, local.y / r, local.z / r];
   const cell = FOUNDED_CELL_BASE + site.seed;
-  const pc: PlanetCity = {
-    cell,
-    name: site.key,
-    dir,
-    density: 0, // no wild crowd founded this — the player did
-    charter: { farmland: 60, ore_access: 0, timberland: 0 },
-    startPop: 0, // zero-building growth: settlers raise everything (①b)
-  };
-  flight.addCities(body.id, [pc]);
+  flight.addCities(body.id, [foundedPlanetCity(cell, site.key, dir)]);
   const live = wildQuestSession()?.foundedSite;
   foundedPlanetSites.set(site.key, {
     cell, bodyId: body.id, dir, surfaceR: r,
@@ -667,6 +686,114 @@ function foundedSiteNetwork(): Array<{ x: number; y: number }> {
   }
   return out;
 }
+
+// ── WORLD SAVES (record-persistence P1 — world-saves.ts is the envelope;
+//    this block is the world-lab wiring). Save = the FOLDED truth read
+//    non-destructively (founded records + felled marks at rest); restore =
+//    found (fill only what memory lacks — the save never outranks live
+//    state — then re-register everything standing into the fresh boot).
+let worldSaveKey: string | null = null;
+/** Felled marks loaded for bodies whose field hasn't mounted yet —
+ *  consumed by driveFlora's body-change seed, once each. */
+const savedFelled = new Map<string, FelledMarksPayload["marks"]>();
+/** Records whose kind this build doesn't produce — carried load→save
+ *  untouched (a newer build's records survive an older build's autosave). */
+let carriedRecords: WorldSaveRecord[] = [];
+
+function assembleWorldSave(): WorldSave | null {
+  if (!worldSaveKey) return null;
+  const records: WorldSaveRecord[] = [];
+  const liveSite = wildQuestSession()?.foundedSite ?? null;
+  for (const [key, rec] of foundedPlanetSites) {
+    // The LIVE site outranks its last snapshot — a mid-play save reads the
+    // session's own record (non-destructive: toJSON copies, never folds).
+    const site = liveSite && liveSite.key === key ? liveSite : rec.record;
+    if (!site) continue;
+    const payload: FoundedSitePayload = {
+      cell: rec.cell, bodyId: rec.bodyId, dir: [...rec.dir], surfaceR: rec.surfaceR,
+      site: foundedSiteToJSON(site),
+    };
+    records.push({ id: `founded:${key}`, kind: "founded-site", payload });
+  }
+  // The mounted field's marks, at REST (remaining seconds; null = forever).
+  if (floraBodyId && wildTwinFelled.size) {
+    const marks = [...wildTwinFelled].map(([key, at]) => ({
+      key, remainS: Number.isFinite(at) ? Math.max(0, at - floraClock) : null,
+    }));
+    records.push({
+      id: `felled:${floraBodyId}`, kind: "felled-marks",
+      payload: { bodyId: floraBodyId, marks } satisfies FelledMarksPayload,
+    });
+  }
+  // Other bodies' unconsumed mark ledgers ride through unchanged.
+  for (const [bodyId, marks] of savedFelled) {
+    if (bodyId === floraBodyId) continue;
+    records.push({ id: `felled:${bodyId}`, kind: "felled-marks", payload: { bodyId, marks } });
+  }
+  records.push(...carriedRecords);
+  return { v: WORLD_SAVE_V, savedAt: Date.now(), worldKey: worldSaveKey, records };
+}
+
+async function applyWorldSave(): Promise<void> {
+  if (!worldSaveKey) return;
+  const save = await loadWorldSave(worldSaveKey);
+  if (save) {
+    // Absence gap (ruling ②): felled marks age by the closed wall-clock
+    // gap — filter-by-date, exact, no cap needed (a mark is a date).
+    const gapS = Math.max(0, (Date.now() - save.savedAt) / 1000);
+    const carried: WorldSaveRecord[] = [];
+    for (const r of save.records) {
+      if (r.kind === "founded-site") {
+        const p = r.payload as FoundedSitePayload;
+        if (!p || typeof p.cell !== "number" || typeof p.bodyId !== "string") continue;
+        if (foundedPlanetSites.has((p.site as SerializedFoundedSite).key)) continue;
+        try {
+          const record = createFoundedSite(p.site as SerializedFoundedSite);
+          foundedPlanetSites.set(record.key, {
+            cell: p.cell, bodyId: p.bodyId, dir: p.dir, surfaceR: p.surfaceR, record,
+          });
+        } catch (e) {
+          console.warn("world-save: founded-site record refused", r.id, e);
+        }
+      } else if (r.kind === "felled-marks") {
+        const p = r.payload as FelledMarksPayload;
+        if (!p || typeof p.bodyId !== "string" || !Array.isArray(p.marks)) continue;
+        if (savedFelled.has(p.bodyId)) continue;
+        const aged = p.marks
+          .map((m) => ({ key: m.key, remainS: m.remainS === null ? null : m.remainS - gapS }))
+          .filter((m) => m.remainS === null || m.remainS > 0); // regrown: gone
+        if (aged.length) savedFelled.set(p.bodyId, aged);
+      } else {
+        carried.push(r);
+      }
+    }
+    carriedRecords = carried;
+  }
+  // Re-register EVERYTHING standing (from the save or from this page's own
+  // memory) into the freshly booted flight/loader — beacons and overrides
+  // are boot chrome; the records are the truth.
+  if (flight && cityTowns) {
+    for (const [key, rec] of foundedPlanetSites) {
+      flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, key, rec.dir)]);
+      if (rec.record) {
+        cityTowns.registerFounded(rec.cell, siteTownConfig(rec.record, { scale: docSessionScale() }));
+      }
+    }
+  }
+}
+
+/** Autosave: the sandbox cadence, gentler — and a flush when the tab hides
+ *  (beforeunload can't await IndexedDB; visibilitychange can start it). */
+const WORLD_SAVE_EVERY_MS = 10_000;
+setInterval(() => {
+  const save = assembleWorldSave();
+  if (save && save.records.length) void putWorldSave(save);
+}, WORLD_SAVE_EVERY_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "hidden") return;
+  const save = assembleWorldSave();
+  if (save && save.records.length) void putWorldSave(save);
+});
 
 /** Town-local METRES of `dir` about `about` — the tangent chart a cluster is
  *  merged in. Sites founded in different wilderness sessions share no sim
@@ -772,7 +899,10 @@ function snapshotLiveFoundedSite(): void {
 function disposeWilderness(): void {
   if (embedWild) traceWalk(`disposeWilderness (groundedIn=${groundedIn})`);
   snapshotLiveFoundedSite();
-  clearFloraTwins(); // every twin dies with its session — all scenery again
+  // Every live twin dies with its session — scenery again. The felled
+  // MARKS survive the unmount (R2): the stumps you left stay stumps.
+  wildTwins.clear();
+  flora?.setTwinHidden(aliveFelledMarks());
   embedWild?.dispose();
   embedWild = null;
   if (wildRoot) { wildRoot.parent?.remove(wildRoot); wildRoot = null; }
@@ -909,6 +1039,18 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
             // fruit plants, animals) still comes from the mix.
             wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0)
               .filter(m => m.species !== FLORA_TREE_SPECIES),
+            // SETTLEMENT CLEARS (round-2 GL defects): the chunk square can
+            // overlap a village — its scatter must not put rocks/plants/
+            // sheep through the streets. Same hole list flora uses, in
+            // chunk-SIM coords (anchor-local x,z — the town registration).
+            clears: settlementHoles(body)
+              .map(h => {
+                const l = wildAnchor!.worldToLocal(_wildPos.copy(h.world));
+                return { x: l.x, y: l.z, r: h.r };
+              })
+              .filter(c =>
+                c.x > -c.r && c.x < WILD_SIDE + c.r &&
+                c.y > -c.r && c.y < WILD_SIDE + c.r),
             // This must read the DOCUMENT's declared avatar kind, not "is a
             // spirit-ladder camera rig active" (a walker spec riding the
             // ladder — nature-hike — still glides the SAME ladder as a
@@ -1471,7 +1613,11 @@ let appliedTier: CreatureTier = "full";
 // tier/budget must HOLD for TIER_DEBOUNCE_MS (`now` is performance.now())
 // before it lands; real transitions (descent, focus) hold far longer.
 const TIER_DEBOUNCE_MS = 700;
-let pushedTier: CreatureTier = "full";
+// null = never pushed for this town — the FIRST push lands immediately (the
+// same seeding debouncedBudget always had): the debounce exists to stop
+// flapping, not to hold a fresh mount at "full" for its first 700 ms while
+// the camera is still a kilometre up (round-2 GL defects).
+let pushedTier: CreatureTier | null = null;
 let tierCandidate: CreatureTier = "full";
 let tierCandidateAt = 0;
 function debouncedTier(t: CreatureTier, now: number): CreatureTier {
@@ -1479,7 +1625,9 @@ function debouncedTier(t: CreatureTier, now: number): CreatureTier {
     tierCandidate = t;
     tierCandidateAt = now;
   }
-  if (t !== pushedTier && now - tierCandidateAt >= TIER_DEBOUNCE_MS) pushedTier = t;
+  if (pushedTier === null || (t !== pushedTier && now - tierCandidateAt >= TIER_DEBOUNCE_MS)) {
+    pushedTier = t;
+  }
   return pushedTier;
 }
 let pushedBudget: number | null | undefined; // undefined = never pushed
@@ -1510,6 +1658,7 @@ const _lp = new THREE.Vector3(); // scratch: launch / land point (world)
 const _lp2 = new THREE.Vector3(); // scratch: landing heading (local)
 const _inv = new THREE.Matrix4(); // scratch: anchor world→local for directions
 const _wildPartnerDir = new THREE.Vector3(); // scratch: wild chunk's radial for partner bearings
+const _viewPt = new THREE.Vector3(); // scratch: camera → session-sim view point (per-body LOD)
 // AIRBORNE town cadence: from the air the town steps at 20 Hz (= the sim's dt
 // clamp, so residents run at full speed) instead of every rAF — the flight and
 // the town sharing one thread is the main frame cost. Grounded = every frame.
@@ -1574,6 +1723,11 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     // the avatar and the camera — the town walker hides until touchdown.
     embedTown.host.setDriveCamera(false);
     embedTown.host.setLocalAvatarHidden(true);
+    // LIVE CROPS over the field paint (bridge R1b): the mount is the only
+    // time the farm record exists, so this is exactly when the field can
+    // show its sown/ripe state. Anchor frame = the static plan's own.
+    farmCrops = createFarmCrops(viz.mesh, play.plan, viz.ground);
+    farmCropsAcc = 1; // first update on the next streamed frame
     // SEAL INTERIORS AT MOUNT (view-distance-lod-tiers.md, Phase 1). A fresh
     // host's renderer defaults interiorReveal=true, and the mount's first
     // host-steps run inside streamGround BEFORE the ladder's per-frame clamp
@@ -1584,9 +1738,10 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     // frames later when the clamp re-seals. Start sealed; the per-frame clamp
     // re-opens it at the structure rung / when riding.
     embedTown.host.setInteriorReveal(false);
+    applyPaths(); // the fresh host joins the Paths toggle's current state
     appliedCrowdAtM = Infinity; // a fresh town re-evaluates its crowd budget
     appliedTier = "full"; // …and its creature tier (the first push re-tiers)
-    pushedTier = "full"; // fresh debounce state — a stale hold must not gate the new town
+    pushedTier = null; // fresh debounce state — the new town's FIRST push lands undelayed
     tierCandidate = "full";
     pushedBudget = undefined;
     budgetCandidate = null;
@@ -1613,6 +1768,8 @@ function disposeEmbeddedTown(): void {
   // the thing a body's existence hangs on.
   if (embedTown) traceWalk(`disposeEmbeddedTown (groundedIn=${groundedIn})`);
   if (groundedIn === "town") handWalkerToWild();
+  farmCrops?.dispose(); // the record leaves with the session; the paint stays
+  farmCrops = null;
   liveViz?.view.setLiveLots(null); // full static plan back
   liveStage = null;
   embedTown?.dispose();
@@ -1831,14 +1988,35 @@ function maybeHandoffGround(): void {
 // its exact spot — hover/jump-on/products/felling through the same engine
 // code a flat region runs — and its scenery instance hides (setTwinHidden).
 // Walk away and an untouched twin releases back to scenery; a part-harvested
-// one stays standing (its state must not evaporate); a FELLED one keeps its
-// instance hidden for the rest of the mount, so the tree you cut down does
-// not respawn behind you as scenery.
+// one stays standing (its state must not evaporate); a FELLED one leaves a
+// fading MARK (below), so the tree you cut down does not respawn behind you
+// as scenery — and only returns when the forest's own clock has regrown it.
 const WILD_TWIN_R = 80;
 /** instance key (`face:tx:ty:i`) → live feature id. */
 const wildTwins = new Map<string, string>();
-/** Instances whose feature was consumed (felled) — hidden for the mount. */
-const wildTwinFelled = new Set<string>();
+/** ⚖️ FELLED MARKS (depletion↔render bridge R2, ruling Ⓑ): instance key →
+ *  the flora-clock second the mark EXPIRES. A felled twin's scenery stays
+ *  hidden until the species' own growth clock would stand a new tree in
+ *  its place (sapling → the scatter's mature class, at the session's
+ *  scale); then the mark dies and the scenery returns — the forest heals
+ *  ON the growth clock, never because a mount boundary forgot. A species
+ *  with no growth clock stamps Infinity (zero re-creation flux ⇒
+ *  permanent — the flux law's own arm). The ledger SURVIVES session
+ *  unmounts and clears only with the field itself (body change); storage
+ *  is driver-side until the persistence round. */
+const wildTwinFelled = new Map<string, number>();
+/** Monotonic sim-seconds for the mark clock — accrues in driveFlora across
+ *  mounts and sessions (page-lifetime). */
+let floraClock = 0;
+/** Purge expired marks (their trees have regrown) and give the alive set. */
+function aliveFelledMarks(): Set<string> {
+  const out = new Set<string>();
+  for (const [k, at] of wildTwinFelled) {
+    if (floraClock < at) out.add(k);
+    else wildTwinFelled.delete(k);
+  }
+  return out;
+}
 function twinRng(instKey: string): () => number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < instKey.length; i++) {
@@ -1854,28 +2032,35 @@ function twinRng(instKey: string): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-function clearFloraTwins(): void {
-  if (!wildTwins.size && !wildTwinFelled.size) return;
-  wildTwins.clear();
-  wildTwinFelled.clear();
-  flora?.setTwinHidden(new Set());
-}
-function syncFloraTwins(playerWorld: THREE.Vector3): void {
+function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world: THREE.Vector3; r: number }>): void {
   const q = embedWild?.quest;
   if (!q || !wildAnchor || !flora || !wildPoint || floraBodyId !== wildPoint.body.id) {
-    clearFloraTwins(); // no session (or another body's field) — all scenery
+    // No session (or another body's field): live twins cannot stand, but
+    // the felled MARKS are the field's memory, not the session's — the
+    // stumps stay stumps (R2; this branch is exactly where the old
+    // per-mount set used to forget them).
+    wildTwins.clear();
+    flora?.setTwinHidden(aliveFelledMarks());
     return;
   }
   const sess = q.session;
   const w = sess.wilderness;
   if (!w) return;
-  const near = floraTreesNear(wildPoint.body, playerWorld, WILD_TWIN_R);
+  // SETTLEMENT GATE (round-2 GL defects): the twin pass reads the PURE tile
+  // scatter (floraTreesNear), which knows nothing of the field's town holes —
+  // it was standing real oaks up inside the very disc the field refuses to
+  // draw. A tree inside any settlement hole is not a twin candidate.
+  const near = floraTreesNear(wildPoint.body, playerWorld, WILD_TWIN_R)
+    .filter(t => !holes.some(h => t.world.distanceTo(h.world) < h.r));
   const nearKeys = new Set(near.map(t => t.key));
   wildAnchor.updateWorldMatrix(true, false);
   // STAND UP trees entering the radius (world → chunk-sim coords; stock
   // rolled off the instance key, so a re-entry re-rolls the same tree).
   for (const t of near) {
-    if (wildTwins.has(t.key) || wildTwinFelled.has(t.key)) continue;
+    if (wildTwins.has(t.key)) continue;
+    const mark = wildTwinFelled.get(t.key);
+    if (mark !== undefined && floraClock < mark) continue; // still a stump
+    if (mark !== undefined) wildTwinFelled.delete(t.key);  // regrown — twins fresh
     const local = wildAnchor.worldToLocal(t.world);
     const id = `wild:${FLORA_TREE_SPECIES}_${t.key}`;
     const f = makeFeature(id, FLORA_TREE_SPECIES, { x: local.x, y: local.z }, twinRng(t.key));
@@ -1885,10 +2070,17 @@ function syncFloraTwins(playerWorld: THREE.Vector3): void {
   for (const [instKey, id] of wildTwins) {
     const f = w.features.find(g => g.id === id);
     if (!f) {
-      // Gone from the session = consumed (fellIfConsumed) — scenery stays
-      // hidden where the stump would be.
+      // Gone from the session = consumed (fellIfConsumed). Stamp the mark
+      // AT FELLING (R2): scenery stays hidden until the species' growth
+      // clock would stand a new tree — sapling to the scatter's mature
+      // class at the session's own scale; a growth-less species is
+      // permanent (zero re-creation flux, the flux law's arm).
       wildTwins.delete(instKey);
-      wildTwinFelled.add(instKey);
+      const growth = naturalSourceOf(FLORA_TREE_SPECIES)?.growth;
+      const span = growth
+        ? growthClassPeriodS(sess.scale, growth) * Math.max(1, growth.classes.length - 1)
+        : Infinity;
+      wildTwinFelled.set(instKey, floraClock + span);
       continue;
     }
     if (nearKeys.has(instKey)) continue;
@@ -1900,7 +2092,9 @@ function syncFloraTwins(playerWorld: THREE.Vector3): void {
       Object.keys({ ...live, ...f.stock }).every(k => (live[k] ?? 0) === (f.stock[k] ?? 0));
     if (untouched && q.removeWildFeature(id)) wildTwins.delete(instKey);
   }
-  flora.setTwinHidden(new Set([...wildTwins.keys(), ...wildTwinFelled]));
+  const hidden = aliveFelledMarks(); // expired marks purge — those trees return
+  for (const k of wildTwins.keys()) hidden.add(k);
+  flora.setTwinHidden(hidden);
 }
 
 /** Drive the world-fixed flora streamer: tiles load around the ground point
@@ -1909,6 +2103,7 @@ function syncFloraTwins(playerWorld: THREE.Vector3): void {
  *  walker). ~4 Hz; tile builds are budgeted inside ensure(). */
 function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
   if (!flight) return;
+  floraClock += dt; // the mark clock accrues even between ensure() beats
   floraAcc += dt;
   if (floraAcc < 0.25) return;
   floraAcc = 0;
@@ -1917,20 +2112,57 @@ function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
   if (!body || !body.walkable || !body.geography || nb.altitude > FLORA_ALT_M) return;
   if (floraBodyId !== body.id) {
     flora?.dispose();
-    clearFloraTwins(); // twin keys are per-field; a fresh field starts clean
+    // Twin keys AND felled marks are per-field — a fresh body's field
+    // starts clean (the new field is born with an empty hidden set)…
+    wildTwins.clear();
+    wildTwinFelled.clear();
     flora = createFloraField(renderer, body);
     floraBodyId = body.id;
+    // …then the SAVED ledger seeds this body's stumps (persistence P1):
+    // remaining seconds re-arm on the live clock, once per body per load.
+    const pend = savedFelled.get(body.id);
+    if (pend) {
+      savedFelled.delete(body.id);
+      for (const m of pend) {
+        wildTwinFelled.set(m.key, m.remainS === null ? Infinity : floraClock + m.remainS);
+      }
+    }
   }
   if (!flora) return;
   const focus = body.surfaceAt ? body.surfaceAt(playerWorld, _floraFocus) : playerWorld;
-  flora.ensure(
-    focus,
-    playerWorld,
-    liveViz ? { world: liveViz.mesh.getWorldPosition(_wildPos), r: 600 } : undefined,
-  );
+  const holes = settlementHoles(body);
+  flora.ensure(focus, playerWorld, holes);
   // The near trees BECOME entities (and their scenery hides) — the same
-  // ground point drives both, so the swap tracks the player exactly.
-  syncFloraTwins(playerWorld);
+  // ground point drives both, so the swap tracks the player exactly, and the
+  // SAME holes gate the twins: a tree the field refuses to draw must never
+  // be stood up as an entity either.
+  syncFloraTwins(playerWorld, holes);
+}
+
+/** Every settlement footprint known on `body`, as world-space keep-clear
+ *  discs: each built static town at its OWN plan radius (the mounted live
+ *  town is among them), plus the wild session's founded site. ONE list,
+ *  THREE consumers — the flora field's live holes, the twin gate, and the
+ *  wild chunk's scatter clears — so no tree system can put a tree inside
+ *  another system's streets. (Keying a single hardcoded 600 m hole on the
+ *  MOUNTED town was the round-1 trees-inside-the-city defect: no hole until
+ *  the live mount, none ever for a big city whose streets outgrew 600 m.) */
+function settlementHoles(body: CelestialBody): Array<{ world: THREE.Vector3; r: number }> {
+  const holes: Array<{ world: THREE.Vector3; r: number }> = [];
+  for (const viz of cityViz.values()) {
+    if (viz.fc.body.id !== body.id) continue;
+    const planR = cityTowns?.entry(viz.fc.city.cell)?.play?.plan.radius ?? 0;
+    holes.push({
+      world: viz.mesh.getWorldPosition(new THREE.Vector3()),
+      r: Math.max(250, planR * 1.25),
+    });
+  }
+  const liveSiteCell = liveFoundedSiteCell();
+  if (liveSiteCell !== null && flight) {
+    const fc = flight.cities().find(c => c.body.id === body.id && c.city.cell === liveSiteCell);
+    if (fc) holes.push({ world: fc.worldPos, r: 300 });
+  }
+  return holes;
 }
 
 // ── INTERCITY ROADS + CARAVANS (planet/routes.ts + trade-roads.ts) ─────────
@@ -2901,15 +3133,41 @@ select.value = DEFAULT_WORLD_ID;
 
 const loadSelected = (): void => {
   const w = TEST_WORLDS.find(t => t.id === select.value) ?? TEST_WORLDS[0];
+  worldSaveKey = w.id; // the save's identity — one ledger per demo world
   specForm.setDocument(w.world);
-  void boot().then(applyPaths);
+  void boot().then(applyPaths).then(() => applyWorldSave());
 };
 select.addEventListener("change", loadSelected);
-reloadBtn.addEventListener("click", () => void boot().then(applyPaths));
+reloadBtn.addEventListener("click", () => void boot().then(applyPaths).then(() => applyWorldSave()));
+// RESET (persistence P1 rider): delete the world's save, forget its whole
+// in-memory record set, rebuild from the spec. Memory clears BEFORE the
+// reboot so the autosave can never re-write what was just deleted (an
+// empty assemble writes nothing). deleteWorldSave resolves even on
+// failure — the reboot happens either way.
+resetSaveBtn.addEventListener("click", () => {
+  if (!worldSaveKey) return;
+  if (!window.confirm("Delete this world's local save and rebuild it fresh?")) return;
+  const key = worldSaveKey;
+  foundedPlanetSites.clear();
+  savedFelled.clear();
+  carriedRecords = [];
+  wildTwins.clear();
+  wildTwinFelled.clear();
+  void deleteWorldSave(key)
+    .then(() => boot())
+    .then(() => {
+      // boot()'s dispose path re-snapshots a LIVE founded site into the
+      // map (snapshotLiveFoundedSite) — a reset forgets that too, or the
+      // next autosave would resurrect the very thing just deleted.
+      foundedPlanetSites.clear();
+      applyPaths();
+    });
+});
 langSelect.addEventListener("change", () => {
   labLocale = langSelect.value;
   localStorage.setItem(LOCALE_STORAGE_KEY, labLocale);
-  void boot().then(applyPaths); // build-time choice — rebuild, don't half-translate
+  // build-time choice — rebuild, don't half-translate
+  void boot().then(applyPaths).then(() => applyWorldSave());
 });
 
 // ── 🧭 PATHS — draw what every hosted body is steering at (see
@@ -2928,9 +3186,16 @@ langSelect.addEventListener("change", () => {
 let pathsOn = false;
 function applyPaths(): void {
   pathsBtn.setAttribute("aria-pressed", String(pathsOn));
-  const w = window as unknown as { __questLab?: QuestHost3D; __questWild?: QuestHost3D };
+  const w = window as unknown as {
+    __questLab?: QuestHost3D; __questWild?: QuestHost3D; __questEmbed?: QuestHost3D;
+  };
   w.__questLab?.setPathDebug(pathsOn);
   w.__questWild?.setPathDebug(pathsOn);
+  // The MOUNTED town publishes __questEmbed (quest-boot bootTownEmbedded) —
+  // it was never driven, so the overlay lit only on the WILD side of a
+  // village edge (the round-2 "pink X appears at the boundary" report: the
+  // magenta cursor mark is part of this overlay). One toggle, every host.
+  w.__questEmbed?.setPathDebug(pathsOn);
 }
 pathsBtn.addEventListener("click", () => {
   pathsOn = !pathsOn;
@@ -2943,6 +3208,48 @@ pathsBtn.addEventListener("click", () => {
 // lab comes up with a blank world file / empty view until you pick a demo.
 resize();
 loadSelected();
+
+// ── FIELD GROUND PAINT (depletion↔render bridge R1a, ruling Ⓐ) ─────────────
+// A ready town's farm rects become terrain vertex paint — the biome-tint
+// family the user asked for ("similar to the way forests are rendered from a
+// distance"), through the route-paint architecture: true extent, coverage
+// fade below the mesh's resolution, repaint of the town-sized ball. Replaces
+// the instanced slab render (city-visuals draws no field boxes any more).
+const _fieldW = new THREE.Vector3();
+function paintTownFields(
+  body: CelestialBody,
+  g: THREE.Object3D,
+  plan: { key: string; fields: ReadonlyArray<{ dx: number; dy: number; w: number; h: number }> },
+): void {
+  const geo = body.geography;
+  if (!geo?.fieldPaint) return;
+  g.updateWorldMatrix(true, false);
+  // Plan-local (x, z) → planet-local unit direction, through the town's own
+  // surface chart (g) and the body frame — the wild-mount idiom.
+  const toDir = (x: number, z: number): [number, number, number] => {
+    const l = body.group.worldToLocal(_fieldW.set(x, 0, z).applyMatrix4(g.matrixWorld));
+    const m = l.length() || 1;
+    return [l.x / m, l.y / m, l.z / m];
+  };
+  const rects: FieldRect[] = plan.fields.map((f) => {
+    const cx = f.dx + f.w / 2;
+    const cz = f.dy + f.h / 2;
+    const center = toDir(cx, cz);
+    // Tangent axes by 1 m finite differences along the plan's own axes —
+    // the chart carries plan east/north onto the sphere; chords normalize
+    // to the unit tangents FieldRect wants.
+    const px = toDir(cx + 1, cz);
+    const pz = toDir(cx, cz + 1);
+    const unit = (a: [number, number, number]): readonly [number, number, number] => {
+      const dx = a[0] - center[0], dy = a[1] - center[1], dz = a[2] - center[2];
+      const m = Math.hypot(dx, dy, dz) || 1;
+      return [dx / m, dy / m, dz / m];
+    };
+    return { center, u: unit(px), v: unit(pz), halfU: f.w / 2, halfV: f.h / 2 };
+  });
+  const patch = geo.fieldPaint.setFields(`fields:${plan.key}`, rects);
+  if (patch) body.refreshTerrain?.(patch.center, patch.radiusM);
+}
 
 // ── The anchor-driven ground streaming (cities LOD ladder + live-town mount +
 // flora/roads), SHARED by fly and spirit modes. `anchorPos` is the ship pose in
@@ -2991,6 +3298,9 @@ function streamGround(
         // edge and splice onto its arterial tips (render-only).
         const spliceSpec = townSpliceSpecOf(fc);
         if (spliceSpec) roadNets.get(fc.body.id)?.setTownSplice(fc.city.cell, spliceSpec);
+        // Farm rects become ground paint the moment the plan is truth
+        // (R1a) — the paint outlives any live mount, like the roads'.
+        paintTownFields(fc.body, g, e.play.plan);
       }
       flight.setCityMarkerVisible(
         fc.city.cell,
@@ -3022,6 +3332,14 @@ function streamGround(
   // — a value that only changes when the camera really moves, so a hovering
   // orbit or district view never re-spawns the marginal body every frame.
   if (embedTown && liveViz) {
+    // LIVE CROPS (bridge R1b): the farm record's sown/ripe state, ~1 Hz —
+    // a READ through the typed quote API; rebuilds only when the summary
+    // moves.
+    farmCropsAcc += dt;
+    if (farmCrops && farmCropsAcc >= 1) {
+      farmCropsAcc = 0;
+      farmCrops.update(embedTown.host.areaQuotes());
+    }
     const walking = groundedIn === "town" || spiritTownDriven;
     const townDistM = anchorPos.distanceTo(liveViz.fc.worldPos);
     // Both pushes are DEBOUNCED (see debouncedTier) — a one-frame `walking`
@@ -3039,6 +3357,17 @@ function streamGround(
       ? forced as CreatureTier
       : walking ? "full" : hystereticCreatureTier(townDistM);
     embedTown.host.setCreatureTier(debouncedTier(wanted, now));
+    // PER-BODY LOD ANCHOR ([LOD per-camera] law, literally): the anchor pose in
+    // TOWN-SIM coords, every streamed frame on every rung. Without this the
+    // host measures from the parked plaza spawn — orbit a town edge and the
+    // bodies NEAR the camera are far from the plaza (sticks) while the crowd
+    // across town renders full: the inverted-LOD defect. liveAnchor's local
+    // frame IS sim coords (mountLiveTown registration).
+    if (liveAnchor) {
+      liveAnchor.updateWorldMatrix(true, false);
+      const lv = liveAnchor.worldToLocal(_viewPt.copy(anchorPos));
+      embedTown.host.setViewPoint({ x: lv.x, y: lv.z });
+    }
   }
   // The layer that OWNS the walker is stepped at full frame rate by the
   // grounded loop; every other mounted ground layer keeps living at the
@@ -3053,6 +3382,28 @@ function streamGround(
       townStepAcc = 0;
       syncLiveHandoff();
     }
+  }
+  // THE PATHS OVERLAY FOLLOWS CURSOR OWNERSHIP (round-2 retest: TWO pink X
+  // marks, out of sync, persisting forever): with the toggle driving BOTH
+  // mounted hosts, each drew its own cursor mark from its own gaze pipeline
+  // — and the non-owner's froze on its last settled point. One cursor, one
+  // mark: the host that owns the glide's ground draws; the other's overlay
+  // clears. Re-asserted per streamed frame (ownership changes at the
+  // boundary); a no-op when the toggle is off (applyPaths already cleared).
+  if (pathsOn) {
+    const inTown = spirit ? spirit.ladder.groundInTown() : groundedIn === "town";
+    embedTown?.host.setPathDebug(inTown);
+    embedWild?.quest?.setPathDebug(!inTown);
+  }
+  // The wild session's per-body LOD anchor — same law, its own chart frame
+  // (worldToLocal on the chunk anchor = wild-SIM coords, the spiritParkWild
+  // mapping). Ungated by ownership: whoever steps the session, the CAMERA is
+  // what LOD measures from. `.quest` is the full host (the legacy sandbox
+  // handle has no creature tiers to anchor).
+  if (embedWild?.quest && wildAnchor) {
+    wildAnchor.updateWorldMatrix(true, false);
+    const wv = wildAnchor.worldToLocal(_viewPt.copy(anchorPos));
+    embedWild.quest.setViewPoint({ x: wv.x, y: wv.z });
   }
   if (embedWild && groundedIn !== "wild") {
     // Cadence step only while nothing else owns the tick: the spirit ground
@@ -3428,9 +3779,12 @@ function stepSpirit(dt: number, now: number): void {
   }
   // DIAGNOSTIC readout: at the ground/structure rungs, append the live town
   // host's cutaway/gaze snapshot + the static↔live handoff state so a broken
-  // dollhouse explains itself.
+  // dollhouse explains itself. PROBES-GATED (large-city perf): loadedLots()
+  // allocates two fresh Sets over the whole plan and debugHandoff() filters
+  // every lot — an O(lotCount) diagnostic string every frame of a 195-house
+  // town. Light it with `__perfProbes = true` when hunting.
   let statusLine = res.status;
-  if (embedTown && (s.ladder.level === "ground" || s.ladder.level === "structure")) {
+  if (probesOn() && embedTown && (s.ladder.level === "ground" || s.ladder.level === "structure")) {
     const lots = liveStage?.loadedLots?.();
     statusLine += ` ‖ ${embedTown.host.debugProbe()} | ${liveViz?.view.debugHandoff() ?? "viz:none"} lots:${
       lots ? `${lots.houses.size}h/${lots.works.size}w` : "ABSENT"

@@ -89,16 +89,31 @@ const PROVIDER_COLORS: Record<Provider, string> = {
   OpenAI: "#10a37f",
 };
 
+// Every AAC category that bills Claude (all run on `claude-haiku` via the
+// Monitor / session-service path). Listed explicitly: matching on "monitor"
+// alone sent session-plan-refresh, session-summary and tool:unknown to
+// "Google" and under-stated Anthropic's share by ~half (audit 2026-08-27).
+const AAC_CLAUDE_CATEGORIES = new Set([
+  "monitor", "monitor-summary", "monitor-startup-enhancer",
+  "session-plan-refresh", "session-summary", "history-compression",
+  "tool:unknown", "chat",
+]);
+
 function categoryProvider(source: "aac" | "chat", category: string): Provider {
   const c = category.toLowerCase();
   if (c.includes("image")) return "OpenAI";
   if (source === "chat") return "Anthropic (Claude)";
-  if (c.includes("monitor")) return "Anthropic (Claude)";
+  if (AAC_CLAUDE_CATEGORIES.has(c) || c.includes("monitor")) return "Anthropic (Claude)";
   return "Google";
 }
 
 /** "board-manager" -> "Board Manager", "tool:generate_image" -> "Tool: Generate Image". */
 function prettyCategory(cat: string): string {
+  // Rows written before 2026-08-27 carry a phantom `tool:unknown` line: every
+  // Monitor tool round was billed twice (chat-handler summed the assistant
+  // tool-call message's own credits as a "tool" charge). It is not a tool and
+  // not real spend — label it so nobody optimizes it.
+  if (cat === "tool:unknown") return "Monitor (double-count, pre-2026-08-27)";
   const t = cat.replace(/^tool:/, "tool: ").replace(/[-_]/g, " ");
   return t.replace(/\b\w/g, (m) => m.toUpperCase());
 }

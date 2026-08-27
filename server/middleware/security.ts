@@ -6,7 +6,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 /**
  * The Electron desktop AAC client's origin. This is a fixed scheme/host that
@@ -255,7 +255,10 @@ export const caretakerPinRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === "test",
-  keyGenerator: (req) => `${req.ip}|${req.params?.id ?? ""}`,
+  // `ipKeyGenerator` normalises IPv6 to its /64 subnet; keying on the raw
+  // `req.ip` would let an IPv6 client rotate addresses inside its own prefix
+  // and get unlimited PIN attempts (express-rate-limit ERR_ERL_KEY_GEN_IPV6).
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip ?? "")}|${req.params?.id ?? ""}`,
   message: { success: false, error: "error:PIN_LOCKED" },
 });
 

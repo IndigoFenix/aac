@@ -2790,12 +2790,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await callService.focus(personId, { callId: cmd.callId, to: cmd.to ?? null });
             break;
           case "call:utterance": {
-            // PRIMARY: a non-student caller's Web-Speech transcript → publish
-            // into the conversation room. Gated on room membership.
+            // COMPATIBILITY ONLY. A non-student caller's already-transcribed
+            // text → published into the conversation room. Gated on room
+            // membership.
+            //
+            // The shipped clinician client NO LONGER SENDS THIS: browser Web
+            // Speech was removed (PHI — it left the BAA region; and it drove an
+            // unwinnable echo guard), and `call:audio` below is now the only
+            // transcription path. This case remains solely so a browser holding
+            // a CACHED older bundle keeps working through a deploy — without it
+            // such a client's speech would silently stop reaching student
+            // boards, which is the exact failure mode being fixed.
+            //
+            // Safe to delete once no client older than the Web-Speech removal
+            // (2026-08-26) can still be running.
             const roomId: string | undefined = (socket as any).__convRoomId;
             const text = typeof cmd.text === "string" ? cmd.text.trim() : "";
             if (roomId && text) {
-              logLiveSession("CLINICIAN_STT", `call:utterance (Web Speech) text="${text}" → publish to room=${roomId} addressee=${(socket as any).__addressee ?? "ROOM"}`);
+              logLiveSession("CLINICIAN_STT", `call:utterance (legacy cached client) text="${text}" → publish to room=${roomId} addressee=${(socket as any).__addressee ?? "ROOM"}`);
               await callService.utterance(personId, { callId: roomId, text, addressee: (socket as any).__addressee ?? "ROOM" });
             }
             break;
@@ -2836,7 +2848,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               );
               (socket as any).__stt = stt;
             }
-            stt.feed(cmd.chunk);
+            stt.feed(cmd.chunk, typeof cmd.t === "number" ? cmd.t : undefined);
             break;
           }
           case "call:conversation":

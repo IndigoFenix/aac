@@ -1,6 +1,9 @@
 // client-aac/src/components/CallFace.tsx
 // Renders the remote peer's video in the avatar slot during an active video
 // call — a parallel to <ProceduralFace> (social peer) and <AacAvatar> (idle AI).
+// VISUAL ONLY: the element is muted because call audio is owned by
+// CallAudioSinks. This slot and the large-video tile can be mounted together,
+// and before that they played the same stream twice.
 // Sized to match the avatar slot (80x80). While the call is still connecting or
 // ringing-out (no remote stream yet) it shows the contact's name initial.
 
@@ -34,6 +37,7 @@ export function CallFace() {
           ref={attachVideo}
           autoPlay
           playsInline
+          muted
           className="w-full h-full object-cover"
         >
           {/* Live call video has no caption track */}

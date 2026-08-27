@@ -2,17 +2,22 @@
 //
 // A reusable multi-participant video layout, SHARED by the clinician CallView
 // and the AAC large-video window. It owns one <video> tile implementation
-// (callback-ref attach + gain/mute volume sync — the pattern previously
-// duplicated as PeerVideoTile / PeerTile) and arranges the tiles per the pure
-// `video-layout` helpers:
+// (callback-ref attach) and arranges the tiles per the pure `video-layout`
+// helpers:
 //
 //   - spotlight / auto: one prominent tile + a thumbnail strip of the rest
 //   - grid:             an even gallery
 //   - compact:          a thin strip (the board/app keeps the rest of the space)
 //
 // It is framework-agnostic about strings (optional `t`), like CallGameSurface.
+//
+// PURELY VISUAL. Every <video> here is muted; call audio belongs to
+// shared/call/CallAudioSinks.tsx, which mounts one <audio> per participant for
+// the whole call. Audio cannot live in this component: a tile only renders a
+// <video> when the peer HAS live video, so a participant with their camera off
+// was silent, and two mounted layouts played the same stream twice.
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { arrangeTiles, type VideoLayoutMode } from "../call/video-layout.js";
 
 const DEFAULT_LABELS: Record<string, string> = {
@@ -26,10 +31,6 @@ export interface VideoTileData {
   name: string | null;
   /** Face-photo URL shown when there's no live video (camera off / not yet up). */
   photoUrl?: string | null;
-  /** Output volume 0..1 (proximity gain). Defaults to 1. */
-  gain?: number;
-  /** Local output mute (silences what we hear from this tile). */
-  muted?: boolean;
   /** Highlight ring — the current active speaker. */
   speaking?: boolean;
   /** Small corner badge, e.g. a screen-share marker. */
@@ -42,19 +43,21 @@ interface VideoTileProps extends VideoTileData {
   prominent?: boolean;
 }
 
-/** One participant's tile: live video when present, else a photo/initial disc. */
-function VideoTile({ stream, name, photoUrl, gain = 1, muted, speaking, badge, onClick, prominent }: VideoTileProps) {
+/** One participant's tile: live video when present, else a photo/initial disc.
+ *  PURELY VISUAL — the <video> is always muted. Call audio is owned by
+ *  CallAudioSinks (shared/call/CallAudioSinks.tsx), which mounts one <audio>
+ *  per participant for the whole call. It has to live outside this component
+ *  because a tile only renders a <video> when the peer HAS video, so routing
+ *  audio through here made a camera-off participant inaudible. */
+function VideoTile({ stream, name, photoUrl, speaking, badge, onClick, prominent }: VideoTileProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const attach = useCallback((el: HTMLVideoElement | null) => {
     ref.current = el;
     if (el) {
       if (el.srcObject !== stream) el.srcObject = stream;
-      el.volume = gain;
-      el.muted = !!muted;
+      el.muted = true;
     }
-  }, [stream, gain, muted]);
-  useEffect(() => { if (ref.current) ref.current.volume = gain; }, [gain]);
-  useEffect(() => { if (ref.current) ref.current.muted = !!muted; }, [muted]);
+  }, [stream]);
 
   const initial = (name ?? "?").trim().charAt(0).toUpperCase() || "?";
   const hasVideo = !!stream && stream.getVideoTracks().some((t) => t.enabled && t.readyState === "live");
@@ -116,7 +119,7 @@ export default function VideoTileLayout({ tiles, mode, spotlightId = null, onPin
 
   const selfPip = selfTile && (
     <div className="absolute bottom-3 end-3 z-10 w-28 sm:w-36 aspect-video">
-      <VideoTile {...selfTile} muted />
+      <VideoTile {...selfTile} />
     </div>
   );
 

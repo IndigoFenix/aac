@@ -95,6 +95,16 @@ import {
       display?: any;
   }
   
+  /** Model-token totals for one billed turn (all tool rounds summed), handed
+   *  to onCreditsUsed so the ledger row carries cache-read / cache-write detail. */
+  export interface TurnTokenUsage {
+      model: string;
+      promptTokens: number;
+      completionTokens: number;
+      cachedTokens: number;
+      cacheCreationTokens: number;
+  }
+
   class ChatMessageManager {
       agent: AgentTemplate;
       session?: ChatSession;
@@ -121,11 +131,14 @@ import {
       requestTimezone?: string;
       onUpdateMemoryValues?: (memoryValues: any) => Promise<void>;
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
-      onCreditsUsed?: (creditsUsed: number, breakdown?: Record<string, number>) => Promise<void>;
+      onCreditsUsed?: (creditsUsed: number, breakdown?: Record<string, number>, tokenUsage?: TurnTokenUsage) => Promise<void>;
       /** Per-function-type credit split for the current turn ("chat",
        *  "web_search", "tool:<name>"). Reset by getResponse; flushed to
        *  onCreditsUsed alongside the turn total. */
       private turnCostBreakdown: Record<string, number> = {};
+      /** Model tokens summed across the current turn's rounds (see
+       *  addToTurnTokenUsage); flushed to onCreditsUsed with the breakdown. */
+      private turnTokenUsage: TurnTokenUsage | null = null;
       /** Function-type key used for the main model calls in the cost
        *  breakdown. "chat" for user-facing chat; overridden by internal
        *  consumers (e.g. the AAC Monitor passes "monitor"). */
@@ -171,7 +184,7 @@ import {
           maxCredits: number,
           onUpdateMemoryValues: (memoryValues: any) => Promise<void>,
           onUpdateChatState: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>
-          onCreditsUsed: (creditsUsed: number, breakdown?: Record<string, number>) => Promise<void>,
+          onCreditsUsed: (creditsUsed: number, breakdown?: Record<string, number>, tokenUsage?: TurnTokenUsage) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
           onNavigate?: (feature: string) => void,
           onSelectStudent?: (studentId: string) => void,
@@ -371,13 +384,14 @@ import {
       // Generate a response to the conversation in its current state, without adding new messages.
       async getResponse(responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: string }): Promise<MessageResponse> {
           this.turnCostBreakdown = {};
+          this.turnTokenUsage = null;
           const reply = await this.updateConversation(0, responseType, apiValues);
           try {
               if (this.onUpdateChatState){
                   await this.onUpdateChatState(this.chatState, this.log);
               }
               if (this.onCreditsUsed && reply.creditsUsed){
-                  await this.onCreditsUsed(reply.creditsUsed, { ...this.turnCostBreakdown });
+                  await this.onCreditsUsed(reply.creditsUsed, { ...this.turnCostBreakdown }, this.turnTokenUsage ?? undefined);
               }
           } catch (error) {
               console.error('Error updating chat state after user message', error);
@@ -713,6 +727,20 @@ import {
           this.turnCostBreakdown[category] = (this.turnCostBreakdown[category] || 0) + credits;
       }
 
+      /** Accumulate the turn's model tokens across tool rounds, so the ledger's
+       *  per-charge row carries prompt / completion / cache-read / cache-write
+       *  detail for this path too. Until now the `chat` charges (= every
+       *  Monitor run) had no token columns, so the Monitor's cache hit rate
+       *  could only be read off an opt-in debug log. */
+      private addToTurnTokenUsage(model: string, promptTokens = 0, completionTokens = 0, cachedTokens = 0, cacheCreationTokens = 0): void {
+          const t = this.turnTokenUsage ?? (this.turnTokenUsage = { model, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheCreationTokens: 0 });
+          t.model = model;
+          t.promptTokens += promptTokens || 0;
+          t.completionTokens += completionTokens || 0;
+          t.cachedTokens += cachedTokens || 0;
+          t.cacheCreationTokens += cacheCreationTokens || 0;
+      }
+
       /**
        * Bill an internal (non-conversation) LLM call — the history-compression
        * summaries — through the same onCreditsUsed sink as conversation turns.
@@ -948,6 +976,7 @@ import {
                       gptResponse.cacheCreationTokens
                   );
                   this.addToTurnBreakdown(this.creditCategory, creditsUsed);
+                  this.addToTurnTokenUsage(model, gptResponse.promptTokens, gptResponse.completionTokens, gptResponse.cachedTokens, gptResponse.cacheCreationTokens);
 
                   // Search surcharge only applies to OpenAI
                   if (provider === "openai" && promptBuild.searchEnabled && promptBuild.searchContextSize) {
@@ -980,11 +1009,20 @@ import {
                       gptResponse.toolCalls.map((tc: any) => [tc.call_id, tc.name])
                   );
                   for (let replyMessage of replyMessages){
-                      totalCreditsUsed += replyMessage.credits || 0;
-                      this.addToTurnBreakdown(
-                          `tool:${toolNameByCallId.get(replyMessage.toolCallId) ?? 'unknown'}`,
-                          replyMessage.credits || 0,
-                      );
+                      // makeToolCalls returns the assistant tool-call message FIRST
+                      // (carrying this round's own model credits as metadata) and
+                      // then the tool responses. Only a response can carry
+                      // tool-incurred credits (media analysis, image generation);
+                      // summing the assistant message too billed every tool round
+                      // twice — the phantom `tool:unknown` line that tracked the
+                      // Monitor at ~0.6x for months (r=0.99 with `monitor`).
+                      if (replyMessage.role === 'tool') {
+                          totalCreditsUsed += replyMessage.credits || 0;
+                          this.addToTurnBreakdown(
+                              `tool:${toolNameByCallId.get(replyMessage.toolCallId) ?? 'unknown'}`,
+                              replyMessage.credits || 0,
+                          );
+                      }
                       await this.addMessage(replyMessage);
                   }
                   console.log('[ChatMsgMgr] After tool calls — Context_Board name:', this.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', this.memoryValues?.Context_Board?.pages?.length ?? 0);
@@ -1389,13 +1427,16 @@ import {
           // provider already reported.
           let reportedCredits = 0;
           this.turnCostBreakdown = {};
+          this.turnTokenUsage = null;
           const flushCredits = async () => {
               const delta = totalCreditsUsed - reportedCredits;
               if (delta > 0 && this.onCreditsUsed) {
                   reportedCredits = totalCreditsUsed;
                   const breakdown = { ...this.turnCostBreakdown };
                   this.turnCostBreakdown = {};
-                  await this.onCreditsUsed(delta, breakdown);
+                  const tokenUsage = this.turnTokenUsage ?? undefined;
+                  this.turnTokenUsage = null;
+                  await this.onCreditsUsed(delta, breakdown, tokenUsage);
               }
           };
           const MAX_ITERATIONS = 10;
@@ -1444,6 +1485,7 @@ import {
               if (usage) {
                   creditsUsed = creditsForModelUsage(providerKey, model, usage.promptTokens, usage.completionTokens, usage.cachedTokens ?? 0, usage.cacheCreationTokens ?? 0);
                   this.addToTurnBreakdown(this.creditCategory, creditsUsed);
+                  this.addToTurnTokenUsage(model, usage.promptTokens, usage.completionTokens, usage.cachedTokens, usage.cacheCreationTokens);
                   totalCreditsUsed += creditsUsed;
               }
 
@@ -1516,11 +1558,16 @@ import {
                   // (e.g. media analysis, web search) like the non-streaming path
                   const toolNameByCallId = new Map(toolCalls.map(tc => [tc.call_id, tc.name]));
                   for (const msg of replyMessages) {
-                      totalCreditsUsed += msg.credits || 0;
-                      this.addToTurnBreakdown(
-                          `tool:${toolNameByCallId.get(msg.toolCallId ?? '') ?? 'unknown'}`,
-                          msg.credits || 0,
-                      );
+                      // Same guard as the non-streaming path: the assistant
+                      // tool-call message leads the array with the round's own
+                      // model credits — counting it here double-bills the round.
+                      if (msg.role === 'tool') {
+                          totalCreditsUsed += msg.credits || 0;
+                          this.addToTurnBreakdown(
+                              `tool:${toolNameByCallId.get(msg.toolCallId ?? '') ?? 'unknown'}`,
+                              msg.credits || 0,
+                          );
+                      }
                       await this.addMessage(msg);
                   }
                   await flushCredits();

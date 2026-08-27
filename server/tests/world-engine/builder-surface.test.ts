@@ -11,7 +11,7 @@ import {
   placeBuilderNouns,
   type BuilderNounEntry,
 } from "@shared/world-engine/interaction/intent/builder-surface.js";
-import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
+import { isAnimal, isPlant, propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import { PLACE_STUBS } from "@shared/world-engine/interaction/content/words.js";
 import { CORE_CONCEPTS } from "@shared/world-engine/object-properties.js";
 import { headOf } from "@shared/world-engine/variations.js";
@@ -22,6 +22,7 @@ import {
   resolveRoomPrograms,
 } from "@shared/world-engine/kernel/town/programs.js";
 import { parseSentence, tokenizeSentence } from "@shared/world-engine/interaction/intent/parse-intent.js";
+import { getSpecies } from "@shared/world-engine/creatures/species.js";
 import {
   emptyRecency,
   noteUtterance,
@@ -324,9 +325,13 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
     for (const n of items) {
       // NO INVENTED KEYS (user law: properties from the spec side): every
       // head is one the engine's registries genuinely know — it carries
-      // spec-derived properties, or it is a core engine concept (water).
+      // spec-derived properties, or it is a core engine concept (water), or
+      // it is a PLANT, whose spec entry is its species row rather than a
+      // property (2026-08-27: a rose is not a container, a toy or a food, and
+      // giving it a property to satisfy this law would be the invention the
+      // law exists to forbid).
       expect(
-        n.properties!.length > 0 || CORE_CONCEPTS.has(headOf(n.symbol)),
+        n.properties!.length > 0 || CORE_CONCEPTS.has(headOf(n.symbol)) || isPlant(n.symbol),
       ).toBe(true);
     }
     // A PLACE's key is legitimate for the same reason, one repository over:
@@ -360,6 +365,77 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
       expect(["item", "place", "creature"]).toContain(b.kind);
       expect(b.label.length).toBeGreaterThan(0);
     }
+  });
+
+  // THE LIVING SPLIT (2026-08-27) — people · animals · plants.
+  //
+  // `creatures` used to mean "every body": the kinship words and the animal
+  // friends in one chip, with the plants nowhere at all. Both halves are read
+  // off the SPEC registries the world already keeps (`isAnimal` / `isPlant`,
+  // i.e. a species row's `kind`), never off a word list here — which is the
+  // whole point: authoring a species row is what puts a word behind a chip.
+  describe("animals and plants are their own sub-categories", () => {
+    const clusterOf = (id: string) =>
+      builderSurfaceFor("", { category: "things", group: id }).buttons.map((b) => b.key);
+
+    it("splits the bodies: [creatures] is people, [animals] is animals", () => {
+      const ids = (builderSurfaceFor("", { category: "things" }).groups ?? []).map((g) => g.id);
+      expect(ids).toContain("creatures");
+      expect(ids).toContain("animals");
+
+      const people = clusterOf("creatures");
+      const animals = clusterOf("animals");
+      expect(people).toContain("mom");
+      expect(animals).toContain("dog");
+      expect(animals).toContain("lion");
+      // Disjoint, and each side agrees with the predicate the world uses.
+      expect(people.filter((k) => animals.includes(k))).toEqual([]);
+      expect(people.every((k) => !isAnimal(k))).toBe(true);
+      expect(animals.every((k) => isAnimal(k))).toBe(true);
+    });
+
+    it("offers a [plants] cluster of exactly the plant species", () => {
+      const ids = (builderSurfaceFor("", { category: "things" }).groups ?? []).map((g) => g.id);
+      expect(ids).toContain("plants");
+      const plants = clusterOf("plants");
+      for (const k of ["tree", "flower", "grass", "mushroom"]) expect(plants).toContain(k);
+      expect(plants.every((k) => isPlant(k))).toBe(true);
+      // A plant is not a person and not a place — it is a thing you SEE and
+      // WANT, and (per the species-kind affordance) cut. Never one you are
+      // handed: nobody gives you an oak.
+      const nouns = defaultBuilderNouns();
+      for (const k of plants) {
+        const n = nouns.find((x) => x.symbol === k)!;
+        expect(n.kind).toBe("item");
+        expect(n.affords).not.toContain("give");
+      }
+    });
+
+    it("labels the chips as CATEGORIES, in the board's own language", () => {
+      const groups = (glyphLocale: string) =>
+        new Map(
+          (builderSurfaceFor("", { category: "things", locale: glyphLocale }).groups ?? []).map(
+            (g) => [g.id, g.label] as const,
+          ),
+        );
+      expect(groups("en").get("animals")).toBe("animal");
+      expect(groups("en").get("plants")).toBe("plant");
+      // The [plants] chip must NOT wear the head `plant`: that head is the
+      // VERB, so a Hebrew board would have labelled a shelf of nouns "שותל"
+      // ("he is planting"). Hence the separate `plants` category head.
+      expect(groups("he").get("animals")).toBe("חיה");
+      expect(groups("he").get("plants")).toBe("צמח");
+    });
+
+    it("the new words are spec stubs — a word each, and no body to build", () => {
+      const syms = defaultBuilderNouns().map((n) => n.symbol);
+      for (const k of ["lion", "penguin", "butterfly", "rose", "cactus"]) expect(syms).toContain(k);
+      // A stub is a real species row with no blueprint: nothing may build one.
+      expect(getSpecies("lion")!.stub).toBe(true);
+      expect(getSpecies("lion")!.blueprint).toEqual({});
+      // …and a species that HAS a body plan is untouched by the batch.
+      expect(getSpecies("cow")!.stub).toBeUndefined();
+    });
   });
 
   it("drives a working surface: eat → food first, and a full round-trip stays JSON", () => {

@@ -18,7 +18,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { BoardButton, ParsedBoardData } from "@shared/schema";
-import type { MirrorQuickButton } from "@shared/call/call-data-messages";
+import type {
+  MirrorHudSections,
+  MirrorQuickButton,
+  MirrorStripItem,
+  MirrorSurface,
+} from "@shared/call/call-data-messages";
+import type { BuilderTarget } from "@shared/call/builder-mirror";
 import VideoTileLayout, { type VideoTileData } from "@shared/social-world/VideoTileLayout";
 import { pickSpotlightId, type VideoLayoutMode } from "@shared/call/video-layout";
 import { useCall } from "@/contexts/CallContext";
@@ -34,13 +40,17 @@ export function CallStateReporter({ onChange }: { onChange: (s: { active: boolea
   return null;
 }
 
-/** Streams the student's current board to the clinician over the data channel. */
-export function CallBoardMirror({ board, pageId, mode, appKind, rtl, contextButtons, quickButtons }: {
+/** Streams the surface the student is currently looking at to the clinician
+ *  over the data channel — the board, the sentence builder, or a game's
+ *  mini-board plus its ambient HUD. */
+export function CallBoardMirror({ board, pageId, mode, appKind, surface, title, rtl, contextButtons, quickButtons, strip, chips, hud }: {
   board: ParsedBoardData | null; pageId?: string; mode?: "board" | "app"; appKind?: string;
+  surface?: MirrorSurface; title?: string;
   rtl?: boolean; contextButtons?: BoardButton[]; quickButtons?: MirrorQuickButton[];
+  strip?: MirrorStripItem[]; chips?: MirrorQuickButton[]; hud?: MirrorHudSections;
 }) {
   const { active, sendData } = useCall();
-  useBoardMirror({ active, sendData, board, pageId, mode, appKind, rtl, contextButtons, quickButtons });
+  useBoardMirror({ active, sendData, board, pageId, mode, appKind, surface, title, rtl, contextButtons, quickButtons, strip, chips, hud });
   return null;
 }
 
@@ -125,11 +135,34 @@ export function CallFacilitatorBridge({ enabled, onPress }: { enabled: boolean; 
   return null;
 }
 
+/** Applies a clinician's facilitated press on the mirrored SENTENCE BUILDER.
+ *  `press` is the builder's own imperative handle, so a remote press takes the
+ *  SAME path as the student's — there is no second composition pipeline that
+ *  could drift from what the child's own finger does. `enabled` is the same
+ *  per-student consent flag that gates board presses. */
+export function CallBuilderFacilitatorBridge({ enabled, press }: {
+  enabled: boolean; press: (target: BuilderTarget) => void;
+}) {
+  const { facilitatorBuilder } = useCall();
+  const lastAtRef = useRef(0);
+  useEffect(() => {
+    if (!facilitatorBuilder) return;
+    if (facilitatorBuilder.at <= lastAtRef.current) return;
+    lastAtRef.current = facilitatorBuilder.at;
+    if (!enabled) {
+      console.warn("[CallBuilderFacilitatorBridge] builder press ignored (consent off)");
+      return;
+    }
+    press(facilitatorBuilder.target);
+  }, [facilitatorBuilder, enabled, press]);
+  return null;
+}
+
 /** The "people I'm talking to" big window — portaled into a home-provided host
  *  in the board region. Offers spotlight / grid / auto and a shrink-to-board
  *  button (the "small video mode" toggle lives in home). */
 export function CallVideoLarge({ host, onShrink }: { host: HTMLElement | null; onShrink: () => void }) {
-  const { remoteStreams, contacts, peerGains, localStream, activeSpeakerId, selfPersonId } = useCall();
+  const { remoteStreams, contacts, localStream, activeSpeakerId, selfPersonId } = useCall();
   const { t } = useLanguage();
   const [mode, setMode] = useState<VideoLayoutMode>("spotlight");
   const [pinned, setPinned] = useState<string | null>(null);
@@ -139,10 +172,9 @@ export function CallVideoLarge({ host, onShrink }: { host: HTMLElement | null; o
       personId,
       stream,
       name: contacts.find((c) => c.personId === personId)?.name ?? null,
-      gain: peerGains.get(personId) ?? 1,
       speaking: personId === activeSpeakerId,
     })),
-    [remoteStreams, contacts, peerGains, activeSpeakerId],
+    [remoteStreams, contacts, activeSpeakerId],
   );
 
   const spotlightId = useMemo(

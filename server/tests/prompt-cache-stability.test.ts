@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, jest, afterEach } from "@jest/globals";
-import { buildPromptAndTools } from "../services/chat/prompt-kit.js";
+import { buildPromptAndTools, printCurrentDateLine } from "../services/chat/prompt-kit.js";
 import { buildCrmAgent } from "../services/crmChat/agentTemplate.js";
 
 /** Returns a human-readable description of the first difference, or null. */
@@ -49,6 +49,17 @@ function makeCtx(memoryValues: any, memoryState: any) {
 describe("prompt-cache stability", () => {
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it("the core-prompt date line is day-granular (was an ISO timestamp — busted the cache on every manager)", () => {
+    // sessionService.enrichCorePrompt prepends this to EVERY system prompt.
+    // A millisecond stamp here meant every Monitor run / clinician turn wrote
+    // the full prefix and never read it back (measured 2026-08-27).
+    const a = printCurrentDateLine(new Date("2026-08-27T08:00:00.123Z"));
+    const b = printCurrentDateLine(new Date("2026-08-27T21:59:59.999Z"));
+    expect(a).toBe(b);
+    expect(a).toBe("Current date (UTC): 2026-08-27");
+    expect(a).not.toMatch(/T\d\d:\d\d/);
   });
 
   it("produces a byte-identical cacheable prefix for identical inputs", () => {

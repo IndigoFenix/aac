@@ -46,6 +46,14 @@ const UNLOAD_R = 2_100;      // …and out past this (hysteresis)
 const NEAR_R = 260;          // sticks RESOLVE to real LOD1 geometry inside this
 const STICK_R = 700;         // …and impostors resolve to STICK trees inside this
 const BUILD_BUDGET = 2;      // tile builds per ensure() call (spread the cost)
+// Rung (stick/real geometry) BUILDS per ensure() call. Tier resolution used
+// to build unbudgeted: the whole STICK_R band crosses at once when the camera
+// drops to city-orbit distance, and dozens of simultaneous InstancedMesh
+// builds were a visible hitch in the flight→orbit transition. A tile past the
+// budget keeps its current rung (billboard stays visible) and resolves on a
+// later ~4 Hz call — the band converges over a couple of seconds instead of
+// one giant frame.
+const RUNG_BUILD_BUDGET = 3;
 
 // Per-biome scatter counts per tile (biome field: 0 barren, 1 tree, 2 grass,
 // 3 grazer range).
@@ -292,8 +300,13 @@ export interface FloraField {
   /** Stream tiles around `focusWorld` (the surface point under the player);
    *  tiles within STICK_R of `nearWorld` swap impostors for stick trees, and
    *  within NEAR_R for real geometry.
-   *  `exclude` skips tiles near a live town anchor (its own flora rules). */
-  ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, exclude?: { world: THREE.Vector3; r: number }): void;
+   *  `excludes` are TOWN HOLES (each town anchor at its own plan radius) —
+   *  enforced LIVE, not just at build: a tile inside a hole is skipped on the
+   *  way in AND disposed if it already stands. (Build-time-only exclusion was
+   *  the trees-inside-the-city defect: tiles built during the descent blend —
+   *  camera kilometres up, glide already on the surface — predate the town's
+   *  hole and used to survive the whole visit.) */
+  ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, excludes?: ReadonlyArray<{ world: THREE.Vector3; r: number }>): void;
   /** SUPPRESS individual tree instances (twin keys `face:tx:ty:i` from
    *  floraTreesNear) — the wilderness session stands a real gatherable
    *  entity there, so the scenery copy must not also draw. Declarative:
@@ -310,7 +323,6 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
   const tiles = new Map<string, Tile>();
   const _local = new THREE.Vector3();
   const _near = new THREE.Vector3();
-  const _excl = new THREE.Vector3();
   const _dir = new THREE.Vector3();
   const _m = new THREE.Matrix4();
   const _q = new THREE.Quaternion();
@@ -440,14 +452,24 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
   };
 
   return {
-    ensure(focusWorld, nearWorld, exclude) {
+    ensure(focusWorld, nearWorld, excludes) {
       // Everything in BODY-LOCAL coordinates (the planet moves and spins).
       body.group.worldToLocal(_local.copy(focusWorld));
       const rf = _local.length();
       if (rf < 1e-3) return;
       const focusLocal = _local;
       const nearLocal = nearWorld ? body.group.worldToLocal(_near.copy(nearWorld)) : null;
-      const exclLocal = exclude ? body.group.worldToLocal(_excl.copy(exclude.world)) : null;
+      // Town holes in body-local coords. The half-diagonal margin makes the
+      // TILE-CENTRE test honest: a tile whose centre clears the hole can still
+      // scatter trees ~141 m past it, straight into the streets.
+      const holes = excludes && excludes.length
+        ? excludes.map(ex => ({
+            p: body.group.worldToLocal(new THREE.Vector3().copy(ex.world)),
+            r: ex.r + TILE_M * 0.71,
+          }))
+        : null;
+      const inHole = (p: THREE.Vector3): boolean =>
+        holes !== null && holes.some(h => p.distanceTo(h.p) < h.r);
 
       _dir.copy(focusLocal).divideScalar(rf);
       const face = faceOf(_dir);
@@ -470,19 +492,38 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
             dirOfUV(face, (tx + 0.5) * uTile, (ty + 0.5) * uTile, _dir);
             _p.copy(_dir).multiplyScalar(rf);
             if (_p.distanceTo(focusLocal) > LOAD_R) continue;
-            if (exclLocal && exclude && _p.distanceTo(exclLocal) < exclude.r) continue;
+            if (inHole(_p)) continue;
             buildTile(face, tx, ty, key);
             if (--budget <= 0) break outer;
           }
         }
       }
 
-      // Near-resolve + stream out.
+      // Near-resolve + stream out. A hole is grounds for disposal exactly like
+      // distance — the exclusion is live, never a build-time latch.
+      // Rung BUILDS are budgeted (RUNG_BUILD_BUDGET) and spent NEAREST-FIRST:
+      // map-order spending let a tile beside the player upgrade seconds late
+      // while far tiles ate the budget — a tree "spontaneously appearing" in
+      // the near field as its impostor finally resolved (round-2 border
+      // report). Nearest-first makes late upgrades a far-field-only event,
+      // where an impostor→stick swap is sub-pixel. Visibility flips between
+      // already-built rungs stay free and immediate.
+      let rungBudget = RUNG_BUILD_BUDGET;
+      const pending: Array<{ tile: Tile; want: FloraTier; dNear: number }> = [];
       for (const [key, tile] of tiles) {
         const d = tile.center.distanceTo(focusLocal);
-        if (d > UNLOAD_R) { disposeTile(tile, key); continue; }
+        if (d > UNLOAD_R || inHole(tile.center)) { disposeTile(tile, key); continue; }
         const dNear = nearLocal ? tile.center.distanceTo(nearLocal) : Infinity;
-        setTier(tile, dNear < NEAR_R ? "real" : dNear < STICK_R ? "stick" : "billboard");
+        const want: FloraTier = dNear < NEAR_R ? "real" : dNear < STICK_R ? "stick" : "billboard";
+        const needsBuild =
+          (want === "stick" && !tile.sticks) || (want === "real" && !tile.real);
+        if (needsBuild) pending.push({ tile, want, dNear });
+        else setTier(tile, want);
+      }
+      pending.sort((a, b) => a.dNear - b.dNear);
+      for (const p of pending) {
+        if (rungBudget-- <= 0) break; // the rest keep their current rung
+        setTier(p.tile, p.want);
       }
     },
     setTwinHidden(hidden) {

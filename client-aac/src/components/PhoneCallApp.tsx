@@ -7,7 +7,14 @@
 //
 // Contacts carry no photo (the callable-contacts endpoint returns name + online
 // only), so each tile shows a large circular avatar with the contact's initial.
-
+//
+// NO PER-CALL AUDIO BUTTONS HERE, deliberately. Audio in/out is governed by the
+// two MASTER controls in the app header: "mic off" means no audio gets in and
+// "speakers off" means no audio comes out, for the whole app — a call included.
+// Duplicating them per-call gives a student two switches for one thing and two
+// places to look when something is muted, which is the confusion this work
+// started from. CallContext mirrors the masters onto the call.
+//
 import { useEffect, useMemo } from "react";
 import { Phone, PhoneOff } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";

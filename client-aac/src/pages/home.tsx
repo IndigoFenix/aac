@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserX, Eye, EyeOff, Play, Copy } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
-import { SentenceConstructorBoard } from "@/components/SentenceConstructorBoard";
+import { SentenceConstructorBoard, type BuilderRemote } from "@/components/SentenceConstructorBoard";
+import type { BuilderMirrorSnapshot, BuilderTarget } from "@shared/call/builder-mirror";
+import type { MirrorSurface } from "@shared/call/call-data-messages";
 import AppsBoard from "@/components/AppsBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
@@ -21,7 +23,7 @@ import { IncomingCallPopup } from "@/components/IncomingCallPopup";
 import { GroupChatHeader } from "@/components/GroupChatHeader";
 import PhoneCallApp from "@/components/PhoneCallApp";
 import { SocialWorldOverlay, SocialGameReporter, SocialWorldPeople } from "@/components/social-world/SocialWorldOverlay";
-import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallVideoLarge, CallCursorReporter, CallPeerCursorReporter, CallScreenShareIndicator } from "@/components/CallVideoOverlay";
+import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallBuilderFacilitatorBridge, CallVideoLarge, CallCursorReporter, CallPeerCursorReporter, CallScreenShareIndicator } from "@/components/CallVideoOverlay";
 import { quickActionsMirror } from "@/components/QuickActions";
 import type { CallGame } from "@shared/realtime-events";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
@@ -839,6 +841,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [aiSessionActive, setAiSessionActive] = useState(false);
   const [isGuessingMode, setIsGuessingMode] = useState(false);
   const [showConstructionBoard, setShowConstructionBoard] = useState(false);
+  // What a clinician's call mirror should show WHILE the builder is open. The
+  // builder is a full-screen overlay over the board, so without this the mirror
+  // streams the board underneath and the clinician watches the wrong screen.
+  const [builderMirror, setBuilderMirror] = useState<BuilderMirrorSnapshot | null>(null);
+  // The builder's own press handlers, so a clinician's facilitated press lands
+  // on the same code the student's finger does.
+  const builderRemoteRef = useRef<BuilderRemote | null>(null);
+  // Stable identity so the bridge's effect doesn't re-fire on every render; the
+  // press only lands while the builder is actually mounted.
+  const facilitateBuilderPress = useCallback((target: BuilderTarget) => {
+    builderRemoteRef.current?.press(target);
+  }, []);
   // Backend-busy state lifted out of the provider (Home renders outside it) to
   // drive the subtle ambient processing indicators.
   const [serverProcessing, setServerProcessing] = useState<import("@/hooks/dual-agent-types").ProcessingState>({ speaker: false, board: false, interpret: false, app: false });
@@ -1002,6 +1016,29 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Which active apps run on the (vendored) world-engine — their embeds accept
   // glyph_input and push engine boards onto the sidebar.
   const worldEngineGameActive = isWorldEngineApp(activeApp?.appId);
+
+  // ── WHAT THE CLINICIAN'S CALL MIRROR IS SHOWING ──────────────────────────
+  // The AAC has several screens, and until now the mirror only knew about one.
+  // The builder counts as the live surface only once it has PUBLISHED itself:
+  // for the frame or two before that the board underneath is still the truthful
+  // answer, and a blank grid would be a worse lie than a slightly stale one.
+  const builderView = showConstructionBoard ? builderMirror : null;
+  const mirrorSurface: MirrorSurface = showConstructionBoard
+    ? "builder"
+    : worldEngineGameActive
+      ? "game"
+      : activeApp
+        ? "app"
+        : "board";
+  // The app's own name, in the STUDENT's language — their device is the one
+  // that knows it. `t()` returns the key itself when a string is missing, so
+  // that has to be compared for; the `t(x) || fallback` idiom never fires.
+  const mirrorTitle = (() => {
+    if (!activeApp) return undefined;
+    const key = `appsBoard.appNames.${activeApp.appId}`;
+    const name = t(key);
+    return name === key ? activeApp.appId : name;
+  })();
   const worldEngineGameActiveRef = useRef(worldEngineGameActive);
   worldEngineGameActiveRef.current = worldEngineGameActive;
   // ANY full-screen app claims the game-style viewport (2026-08-19, Daniel):
@@ -1054,7 +1091,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     else if (msg.type === "word_images") registerWordImages(msg.images);
   }, []);
   // The game's ambient HUD (family present, pocket, …) — shown above the
-  // button sidebar while the game runs; its in-iframe panel is hidden.
+  // button sidebar while the game runs; its in-iframe panel is hidden. Also
+  // relayed to a clinician on the call, who otherwise sees only the mini-board.
   const [worldHud, setWorldHud] = useState<WorldHudSections | null>(null);
   // Keep the local dollhouse app in step with the call's iframe-quest game:
   // game attached (by anyone in the call) → launch the app; game detached →
@@ -3023,6 +3061,8 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                   void handleBuilderPlay(glyphString, spokenFallback);
                 }}
                 awaitingInterpret={interpretAwaiting}
+                onMirror={setBuilderMirror}
+                remoteRef={builderRemoteRef}
                 onClose={() => { setInterpretAwaiting(false); setShowConstructionBoard(false); }}
               />
             </div>
@@ -3672,13 +3712,25 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               student pulls the call into the big window) render the people they
               are talking to via the shared VideoTileLayout. */}
           <CallStateReporter onChange={setCallInfo} />
+          {/* THE SURFACE THE STUDENT IS ACTUALLY ON. The sentence builder opens
+              as a full-screen overlay OVER the board, so mirroring
+              `boardData` while it is open showed the clinician a screen the
+              child had left — the grid they were reading was not the grid the
+              child was reading. `builderMirror` is the builder's own published
+              view of itself; `worldHud` is a game's ambient state, which the
+              8-button mini-board could never carry. */}
           <CallBoardMirror
-            board={prebuiltBoardData || boardData}
-            pageId={(prebuiltBoardData || boardData)?.currentPageId}
-            mode={activeApp ? "app" : "board"}
+            board={builderView ? builderView.board : (prebuiltBoardData || boardData)}
+            pageId={builderView ? builderView.board.currentPageId : (prebuiltBoardData || boardData)?.currentPageId}
+            mode={activeApp || showConstructionBoard ? "app" : "board"}
             appKind={activeApp?.appId}
+            surface={mirrorSurface}
+            title={mirrorTitle}
+            strip={builderView ? builderView.strip : undefined}
+            chips={builderView ? builderView.chips : undefined}
+            hud={mirrorSurface === "game" ? worldHud ?? undefined : undefined}
             rtl={direction === "rtl"}
-            contextButtons={contextButtons.map((b, i) => ({
+            contextButtons={builderView ? builderView.contextButtons : contextButtons.map((b, i) => ({
               id: `ctx-${i}`,
               row: i,
               col: 0,
@@ -3711,6 +3763,13 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           <CallFacilitatorBridge
             enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
             onPress={handleBoardButtonClick}
+          />
+          {/* The same consent flag, applied to the mirrored SENTENCE BUILDER —
+              a clinician can add a word to the sentence the student is
+              composing, and it lands through the builder's own handlers. */}
+          <CallBuilderFacilitatorBridge
+            enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
+            press={facilitateBuilderPress}
           />
           {/* Cursor sharing: stream the student's gaze/pointer to the clinician,
               and lift the clinician's cursor down to highlight the student's board. */}

@@ -995,7 +995,10 @@ ${transcript}`;
     try {
       // Build monitor prompt for dual mode
       const systemPromptOverride = this.student
-        ? buildMonitorSystemPrompt(this.student, muteState, interactivePrompt, availableBoards)
+        // `interactivePrompt` is no longer quoted into the Monitor prompt (13k
+        // tokens per round for a directive nothing consumed) — see
+        // buildMonitorSystemPrompt. The parameter stays for the caller's sake.
+        ? buildMonitorSystemPrompt(this.student, muteState, availableBoards)
         : undefined;
 
       // Process through sessionService for memory updates

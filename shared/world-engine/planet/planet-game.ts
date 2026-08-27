@@ -31,6 +31,7 @@ import { applyEcology, biomePalette, DEFAULT_BIOSPHERE } from "./ecology";
 import { substrateSurface, type PlanetSurface, type PlanetPalette, type RGB } from "./surface";
 import { attachRiverRelief, type RiverRelief } from "./rivers";
 import { createRoutePaint, type RoutePaint } from "./route-paint";
+import { createFieldPaint, type FieldPaint } from "./field-paint";
 import { EARTHLIKE_BLUE, hexToLinear } from "./palettes";
 import { validateFields, type FieldSpec, type GroupSpec } from "../kernel/spec-schema";
 import { GEOLOGY_FIELDS } from "../kernel/civ/region-game";
@@ -246,6 +247,10 @@ export interface BuiltPlanet {
    *  host merges route sets as they appear (interstates at founding, region
    *  lanes on refine, stitches) and repaints standing chunks. */
   routePaint: RoutePaint;
+  /** FARM FIELDS AS PAINT (field-paint.ts — the third paint layer): the
+   *  host sets a town's field rects when its plan resolves and repaints
+   *  the town-sized ball. Painted fields outlive the live session. */
+  fieldPaint: FieldPaint;
 }
 
 /** The surface both build paths share — one construction, one look. */
@@ -294,8 +299,10 @@ export function rebuiltPlanetWorld(
     spec, topo: grid.topo, grid, sites,
     surface: surfaceFor(spec, grid),
     routePaint: createRoutePaint(spec.radius),
+    fieldPaint: createFieldPaint(spec.radius),
   };
   built.surface.roadTintAt = built.routePaint.tintAt;
+  built.surface.fieldTintAt = built.fieldPaint.tintAt;
   attachRiverRelief(built); // same fold as buildPlanetWorld — a rebuilt planet renders identically
   return built;
 }
@@ -392,8 +399,10 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
   const built: BuiltPlanet = {
     spec, topo, grid: prep.grid, sites: spec.settle ? prep.sites : [], geology, surface,
     routePaint: createRoutePaint(spec.radius),
+    fieldPaint: createFieldPaint(spec.radius),
   };
   built.surface.roadTintAt = built.routePaint.tintAt;
+  built.surface.fieldTintAt = built.fieldPaint.tintAt;
   // Fold the river network back into the terrain: recolor + valley notch
   // (rivers.ts). After surfaceFor so it wraps the finished surface.
   attachRiverRelief(built);

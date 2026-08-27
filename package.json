@@ -14,6 +14,7 @@
     "build:world-lab": "npm run build:games -- world-lab",
     "sync:game-engine": "tsx scripts/sync-game-engine.ts",
     "world:text": "tsx scripts/world-text.ts",
+    "verify:call-audio": "node scripts/verify-call-audio.mjs",
     "build": "vite build && npm run build:client-aac && esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && npm run build:games",
     "build:client": "vite build",
     "prerender:landing": "tsx scripts/prerender-landing.ts",

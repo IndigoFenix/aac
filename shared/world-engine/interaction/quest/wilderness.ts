@@ -239,6 +239,12 @@ export interface WildernessParams {
    *  its plaza/site, not through it). Default: the centre spawn clearing. */
   clearAt?: { x: number; y: number };
   clearR?: number;
+  /** ADDITIONAL keep-clear discs (sim coords) — settlements inside or
+   *  bordering the scatter square. A planet chunk mounted at a village edge
+   *  must not scatter oaks through its streets (round-2 GL defects: the
+   *  boundary "trees appearing"); the driver passes every known settlement
+   *  footprint here. Composes with clearAt/clearR; absent = byte-identical. */
+  clears?: ReadonlyArray<{ x: number; y: number; r: number }>;
   /** ⚖️ INERT (S3 review): abundance is DIAL-FREE — never pass the session's
    *  `resourceCompression` here; the conversion dial applies only at
    *  effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson. The seat
@@ -455,6 +461,10 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
   const spawn = { x: side / 2, y: side / 2 };
   const clearAt = params.clearAt ?? spawn;
   const clearR = Math.max(0, params.clearR ?? 6); // keep the clearing open
+  // Every keep-clear disc in one list: the clearing + any settlement
+  // footprints the driver declared. Same rng consumption when none are
+  // passed — the scatter stays byte-identical for existing callers.
+  const clears = [{ x: clearAt.x, y: clearAt.y, r: clearR }, ...(params.clears ?? [])];
   // ⚖️ S3 review: abundance is DIAL-FREE — params.conversionDial is an
   // inert seat (see ScatterOpts); the one-application law lives at
   // effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson.
@@ -464,7 +474,7 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
     for (let tries = 0; tries < 12; tries++) {
       const x = 8 + rng() * (side - 16);
       const y = 8 + rng() * (side - 16);
-      if (Math.hypot(x - clearAt.x, y - clearAt.y) < clearR) continue;
+      if (clears.some((c) => Math.hypot(x - c.x, y - c.y) < c.r)) continue;
       return { x, y };
     }
     return { x: 8, y: 8 };

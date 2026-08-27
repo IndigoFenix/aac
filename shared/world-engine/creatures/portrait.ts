@@ -271,7 +271,8 @@ export interface PortraitView {
  */
 export function buildPortraitView(spec: CreaturePortraitSpec, angle: PortraitAngle = {}): PortraitView | null {
   const species = getSpecies(spec.speciesId);
-  if (!species || species.bodiless) return null;
+  // A stub is a word with no body plan yet — there is nothing to photograph.
+  if (!species || species.bodiless || species.stub) return null;
 
   const look = spec.look ?? {};
   const assets = getSpeciesAssets(

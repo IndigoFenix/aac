@@ -665,7 +665,7 @@ function expandCohortPayload(
 
 /** Every unit a cohort row holds, by glyph — the read side `foldedStock`
  *  sums over (a session's own `t.deltas.cohorts` plugs in exactly as
- *  `session.wildAreas.values()` plugs into wild's). Population itself is
+ *  `session.areaRecords.values()` plugs into wild's). Population itself is
  *  not a glyph — `cohortPopulation`/`cohortTotals` answer that question;
  *  this is the MATERIAL half only, matching `wildAreaStock`'s own scope. */
 function cohortRowStock(row: CohortRow): Record<string, number> {

@@ -29,7 +29,8 @@ import {
   type IncomingCall,
 } from "@shared/call/call-client";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
-import { parseCallDataMessage, type CallDataMessage, type FacilitatorPressMessage } from "@shared/call/call-data-messages";
+import { parseCallDataMessage, type CallDataMessage, type FacilitatorBuilderMessage, type FacilitatorPressMessage } from "@shared/call/call-data-messages";
+import CallAudioSinks from "@shared/call/CallAudioSinks";
 import type { WorldNetMessage } from "@shared/world-engine/index";
 import { CallWorldHub, CallNpcHub } from "@shared/social-world/call-game-net";
 import { WorldPresenceChannel, type WorldPresence } from "@shared/social-world/world-presence";
@@ -61,6 +62,12 @@ const DEFAULT_MEDIA: CallMediaFlags = { audio: true, video: true, pose: false };
 
 /** How often the proximity media gate re-evaluates (ms). ~1s re-form is fine. */
 const MEDIA_GATE_INTERVAL_MS = 700;
+
+/** Mic hold applied per poll while a remote party's call audio is playing.
+ *  Short, because the active-speaker detector re-arms it continuously — what
+ *  matters is that it decays quickly once the far end goes quiet, so a student
+ *  composing a reply is not talked over by their own gate. */
+const REMOTE_CALL_AUDIO_HOLD_MS = 600;
 
 /** Cheap equality so the gate only triggers a re-render when gains actually change. */
 function sameGains(a: Map<string, number>, b: Map<string, number>): boolean {
@@ -114,6 +121,11 @@ interface CallContextValue {
   decline: () => void;
   cancel: () => void;
   hangUp: () => void;
+  /** Local output mute — silences every remote participant for this student. */
+  outputMuted: boolean;
+  setOutputMuted: (muted: boolean) => void;
+  /** The call MICROPHONE — this student's room → peers. Driven by the app's
+   *  MASTER mic control, not by a per-call button. */
   toggleAudio: () => void;
   toggleVideo: () => void;
 
@@ -140,6 +152,11 @@ interface CallContextValue {
   sendData: (message: CallDataMessage) => void;
   /** Latest facilitator press from a clinician (dedup on `.at`), or null. */
   facilitatorPress: FacilitatorPressMessage | null;
+  /** Latest facilitated press on the mirrored SENTENCE BUILDER, or null. Kept
+   *  apart from `facilitatorPress` because the two drive different handlers: a
+   *  board button is a whole utterance, a builder press is one move in
+   *  composing one. */
+  facilitatorBuilder: FacilitatorBuilderMessage | null;
   /** Button id the clinician is hovering (their cursor), or null — highlight it. */
   peerDwellId: string | null;
   /** True while this device is sharing its screen (clinician requested it). */
@@ -187,6 +204,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [selfPersonId, setSelfPersonId] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [outputMuted, setOutputMuted] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const [activeContact, setActiveContact] = useState<ActiveContactInfo | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -198,6 +216,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // home consumes it (dedup on `at`) and routes it through the student's own
   // press pipeline — gated by a per-student consent flag.
   const [facilitatorPress, setFacilitatorPress] = useState<FacilitatorPressMessage | null>(null);
+  const [facilitatorBuilder, setFacilitatorBuilder] = useState<FacilitatorBuilderMessage | null>(null);
   // Button id the clinician is hovering on their mirrored view — highlighted on
   // the student's real board so they see the clinician's "cursor".
   const [peerDwellId, setPeerDwellId] = useState<string | null>(null);
@@ -376,6 +395,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // device to share its screen (screen-request).
         const m = parseCallDataMessage(event.message);
         if (m?.k === "facilitator-press") setFacilitatorPress(m);
+        else if (m?.k === "facilitator-builder") setFacilitatorBuilder(m);
         else if (m?.k === "world-cmd") worldCmdHubRef.current.emit(event.personId, m);
         else if (m?.k === "board-dwell") setPeerDwellId(m.buttonId);
         else if (m?.k === "screen-request") {
@@ -560,13 +580,40 @@ export function CallProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, [circlesOn, selfPersonId]);
 
-  // Per-peer audio activity → active speaker (for the "auto" large-video layout).
+  // Per-peer audio activity → (a) the active speaker for the "auto" large-video
+  // layout, and (b) the DUPLEX GATE: while any remote party's audio is coming
+  // out of this device's speakers, hold this student's own microphone shut.
+  //
+  // Without it the AAC's recogniser hears the clinician through the room and
+  // hands their words to the Observer as speech from someone PRESENT — so the
+  // clinician reaches the student's AI twice: once correctly attributed via the
+  // conversation room, once misattributed to whoever the Observer thinks is
+  // sitting with the child.
+  //
+  // NOTE this is the opposite of the clinician-side "echo guard" that A3
+  // deleted, and deliberately so. That one let the audio be recognised and then
+  // tried to guess which of its OWN transcripts were really the far end — a
+  // guess it could not win. This gates CAPTURE, at the one device that knows
+  // for certain it is playing remote audio right now.
   useEffect(() => {
     if (callState !== "active" || remoteStreams.size === 0) { setActiveSpeakerId(null); return; }
-    const detector = createActiveSpeakerDetector({ onActiveSpeaker: setActiveSpeakerId });
+    const detector = createActiveSpeakerDetector({
+      onActiveSpeaker: setActiveSpeakerId,
+      onAnyActive: (anyActive) => {
+        // Re-armed on every poll while sound is flowing; on silence it decays to
+        // the room-echo tail rather than releasing instantly. A deadline, never
+        // a flag — a call that drops mid-sentence cannot strand the mic shut.
+        dualRef.current?.noteRemoteCallAudio?.(anyActive, REMOTE_CALL_AUDIO_HOLD_MS);
+      },
+    });
     if (!detector) return;
     detector.setStreams(remoteStreams);
-    return () => detector.stop();
+    return () => {
+      detector.stop();
+      // Releasing the call must release the hold; the detector stops polling and
+      // would otherwise leave the last deadline standing.
+      dualRef.current?.noteRemoteCallAudio?.(false);
+    };
   }, [callState, remoteStreams]);
 
   const accept = useCallback(async () => {
@@ -612,6 +659,35 @@ export function CallProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, []);
+
+  // -------------------------------------------------------------------------
+  // MASTER DEVICE I/O — the two small toggles in the app header.
+  //
+  // They are APP-WIDE, not assistant-only: "mic off" means NO audio gets in and
+  // "speakers off" means NO audio comes out, whatever is running. A call is not
+  // an exception to that, and treating it as one is the bug that started this
+  // work — a caretaker muted both and still heard themselves, because the call
+  // microphone kept transmitting underneath a control that said it was off.
+  //
+  // Mirrored here rather than in DualAgentContext because the call layer is the
+  // CHILD: it can read the master state, the master cannot reach into the call.
+  //
+  // NOTE the output master deliberately does NOT stop the student's voice going
+  // to peers. Speakers are what this room HEARS; the student's TTS still has to
+  // reach the person they are talking to. That asymmetry is why the audio
+  // player taps the call feed ahead of its own master gain.
+  // -------------------------------------------------------------------------
+  const masterMicOn = dual?.voiceEnabled ?? true;
+  const masterSpeakersOn = dual?.audioEnabled ?? true;
+
+  useEffect(() => {
+    clientRef.current?.toggleAudio(masterMicOn);
+    setAudioEnabled(masterMicOn);
+  }, [masterMicOn]);
+
+  useEffect(() => {
+    setOutputMuted(!masterSpeakersOn);
+  }, [masterSpeakersOn]);
 
   // -------------------------------------------------------------------------
   // AI-initiated call bridge — the live session surfaces a `call_directive`
@@ -702,6 +778,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     decline,
     cancel,
     hangUp,
+    outputMuted,
+    setOutputMuted,
     toggleAudio,
     toggleVideo,
     game,
@@ -715,6 +793,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     sendWorld,
     sendData,
     facilitatorPress,
+    facilitatorBuilder,
     peerDwellId,
     screenSharing,
     worldHub: worldHubRef.current,
@@ -729,12 +808,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }), [
     callState, incoming, selfPersonId, localStream, remoteStreams, activeContact,
     error, audioEnabled, videoEnabled, contacts, contactsLoading, refreshContacts,
-    startCallToContact, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
-    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, peerDwellId, screenSharing, sendNpc,
+    startCallToContact, accept, decline, cancel, hangUp, toggleAudio, toggleVideo, outputMuted,
+    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, facilitatorBuilder, peerDwellId, screenSharing, sendNpc,
     publishPresence, getAudibleIds, peerGains, activeSpeakerId,
   ]);
 
-  return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
+  return (
+    <CallContext.Provider value={value}>
+      {children}
+      {/* THE call's audio output — one sink per peer, alive for the whole call.
+          The avatar slot, the large-video window and the in-game people panel
+          are all visual now; before this they could play the same stream twice
+          and went silent entirely when a peer's camera was off. */}
+      <CallAudioSinks streams={remoteStreams} gains={peerGains} muted={outputMuted} />
+    </CallContext.Provider>
+  );
 }
 
 export function useCall(): CallContextValue {

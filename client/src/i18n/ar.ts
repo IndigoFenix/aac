@@ -3896,6 +3896,20 @@ export const ar = {
     everyone: "الجميع",
     speakTo: "تحدث مع",
     isTalkingToYou: "يتحدث إليك",
+    studentView: {
+      board: "شاشة",
+      label: "شاشتهم",
+      resize: "تغيير حجم الكاميرا",
+      split: "كلاهما",
+      video: "فيديو",
+      noCamera: "الكاميرا الخاصة بهم مغلقة",
+    },
+    surface: {
+      app: "تطبيق",
+      board: "لوحة",
+      builder: "أداة بناء الجمل",
+      game: "لعبة",
+    },
   },
 
   personChat: {

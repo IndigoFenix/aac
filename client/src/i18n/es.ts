@@ -3896,6 +3896,20 @@ export const es = {
     everyone: "Todos",
     speakTo: "Hablar con",
     isTalkingToYou: "está hablando contigo",
+    studentView: {
+      board: "Pantalla",
+      label: "Su pantalla",
+      resize: "Cambiar el tamaño de la cámara",
+      split: "Ambos",
+      video: "Vídeo",
+      noCamera: "Su cámara está apagada",
+    },
+    surface: {
+      app: "Aplicación",
+      board: "Tablero",
+      builder: "Constructor de frases",
+      game: "Juego",
+    },
   },
 
   personChat: {

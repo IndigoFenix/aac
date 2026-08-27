@@ -12,7 +12,7 @@ import { useActivityMonitor } from "@/hooks/useActivityMonitor";
 import { useVoiceEngagementSignal } from "@/hooks/useVoiceEngagementSignal";
 import { useBoardAudio } from "@/contexts/BoardAudioContext";
 import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
-import { appSpeechHoldUntil } from "@/lib/app-speech-gate";
+import { appSpeechHoldUntil, deviceAudioBusy } from "@/lib/app-speech-gate";
 import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from "@shared/aac/audio-cue";
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
@@ -361,6 +361,11 @@ interface DualAgentContextType {
    * bounds it, so a game that dies mid-line can't leave the mic deaf.
    */
   noteAppSpeech: (speaking: boolean, ms?: number) => void;
+  /** A remote party's CALL audio is coming out of this device's speakers.
+   *  Holds the mic gate the same way an app's own voice does — see
+   *  `deviceAudioBusyRef`. Kept SEPARATE from noteAppSpeech so one source
+   *  going quiet never releases the hold the other still needs. */
+  noteRemoteCallAudio: (speaking: boolean, ms?: number) => void;
 
   // PCM gating debug (Live API only)
   pcmDebug: {
@@ -703,13 +708,37 @@ function DualAgentProviderInner({
     );
   }, []);
   const appSpeechActive = useCallback(() => Date.now() < appSpeechUntilRef.current, []);
+  // A REMOTE party's call audio plays through this same speaker and is likewise
+  // invisible to our audio player. Without this hold the AAC's own recogniser
+  // hears the clinician through the room and hands their words to the Observer
+  // as SPEECH FROM SOMEONE PRESENT — so the clinician arrives twice: once
+  // correctly attributed through the conversation room, once misattributed to
+  // whoever the Observer believes is in the room with the child.
+  //
+  // Its own deadline, NOT shared with app speech: either source going quiet must
+  // not release a hold the other still needs.
+  const remoteCallAudioUntilRef = useRef(0);
+  const noteRemoteCallAudio = useCallback((speaking: boolean, ms?: number) => {
+    // Same deadline arithmetic as app speech — the maths is source-agnostic
+    // (extend on start, cut to the room-echo tail on stop, never strand shut).
+    remoteCallAudioUntilRef.current = appSpeechHoldUntil(
+      Date.now(),
+      remoteCallAudioUntilRef.current,
+      { speaking, ms },
+    );
+  }, []);
   // THE question every gate below actually asks: "is this device making sound
-  // right now?" — our own TTS or an embedded app's. One ref, so a new source of
-  // device audio only has to reach `noteAppSpeech` to be covered everywhere.
+  // right now?" — our own TTS, an embedded app's, or a remote party's on a call.
+  // One ref, so a new source of device audio only has to reach one of the
+  // `note…` callbacks to be covered everywhere.
   const deviceAudioBusyRef = useMemo(
     () => ({
       get current(): boolean {
-        return !!aiTtsBusyRef?.current || Date.now() < appSpeechUntilRef.current;
+        return deviceAudioBusy(Date.now(), {
+          aiTtsBusy: !!aiTtsBusyRef?.current,
+          appSpeechUntil: appSpeechUntilRef.current,
+          remoteCallAudioUntil: remoteCallAudioUntilRef.current,
+        });
       },
     }),
     [aiTtsBusyRef],
@@ -1494,6 +1523,7 @@ function DualAgentProviderInner({
       activityMonitor={activityMonitor}
       pcmDebug={pcmDebug}
       noteAppSpeech={noteAppSpeech}
+      noteRemoteCallAudio={noteRemoteCallAudio}
       micActive={micStream !== null}
       lastSttTranscript={lastSttTranscript}
       sessionAsleep={sessionAsleep}
@@ -1552,6 +1582,8 @@ interface ProviderShellProps {
   /** Mic hold for an embedded app's own speech — see the context type. Absent
    *  in shells that host no apps (the call ferry), where it no-ops. */
   noteAppSpeech?: (speaking: boolean, ms?: number) => void;
+  /** Mic hold for a remote party's call audio — see the context type. */
+  noteRemoteCallAudio?: (speaking: boolean, ms?: number) => void;
   micActive: boolean;
   lastSttTranscript?: { text: string; confidence: number; at: number } | null;
   /** SLP MODE header control — current state + toggle. Computed in the outer
@@ -1588,6 +1620,7 @@ function ProviderShell({
   activityMonitor,
   pcmDebug: pcmDebugProp,
   noteAppSpeech: noteAppSpeechProp,
+  noteRemoteCallAudio: noteRemoteCallAudioProp,
   micActive,
   lastSttTranscript,
   sessionAsleep,
@@ -1771,6 +1804,7 @@ function ProviderShell({
     constructionMemoryChips: agent.constructionMemoryChips ?? {},
 
     noteAppSpeech: noteAppSpeechProp ?? (() => { /* no mic to gate in this shell */ }),
+    noteRemoteCallAudio: noteRemoteCallAudioProp ?? (() => { /* no mic to gate in this shell */ }),
 
     pcmDebug: pcmDebugProp ?? {
       audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0,

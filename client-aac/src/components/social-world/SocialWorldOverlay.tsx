@@ -36,19 +36,17 @@ function resolveAacWsUrl(path: string): string {
 
 /** One remote participant's video tile for the in-game people panel. `gain` is
  *  the proximity media-gate volume (1 = in your circle; <1 = fading at the edge). */
-function PeerTile({ stream, name, gain }: { stream: MediaStream; name: string | null; gain: number }) {
+function PeerTile({ stream, name }: { stream: MediaStream; name: string | null }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Visual only — audio (including the proximity gain that used to be applied
+  // here) is owned by CallAudioSinks, which is mounted for the whole call.
   const attach = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
     if (el) {
       if (el.srcObject !== stream) el.srcObject = stream;
-      el.volume = gain;
+      el.muted = true;
     }
-  }, [stream, gain]);
-  // Keep volume in sync as the peer moves through the hysteresis band.
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.volume = gain;
-  }, [gain]);
+  }, [stream]);
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-black/60">
       {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live WebRTC peer feed */}
@@ -89,7 +87,7 @@ export function SocialWorldPeople({ host }: { host: HTMLElement | null }) {
         </div>
       ) : (
         entries.map(([personId, stream]) => (
-          <PeerTile key={personId} stream={stream} name={nameFor(personId)} gain={peerGains.get(personId) ?? 1} />
+          <PeerTile key={personId} stream={stream} name={nameFor(personId)} />
         ))
       )}
     </div>,

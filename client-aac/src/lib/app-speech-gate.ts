@@ -1,4 +1,12 @@
-// THE MIC HOLD FOR AN EMBEDDED APP'S OWN VOICE.
+// THE MIC HOLD FOR AUDIO THIS DEVICE IS MAKING.
+//
+// Two sources are invisible to the AAC's own audio player and therefore to the
+// echo gate that covers our TTS: an embedded app's voice, and a remote party's
+// audio on a call. Both come out of the same speaker and both get heard by the
+// microphone. Each keeps its OWN deadline (see `deviceAudioBusy`) — one going
+// quiet must never release a hold the other still needs.
+//
+// ---- the original case: AN EMBEDDED APP'S OWN VOICE ----
 //
 // A game speaks through the device's speaker with its own TTS (the world
 // engine's `speechSynthesis` NPC voice, inside the iframe). That audio reaches
@@ -41,4 +49,28 @@ export function appSpeechHoldUntil(now: number, current: number, edge: AppSpeech
     APP_SPEECH_MAX_MS,
   );
   return Math.max(current, now + span + APP_SPEECH_TAIL_MS);
+}
+
+
+/** The live hold deadlines, plus whether our own TTS is playing. */
+export interface DeviceAudioState {
+  /** Our audio player is mid-utterance (its own synchronous busy flag). */
+  aiTtsBusy: boolean;
+  /** Deadline for an embedded app's speech (0 = none). */
+  appSpeechUntil: number;
+  /** Deadline for a remote party's call audio (0 = none). */
+  remoteCallAudioUntil: number;
+}
+
+/**
+ * "Is this device making sound right now?" — the one question every mic gate
+ * actually asks. Any source being live holds the mic; sources are INDEPENDENT,
+ * so an app finishing its line does not open the mic while a call is still
+ * talking, and vice versa.
+ *
+ * Pure so the independence can be tested: it is the property most easily lost
+ * if the deadlines are ever merged into one.
+ */
+export function deviceAudioBusy(now: number, s: DeviceAudioState): boolean {
+  return s.aiTtsBusy || now < s.appSpeechUntil || now < s.remoteCallAudioUntil;
 }

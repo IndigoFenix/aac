@@ -11,7 +11,7 @@
 //   - Button-sized targets only (no chips smaller than a button)
 //   - "More" lives in fixed positions
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { motion } from "framer-motion";
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
 import {
@@ -59,7 +59,22 @@ import type {
   ConstructionMemoryChipsClient,
 } from "@/hooks/dual-agent-types";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
+import {
+  serializeBuilderMirror,
+  type BuilderMirrorCell,
+  type BuilderMirrorSnapshot,
+  type BuilderTarget,
+} from "@shared/call/builder-mirror";
 import type { BuilderRecency, BuilderSurface, BuilderWord } from "@shared/games-bridge";
+// The sidebar columns' geometry — measured capacity, paging and the fill
+// class (see sidebar-layout.ts). Pure arithmetic, tested on its own.
+import {
+  SIDEBAR_BUTTON_FILL,
+  SIDEBAR_PAD_PX,
+  sidebarCapacity,
+  sidebarDensity,
+  sidebarPage,
+} from "@/lib/sidebar-layout";
 import { BUILDER_SURFACE_CAPACITY, type EngineBuilderBackend } from "@/lib/engine-builder";
 // ONE paging rule for both word sources (engine surface + registry fallback).
 import { BUILDER_GRID_CELLS, BUILDER_ITEMS_WITH_MORE, pageBuilderGrid } from "@shared/aac-builder-paging";
@@ -151,46 +166,6 @@ const ENGINE_TAB_ICON: Record<string, string> = {
   social: "💬",
 };
 const ENGINE_ALL_TAB_ICON = "⭐";
-/**
- * HOW MANY BUTTONS A SIDEBAR COLUMN MAY SHOW AT ONCE (user, 2026-08-25).
- *
- * The columns are `flex-col` inside a fixed height, so every extra button
- * squeezes all of them: with the engine's five noun chips, four action chips,
- * an "all" and a "photos", the column held eleven and each was a sliver with a
- * clipped label. Six is the cap for the WHOLE column — the pinned entries and
- * the pager count against it, not just the categories.
- */
-const SIDEBAR_MAX_BUTTONS = 6;
-
-/**
- * One page of a sidebar column: how many ITEMS fit beside the fixed buttons,
- * and whether a pager is needed at all. The pager takes a slot of its own, so
- * asking for it costs an item.
- */
-function sidebarPage<T>(items: readonly T[], fixed: number, page: number): { items: T[]; needsMore: boolean } {
-  const room = Math.max(1, SIDEBAR_MAX_BUTTONS - fixed);
-  if (items.length <= room) return { items: [...items], needsMore: false };
-  const perPage = Math.max(1, room - 1);
-  const start = (((page * perPage) % items.length) + items.length) % items.length;
-  return { items: [...items.slice(start), ...items.slice(0, start)].slice(0, perPage), needsMore: true };
-}
-
-/**
- * COMPRESS BEFORE YOU CLIP. A column of two buttons can afford a big icon and a
- * roomy label; a column of six cannot, and squashing them equally is what made
- * the labels unreadable. The classes step down together so the button keeps its
- * shape — icon, gap and label — instead of the label being cut off.
- */
-function sidebarDensity(count: number) {
-  const tight = count >= 5;
-  const snug = count === 4;
-  return {
-    pad: tight ? "py-1 gap-0.5" : snug ? "py-1.5 gap-1" : "py-2 gap-1",
-    icon: tight ? "text-lg" : snug ? "text-xl" : "text-2xl",
-    label: tight ? "text-[10px] leading-tight" : "text-xs",
-    face: tight ? "w-8 h-8" : snug ? "w-10 h-10" : "w-12 h-12",
-  };
-}
 /** Client-side chip id for the person-directory list under the engine's
  *  "person" tab (real people with photos — content the engine can't serve). */
 const ENGINE_PHOTOS_CHIP = "photos";
@@ -381,6 +356,21 @@ export interface SentenceConstructorBoardProps {
    *  chip while guessing is active — the explicit category choice means they
    *  no longer want the narrowing assistant). */
   onExitGuessing?: () => void;
+  /**
+   * Publish what a clinician's CALL MIRROR should show of this board — the
+   * visible grid, the tabs and chips around it, and the sentence built so far.
+   * Fires `null` on unmount, so the mirror stops claiming a builder is open the
+   * moment the student closes it.
+   */
+  onMirror?: (snapshot: BuilderMirrorSnapshot | null) => void;
+  /** Imperative handle so a clinician's facilitated press can drive this board
+   *  through the student's own handlers (consent-gated by the caller). */
+  remoteRef?: Ref<BuilderRemote>;
+}
+
+/** What a facilitated (clinician-driven) press can do to this board. */
+export interface BuilderRemote {
+  press: (target: BuilderTarget) => void;
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
@@ -533,6 +523,26 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const [engineCategory, setEngineCategory] = useState<string | null>(null);
   const [engineChip, setEngineChip] = useState<string | null>(null);
   const [engineTabPage, setEngineTabPage] = useState(0);
+  // THE MEASURED COLUMN (2026-08-27). Both sidebars are siblings in the board's
+  // `flex h-full` row, so they are always the same height — one observer
+  // answers for both. Everything that decides how many buttons a column shows,
+  // and how tightly they draw, reads this instead of a constant.
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const [sidebarHeight, setSidebarHeight] = useState(0);
+  useEffect(() => {
+    const el = sidebarRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = (h: number) => setSidebarHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+    apply(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) apply(e.contentRect.height + SIDEBAR_PAD_PX * 2);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+    // The element is stable for the component's life; re-running on every
+    // render would tear the observer down mid-resize.
+  }, []);
+  const sidebarSlots = sidebarCapacity(sidebarHeight);
   // A tapped SENTENCE-TYPE chip ("I want to ask something"), echoed back on the
   // next request so the openers narrow to that move. Empty board only — the
   // engine stops offering the chips the moment a word lands.
@@ -603,8 +613,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // (paged with a "…" tab when they overflow the column).
   // …budgeted against the whole column: the "all" tab is one of the six.
   const engineTabPageView = useMemo(
-    () => sidebarPage(engineCategories ?? [], 1, engineTabPage),
-    [engineCategories, engineTabPage],
+    () => sidebarPage(engineCategories ?? [], 1, engineTabPage, sidebarSlots),
+    [engineCategories, engineTabPage, sidebarSlots],
   );
   const engineTabsNeedMore = engineTabPageView.needsMore;
   const visibleEngineTabs = engineTabPageView.items;
@@ -622,8 +632,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
    *  against the pinned "all" chip and the person tab's "photos" chip. */
   const engineChipsFixed = 1 + (engineUiActive && engineCategory === "person" ? 1 : 0);
   const engineChipPageView = useMemo(
-    () => sidebarPage(engineGroupChips, engineChipsFixed, engineChipPage),
-    [engineGroupChips, engineChipsFixed, engineChipPage],
+    () => sidebarPage(engineGroupChips, engineChipsFixed, engineChipPage, sidebarSlots),
+    [engineGroupChips, engineChipsFixed, engineChipPage, sidebarSlots],
   );
   const visibleEngineChips = engineChipPageView.items;
   const engineChipsNeedMore = engineChipPageView.needsMore;
@@ -1254,20 +1264,195 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     ];
   }, [activeTab, constructionMemoryChips, t]);
 
-  const chipPageView = useMemo(() => sidebarPage(allChips, 0, chipPage), [allChips, chipPage]);
+  const chipPageView = useMemo(
+    () => sidebarPage(allChips, 0, chipPage, sidebarSlots),
+    [allChips, chipPage, sidebarSlots],
+  );
   const visibleChips = chipPageView.items;
   const chipsNeedMore = chipPageView.needsMore;
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // CALL MIRROR
+  //
+  // What a clinician on the call sees of this board, and how they press it.
+  // The builder opens as a full-screen overlay OVER the communication board, so
+  // a mirror that only knew about boards kept streaming the screen the student
+  // had just left — the clinician watched a grid nobody was looking at, with
+  // nothing to say so. `onMirror` publishes what is actually visible here;
+  // `remoteRef` routes a facilitated press into the very handler the student's
+  // own finger takes, so there is no second composition path to drift.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /** The label printed under a registry button (the non-hook half of `useItemLabel`). */
+  const itemLabel = useCallback((item: VocabularyItem) => {
+    const translated = t(item.tKey);
+    return translated === item.tKey ? item.key : translated;
+  }, [t]);
+
+  /** Whichever of the builder's several word views is on screen right now. */
+  const photosActive = engineUiActive ? enginePhotos : activeTab === "who" && modeChip === "photos";
+
+  const mirrorCells = useMemo<BuilderMirrorCell[]>(() => {
+    // Word Finder replaces the grid with server-sent narrowing buttons that are
+    // not builder vocabulary. Sending none is the honest answer — the surface
+    // badge and the sentence strip still tell the clinician where the child is.
+    if (guessingActive) return [];
+
+    if (photosActive) {
+      if (mergedWhoTiles) {
+        return pagedWhoTiles.map((tile) =>
+          tile.type === "person"
+            ? { key: `face:${tile.person.id}`, label: tile.person.name, glyph: `face:${tile.person.id}`, emoji: "🧑", present: presentPersonIds.includes(tile.person.id) }
+            : { key: tile.word.key, label: tile.word.label || tile.word.key, glyph: tile.word.glyph ?? tile.word.key, engine: true, present: tile.word.present },
+        );
+      }
+      return orderedPeople.map((person) => ({
+        key: `face:${person.id}`,
+        label: person.name,
+        glyph: `face:${person.id}`,
+        emoji: "🧑",
+        present: presentPersonIds.includes(person.id),
+      }));
+    }
+
+    if (engineGridActive) {
+      return engineGridWords.map((word) => ({
+        key: word.key,
+        label: word.label || word.key,
+        glyph: word.glyph ?? word.key,
+        engine: true,
+        present: word.present,
+      }));
+    }
+
+    return gridItems.map((item) => ({
+      key: item.key,
+      label: itemLabel(item),
+      // The student's own cell previews what the button INSERTS, so an alias
+      // (`tomorrow` → `day.next`) must mirror as the composed form, not the alias.
+      glyph: item.expandsTo ?? item.key,
+      emoji: item.emoji,
+    }));
+  }, [guessingActive, photosActive, mergedWhoTiles, pagedWhoTiles, orderedPeople, presentPersonIds, engineGridActive, engineGridWords, gridItems, itemLabel]);
+
+  const mirrorSnapshot = useMemo<BuilderMirrorSnapshot>(() => serializeBuilderMirror({
+    cells: mirrorCells,
+    paging: photosActive ? whoTilesNeedMore : engineGridActive ? engineNeedsMore : gridNeedsMore,
+    engine: engineUiActive,
+    tabs: engineUiActive
+      ? [
+          { id: "all", label: engineTabLabel("all"), emoji: ENGINE_ALL_TAB_ICON, active: engineCategory == null },
+          ...visibleEngineTabs.map((cat) => ({ id: cat, label: engineTabLabel(cat), active: cat === engineCategory })),
+        ]
+      : TABS.map((tab) => ({ id: tab, label: t(`construction.tabs.${tab}`), emoji: TAB_ICON[tab], active: tab === activeTab })),
+    chips: engineUiActive
+      ? visibleEngineChips.map((chip) => ({ id: chip.id, label: chip.label, glyph: chip.glyph, active: chip.id === engineChip }))
+      : visibleChips.map((chip) => ({ id: chip.key, label: chip.label, emoji: chip.memory ? "✨" : CHIP_ICON[chip.key], active: chip.key === modeChip })),
+    // One glyph string per filled slot, composed the way `serializeGlyph`
+    // composes the whole sentence — head, payload, then modifiers.
+    slots: displayedGlyph.slots
+      .filter((slot) => !!slot.key)
+      .map((slot) => {
+        const head = slot.payload ? `${slot.key}(${slot.payload})` : slot.key;
+        return slot.modifiers.length ? [head, ...slot.modifiers].join(".") : head;
+      }),
+    activeSlot,
+    labels: {
+      play: t("construction.play"),
+      backspace: t("construction.backspace"),
+      clear: t("common.delete"),
+    },
+  }), [
+    mirrorCells, photosActive, whoTilesNeedMore, engineGridActive, engineNeedsMore, gridNeedsMore,
+    engineUiActive, visibleEngineTabs, engineCategory, visibleEngineChips, engineChip,
+    visibleChips, activeTab, modeChip, displayedGlyph, activeSlot, t,
+  ]);
+
+  const onMirror = props.onMirror;
+  // Published by CONTENT, not by object identity. `t` is not guaranteed stable
+  // across renders, so the memo above can hand back a fresh-but-identical
+  // snapshot; forwarding that would set state in the host, re-render, and do it
+  // again. The signature is cheap — 18 buttons and a short sentence.
+  const lastMirrorSigRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onMirror) return;
+    const sig = JSON.stringify(mirrorSnapshot);
+    if (sig === lastMirrorSigRef.current) return;
+    lastMirrorSigRef.current = sig;
+    onMirror(mirrorSnapshot);
+  }, [onMirror, mirrorSnapshot]);
+  // The overlay is unmounted when the student leaves the builder, so clear the
+  // published snapshot on the way out — a stale sentence strip beside the
+  // communication board is exactly the kind of lie this whole thing removes.
+  useEffect(() => () => { onMirror?.(null); }, [onMirror]);
+
+  /** Drive this board from the clinician's mirror. Every branch lands on the
+   *  handler a local press would have called. */
+  useImperativeHandle(props.remoteRef, () => ({
+    press(target: BuilderTarget) {
+      switch (target.kind) {
+        case "word": {
+          if (target.key.startsWith("face:")) { handlePersonPress(target.key.slice(5)); return; }
+          const item = getVocabularyItem(target.key);
+          if (item) handleGridPress(item);
+          return;
+        }
+        case "engineWord": {
+          const word =
+            engineGridWords.find((w) => w.key === target.key) ??
+            enginePersonWords.find((w) => w.key === target.key) ??
+            engineSurface?.buttons.find((w) => w.key === target.key);
+          if (word) handleEngineWordPress(word);
+          return;
+        }
+        case "tab":
+          if ((TABS as readonly string[]).includes(target.tab)) handleTabSelect(target.tab as GlyphCategory);
+          return;
+        case "engineTab":
+          handleEngineTabSelect(target.tab === "all" ? null : target.tab);
+          return;
+        case "chip":
+          handleModeChipSelect(target.chip);
+          return;
+        case "engineChip":
+          handleEngineChipSelect(target.chip);
+          return;
+        case "page":
+          setGridPage((page) => page + (target.dir === "more" ? 1 : -1));
+          return;
+        case "slot":
+          handleSlotPress(target.index);
+          return;
+        case "play":
+          handlePlay();
+          return;
+        case "backspace":
+          handleBackspace();
+          return;
+        case "clear":
+          handleClearSelected();
+          return;
+      }
+    },
+  }), [
+    handlePersonPress, handleGridPress, handleEngineWordPress, handleTabSelect,
+    handleEngineTabSelect, handleModeChipSelect, handleEngineChipSelect,
+    handleSlotPress, handlePlay, handleBackspace, handleClearSelected,
+    engineGridWords, enginePersonWords, engineSurface,
+  ]);
 
   // How tight each sidebar column has to draw itself — the count includes the
   // pinned buttons and the pager, because they take the same room a category
   // does (see `sidebarDensity`).
   const tabDensity = sidebarDensity(
     engineUiActive ? 1 + visibleEngineTabs.length + (engineTabsNeedMore ? 1 : 0) : TABS.length,
+    sidebarHeight,
   );
   const chipDensity = sidebarDensity(
     engineUiActive
       ? engineChipsFixed + visibleEngineChips.length + (engineChipsNeedMore ? 1 : 0)
       : visibleChips.length + (chipsNeedMore ? 1 : 0),
+    sidebarHeight,
   );
 
 
@@ -1451,6 +1636,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           the legacy who/do/what/where taxonomy renders only as the fallback
           when no engine surface is available. */}
       <nav
+        ref={sidebarRef}
         aria-label={t("construction.tabsLabel")}
         className="flex flex-col gap-2 p-2 border-e border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 w-28 shrink-0 overflow-hidden"
         data-testid={engineUiActive ? "engine-tabs" : undefined}
@@ -1466,7 +1652,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => handleEngineTabSelect(null)}
               whileTap={{ scale: 0.96 }}
               className={[
-                "flex flex-col items-center justify-center rounded-xl min-h-0 overflow-hidden",
+                "flex flex-col items-center justify-center rounded-xl overflow-hidden",
+                SIDEBAR_BUTTON_FILL,
                 tabDensity.pad,
                 "border-2 transition-colors",
                 engineCategory == null
@@ -1494,7 +1681,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   onClick={() => handleEngineTabSelect(cat)}
                   whileTap={{ scale: 0.96 }}
                   className={[
-                    "flex flex-col items-center justify-center rounded-xl min-h-0 overflow-hidden",
+                    "flex flex-col items-center justify-center rounded-xl overflow-hidden",
+                    SIDEBAR_BUTTON_FILL,
                     tabDensity.pad,
                     "border-2 transition-colors",
                     active
@@ -1517,7 +1705,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 data-testid="engine-tab-more"
                 onClick={() => setEngineTabPage((p) => p + 1)}
                 whileTap={{ scale: 0.95 }}
-                className="rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center"
+                className={`rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center ${SIDEBAR_BUTTON_FILL}`}
               >
                 …
               </motion.button>
@@ -1537,7 +1725,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onKeyDown={(e) => onTabKey(e, tab)}
                 whileTap={{ scale: 0.96 }}
                 className={[
-                  "flex flex-col items-center justify-center rounded-xl min-h-0 overflow-hidden",
+                  "flex flex-col items-center justify-center rounded-xl overflow-hidden",
+                  SIDEBAR_BUTTON_FILL,
                   tabDensity.pad,
                   "border-2 transition-colors",
                   active
@@ -1575,7 +1764,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => handleEngineChipSelect(null)}
               whileTap={{ scale: 0.95 }}
               className={[
-                "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
+                SIDEBAR_BUTTON_FILL,
                   chipDensity.pad,
                   chipDensity.label,
                 engineChip == null
@@ -1598,7 +1788,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   onClick={() => handleEngineChipSelect(chip.id)}
                   whileTap={{ scale: 0.95 }}
                   className={[
-                    "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                    "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
+                    SIDEBAR_BUTTON_FILL,
                   chipDensity.pad,
                   chipDensity.label,
                     active
@@ -1634,7 +1825,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onClick={() => setEngineChipPage((p) => p + 1)}
                 whileTap={{ scale: 0.95 }}
                 className={[
-                  "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 px-2 flex items-center justify-center min-h-0",
+                  "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 px-2 flex items-center justify-center",
+                  SIDEBAR_BUTTON_FILL,
                   chipDensity.pad,
                   chipDensity.label,
                   "font-medium",
@@ -1650,7 +1842,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onClick={() => handleEngineChipSelect(ENGINE_PHOTOS_CHIP)}
                 whileTap={{ scale: 0.95 }}
                 className={[
-                  "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                  "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
+                  SIDEBAR_BUTTON_FILL,
                   chipDensity.pad,
                   chipDensity.label,
                   engineChip === ENGINE_PHOTOS_CHIP
@@ -1684,7 +1877,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               onClick={() => handleModeChipSelect(chip.key)}
               whileTap={{ scale: 0.95 }}
               className={[
-                "rounded-xl border-2 px-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
+                "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
+                SIDEBAR_BUTTON_FILL,
                   chipDensity.pad,
                   chipDensity.label,
                 baseStyle,
@@ -1705,7 +1899,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             data-testid="chip-more"
             onClick={() => setChipPage((p) => p + 1)}
             whileTap={{ scale: 0.95 }}
-            className="rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center"
+            className={`rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center ${SIDEBAR_BUTTON_FILL}`}
           >
             …
           </motion.button>
@@ -2228,6 +2422,11 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   </div>
                 ) : (
                   <>
+                    {/* BACK LEADS THE LIST (user, 2026-08-27) — see the main
+                        grid below for why. */}
+                    {whoTilesNeedMore && (
+                      <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="who-back" />
+                    )}
                     {pagedWhoTiles.map((tile) =>
                       tile.type === "person" ? (
                         <PersonButton
@@ -2246,10 +2445,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                       )
                     )}
                     {whoTilesNeedMore && (
-                      <>
-                        <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="who-back" />
-                        <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="who-more" />
-                      </>
+                      <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="who-more" />
                     )}
                   </>
                 )
@@ -2281,6 +2477,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               }}
               data-testid="engine-grid"
             >
+              {/* BACK LEADS THE LIST (user, 2026-08-27) — see the main grid below. */}
+              {engineNeedsMore && (
+                <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
+              )}
               {engineGridWords.map((word) => (
                 <EngineWordButton
                   key={word.key}
@@ -2289,10 +2489,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 />
               ))}
               {engineNeedsMore && (
-                <>
-                  <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
-                  <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
-                </>
+                <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
               )}
             </div>
           ) : (
@@ -2303,6 +2500,27 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               gridTemplateRows: "repeat(2, minmax(0, 1fr))",
             }}
           >
+            {/* THE PAGING CONTROLS BRACKET THE LIST — only rendered when the
+                current mode-chip has more items than fit in one page; without
+                the conditional they would always push the grid onto an implicit
+                extra row and compress the visible buttons.
+
+                BACK as well as More (user, 2026-08-25): forward-only paging
+                made a word you scrolled past cost a full lap of the list, which
+                on a 54-word budget is two more dwells.
+
+                BACK LEADS THE LIST, More closes it (user, 2026-08-27). The two
+                sat side by side in the last two cells, which read as one pair of
+                arrows rather than as the two ENDS of a list — and put the
+                control for "what came before" after everything that comes
+                after. First cell and last cell say which way each one goes
+                without being read, which is the only way a control is read at
+                all on a board driven by dwell. The reading direction carries it:
+                the board's `dir` flips the grid's flow, so on a Hebrew board
+                back is the top-RIGHT cell and still the first one. */}
+            {gridNeedsMore && (
+              <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
+            )}
             {gridItems.map((item) => (
               <GridButton
                 key={item.key}
@@ -2310,18 +2528,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 onPress={() => handleGridPress(item)}
               />
             ))}
-            {/* Trailing paging controls — only rendered when the current
-                mode-chip has more items than fit in one page. They occupy the
-                last TWO cells; without the conditional they would always push
-                the grid onto an implicit extra row and compress the visible
-                buttons. BACK as well as More (user, 2026-08-25): forward-only
-                paging made a word you scrolled past cost a full lap of the
-                list, which on a 54-word budget is two more dwells. */}
             {gridNeedsMore && (
-              <>
-                <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
-                <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
-              </>
+              <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
             )}
           </div>
           )}

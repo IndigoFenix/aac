@@ -253,6 +253,30 @@ export interface FoldCodec<Payload = unknown, Ctx extends FoldCtx = FoldCtx> {
    * legs refuse, stock rides.
    */
   services?(commitment: FoldCommitment, scope: FoldScope): boolean;
+  /**
+   * ⚖️ PERSISTENCE ARMS (record-persistence round P0, rulings ⑥/⑦ —
+   * scope-agnostic INDEX, kind-owned shape). A kind whose payload carries
+   * sim-clock-ABSOLUTE stamps declares how to put it TO REST and how to
+   * WAKE it: `rest(payload, now)` rebases every stamp RELATIVE to `now`
+   * (the fingerprint's own armed-timer idiom — a rested record is
+   * portable across boots because it no longer references a clock that
+   * dies), and `wake(payload, now)` re-adds the new clock. Both pure;
+   * both return the SAME object when nothing moves (`advanceWildArea`'s
+   * convention). The identity law every implementation must hold:
+   * `wake(rest(p, t), t) ≡ p`, byte for byte — and stocks never move
+   * through either (conservation is untouched by time travel).
+   * ABSENT ⇒ the kind's payloads are clock-free.
+   */
+  rest?(payload: Payload, now: number): Payload;
+  wake?(payload: Payload, now: number): Payload;
+  /**
+   * Validate + DEEP-COPY a payload arriving from a save or a wire, or null
+   * when it is not this kind's shape (readWildRecord's law, generalized:
+   * the same function copies OUT and validates IN, so a shape the sender
+   * cannot express is a shape the receiver must not accept). ABSENT ⇒ the
+   * kind has no untrusted sources yet.
+   */
+  read?(payload: unknown): Payload | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a registry of
@@ -281,6 +305,41 @@ export function registerFoldCodec<Payload, Ctx extends FoldCtx>(
  *  `condense`/`expand`. */
 export function foldCodecFor(kind: ScopeKind): FoldCodec<any, any> | undefined {
   return CODECS.get(kind);
+}
+
+// ── Plain-data reading (every codec's `read` arm builds on these) ─────────
+// Moved VERBATIM from quest-host's handover validator (P0): the record
+// layer owns "how untrusted plain data is read", so a codec's read arm and
+// a host's payload validator go through one set of gates.
+
+/** A finite number, or null — the one numeric gate every field below goes
+ *  through, so a NaN can never enter a record from the wire. */
+export function finiteOrNull(x: unknown): number | null {
+  return typeof x === "number" && Number.isFinite(x) ? x : null;
+}
+
+/** A plain glyph→count map, COPIED, or null when it is not one. */
+export function readNumMap(x: unknown): Record<string, number> | null {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+    const n = finiteOrNull(v);
+    if (n === null) return null;
+    out[k] = n;
+  }
+  return out;
+}
+
+/** An array of finite numbers, COPIED, or null. */
+export function readNumList(x: unknown): number[] | null {
+  if (!Array.isArray(x)) return null;
+  const out: number[] = [];
+  for (const v of x) {
+    const n = finiteOrNull(v);
+    if (n === null) return null;
+    out.push(n);
+  }
+  return out;
 }
 
 // ── The dispatch (F-②) + the promise guard (F-④) ─────────────────────────
@@ -427,7 +486,7 @@ export function expand<Payload = unknown>(
  * generic replacement for a per-kind audit hand-add (quest-host's old
  * wild-only loop straight over `wildAreaStock`): look the kind's codec up
  * once, sum its `stockOf` over every payload. A session's own per-kind
- * collection (today `session.wildAreas`; F2/F3 add their own) plugs into
+ * collection (today `session.areaRecords`; F2/F3 add their own) plugs into
  * this SAME accounting instead of writing a second copy of the loop — "no
  * kind needs a hand-add again" (fold-round.md F1).
  */

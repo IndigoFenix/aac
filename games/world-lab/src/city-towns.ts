@@ -179,6 +179,13 @@ export function cityTownConfig(
   return {
     seed: fc.city.cell,
     key: cityTownKey(fc),
+    // ON THE PLANET the town rect is CONTENT, not the world's edge: an
+    // unbounded manifold (town-stage `onPlanet`), so a resident can follow
+    // the player out of the village instead of freezing on clampToManifold's
+    // invisible wall at plan.radius+40 (round-2 GL defects). The walker
+    // handoff always crossed; NPC feet now can too. (Their bodies still die
+    // with dispose — the histfig promotion stays the recorded TODO.)
+    terrain: "planet",
     charter: fc.city.charter,
     startPop: Math.min(fc.city.startPop, VISIT_START_POP),
     days: grownDays(100 + Math.round(120 * crowd01), nowMs),

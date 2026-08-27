@@ -434,6 +434,11 @@ export function rejectCurrentDimension(state: GuessingModeState): GuessingModeSt
 
 export function readyForGuesses(state: GuessingModeState): boolean {
   if (!state.category) return false;
+  // Nothing left to ask IS ready, whatever the counters say. A shallow
+  // category (`time` has one dimension) otherwise shipped an injection that
+  // contradicted itself — "No more narrowing dimensions — offer [GUESS]
+  // buttons now" directly above "Ready for guesses: not yet (still broad)".
+  if (candidateDimensions(state).length === 0) return true;
   const confidentSteering = DIMENSIONS_BY_CATEGORY[state.category].filter(
     (def) => def.role === "steering" && isConfident(state, def),
   ).length;

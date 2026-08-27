@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, LayoutDashboard, Hand, MonitorUp } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, Hand, MonitorUp } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { GameJsonEditor } from "./GameJsonEditor";
 import { MirroredBoardView } from "./MirroredBoardView";
+import { StudentSplitView } from "./StudentSplitView";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useInstitute } from "@/hooks/useInstitute";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 import CallGameSurface from "@shared/social-world/CallGameSurface";
 import VideoTileLayout, { type VideoTileData } from "@shared/social-world/VideoTileLayout";
 import { pickSpotlightId, VIDEO_LAYOUT_MODES, type VideoLayoutMode } from "@shared/call/video-layout";
+import { STUDENT_VIEW_MODES, type StudentSurface, type StudentViewMode } from "@shared/call/student-view";
 import type { CallGame } from "@shared/realtime-events";
 import type { BoardButton } from "@shared/schema";
 import { useCall } from "./CallContext";
@@ -34,18 +36,16 @@ function resolveCallWsUrl(path: string): string {
  *  the proximity volume (1 = in the circle; <1 = fading at the edge).
  *  `borderColor` tints the tile's ring — during an iframe world game it matches
  *  the peer's in-game color so faces map to avatars. */
-function PeerVideoTile({ stream, name, gain, muted, borderColor }: { stream: MediaStream; name: string | null; gain: number; muted?: boolean; borderColor?: string }) {
+function PeerVideoTile({ stream, name, borderColor }: { stream: MediaStream; name: string | null; borderColor?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  // Visual only — audio is owned by CallAudioSinks for the whole call.
   const attach = useCallback((el: HTMLVideoElement | null) => {
     ref.current = el;
     if (el) {
       if (el.srcObject !== stream) el.srcObject = stream;
-      el.volume = gain;
-      el.muted = !!muted;
+      el.muted = true;
     }
-  }, [stream, gain, muted]);
-  useEffect(() => { if (ref.current) ref.current.volume = gain; }, [gain]);
-  useEffect(() => { if (ref.current) ref.current.muted = !!muted; }, [muted]);
+  }, [stream]);
   return (
     <div
       className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/60"
@@ -73,6 +73,8 @@ export function CallView() {
     activeContactName,
     audioEnabled,
     videoEnabled,
+    outputMuted,
+    setOutputMuted,
     toggleAudio,
     toggleVideo,
     hangUp,
@@ -100,6 +102,7 @@ export function CallView() {
     mirroredDwell,
     mirroredSelection,
     sendData,
+    sendBuilderPress,
     screenStreams,
     screenRequested,
     requestScreenShare,
@@ -109,9 +112,11 @@ export function CallView() {
   // pinned prominent peer (click a tile to pin).
   const [layoutMode, setLayoutMode] = useState<VideoLayoutMode>("spotlight");
   const [pinnedPeer, setPinnedPeer] = useState<string | null>(null);
-  // "See their screen": swap the main area to a read-only render of the
-  // student's mirrored board. "Interact" arms facilitator presses on it.
-  const [viewBoard, setViewBoard] = useState(false);
+  // "See their screen": video only, the student's mirrored screen only, or BOTH
+  // side by side. Split is the useful default once a mirror exists — the grid
+  // says what they pressed, the face says whether they meant it, and a clinician
+  // reading intent needs the two together. "Interact" arms facilitator presses.
+  const [studentView, setStudentView] = useState<StudentViewMode>("video");
   const [interactArmed, setInteractArmed] = useState(false);
   // Live game-JSON editor (testing affordance): edit the running game and reload
   // it for everyone in the call.
@@ -166,8 +171,9 @@ export function CallView() {
   // Output mute: silence ALL audio this window plays (the remote peers + the
   // game's NPC voices). Distinct from the mic toggle, which mutes what we SEND.
   // Handy for testing on one machine (mute one window, listen on the other)
-  // without feedback. VideoTileLayout applies it per tile.
-  const [outputMuted, setOutputMuted] = useState(false);
+  // without feedback.
+  // It lives in CallContext, not here: CallAudioSinks owns the call's audio for
+  // the whole call, so the control over it must outlive this panel.
 
   const attachLocal = useCallback((el: HTMLVideoElement | null) => {
     if (el && el.srcObject !== localStream) el.srcObject = localStream;
@@ -183,12 +189,10 @@ export function CallView() {
         stream,
         name: p?.name ?? null,
         photoUrl: p?.photo ?? null,
-        gain: peerGains.get(personId) ?? 1,
-        muted: outputMuted,
         speaking: personId === activeSpeakerId,
       };
     }),
-    [remoteStreams, participants, peerGains, outputMuted, activeSpeakerId],
+    [remoteStreams, participants, activeSpeakerId],
   );
   const spotlightId = useMemo(
     () => pickSpotlightId(videoTiles.map((x) => x.personId), { manualPin: pinnedPeer, activeSpeakerId }),
@@ -203,8 +207,9 @@ export function CallView() {
   }, [sendData]);
 
   // The board mirror is only meaningful for a 1:1 student call; offer it when one
-  // has arrived. Dropping out of board view also disarms Interact.
+  // has arrived. Dropping out of the student view also disarms Interact.
   const canViewBoard = !!mirroredBoard;
+  const viewBoard = studentView !== "video";
 
   // Inbound screen-share (getDisplayMedia) from the student, when present.
   const screenStream = useMemo(() => {
@@ -214,6 +219,18 @@ export function CallView() {
   const attachScreen = useCallback((el: HTMLVideoElement | null) => {
     if (el && el.srcObject !== screenStream) el.srcObject = screenStream;
   }, [screenStream]);
+
+  // The camera to pair the mirror with: the peer that actually SENT it. In a
+  // group call "the first remote stream" is routinely a different person, and
+  // captioning a student's board with a colleague's face is worse than no face.
+  const mirrorPeerId = mirroredBoard?.fromPersonId ?? null;
+  const studentStream = mirrorPeerId ? remoteStreams.get(mirrorPeerId) ?? null : null;
+  const studentName = mirrorPeerId ? getLabel(mirrorPeerId) || activeContactName : activeContactName;
+
+  // What the surface pane is showing — a real screen capture outranks the
+  // mirror, since it is the thing the clinician asked for.
+  const shownSurface: StudentSurface = screenStream ? "screen" : mirroredBoard?.surface ?? "board";
+  const surfaceLabel = mirroredBoard?.surface ? t(`call.surface.${mirroredBoard.surface}`) : undefined;
 
   if (callState === "idle") return null;
 
@@ -244,8 +261,6 @@ export function CallView() {
                     key={pid}
                     stream={stream}
                     name={participants.find((p) => p.personId === pid)?.name ?? null}
-                    gain={peerGains.get(pid) ?? 1}
-                    muted={outputMuted}
                     borderColor={colorForPeerId(pid)}
                   />
                 ))}
@@ -280,7 +295,7 @@ export function CallView() {
                 type="button"
                 size="icon"
                 variant={outputMuted ? "destructive" : "secondary"}
-                onClick={() => setOutputMuted((m) => !m)}
+                onClick={() => setOutputMuted(!outputMuted)}
                 aria-label={outputMuted ? t("call.unmuteSpeaker") : t("call.muteSpeaker")}
                 aria-pressed={outputMuted}
                 data-testid="call-toggle-output"
@@ -329,6 +344,44 @@ export function CallView() {
       : callState === "connecting"
         ? t("call.connecting")
         : "";
+
+  // THE STUDENT'S SCREEN, whichever way it is arriving. A real screen capture
+  // outranks the mirror — the clinician asked for pixels and the mirror is the
+  // approximation they asked to replace.
+  const surfacePane = screenStream ? (
+    <div className="relative h-full w-full">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live screen-share feed */}
+      <video ref={attachScreen} autoPlay playsInline muted className="h-full w-full object-contain" aria-label={t("call.screenLabel")} />
+      <div className="absolute top-2 start-2 rounded bg-sky-600/90 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
+        {t("call.screenLabel")}
+      </div>
+    </div>
+  ) : mirroredBoard ? (
+    <MirroredBoardView
+      board={mirroredBoard.board}
+      pageId={mirroredBoard.pageId}
+      rtl={mirroredBoard.rtl}
+      contextButtons={mirroredBoard.contextButtons}
+      quickButtons={mirroredBoard.quickButtons}
+      surface={mirroredBoard.surface}
+      surfaceLabel={surfaceLabel}
+      title={mirroredBoard.title}
+      strip={mirroredBoard.strip}
+      chips={mirroredBoard.chips}
+      hud={mirroredBoard.hud}
+      dwellId={mirroredDwell}
+      selection={mirroredSelection}
+      interactive={interactArmed}
+      onPress={facilitate}
+      onBuilderPress={sendBuilderPress}
+      onHover={(buttonId) => sendData({ k: "board-dwell", buttonId, at: Date.now() })}
+      className="h-full w-full"
+    />
+  ) : null;
+
+  // A screen share promotes itself: the clinician pressed "Share screen" and
+  // expects to see one, whichever view mode they happened to be in.
+  const showSurface = !!surfacePane && (viewBoard || !!screenStream);
 
   return (
     <div
@@ -396,6 +449,32 @@ export function CallView() {
         </div>
       )}
 
+      {/* Student-view picker — video / both / their screen. Only once a mirror
+          has arrived (a 1:1 student call); until then there is no second thing
+          to show and the control would be three ways of saying "video". */}
+      {isActive && !game && canViewBoard && (
+        <div className="flex flex-wrap items-center justify-center gap-2 px-4 pt-2 pb-1">
+          <span className="me-1 text-xs uppercase tracking-wide text-white/60">{t("call.studentView.label")}</span>
+          {STUDENT_VIEW_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              // Leaving the student's screen disarms Interact: an armed press
+              // that you cannot see the target of is a press waiting to go astray.
+              onClick={() => { setStudentView(m); if (m === "video") setInteractArmed(false); }}
+              aria-pressed={studentView === m}
+              data-testid={m === "board" ? "call-toggle-view-board" : `call-student-view-${m}`}
+              className={cn(
+                "rounded-full px-3 py-1 text-sm font-medium transition",
+                studentView === m ? "bg-amber-400 text-gray-900" : "bg-white/15 text-white hover:bg-white/25",
+              )}
+            >
+              {t(`call.studentView.${m}`)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Video layout picker — when viewing the multi-participant video (not the
           mirrored board, not a game). Click a mode to re-arrange the tiles. */}
       {isActive && !game && !viewBoard && !screenStream && videoTiles.length > 0 && (
@@ -434,8 +513,6 @@ export function CallView() {
                   key={pid}
                   stream={stream}
                   name={participants.find((p) => p.personId === pid)?.name ?? null}
-                  gain={peerGains.get(pid) ?? 1}
-                  muted={outputMuted}
                   borderColor={game.engine === "iframe-quest" ? colorForPeerId(pid) : undefined}
                 />
               ))
@@ -443,32 +520,25 @@ export function CallView() {
           </div>
         )}
 
-        {/* Main area: the mirrored board, the multi-participant video layout, or
-            the game surface. */}
+        {/* Main area: the student's screen (alone or beside their camera), the
+            multi-participant video layout, or the game surface. */}
         <div className="relative flex-1 min-h-0 flex items-center justify-center">
           {isActive && !game ? (
-            viewBoard && mirroredBoard ? (
-              <MirroredBoardView
-                board={mirroredBoard.board}
-                pageId={mirroredBoard.pageId}
-                rtl={mirroredBoard.rtl}
-                contextButtons={mirroredBoard.contextButtons}
-                quickButtons={mirroredBoard.quickButtons}
-                dwellId={mirroredDwell}
-                selection={mirroredSelection}
-                interactive={interactArmed}
-                onPress={facilitate}
-                onHover={(buttonId) => sendData({ k: "board-dwell", buttonId, at: Date.now() })}
-                className="h-full w-full"
-              />
-            ) : screenStream ? (
-              <div className="relative h-full w-full">
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live screen-share feed */}
-                <video ref={attachScreen} autoPlay playsInline muted className="h-full w-full object-contain" aria-label={t("call.screenLabel")} />
-                <div className="absolute top-2 start-2 rounded bg-sky-600/90 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
-                  {t("call.screenLabel")}
-                </div>
-              </div>
+            showSurface ? (
+              studentView === "split" ? (
+                <StudentSplitView
+                  stream={studentStream}
+                  name={studentName}
+                  surface={shownSurface}
+                  noVideoLabel={t("call.studentView.noCamera")}
+                  resizeLabel={t("call.studentView.resize")}
+                  className="p-2"
+                >
+                  {surfacePane}
+                </StudentSplitView>
+              ) : (
+                surfacePane
+              )
             ) : videoTiles.length > 0 ? (
               <VideoTileLayout
                 tiles={videoTiles}
@@ -615,7 +685,7 @@ export function CallView() {
           type="button"
           size="icon"
           variant={outputMuted ? "destructive" : "secondary"}
-          onClick={() => setOutputMuted((m) => !m)}
+          onClick={() => setOutputMuted(!outputMuted)}
           aria-label={outputMuted ? t("call.unmuteSpeaker") : t("call.muteSpeaker")}
           aria-pressed={outputMuted}
           data-testid="call-toggle-output"
@@ -623,21 +693,9 @@ export function CallView() {
           {outputMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </Button>
 
-        {/* See the student's screen (their mirrored board) instead of video. Only
-            offered once a mirror has arrived (a 1:1 student call). */}
-        {isActive && !game && canViewBoard && (
-          <Button
-            type="button"
-            size="icon"
-            variant={viewBoard ? "default" : "secondary"}
-            onClick={() => { setViewBoard((v) => { if (v) setInteractArmed(false); return !v; }); }}
-            aria-label={viewBoard ? t("call.viewVideo") : t("call.viewBoard")}
-            aria-pressed={viewBoard}
-            data-testid="call-toggle-view-board"
-          >
-            <LayoutDashboard className="w-5 h-5" />
-          </Button>
-        )}
+        {/* (Seeing the student's screen is the picker at the top of the panel —
+            video / both / their screen. One owner of that state, and it has to
+            offer three choices, which an icon toggle cannot.) */}
 
         {/* Ask the student device to share its real screen (getDisplayMedia) —
             for anything the board mirror can't show. */}

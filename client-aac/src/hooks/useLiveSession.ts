@@ -17,6 +17,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { getHost } from "@/lib/platform";
 import { getCurrentGps, metersBetween, type GpsReading } from "@/lib/geolocation";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { repairGuessingBoard } from "@/lib/guessing-board-repair";
 
 /** Context passed when guessing is launched from the sentence builder for a slot.
  *  The server uses this to pre-select the top-level guessing category from
@@ -346,6 +348,17 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // guessing_narrow / exit_guessing). Was previously client-owned but
   // every logic tweak required a client rebuild + redeploy.
   const [guessingMode, setGuessingMode] = useState(false);
+  // Registry keys the CURRENT narrowing question offers, mirrored from the
+  // server on every `guessing_mode` push. Used only to repair an inbound
+  // board (see `repairGuessingBoard`) — a ref, not state, because nothing
+  // renders from it and a re-render per narrowing turn would reset dwell.
+  const guessingOfferedKeysRef = useRef<string[]>([]);
+  // `handleServerMessage` is memoized on an audio-only dep list; holding t() in
+  // a ref keeps the repair using the CURRENT language without widening those
+  // deps (which would re-bind the WebSocket listener on every language change).
+  const { t } = useLanguage();
+  const tRef = useRef(t);
+  tRef.current = t;
   const [constructionSuggestions, setConstructionSuggestions] = useState<
     import("./dual-agent-types").ConstructionSuggestionsClient | null
   >(null);
@@ -745,7 +758,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "board":
-          onBoardUpdateRef.current?.(msg.data);
+          // Two jobs, both at ingest so EVERY surface gets them (AppMiniBoard —
+          // the strip beside an open app — renders `label` straight through and
+          // localizes nothing):
+          //   1. Registry suggestion buttons arrive with the server's English
+          //      `labelEn`; swap in the translation (and `spokenText`, which
+          //      AppMiniBoard speaks).
+          //   2. While a narrowing question is live, re-tag any button
+          //      BoardManager wrote as an offered option's localized label so it
+          //      routes as a `guessing_press` rather than a plain utterance, and
+          //      collapse the duplicate left beside the server-injected key.
+          onBoardUpdateRef.current?.(
+            repairGuessingBoard(msg.data, guessingOfferedKeysRef.current, tRef.current),
+          );
           break;
 
         case "input_glyphs":
@@ -1217,6 +1242,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // is flip a boolean so UI surfaces (quick-button highlight,
           // sentence-builder Find-word highlight) reflect the current mode.
           setGuessingMode(msg.active ?? false);
+          guessingOfferedKeysRef.current = msg.active && Array.isArray(msg.offeredKeys)
+            ? msg.offeredKeys
+            : [];
           break;
 
         case "construction_suggestions": {

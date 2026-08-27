@@ -126,7 +126,7 @@ export type CallClientCommand =
   | { type: "call:focus"; callId: string; to: string | null } // caller declares who they're addressing (a remote personId), or null for everyone
   | { type: "call:conversation"; join: boolean; callId: string } // non-student caller joins/leaves the conversation room for the call (so they appear in AAC rosters + receive roster/focus)
   | { type: "call:utterance"; callId: string; text: string } // non-student caller's Web-Speech transcript → published into the conversation room (primary path)
-  | { type: "call:audio"; callId: string; chunk: string; sampleRate: number; lang?: string } // FALLBACK: non-student caller's mic PCM (base64 LINEAR16 mono @ sampleRate) → server Google Cloud STT → published into the conversation room
+  | { type: "call:audio"; callId: string; chunk: string; sampleRate: number; lang?: string; t?: number } // A non-student caller's mic PCM (base64 LINEAR16 mono @ sampleRate) → in-region Google Cloud STT → published into the conversation room. THE transcription path (browser Web Speech was removed: it left the BAA region and drove an unwinnable echo guard). `t` is the SENDER's clock when the chunk was produced — deltas only, so skew is irrelevant; it lets the server tell a client that stopped producing audio apart from audio that arrived late.
   | { type: "call:leave"; callId: string };
 
 // Server → client call events (delivered on call:<callId> or call:person:<id>).

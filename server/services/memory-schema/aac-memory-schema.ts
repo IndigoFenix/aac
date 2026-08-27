@@ -1105,9 +1105,16 @@ You have one fixed AI voice. NEVER imitate, mimic, or play back the voice of any
 export function buildMonitorSystemPrompt(
   student: { name: string; aacSettings?: { chatAgentPrompt?: string[] | string | null; autoAacPrompt?: string[] | string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
   muteState: 'unmuted' | 'muted' = 'unmuted',
-  interactivePrompt?: string,
   availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
 ): string {
+  // NOTE (2026-08-27): this prompt used to quote the ENTIRE Interactive-Agent
+  // system prompt (~52k chars ≈ 13k tokens, about half of every Monitor
+  // round) so the Monitor could emit [UPDATE_PROMPT]. Nothing in the 4-agent
+  // system consumes that directive — the legacy InteractiveAgent it updated
+  // is never started — so both the quote and the directive are gone. The
+  // memory rules below are written for STATIC prompt mode (schema only, data
+  // via manageMemory view), which is what keeps this prompt byte-identical
+  // across rounds and runs so the prompt cache hits.
   const personaPrompt = composeAacPersona({
     custom: student.aacSettings?.chatAgentPrompt,
     auto: student.aacSettings?.autoAacPrompt,
@@ -1134,8 +1141,8 @@ Your responsibilities:
 
 ## Efficiency Rules
 - Do NOT browse memory for the sake of it. Only view paths that are directly relevant to the pending messages you are reviewing.
-- Student_Notes and other writable fields are ALREADY VISIBLE in the memory section of this prompt. Do NOT use view operations to re-read data that is already shown above.
-- Only use view operations for paths explicitly marked as "hidden" or "may contain items — view to load".
+- Memory DATA is not rendered in this prompt — only its schema is. View the few paths the pending messages actually call for (usually /Student_Notes; /Context_Progress when goals matter; a contact only when that person is involved) and nothing else.
+- Data you have already viewed this session stays in your earlier tool responses. Do NOT view the same path twice.
 - Combine multiple operations in a single manageMemory call when possible (e.g., view + delete + add in one call).
 - After making your memory updates, respond immediately with your text output. Do not make additional view calls to verify your changes.
 
@@ -1166,11 +1173,8 @@ Available read-only context paths (view only when relevant):
 ## Guiding the Interactive Agent
 The Interactive Agent interacts with the user, but lacks the ability to track long-term memory or understand complex context.
 If you notice something important that the Interactive Agent seems to be missing, or if you have a suggestion for how it could be more helpful, inject commands into the conversation to guide the Interactive Agent's behavior and help it better support the user.
-You can inject the following commands (they will be forwarded to the Interactive Agent):
-- [CONTEXT]...[/CONTEXT] — Inject guidance for the Interactive Agent. This is the PRIMARY way to influence its behavior. Use this for all instructions, corrections, and suggestions. Your context injections are sent directly to the AI during the live session.
-- [UPDATE_PROMPT]...[/UPDATE_PROMPT] — Update the Interactive Agent's system prompt. NOTE: This only takes effect after a reconnection, NOT immediately. For immediate guidance, ALWAYS use [CONTEXT] instead.
-
-IMPORTANT: Always use [CONTEXT] for actionable guidance. [UPDATE_PROMPT] is only for permanent changes that should persist across reconnections.
+You can inject the following command (it is forwarded to the Interactive Agent):
+- [CONTEXT]...[/CONTEXT] — Inject guidance for the Interactive Agent. This is the ONLY way to influence its behavior. Use it for all instructions, corrections, and suggestions. Your context injections are sent directly to the AI during the live session.
 
 ${modeNote}
 
@@ -1189,10 +1193,6 @@ Example:
 This helps the Interactive Agent know when your guidance is needed, without requiring you to check in on every turn.
 
 `
-
-  if (interactivePrompt) {
-    prompt += `\n## Interactive Agent's Current Prompt\n<quote>\n${interactivePrompt}\n</quote>`;
-  }
 
   // Dynamic board generation section
   if (student.aacSettings?.dynamicBoardsEnabled) {

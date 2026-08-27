@@ -123,6 +123,27 @@ describe('Monitor history ownership (state.history vs log)', () => {
       expect(state.summarizedMsgCount).toBe(4);
     });
 
+    it('always writes the Monitor into STATIC prompt mode (the prompt-cache precondition)', async () => {
+      // With `memoryState: {}` the memory section re-rendered after every
+      // manageMemory op, the Monitor's system prompt changed between rounds,
+      // and Claude's prompt cache never read (2026-08-27: cache_read 0 on
+      // every run). Legacy rows carry `{}`; a save must overwrite it.
+      const id = await insertSession({
+        state: { history: CULLED, conversationSummary: MONITOR_SUMMARY, memoryState: {} },
+        log: FULL,
+      });
+
+      await save(makeState(id, FULL));
+      const first = await readRow(id);
+      expect(first.state.memoryState).toEqual({ visible: [], page: {}, staticPromptMode: true });
+
+      // And it stays static on the next save, whatever the prior row held.
+      await save(makeState(id, FULL, { sessionSummary: 'later' }));
+      const second = await readRow(id);
+      expect(second.state.memoryState.staticPromptMode).toBe(true);
+      expect(second.state.history).toEqual(CULLED);
+    });
+
     it('does not leak the rolling session summary into the framework field', async () => {
       // `conversationSummary` is the chat framework's field and lands in the
       // system prompt. Feeding it the rolling session summary (which updates

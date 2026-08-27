@@ -31,6 +31,25 @@ export const CATEGORY_VALUES: GuessingCategory[] = [
 const kindIs = (value: string) => (s: GuessingModeState) =>
   isDominant(s, "things.kind", value);
 
+/**
+ * Kinds that instantiate their OWN copy of `PLACE_CLUSTER` below. While one of
+ * these leads `things.kind`, the generic `things.*` place instance stands down
+ * so the user isn't asked the same five-button "where is it?" twice in a row
+ * (and then "which room" twice). Add a kind here whenever you give it its own
+ * place instance.
+ */
+const KINDS_WITH_OWN_PLACE_CLUSTER = ["animal"];
+const kindHasOwnPlaceCluster = (s: GuessingModeState): boolean =>
+  KINDS_WITH_OWN_PLACE_CLUSTER.some((k) => isDominant(s, "things.kind", k));
+
+/** Gate for the generic `things` place cluster. Standing it down is about not
+ *  ASKING the same question twice — so it is per-DIMENSION: a dim the user
+ *  already answered stays applicable (otherwise `buildStateInjection` drops its
+ *  value from the `Known:` line and the fact is silently lost), while its
+ *  unanswered siblings stand down in favour of the animal instance. */
+const genericPlaceDimApplies = (s: GuessingModeState, local: string): boolean =>
+  !kindHasOwnPlaceCluster(s) || s.dimensions[`things.${local}`]?.lastPressedTurn != null;
+
 // ─── things ────────────────────────────────────────────────────────────────
 const THINGS: DimensionDef[] = [
   {
@@ -48,9 +67,17 @@ const THINGS: DimensionDef[] = [
     subquestionLabel: "what kind of thing",
   },
   // Universal "where is it found?" — reused place cluster.
-  ...instantiate(PLACE_CLUSTER, "things", { focusLabel: "where you find it" }),
+  ...instantiate(PLACE_CLUSTER, "things", {
+    // Only the ENTRY question is renamed; "which room" / "where at school" /
+    // "which kind of nature place" stay as themselves.
+    labelOverrides: { where_found: "where you find it" },
+    // Once the kind has its OWN place cluster (animal), this generic one is
+    // redundant — leaving both live asked the identical five-button question
+    // twice in a row, then "which room" twice.
+    baseApplicable: genericPlaceDimApplies,
+  }),
   // Universal "is it related to one of these?" — reused theme cluster.
-  ...instantiate(THEME_CLUSTER, "things", { focusLabel: "is it related to one of these" }),
+  ...instantiate(THEME_CLUSTER, "things"),
   // Descriptive facts — low priority, rarely suggested, but sharpen the guess.
   {
     id: "things.size",
@@ -59,6 +86,7 @@ const THINGS: DimensionDef[] = [
     role: "descriptive",
     priority: 4,
     values: ["tiny", "medium", "big"],
+    subquestionLabel: "how big it is",
   },
   {
     id: "things.color",
@@ -67,6 +95,7 @@ const THINGS: DimensionDef[] = [
     role: "descriptive",
     priority: 2,
     values: ["red", "orange_c", "yellow", "green", "blue", "purple", "pink", "brown", "black", "white"],
+    subquestionLabel: "what colour it is",
   },
   {
     id: "things.real_or_imagined",
@@ -75,6 +104,7 @@ const THINGS: DimensionDef[] = [
     role: "descriptive",
     priority: 3,
     values: ["real_thing", "from_a_show"],
+    subquestionLabel: "real or from a show",
   },
   {
     id: "things.where_known",
@@ -83,12 +113,13 @@ const THINGS: DimensionDef[] = [
     role: "descriptive",
     priority: 2,
     values: ["real_life", "on_screen_known", "in_a_book"],
+    subquestionLabel: "where you know it from",
   },
 
   // ── kind=animal ──
   ...instantiate(PLACE_CLUSTER, "animal", {
     baseApplicable: kindIs("animal"),
-    focusLabel: "where this animal lives",
+    labelOverrides: { where_found: "where this animal lives" },
   }),
   {
     id: "animal.covering",
@@ -130,6 +161,7 @@ const THINGS: DimensionDef[] = [
     priority: 3,
     values: ["hot", "warm", "cold"],
     applicableWhen: kindIs("food"),
+    subquestionLabel: "hot or cold",
   },
   {
     id: "food.texture",
@@ -155,7 +187,7 @@ const THINGS: DimensionDef[] = [
   // ── kind=clothes ──
   ...instantiate(BODY_PART_CLUSTER, "clothes", {
     baseApplicable: kindIs("clothes"),
-    focusLabel: "where it is worn",
+    labelOverrides: { part: "where it is worn" },
   }),
   {
     id: "clothes.when",
@@ -251,10 +283,10 @@ const THINGS: DimensionDef[] = [
 
 // ─── actions ─────────────────────────────────────────────────────────────
 const ACTIONS: DimensionDef[] = [
-  ...instantiate(ACTION_CLUSTER, "actions", { focusLabel: "what kind of action" }),
+  ...instantiate(ACTION_CLUSTER, "actions"),
   // "is it related to one of these?" — reused theme cluster (e.g. a sport, a
   // music activity, a game). Same registry entries as things.theme.
-  ...instantiate(THEME_CLUSTER, "actions", { focusLabel: "is it related to one of these" }),
+  ...instantiate(THEME_CLUSTER, "actions"),
 ];
 
 // ─── people ──────────────────────────────────────────────────────────────
@@ -282,7 +314,7 @@ const PEOPLE: DimensionDef[] = [
 
 // ─── places ──────────────────────────────────────────────────────────────
 const PLACES: DimensionDef[] = [
-  ...instantiate(PLACE_CLUSTER, "places", { focusLabel: "which place" }),
+  ...instantiate(PLACE_CLUSTER, "places", { labelOverrides: { where_found: "which place" } }),
   {
     id: "places.activity",
     cluster: "activity",
@@ -296,7 +328,7 @@ const PLACES: DimensionDef[] = [
 
 // ─── feelings ──────────────────────────────────────────────────────────────
 const FEELINGS: DimensionDef[] = [
-  ...instantiate(FEELING_CLUSTER, "feelings", { focusLabel: "which feeling" }),
+  ...instantiate(FEELING_CLUSTER, "feelings"),
 ];
 
 // ─── time ────────────────────────────────────────────────────────────────

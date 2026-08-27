@@ -13,6 +13,7 @@ import {
   creditsForModelUsage,
   creditsForLiveUsage,
   creditsForLiveUsageByModality,
+  creditsForTtsUsage,
   type LiveUsageBreakdown,
 } from "../services/chat/cost-helpers.js";
 
@@ -67,6 +68,29 @@ describe("creditsForModelUsage — OpenAI cache accounting", () => {
   });
 });
 
+describe("catalog rates — pinned to the published prices (audit 2026-08-27)", () => {
+  // The ledger under-counted ~40% for months because these constants drifted
+  // from the price lists. Pin them so a stale catalog fails loudly.
+  it("bills gemini-2.5-flash at $0.30 in / $2.50 out, cached reads at 0.1x", () => {
+    // ai.google.dev/gemini-api/docs/pricing — not the 2.0 Flash $0.15/$0.60.
+    const FLASH_IN = 0.30 / 1e6, FLASH_OUT = 2.50 / 1e6;
+    expect(creditsForModelUsage("gemini", "gemini-2.5-flash", 1_000_000, 1_000_000, 0, 0)).toBeCloseTo(2.80, 9);
+    // Gemini prompt_tokens INCLUDES cached reads; cached portion @ $0.03/1M.
+    const cost = creditsForModelUsage("gemini", "gemini-2.5-flash", 1000, 200, 400, 0);
+    expect(cost).toBeCloseTo((1000 - 400) * FLASH_IN + 400 * FLASH_IN * 0.1 + 200 * FLASH_OUT, 12);
+  });
+
+  it("bills claude-haiku (Haiku 4.5) at $1.00 in / $5.00 out", () => {
+    expect(creditsForModelUsage("claude", "claude-haiku", 1_000_000, 1_000_000, 0, 0)).toBeCloseTo(6.0, 9);
+  });
+
+  it("never charges ElevenLabs TTS — it runs on the student's own account", () => {
+    expect(creditsForTtsUsage("elevenlabs", 5000)).toBe(0);
+    // Google TTS is ours: $0.004 per 1k chars.
+    expect(creditsForTtsUsage("google", 1000)).toBeCloseTo(0.004, 12);
+  });
+});
+
 describe("creditsForModelUsage — unknown model fallback", () => {
   it("falls back to Claude-Haiku rates (not gpt-4o-mini) for an unrecognized model", () => {
     // Unknown id → fallback. Expect the catalog's Haiku rate, NOT the old gpt-4o-mini $0.15/$0.60.
@@ -92,7 +116,7 @@ describe("creditsForLiveUsageByModality — Phase 0 cost measurement", () => {
   it("splits credits per modality at the right rates", () => {
     const s = creditsForLiveUsageByModality("gemini", LIVE_MODEL, usage);
     expect(s.textIn).toBeCloseTo((5000 - 2000) * T_IN, 12);     // fresh text only
-    expect(s.cachedIn).toBeCloseTo(2000 * T_IN * 0.5, 12);      // cached @ 0.5x (gemini)
+    expect(s.cachedIn).toBeCloseTo(2000 * T_IN * 0.1, 12);      // cached @ 0.1x (gemini, same as the HTTP path)
     expect(s.nonTextIn).toBeCloseTo(8000 * NT_IN, 12);          // audio/image @ audio rate
     expect(s.textOut).toBeCloseTo(300 * T_OUT, 12);
     expect(s.audioOut).toBeCloseTo(0, 12);

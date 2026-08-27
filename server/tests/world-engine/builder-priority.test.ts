@@ -148,6 +148,51 @@ describe("a place is not a thing you want (⑬)", () => {
     const all = builderSurfaceFor("you + see", { nouns: NOUNS, capacity: CAPACITY }).buttons;
     expect(all.some((b) => kindOf(b.key) === "place")).toBe(true);
   });
+
+  // THE ANIMAL ALLOWANCE (2026-08-27). The animals went from a handful to
+  // fifty-three, and a band that offers BODIES offers all of them: the `see`
+  // board filled all fifty-four buttons with creatures and kept not one of the
+  // places the law above is about. `INLINE_ANIMALS` is the same answer
+  // `DESIRE_PEOPLE` gives one band over — seat the best, defer the rest to the
+  // foot of the board, drop nothing.
+  it("a band seats its BEST animals and defers the rest — never the whole zoo", () => {
+    const all = builderSurfaceFor("you + see", { nouns: NOUNS, capacity: CAPACITY }).buttons.map((b) => b.key);
+    const page = all.slice(0, BUILDER_ITEMS_WITH_MORE);
+    const animalsOn = (ks: string[]) => ks.filter((k) => kindOf(k) === "creature" && isAnimal(k));
+    // Page one is not a zoo…
+    expect(animalsOn(page).length).toBeLessThanOrEqual(12);
+    // …the ones it does seat are the vocabulary's own best (dog and cat, never
+    // the gorilla first)…
+    expect(animalsOn(page)).toContain("dog");
+    expect(animalsOn(page)).not.toContain("gorilla");
+    // …the room the allowance frees goes to the OTHER things `see` takes: the
+    // board that was sixty creatures is now people, animals, plants and every
+    // place the world knows.
+    expect(all.filter((k) => kindOf(k) === "place").length).toBeGreaterThan(15);
+    // The deferred ones fall to the foot of the band, which at this budget is
+    // off the flat grid — and that is the whole promise of the chips: the
+    // [animals] chip opens every last one in a single press.
+    expect(all).not.toContain("gorilla");
+    const chip = builderSurfaceFor("you + see", { nouns: NOUNS, capacity: CAPACITY, page: BUILDER_ITEMS_WITH_MORE })
+      .groups?.find((g) => g.id === "animals");
+    expect(chip).toBeDefined();
+    const opened = builderSurfaceFor("you + see", { nouns: NOUNS, capacity: CAPACITY, group: "animals" })
+      .buttons.map((b) => b.key);
+    expect(opened.length).toBeGreaterThan(40);
+    expect(opened).toContain("gorilla");
+  });
+
+  it("THE MEMORY OUTRANKS THE ALLOWANCE — a child's own animal is never deferred", () => {
+    // Without this, a vocabulary the child never chose would page their own
+    // animal off the board behind forty they have never named.
+    const mem = noteUtterance(
+      noteUtterance(emptyRecency(), parseSentence("i_me + want + gorilla")),
+      parseSentence("i_me + want + gorilla"),
+    );
+    const with_ = builderSurfaceFor("you + see", { nouns: NOUNS, capacity: CAPACITY, recency: mem })
+      .buttons.map((b) => b.key);
+    expect(with_.slice(0, BUILDER_ITEMS_WITH_MORE)).toContain("gorilla");
+  });
 });
 
 describe("what a verb's object may BE (VERB_OBJECT_CLASSES)", () => {

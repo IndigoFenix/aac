@@ -3896,6 +3896,20 @@ export const ru = {
     everyone: "Все",
     speakTo: "Говорить с",
     isTalkingToYou: "говорит с вами",
+    studentView: {
+      board: "Экран",
+      label: "Их экран",
+      resize: "Изменить размер камеры",
+      split: "Оба",
+      video: "Видео",
+      noCamera: "Их камера выключена",
+    },
+    surface: {
+      app: "Приложение",
+      board: "Доска",
+      builder: "Конструктор предложений",
+      game: "Игра",
+    },
   },
 
   personChat: {

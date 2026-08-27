@@ -603,6 +603,9 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => setVoiceEnabled(!voiceEnabled)}
                     className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${voiceEnabled ? 'bg-white/20' : ''}`}
+                    // MASTER INPUT for the whole app: mic off means NO audio
+                    // gets in — not the assistant's listening, not a call.
+                    // CallContext mirrors this onto the call microphone.
                     title={voiceEnabled ? t('status.disableAudioCapture') : t('status.enableAudioCapture')}
                   >
                     {voiceEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
@@ -613,6 +616,10 @@ export function DualAgentConversationBox({
                     size="sm"
                     onClick={() => setAudioEnabled(!audioEnabled)}
                     className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
+                    // MASTER OUTPUT for the whole app: speakers off means NO
+                    // audio comes out — the assistant's voice AND the other
+                    // person on a call. CallContext mirrors this onto the call
+                    // audio sinks.
                     title={audioEnabled ? t('conversation.muteAudio') : t('conversation.unmuteAudio')}
                   >
                     {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}

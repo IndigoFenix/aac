@@ -95,6 +95,13 @@ export interface PlanetSurface {
    *  coverage below the mesh's resolution, same law as the river paint. The
    *  index starts empty; the host merges route sets as they appear. */
   roadTintAt?(dir: Vec3, vertSpanM: number, rgb: [number, number, number]): void;
+  /** FIELD RECOLOR (planet/field-paint.ts): blends tilled-field colour into
+   *  a vertex colour where `dir` lies inside a painted farm rect — true
+   *  extent, coverage-faded below the mesh's resolution, the road paint's
+   *  own law. Painted BEFORE rivers and roads so a channel or lane crossing
+   *  a field reads as the crossing. The index starts empty; the host sets a
+   *  town's rects when its plan resolves. */
+  fieldTintAt?(dir: Vec3, vertSpanM: number, rgb: [number, number, number]): void;
   /** Vertex color for an elevation at a direction (dir enables field-driven
    *  tinting — fertility greens, ore dust). Writes into `out`. */
   colorAt(h: number, dir: Vec3, out: [number, number, number]): void;

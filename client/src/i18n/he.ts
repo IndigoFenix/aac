@@ -3896,6 +3896,20 @@ export const he = {
     everyone: "כולם",
     speakTo: "דבר עם",
     isTalkingToYou: "מדבר אליך",
+    studentView: {
+      board: "מסך",
+      label: "המסך שלהם",
+      resize: "שינוי גודל המצלמה",
+      split: "שניהם",
+      video: "וידאו",
+      noCamera: "המצלמה שלהם כבויה",
+    },
+    surface: {
+      app: "אפליקציה",
+      board: "לוח",
+      builder: "בונה המשפטים",
+      game: "משחק",
+    },
   },
 
   personChat: {

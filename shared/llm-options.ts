@@ -215,8 +215,12 @@ export const MODEL_OPTIONS: ModelOption[] = [
     displayName: "Gemini 2.5 Flash",
     description: "Google's fastest model. Great for real-time use.",
     tier: "economy",
-    inputCostPer1M: 0.15,
-    outputCostPer1M: 0.60,
+    // Published paid-tier rates (ai.google.dev/gemini-api/docs/pricing,
+    // verified 2026-08-27). These sat at the 2.0 Flash rates ($0.15/$0.60)
+    // until then, under-billing every Board Manager / economy-Observer turn
+    // by 2x on input and 4x on output.
+    inputCostPer1M: 0.30,
+    outputCostPer1M: 2.50,
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: true,
