@@ -177,7 +177,7 @@ describe("the surface tint backs the rivers without flooding the land", () => {
       settle: true, radius: 6_371_000,
       founding: { threshold: 100, radius: 2, minSpacing: 6, maxHarvest: 600 },
     },
-    initialFocus: null, avatar: false, avatarSpecies: "human",
+    initialFocus: null, avatar: false, avatarSpecies: "human", mods: [],
     canFly: false, creativeMode: false, entities: null,
   };
   const built = buildPlanetWorld(game);

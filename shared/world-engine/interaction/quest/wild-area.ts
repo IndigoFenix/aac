@@ -1151,9 +1151,15 @@ export function wildSourcePartner(
  *
  * `shelf` is the source's BOUNDARY SHELF, the live map a draw lands in and a leg
  * ships out of: the exact counterpart of a condensed town's `partnerStock`
- * shelf, filled by `drawWildArea` where the town's is filled by a mint. No
- * `at`: like a partner town's endpoint this is abstract and scheduled-only —
- * you do not walk to a region.
+ * shelf, filled by `drawWildArea` where the town's is filled by a mint.
+ *
+ * ⚖️ #44 REVISION of "you do not walk to a region": you still do not walk
+ * INTO one — but you walk to its EDGE, where the cut goods wait at the road.
+ * `at` is that shelf point (the record's rect edge toward the caller's own
+ * gate), so a walked haul can load what a draw has felled instead of failing
+ * `no-endpoint` and dead-ending the whole founding at "there is none to
+ * fetch". ABSENT `at` keeps the old contract to the byte (a recordless shelf
+ * has no edge to stand at — scheduled-only, exactly as before).
  *
  * KEYED, NOT RECORDED, on purpose: the shelf OUTLIVES the record. Timber
  * already cut and waiting at the road is not standing timber, so an area that
@@ -1161,8 +1167,19 @@ export function wildSourcePartner(
  * still owed against it goes on shipping instead of failing for want of an
  * endpoint.
  */
-export function wildSourceEndpoint(key: string, shelf: Record<string, number>): StockEndpoint {
-  return { id: wildAreaId(key), kind: "wild", capacity: 0, stack: shelf, owner: null };
+export function wildSourceEndpoint(
+  key: string,
+  shelf: Record<string, number>,
+  at?: { x: number; y: number },
+): StockEndpoint {
+  return {
+    id: wildAreaId(key),
+    kind: "wild",
+    capacity: 0,
+    stack: shelf,
+    owner: null,
+    ...(at ? { at } : {}),
+  };
 }
 
 // ── The registered codec (F1 — fold-round.md) ───────────────────────────────

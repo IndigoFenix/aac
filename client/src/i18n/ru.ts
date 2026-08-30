@@ -2608,6 +2608,8 @@ export const ru = {
     allowNotesDesc: "При отключении ИИ не может читать или записывать заметки сессий (память не сохраняется вне журналов сообщений)",
     shareMonitorNotesWithInstitute: "Делиться заметками АДК с моим учреждением",
     shareMonitorNotesWithInstituteDesc: "Когда включено, клиницисты этого учреждения видят заметки, записанные во время сеансов АДК (интересы, предпочтения, наблюдения). Отключите, чтобы требовался явный доступ через общий доступ.",
+    deviceLocation: "Местоположение устройства",
+    deviceLocationDesc: "Разрешает устройству сообщать, где оно находится, чтобы сеанс распознавал зарегистрированное место (школа, клиника, дом), а приложение ресторанов находило что-то поблизости. Выключено — местоположение у устройства никогда не запрашивается.",
     aiLearning: "Настройки обучения ИИ",
     aiLearningDesc: "Что ИИ может записывать самостоятельно во время сеансов.",
     autoAddContacts: "Запоминать новые контакты",
@@ -3658,6 +3660,7 @@ export const ru = {
       "public-symbols": "Публичные символы",
       crm: "CRM-чат",
       admins: "Администраторы",
+      "security-incidents": "Security Incidents", // TODO-i18n
     },
     admins: {
       title: "Администраторы",
@@ -3684,6 +3687,88 @@ export const ru = {
       updatedToast: "Администратор обновлён",
       deletedToast: "Администратор удалён",
       errorGeneric: "Что-то пошло не так",
+    },
+    incidents: {
+      addNote: "Add note", // TODO-i18n
+      clockStartsNow: "The notification clock starts now, from the moment of discovery.", // TODO-i18n
+      column: {
+        customerDue: "Customer notice due", // TODO-i18n
+        discovered: "Discovered", // TODO-i18n
+        reference: "Reference", // TODO-i18n
+        reportDue: "Report due", // TODO-i18n
+        severity: "Severity", // TODO-i18n
+        status: "Status", // TODO-i18n
+        title: "Title", // TODO-i18n
+      },
+      empty: "No incidents recorded.", // TODO-i18n
+      event: {
+        closed: "Closed", // TODO-i18n
+        deadline_missed: "Deadline missed", // TODO-i18n
+        deadline_warning: "Deadline approaching", // TODO-i18n
+        note: "Note", // TODO-i18n
+        notification_sent: "Notification sent", // TODO-i18n
+        opened: "Opened", // TODO-i18n
+        status_change: "Status changed", // TODO-i18n
+      },
+      field: {
+        affectedScope: "What data was affected", // TODO-i18n
+        description: "What happened", // TODO-i18n
+        endedAt: "Event ended", // TODO-i18n
+        kind: "Type", // TODO-i18n
+        locale: "Letter language", // TODO-i18n
+        recipients: "Recipients", // TODO-i18n
+        severity: "Severity", // TODO-i18n
+        status: "Status", // TODO-i18n
+        target: "Notify", // TODO-i18n
+        title: "Title", // TODO-i18n
+      },
+      fillTokens: "Fill in the remaining placeholders before sending:", // TODO-i18n
+      hideClosed: "Hide closed", // TODO-i18n
+      kind: {
+        phi_breach: "Personal data breach", // TODO-i18n
+        security_breach: "Security breach", // TODO-i18n
+        vendor_incident: "Sub-processor incident", // TODO-i18n
+      },
+      locale: {
+        en: "English", // TODO-i18n
+        he: "Hebrew", // TODO-i18n
+      },
+      markEnded: "Mark event ended", // TODO-i18n
+      notify: "Notify", // TODO-i18n
+      notifyFailed: "Notification could not be delivered", // TODO-i18n
+      notifySent: "Notification sent", // TODO-i18n
+      obligation: {
+        customer: "Customer (contractual)", // TODO-i18n
+        investigation_report: "Investigation report", // TODO-i18n
+        regulator: "Regulator", // TODO-i18n
+      },
+      opened: "Incident opened", // TODO-i18n
+      openFailed: "Could not open the incident", // TODO-i18n
+      openIncident: "Open incident", // TODO-i18n
+      overdueBanner: "{count} incident(s) have a deadline that has passed with nothing sent.", // TODO-i18n
+      overdueList: "Past due:", // TODO-i18n
+      preview: "Preview", // TODO-i18n
+      recipientsPlaceholder: "Comma-separated email addresses", // TODO-i18n
+      sendFailedDetail: "Could not reach:", // TODO-i18n
+      sendForReal: "Send now", // TODO-i18n
+      sentAt: "sent", // TODO-i18n
+      severity: {
+        critical: "Critical", // TODO-i18n
+        high: "High", // TODO-i18n
+        low: "Low", // TODO-i18n
+        medium: "Medium", // TODO-i18n
+      },
+      showClosed: "Show closed", // TODO-i18n
+      status: {
+        closed: "Closed", // TODO-i18n
+        contained: "Contained", // TODO-i18n
+        dismissed: "Dismissed", // TODO-i18n
+        notified: "Notified", // TODO-i18n
+        open: "Open", // TODO-i18n
+      },
+      subtitle: "Breach register and notification deadlines.", // TODO-i18n
+      timeline: "Timeline", // TODO-i18n
+      title: "Security Incidents", // TODO-i18n
     },
   },
 
@@ -3910,6 +3995,11 @@ export const ru = {
       builder: "Конструктор предложений",
       game: "Игра",
     },
+    facilitatorRefused: {
+      consent: "Сопровождаемая коммуникация отключена для этого ученика",
+      unavailable: "Этой кнопки больше нет на их экране",
+    },
+    indicateHint: "Удерживайте кнопку, чтобы указать на неё",
   },
 
   personChat: {

@@ -349,6 +349,16 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   // PHI leaving the system as a file (board export, CSV, backup). Subject is
   // the exported object; subject2 the student. Details carry `{ format }`.
   "export",
+  // Security/privacy incident register (schema.ts `securityIncidents`). Subject
+  // is the incident; subject2 the affected institute when there is exactly one.
+  // The register is itself the evidence we owe a customer after a breach, so
+  // every transition is audited — including the automated ones. Details carry
+  // `{ reference, kind, severity }`, plus `{ from, to }` on a status change and
+  // `{ party, channel }` on a notification.
+  "security_incident_opened",
+  "security_incident_updated",
+  "security_incident_notification_sent",
+  "security_incident_closed",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -372,6 +382,9 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "chat_session",
   // The audit log itself: reading it is a privileged act and is recorded.
   "activity_log",
+  // A row in the security/privacy incident register (schema.ts). Not the
+  // per-student clinical `incident` above — different table, different meaning.
+  "security_incident",
 ]);
 
 // =============================================================================
@@ -748,6 +761,18 @@ export const aacSettings = pgTable("aac_settings", {
   // Cross-institute access still requires a monitor_note standing share
   // regardless of this flag.
   shareMonitorNotesWithInstitute: boolean("share_monitor_notes_with_institute").default(true).notNull(),
+
+  // Whether this student's DEVICE may report its own location. Gates BOTH
+  // consumers: the session-startup/refresh GPS that places the student at a
+  // registered institute location (shared/location-matching.ts), and the venue
+  // lanes' "find somewhere near me" search. Off by default and clinician-only —
+  // a child's whereabouts is not something the AI may switch on for itself, so
+  // this is deliberately absent from the AI-editable whitelists, like
+  // venueMenus and sessionRecording.
+  //
+  // Off is a real off: the client never calls navigator.geolocation at all, so
+  // no OS permission prompt is raised either.
+  deviceLocationEnabled: boolean("device_location_enabled").default(false).notNull(),
 
   // App configuration — per-app settings stored as JSON (e.g. { youtube: { enabled: true }, spotify: { enabled: true } })
   appConfig: jsonb("app_config").default({}),

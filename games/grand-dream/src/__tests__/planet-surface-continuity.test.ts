@@ -33,7 +33,7 @@ function buildEarth() {
     },
     initialFocus: null,
     avatar: false,
-    avatarSpecies: "human",
+    avatarSpecies: "human", mods: [],
     canFly: false,
     creativeMode: false,
     entities: null,

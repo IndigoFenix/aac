@@ -15,7 +15,7 @@ import { useAacCaption } from "./useAacCaption";
 import { API_BASE_URL } from "@/lib/api-base";
 import { apiRequest } from "@/lib/queryClient";
 import { getHost } from "@/lib/platform";
-import { getCurrentGps, metersBetween, type GpsReading } from "@/lib/geolocation";
+import { getCurrentGps, mayReadDeviceLocation, metersBetween, type GpsReading } from "@/lib/geolocation";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { repairGuessingBoard } from "@/lib/guessing-board-repair";
@@ -113,6 +113,11 @@ export interface UseLiveSessionOptions {
   /** Observer asked to re-hear a recent speech clip (Phase 1b). The caller
    *  looks it up in its audio ring buffer and replies via sendAudioClip. */
   onRequestAudioClip?: (clipId: string) => void;
+  /** Per-student `deviceLocationEnabled` (aac_settings). When false — the
+   *  DEFAULT — this hook never calls navigator.geolocation at all, so no OS
+   *  permission prompt is raised and no reading is sent. A child's whereabouts
+   *  is a clinician decision, not a build-time one. */
+  locationEnabled?: boolean;
 }
 
 export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentReturn {
@@ -139,6 +144,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     onFalseWakeReport,
     onSetFidelity,
     onRequestAudioClip,
+    locationEnabled = false,
   } = options;
   const { user, isLoading: isAuthLoading } = useAuth();
   // Stable ref so ws.onopen always reads the latest user
@@ -171,6 +177,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // only re-sent when the device has moved meaningfully.
   const gpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastGpsSentRef = useRef<GpsReading | null>(null);
+  // Read through a ref, not the closure: both GPS call sites live inside
+  // long-lived callbacks, and a clinician can flip the setting mid-session
+  // (the profile refetch re-renders us). The ref is what makes "off" take
+  // effect on the very next poll instead of at the next reconnect.
+  const locationEnabledRef = useRef(locationEnabled);
+  locationEnabledRef.current = locationEnabled;
+  /** Whether we may ask this device where it is, at this instant. The rule
+   *  itself lives in geolocation.ts so the venue lanes share it verbatim. */
+  const mayReadLocation = useCallback(
+    () => mayReadDeviceLocation({ enabled: locationEnabledRef.current, host: getHost() }),
+    [],
+  );
 
   // Debug state
   const [debugData, setDebugData] = useState<Record<string, any>>({});
@@ -1398,13 +1416,17 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   const startGpsWatch = useCallback(() => {
     stopGpsWatch();
-    // iPad has no location usage-description key, so every poll would be a
-    // guaranteed miss — don't run the timer at all. Matches the skip in sendInit.
-    if (getHost() === "capacitor") return;
+    // Location off for this student, or iPad (no usage-description key, so
+    // every poll would be a guaranteed miss) — don't run the timer at all.
+    // Matches the skip in sendInit.
+    if (!mayReadLocation()) return;
     const GPS_REFRESH_MS = 120_000;       // ~ monitor cadence
     const GPS_MOVE_THRESHOLD_M = 40;      // ignore sub-40m jitter
     gpsTimerRef.current = setInterval(async () => {
       if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+      // Re-checked per tick, not just at start: a clinician turning location
+      // off mid-session must stop the polling, not merely stop the sending.
+      if (!mayReadLocation()) return;
       const gps = await getCurrentGps();
       if (!gps) return;
       const last = lastGpsSentRef.current;
@@ -1412,7 +1434,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       lastGpsSentRef.current = gps;
       wsSend({ type: "gps_update", gps });
     }, GPS_REFRESH_MS);
-  }, [wsSend, stopGpsWatch]);
+  }, [wsSend, stopGpsWatch, mayReadLocation]);
 
   // -------------------------------------------------------------------------
   // Initialize — open WebSocket and send initialize message
@@ -1548,15 +1570,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
 
           // Best-effort device location (null if unsupported/denied/timeout).
-          // Skipped outright on iPad: the shell ships no location
+          // Skipped outright when the student's `deviceLocationEnabled` is off
+          // (the default) or on iPad: the shell ships no location
           // usage-description key, so a reading can never succeed there — asking
           // would only burn the timeout budget on every session start, and
           // adding the key would put an OS permission prompt in front of a
           // student who may not be able to answer it.
-          const gps =
-            getHost() === "capacitor"
-              ? null
-              : await settleWithin("GPS read", 10_000, () => getCurrentGps());
+          const gps = !mayReadLocation()
+            ? null
+            : await settleWithin("GPS read", 10_000, () => getCurrentGps());
           if (gps) lastGpsSentRef.current = gps;
 
           // Round-trip the prior sessionId on reconnect so the server resumes
@@ -1655,7 +1677,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       setError("error:CONNECTION_ERROR");
       setIsLoading(false);
     }
-  }, [studentId, muteState, responseMode, debugMode, isInitialized, wsSend, handleServerMessage, startGpsWatch, stopGpsWatch]);
+  }, [studentId, muteState, responseMode, debugMode, isInitialized, wsSend, handleServerMessage, startGpsWatch, stopGpsWatch, mayReadLocation]);
 
   // -------------------------------------------------------------------------
   // Actions — send messages over WebSocket

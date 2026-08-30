@@ -29,6 +29,7 @@ import {
   removeProgram,
   requestAnnex,
   type PendingDemolition,
+  pileEntries,
   type QueuedCraft,
   type SerializedTownDeltas,
 } from "@shared/world-engine/kernel/town/construction.js";
@@ -1303,5 +1304,254 @@ describe("the re-flow's pace is a HAND COUNT, not a clock (scope-unification ⑥
     sweep(2);
     expect(errands).toHaveLength(2);
     expect((session as unknown as { townClock: number }).townClock - firstAt).toBeLessThan(12);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// #43 HOMESTEAD TREADMILL (homestead-defect-round.md ② + ④) — the scarcity
+// laws that stop porters circling the yard crate: ONE open refine row per
+// (head, scope) with a batch-capped bill, the release arm's receive-hold and
+// co-located-ledger rules, and the third refusal state (dead < IMPOSSIBLE <
+// slow) for a spoken structure the whole reachable world cannot supply.
+// ─────────────────────────────────────────────────────────────────────────
+
+import {
+  REFINE_BATCH_UNITS,
+} from "@shared/world-engine/interaction/quest/construction-director.js";
+
+/** A harness whose session can actually SUPPLY materials: one unowned box
+ *  of raw stock, anchored at the origin, visible to `siteMaterialSources`
+ *  (the stubs' nulls otherwise hide every stack). */
+function suppliedHarness(stock: Record<string, number>) {
+  const box: ContainerRecord = { stock } as unknown as ContainerRecord;
+  const h = harness({
+    containerAnchor: (_s: QuestSession, id: string) =>
+      id === "box_test" ? { x: 0, y: 0 } : null,
+  });
+  (h.session as unknown as { containerRecords: Map<string, ContainerRecord> })
+    .containerRecords.set("box_test", box);
+  (h.session as unknown as { meta: { syntax: string } }).meta = { syntax: "b" };
+  return { ...h, box };
+}
+
+describe("#43 ②c/④ — ensureRefineOrders: one open row, batch-capped", () => {
+  it("caps a fresh 120-block bill at REFINE_BATCH_UNITS and never fragments while a row is open", () => {
+    const { play, session, director } = suppliedHarness({ wood: 500 });
+    const r1 = director.ensureRefineOrders(session, { block: 120 });
+    expect(r1.rest).toEqual({});
+    expect(r1.milling).toBe(120);
+    const rows = play.deltas.refineOrders();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.count).toBe(REFINE_BATCH_UNITS);
+    // The measured disease: a second sweep used to post the REMAINDER as a
+    // fresh supply-sized row (four concurrent rows splitting one bill, their
+    // piles all on the yard spot). While a row is open, nothing more posts.
+    const r2 = director.ensureRefineOrders(session, { block: 120 });
+    expect(r2.milling).toBe(120);
+    expect(play.deltas.refineOrders()).toHaveLength(1);
+  });
+
+  it("the remainder re-triggers AFTER the open row commits — sequential batches, never siblings", () => {
+    const { play, session, director } = suppliedHarness({ wood: 500 });
+    director.ensureRefineOrders(session, { block: 120 });
+    const first = play.deltas.refineOrders()[0]!;
+    play.deltas.removeOrder(first.ord); // the commit's own retirement
+    director.ensureRefineOrders(session, { block: 120 - REFINE_BATCH_UNITS });
+    const rows = play.deltas.refineOrders();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.count).toBe(REFINE_BATCH_UNITS);
+    expect(rows[0]!.ord).not.toBe(first.ord); // ordinals never reused
+  });
+});
+
+describe("#43 ②a — infeasibleBillHeads: the state between dead and slow", () => {
+  it("names need and have when the whole chain cannot reach the bill", () => {
+    const { session, director } = suppliedHarness({ wood: 100 });
+    const sources = director.siteMaterialSources(session, { x: 0, y: 0 });
+    const short = director.infeasibleBillHeads(session, { block: 120 }, sources);
+    // 100 wood at the shipped 2:1 mills 50 blocks — impossible, and SAID so
+    // with both numbers (the refusal's actionability law).
+    expect(short).toEqual({ block: { need: 120, have: 50 } });
+  });
+
+  it("stays quiet when supply covers the bill (the control)", () => {
+    const { session, director } = suppliedHarness({ wood: 300 });
+    const sources = director.siteMaterialSources(session, { x: 0, y: 0 });
+    expect(director.infeasibleBillHeads(session, { block: 120 }, sources)).toEqual({});
+  });
+});
+
+describe("#43 ②b — releaseStarvedPile: co-located ledger moves + the receive-hold", () => {
+  /** Two unstaged refine rows on one harness: the donor holding a heap, the
+   *  recipient a gap the heap covers WHOLE — the release's precondition. The
+   *  endpoint map is mutable so the ctx override can be threaded BEFORE the
+   *  ords exist. */
+  function releasePair(donorAt: { x: number; y: number }, rcptAt: { x: number; y: number }) {
+    const endpoints = new Map<string, { at: { x: number; y: number }; stack: Record<string, number> }>();
+    const h = harness({
+      stockEndpointOf: (_s: QuestSession, id: string) => endpoints.get(id) ?? null,
+      // The ledger arm's wake — a host service the default stubs don't carry.
+      bumpStockEpoch: () => {},
+    });
+    expect(h.play.deltas.refineOrders()).toHaveLength(0); // clean slate, or the pins lie
+    const donor = h.play.deltas.postRefineOrder({
+      produces: "block.material_wood", count: 30, costs: { wood: 60 },
+      pile: { wood: 20 }, at: donorAt, startedDay: 0, buildDays: 1,
+    });
+    const rcpt = h.play.deltas.postRefineOrder({
+      produces: "block.material_wood", count: 10, costs: { wood: 20 },
+      pile: {}, at: rcptAt, startedDay: 0, buildDays: 1,
+    });
+    // A third mouth the RECIPIENT could feed after receiving (its 20-wood
+    // gap = exactly the heap) — what makes the receive-hold pin a pin on the
+    // HOLD and not on feasibility. Posted last, so the tie-break (progress,
+    // then ord ascending) always picks `rcpt` for the first release.
+    const third = h.play.deltas.postRefineOrder({
+      produces: "block.material_wood", count: 10, costs: { wood: 20 },
+      pile: {}, at: rcptAt, startedDay: 0, buildDays: 1,
+    });
+    endpoints.set(`orderpile:${donor.ord}`, { at: donorAt, stack: donor.pile! });
+    endpoints.set(`orderpile:${rcpt.ord}`, {
+      at: rcptAt,
+      stack: (rcpt as { pile?: Record<string, number> }).pile ?? {},
+    });
+    endpoints.set(`orderpile:${third.ord}`, {
+      at: rcptAt,
+      stack: (third as { pile?: Record<string, number> }).pile ?? {},
+    });
+    return { ...h, donor, rcpt, third, endpoints };
+  }
+
+  it("piles on the same spot move as ARITHMETIC — heap lands, no agreement, no toast", () => {
+    const at = { x: 5, y: 5 };
+    const { session, play, toasts, director, donor, rcpt } = releasePair(at, {
+      x: at.x + 1,
+      y: at.y + 1,
+    });
+    const before = play.deltas.transfers.all().length;
+    expect(
+      director.releaseStarvedPile(session, `orderpile:${donor.ord}`, "issuer", "haul"),
+    ).toBe(true);
+    // The heap changed COLUMN, not place: recipient's pile holds it, the
+    // donor's is empty, and nothing was posted or announced.
+    expect((rcpt as { pile?: Record<string, number> }).pile).toEqual({ wood: 20 });
+    expect(Object.values(donor.pile ?? {}).reduce((s, n) => s + n, 0)).toBe(0);
+    expect(play.deltas.transfers.all().length).toBe(before);
+    expect(toasts.some((t) => t.includes("🔁"))).toBe(false);
+  });
+
+  it("a pile that just RECEIVED may not donate until the hold lapses", () => {
+    const at = { x: 5, y: 5 };
+    const pair = releasePair(at, { x: at.x + 1, y: at.y + 1 });
+    const { session, director, donor, rcpt } = pair;
+    director.releaseStarvedPile(session, `orderpile:${donor.ord}`, "issuer", "haul");
+    // `third`'s gap is exactly the heap the recipient now holds — without
+    // the hold this donate would fire at once, and the old code shuttled
+    // heaps exactly this way every 20 s gate.
+    expect(
+      director.releaseStarvedPile(session, `orderpile:${rcpt.ord}`, "issuer", "haul"),
+    ).toBe(false);
+    // Past the hold the same call releases — the refusal above was the hold,
+    // not some other precondition.
+    (session as unknown as { taskClock: number }).taskClock +=
+      0.5 * REAL_SCALE.dayLengthS + 1;
+    expect(
+      director.releaseStarvedPile(session, `orderpile:${rcpt.ord}`, "issuer", "haul"),
+    ).toBe(true);
+  });
+
+  it("far-apart piles still WALK the release — an agreement posts and the 🔁 line speaks", () => {
+    const { session, play, toasts, director, donor } = releasePair(
+      { x: 0, y: 0 },
+      { x: 60, y: 0 },
+    );
+    expect(
+      director.releaseStarvedPile(session, `orderpile:${donor.ord}`, "issuer", "haul"),
+    ).toBe(true);
+    expect(
+      play.deltas.transfers.all().some((a) => a.from === `orderpile:${donor.ord}`),
+    ).toBe(true);
+    expect(toasts.some((t) => t.includes("🔁"))).toBe(true);
+  });
+});
+
+// ═══ #44 — RENDERED PILES: the one emitter shape ═══
+// Every site/lot pile row list comes off `pileEntries`, so the drawn goods
+// can never disagree with the ledger that is their whole truth.
+describe("#44 pileEntries (rendered piles)", () => {
+  it("is glyph-sorted, zero-dropped, and deterministic", () => {
+    expect(pileEntries({ wood: 3, "block.material_wood": 2, stone: 0 })).toEqual([
+      { glyph: "block.material_wood", n: 2 },
+      { glyph: "wood", n: 3 },
+    ]);
+    expect(pileEntries({})).toEqual([]);
+    expect(pileEntries(undefined)).toEqual([]);
+  });
+});
+
+// ═══ #44 C — FOLDED REGION RECORDS JOIN THE SUPPLY ═══
+// The ① ruling's law revision at the decision layer: a folded stand counts
+// toward every starved path's arithmetic (siteMaterialSources → the
+// infeasibility refusal), with the boundary shelf + standing stock as the
+// COUNTING stack. Movement stays endpoint-shaped — pinned live in the
+// probe arcs (22 walked hauls off wild:area:grove, record 459→363).
+describe("#44 region records in siteMaterialSources", () => {
+  async function groveRecord(woodTarget: number) {
+    const { condenseWildArea, wildAreaStock } = await import(
+      "@shared/world-engine/interaction/quest/wild-area.js"
+    );
+    const { makeFeature } = await import(
+      "@shared/world-engine/interaction/quest/wilderness.js"
+    );
+    let s = 7;
+    const rand = () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const features = [];
+    let wood = 0;
+    for (let i = 0; wood < woodTarget && i < 200; i++) {
+      const f = makeFeature(`wild:oak_g.${i}`, "oak", { x: 150 + rand() * 20, y: 60 + rand() * 20 }, rand);
+      wood += f.stock.wood ?? 0;
+      features.push(f);
+    }
+    const rec = condenseWildArea({
+      features, now: 0, area: { x: 150, y: 60, w: 30, h: 30 }, seed: 7, key: "grove",
+    });
+    return { rec, wood: wildAreaStock(rec).wood ?? 0 };
+  }
+
+  it("a folded grove joins the source walk and WIDENS the #43 refusal", async () => {
+    const { session, director } = suppliedHarness({ wood: 100 });
+    const { rec, wood } = await groveRecord(200);
+    (session as unknown as { areaRecords: Map<string, unknown> }).areaRecords =
+      new Map([["grove", rec]]);
+    (session as unknown as { partnerStock: Record<string, Record<string, number>> }).partnerStock = {};
+    const sources = director.siteMaterialSources(session, { x: 0, y: 0 });
+    const grove = sources.find((src: { id: string }) => src.id === "wild:area:grove");
+    expect(grove).toBeDefined();
+    expect(grove!.stack.wood).toBe(wood); // standing stock IS the counting stack
+    // 100 local wood alone mills 50 — the pinned IMPOSSIBLE refusal above.
+    // With the grove the chain covers 120 whole blocks: the refusal widens
+    // AUTOMATICALLY, because sources are a parameter.
+    expect(
+      director.infeasibleBillHeads(session, { block: 120 }, sources),
+    ).toEqual({});
+  });
+
+  it("the shelf's cut goods count WITH the standing stock (one source, both halves)", async () => {
+    const { session, director } = suppliedHarness({ wood: 100 });
+    const { rec, wood } = await groveRecord(60);
+    (session as unknown as { areaRecords: Map<string, unknown> }).areaRecords =
+      new Map([["grove", rec]]);
+    (session as unknown as { partnerStock: Record<string, Record<string, number>> }).partnerStock = {
+      "wild:area:grove": { wood: 9 },
+    };
+    const sources = director.siteMaterialSources(session, { x: 0, y: 0 });
+    const grove = sources.find((src: { id: string }) => src.id === "wild:area:grove");
+    expect(grove!.stack.wood).toBe(wood + 9);
+  });
+
+  it("a session with no record map simply has no regions (harness truth)", () => {
+    const { session, director } = suppliedHarness({ wood: 100 });
+    const sources = director.siteMaterialSources(session, { x: 0, y: 0 });
+    expect(sources.every((src: { id: string }) => !src.id.startsWith("wild:area:"))).toBe(true);
   });
 });

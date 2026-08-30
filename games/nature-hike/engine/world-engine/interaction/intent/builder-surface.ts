@@ -47,7 +47,7 @@ import {
   type SurfaceNoun,
 } from "./surface-next.js";
 import { AXIS_WORDS, descriptorAxesFor, type DescriptorAxis } from "../../object-properties.js";
-import { propertiesOf } from "../content/properties.js";
+import { isAnimal, isPlant, propertiesOf } from "../content/properties.js";
 import {
   DEFAULT_ROOM_PROGRAMS,
   DEFAULT_STRUCTURE_PROGRAMS,
@@ -58,7 +58,7 @@ import {
 } from "../../kernel/town/programs.js";
 import { AFFORDANCE_VERBS, buildConcepts } from "../content/concepts.js";
 import { listSpecies } from "../../creatures/species.js";
-import { PLACE_STUBS } from "../content/words.js";
+import { PLACE_STUBS, specWordHeads } from "../content/words.js";
 import { placeGroupOf } from "../content/vocab-order.js";
 import { CORE_PEOPLE } from "../../object-properties.js";
 import { FURNITURE_ITEMS, STATION_ACTS } from "../../kernel/town/stations.js";
@@ -364,12 +364,29 @@ function walkDefaultNouns(): BuilderNounEntry[] {
     );
   }
 
-  // 2. The animals the world actually builds. A species row with `words` is a
-  //    creature a sentence can name (`cat`, `horse`); one without them is a body
-  //    the builder makes, not a word a child says.
+  // 2. The animals. A species row with `words` is a creature a sentence can
+  //    name (`cat`, `horse`, and every `stub` row that ships a word ahead of
+  //    its body plan); one without them is a body the builder makes, not a word
+  //    a child says.
   for (const sp of listSpecies()) {
     if (sp.kind !== "creature" || !sp.words) continue;
     push(entry(sp.id, "creature", ["see", "want", "play", "follow", "help"], []));
+  }
+
+  // 2b. The PLANTS — the same registry, the other kind (2026-08-27). A plant is
+  //    something you SEE, WANT and CUT (the species-kind affordance the concept
+  //    bridge already derives), never something you are handed: an oak is not a
+  //    thing anybody gives you, and the give band read one as an item the
+  //    moment it was filed as one.
+  //
+  //    SAYABLE, not just worded: `tree`'s four lexemes live in `ITEM_WORDS`
+  //    (one definition per head), so a `words`-only test would have left the
+  //    plant word a child was likeliest to reach for off the plant chip.
+  const specHeads = specWordHeads();
+  for (const sp of listSpecies()) {
+    if (sp.kind !== "plant") continue;
+    if (!sp.words && !specHeads.has(sp.id)) continue;
+    push(entry(sp.id, "item", ["see", "want", "cut"]));
   }
 
   // 3. The people a child names. Frame words with no spec row by law, so they
@@ -645,6 +662,13 @@ export const GROUP_LABEL_HEAD: Record<string, string> = {
   creatures: "person",
   places: "place",
   things: "thing",
+  // The LIVING split (2026-08-27). `creatures` keeps the people — the chip that
+  // means "somebody" — and the two kinds of living thing that are NOT somebody
+  // get their own. `plants` is deliberately not the head `plant`: that head is
+  // the VERB (he שותל, es planto), so labelling the chip with it would put "he
+  // is planting" on a category of nouns in three of the four rulesets.
+  animals: "animal",
+  plants: "plants",
   // The place split (2026-08-25) — each id is already a lang-layer word.
   room: "room",
   building: "building",
@@ -653,8 +677,9 @@ export const GROUP_LABEL_HEAD: Record<string, string> = {
 
 /** The surfacer's own noun clustering (surface-next buildGroups), applied to
  *  the FULL noun list for the "things" tab's sub-group chips: one cluster per
- *  object property, plus the kind clusters (creatures / places / plain
- *  things). Deterministic: noun-list order, first appearance first. */
+ *  object property, plus the kind clusters (people / animals / plants / the
+ *  three place kinds / plain things). Deterministic: noun-list order, first
+ *  appearance first. */
 function thingClusters(nouns: BuilderNounEntry[]): Map<string, BuilderNounEntry[]> {
   const clusters = new Map<string, BuilderNounEntry[]>();
   const push = (id: string, n: BuilderNounEntry) => {
@@ -664,9 +689,19 @@ function thingClusters(nouns: BuilderNounEntry[]): Map<string, BuilderNounEntry[
   };
   for (const n of nouns) {
     for (const p of n.properties ?? []) push(p, n);
-    if (n.kind === "creature") push("creatures", n);
+    // THE LIVING SPLIT (2026-08-27) — the same three questions the place split
+    // answered, asked of bodies: `creatures` is the chip that means SOMEBODY,
+    // and an animal is not somebody. Read off the spec registries
+    // (`isAnimal`/`isPlant`), never a word list, so a new species row files
+    // itself.
+    if (n.kind === "creature") push(isAnimal(n.symbol) ? "animals" : "creatures", n);
     else if (n.kind === "place") push(placeGroupOf(n.symbol), n);
-    else if (n.kind === "item" && !(n.properties ?? []).length) push("things", n);
+    else if (n.kind === "item") {
+      // A plant is a plant whatever else it is: `tree` is also timber, and the
+      // property chip it earns there must not cost it the one a child looks for.
+      if (isPlant(n.symbol)) push("plants", n);
+      else if (!(n.properties ?? []).length) push("things", n);
+    }
   }
   return clusters;
 }

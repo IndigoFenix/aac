@@ -13,6 +13,26 @@ export interface GpsReading {
 }
 
 /**
+ * THE one place that decides whether this device may be asked where it is.
+ *
+ * Two independent reasons to say no, and both must live together — they were
+ * previously written out at each call site, which is exactly why the venue
+ * lanes never got the Capacitor guard and could hang forever:
+ *
+ *  - `enabled`: the student's `deviceLocationEnabled` (aac_settings). Off is
+ *    the default. Off means we never call navigator.geolocation at all, so no
+ *    OS permission prompt is raised in front of a child either.
+ *  - `host`: the Capacitor (iPad) shell ships no location usage-description
+ *    key, so a reading can never succeed there — and in that state iPadOS
+ *    WKWebView invokes NEITHER callback. See docs/IPAD_BUILD.md. Drop this half
+ *    only together with adding `NSLocationWhenInUseUsageDescription` in
+ *    scripts/ios-configure.mjs.
+ */
+export function mayReadDeviceLocation(input: { enabled: boolean; host: string }): boolean {
+  return input.enabled === true && input.host !== "capacitor";
+}
+
+/**
  * Get a single GPS reading. Resolves `null` (never rejects) and ALWAYS settles
  * — no geolocation support (e.g. a desktop build without GPS), denied
  * permission, or timeout.

@@ -18,6 +18,15 @@
 // "the first remote stream" — in a group call those are routinely different
 // people, and pairing a student's board with someone else's face is worse than
 // showing no face at all.
+//
+// 🚨 THE SURFACE PANE LEADS AND THE CAMERA TRAILS, and that order is load-
+// bearing. The clinician's own self-view is pinned `bottom-4 end-4` over the
+// whole call area, so whichever pane trails gets a video thumbnail dropped on
+// its bottom corner. Covering a corner of the camera costs nothing; covering a
+// corner of the BOARD hides buttons, and the whole point of the mirror is that
+// the clinician sees every button the child has. Both the self-view's `end` and
+// this flex order are LOGICAL, so the pairing survives RTL without a special
+// case — but the drag maths does not, and has to invert.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -73,9 +82,10 @@ export function StudentSplitView({ stream, name, surface, children, noVideoLabel
     if (!host) return;
     const rect = host.getBoundingClientRect();
     if (rect.width <= 0) return;
-    const fromStart = (e.clientX - rect.left) / rect.width;
-    // The camera pane is the LEADING one, so in RTL it grows leftward.
-    setShare(clampCameraShare(isRTL ? 1 - fromStart : fromStart));
+    const fromLeft = (e.clientX - rect.left) / rect.width;
+    // The camera pane TRAILS, so it occupies what is left of the container:
+    // the right edge in LTR, the left edge in RTL.
+    setShare(clampCameraShare(isRTL ? fromLeft : 1 - fromLeft));
   }, [dragging, isRTL]);
 
   const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -85,21 +95,10 @@ export function StudentSplitView({ stream, name, surface, children, noVideoLabel
 
   return (
     <div ref={hostRef} className={cn("flex h-full w-full items-stretch", className)}>
-      <div className="relative min-w-0 overflow-hidden rounded-lg bg-black/60" style={{ flex: `0 0 ${share * 100}%` }}>
-        {stream ? (
-          // eslint-disable-next-line jsx-a11y/media-has-caption -- live WebRTC peer feed
-          <video ref={attach} autoPlay playsInline className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center px-2 text-center text-sm text-white/40">
-            {noVideoLabel}
-          </div>
-        )}
-        {name && (
-          <div className="absolute inset-x-0 bottom-0 truncate bg-black/50 px-2 py-1 text-center text-xs text-white">
-            {name}
-          </div>
-        )}
-      </div>
+      {/* The student's screen LEADS — see the note at the top of this file: the
+          self-view thumbnail lands on the trailing pane, and it must not be
+          allowed to sit on top of the child's buttons. */}
+      <div className="min-w-0 flex-1">{children}</div>
 
       {/* Drag handle. Wide hit area, thin visual — a hairline is hard to grab
           and this sits between two things the clinician is actively reading. */}
@@ -116,7 +115,23 @@ export function StudentSplitView({ stream, name, surface, children, noVideoLabel
         <div className={cn("h-16 w-1 rounded-full transition-colors", dragging ? "bg-amber-400" : "bg-white/25 group-hover:bg-white/50")} />
       </div>
 
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="relative min-w-0 overflow-hidden rounded-lg bg-black/60" style={{ flex: `0 0 ${share * 100}%` }}>
+        {stream ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption -- live WebRTC peer feed
+          <video ref={attach} autoPlay playsInline className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center px-2 text-center text-sm text-white/40">
+            {noVideoLabel}
+          </div>
+        )}
+        {name && (
+          // Sits at the TOP: the bottom corner of this pane is where the
+          // clinician's own self-view thumbnail lands.
+          <div className="absolute inset-x-0 top-0 truncate bg-black/50 px-2 py-1 text-center text-xs text-white">
+            {name}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

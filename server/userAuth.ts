@@ -24,6 +24,27 @@ declare global {
   }
 }
 
+/**
+ * Whether an account is allowed to authenticate.
+ *
+ * ONE owner for the rule, because it has to hold at every door:
+ * password login, Google-by-external-identity, Google-by-email, and session
+ * deserialization. Before this existed `users.is_active` was written but never
+ * read — neither passport strategy consulted it and the Google strategy
+ * resolved an account by email alone, so "deactivating" a user blocked
+ * nothing. See docs/AKIM_REMEDIATION_PLAN.md item 2.
+ *
+ * Covers `admin_users` too (migration 0170 added its `is_active` column):
+ * backoffice accounts hold the widest access in the system and previously had
+ * no off switch at all.
+ */
+export function canAuthenticate(user: { isActive?: boolean | null } | null | undefined): boolean {
+  if (!user) return false;
+  // Absent flag means active: the column is NOT NULL with default true, and a
+  // caller passing a partial row must not be locked out by omission.
+  return user.isActive !== false;
+}
+
 export function getUserSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);
@@ -100,6 +121,9 @@ export async function setupUserAuth(app: Express) {
           if (!isValidAdminPassword) {
             return done(null, false, { message: 'Invalid login credentials' });
           }
+          if (!canAuthenticate(admin)) {
+            return done(null, false, { message: 'Invalid login credentials' });
+          }
           await adminUserRepository.update(admin.id, { lastActiveAt: new Date() } as any);
           // Make sure the admin has a users shell row for FK anchors / support mode.
           await ensureAdminShellUser(admin);
@@ -109,6 +133,15 @@ export async function setupUserAuth(app: Express) {
         const user = await storage.getUserByEmail(email);
         if (!user) {
           return done(null, false, { message: 'No account found with this email address' });
+        }
+
+        // Deactivated accounts cannot sign in. Checked here AND in the Google
+        // strategy AND in deserializeUser — the flag is only a revocation
+        // control if EVERY door honours it. Deliberately reported as the
+        // generic credential failure so the response does not disclose that
+        // the address exists but is disabled.
+        if (!canAuthenticate(user)) {
+          return done(null, false, { message: 'Invalid login credentials' });
         }
 
         if (user.authProvider === 'google') {
@@ -173,6 +206,7 @@ export async function setupUserAuth(app: Express) {
         if (existingIdentity) {
           const user = await storage.getUser(existingIdentity.userId);
           if (user) {
+            if (!canAuthenticate(user)) return done(null, false, { message: 'Account disabled' });
             await storage.updateUser(user.id, { lastActiveAt: new Date() });
             return done(null, user);
           }
@@ -184,6 +218,9 @@ export async function setupUserAuth(app: Express) {
           // logs in under the admin identity. admin_users holds its own
           // authProvider/googleId/MFA state — no users-row fallback needed.
           const adminMatch = await adminUserRepository.getByEmail(email);
+          if (adminMatch && !canAuthenticate(adminMatch)) {
+            return done(null, false, { message: 'Account disabled' });
+          }
           if (adminMatch) {
             await adminUserRepository.update(adminMatch.id, { lastActiveAt: new Date() } as any);
             await ensureAdminShellUser(adminMatch);
@@ -191,6 +228,10 @@ export async function setupUserAuth(app: Express) {
           }
 
           let user = await storage.getUserByEmail(email);
+
+          if (user && !canAuthenticate(user)) {
+            return done(null, false, { message: 'Account disabled' });
+          }
 
           if (user) {
             // Link Google identity to existing user
@@ -259,13 +300,19 @@ export async function setupUserAuth(app: Express) {
 
       if (identity.kind === "admin") {
         const admin = await adminUserRepository.getById(identity.id);
-        if (!admin) {
+        if (!admin || !canAuthenticate(admin)) {
           return done(null, false);
         }
         return done(null, adaptAdminAsUser(admin));
       }
 
       const user = await storage.getUser(identity.id);
+      // An account deactivated mid-session stops working on the next request
+      // rather than at cookie expiry. This is what makes revocation
+      // "immediate and effective" rather than eventual.
+      if (user && !canAuthenticate(user)) {
+        return done(null, false);
+      }
       done(null, user);
     } catch (error) {
       done(error);

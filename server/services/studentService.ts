@@ -70,6 +70,7 @@ export const AAC_SETTINGS_FIELDS = new Set([
   "autoAudioScan", "autoAudioScanDelay",
   "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes", "shareMonitorNotesWithInstitute",
+  "deviceLocationEnabled",
   "autoAddContacts",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "homeActions", "venueMenus",

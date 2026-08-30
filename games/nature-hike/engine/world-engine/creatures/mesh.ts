@@ -19,8 +19,8 @@
 
 import * as THREE from "three";
 import type { Blueprint } from "./blueprint";
-import { resolveLimbs, skullRaycast } from "./skeleton";
-import type { CreatureBone, CreatureSkeleton, MouthSpec, Vec3 } from "./skeleton";
+import { resolveLimbs, skullRaycast, XSECTION_WIDEN, XSECTION_FLATTEN } from "./skeleton";
+import type { CreatureBone, CreatureSkeleton, MouthSpec, SkullGuide, Vec3 } from "./skeleton";
 import { standaloneFruitStructure, type GrowthFruitBlueprint } from "./growth";
 import type { GarmentBlueprint } from "./clothing";
 import { surfaceMaterial } from "../materials";
@@ -31,10 +31,12 @@ export const LOFT = {
   sides: 8,
   /** Extra rings lofted along the head bulb. */
   headRings: 6,
-  /** Cross-section widening at membrane=1 (wing chord multiplier). */
-  membraneWiden: 1.6,
+  /** Cross-section widening at membrane=1 (wing chord multiplier).
+   *  ⚠️ Defined in skeleton.ts: the skeleton has to place digits against a
+   *  sole's RENDERED half-width, so these two cannot be owned here alone. */
+  membraneWiden: XSECTION_WIDEN,
   /** Cross-section flattening at membrane=1. */
-  membraneFlatten: 0.7,
+  membraneFlatten: XSECTION_FLATTEN,
   /** Wing chord as a fraction of limb length at membrane=1. Radius-based
    *  widening alone leaves wings looking like rods — the chord has to
    *  scale with the LIMB, not its skinny cross-section. */
@@ -210,22 +212,43 @@ interface RingRim {
 /** Loft a sequence of rings into a tube, parallel-transporting the frame.
  *  Returns the vertex index ranges of the first and last rings so the
  *  caller can cap them, plus each ring's clip-crease rim points. */
+/** The frame and half-extents a loft ended on — everything needed to build a
+ *  ring that MEETS the last ring rather than merely sitting near it. */
+export interface LoftEnd {
+  center: THREE.Vector3;
+  direction: THREE.Vector3;
+  /** Unit axes the ring's ellipse was drawn on: `rx` along side, `ry` along up. */
+  side: THREE.Vector3;
+  up: THREE.Vector3;
+  rx: number;
+  ry: number;
+}
+
 function loftChain(
   geo: GeoBuilder,
   rings: RingSpec[],
   sides: number,
   colors: RingColors,
-): { firstRing: number; lastRing: number; rims: RingRim[] } {
+  /** Frame to START on, instead of deriving one from world up. ⚠️ Required
+   *  whenever `rings[0].points` were laid out on SOMEONE ELSE'S frame — a
+   *  digit's base ring is cut from its sole's end ring, and a fresh frame
+   *  wrings the toe round its own axis by whatever angle the two differ by.
+   *  Must be orthonormal and perpendicular to `rings[0].direction`. */
+  startFrame?: { side: THREE.Vector3; up: THREE.Vector3 },
+): { firstRing: number; lastRing: number; rims: RingRim[]; end: LoftEnd } {
   // Initial frame: side = cross(worldUp, dir), fall back when vertical.
   let dir = rings[0].direction.clone();
-  let side = new THREE.Vector3(0, 1, 0).cross(dir);
+  let side = startFrame ? startFrame.side.clone() : new THREE.Vector3(0, 1, 0).cross(dir);
   if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
   side.normalize();
-  let up = new THREE.Vector3().crossVectors(dir, side).normalize();
+  let up = startFrame
+    ? startFrame.up.clone().normalize()
+    : new THREE.Vector3().crossVectors(dir, side).normalize();
 
   let prevStart = -1;
   let firstRing = -1;
   const rims: RingRim[] = [];
+  let end: LoftEnd | null = null;
   for (const ring of rings) {
     // Parallel-transport the frame onto this ring's direction.
     _q.setFromUnitVectors(dir, ring.direction);
@@ -241,6 +264,7 @@ function loftChain(
     const ry = ring.radius * ah * (1 - LOFT.membraneFlatten * ring.flatten);
     const start = geo.vertexCount;
     if (firstRing < 0) firstRing = start;
+    end = { center: ring.center.clone(), direction: ring.direction.clone(), side: side.clone(), up: up.clone(), rx, ry };
     const ringBase = ring.colorBase ?? colors.base;
     const ringBelly = ring.colorBelly ?? colors.belly;
 
@@ -368,7 +392,7 @@ function loftChain(
     }
     prevStart = start;
   }
-  return { firstRing, lastRing: prevStart, rims };
+  return { firstRing, lastRing: prevStart, rims, end: end! };
 }
 
 /** Cap a ring with a triangle fan to a center point. `flip` controls
@@ -388,6 +412,71 @@ function capRing(
     if (flip) geo.tri(c, ringStart + sn, ringStart + s);
     else geo.tri(c, ringStart + s, ringStart + sn);
   }
+}
+
+/** Centre of digit `k` of `n` along the sole's wide axis, measured from the
+ *  ring centre: the slots tile `[-rx, +rx]`, so slot k spans
+ *  `[-rx + 2rx·k/n, -rx + 2rx·(k+1)/n]`. */
+function slotCenterU(rx: number, k: number, n: number): number {
+  return n > 1 ? -rx + (2 * rx * (k + 0.5)) / n : 0;
+}
+
+/**
+ * The base ring for one digit: the sole's end POLYGON clipped to that digit's
+ * slot, sampled at the same `sides` angles the digit's own rings use.
+ *
+ * Both shapes are convex — the end ring is a regular `sides`-gon on the
+ * ellipse (rx, ry), the slot is a slab — so their intersection is convex and a
+ * ray from the slot's centre meets its boundary exactly once. That makes the
+ * sampling ORDER match a plain ellipse ring's, so the loft to the digit's tip
+ * carries no twist, and it makes the slices EXACT: adjacent digits share their
+ * dividing chord and the union is the whole polygon, so the row seals the sole
+ * with no flat left between toes. ⚠️ Clip against the POLYGON, not the ideal
+ * ellipse the polygon is inscribed in, or the seal leaks at every chord.
+ */
+function digitBasePoints(
+  end: LoftEnd,
+  k: number,
+  n: number,
+  sides: number,
+): THREE.Vector3[] {
+  const { rx, ry } = end;
+  const cu = slotCenterU(rx, k, n);
+  const uLo = n > 1 ? -rx + (2 * rx * k) / n : -rx;
+  const uHi = n > 1 ? -rx + (2 * rx * (k + 1)) / n : rx;
+  // Half-planes: the polygon's edges, then the slot's two chords. Each is
+  // `a·u + b·v <= c` with the slot centre strictly inside.
+  const half: Array<{ a: number; b: number; c: number }> = [];
+  for (let i = 0; i < sides; i++) {
+    const a0 = ((i / sides) * Math.PI * 2), a1 = (((i + 1) / sides) * Math.PI * 2);
+    const p0 = { u: Math.cos(a0) * rx, v: Math.sin(a0) * ry };
+    const p1 = { u: Math.cos(a1) * rx, v: Math.sin(a1) * ry };
+    const nu = p1.v - p0.v, nv = -(p1.u - p0.u); // outward for CCW winding
+    half.push({ a: nu, b: nv, c: nu * p0.u + nv * p0.v });
+  }
+  half.push({ a: 1, b: 0, c: uHi });
+  half.push({ a: -1, b: 0, c: -uLo });
+
+  const pts: THREE.Vector3[] = [];
+  for (let sIdx = 0; sIdx < sides; sIdx++) {
+    const ang = (sIdx / sides) * Math.PI * 2;
+    const du = Math.cos(ang), dv = Math.sin(ang);
+    let t = Infinity;
+    for (const h of half) {
+      const denom = h.a * du + h.b * dv;
+      if (denom <= 1e-12) continue; // parallel or moving inward
+      const hit = (h.c - (h.a * cu + h.b * 0)) / denom;
+      if (hit >= 0 && hit < t) t = hit;
+    }
+    if (!Number.isFinite(t)) t = 0;
+    pts.push(
+      end.center
+        .clone()
+        .addScaledVector(end.side, cu + du * t)
+        .addScaledVector(end.up, dv * t),
+    );
+  }
+  return pts;
 }
 
 // ── Growth lofting ───────────────────────────────────────────────────────
@@ -1148,6 +1237,25 @@ export function buildCreatureMesh(
     // muzzle-root BOTTOM. Anchored planes rotate monotonically, so even the
     // near-vertical forehead drop of a human face cannot fold the loft.
     const muzzleSts = gd.stations.slice(gd.muzzleFrom);
+    // The union sweep is star-shaped FROM THE CRANIUM CENTRE — that is what
+    // lets it rotate monotonically and never fold. The MUZZLE breaks that
+    // assumption the moment it pitches or curves far enough to rise into the
+    // sweep's own angular range: rays meant for the cranium then land far up
+    // the snout, and a single "cranium" ring splays along the muzzle instead
+    // of cutting across it (rings spanning a third of the head in z). That is
+    // the face coming apart at high pitch or curve.
+    //
+    // So the sweep sees ONLY the cranium and the forehead bridge. The muzzle
+    // is lofted from its own station rings straight after, and does not need
+    // — or want — to be visible to the sweep.
+    const sweepGuide: SkullGuide = {
+      cranium: gd.cranium,
+      stations: gd.stations.slice(0, gd.muzzleFrom),
+      muzzleFrom: gd.muzzleFrom,
+      dorsal: [],
+    };
+    const castSweep = (o: THREE.Vector3, d: THREE.Vector3) =>
+      skullRaycast(sweepGuide, { x: o.x, y: o.y, z: o.z }, { x: d.x, y: d.y, z: d.z });
     const root = muzzleSts[0];
     let aTopEnd = 0.12, aBotEnd = -0.12; // no muzzle: close at the front pole
     let rootTopV: THREE.Vector3 | null = null, rootBotV: THREE.Vector3 | null = null;
@@ -1164,24 +1272,32 @@ export function buildCreatureMesh(
       aBotEnd = angOf(rootBotV);
     }
     const rings: RingSpec[] = [];
-    const nU = Math.max(6, LOFT.headRings + 2); // union rings (rear → face)
+    const nU = Math.max(7, LOFT.headRings + 3); // union rings (rear → face)
     for (let k = 1; k < nU; k++) {
-      const u = k / (nU - 1);
+      // The sweep STOPS SHORT of the muzzle root. The muzzle's own station
+      // ring is the ring at the root; emitting a second one there — pinned
+      // to the root rim for its centre and axis, but RAY-CAST for its actual
+      // vertices, so a different size — left a flat annulus of quads
+      // standing in the z plane. That annulus IS the vertical plate above
+      // the snout: a wall with no thickness, invisible to any sagittal
+      // measure because the whole defect is in the cross-section.
+      //
+      // Rings also BUNCH toward the face (the exponent), because the bridge
+      // is where the cross-section changes fastest and an under-sampled
+      // bridge is a hard facet even without the duplicate ring.
+      const u = Math.pow(k / nU, 0.8);
       // Dorsal sweep: rear pole (π) over the crown toward the root top.
       const at = Math.PI - u * (Math.PI - aTopEnd);
       // Ventral sweep: rear pole (π) under the base toward the root bottom.
       const ab = Math.PI + u * (Math.PI + aBotEnd);
-      const anchor = (ang: number, endPt: THREE.Vector3 | null): THREE.Vector3 => {
+      const anchor = (ang: number): THREE.Vector3 => {
         const dir = cF.clone().multiplyScalar(Math.cos(ang) * aL)
           .addScaledVector(cU, Math.sin(ang) * bH).normalize();
-        const hit = cast(cC, dir);
-        const p = cC.clone().addScaledVector(dir, hit ? hit.t : Math.min(aL, bH));
-        // Land the last ring exactly on the muzzle-root rim so the muzzle
-        // ellipse ring that follows mates without a gap.
-        return u === 1 && endPt ? endPt : p;
+        const hit = castSweep(cC, dir);
+        return cC.clone().addScaledVector(dir, hit ? hit.t : Math.min(aL, bH));
       };
-      const top = anchor(at, rootTopV);
-      const bottom = anchor(ab, rootBotV);
+      const top = anchor(at);
+      const bottom = anchor(ab);
       const c = top.clone().add(bottom).multiplyScalar(0.5);
       const bHat = top.clone().sub(bottom);
       const halfB = Math.max(bHat.length() * 0.5, 1e-4);
@@ -1190,7 +1306,7 @@ export function buildCreatureMesh(
       for (let s = 0; s < sides; s++) {
         const a = (s / sides) * Math.PI * 2;
         const dir = XV.clone().multiplyScalar(Math.cos(a)).addScaledVector(bHat, Math.sin(a)).normalize();
-        const hit = cast(c, dir);
+        const hit = castSweep(c, dir);
         pts.push(c.clone().addScaledVector(dir, hit ? hit.t : halfB));
       }
       // Forward of the hinge, the lower face belongs to the MANDIBLE: cut
@@ -1334,14 +1450,33 @@ export function buildCreatureMesh(
       jaw0Idx >= 0 ? jaw0Idx + Math.min(i, Math.max(0, nJawBones - 1)) : headIdx;
     const root = muzzleSts[0];
     const rootC = vec(root.center);
-    // How deep the head's own lower face hangs at the muzzle root — the jaw
-    // body starts this deep (the masseter cheek) and tapers toward its own
-    // jawDepth at the chin.
-    const downHit = cast(rootC, new THREE.Vector3(0, -1, 0));
-    const rearDepth = downHit ? downHit.t : root.ry + jawExtra;
+    // ── The mandible's DEPTH FIELD, hinge → chin ─────────────────────────
+    // At the muzzle root the mandible is still the head's own lower face —
+    // the rear shells that precede it ARE the head's cross-sections — so it
+    // has to start exactly as deep as the head hangs there, whatever
+    // `jawDepth` says. `jawDepth` is the depth at the CHIN. The two are
+    // joined by a smoothstep, which is flat at both ends, so neither the
+    // handover from the rear shells nor the arrival at the chin creases.
+    //
+    // The rear shells END EXACTLY ON THE ROOT RIM — the union sweep that
+    // produced them lands its last ring there — so the first muzzle ring
+    // must carry NO extra depth at all, or the mandible steps off the head
+    // the instant the muzzle begins. That step was the reported defect, and
+    // it was NOT jawDepth's doing: the old field anchored on a straight-DOWN
+    // raycast from the root, which measures how deep the whole head hangs
+    // beneath that point — the bottom of the cranium, far below the rim the
+    // shells actually hand over at. Every muzzled creature stepped, at any
+    // jawDepth, including jawDepth 0.
+    //
+    // From there the depth reaches `jawDepth` early and HOLDS: it is the
+    // mandible's depth ALONG the muzzle, not at one point — a massive jaw is
+    // deep the whole way (a hyena, a hippo). Ramping to the tip instead puts
+    // the entire depth at the chin, a wedge jutting off a slender jaw.
+    const DEPTH_REACHED_AT = 0.6; // fraction of the muzzle the blend spans
     const muzzleExtra = (i: number): number => {
       const frac = muzzleSts.length > 1 ? i / (muzzleSts.length - 1) : 1;
-      return Math.max(jawExtra, THREE.MathUtils.lerp(rearDepth - root.ry, jawExtra, Math.min(1, frac * 1.8)));
+      const t = Math.min(1, frac / DEPTH_REACHED_AT);
+      return jawExtra * t * t * (3 - 2 * t); // smoothstep — flat at both ends
     };
 
     const rings: RingSpec[] = [];
@@ -1617,8 +1752,45 @@ export function buildCreatureMesh(
   }
 
   // ── Limbs ─────────────────────────────────────────────────────────────
-  for (const [name, chain] of chains) {
-    if (!name.startsWith("limb") && !name.startsWith("chain")) continue;
+  // ⚖️ A DIGIT'S BASE IS A SLICE OF THE SOLE'S END POLYGON, not a tube parked
+  // on top of it. Lofted as an independent ellipse, a toe left flat cap showing
+  // between it and its neighbours and met the sole at a floating rim. So the
+  // limbs loft in TWO passes: every sole first, recording the frame its last
+  // ring ended on (`LoftEnd`), then the digits, each taking as its base ring
+  // the part of that polygon inside its own slot. The slots tile the polygon,
+  // so no flat shows between them; the sole's own cap (flattened, since the
+  // toes are seated on it) stays as the single seal behind the row.
+  const limbChains = [...chains].filter(
+    ([n]) => n.startsWith("limb") || n.startsWith("chain"),
+  );
+  const isDigit = (n: string): boolean => /d\d+$/.test(n) && n.startsWith("limb");
+  /** `limb0L` → the ring its loft ended on. */
+  const soleEnds = new Map<string, LoftEnd>();
+  /** `limb0L` → its digit chain names, in row order. */
+  const soleDigits = new Map<string, string[]>();
+  for (const [n] of limbChains) {
+    const m = /^(limb\d+[LRr])d(\d+)$/.exec(n);
+    if (!m) continue;
+    const row = soleDigits.get(m[1]) ?? [];
+    row.push(n);
+    soleDigits.set(m[1], row);
+  }
+  for (const row of soleDigits.values()) {
+    row.sort((a, b) => Number(/d(\d+)$/.exec(a)![1]) - Number(/d(\d+)$/.exec(b)![1]));
+  }
+  /** Whether this limb has a SOLE for its digits to split (a wing does not:
+   *  its tip ring is a membrane chord, and tiling that would give the wing a
+   *  paddle instead of a finger). */
+  const limbsForSoles = resolveLimbs(blueprint).limbs;
+  const hasSole = (chainName: string): boolean => {
+    const m = /^limb(\d+)/.exec(chainName);
+    const limb = m ? limbsForSoles[Number(m[1])] : undefined;
+    return !!limb && limb.footLengthFrac > 1e-6;
+  };
+
+  for (const [name, chain] of [...limbChains].sort(
+    (a, b) => Number(isDigit(a[0])) - Number(isDigit(b[0])),
+  )) {
     geo.section(name.startsWith("chain") ? `chain:${name}` : `limb:${name}`);
     const rings = chainRings(chain.bones, (i) => chain.indices[Math.min(i, chain.indices.length - 1)]);
     // Membrane chord: widen the airfoil proportionally to LIMB LENGTH,
@@ -1633,15 +1805,57 @@ export function buildCreatureMesh(
       ring.chordBoost =
         ring.flatten * chainLen * LOFT.membraneChordFrac * Math.sin(Math.PI * Math.min(1, t * 1.2)) ** 0.7;
     });
-    // Sink the root ring slightly along the first bone so it sits inside
-    // the torso — hides the join, no visible cap.
-    const rootDir = rings[0].direction;
-    rings[0].center.addScaledVector(rootDir, -rings[0].radius * 0.6);
-    const { firstRing, lastRing } = loftChain(geo, rings, sides, axialColors);
+    // A digit whose sole was lofted takes its slot of that end polygon as its
+    // base ring; everything else sinks its root ring into its parent to hide
+    // the join.
+    const dm = /^(limb\d+[LRr])d(\d+)$/.exec(name);
+    const soleEnd = dm ? soleEnds.get(dm[1]) : undefined;
+    const tiled = !!dm && !!soleEnd && hasSole(name);
+    if (tiled) {
+      const row = soleDigits.get(dm![1])!;
+      rings[0].points = digitBasePoints(soleEnd!, row.indexOf(name), row.length, sides);
+      rings[0].center = soleEnd!.center
+        .clone()
+        .addScaledVector(soleEnd!.side, slotCenterU(soleEnd!.rx, row.indexOf(name), row.length));
+      rings[0].direction = soleEnd!.direction.clone();
+    } else {
+      // Sink the root ring slightly along the first bone so it sits inside
+      // the torso — hides the join, no visible cap.
+      const rootDir = rings[0].direction;
+      rings[0].center.addScaledVector(rootDir, -rings[0].radius * 0.6);
+    }
+    const { firstRing, lastRing, end } = loftChain(
+      geo,
+      rings,
+      sides,
+      axialColors,
+      // A tiled digit inherits the sole's frame — see `startFrame`.
+      tiled ? { side: soleEnd!.side, up: soleEnd!.up } : undefined,
+    );
+    if (!isDigit(name)) soleEnds.set(name, end);
     const first = rings[0];
-    capRing(geo, firstRing, sides, first.center.clone().addScaledVector(first.direction, -first.radius * 0.4), base, first.boneA, true);
+    // A tiled digit needs NO base cap: its base ring lies in the sole's end
+    // plane, which the sole's own cap already fills right behind it. Capping
+    // both would put two coplanar surfaces in the same place.
+    if (!tiled) {
+      capRing(geo, firstRing, sides, first.center.clone().addScaledVector(first.direction, -first.radius * 0.4), base, first.boneA, true);
+    }
     const last = rings[rings.length - 1];
-    capRing(geo, lastRing, sides, last.center.clone().addScaledVector(last.direction, last.radius * 0.5), base, last.boneA, false);
+    // A sole that carries digits caps FLAT rather than with the usual
+    // forward-bulged cone — the toes are seated ON that plane, and a cone
+    // would push through between them.
+    const carriesDigits = soleDigits.has(name) && hasSole(name);
+    capRing(
+      geo,
+      lastRing,
+      sides,
+      carriesDigits
+        ? last.center.clone()
+        : last.center.clone().addScaledVector(last.direction, last.radius * 0.5),
+      base,
+      last.boneA,
+      false,
+    );
   }
 
   // ── Rigid details ─────────────────────────────────────────────────────

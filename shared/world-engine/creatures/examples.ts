@@ -13,11 +13,28 @@
 //
 // Plants live here too: a plant is a creature that has no body except a
 // growth (plantBlueprint wraps a growth in a near-invisible grounded nub).
+//
+// ONE LIST, NOT TWO (2026-08-30). This file and the species registry
+// (species.ts) used to be parallel catalogues kept in step by hand: a row named
+// its example by DISPLAY TITLE ("Crocodile (long jaw)"), so a body could sit
+// here fully authored while the word a child already had stayed a stub, and
+// nothing said so. Every entry now carries the SPECIES `id` it backs, the
+// registry resolves blueprints by that id, and the invariant runs both ways —
+// a species row whose id names no example is a stub, and an example whose id
+// names no species row is a hard error at module load (species.ts). Adding a
+// creature is ONE entry here plus ONE row there; neither can drift alone.
 
 import { plantBlueprint } from "./blueprint";
 
 export interface CreatureExample {
-  name: string;
+  /** THE SPECIES ID this blueprint backs (species.ts `CATALOGUE`). The join
+   *  key — not decoration: `speciesBlueprint("crocodile")` finds its body by
+   *  matching this, and a value naming no registry row fails the load. */
+  id: string;
+  /** The human-readable label the creature lab shows in its dropdown
+   *  ("Crocodile (long jaw)"). A TITLE, never a word a sentence can carry —
+   *  the child-facing word is the species row's `words`. */
+  title: string;
   blueprint: Record<string, unknown>;
 }
 
@@ -28,11 +45,25 @@ const plant = (
 
 export const CREATURE_EXAMPLES: CreatureExample[] = [
   {
-    name: "Quadruped (default)",
-    blueprint: { version: 1 },
+    id: "quadruped",
+    title: "Quadruped (default)",
+    blueprint: {
+      version: 1,
+      // Spelled out rather than inherited: `defaultBlueprint()` still carries
+      // ONE leg group (it doubles as the per-field default source), and one
+      // group cannot fold a fore and a hind knee opposite ways.
+      limbGroups: [
+        // FORE — elbow folds BACK. lengthFrac/radiusFrac carry the 0.88 the
+        // default's size gravitation used to apply to the front copy.
+        { placement: "bilateral", count: 1, stationStart: 0.18, stationEnd: 0.18, sizeContrast: 0, lengthFrac: 0.5104, radiusFrac: 0.1584, restFlexion: -0.3, taper: 0.55, membrane: 0, attachHeight: 0.38, restProtraction: 0, restLevation: -0.45, flexRange: 1, legTwist: 0, legBalance: 0, footLengthFrac: 0.22, stance: 0.4, ankleRange: 1, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5, toeContrast: 0.2, opposition: 0, toeCurl: 0.1 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, sizeContrast: 0, lengthFrac: 0.58, radiusFrac: 0.18, restFlexion: 0.3, taper: 0.55, membrane: 0, attachHeight: 0.38, restProtraction: 0, restLevation: -0.45, flexRange: 1, legTwist: 0, legBalance: 0, footLengthFrac: 0.22, stance: 0.4, ankleRange: 1, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5, toeContrast: 0.2, opposition: 0, toeCurl: 0.1 },
+      ],
+    },
   },
   {
-    name: "Snake (limbless)",
+    id: "snake",
+    title: "Snake (limbless)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 3.0, girth: 0.05, girthPeak: 0.3, torsoSegments: 11, frontTaper: 0.5, rearTaper: 0.4 },
@@ -43,7 +74,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Fish (fins + tail)",
+    id: "fish",
+    title: "Fish (fins + tail)",
     blueprint: {
       version: 1,
       spine: { crossSection: 0.5, girth: 0.2, girthPeak: 0.5, torsoLengthM: 1.0 },
@@ -64,7 +96,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Stingray (flat + stinger)",
+    id: "stingray",
+    title: "Stingray (flat + stinger)",
     blueprint: {
       version: 1,
       spine: { crossSection: 2.6, girth: 0.26, girthPeak: 0.4, torsoLengthM: 1.4, frontTaper: 0.5, rearTaper: 0.7 },
@@ -78,7 +111,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Dimetrodon (sail)",
+    id: "dimetrodon",
+    title: "Dimetrodon (sail)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 1.4, girth: 0.16, girthPeak: 0.5 },
@@ -88,13 +122,17 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       posture: { bodyHeight: 0.4 },
       // Sprawled reptilian legs (lateral socket → elbows-out, feet wide).
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.2, stationEnd: 0.82, attachHeight: 0.42, restProtraction: 0, restLevation: 0.05, restFlexion: 0, radiusFrac: 0.07, lengthFrac: 0.5, stance: 0.4, toeCount: 4, toeSpread: 0.7 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.2, stationEnd: 0.2, attachHeight: 0.42, restProtraction: 0, restLevation: 0.05, restFlexion: -0.15, radiusFrac: 0.0616, lengthFrac: 0.44, stance: 0.4, toeCount: 4, toeSpread: 0.7, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.82, stationEnd: 0.82, attachHeight: 0.42, restProtraction: 0, restLevation: 0.05, restFlexion: 0.15, radiusFrac: 0.07, lengthFrac: 0.5, stance: 0.4, toeCount: 4, toeSpread: 0.7, sizeContrast: 0 },
       ],
       membranes: [{ edge: "dorsal", start: 0.28, end: 0.78, height: 0.7, heightPeak: 0.5, rays: 10 }],
     },
   },
   {
-    name: "Crocodile (long jaw)",
+    id: "crocodile",
+    title: "Crocodile (long jaw)",
     blueprint: {
       version: 1,
       // The head-variety showcase: an elongated flat skull whose face
@@ -110,7 +148,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         sizeFrac: 0.55, lengthFrac: 1.7, braincaseDome: 0.6, crossSection: 1.5,
         // Snout leaves near the TOP of the flat skull (foreheadHeight high),
         // straight off the front — no forehead at all.
-        foreheadHeight: 0.8, foreheadLength: 0.05, foreheadSlope: -0.1,
+        foreheadHeight: 0.4647, foreheadLength: 0, foreheadSlope: -0.1,
         beak: 0.15, snoutLengthFrac: 1.6, snoutRadiusFrac: 0.5, muzzleSquash: 0.35,
         snoutFlatten: 1.8, snoutCurve: -0.1, mouthOpen: 1, jawDepth: 0.12, jawOffset: 0,
         eyePairs: 1, eyeSizeFrac: 0.14, eyeAngle: 0.55, eyeHeight: 0.9, eyeBulge: 0.75,
@@ -118,13 +156,17 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       posture: { bodyHeight: 0.25 },
       // Sprawled reptilian legs, belly riding low.
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.18, stationEnd: 0.8, attachHeight: 0.45, restLevation: 0.1, restFlexion: 0, radiusFrac: 0.08, lengthFrac: 0.42, stance: 0.5, toeCount: 4, toeSpread: 0.6 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.18, stationEnd: 0.18, attachHeight: 0.45, restLevation: 0.1, restFlexion: -0.15, radiusFrac: 0.0704, lengthFrac: 0.3696, stance: 0.5, toeCount: 4, toeSpread: 0.6, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.8, stationEnd: 0.8, attachHeight: 0.45, restLevation: 0.1, restFlexion: 0.15, radiusFrac: 0.08, lengthFrac: 0.42, stance: 0.5, toeCount: 4, toeSpread: 0.6, sizeContrast: 0 },
       ],
       skin: { baseColor: "#4a5d3a", bellyColor: "#c9c2a0", accentColor: "#2e3a24" },
     },
   },
   {
-    name: "Winged biped (raptor)",
+    id: "raptor",
+    title: "Winged biped (raptor)",
     blueprint: {
       version: 1,
       posture: { bodyPitch: 0.85, bodyHeight: 0.95 },
@@ -136,13 +178,19 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       head: { sizeFrac: 0.5, beak: 0.7, snoutLengthFrac: 0.7, snoutRadiusFrac: 0.33, snoutCurve: 0.35, mouthOpen: 0.8, eyePairs: 1, eyeSizeFrac: 0.2, eyeAngle: 0.5 },
       // Long hind legs lead; shorter membranous forelimbs lift off (wings).
       limbGroups: [
-        { placement: "bilateral", count: 1, stationStart: 0.78, stationEnd: 0.84, lengthFrac: 0.85, restLevation: -0.3, restFlexion: -0.5, stance: 0.6, toeCount: 3, footLengthFrac: 0.18, radiusFrac: 0.09 },
+        { placement: "bilateral", count: 1, stationStart: 0.78, stationEnd: 0.84, lengthFrac: 0.85, restLevation: -0.3, restFlexion: 0.5, stance: 0.6, toeCount: 3, footLengthFrac: 0.18, radiusFrac: 0.09 },
         { placement: "bilateral", count: 1, stationStart: 0.24, stationEnd: 0.24, membrane: 0.95, lengthFrac: 0.6, radiusFrac: 0.07, attachHeight: 0.85, restProtraction: -0.4, restLevation: 0.7, restFlexion: 0.6, footLengthFrac: 0, toeCount: 1 },
       ],
     },
   },
+  // SUPERSEDED AT RUNTIME, on purpose. `animals-people.ts` authors the real
+  // `human` and overrides this row in the registry (species.ts, override chain:
+  // examples < animals-people < lab). This stays under the same id so the
+  // creature lab can still load the plain worked biped — edit it for the
+  // teaching example, never expecting the world to build it.
   {
-    name: "Human (biped + hands)",
+    id: "human",
+    title: "Human (biped + hands)",
     blueprint: {
       version: 1,
       // Fully erect (pitch ≈ 86°); bodyHeight leaves a natural knee ease.
@@ -164,11 +212,11 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       // and the mouth is the seam just below. The head holds the horizon
       // off the vertical neck by rule — facePitch 0.
       head: {
-        sizeFrac: 0.9, lengthFrac: 1.05, braincaseDome: 0.95, crossSection: 0.88, faceHeight: -0.45,
+        sizeFrac: 0.9, lengthFrac: 1.05, braincaseDome: 0.95, crossSection: 0.88,
         // The snout root sits LOW on the cranium front (foreheadHeight
         // 0.28), so the forehead IS the front of the cranium; a short flat
         // face shelf, straight slope.
-        foreheadHeight: 0.28, foreheadLength: 0.15, foreheadSlope: 0.1,
+        foreheadHeight: 0.0709, foreheadLength: 0.0548, foreheadSlope: 0.1,
         // Muzzle almost fully squared into the face (full-width tip, tiny
         // projection); a DEEP mandible drops the chin well below the small
         // terminal mouth — that is where the face gets its height.
@@ -177,9 +225,10 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         jawDepth: 0.38, jawOffset: 0.15, mouthVertical: 0,
         // The nose is its OWN feature: protruding forward off the face with
         // the tip curling down.
-        noseLengthFrac: 0.32, noseRadiusFrac: 0.2, noseHeight: 0.18,
+        noseLengthFrac: 0.32, noseRadiusFrac: 0.445, nosePosition: 0.18,
+        noseTaper: 0.45, noseFlatten: 1,
         noseSegments: 2, noseDroop: 1.1,
-        eyePairs: 1, eyeSizeFrac: 0.15, eyeAngle: 0.45, eyeHeight: 0.3, eyeBulge: 0.35,
+        eyePairs: 1, eyeSizeFrac: 0.15, eyeAngle: 0.45, eyeHeight: 0.03, eyeBulge: 0.35,
         // What separates this face from a chimp's: a small mouth (the
         // commissure sits far forward), a strong CHIN, a light brow, and
         // full everted lips — plus the flat midface + projecting nose above.
@@ -198,7 +247,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Ungulate (hooves)",
+    id: "ungulate",
+    title: "Ungulate (hooves)",
     blueprint: {
       version: 1,
       posture: { bodyHeight: 0.5 },
@@ -209,7 +259,7 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       // jaw behind it), lateral eyes, and a roman-nose bridge (snoutCurve).
       head: {
         sizeFrac: 0.5, lengthFrac: 1.2, braincaseDome: 0.95, beak: 0.1, snoutLengthFrac: 1.5,
-        foreheadHeight: 0.55, foreheadLength: 0.35, foreheadSlope: 0.05,
+        foreheadHeight: 0.1965, foreheadLength: 0.35, foreheadSlope: 0.05,
         snoutSegments: 3, snoutRadiusFrac: 0.5, muzzleSquash: 0.7, snoutFlatten: 0.7,
         snoutCurve: 0.12, mouthOpen: 0.3, jawDepth: 0.2, jawOffset: 0.1,
         eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.1, eyeHeight: 0.45,
@@ -220,7 +270,10 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       // One thick digit (hoof); the high stance rest + raised posture keeps
       // it up on the tip (unguligrade), the long foot as the cannon bone.
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.2, stationEnd: 0.85, attachHeight: 0.32, restProtraction: 0, restLevation: -0.5, restFlexion: -0.5, stance: 0.85, footLengthFrac: 0.28, lengthFrac: 0.66, radiusFrac: 0.11, toeCount: 1, toeContrast: 0 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.2, stationEnd: 0.2, attachHeight: 0.32, restProtraction: 0, restLevation: -0.5, restFlexion: -0.5, stance: 0.85, footLengthFrac: 0.28, lengthFrac: 0.5808, radiusFrac: 0.0968, toeCount: 1, toeContrast: 0, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, attachHeight: 0.32, restProtraction: 0, restLevation: -0.5, restFlexion: 0.5, stance: 0.85, footLengthFrac: 0.28, lengthFrac: 0.66, radiusFrac: 0.11, toeCount: 1, toeContrast: 0, sizeContrast: 0 },
       ],
     },
   },
@@ -236,18 +289,20 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
   // near the front of a short jaw, many segments, drooping down. The actual
   // mouth stays small and separate at the jaw.
   {
-    name: "Elephant (trunk)",
+    id: "elephant",
+    title: "Elephant (trunk)",
     blueprint: {
       version: 1,
       spine: { torsoSegments: 6, torsoLengthM: 5, girth: 0.45, girthPeak: 0.62, frontTaper: 0.255, rearTaper: 0.33, crossSection: 1 },
       neck: { segments: 2, lengthFrac: 0, radiusFrac: 0.756, lift: -0.005 },
       tail: { segments: 5, lengthFrac: 0.7, radiusFrac: 0.18775, droop: -1.2 },
       head: {
-        sizeFrac: 0.851, lengthFrac: 0.96, braincaseDome: 1, crossSection: 1, facePitch: -0.063, faceHeight: 0.1,
-        foreheadHeight: 0.475, foreheadLength: 0.13, foreheadSlope: 0.41, beak: 0, snoutLengthFrac: 0.225, snoutSegments: 2,
+        sizeFrac: 0.851, lengthFrac: 0.96, braincaseDome: 1, crossSection: 1, facePitch: -0.063,
+        foreheadHeight: 0.2742, foreheadLength: 0.1238, foreheadSlope: 0.41, beak: 0, snoutLengthFrac: 0.225, snoutSegments: 2,
         snoutRadiusFrac: 0.4244, muzzleSquash: 0, snoutFlatten: 1.34975, snoutCurve: 0.83, mouthOpen: 0.5, jawDepth: 0.365,
-        jawOffset: -0.27, mouthVertical: 0, noseLengthFrac: 2.19, noseRadiusFrac: 0.36915, noseHeight: 0.285, noseSegments: 5,
-        noseDroop: 1.5, eyePairs: 1, eyeSizeFrac: 0.12, eyeAngle: 1, eyeHeight: 0.35, eyeBulge: 0.35,
+        jawOffset: -0.27, mouthVertical: 0, noseLengthFrac: 2.19, noseRadiusFrac: 0.6326, nosePosition: 0.285,
+        noseTaper: 0.45, noseFlatten: 1, noseSegments: 5,
+        noseDroop: 1.5, eyePairs: 1, eyeSizeFrac: 0.12, eyeAngle: 1, eyeHeight: 0.41, eyeBulge: 0.35,
         padding: 0.3, cheek: 0.3, jowl: 0, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
         chin: 0,
       },
@@ -255,29 +310,27 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       skin: { baseColor: "#82807d", bellyColor: "#cbcac8", accentColor: "#545454" },
       // Thick pillar legs, plantigrade, knees barely bent.
       limbGroups: [
-        {
-          placement: "bilateral", count: 2, stationStart: 0.065, stationEnd: 0.85, sizePeak: 0.915,
-          sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.30075, taper: 0.7075, membrane: 0,
-          attachHeight: 0.165, restProtraction: -1, restLevation: -1, restFlexion: -0.01, flexRange: 0.365,
-          legTwist: 0.06, legBalance: 0, footLengthFrac: 0.324, stance: 0.85, ankleRange: 0.54,
-          toeCount: 4, toeLengthFrac: 0.64, toeSpread: 1.4, toeContrast: 0, opposition: 0,
-          toeCurl: 0.055,
-        },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.065, stationEnd: 0.065, sizePeak: 0.915, sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.30075, taper: 0.7075, membrane: 0, attachHeight: 0.165, restProtraction: -1, restLevation: -1, restFlexion: -0.15, flexRange: 0.365, legTwist: 0.06, legBalance: 0, footLengthFrac: 0.324, stance: 0.85, ankleRange: 0.54, toeCount: 4, toeLengthFrac: 0.64, toeSpread: 1.4, toeContrast: 0, opposition: 0, toeCurl: 0.055 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, sizePeak: 0.915, sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.30075, taper: 0.7075, membrane: 0, attachHeight: 0.165, restProtraction: -1, restLevation: -1, restFlexion: 0.15, flexRange: 0.365, legTwist: 0.06, legBalance: 0, footLengthFrac: 0.324, stance: 0.85, ankleRange: 0.54, toeCount: 4, toeLengthFrac: 0.64, toeSpread: 1.4, toeContrast: 0, opposition: 0, toeCurl: 0.055 },
       ],
     },
   },
   {
-    name: "Horse",
+    id: "horse",
+    title: "Horse",
     blueprint: {
       version: 1,
       spine: { torsoSegments: 6, torsoLengthM: 1.2, girth: 0.36, girthPeak: 0.33, frontTaper: 0.275, rearTaper: 0.44, crossSection: 1 },
       neck: { segments: 4, lengthFrac: 0.3625, radiusFrac: 0.45, lift: 0.895 },
       tail: { segments: 7, lengthFrac: 0.855, radiusFrac: 0.3, droop: -1.2 },
       head: {
-        sizeFrac: 0.543, lengthFrac: 1.14, braincaseDome: 1, crossSection: 0.814, facePitch: -0.585, faceHeight: 0,
-        foreheadHeight: 0.275, foreheadLength: 0.75, foreheadSlope: 0.19, beak: 0, snoutLengthFrac: 0.875, snoutSegments: 2,
+        sizeFrac: 0.543, lengthFrac: 1.14, braincaseDome: 1, crossSection: 0.814, facePitch: -0.585,
+        foreheadHeight: 0, foreheadLength: 0.6426, foreheadSlope: 0.19, beak: 0, snoutLengthFrac: 0.875, snoutSegments: 2,
         snoutRadiusFrac: 0.613, muzzleSquash: 0.4, snoutFlatten: 1.11325, snoutCurve: -0.09, mouthOpen: 0.285, jawDepth: 0,
-        jawOffset: 0.1, mouthVertical: 0, noseLengthFrac: 0, noseRadiusFrac: 0.24945, noseHeight: 0.0825, noseSegments: 2,
+        jawOffset: 0.1, mouthVertical: 0, noseLengthFrac: 0, noseRadiusFrac: 0.24945, nosePosition: 0.0825,
+        noseTaper: 0.45, noseFlatten: 1, noseSegments: 2,
         noseDroop: 1.02, eyePairs: 1, eyeSizeFrac: 0.222, eyeAngle: 1.06125, eyeHeight: 0.39, eyeBulge: 0,
         padding: 0.3, cheek: 0.3, jowl: 0.2, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
         chin: 0,
@@ -286,79 +339,72 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
       // ONE toe — the hoof. Long legs, deep flex range, a standing runner.
       limbGroups: [
-        {
-          placement: "bilateral", count: 2, stationStart: 0.145, stationEnd: 0.85, sizePeak: 1,
-          sizeContrast: 0, lengthFrac: 0.556, radiusFrac: 0.43185, taper: 0.19, membrane: 0,
-          attachHeight: 0.135, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.08, flexRange: 0.55,
-          legTwist: -0.78, legBalance: 0, footLengthFrac: 0.6, stance: 1, ankleRange: 1,
-          toeCount: 1, toeLengthFrac: 0.2, toeSpread: 0.399, toeContrast: 0, opposition: 0,
-          toeCurl: 0.1,
-        },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.145, stationEnd: 0.145, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.556, radiusFrac: 0.43185, taper: 0.19, membrane: 0, attachHeight: 0.135, restProtraction: -0.47, restLevation: -0.73, restFlexion: -0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.6, stance: 1, ankleRange: 1, toeCount: 1, toeLengthFrac: 0.2, toeSpread: 0.399, toeContrast: 0, opposition: 0, toeCurl: 0.1 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.556, radiusFrac: 0.43185, taper: 0.19, membrane: 0, attachHeight: 0.135, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.6, stance: 1, ankleRange: 1, toeCount: 1, toeLengthFrac: 0.2, toeSpread: 0.399, toeContrast: 0, opposition: 0, toeCurl: 0.1 },
       ],
     },
   },
   {
-    name: "Cat",
+    id: "cat",
+    title: "Cat",
     blueprint: {
       version: 1,
       spine: { torsoSegments: 6, torsoLengthM: 0.4, girth: 0.2, girthPeak: 0.44, frontTaper: 0.465, rearTaper: 0.44, crossSection: 1.28 },
       neck: { segments: 4, lengthFrac: 0.05, radiusFrac: 0.45, lift: 0.1 },
       tail: { segments: 10, lengthFrac: 1.56, radiusFrac: 0.3, droop: -0.168 },
       head: {
-        sizeFrac: 0.683, lengthFrac: 1.14, braincaseDome: 1, crossSection: 1, facePitch: -0.027, faceHeight: -0.09,
-        foreheadHeight: 0.62, foreheadLength: 0.24, foreheadSlope: -0.12, beak: 0, snoutLengthFrac: 0.3875, snoutSegments: 2,
+        sizeFrac: 0.683, lengthFrac: 1.14, braincaseDome: 1, crossSection: 1, facePitch: -0.027,
+        foreheadHeight: 0.2345, foreheadLength: 0.233, foreheadSlope: -0.12, beak: 0, snoutLengthFrac: 0.3875, snoutSegments: 2,
         snoutRadiusFrac: 0.7319, muzzleSquash: 0, snoutFlatten: 1.21, snoutCurve: -0.14, mouthOpen: 0.2325, jawDepth: 0.05,
-        jawOffset: -0.03, mouthVertical: 0, noseLengthFrac: 0.21, noseRadiusFrac: 0.1497, noseHeight: 0.1125, noseSegments: 2,
-        noseDroop: 0, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.42, eyeHeight: 0.651, eyeBulge: 0.54,
+        jawOffset: -0.03, mouthVertical: 0, noseLengthFrac: 0.21, noseRadiusFrac: 0.306, nosePosition: 0.1125,
+        noseTaper: 0.45, noseFlatten: 1, noseSegments: 2,
+        noseDroop: 0, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.42, eyeHeight: 0.597, eyeBulge: 0.54,
         padding: 0.3, cheek: 0.3, jowl: 0.2, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
         chin: 0,
       },
       posture: { bodyPitch: 0.0655, bodyHeight: 0.82 },
       skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
       limbGroups: [
-        {
-          placement: "bilateral", count: 2, stationStart: 0.145, stationEnd: 0.85, sizePeak: 1,
-          sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.43185, taper: 0.19, membrane: 0,
-          attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.08, flexRange: 0.55,
-          legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1,
-          toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0,
-          toeCurl: 0.02,
-        },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.145, stationEnd: 0.145, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.43185, taper: 0.19, membrane: 0, attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: -0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1, toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0, toeCurl: 0.02 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.424, radiusFrac: 0.43185, taper: 0.19, membrane: 0, attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1, toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0, toeCurl: 0.02 },
       ],
     },
   },
   {
-    name: "Dog",
+    id: "dog",
+    title: "Dog",
     blueprint: {
       version: 1,
       spine: { torsoSegments: 6, torsoLengthM: 1.7, girth: 0.258, girthPeak: 0.44, frontTaper: 0.465, rearTaper: 0.75, crossSection: 1.28 },
       neck: { segments: 4, lengthFrac: 0.1125, radiusFrac: 0.45, lift: 0.1 },
       tail: { segments: 10, lengthFrac: 0.495, radiusFrac: 0.3, droop: 0.528 },
       head: {
-        sizeFrac: 0.543, lengthFrac: 0.915, braincaseDome: 1, crossSection: 1, facePitch: -0.342, faceHeight: 0.08,
-        foreheadHeight: 0.61, foreheadLength: 0.38, foreheadSlope: -0.05, beak: 0, snoutLengthFrac: 0.45, snoutSegments: 2,
+        sizeFrac: 0.543, lengthFrac: 0.915, braincaseDome: 1, crossSection: 1, facePitch: -0.342,
+        foreheadHeight: 0.2907, foreheadLength: 0.3758, foreheadSlope: -0.05, beak: 0, snoutLengthFrac: 0.45, snoutSegments: 2,
         snoutRadiusFrac: 0.6581, muzzleSquash: 0.495, snoutFlatten: 1.468, snoutCurve: -0.12, mouthOpen: 1.14, jawDepth: 0.11,
-        jawOffset: 0.1, mouthVertical: 0, noseLengthFrac: 0.27, noseRadiusFrac: 0.4575, noseHeight: 0.0525, noseSegments: 2,
-        noseDroop: 1.5, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.582, eyeHeight: 0.651, eyeBulge: 0.54,
+        jawOffset: 0.1, mouthVertical: 0, noseLengthFrac: 0.27, noseRadiusFrac: 1.09, nosePosition: 0.0525,
+        noseTaper: 0.45, noseFlatten: 1, noseSegments: 2,
+        noseDroop: 1.5, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 0.582, eyeHeight: 0.699, eyeBulge: 0.54,
         padding: 0.3, cheek: 0.3, jowl: 0.2, brow: 0.25, muzzlePad: 0.45, lips: 0.3,
         chin: 0,
       },
       posture: { bodyPitch: 0.0655, bodyHeight: 0.805 },
       skin: { baseColor: "#8a7456", bellyColor: "#cdbfa3", accentColor: "#3d3528" },
       limbGroups: [
-        {
-          placement: "bilateral", count: 2, stationStart: 0.145, stationEnd: 0.61, sizePeak: 1,
-          sizeContrast: 0, lengthFrac: 0.388, radiusFrac: 0.43185, taper: 0.298, membrane: 0,
-          attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.08, flexRange: 0.55,
-          legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1,
-          toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0,
-          toeCurl: 0.02,
-        },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.145, stationEnd: 0.145, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.388, radiusFrac: 0.43185, taper: 0.298, membrane: 0, attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: -0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1, toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0, toeCurl: 0.02 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.61, stationEnd: 0.61, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.388, radiusFrac: 0.43185, taper: 0.298, membrane: 0, attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1, toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0, toeCurl: 0.02 },
       ],
     },
   },
   {
-    name: "Plesiosaur (flippers)",
+    id: "plesiosaur",
+    title: "Plesiosaur (flippers)",
     blueprint: {
       version: 1,
       neck: { segments: 5, lengthFrac: 1.3, radiusFrac: 0.4, lift: 0.5 },
@@ -372,7 +418,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Hexapod (beetle)",
+    id: "beetle",
+    title: "Hexapod (beetle)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 0.9, girth: 0.22, girthPeak: 0.55, profile: [{ at: 0.25, scale: 0.8 }, { at: 0.5, scale: 0.7 }, { at: 0.75, scale: 1.1 }] },
@@ -389,7 +436,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Centipede (many legs)",
+    id: "centipede",
+    title: "Centipede (many legs)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 2.2, girth: 0.06, girthPeak: 0.5, torsoSegments: 10, frontTaper: 0.4, rearTaper: 0.4 },
@@ -406,7 +454,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Spider (waist + abdomen)",
+    id: "spider",
+    title: "Spider (waist + abdomen)",
     blueprint: {
       version: 1,
       spine: { crossSection: 1.2, girth: 0.18, girthPeak: 0.25, torsoLengthM: 0.9, frontTaper: 0.4, rearTaper: 0.3, profile: [{ at: 0.2, scale: 1 }, { at: 0.45, scale: 0.4 }, { at: 0.8, scale: 1.55 }] },
@@ -420,7 +469,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Wasp (waist + stinger)",
+    id: "wasp",
+    title: "Wasp (waist + stinger)",
     blueprint: {
       version: 1,
       spine: { girth: 0.16, girthPeak: 0.3, torsoLengthM: 1.2, frontTaper: 0.3, rearTaper: 0.2, profile: [{ at: 0.3, scale: 1.1 }, { at: 0.45, scale: 0.18 }, { at: 0.62, scale: 1.5 }, { at: 0.95, scale: 0.7 }] },
@@ -437,7 +487,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Crab (flat + claws)",
+    id: "crab",
+    title: "Crab (flat + claws)",
     blueprint: {
       version: 1,
       spine: { crossSection: 2.2, girth: 0.32, girthPeak: 0.5, torsoLengthM: 0.6 },
@@ -460,7 +511,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Mantis (raptorial forelegs)",
+    id: "mantis",
+    title: "Mantis (raptorial forelegs)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 1.0, girth: 0.09, girthPeak: 0.45, frontTaper: 0.4, rearTaper: 0.5, profile: [{ at: 0.3, scale: 0.85 }, { at: 0.6, scale: 1.15 }] },
@@ -483,7 +535,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Octopus (radial arms)",
+    id: "octopus",
+    title: "Octopus (radial arms)",
     blueprint: {
       version: 1,
       spine: { girth: 0.33, girthPeak: 0.3, torsoLengthM: 0.7 },
@@ -497,7 +550,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Jellyfish (radial)",
+    id: "jellyfish",
+    title: "Jellyfish (radial)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 0.5, girth: 0.45, girthPeak: 0.5, crossSection: 2.0, frontTaper: 0.6, rearTaper: 0.6 },
@@ -514,7 +568,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
   // growths welded to the head; foliage is explicitly zeroed (the growth
   // defaults are a leafy shrub for the lab's "add growth" button).
   {
-    name: "Ram (curled horns)",
+    id: "ram",
+    title: "Ram (curled horns)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 1.1, girth: 0.22, girthPeak: 0.4, frontTaper: 0.4, rearTaper: 0.5 },
@@ -522,7 +577,10 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       tail: { segments: 2, lengthFrac: 0.2, radiusFrac: 0.3, droop: 0.8 },
       head: { sizeFrac: 0.55, beak: 0.2, snoutLengthFrac: 0.7, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.15, stationEnd: 0.85, lengthFrac: 0.55, radiusFrac: 0.14, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.15, stationEnd: 0.15, lengthFrac: 0.484, radiusFrac: 0.1232, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, lengthFrac: 0.55, radiusFrac: 0.14, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: 0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1, sizeContrast: 0 },
       ],
       growths: [
         {
@@ -536,7 +594,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Deer (branching antlers)",
+    id: "deer",
+    title: "Deer (branching antlers)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 1.3, girth: 0.15, girthPeak: 0.4 },
@@ -544,7 +603,10 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       tail: { segments: 2, lengthFrac: 0.15, radiusFrac: 0.3, droop: 0.5 },
       head: { sizeFrac: 0.45, beak: 0.25, snoutLengthFrac: 0.9, eyePairs: 1, eyeSizeFrac: 0.18, eyeAngle: 1.0 },
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.15, stationEnd: 0.85, lengthFrac: 0.85, radiusFrac: 0.09, taper: 0.45, attachHeight: 0.35, restLevation: -0.6, restFlexion: -0.25, stance: 0.9, footLengthFrac: 0.22, toeCount: 1 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.15, stationEnd: 0.15, lengthFrac: 0.748, radiusFrac: 0.0792, taper: 0.45, attachHeight: 0.35, restLevation: -0.6, restFlexion: -0.25, stance: 0.9, footLengthFrac: 0.22, toeCount: 1, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, lengthFrac: 0.85, radiusFrac: 0.09, taper: 0.45, attachHeight: 0.35, restLevation: -0.6, restFlexion: 0.25, stance: 0.9, footLengthFrac: 0.22, toeCount: 1, sizeContrast: 0 },
       ],
       growths: [
         {
@@ -560,7 +622,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Cow (straight horns)",
+    id: "cow",
+    title: "Cow (straight horns)",
     blueprint: {
       version: 1,
       spine: { torsoLengthM: 1.6, girth: 0.24, girthPeak: 0.55 },
@@ -568,7 +631,10 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       tail: { segments: 5, lengthFrac: 0.6, radiusFrac: 0.2, droop: 1.0 },
       head: { sizeFrac: 0.5, beak: 0.15, snoutLengthFrac: 0.8, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.1 },
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.15, stationEnd: 0.85, lengthFrac: 0.6, radiusFrac: 0.15, taper: 0.55, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.15, stationEnd: 0.15, lengthFrac: 0.528, radiusFrac: 0.132, taper: 0.55, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.85, stationEnd: 0.85, lengthFrac: 0.6, radiusFrac: 0.15, taper: 0.55, attachHeight: 0.35, restLevation: -0.55, restFlexion: 0.3, stance: 0.85, footLengthFrac: 0.18, toeCount: 1, sizeContrast: 0 },
       ],
       growths: [
         {
@@ -582,7 +648,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    name: "Sheep (woolly)",
+    id: "sheep",
+    title: "Sheep (woolly)",
     blueprint: {
       version: 1,
       // Stocky woolly barrel on short legs: girth up, legs down, blunt
@@ -593,7 +660,10 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       // A small bare head poking out of the fleece.
       head: { sizeFrac: 0.38, beak: 0.15, snoutLengthFrac: 0.6, eyePairs: 1, eyeSizeFrac: 0.16, eyeAngle: 1.0 },
       limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.18, stationEnd: 0.82, lengthFrac: 0.45, radiusFrac: 0.1, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.16, toeCount: 1 },
+        // FORE — elbow folds BACK.
+        { placement: "bilateral", count: 1, stationStart: 0.18, stationEnd: 0.18, lengthFrac: 0.396, radiusFrac: 0.088, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: -0.3, stance: 0.85, footLengthFrac: 0.16, toeCount: 1, sizeContrast: 0 },
+        // HIND — knee folds FORWARD.
+        { placement: "bilateral", count: 1, stationStart: 0.82, stationEnd: 0.82, lengthFrac: 0.45, radiusFrac: 0.1, taper: 0.5, attachHeight: 0.35, restLevation: -0.55, restFlexion: 0.3, stance: 0.85, footLengthFrac: 0.16, toeCount: 1, sizeContrast: 0 },
       ],
       // Wool: pale cream body over a lighter belly; dark hooves/face accent.
       skin: { baseColor: "#e6dfcd", bellyColor: "#d8d0bc", accentColor: "#4a4038" },
@@ -603,7 +673,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
   // ── Plants — nothing but a growth on a nub. Plant height ≈ 0.1 m
   // (the nub torso) × stem.lengthFrac; skin.baseColor is the stem color.
   {
-    name: "Oak (tree)",
+    id: "oak",
+    title: "Oak (tree)",
     blueprint: plant(
       {
         seed: 12,
@@ -615,7 +686,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Grass tuft",
+    id: "grass",
+    title: "Grass tuft",
     blueprint: plant(
       {
         seed: 5,
@@ -630,7 +702,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Mushroom",
+    id: "mushroom",
+    title: "Mushroom",
     blueprint: plant(
       {
         seed: 3,
@@ -647,7 +720,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Saguaro (cactus)",
+    id: "saguaro",
+    title: "Saguaro (cactus)",
     blueprint: plant(
       {
         seed: 9,
@@ -661,7 +735,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Bush (berries)",
+    id: "bush",
+    title: "Bush (berries)",
     blueprint: plant(
       {
         seed: 21,
@@ -681,7 +756,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
   // fruit kinds the market items above/below use. Visual plausibility at
   // town-scenery distance is the bar, not botany.
   {
-    name: "Apple tree",
+    id: "apple_tree",
+    title: "Apple tree",
     blueprint: plant(
       {
         seed: 17,
@@ -697,7 +773,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Banana plant",
+    id: "banana_plant",
+    title: "Banana plant",
     blueprint: plant(
       {
         seed: 23,
@@ -715,7 +792,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Grape vine",
+    id: "grape_vine",
+    title: "Grape vine",
     blueprint: plant(
       {
         seed: 29,
@@ -732,7 +810,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Carrot plant",
+    id: "carrot_plant",
+    title: "Carrot plant",
     blueprint: plant(
       {
         seed: 31,
@@ -755,21 +834,24 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
   // neck / tipTaper), curvature, lobes, and pole crown. These double as
   // the market-item catalogue (buildFruitMesh renders one standalone).
   {
-    name: "Apple",
+    id: "apple",
+    title: "Apple",
     blueprint: plant(
       { type: "fruit", seed: 1, fruit: { sizeM: 0.085, aspect: 0.95, bulge: 0.48, neck: 0.22, tipTaper: 0.22, stemFrac: 0, color: "#c0392b" } },
       { name: "apple", skin: { baseColor: "#6a5a2e" } },
     ),
   },
   {
-    name: "Banana",
+    id: "banana",
+    title: "Banana",
     blueprint: plant(
       { type: "fruit", seed: 2, fruit: { sizeM: 0.035, aspect: 5.5, bulge: 0.5, neck: 0.35, tipTaper: 0.45, curvature: 1.4, stemFrac: 0, color: "#e3c018" } },
       { name: "banana", skin: { baseColor: "#6a5a2e" } },
     ),
   },
   {
-    name: "Grape",
+    id: "grape",
+    title: "Grape",
     blueprint: plant(
       // One berry of the bunch — the market/ground item the grape vine yields.
       { type: "fruit", seed: 9, fruit: { sizeM: 0.025, aspect: 1.2, bulge: 0.5, neck: 0.12, tipTaper: 0.1, stemFrac: 0, color: "#5b2a6e" } },
@@ -777,7 +859,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Pear",
+    id: "pear",
+    title: "Pear",
     blueprint: plant(
       // Bulb at the base (bottom), tapering to a neck at the tip (top).
       { type: "fruit", seed: 3, fruit: { sizeM: 0.09, aspect: 1.5, bulge: 0.32, neck: 0, tipTaper: 0.5, curvature: 0.12, stemFrac: 0, color: "#b5c23a" } },
@@ -785,7 +868,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Strawberry",
+    id: "strawberry",
+    title: "Strawberry",
     blueprint: plant(
       // Point at the base (bottom), widening to a leafy calyx crown at the
       // top — crownLeaves fan from the tip pole.
@@ -794,7 +878,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Pumpkin",
+    id: "pumpkin",
+    title: "Pumpkin",
     blueprint: plant(
       // Squat + ribbed (lobes); sits near the ground on a stub stalk.
       { type: "fruit", seed: 5, stem: { lengthFrac: 0.3, girth: 0.02 }, fruit: { sizeM: 0.3, aspect: 0.72, bulge: 0.5, neck: 0.18, tipTaper: 0.18, lobes: 8, stemFrac: 0, color: "#d1892f" } },
@@ -802,7 +887,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Pineapple",
+    id: "pineapple",
+    title: "Pineapple",
     blueprint: plant(
       // Barrel body + a big spray of crown leaves at the top.
       { type: "fruit", seed: 6, fruit: { sizeM: 0.14, aspect: 1.55, bulge: 0.5, neck: 0.12, tipTaper: 0.12, lobes: 6, stemFrac: 0, crownLeaves: 9, crownSize: 1.0, color: "#c69a2e" } },
@@ -810,7 +896,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Carrot (root)",
+    id: "carrot",
+    title: "Carrot (root)",
     blueprint: plant(
       // Downward taper to a point, leafy top at the ground (calyx crown).
       { type: "root", seed: 7, fruit: { sizeM: 0.05, aspect: 3.4, bulge: 0.14, neck: 0, tipTaper: 1, stemFrac: 0, calyxLeaves: 6, crownSize: 1.4, color: "#e07b1a" } },
@@ -818,7 +905,8 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     ),
   },
   {
-    name: "Beet (root)",
+    id: "beet",
+    title: "Beet (root)",
     blueprint: plant(
       { type: "root", seed: 8, fruit: { sizeM: 0.09, aspect: 1.15, bulge: 0.35, neck: 0, tipTaper: 0.85, stemFrac: 0, calyxLeaves: 5, crownSize: 1.1, color: "#7b1f3a" } },
       { name: "beet", skin: { baseColor: "#3f7a34" } },

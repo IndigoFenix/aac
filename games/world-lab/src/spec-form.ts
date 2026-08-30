@@ -10,16 +10,17 @@
  * `aivota-world` envelope and folds in the session settings (avatar / scale /
  * culture — how you VIEW the world, orthogonal to what it IS).
  */
-import { OBJECT_KINDS, lowerObjectDef, type ObjectDef } from "@shared/world-engine/object-def";
+import { OBJECT_KINDS, type ObjectDef } from "@shared/world-engine/object-def";
+import { lowerTreeWorld, type TreeWorld } from "./lower-world";
 import { validateFields, type FieldSpec, type GroupSpec } from "@shared/world-engine/kernel/spec-schema";
+import { listCreatureMods } from "@shared/world-engine/creatures/mod-library";
 
 type Dict = Record<string, unknown>;
 
-/** A loadable preset: an ObjectDef tree + its session settings. */
-export interface TreeWorld {
-  tree: ObjectDef;
-  session?: Dict; // avatar / can_fly / avatar_species / scale / culture
-}
+/** A loadable preset: an ObjectDef tree + its session settings. Defined in
+ *  lower-world.ts (with the fold that consumes it) and re-exported here, where
+ *  every existing caller imports it from. */
+export type { TreeWorld };
 
 /** The scopeable kinds, in ladder order — a root may be any of these. */
 const ROOT_KINDS = Object.values(OBJECT_KINDS).filter((k) => k.scope);
@@ -225,10 +226,27 @@ export function mountSpecForm(container: HTMLElement, onChange: () => void = () 
     fly.addEventListener("change", () => { if (fly.checked) session.can_fly = true; else delete session.can_fly; onChange(); });
     row(sec, "Can fly", fly);
 
-    const sp = el("input", "sf-ctl"); sp.type = "text"; sp.placeholder = "human_cute";
+    const sp = el("input", "sf-ctl"); sp.type = "text"; sp.placeholder = "human";
     if (typeof session.avatar_species === "string") sp.value = session.avatar_species;
     sp.addEventListener("input", () => { if (sp.value) session.avatar_species = sp.value; else delete session.avatar_species; onChange(); });
     row(sec, "Avatar species", sp);
+
+    // CREATURE MODS (creatures/mod-library.ts) — one checkbox per built-in.
+    // The set is rebuilt in library order rather than click order, because
+    // declaration order is semantic (mods compose left to right).
+    for (const mod of listCreatureMods()) {
+      const on = el("input", "sf-ctl"); on.type = "checkbox";
+      const current = (): string[] => Array.isArray(session.mods) ? session.mods as string[] : [];
+      on.checked = current().includes(mod.id);
+      on.addEventListener("change", () => {
+        const next = listCreatureMods()
+          .map((m) => m.id)
+          .filter((id) => (id === mod.id ? on.checked : current().includes(id)));
+        if (next.length) session.mods = next; else delete session.mods;
+        onChange();
+      });
+      row(sec, `Mod: ${mod.id}`, on, mod.description);
+    }
 
     // scale toggle
     const scHead = el("label", "sf-objtoggle", sec);
@@ -344,14 +362,9 @@ export function mountSpecForm(container: HTMLElement, onChange: () => void = () 
       render();
     },
     getDocument(): unknown {
-      const doc = lowerObjectDef(tree) as Dict;
-      const g = doc.game as Dict;
-      if (session.avatar !== undefined) g.avatar = session.avatar;
-      if (session.can_fly) g.can_fly = true;
-      if (typeof session.avatar_species === "string") g.avatar_species = session.avatar_species;
-      if (isObj(session.scale)) g.scale = session.scale;
-      if (isObj(session.culture)) g.culture = session.culture;
-      return doc;
+      // ONE fold, shared with the sync script that generates a shipped game's
+      // spec — see lower-world.ts.
+      return lowerTreeWorld({ tree, session });
     },
   };
 }

@@ -74,7 +74,7 @@ describe("planet build wires climate rain into the rivers", () => {
       settle: true, radius: 6_371_000,
       founding: { threshold: 100, radius: 2, minSpacing: 6, maxHarvest: 600 },
     },
-    initialFocus: null, avatar: false, avatarSpecies: "human",
+    initialFocus: null, avatar: false, avatarSpecies: "human", mods: [],
     canFly: false, creativeMode: false, entities: null,
   };
   const built = buildPlanetWorld(game);

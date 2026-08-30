@@ -7,6 +7,7 @@
 import pg from "pg";
 import { randomUUID } from "crypto";
 import type { FanoutBus } from "./bus";
+import { resolveDbSsl } from "../../db-ssl.js";
 
 const NOTIFY_CHANNEL = "realtime_events";
 
@@ -25,7 +26,7 @@ export class PostgresBus implements FanoutBus {
   private async connect(): Promise<void> {
     const client = new pg.Client({
       connectionString: this.connectionString.replace(/[?&]sslmode=[^&]*/g, ""),
-      ssl: { rejectUnauthorized: false },
+      ssl: resolveDbSsl(this.connectionString),
     });
     client.on("notification", (msg) => {
       if (msg.channel !== NOTIFY_CHANNEL || !msg.payload) return;

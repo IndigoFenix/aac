@@ -73,6 +73,15 @@ export interface BuildSiteMark {
   /** Banked-labor fraction 0..1 — how far along the work is. The 3D overlay
    *  reads it as wall courses; a narrator reads it as a number. */
   progress?: number;
+  /** ④ #43 — the GATHER phase while unstaged: the least-covered head of the
+   *  bill as the pile's have/want (`orderGathering`, one definition beside
+   *  `stagingMissing`). A narrator reads it as "gathering block 84/120";
+   *  the ghost overlay already draws the same fact as claimed bays. */
+  gathering?: { head: string; have: number; want: number };
+  /** #44 RENDERED PILES — the goods physically ON this ground (an order's
+   *  site pile; the community lot's ledger), drawn as stacked units in a
+   *  corner of the rect. One row per glyph, kernel `pileEntries` shape. */
+  pile?: ReadonlyArray<{ glyph: string; n: number }>;
   /** The finished building's wall tint. */
   color?: string;
 }
@@ -165,6 +174,28 @@ const PILLAR_SPAN = 7;
 /** How high the kind icon floats over a site — clear of the pillars. */
 const ICON_Y = 3.9;
 const ICON_H = 1.7;
+
+// ── RENDERED PILES (#44) ──────────────────────────────────────────────────
+/** One drawn unit of hauled goods — a matte squared lump, laid in courses at
+ *  the rect's corner. Sized well under a bay so a pile reads as GOODS on the
+ *  ground, never as construction geometry. */
+const PILE_UNIT_W = 0.52;
+const PILE_UNIT_H = 0.3;
+const PILE_UNIT_D = 0.34;
+/** Units per course row before the next layer starts. */
+const PILE_ROW_N = 6;
+/** Draw cap PER SITE: past this the stack saturates visually — the count
+ *  stays honest in the narrator's have/want readout, and a cap this high is
+ *  only reached by bills the ghost lattice already dominates visually. */
+const PILE_DRAW_CAP = 60;
+/** Matte tints by stack HEAD (the facet names the material, the head names
+ *  the thing). Unknown heads take the neutral. */
+const PILE_TINT: Readonly<Record<string, number>> = {
+  block: 0xb3a48b,
+  wood: 0x8a6a45,
+  stone: 0x8f9094,
+};
+const PILE_TINT_DEFAULT = 0xa39a8a;
 
 // ── GHOSTS (phase 6) ──────────────────────────────────────────────────────
 /** The three answers, as colour. Blue = on its way, amber = being made, red =
@@ -447,6 +478,11 @@ export class BuildOverlay3D implements SceneOverlay {
         }
         this.siteJunk.push(geo, mat);
       }
+      // #44 RENDERED PILES — the hauled goods, drawn where they physically
+      // are: one lump per unit in courses at the rect's corner. The ledger
+      // is the count; the cap only saturates the drawing, never the number
+      // (the narrator's have/want carries it).
+      if (s.pile?.length) this.buildPile(s, baseY);
       // THE KIND ICON — kept from the previous set when the glyph is the same,
       // so a stage change never restarts its raster.
       const kept = keptIcons.get(s.id);
@@ -467,6 +503,47 @@ export class BuildOverlay3D implements SceneOverlay {
     for (const e of keptIcons.values()) {
       e.tex.dispose();
       e.mat.dispose();
+    }
+  }
+
+  /** #44 — draw one site's pile: per glyph row, units in courses of
+   *  PILE_ROW_N along the rect's inner corner, layers stacking up. One
+   *  shared geometry + one material per head tint, disposed with the site
+   *  set (siteJunk). */
+  private buildPile(s: BuildSiteMark, baseY: number): void {
+    const geo = new THREE.BoxGeometry(PILE_UNIT_W, PILE_UNIT_H, PILE_UNIT_D);
+    this.siteJunk.push(geo);
+    const mats = new Map<number, THREE.MeshStandardMaterial>();
+    const matOf = (tint: number): THREE.MeshStandardMaterial => {
+      let m = mats.get(tint);
+      if (!m) {
+        m = new THREE.MeshStandardMaterial({ color: tint, roughness: 1, metalness: 0 });
+        mats.set(tint, m);
+        this.siteJunk.push(m);
+      }
+      return m;
+    };
+    const ox = s.x + 0.8;
+    let oy = s.y + 0.8;
+    let drawn = 0;
+    for (const row of s.pile ?? []) {
+      const head = row.glyph.split(".")[0] ?? row.glyph; // facet → head
+      const mat = matOf(PILE_TINT[head] ?? PILE_TINT_DEFAULT);
+      for (let i = 0; i < row.n && drawn < PILE_DRAW_CAP; i++, drawn++) {
+        const col = i % PILE_ROW_N;
+        const layer = Math.floor(i / PILE_ROW_N);
+        const px = ox + col * (PILE_UNIT_W + 0.07);
+        const py = oy + (layer % 2) * 0.05; // slight stagger so layers read
+        const unit = new THREE.Mesh(geo, mat);
+        unit.position.set(
+          px,
+          this.groundAt(px, py) + PILE_UNIT_H / 2 + layer * PILE_UNIT_H,
+          py,
+        );
+        this.siteGroup.add(unit);
+      }
+      oy += PILE_UNIT_D + 0.3; // the next glyph gets its own row strip
+      if (drawn >= PILE_DRAW_CAP) break;
     }
   }
 

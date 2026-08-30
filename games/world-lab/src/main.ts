@@ -60,7 +60,7 @@ import {
 } from "@shared/world-engine/planet/growth";
 import type { TownPlay } from "@shared/world-engine/interaction/town/town-play";
 import {
-  createFoundedSite, foundedSiteToJSON,
+  createFoundedSite, foundedSiteToJSON, foundSite,
   siteTownConfig, clusterSites, clusterRadiusM, mergeSites, CLUSTER_MIN_SITES,
   type FoundedSite, type SerializedFoundedSite,
 } from "@shared/world-engine/interaction/town/founding";
@@ -665,6 +665,97 @@ function registerFoundedPlanetSite(site: {
   // THE FOUNDING CADENCE (growth phase C §3.3): a new homestead is the only
   // thing that can complete a cluster, so the check rides the founding.
   maybeFoundTownOverCluster(body.id);
+}
+
+// ⚖️ #44 E — THE FOUNDING PREMISE ON PLANET GROUND (the homestead ① ruling
+// built): a preset whose solar root declares `premise: "founding"` seeds a
+// pre-registered FoundedSite at a FOREST-biome founding cell of the home
+// planet, through the SAME door the save-restore uses (foundedPlanetSites +
+// addCities + registerFounded), and parks the spirit over it — the approach
+// loader then mounts the age-0 town on real planet ground (siteTownConfig:
+// terrain "planet", no walls) with the whole founding machinery live and
+// #44 C's region draws as its supply line. The seed WAITS for the home
+// planet's geography (the restore door's own addCities no-ops pre-bake),
+// polled from stepSpirit beside the pendingFocus resolver.
+let premiseSeedPending: {
+  stock: Record<string, number>;
+  startPop: number;
+  seed: number;
+} | null = null;
+const PREMISE_KEY = "frontier";
+
+function stepFoundingPremise(): void {
+  if (!premiseSeedPending || !flight || !spirit || !cityTowns) return;
+  const body = flight.world.homePlanet;
+  if (!body) return;
+  const built = body.geography;
+  if (!built) {
+    // Ahead of the pixel gate — the premise IS the destination.
+    body.startGeographyBake?.();
+    return;
+  }
+  const want = premiseSeedPending;
+  premiseSeedPending = null;
+  let rec = foundedPlanetSites.get(PREMISE_KEY);
+  if (!rec) {
+    // FOREST-FIRST: the ① ruling's whole point — the homestead stands where
+    // the timber is. Founding cells are pre-scored (findFoundingSites);
+    // biome 1 = tree (ecology.ts: species index + 1); dry land only.
+    const biome = built.grid.fields.biome;
+    const dry = (built.sites ?? []).filter((s) => {
+      const d = built.topo.pos3?.(s.cell);
+      return !!d && built.surface.heightAt(d) >= 0;
+    });
+    const site0 = dry.find((s) => biome?.[s.cell] === 1) ?? dry[0];
+    if (!site0 || !built.topo.pos3) return;
+    const dirArr = built.topo.pos3(site0.cell);
+    const dir: [number, number, number] = [dirArr[0]!, dirArr[1]!, dirArr[2]!];
+    const surfaceR = body.radius + Math.max(0, built.surface.heightAt(dirArr));
+    const site = foundSite({ seed: want.seed, at: { x: 0, y: 0 }, key: PREMISE_KEY });
+    // Spec stock straight onto the site ledger — founders carry what the
+    // spec says and nothing else (the #43 rider law); the baskets ride the
+    // same declared list (depositSiteStock's material filter would drop
+    // them, which is why this writes the ledger directly).
+    for (const [g, n] of Object.entries(want.stock)) {
+      if (n > 0) site.stock[g] = (site.stock[g] ?? 0) + n;
+    }
+    const cell = FOUNDED_CELL_BASE + site.seed;
+    rec = { cell, bodyId: body.id, dir, surfaceR, record: site };
+    foundedPlanetSites.set(PREMISE_KEY, rec);
+    flight.addCities(body.id, [foundedPlanetCity(cell, PREMISE_KEY, dir)]);
+    cityTowns.registerFounded(
+      cell,
+      siteTownConfig(site, { scale: docSessionScale(), startPop: want.startPop }),
+    );
+    traceWalk(
+      `founding premise seeded: ${PREMISE_KEY} (cell ${cell}, biome ${biome?.[site0.cell] ?? "?"})`,
+    );
+  } else {
+    // A RESTORED premise: the save's own registration ran with startPop 0
+    // (every restored site does) and its beacon may have raced the bake
+    // (addCities no-ops pre-geography). Re-register with the founding
+    // population and re-add the beacon now that the ground exists.
+    if (!flight.cities().some((fc) => fc.city.cell === rec!.cell)) {
+      flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, PREMISE_KEY, rec.dir)]);
+    }
+    if (rec.record) {
+      cityTowns.registerFounded(
+        rec.cell,
+        siteTownConfig(rec.record, { scale: docSessionScale(), startPop: want.startPop }),
+      );
+    }
+  }
+  // Park the drone over the homestead and kick the approach — the boot's
+  // whole promise is standing at the founding, not hunting for it.
+  const fc = flight.cities().find((c) => c.city.cell === rec!.cell);
+  if (fc) {
+    _pendDir
+      .set(fc.city.dir[0], fc.city.dir[1], fc.city.dir[2])
+      .normalize()
+      .applyQuaternion(fc.body.orientation);
+    spirit.drone.setGround(_pendDir, CITY_FOCUS_ALT * 1.5);
+    cityTowns.approach(fc);
+  }
 }
 
 /** SESSION COORDS of every OTHER site standing on this body — the standing
@@ -3623,6 +3714,10 @@ function stepSpirit(dt: number, now: number): void {
   const glidingWild = s.ladder.level === "ground" && !glidingTown;
   spiritWildDriven = glidingWild && embedWild !== null;
 
+  // #44 E — the founding premise seeds (and aims) once the home planet's
+  // geography lands; a no-op every frame after.
+  stepFoundingPremise();
+
   // A town-rung initial_focus resolves once the home world's cities exist
   // (the geology bake founds them): park the drone over the focus town and
   // let the ladder's own enter gate take it from there.
@@ -3843,8 +3938,28 @@ function bootSpiritWorld(game: GameSettings): void {
   const t0 = performance.now();
   clearWorld();
   setSpaceMode(true);
-  const ws = game.world as { seed?: number; questCount?: number };
+  const ws = game.world as {
+    seed?: number;
+    questCount?: number;
+    // #44 E — the founding-premise marker rides the solar root's params
+    // verbatim (lowerObjectDef copies root params; nothing on the spirit
+    // path re-validates them — buildSolarWorld's reject-unknown gate never
+    // runs here).
+    premise?: string;
+    premise_stock?: Record<string, number>;
+    premise_population?: number;
+  };
   const galaxySeed = (ws.seed ?? 1337) >>> 0;
+  // #44 E — arm (or disarm) the founding premise for THIS boot; the seed
+  // itself waits for the home planet's geography (stepFoundingPremise).
+  premiseSeedPending =
+    ws.premise === "founding"
+      ? {
+          stock: ws.premise_stock ?? { wood: 14, stone: 6, basket: 2 },
+          startPop: ws.premise_population ?? 5,
+          seed: galaxySeed,
+        }
+      : null;
   // COMPRESSION rides the spirit route too (the miniature demo with
   // avatar: "spirit" boots here, not bootSolarFlight).
   geoBaker = createGeologyBaker({ scale: () => rootLoaded?.game?.scale ?? null });

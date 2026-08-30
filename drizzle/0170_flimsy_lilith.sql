@@ -1,0 +1,1 @@
+ALTER TABLE "admin_users" ADD COLUMN "is_active" boolean DEFAULT true NOT NULL;

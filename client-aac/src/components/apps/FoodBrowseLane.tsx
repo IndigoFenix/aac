@@ -2,7 +2,7 @@
 //
 // THE STUDENT'S HALF of the restaurant app — "what do you want to eat?".
 //
-// Everything else in RestaurantApp is built for the adult holding the device.
+// Everything else in RestaurantApp is built for the companion holding the device.
 // This lane is built for the child, and the difference is not decoration:
 //
 //   - it renders through the ORDINARY BOARD RENDERER, so it is a real AAC
@@ -56,6 +56,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import { getCurrentGps, mayReadDeviceLocation } from "@/lib/geolocation";
+import { getHost } from "@/lib/platform";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { CUISINE_CATEGORIES } from "@shared/venue-cuisine";
 import { getVocabularyItem } from "@shared/glyph-registry";
@@ -91,10 +93,17 @@ interface FoodBrowseLaneProps {
    * still speaks, there is just nothing to search. See restaurant-app-open.ts.
    */
   canSearch?: boolean;
+  /**
+   * Per-student `deviceLocationEnabled`. Independent of `canSearch`: that one
+   * asks whether this child may look for places at all, this one asks whether
+   * the device may say where it is. Either being off withholds the places half
+   * and nothing else — the grid still renders in full and still speaks.
+   */
+  locationEnabled?: boolean;
   /** Voice a press the way a board button is voiced — student's voice, and the
    *  AI is told. `label` is what was pressed; `sentence` is what is said. */
   onSpeak?: (label: string, sentence: string) => void;
-  /** Hand the device to the adult. Deliberately not dwellable — see below. */
+  /** Hand the device to the companion. Deliberately not dwellable — see below. */
   onSwitchToCaretaker: () => void;
   /** Reported once, so the parent can fall back to the caretaker lane when a
    *  clinician has not enabled student browsing for this child. */
@@ -108,16 +117,16 @@ interface FoodBrowseLaneProps {
 }
 
 /** A position, or null when we could not get one. Never an error to the
- *  student: the grid works either way. */
+ *  student: the grid works either way.
+ *
+ *  Goes through getCurrentGps rather than navigator.geolocation directly, so it
+ *  inherits the watchdog: the platform `timeout` alone is not enough, because a
+ *  host with no location usage-description key fires NEITHER callback and the
+ *  promise never settles (docs/IPAD_BUILD.md). */
 function currentPosition(): Promise<{ latitude: number; longitude: number } | null> {
-  if (!navigator.geolocation) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 },
-    );
-  });
+  return getCurrentGps().then((gps) =>
+    gps ? { latitude: gps.latitude, longitude: gps.longitude } : null,
+  );
 }
 
 /**
@@ -140,6 +149,7 @@ export function FoodBrowseLane({
   initialPlaces,
   initialFood,
   canSearch = true,
+  locationEnabled = false,
   onSpeak,
   onSwitchToCaretaker,
   onDisabled,
@@ -187,11 +197,13 @@ export function FoodBrowseLane({
   // is in `initialCategories`. Pressing a food type is what needs coordinates,
   // and asking for them now means the press does not wait on a GPS fix.
   //
-  // Skipped entirely when this student may not search: asking a child's device
-  // for its location to support a lookup that will never happen is a permission
-  // prompt bought for nothing.
+  // Skipped entirely when this student may not search, or when the clinician
+  // has not enabled device location: asking a child's device where it is to
+  // support a lookup that will never happen is a permission prompt bought for
+  // nothing. The grid itself is unaffected either way — see the header.
   useEffect(() => {
     if (!canSearch) return;
+    if (!mayReadDeviceLocation({ enabled: locationEnabled, host: getHost() })) return;
     let cancelled = false;
     void currentPosition().then((position) => {
       if (!cancelled) setGps(position);
@@ -199,7 +211,7 @@ export function FoodBrowseLane({
     return () => {
       cancelled = true;
     };
-  }, [canSearch]);
+  }, [canSearch, locationEnabled]);
 
   const pressFood = async (key: string) => {
     const food = t(`aac.glyph.${key}`);
@@ -367,7 +379,7 @@ export function FoodBrowseLane({
         />
       </div>
 
-      {/* The way to the adult's half. NOT dwellable, on purpose: a student who
+      {/* The way to the companion's half. NOT dwellable, on purpose: a student who
           lands there by gaze reaches a text screen they cannot use, and one of
           its buttons starts a camera. It stays a deliberate touch. */}
       <button
@@ -376,7 +388,7 @@ export function FoodBrowseLane({
         className="mt-2 pt-2 text-xs text-gray-400 underline self-center shrink-0"
         data-testid="restaurant-caretaker-lane"
       >
-        {t("aac.restaurant.forGrownUp")}
+        {t("aac.restaurant.forCompanion")}
       </button>
     </div>
   );

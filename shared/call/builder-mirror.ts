@@ -57,7 +57,16 @@ export type BuilderTarget =
   /** Remove the last slot (`handleBackspace`). */
   | { kind: "backspace" }
   /** Clear the selected slot (`handleClearSelected`). */
-  | { kind: "clear" };
+  | { kind: "clear" }
+  /**
+   * A WORD FINDER button, by its own board-button id. Guessing mode replaces
+   * the builder's grid with a server-authored board, and its buttons carry
+   * three different meanings (`suggestion` / `narrow` / free guess) that only
+   * the builder's own dispatch can tell apart. Carrying the id — rather than
+   * routing these through `facilitator-press` like a communication-board
+   * button — is what keeps a remote press on the same path as the child's.
+   */
+  | { kind: "guess"; buttonId: string };
 
 /** Prefix that marks a mirrored button id as a builder target. Board buttons
  *  carry server-generated ids and never start with this. */
@@ -73,6 +82,7 @@ const TAG: Record<BuilderTarget["kind"], string> = {
   engineChip: "echip",
   page: "page",
   slot: "slot",
+  guess: "g",
   play: "play",
   backspace: "bksp",
   clear: "clear",
@@ -95,6 +105,8 @@ export function formatBuilderTarget(target: BuilderTarget): string {
       return `${head}:${target.dir}`;
     case "slot":
       return `${head}:${target.index}`;
+    case "guess":
+      return `${head}:${target.buttonId}`;
     default:
       return head;
   }
@@ -133,6 +145,8 @@ export function parseBuilderTarget(id: string | undefined | null): BuilderTarget
       const index = Number(arg);
       return Number.isInteger(index) && index >= 0 ? { kind: "slot", index } : null;
     }
+    case "g":
+      return arg ? { kind: "guess", buttonId: arg } : null;
     case "play":
       return { kind: "play" };
     case "bksp":
@@ -196,6 +210,18 @@ export interface BuilderMirrorInput {
   /** Grid geometry. Defaults to the builder's own fixed 9×2. */
   rows?: number;
   cols?: number;
+  /**
+   * WORD FINDER. When guessing is active the builder hands its grid over to a
+   * server-authored board, and these buttons REPLACE `cells` — they are the
+   * grid the child is looking at, so the mirror shows them rather than a blank
+   * space with a badge saying "word finder".
+   *
+   * Passed through with their own art and labels intact and only their ids
+   * rewritten, because a word-finder button is not builder vocabulary: it is a
+   * narrowing step whose meaning lives in `suggestionKey` / `narrowDimension`,
+   * which only the builder's own dispatch can read.
+   */
+  guessButtons?: BoardButton[];
 }
 
 /** What `serializeBuilderMirror` produces — exactly the fields the existing
@@ -212,9 +238,19 @@ export interface BuilderMirrorSnapshot {
 const DEFAULT_COLS = 9;
 const DEFAULT_ROWS = BUILDER_GRID_CELLS / DEFAULT_COLS;
 
-/** Tint for a word that is present in the scene, matching the student's own
- *  green "here now" treatment (EngineWordButton). */
-const PRESENT_TINT = "#065f46";
+/**
+ * Tint for a word that is present in the scene — the student's own green "here
+ * now" treatment (EngineWordButton's `bg-green-50`).
+ *
+ * 🚨 PALE, not saturated. Every mirrored fill is a BACKGROUND behind DARK text,
+ * exactly as `BoardButtonVisual` paints the real board: the AAC palette is all
+ * pastels (shared/button-color.ts COLOR_MAP) and the label is `text-gray-800`.
+ * A dark plate here puts dark text on a dark fill and the word disappears.
+ */
+const PRESENT_TINT = "#DCFCE7";
+
+/** The active category tab. Same rule as PRESENT_TINT — pale, dark text on it. */
+const ACTIVE_TAB_TINT = "#EDE9FE";
 
 /**
  * Turn the builder's visible state into mirror shapes.
@@ -228,6 +264,15 @@ const PRESENT_TINT = "#065f46";
  * what this mirrors, so the positions are not a choice made here.
  */
 export function serializeBuilderMirror(input: BuilderMirrorInput): BuilderMirrorSnapshot {
+  // Word Finder owns the whole grid when it is up. It FLOWS four across
+  // (`gridAutoRows` on the student's side), so the buttons' own row/col are
+  // ignored there and must be ignored here too.
+  if (input.guessButtons) {
+    return {
+      ...emptyChrome(input),
+      board: guessBoard(input.guessButtons),
+    };
+  }
   const cols = input.cols ?? DEFAULT_COLS;
   const rows = input.rows ?? DEFAULT_ROWS;
   const capacity = rows * cols;
@@ -291,7 +336,7 @@ export function serializeBuilderMirror(input: BuilderMirrorInput): BuilderMirror
     iconRef: tab.emoji,
     // The active tab is the student's current context; without it the clinician
     // cannot tell which of nine identical-looking rails is live.
-    color: tab.active ? "#7c3aed" : undefined,
+    color: tab.active ? ACTIVE_TAB_TINT : undefined,
   }));
 
   const chips: MirrorQuickButton[] = (input.chips ?? []).map((chip) => ({
@@ -337,4 +382,35 @@ export function serializeBuilderMirror(input: BuilderMirrorInput): BuilderMirror
   }
 
   return { board, contextButtons, chips, strip };
+}
+
+/** Tabs, chips and the sentence strip, without the main grid — shared by the
+ *  Word Finder path, where the grid comes from the server instead. */
+function emptyChrome(input: BuilderMirrorInput): BuilderMirrorSnapshot {
+  const { board, ...chrome } = serializeBuilderMirror({ ...input, guessButtons: undefined, cells: [] });
+  return { ...chrome, board };
+}
+
+/** Cells per row in the Word Finder grid — the student's own `repeat(4, …)`. */
+const GUESS_COLS = 4;
+
+/** The Word Finder's board, re-laid the way the student's flows and re-keyed so
+ *  a press comes back as a `guess` target rather than a board-button press. */
+function guessBoard(guessButtons: BoardButton[]): ParsedBoardData {
+  const buttons = guessButtons.map((b, i) => ({
+    ...b,
+    id: formatBuilderTarget({ kind: "guess", buttonId: b.id }),
+    row: Math.floor(i / GUESS_COLS),
+    col: i % GUESS_COLS,
+    // The student's grid flows; a span carried over from an authored layout
+    // would tear a hole in a grid that never had one.
+    rowSpan: 1,
+    colSpan: 1,
+  }));
+  return {
+    name: "wordfinder",
+    grid: { rows: Math.max(1, Math.ceil(buttons.length / GUESS_COLS)), cols: GUESS_COLS },
+    currentPageId: "wordfinder",
+    pages: [{ id: "wordfinder", name: "wordfinder", buttons }],
+  };
 }

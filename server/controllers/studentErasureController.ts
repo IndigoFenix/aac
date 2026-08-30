@@ -4,6 +4,7 @@
 //   POST /api/admin/students/:id/erase            — soft-delete + schedule
 //   POST /api/admin/students/:id/erase/cancel     — within window, restore
 //   GET  /api/admin/students/:id/erasure-status   — read-only status
+//   GET  /api/admin/students/:id/erasure-certificate — §8.4 written confirmation
 //
 // All gated by requireSystemAdmin. Institute admins can request erasure
 // via a separate self-service flow (out of scope for v1; surface this
@@ -13,6 +14,11 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { studentErasureService } from "../services/studentErasureService";
 import { runStudentErasureSweep } from "../services/studentErasureCron";
+import {
+  buildErasureCertificate,
+  renderErasureCertificate,
+  ErasureCertificateNotAvailable,
+} from "../services/erasureCertificateService";
 
 const eraseBodySchema = z.object({
   reason: z.string().max(2000).optional(),
@@ -103,6 +109,34 @@ export class StudentErasureController {
     } catch (err: any) {
       console.error("Erasure status failed:", err);
       res.status(500).json({ success: false, message: "Failed to fetch status" });
+    }
+  }
+
+  /**
+   * Written confirmation of erasure (AKIM appendix §8.4).
+   *
+   * 404 when no completed erasure is recorded — a certificate is derived from
+   * the audit trail, never asserted, so "no evidence" must surface as an
+   * absent document rather than an empty one. `?locale=en` for the English
+   * rendering; Hebrew is the default, the counterparty being Israeli.
+   */
+  async getCertificate(req: Request, res: Response): Promise<void> {
+    try {
+      const studentId = req.params.id;
+      const locale = req.query.locale === "en" ? "en" : "he";
+      const certificate = await buildErasureCertificate(studentId);
+      const document = renderErasureCertificate(certificate, locale);
+      res.json({ success: true, certificate, document });
+    } catch (err: any) {
+      if (err instanceof ErasureCertificateNotAvailable) {
+        res.status(404).json({
+          success: false,
+          message: "No completed erasure is recorded for this record",
+        });
+        return;
+      }
+      console.error("Erasure certificate failed:", err);
+      res.status(500).json({ success: false, message: "Failed to build certificate" });
     }
   }
 }

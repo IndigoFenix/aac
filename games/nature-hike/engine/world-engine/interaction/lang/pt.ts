@@ -106,6 +106,7 @@ const CENTRAL: Record<string, Lexeme> = {
   teacher: { w: "professor", g: "m" },
   street: { w: "rua", g: "f" },
   animal: { w: "animal", g: "m", plw: "animais" },
+  plants: { w: "planta", g: "f" },
   creature: { w: "criatura", g: "f" },
   // Devices (§5) + their toggle states (agree with the device's gender).
   on: { w: "aceso", f: "acesa" },

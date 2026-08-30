@@ -628,3 +628,21 @@ describe("F5 — the region source yields, and never receives", () => {
     expect(BARTER_LEG_DAY_FRAC).toBe(transactionDayFrac({ kind: "shipment-leg" }));
   });
 });
+
+// ═══ #44 — THE SHELF GAINED ITS EDGE (the law revision) ═══
+// You still do not walk INTO a region — you walk to its EDGE, where the cut
+// goods wait at the road. `at` is optional and additive: absent keeps the
+// old scheduled-only contract to the byte.
+describe("#44 wildSourceEndpoint `at` (walk to the region's edge)", () => {
+  it("carries the shelf point when given one, and omits it exactly as before when not", () => {
+    const shelf: Record<string, number> = {};
+    const bare = wildSourceEndpoint("grove", shelf);
+    expect(bare.at).toBeUndefined(); // recordless shelf — scheduled-only
+    const edged = wildSourceEndpoint("grove", shelf, { x: 150, y: 90 });
+    expect(edged.at).toEqual({ x: 150, y: 90 });
+    // The one-way law is untouched by the edge: capacity 0, still refuses.
+    expect(edged.capacity).toBe(0);
+    expect(putStock(edged, { wood: 1 })).toEqual({ accepted: {}, refused: { wood: 1 } });
+    expect(edged.stack).toBe(shelf); // the live shelf, never a copy
+  });
+});

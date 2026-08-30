@@ -24,6 +24,27 @@ if (!acquireSingleInstanceLock()) {
   process.exit(0);
 }
 
+// ── Geolocation provider, BEFORE app.ready ──
+// Chromium's DEFAULT geolocation path is Google's network location service,
+// and Electron ships without Google's compiled-in API keys — so every
+// getCurrentPosition() here failed with POSITION_UNAVAILABLE ("Failed to query
+// location from network service"), no matter what the permission handler said.
+// Granting the permission alone fixes nothing; this switch is the other half.
+//
+// PlatformOnly routes the request to the WINDOWS location provider instead:
+// no API key, nothing billed, and — the reason it is PlatformOnly rather than
+// HybridPlatform — no request to Google carrying a child's whereabouts. The OS
+// still gates it on the system location toggle + the desktop-app permission.
+//
+// Measured on Windows 11 / Electron 34 / Chromium 132: ~100–240 m accuracy,
+// first fix ~2.6 s, cached fixes ~0.4 s. That is coarser than NEAR_RADIUS_M
+// (150 m), which is why shared/location-matching.ts must weigh `accuracy`
+// rather than trusting a bare coordinate.
+app.commandLine.appendSwitch(
+  "enable-features",
+  "LocationProviderManager:LocationProviderManagerMode/PlatformOnly",
+);
+
 // Register app:// as a privileged scheme BEFORE app.ready
 protocol.registerSchemesAsPrivileged([
   {
@@ -194,11 +215,16 @@ app.on("ready", async () => {
 
   // Auto-grant camera, mic, HID — but ONLY to the app's own origin. Embedded
   // third-party sites (the in-app browser) must not auto-acquire these.
+  // "geolocation" is here so the app's own page can place the student at a
+  // registered location; the client only ever ASKS when the student's
+  // `deviceLocationEnabled` is on, so this grant is the ceiling, not the
+  // decision. Scoped to the app origin like the rest: a <webview> guest asking
+  // for the child's position gets nothing.
   // "display-capture" is the gate in FRONT of the display-media handler below:
   // without it the getDisplayMedia() call is denied before that handler is ever
   // consulted, and session recording / call screen-share silently produce
   // nothing. It stays scoped to the app's own origin like everything else here.
-  const allowedPermissions = ["media", "display-capture", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write"];
+  const allowedPermissions = ["media", "display-capture", "fullscreen", "hid", "clipboard-read", "clipboard-sanitized-write", "geolocation"];
   session.defaultSession.setPermissionRequestHandler(
     (_webContents, permission, callback, details) => {
       callback(allowedPermissions.includes(permission) && isAppOrigin(details?.requestingUrl));

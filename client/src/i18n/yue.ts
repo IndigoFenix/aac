@@ -2608,6 +2608,8 @@ export const yue = {
     allowNotesDesc: "停用嗰陣，AI 讀唔到或寫唔到工作階段筆記（訊息記錄以外唔會儲存記憶）",
     shareMonitorNotesWithInstitute: "同我嘅機構分享 AAC 筆記",
     shareMonitorNotesWithInstituteDesc: "啟用嗰陣，本機構嘅臨床人員可以睇到 AAC 工作階段期間記低嘅筆記（興趣、偏好、觀察）。停用就要明確嘅分享授權先得。",
+    deviceLocation: "裝置位置",
+    deviceLocationDesc: "俾呢部裝置報告佢喺邊，咁工作階段就認得出登記咗嘅地方（學校、診所、屋企），餐廳應用程式亦搵到附近嘅地方。閂咗就永遠唔會問裝置個位置。",
     aiLearning: "AI 學習設定",
     aiLearningDesc: "AI 喺工作階段期間可以自己記低嘅嘢。",
     autoAddContacts: "學習新聯絡人",
@@ -3658,6 +3660,7 @@ export const yue = {
       "public-symbols": "公開符號",
       crm: "CRM 聊天",
       admins: "管理員",
+      "security-incidents": "Security Incidents", // TODO-i18n
     },
     admins: {
       title: "管理員",
@@ -3684,6 +3687,88 @@ export const yue = {
       updatedToast: "管理員已更新",
       deletedToast: "管理員已刪除",
       errorGeneric: "出咗啲問題",
+    },
+    incidents: {
+      addNote: "Add note", // TODO-i18n
+      clockStartsNow: "The notification clock starts now, from the moment of discovery.", // TODO-i18n
+      column: {
+        customerDue: "Customer notice due", // TODO-i18n
+        discovered: "Discovered", // TODO-i18n
+        reference: "Reference", // TODO-i18n
+        reportDue: "Report due", // TODO-i18n
+        severity: "Severity", // TODO-i18n
+        status: "Status", // TODO-i18n
+        title: "Title", // TODO-i18n
+      },
+      empty: "No incidents recorded.", // TODO-i18n
+      event: {
+        closed: "Closed", // TODO-i18n
+        deadline_missed: "Deadline missed", // TODO-i18n
+        deadline_warning: "Deadline approaching", // TODO-i18n
+        note: "Note", // TODO-i18n
+        notification_sent: "Notification sent", // TODO-i18n
+        opened: "Opened", // TODO-i18n
+        status_change: "Status changed", // TODO-i18n
+      },
+      field: {
+        affectedScope: "What data was affected", // TODO-i18n
+        description: "What happened", // TODO-i18n
+        endedAt: "Event ended", // TODO-i18n
+        kind: "Type", // TODO-i18n
+        locale: "Letter language", // TODO-i18n
+        recipients: "Recipients", // TODO-i18n
+        severity: "Severity", // TODO-i18n
+        status: "Status", // TODO-i18n
+        target: "Notify", // TODO-i18n
+        title: "Title", // TODO-i18n
+      },
+      fillTokens: "Fill in the remaining placeholders before sending:", // TODO-i18n
+      hideClosed: "Hide closed", // TODO-i18n
+      kind: {
+        phi_breach: "Personal data breach", // TODO-i18n
+        security_breach: "Security breach", // TODO-i18n
+        vendor_incident: "Sub-processor incident", // TODO-i18n
+      },
+      locale: {
+        en: "English", // TODO-i18n
+        he: "Hebrew", // TODO-i18n
+      },
+      markEnded: "Mark event ended", // TODO-i18n
+      notify: "Notify", // TODO-i18n
+      notifyFailed: "Notification could not be delivered", // TODO-i18n
+      notifySent: "Notification sent", // TODO-i18n
+      obligation: {
+        customer: "Customer (contractual)", // TODO-i18n
+        investigation_report: "Investigation report", // TODO-i18n
+        regulator: "Regulator", // TODO-i18n
+      },
+      opened: "Incident opened", // TODO-i18n
+      openFailed: "Could not open the incident", // TODO-i18n
+      openIncident: "Open incident", // TODO-i18n
+      overdueBanner: "{count} incident(s) have a deadline that has passed with nothing sent.", // TODO-i18n
+      overdueList: "Past due:", // TODO-i18n
+      preview: "Preview", // TODO-i18n
+      recipientsPlaceholder: "Comma-separated email addresses", // TODO-i18n
+      sendFailedDetail: "Could not reach:", // TODO-i18n
+      sendForReal: "Send now", // TODO-i18n
+      sentAt: "sent", // TODO-i18n
+      severity: {
+        critical: "Critical", // TODO-i18n
+        high: "High", // TODO-i18n
+        low: "Low", // TODO-i18n
+        medium: "Medium", // TODO-i18n
+      },
+      showClosed: "Show closed", // TODO-i18n
+      status: {
+        closed: "Closed", // TODO-i18n
+        contained: "Contained", // TODO-i18n
+        dismissed: "Dismissed", // TODO-i18n
+        notified: "Notified", // TODO-i18n
+        open: "Open", // TODO-i18n
+      },
+      subtitle: "Breach register and notification deadlines.", // TODO-i18n
+      timeline: "Timeline", // TODO-i18n
+      title: "Security Incidents", // TODO-i18n
     },
   },
 
@@ -3910,6 +3995,11 @@ export const yue = {
       builder: "砌句板",
       game: "遊戲",
     },
+    facilitatorRefused: {
+      consent: "呢位學生嘅引導式溝通已經閂咗",
+      unavailable: "嗰個掣已經唔喺佢哋個畫面度",
+    },
+    indicateHint: "長撳個掣去指出佢",
   },
 
   personChat: {

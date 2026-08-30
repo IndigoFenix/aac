@@ -205,6 +205,7 @@ self.onmessage = (e: MessageEvent<GeologyBakeRequest>) => {
       initialFocus: null,
       avatar: false,
       avatarSpecies: "human",
+      mods: [],
       canFly: false,
       creativeMode: false,
       entities: null,

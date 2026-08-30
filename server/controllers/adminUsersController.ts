@@ -20,6 +20,7 @@ function formatAdmin(row: any) {
     profileImageUrl: row.profileImageUrl,
     role: row.role,
     permissions: row.permissions ?? [],
+    isActive: row.isActive ?? true,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -86,6 +87,21 @@ class AdminUsersController {
       if (req.body?.permissions !== undefined) {
         const sanitized = sanitizeAdminPermissions(req.body.permissions);
         updates.permissions = sanitized.length === 0 ? [] : sanitized;
+      }
+      // Deactivation is the off switch for a backoffice account: it blocks
+      // password login, Google login and any session already open
+      // (canAuthenticate in server/userAuth.ts). Guarded so an admin cannot
+      // lock themselves out and leave nobody able to re-enable them.
+      if (typeof req.body?.isActive === "boolean") {
+        const actorId = (req.user as { id?: string } | undefined)?.id;
+        if (req.body.isActive === false && actorId === id) {
+          res.status(400).json({
+            success: false,
+            message: "You cannot deactivate your own admin account",
+          });
+          return;
+        }
+        updates.isActive = req.body.isActive;
       }
 
       const updated = await adminUserRepository.update(id, updates as any);

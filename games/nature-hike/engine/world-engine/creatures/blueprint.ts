@@ -126,29 +126,33 @@ export interface HeadBlueprint {
    *  radians. The braincase holds the horizon (neck lift only POSITIONS
    *  the head); this hinges just the muzzle: + lifts it (a stargazer, an
    *  upturned bill), − drops it (a grazer, a raptor's hook). 0 = the
-   *  muzzle continues the braincase straight, an erect biped's face. */
+   *  muzzle continues the braincase straight, an erect biped's face.
+   *  CAPPED BY SNOUT LENGTH: a tube cannot turn by more than length/radius
+   *  without folding, so a short muzzle pitches less than asked. */
   facePitch: number;
-  /** Eye latitude reference on the braincase: 0 = mid, −1 low (the dome
-   *  above reads as forehead/brow — a human), +1 high (eyes up top — a
-   *  crocodile). `eyeHeight` is measured from here. */
-  faceHeight: number;
-  // ── Forehead (the cranium→snout bridge — the "red dot" placement) ────
-  // Per skull-diagram.png the cranium is JUST a sphere; the snout springs
-  // from a point (the "red dot") on its lower-front, and the FOREHEAD is
-  // the sloping surface bridging the two. These three place that point and
-  // shape the bridge, independent of the snout's own dimensions.
-  /** Vertical seat of the snout root (the red dot) on the cranium front:
-   *  0 = low (a tall domed forehead rises above it — a human), 1 = high
-   *  near the crown (a flat forehead, the snout leaves the top — a
-   *  crocodile / lizard). */
+  // ── Forehead (the cranium→snout bridge — where the muzzle is seated) ──
+  // The cranium is JUST an ellipsoid; the muzzle springs from a RING seated
+  // on its front, and the FOREHEAD is the surface bridging the two. These
+  // two dials are the ring centre's (height, forward reach) — an X/Y point
+  // in the face plane, NOT a walk around the sphere, so they are genuinely
+  // independent: raising the brow never drags the snout backward. The reach
+  // is measured from the cranium's front pole, so the seat is always at or
+  // ahead of the skull and the bridge can never fold back into it.
+  /** Height of the muzzle-root ring's CENTRE, in cranium half-heights:
+   *  0 = at or below the floor of the cranium (a horse, a long-faced
+   *  grazer — a tall domed forehead rises above it), 1 = at the crown (the
+   *  snout leaves the top of the head — a whale's blowhole, a stargazer). */
   foreheadHeight: number;
-  /** How far the snout root projects FORWARD of the cranium front surface,
-   *  in cranium radii: 0 = the snout springs straight off the sphere, >0 =
-   *  a longer face bridge (a muzzle shelf) before the snout proper. */
+  /** How far the muzzle root sits FORWARD of the cranium's front pole, in
+   *  head radii: 0 = seated right against the skull (a flat human face),
+   *  >0 = a face bridge (a muzzle shelf) before the snout proper. */
   foreheadLength: number;
-  /** Curvature of the forehead surface between the cranium and the red
-   *  dot: 0 = a straight ramp, + convex (a bulging brow / rounded forehead),
-   *  − concave (a dished, scooped face). */
+  /** Where the bridge TURNS between the cranium and the muzzle root. Both
+   *  ends are tangent-locked (it leaves the skull at a tangency and enters
+   *  the seat along the muzzle axis), so this only shapes the curve between
+   *  them: + convex (a bulging brow / rounded forehead), 0 a straight ramp,
+   *  − concave (a dished, scooped face). It cannot detach the face from the
+   *  skull or raise a wall above the snout. */
   foreheadSlope: number;
   // ── Rostrum / jaws (the muzzle shape) ───────────────────────────────
   /** 0 = fleshy muzzle blended into the skin, 1 = hard rigid beak.
@@ -169,9 +173,12 @@ export interface HeadBlueprint {
   /** #3 snout depth — rostrum cross-section width : height (a duck's flat
    *  bill >1, a horse's deep muzzle <1). Composed with `crossSection`. */
   snoutFlatten: number;
-  /** #9 dorsal profile — the rostrum's centerline curvature, radians: +
-   *  curls the bridge down (a roman/convex nose, an eagle hook), − turns
-   *  it up (a dished, concave face). */
+  /** #9 dorsal profile — the rostrum's centerline CURVATURE, radians
+   *  accumulated along its length from ZERO at the root: + curls the bridge
+   *  down (a roman/convex nose, an eagle hook), − turns it up (a dished,
+   *  concave face). Orthogonal to `facePitch` by construction: pitch is the
+   *  direction the muzzle LEAVES the skull, curve is how it bends after.
+   *  Capped by snout length on the same rule as `facePitch`. */
   snoutCurve: number;
   // ── Mouth & mandible (the opening — separate from the jawline) ───────
   /** #7 gape — how far back from the muzzle tip the lips PART (the mouth
@@ -182,9 +189,12 @@ export interface HeadBlueprint {
    *  splits the whole head. Continuous: the corner is a real ring that
    *  slides, not a per-segment snap. */
   mouthOpen: number;
-  /** #11 jaw robustness — mandible depth / head radius. ~0.05 = a slender
-   *  jaw (an anteater, a bird), 0.4 = a massive jaw (a hyena, a hippo).
-   *  Sets how deep the lower jaw hangs below the mouth line. */
+  /** #11 jaw robustness — mandible depth ALONG the muzzle / head radius.
+   *  ~0.05 = a slender jaw (an anteater, a bird), 0.4 = a massive jaw (a
+   *  hyena, a hippo). The mandible leaves the head flush with its own lower
+   *  face and reaches this depth by ~60% along the muzzle, then holds it —
+   *  so this is the jaw's depth for most of its length, not a bulge at the
+   *  chin. */
   jawDepth: number;
   /** #12 bite offset — the lower jaw's fore/aft shift vs the upper: −1 =
    *  underbite (a bulldog, the lower jaw juts forward), +1 = overbite
@@ -199,18 +209,31 @@ export interface HeadBlueprint {
   /** Nose length / head radius (0 = none, a bump ~0.3, an elephant trunk
    *  4+). The nose is a SEPARATE feature from the muzzle. */
   noseLengthFrac: number;
-  /** Nose thickness / head radius. */
+  /** Nose thickness as a fraction of THE SURFACE IT SITS ON — the local
+   *  half-thickness of the snout, bridge or cranium under its root, not of
+   *  the head. 1 = as thick as its host, so a nose can never out-fatten the
+   *  snout it grows out of and read as a ball stuck on a stick. */
   noseRadiusFrac: number;
   /** Nose position along the skull's dorsal contour: 0 = the snout tip,
    *  climbing the bridge and forehead to 1 = the crown (a whale's
    *  blowhole), and past 1 down the occiput to 1.5 = the base of the
    *  skull. The root rides the REAL surface (beak, snout, forehead,
    *  cranium) and protrudes along its local normal. */
-  noseHeight: number;
+  nosePosition: number;
+  /** Nose tip thickness : base thickness. 1 = a cylinder (a trunk), 0.45 =
+   *  a tapering bump, 0 = a point. */
+  noseTaper: number;
+  /** Nose cross-section width : height. >1 a broad flat nose, <1 a narrow
+   *  tall one. Independent of the head's own `crossSection`. */
+  noseFlatten: number;
   /** Bone segments in the nose (a trunk needs several to curl). */
   noseSegments: number;
-  /** Nose droop, radians across its length: + curls down (elephant trunk,
-   *  a human nose tip), − turns up (a pig snout, a tapir up-curl). */
+  /** Nose droop as a FRACTION of what its length can carry: + curls down
+   *  (elephant trunk, a human nose tip), − turns up (a pig snout, a tapir
+   *  up-curl). Zero at the root and accumulating along the length, so it
+   *  bends the nose rather than tilting it, and a stubby nose bends less
+   *  than a trunk does at the same value — a tube that turns by more than
+   *  length/radius folds in on itself. */
   noseDroop: number;
   // ── Orbits (eyes) ───────────────────────────────────────────────────
   /** Eye PAIRS (0..3). Eyes are rigid details on the braincase. */
@@ -565,7 +588,6 @@ export const HEAD_RANGES: RangesOf<HeadBlueprint> = {
   braincaseDome: { min: 0.5, max: 1.4 },
   crossSection: { min: 0.4, max: 2.2 },
   facePitch: { min: -0.9, max: 0.9 },
-  faceHeight: { min: -1, max: 1 },
   foreheadHeight: { min: 0, max: 1 },
   foreheadLength: { min: 0, max: 2 },
   foreheadSlope: { min: -1, max: 1 },
@@ -581,8 +603,10 @@ export const HEAD_RANGES: RangesOf<HeadBlueprint> = {
   jawOffset: { min: -1, max: 1 },
   mouthVertical: { min: -1, max: 1 },
   noseLengthFrac: { min: 0, max: 6 },
-  noseRadiusFrac: { min: 0.03, max: 0.6 },
-  noseHeight: { min: 0, max: 1.5 },
+  noseRadiusFrac: { min: 0.05, max: 1.2 },
+  nosePosition: { min: 0, max: 1.5 },
+  noseTaper: { min: 0, max: 1 },
+  noseFlatten: { min: 0.35, max: 2.5 },
   noseSegments: { min: 1, max: 8, int: true },
   noseDroop: { min: -1.5, max: 1.5 },
   eyePairs: { min: 0, max: 3, int: true },
@@ -683,9 +707,8 @@ export function defaultBlueprint(): Blueprint {
       braincaseDome: 1,
       crossSection: 1,
       facePitch: 0,
-      faceHeight: 0,
-      foreheadHeight: 0.45,
-      foreheadLength: 0.3,
+      foreheadHeight: 0.21,
+      foreheadLength: 0.29,
       foreheadSlope: 0,
       beak: 0.25,
       snoutLengthFrac: 0.8,
@@ -699,8 +722,10 @@ export function defaultBlueprint(): Blueprint {
       jawOffset: 0.1,
       mouthVertical: 0,
       noseLengthFrac: 0,
-      noseRadiusFrac: 0.12,
-      noseHeight: 0,
+      noseRadiusFrac: 0.5,
+      nosePosition: 0,
+      noseTaper: 0.45,
+      noseFlatten: 1,
       noseSegments: 2,
       noseDroop: 0,
       eyePairs: 1,
@@ -717,7 +742,11 @@ export function defaultBlueprint(): Blueprint {
       chin: 0,
     },
     // One leg type, duplicated into a fore + hind pair — the generic
-    // quadruped. Distinct fore/hind bend would be two groups.
+    // quadruped. ⚠️ ONE group, so both knees fold the same way — this object
+    // is ALSO `LIMB_GROUP_DEFAULT`, the source of every omitted limb field, so
+    // splitting it here would silently move the default count, stations and
+    // sizeContrast for every partial blueprint. The `quadruped` EXAMPLE spells
+    // its two groups out instead; see examples.ts.
     limbGroups: [
       {
         placement: "bilateral",
@@ -779,11 +808,12 @@ export function plantBlueprint(
     neck: { segments: 0, lengthFrac: 0, radiusFrac: 0.1, lift: 0 },
     tail: { segments: 0, lengthFrac: 0, radiusFrac: 0.05, droop: 0 },
     head: {
-      sizeFrac: 0.2, lengthFrac: 1, braincaseDome: 1, crossSection: 1, facePitch: 0, faceHeight: 0,
-      foreheadHeight: 0.45, foreheadLength: 0.3, foreheadSlope: 0,
+      sizeFrac: 0.2, lengthFrac: 1, braincaseDome: 1, crossSection: 1, facePitch: 0,
+      foreheadHeight: 0.21, foreheadLength: 0.29, foreheadSlope: 0,
       beak: 0, snoutLengthFrac: 0, snoutSegments: 2, snoutRadiusFrac: 0.45, muzzleSquash: 0,
       snoutFlatten: 1, snoutCurve: 0, mouthOpen: 0, jawDepth: 0.18, jawOffset: 0, mouthVertical: 0,
-      noseLengthFrac: 0, noseRadiusFrac: 0.12, noseHeight: 0, noseSegments: 2, noseDroop: 0,
+      noseLengthFrac: 0, noseRadiusFrac: 0.5, nosePosition: 0, noseTaper: 0.45,
+      noseFlatten: 1, noseSegments: 2, noseDroop: 0,
       eyePairs: 0, eyeSizeFrac: 0.05, eyeAngle: 0.5, eyeHeight: 0.35, eyeBulge: 0.35,
       padding: 0, cheek: 0, jowl: 0, brow: 0, muzzlePad: 0, lips: 0, chin: 0,
     },
@@ -1288,12 +1318,22 @@ export function randomBlueprint(seed: number): Blueprint {
       // one leg type duplicated into a row of pairs (centipede-ish)
       limbGroups.push(legGroup(3 + Math.round(rng() * 3), lerp(0.1, 0.2, rng()), lerp(0.8, 0.95, rng())));
     } else if (rng() < 0.4) {
-      // distinct fore + hind knee fold (two groups, opposite restFlexion)
-      limbGroups.push(legGroup(1, lerp(0.1, 0.22, rng()), 0.2, { restFlexion: lerp(0.2, 0.7, rng()) }));
-      limbGroups.push(legGroup(1, lerp(0.78, 0.92, rng()), 0.9, { restFlexion: lerp(-0.7, -0.2, rng()) }));
+      // Distinct fore and hind limbs: two groups, and the knees fold OPPOSITE
+      // ways. ⚖️ FORE elbow points BACK (negative), HIND knee points FORWARD
+      // (positive) — the tetrapod law. These two were the wrong way round,
+      // which built a reversed mammal every time this branch fired.
+      limbGroups.push(legGroup(1, lerp(0.1, 0.22, rng()), 0.2, { restFlexion: lerp(-0.7, -0.2, rng()) }));
+      limbGroups.push(legGroup(1, lerp(0.78, 0.92, rng()), 0.9, { restFlexion: lerp(0.2, 0.7, rng()) }));
     } else {
-      // one type, fore+hind rows (generic quadruped)
-      limbGroups.push(legGroup(2, lerp(0.1, 0.22, rng()), lerp(0.8, 0.92, rng())));
+      // ONE kind of limb, but still TWO groups: a single group spanning chest
+      // to hip hands both pairs the same restFlexion, so one of the two knees
+      // is necessarily inverted. Same dials front and back, opposite fold.
+      const front = lerp(0.1, 0.22, rng());
+      const rear = lerp(0.8, 0.92, rng());
+      const base = legGroup(1, front, front);
+      const fold = Math.max(Math.abs(base.restFlexion), 0.15);
+      limbGroups.push({ ...base, restFlexion: -fold });
+      limbGroups.push({ ...base, stationStart: rear, stationEnd: rear, restFlexion: fold });
     }
     if (rng() < 0.15) limbGroups.push(wingLimb(lerp(0.3, 0.45, rng())));
   } else {
@@ -1366,8 +1406,7 @@ export function randomBlueprint(seed: number): Blueprint {
       braincaseDome: lerp(0.7, 1.2, rng()),
       crossSection: lerp(0.75, 1.4, rng()),
       facePitch: (rng() - 0.5) * 0.5,
-      faceHeight: (rng() - 0.5) * 0.9,
-      foreheadHeight: lerp(0.3, 0.85, rng()),
+      foreheadHeight: lerp(0.1, 0.55, rng()),
       foreheadLength: lerp(0, 0.5, rng()),
       foreheadSlope: (rng() - 0.5) * 0.7,
       beak: rng() < 0.4 ? lerp(0.5, 1, rng()) : lerp(0, 0.35, rng()),
@@ -1382,8 +1421,10 @@ export function randomBlueprint(seed: number): Blueprint {
       jawOffset: (rng() - 0.4) * 0.6,
       mouthVertical: rng() < 0.2 ? lerp(-0.8, -0.2, rng()) : 0,
       noseLengthFrac: rng() < 0.4 ? lerp(0.2, 0.6, rng()) : 0,
-      noseRadiusFrac: lerp(0.08, 0.2, rng()),
-      noseHeight: rng() < 0.2 ? lerp(0.3, 1, rng()) : 0,
+      noseRadiusFrac: lerp(0.25, 0.7, rng()),
+      nosePosition: rng() < 0.2 ? lerp(0.3, 1, rng()) : 0,
+      noseTaper: lerp(0.2, 0.8, rng()),
+      noseFlatten: lerp(0.7, 1.4, rng()),
       noseSegments: Math.round(lerp(2, 3, rng())),
       noseDroop: (rng() - 0.4) * 0.8,
       eyePairs: 1 + (rng() < 0.12 ? 1 : 0),

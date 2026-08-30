@@ -1,0 +1,362 @@
+# world-text v1   proto=1
+# world=homestead-rich.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=4aa59e83+dirty
+# started=2026-08-27T20:55:19.729Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    person-5: "I will carry the stone to the storehouse."  [carry.will + stone + to + storehouse]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 5.0s.
+> say build house
+OK     said: build + house
+SAY    person-3: "I will build the house."  [build.will + house]
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TICK   quiet after 2.5s.
+> wait 120
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+EXIT   person-5 left view there west.
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+TOAST  🪚 12 block milled and stored (feedback)
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+ENTER  person-5 came into view there west.
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 120.0s.
+> /orders
+CHEAT  /orders
+> wait 240
+TOAST  🪚 milling 108 block for the site (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 6 stone — delivered (feedback)
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 16 wood — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+TOAST  🪚 12 block milled and stored (feedback)
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TOAST  📦 bring 4 block — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  🪚 milling 96 block for the site (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> wait 240
+TOAST  🪚 milling 96 block for the site (feedback)
+TOAST  🪚 12 block milled and stored (feedback)
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 4 block — delivered (feedback)
+SAY    person-5: "I don't have the block."  [have.not + block]
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  🪚 milling 84 block for the site (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-5: "I will build."  [i_me + build.will]
+TOAST  🪚 12 block milled and stored (feedback)
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🪚 milling 72 block for the site (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> wait 240
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 23 wood — delivered (feedback)
+SAY    person-5: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 22 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 14 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 6 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+TOAST  🪚 milling 72 block for the site (feedback)
+TOAST  🪚 12 block milled and stored (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 4 block — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  📦 bring 16 wood — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  🪚 milling 60 block for the site (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-4: "I will build."  [i_me + build.will]
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> wait 240
+TOAST  🪚 12 block milled and stored (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  📦 bring 11 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 3 block — delivered (feedback)
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  🪚 milling 48 block for the site (feedback)
+SAY    person-4: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-1: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+SAY    person-3: "bye-bye"  [goodbye]
+TOAST  🪚 12 block milled and stored (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 12 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> wait 240
+TOAST  📦 bring 4 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  🪚 milling 36 block for the site (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 24 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 23 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 22 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 21 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 20 wood — delivered (feedback)
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  🪚 milling 36 block for the site (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 19 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 18 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 17 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 16 wood — delivered (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TOAST  📦 bring 15 wood — delivered (feedback)
+TOAST  🪚 milling 36 block for the site (feedback)
+SAY    person-2: "I will carry the wood to the yard."  [carry.will + wood + to + yard]
+TICK   waited 240.0s.
+> /orders
+CHEAT  /orders
+> scene
+SCENE  outdoors — 6 thing(s) in view.
+  person-4 (person), here north, holding basket-3.
+  person-2 (person), there west.
+  person-5 (person), there west, holding basket-2.
+  person-3 (person), there west.
+  person-1 (person), there north, holding basket-1.
+  wood-1 (wood), here west.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, there east, 12 m
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=15  presses=0  screens=9  sim=1329.0s
+# events: SAY 85  TOAST 79  BOARD 9  NOTE 9  TICK 9  CHEAT 6  OK 1  EXIT 1  ENTER 1  SCENE 1  SITE 1

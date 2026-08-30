@@ -55,7 +55,7 @@ import {
 } from "../../object-properties.js";
 import { headOf } from "../../variations.js";
 import { isMakeable } from "../content/makeable.js";
-import { isAnimal } from "../content/properties.js";
+import { isAnimal, isPlant } from "../content/properties.js";
 import { relatesToVerb, verbDistance } from "../content/relations.js";
 import { NEED_NOUNS, nounRank, placeGroupOf } from "../content/vocab-order.js";
 import { SELF_NEEDS } from "./intent-compile.js";
@@ -386,6 +386,25 @@ const MODAL_INLINE_ACTIONS = 8;
 const MODAL_ACTION_LEAD = 22;
 /** How many bodies a bare desire offers inline (the rest via the things tab). */
 const DESIRE_PEOPLE = 5;
+/**
+ * HOW MANY ANIMALS RIDE ANY BAND INLINE (2026-08-27).
+ *
+ * The animals used to be a handful — five pool friends and the seven species
+ * the world can build — so a band that offered BODIES could offer all of them.
+ * There are fifty-three now, and offering all of them filled the entire
+ * fifty-four-button `see` board with creatures: not one of the PLACES that
+ * `see` is the single verb allowed to take survived to it, and neither did a
+ * cup, a ball or a home.
+ *
+ * The same defect `DESIRE_PEOPLE` names one band over — a list of every body in
+ * the world is the pantry problem with faces on it — so the same answer. A
+ * board seats its best animals (the library's own order: dog and cat long
+ * before the gorilla) and the rest fall to the FOOT of their band rather than
+ * off the board, while the [animals] chip still opens every one of them in a
+ * single press. Anything the LEARNED layer speaks for is never deferred: a
+ * child who talks about their rabbit keeps it wherever it ranks.
+ */
+const INLINE_ANIMALS = 12;
 
 /** TRANSPORT VERBS — the ones that MOVE A THING to an endpoint. Their `to` does
  *  not have to point at a body: "bring + wood + to + yard" ends at a place and
@@ -603,7 +622,21 @@ const QUOTA: Partial<Record<SlotNeed, number>> = {
   addressee: 2,
 };
 
-const MAX_GROUPS = 5;
+/**
+ * HOW MANY SUB-CATEGORY CHIPS ONE BOARD OFFERS.
+ *
+ * Was five, which was the AAC sidebar's own limit: the chip column drew six
+ * buttons behind a pinned "all". The column is measured now and holds as many
+ * as fit (client-aac/src/lib/sidebar-layout.ts), so the surfacer no longer has
+ * to choose FOR it — and it was choosing badly the moment the vocabulary grew:
+ * with fifty-three animals and thirteen plants in the library, [animals],
+ * [plants] and the three place chips filled the whole row and [food] — the
+ * category an AAC child reaches for most — fell off the empty board entirely.
+ *
+ * A client with a shorter column still pages; a chip it cannot draw is one
+ * press further away, not gone.
+ */
+const MAX_GROUPS = 8;
 
 export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSuggestion {
   const capacity = ctx.capacity ?? 16;
@@ -652,6 +685,13 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
    *  which legitimately repeat ("… and … and …"). */
   const saidHeads = new Set(tokens.map(head));
   const REPEATABLE = new Set(["connective", "relation", "quantity"]);
+  /** Animals seated inline so far, and the ones the allowance held back — see
+   *  INLINE_ANIMALS. Deferred, never dropped: `flushDeferredAnimals` seats them
+   *  at the foot of their own band before the board is ranked. */
+  let animalsSeated = 0;
+  const deferredAnimals: { symbol: string; role: SlotNeed }[] = [];
+  const isAnimalNoun = (symbol: string): boolean =>
+    nounBy.get(symbol)?.kind === "creature" && isAnimal(symbol);
   /** Add a candidate word for a role; first (highest-tier) role wins a symbol.
    *  Learned layers ride on top: recency band, use counts, last-word pairs. */
   const add = (symbol: string, role: SlotNeed, bonus = 0) => {
@@ -661,12 +701,38 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     const recBonus = rec !== undefined ? Math.max(0, 3 - rec) : 0;
     const useBonus = Math.min(2, Math.max(0, (usesN.get(symbol) ?? 0) - 1));
     const pairBonus = lastHead !== undefined ? Math.min(3, pairsN.get(`${lastHead}>${symbol}`) ?? 0) : 0;
+    // THE ANIMAL ALLOWANCE (INLINE_ANIMALS). Bands are walked strongest-first,
+    // so the animals a board seats are the ones its strongest band asked for.
+    // A word the LEARNED layer speaks for is exempt — the memory outranks a
+    // quota, or a child's own rabbit would vanish behind the alphabet of a
+    // vocabulary they never chose.
+    if (!recBonus && !useBonus && !pairBonus && isAnimalNoun(symbol)) {
+      if (animalsSeated >= INLINE_ANIMALS) {
+        deferredAnimals.push({ symbol, role });
+        return;
+      }
+      animalsSeated += 1;
+    }
     buttons.set(symbol, {
       symbol,
       ...(nounBy.get(symbol)?.label ? { label: nounBy.get(symbol)!.label! } : {}),
       role,
       weight: TIER[role] + bonus + recBonus + useBonus + pairBonus,
     });
+  };
+  /** Seat what the allowance held back, at the FOOT of the band that asked for
+   *  it (`TIER[role] - 1` is below every bonus `add` can grant). Called once,
+   *  after every band has spoken and before the board is ranked. */
+  const flushDeferredAnimals = () => {
+    for (const { symbol, role } of deferredAnimals) {
+      if (buttons.has(symbol)) continue;
+      buttons.set(symbol, {
+        symbol,
+        ...(nounBy.get(symbol)?.label ? { label: nounBy.get(symbol)!.label! } : {}),
+        role,
+        weight: TIER[role] - 1,
+      });
+    }
   };
   const openRole = (role: SlotNeed) => {
     if (!open.includes(role)) open.push(role);
@@ -681,15 +747,21 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
   for (const n of ctx.nouns) {
     const bump = (id: string) => clusterSize.set(id, (clusterSize.get(id) ?? 0) + 1);
     for (const p of n.properties ?? []) bump(p);
-    if (n.kind === "creature") bump("creatures");
+    if (n.kind === "creature") bump(isAnimal(n.symbol) ? "animals" : "creatures");
     else if (n.kind === "place") bump("places");
-    else if (n.kind === "item" && !(n.properties ?? []).length) bump("things");
+    else if (n.kind === "item") {
+      if (isPlant(n.symbol)) bump("plants");
+      else if (!(n.properties ?? []).length) bump("things");
+    }
   }
   const isChipped = (n: SurfaceNoun): boolean => {
     const ids = [...(n.properties ?? [])];
-    if (n.kind === "creature") ids.push("creatures");
+    if (n.kind === "creature") ids.push(isAnimal(n.symbol) ? "animals" : "creatures");
     else if (n.kind === "place") ids.push("places");
-    else if (n.kind === "item" && !(n.properties ?? []).length) ids.push("things");
+    else if (n.kind === "item") {
+      if (isPlant(n.symbol)) ids.push("plants");
+      else if (!(n.properties ?? []).length) ids.push("things");
+    }
     return ids.some((id) => (clusterSize.get(id) ?? 0) >= 2);
   };
   /** COMPANY JOINS for an activity verb — "eat + together", "play + with + …".
@@ -1321,6 +1393,7 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       if (ao === undefined && bo !== undefined) return 1;
       return a.symbol < b.symbol ? -1 : 1;
     };
+    flushDeferredAnimals();
     const ranked = [...buttons.values()].sort(byRank);
     // Reserve one representative per open role, then fill by rank under the
     // per-role quotas. No backfill past a quota: fewer, better buttons.
@@ -1407,11 +1480,20 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     for (const b of cands.values()) {
       const n = nounBy.get(b.symbol)!;
       for (const p of n.properties ?? []) push(p, "property", b);
-      if (n.kind === "creature") push("creatures", "kind", b);
+      // LIVING SPLIT (2026-08-27): people · animals · plants. `creatures` is
+      // the chip that means SOMEBODY, and an animal is not somebody — the same
+      // distinction the addressee and company bands already draw with
+      // `isAnimal`, drawn once more where a child chooses a word.
+      if (n.kind === "creature") push(isAnimal(n.symbol) ? "animals" : "creatures", "kind", b);
       // PLACES SPLIT (2026-08-25): rooms · buildings · outside. One chip for
       // twenty-two places is a chip that opens another paging problem.
       else if (n.kind === "place") push(placeGroupOf(n.symbol), "kind", b);
-      else if (n.kind === "item" && !(n.properties ?? []).length) push("things", "kind", b);
+      else if (n.kind === "item") {
+        // A plant keeps its property chips too (`tree` is also timber) — the
+        // one a child actually looks for must not be the one it loses.
+        if (isPlant(n.symbol)) push("plants", "kind", b);
+        else if (!(n.properties ?? []).length) push("things", "kind", b);
+      }
     }
     const groups: SurfaceGroup[] = [];
     for (const [id, c] of clusters) {

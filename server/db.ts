@@ -4,6 +4,7 @@
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
+import { resolveDbSsl } from "./db-ssl.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set for Postgres RDS.");
@@ -17,11 +18,7 @@ const connectionString = process.env.DATABASE_URL.replace(/[?&]sslmode=[^&]*/g, 
 
 export const pool = new Pool({
   connectionString,
-  ssl: {
-    // Connection is still TLS encrypted, just not verifying the server certificate
-    // This is safe because Lambda is in a private VPC with security group rules
-    rejectUnauthorized: false
-  },
+  ssl: resolveDbSsl(process.env.DATABASE_URL),
   max: 3,
   idleTimeoutMillis: 30000,
 });

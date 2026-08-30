@@ -15,9 +15,11 @@ import {
   descendantScopeIds,
   isTownYard,
   itemLocationOf,
+  lotScopeId,
   ownerScopeOf,
   parseScopeId,
   scopeIdOf,
+  scopeIdReceivesGoods,
   scopeParentOf,
   scopeStock,
   scopeStockIndex,
@@ -376,5 +378,31 @@ describe("the bridge to the item ledger", () => {
     for (const ref of refs) {
       expect([ref.kind, parseScopeId(scopeIdOf(ref))]).toEqual([ref.kind, ref]);
     }
+  });
+});
+
+// ═══ #44 — THE DESIGNATED GROUND LOT (instant lot designation) ═══
+// Partitioned open ground is a scope BEFORE any building stands on it: the
+// community charter's patch parses as its own rung, hangs off the town, and
+// receives goods (it is exactly the place things are set down).
+describe("#44 lot scope (community ground)", () => {
+  it("lot:<ord> round-trips through parse/print", () => {
+    const ref = parseScopeId(lotScopeId(3));
+    expect(ref).toEqual({ kind: "lot", ord: 3 });
+    expect(scopeIdOf(ref)).toBe("lot:3");
+  });
+
+  it("a malformed lot id falls to the container fallback (total parse)", () => {
+    expect(parseScopeId("lot:abc").kind).toBe("container");
+  });
+
+  it("prop → lot → town: the lot hangs off the settlement that partitioned it", () => {
+    expect(scopeParentOf({ kind: "lot", ord: 0 }, { townId: () => TOWN_SCOPE })).toBe(TOWN_SCOPE);
+    // A townless founding: the lot is an honest root, never a phantom parent.
+    expect(scopeParentOf({ kind: "lot", ord: 0 }, {})).toBeNull();
+  });
+
+  it("a lot RECEIVES goods — the whole point of the community pile", () => {
+    expect(scopeIdReceivesGoods(lotScopeId(0))).toBe(true);
   });
 });

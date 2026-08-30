@@ -8,6 +8,7 @@
 import type { Request, Response } from "express";
 import { reportService } from "../services";
 import { activityLogService } from "../services/activityLogService";
+import { summarizeChanges, changeDetails } from "../services/activityChanges";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 import { canWriteObject } from "../services/sharing/visibility";
 import { requireConsentForResponse } from "../services/consent/consentGate";
@@ -369,6 +370,9 @@ export class ReportController {
         eventType: "update",
         subjectType1: "medical_record",
         subjectId1: id,
+        details: changeDetails(
+          summarizeChanges("medical_records", result.record as any, updates as any),
+        ),
       });
     } catch (error: any) {
       console.error("Error updating medical record:", error);
@@ -826,6 +830,9 @@ export class ReportController {
         eventType: "update",
         subjectType1: "functional_report",
         subjectId1: id,
+        details: changeDetails(
+          summarizeChanges("functional_reports", result.report as any, updates as any),
+        ),
       });
     } catch (error: any) {
       console.error("Error updating functional report:", error);
@@ -1283,6 +1290,9 @@ export class ReportController {
         eventType: "update",
         subjectType1: "educational_report",
         subjectId1: id,
+        details: changeDetails(
+          summarizeChanges("educational_reports", result.report as any, updates as any),
+        ),
       });
     } catch (error: any) {
       console.error("Error updating educational report:", error);

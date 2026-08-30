@@ -49,6 +49,15 @@ export interface PooledTask {
   claimedBy?: CreatureId;
   /** The spoken sentence that posted it — for the "no one can do that" report. */
   sourceGlyph?: string;
+  /** ⚖️ #45 — WHY THE TOWN WANTS THIS, when nobody spoke it: the stack HEAD
+   *  a civic sweep posted this task to cover (par stock, an order pile's
+   *  bill, a starved-pile release). The why-chain renders it as "because the
+   *  town needs <head>" and SUPPRESSES the authority link — the issuer field
+   *  still names a creature (reach + volunteer compliance read it), but an
+   *  automatic stockpile must never answer "because you asked" (user report:
+   *  the dollhouse opened with an errand blamed on a player who said
+   *  nothing). Absent = a real order; authority answers as ever. */
+  need?: string;
   /**
    * ⚖️ WHAT DOING THIS IS WORTH, in hand-seconds (economy arc batch 2, L1).
    *
@@ -86,6 +95,8 @@ export interface TaskPool {
     sourceGlyph?: string;
     /** See {@link PooledTask.valueS} — omitted stays omitted. */
     valueS?: number;
+    /** See {@link PooledTask.need} — omitted stays omitted. */
+    need?: string;
   }): PooledTask;
   get(id: string): PooledTask | undefined;
   /** Open tasks in CREATION ORDER (the deterministic processing order). */
@@ -127,6 +138,7 @@ export function createTaskPool(json?: SerializedTaskPool): TaskPool {
         status: "open",
         ...(input.sourceGlyph !== undefined ? { sourceGlyph: input.sourceGlyph } : {}),
         ...(input.valueS !== undefined ? { valueS: input.valueS } : {}),
+        ...(input.need !== undefined ? { need: input.need } : {}),
       };
       tasks.push(task);
       byId.set(task.id, task);

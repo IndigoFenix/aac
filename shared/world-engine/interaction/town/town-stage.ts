@@ -52,12 +52,15 @@ import {
   foundedStage,
   isInteriorCandidate,
   laborFraction,
+  orderGathering,
   pendingAnnexStage,
   pendingRoomKindOf,
+  pileEntries,
   workDeltaKey,
   type FoundedBuilding,
 } from "@shared/world-engine/kernel/town/construction.js";
 import { roomKindDisplayGlyph } from "@shared/world-engine/kernel/town/programs.js";
+import { communityGroundOf } from "@shared/world-engine/kernel/town/zoning.js";
 import {
   resolveStructure,
   structureDisplayGlyph,
@@ -173,6 +176,17 @@ export interface ConstructionSite {
    *  block by block as labor banks (and sink as a demolition works). Absent
    *  ⇒ 0. Never its own clock — a pure read of the order's labor. */
   progress?: number;
+  /** ④ #43 — the GATHER phase's readout while the site is unstaged: the
+   *  least-covered head of its bill as the pile's have/want ("block 84/120"),
+   *  from the kernel's `orderGathering` (one definition beside
+   *  `stagingMissing`). Absent once staged, and for costless rows — an
+   *  hour of honest hauling must never render as an eternal "0% worked". */
+  gathering?: { head: string; have: number; want: number };
+  /** #44 RENDERED PILES — the goods physically ON this ground (an order's
+   *  site pile; the community lot's own ledger), for the overlay to draw as
+   *  stacked units. The kernel's `pileEntries` is the one emitter shape.
+   *  Absent/empty = bare ground. */
+  pile?: Array<{ glyph: string; n: number }>;
   /** The composed GLYPH of what will stand here — a house, a bedroom — shown
    *  as an icon hovering over the plot so a site is never an anonymous
    *  rectangle. Absent = no icon. */
@@ -608,8 +622,11 @@ export function* createTownStageSteps(
    * source list is stable; the ALLOTMENT behind it is re-read every `stockOf`.
    */
   const importable = new Map<string, boolean>();
-  const importsOf = (goodKey: string): ImportDepotReading | null => {
-    if (!trade) return null;
+  /** The two conditions above, memoized — split out of `importsOf` so the
+   *  caravan's own cargo gate (⑤a, below) can ask the same question without
+   *  minting a depot reading nobody consumes. ONE definition of "can this town
+   *  receive `goodKey` from the road at all". */
+  const canImport = (goodKey: string): boolean => {
     let ok = importable.get(goodKey);
     if (ok === undefined) {
       const spec = eco.goods.find((g) => g.key === goodKey);
@@ -623,12 +640,52 @@ export function* createTownStageSteps(
         );
       importable.set(goodKey, ok);
     }
-    if (!ok) return null;
+    return ok;
+  };
+  const importsOf = (goodKey: string): ImportDepotReading | null => {
+    if (!trade || !canImport(goodKey)) return null;
     return {
       at: trade.depot,
       dailyUnits: trade.importUnitsPerVisit(goodKey),
       dayFrac: (t) => trade.dayPhase(t),
     };
+  };
+  /**
+   * ⚖️ #43 ⑤a — DOES THE TRIP CARRY ANYTHING? The intercity line's BOOKS run
+   * whatever the answer (the trade clock's landing sweeps are the town's
+   * economics, and they stay untouched); its CARRIERS are BODIES, and a caravan
+   * that walks in empty and back out empty is the founding-age ghost the user
+   * saw — two figures on the road of a five-person homestead that has 0 houses
+   * and therefore `exportDaily = 0`.
+   *
+   * Both directions, off trade.ts's OWN cargo terms — never a second formula:
+   *  • OUT — `exportDaily`, the authored daily shipment handed to
+   *    `createTownTrade` above. The STRUCTURAL term on purpose, not the live
+   *    `exportDailyUnits()`: a town whose crew was poached "leaves light"
+   *    (trade.ts's own words) and still comes, whereas a town with no
+   *    households has no shipment to be light OF.
+   *  • IN — a kind this line actually carries (`importUnitsPerVisit > 0`) that
+   *    this town can actually receive (`canImport`, just above).
+   *
+   * ⚠️ THE IN SIDE IS A CONSTANT TODAY and cannot reach zero on its own: an
+   * unbound `away:` line lands `IMPORT_ALLOTMENT` split across
+   * `TRADE_IMPORT_KINDS` plus a `rarePerVisit` floored at 1. Those kinds are
+   * trinkets deliberately OUTSIDE the subsistence commodities, so `canImport`
+   * rejects every one of them and the gate rests on the export side alone —
+   * which is exactly design call ⑤(a). It is written as the two-way test
+   * regardless because that IS the rule: the day a bound partner's derived
+   * cargo (`refreshCargo`) lands a good these books can bank, the carriers walk
+   * the import leg with no exports at all, which is what an import lane looks
+   * like.
+   */
+  const caravanCarries = (): boolean => {
+    if (!trade) return false;
+    if (exportDaily > 0) return true;
+    for (const kind of trade.route.imports) {
+      if (trade.importUnitsPerVisit(kind) > 0 && canImport(kind)) return true;
+    }
+    const rare = trade.route.rare.kind;
+    return trade.importUnitsPerVisit(rare) > 0 && canImport(rare);
   };
   const goods: TownGoods[] = streetGoods(
     town, eco, { key: siteKey, center, plan }, opts.seed, undefined, importsOf,
@@ -719,12 +776,16 @@ export function* createTownStageSteps(
       const h = m ? plan.houses.find((hh) => hh.index === Number(m[1])) : undefined;
       if (!h) continue;
       const r = annexWorldRect(center, h, p.candidate);
+      const gathering = orderGathering(p);
+      const pile = pileEntries(p.pile);
       out.push({
         id: `site_pa_${p.ord}`,
         ...r,
         type: "annex",
         stage: siteStage(pendingAnnexStage(p)),
         progress: laborFraction(p),
+        ...(gathering ? { gathering } : {}),
+        ...(pile.length ? { pile } : {}), // #44 — the hauled goods, drawn
         glyph: roomKindDisplayGlyph(pendingRoomKindOf(p)),
         word: pendingRoomKindOf(p),
         ...(h.color ? { color: h.color } : {}),
@@ -803,18 +864,50 @@ export function* createTownStageSteps(
         wk?.foundedOrd !== undefined
           ? opts.deltas?.founded().find((f) => f.ord === wk.foundedOrd)
           : undefined;
+      const gathering = fb ? orderGathering(fb) : null;
+      const pile = pileEntries(fb?.pile);
       out.push({
         ...base,
         stage: siteStage(fb ? foundedStage(fb, day) : 0),
         progress: fb ? foundedProgress(fb, day) : 0,
+        ...(gathering ? { gathering } : {}),
+        ...(pile.length ? { pile } : {}), // #44 — the hauled goods, drawn
       });
     }
     return out;
+  };
+  /** ⚖️ #44 COMMUNITY GROUND — the instant lot designation renders as marked
+   *  ground the moment it exists (automatic-but-visible, the ruled opener):
+   *  a stage-0 site row over the charter's disc. The host's reservedGround
+   *  mapping EXCLUDES the `community` type — this ground exists to be
+   *  dropped on, the exact opposite of an ordered site's no-drop rect. */
+  const communitySites = (): ConstructionSite[] => {
+    const lot = communityGroundOf(opts.deltas?.zones() ?? []);
+    if (!lot) return [];
+    // #44 — the COMMUNITY PILE renders on the lot: the yard ledger's own
+    // rows, drawn as stacked goods (the crate stays the endpoint; the
+    // stacks are what the goods LOOK like — one rendering shape with the
+    // order piles, per the ruling).
+    const pile = pileEntries(opts.deltas?.stock);
+    return [{
+      id: `site_lot_${lot.ord}`,
+      x: center.x + lot.x - lot.r,
+      y: center.y + lot.y - lot.r,
+      w: lot.r * 2,
+      h: lot.r * 2,
+      type: "community",
+      stage: 0, // marked ground, never "worked" — the lot is not a build
+      ...(pile.length ? { pile } : {}),
+      // The camp is the yard's own ground — bodies bound there already call
+      // it "yard" (#45 endpointPlaceWord), so the narrator does too.
+      word: "yard",
+    }];
   };
   const activeSites = (): ConstructionSite[] => [
     ...workSiteRows(),
     ...pendingSites(),
     ...fallingSites(),
+    ...communitySites(),
   ];
   const houseStagingOf = (h: TownHouse): HouseStaging => {
     const delta = opts.deltas?.get(`h_${h.index}`);
@@ -998,8 +1091,14 @@ export function* createTownStageSteps(
   plan.works.forEach((_, i) => refreshWorkFurniture(i));
   /** House ids whose furniture is currently in the world. */
   const furnished = new Set<string>();
-  /** Live hauler body ids (dawn-cart carriers, goods.ts `haul`). */
-  const liveHaulers = new Set<string>();
+  /** Live hauler/carrier body ids → the `tSec` each embodied at. The clock is
+   *  the residents' EMBODIMENT DWELL anchor, which these bodies now share
+   *  (⑤c — `ResidentModel.mayCull`). */
+  const liveHaulers = new Map<string, number>();
+  /** Carriers the model has finished with whose bodies are still protected (in
+   *  view, or inside the dwell). They hold their body until the guard clears —
+   *  and re-join the round if their trip wants them again first. */
+  const retiringHaulers = new Set<string>();
   /** Haulers embody within this range of the player (meters). */
   const HAULER_EMBODY_R = 160;
   /** The overlay version the stage last reconciled (frame's dirty check). */
@@ -1192,8 +1291,13 @@ export function* createTownStageSteps(
     // in-progress build. Progress is bucketed to course granularity so
     // the walls climb in visible steps, not a re-emit every frame.
     const siteList = activeSites();
+    // #44 — the PILE and GATHER readouts join the signature: a delivery must
+    // re-emit the set (drawn goods that lag the ledger are exactly the
+    // "blocks just disappear" report this field answers).
     const siteSig = siteList
-      .map(s => `${s.id}@${s.stage ?? 0}.${Math.floor((s.progress ?? 0) * 8)}`)
+      .map(s =>
+        `${s.id}@${s.stage ?? 0}.${Math.floor((s.progress ?? 0) * 8)}` +
+        `.${(s.pile ?? []).reduce((a, p) => a + p.n, 0)}.${s.gathering?.have ?? -1}`)
       .join("|");
     const sites = siteSig !== lastSiteSig ? siteList : null;
     lastSiteSig = siteSig;
@@ -1286,21 +1390,47 @@ export function* createTownStageSteps(
     // covers the CAMERA's reach too (visibleR): a spirit watching from
     // orbit must never see a carrier blink in or out mid-street.
     const embodyR = Math.max(HAULER_EMBODY_R, visibleR ?? 0);
+    // ⚖️ #43 ⑤c — THE CULL GUARD, borrowed whole from the residents
+    // (`residents.mayCull`, armed by the `residents.update` two blocks up, so
+    // it reads THIS frame's camera). These carriers used to evaporate the
+    // instant the model finished with them — mid-road, in full view, which is
+    // the visible half of the ghost report.
+    //
+    // WHAT A PROTECTED CARRIER DOES INSTEAD: it simply HOLDS its body. That is
+    // the cheapest honest behaviour here because the walk it needs is ALREADY
+    // ISSUED — a caravan's errand runs gate → depot → gate and a dawn cart's
+    // producer → stall → producer, so a carrier due to retire is already
+    // walking itself off the stage; it just has to be allowed to arrive. The
+    // cull lands the frame the camera looks away (or the dwell expires out of
+    // view). If its trip wants it back before that (the next day's visit, the
+    // next dawn round), it is un-retired with a fresh errand rather than left
+    // standing at the gate.
+    const retire = (id: string): void => {
+      const since = liveHaulers.get(id);
+      if (since === undefined) return;
+      if (!residents.mayCull(bodyPos(id), since, tSec)) {
+        retiringHaulers.add(id);
+        return;
+      }
+      remove.push(id);
+      liveHaulers.delete(id);
+      retiringHaulers.delete(id);
+    };
     if (trade) {
       const trip = trade.caravan(tSec);
+      // ⚖️ ⑤a: an empty hold walks no bodies (see `caravanCarries`). The books
+      // above are untouched — only the carriers are gated.
+      const carries = caravanCarries();
       for (let i = 0; i < 2; i++) {
         const id = `caravan_${i}`;
         const live = liveHaulers.has(id);
-        if (trip.phase === "away") {
-          if (live) {
-            remove.push(id);
-            liveHaulers.delete(id);
-          }
+        if (trip.phase === "away" || !carries) {
+          if (live) retire(id);
           continue;
         }
         const d = Math.hypot(trip.pos.x - p.x, trip.pos.y - p.y);
         if (!live && d <= embodyR) {
-          liveHaulers.add(id);
+          liveHaulers.set(id, tSec);
           add.push({
             id, x: trip.pos.x + i * 1.1, y: trip.pos.y + i * 0.7,
             ...(plan.species ? { species: plan.species } : {}),
@@ -1311,8 +1441,10 @@ export function* createTownStageSteps(
           });
           if (trip.walkTo) errands.push({ npcId: id, points: trip.walkTo });
         } else if (live && d > embodyR + 60) {
-          remove.push(id);
-          liveHaulers.delete(id);
+          retire(id);
+        } else if (live && retiringHaulers.delete(id) && trip.walkTo) {
+          // Held through its own retirement and wanted again: back on the round.
+          errands.push({ npcId: id, points: trip.walkTo });
         }
       }
     }
@@ -1329,15 +1461,12 @@ export function* createTownStageSteps(
         const id = `hauler_${g.good.key}_${si}`;
         const live = liveHaulers.has(id);
         if (!trip || trip.phase === "idle") {
-          if (live) {
-            remove.push(id);
-            liveHaulers.delete(id);
-          }
+          if (live) retire(id); // ⑤c — same in-view guard + dwell as the caravan
           continue;
         }
         const d = Math.hypot(trip.pos.x - p.x, trip.pos.y - p.y);
         if (!live && d <= embodyR) {
-          liveHaulers.add(id);
+          liveHaulers.set(id, tSec);
           add.push({
             id, x: trip.pos.x, y: trip.pos.y,
             ...(plan.species ? { species: plan.species } : {}),
@@ -1348,8 +1477,10 @@ export function* createTownStageSteps(
           });
           if (trip.walkTo) errands.push({ npcId: id, points: trip.walkTo });
         } else if (live && d > embodyR + 60) {
-          remove.push(id);
-          liveHaulers.delete(id);
+          retire(id);
+        } else if (live && retiringHaulers.delete(id) && trip.walkTo) {
+          // Held through its own retirement and wanted again: back on the round.
+          errands.push({ npcId: id, points: trip.walkTo });
         }
       }
     }

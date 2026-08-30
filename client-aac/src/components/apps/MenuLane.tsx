@@ -52,7 +52,7 @@ interface MenuLaneProps {
   initial: "menu" | "floor";
   /** Voice a press the way any board press is voiced. */
   onSpeak?: (label: string, sentence: string) => void;
-  /** Hand the device to the adult. Not dwellable — see FoodBrowseLane. */
+  /** Hand the device to the companion. Not dwellable — see FoodBrowseLane. */
   onSwitchToCaretaker: () => void;
   language?: string;
   iconTextRatio?: number;
@@ -126,7 +126,7 @@ export function MenuLane({
         className="mt-2 pt-2 text-xs text-gray-400 underline self-center"
         data-testid="menu-caretaker-lane"
       >
-        {t("aac.restaurant.forGrownUp")}
+        {t("aac.restaurant.forCompanion")}
       </button>
     </div>
   );

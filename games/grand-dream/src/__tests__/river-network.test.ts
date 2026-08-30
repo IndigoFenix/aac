@@ -18,7 +18,7 @@ const game: GameSettings = {
     settle: true, radius: 6_371_000,
     founding: { threshold: 100, radius: 2, minSpacing: 6, maxHarvest: 600 },
   },
-  initialFocus: null, avatar: false, avatarSpecies: "human", canFly: false, creativeMode: false, entities: null,
+  initialFocus: null, avatar: false, avatarSpecies: "human", mods: [], canFly: false, creativeMode: false, entities: null,
 };
 
 describe("river network extraction", () => {

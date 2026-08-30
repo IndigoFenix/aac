@@ -139,9 +139,20 @@ export interface GameSettings {
    *  system. Default false. */
   canFly: boolean;
   /** Species id (see the creature-builder registry) for the embodied avatar —
-   *  and, for the town scope, its residents. Defaults to "human_cute" (the main
-   *  people species) when the document omits it. */
+   *  and, for the town scope, its residents. Defaults to "human" (the people
+   *  species) when the document omits it. */
   avatarSpecies: string;
+  /** CREATURE MODS (`mods` — creatures/mod-library.ts): optional, built-in
+   *  world modifiers that reshape the species registry before play. `cute` is
+   *  an art style (every creature chunkier, bigger-headed); `animal_people`
+   *  derives a speaking, bipedal counterpart for every animal.
+   *
+   *  SHAPE ONLY here, per the module law: the kernel checks it is a list of
+   *  non-empty ids, and `applyWorldCreatureMods` refuses an unknown one by
+   *  name at install — the same split as `avatar_species`, which the kernel
+   *  also never resolves against the registry. Empty = the authored registry,
+   *  unchanged. */
+  mods: string[];
   /** true = the focused object is player-modifiable. */
   creativeMode: boolean;
   /** SPACE-TIME COMPRESSION (`scale` — space-time-compression.md): the
@@ -237,8 +248,8 @@ function fail(path: string, msg: string): never {
 export function parseGameSettings(raw: unknown, path: string): GameSettings {
   if (!isObj(raw)) fail(path, "expected an object");
   for (const k of Object.keys(raw)) {
-    if (!["scope", "world", "initial_focus", "avatar", "avatar_species", "can_fly", "creative_mode", "entities", "scale", "transport", "culture"].includes(k)) {
-      fail(`${path}.${k}`, "unknown field (allowed: scope, world, initial_focus, avatar, avatar_species, can_fly, creative_mode, entities, scale, transport, culture)");
+    if (!["scope", "world", "initial_focus", "avatar", "avatar_species", "mods", "can_fly", "creative_mode", "entities", "scale", "transport", "culture"].includes(k)) {
+      fail(`${path}.${k}`, "unknown field (allowed: scope, world, initial_focus, avatar, avatar_species, mods, can_fly, creative_mode, entities, scale, transport, culture)");
     }
   }
 
@@ -286,13 +297,25 @@ export function parseGameSettings(raw: unknown, path: string): GameSettings {
     canFly = raw.can_fly;
   }
 
-  // Defaults to "human_cute" — the main people species.
-  let avatarSpecies = "human_cute";
+  // Defaults to "human" — THE people species since `human_cute` was retired
+  // into the `cute` creature mod (a document naming the old id still loads:
+  // species.ts keeps it as an alias).
+  let avatarSpecies = "human";
   if ("avatar_species" in raw && raw.avatar_species !== null) {
     if (typeof raw.avatar_species !== "string" || !raw.avatar_species.length) {
       fail(`${path}.avatar_species`, "must be a non-empty species id string");
     }
     avatarSpecies = raw.avatar_species;
+  }
+
+  const mods: string[] = [];
+  if ("mods" in raw && raw.mods !== null && raw.mods !== undefined) {
+    if (!Array.isArray(raw.mods)) fail(`${path}.mods`, "must be an array of creature-mod ids");
+    raw.mods.forEach((m, i) => {
+      if (typeof m !== "string" || !m.length) fail(`${path}.mods[${i}]`, "must be a non-empty mod id string");
+      if (mods.includes(m)) fail(`${path}.mods[${i}]`, `"${m}" is declared twice — mod order is semantic, a repeat is a mistake`);
+      mods.push(m);
+    });
   }
 
   let creativeMode = false;
@@ -353,7 +376,7 @@ export function parseGameSettings(raw: unknown, path: string): GameSettings {
     culture = parseWorldCultureSpec(raw.culture, `${path}.culture`);
   }
 
-  return { scope: scope as GameScope, world: raw.world, initialFocus, avatar, avatarSpecies, canFly, creativeMode, entities, scale, transport, culture };
+  return { scope: scope as GameScope, world: raw.world, initialFocus, avatar, avatarSpecies, mods, canFly, creativeMode, entities, scale, transport, culture };
 }
 
 /**

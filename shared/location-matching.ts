@@ -32,6 +32,37 @@ export interface GpsReading extends GeoPoint {
 /** "Near a location" threshold, in metres. */
 export const NEAR_RADIUS_M = 150;
 
+/**
+ * A fix coarser than this cannot place a student at all, and matching on it
+ * would be guessing dressed up as a signal — every candidate inside half a
+ * kilometre would "match". Such a reading is discarded outright.
+ */
+export const MAX_USABLE_ACCURACY_M = 500;
+
+/**
+ * A fix coarser than this may still put the student NEAR a location, but cannot
+ * establish they are AT it — so it never earns 'at_event', which the prompt
+ * turns into "the user is very likely attending it right now".
+ *
+ * Why this matters in practice: a phone outdoors reports ±5–20 m, but the
+ * DESKTOP (Electron) build resolves location from WiFi via the Windows platform
+ * provider and measured ±85–241 m. The upper half of that range is wider than
+ * NEAR_RADIUS_M itself — i.e. the reading genuinely cannot tell one registered
+ * place from its neighbour, and must not be allowed to assert one.
+ */
+export const PRECISE_FIX_ACCURACY_M = NEAR_RADIUS_M;
+
+/**
+ * The usable horizontal accuracy of a reading, or undefined when the device did
+ * not report one. Junk values (non-finite, zero, negative) are treated as
+ * "not reported" rather than as a perfect fix.
+ */
+function reportedAccuracy(gps: GpsReading | GeoPoint): number | undefined {
+  const a = (gps as GpsReading).accuracy;
+  if (typeof a !== "number" || !Number.isFinite(a) || a <= 0) return undefined;
+  return a;
+}
+
 /** How far around "now" an event counts as happening, in milliseconds (±2h). */
 export const EVENT_WINDOW_MS = 2 * 60 * 60 * 1000;
 
@@ -91,15 +122,30 @@ export interface LocationMatch {
   distanceM: number;
   nearbyEvents: NearbyEvent[];
   /**
-   * 'at_event' — within radius AND a linked event is happening around now;
-   *              the strongest signal the student is at that event.
-   * 'near'     — within radius, but nothing scheduled there right now.
+   * 'at_event' — within radius AND a linked event is happening around now AND
+   *              the fix is precise enough to say so; the strongest signal.
+   * 'near'     — within radius, but either nothing is scheduled there right now
+   *              or the fix is too coarse to claim attendance. Check
+   *              `nearbyEvents` to tell those two apart — a 'near' match with
+   *              events is NOT "nothing is scheduled here".
    */
   confidence: "at_event" | "near";
+  /** Reported horizontal accuracy of the fix behind this match, if the device
+   *  gave one. Undefined means the device did not report it. */
+  accuracyM?: number;
+  /**
+   * The fix was too coarse to distinguish this place from its surroundings, so
+   * the match is PLAUSIBLE rather than established. Callers that put this in a
+   * prompt must hedge accordingly — an over-confident location claim sends the
+   * whole session's conversation somewhere the student is not.
+   */
+  coarse: boolean;
 }
 
 export interface MatchInput {
-  gps: GeoPoint;
+  /** The device reading. `accuracy`, when present, widens the search and gates
+   *  the 'at_event' claim — see matchStudentLocation. */
+  gps: GpsReading;
   candidateLocations: LocationCandidate[];
   events: EventOccurrence[];
   now: Date;
@@ -126,10 +172,36 @@ function eventOverlapsWindow(ev: EventOccurrence, now: Date, windowMs: number): 
  * Rank the student's nearby registered locations and flag those with a
  * concurrent event. Returns matches sorted by confidence ('at_event' first),
  * then by ascending distance. Locations outside the radius are omitted.
+ *
+ * ── The reading's ACCURACY is part of the answer, not decoration ──
+ *
+ * A coordinate without its error bars is a claim the device never made. Three
+ * things follow from the reported `accuracy`:
+ *
+ *   1. Too coarse to mean anything (> MAX_USABLE_ACCURACY_M) → NO matches. A
+ *      half-kilometre error circle "matches" every place in a neighbourhood.
+ *   2. Otherwise the search radius widens by the accuracy: a place 200 m away
+ *      is genuinely reachable inside a ±100 m fix, and the old flat radius
+ *      dropped it. Distances reported back stay the raw centre-to-centre value.
+ *   3. A fix coarser than PRECISE_FIX_ACCURACY_M can suggest but never assert:
+ *      such matches come back `coarse: true` and never 'at_event', because the
+ *      prompt turns that into "very likely attending it right now".
+ *
+ * A reading with NO accuracy behaves exactly as before (flat radius, 'at_event'
+ * available) — most callers report one, and inventing a penalty for those that
+ * do not would silently disable the feature for them.
  */
 export function matchStudentLocation(input: MatchInput): LocationMatch[] {
-  const radiusM = input.radiusM ?? NEAR_RADIUS_M;
+  const baseRadiusM = input.radiusM ?? NEAR_RADIUS_M;
   const windowMs = input.eventWindowMs ?? EVENT_WINDOW_MS;
+
+  const accuracyM = reportedAccuracy(input.gps);
+  // A reading this vague is not evidence of anything. Better to say nothing
+  // than to place a child somewhere they are not.
+  if (accuracyM !== undefined && accuracyM > MAX_USABLE_ACCURACY_M) return [];
+
+  const coarse = accuracyM !== undefined && accuracyM > PRECISE_FIX_ACCURACY_M;
+  const radiusM = baseRadiusM + (accuracyM ?? 0);
 
   // Pre-group the in-window events by location id so each candidate is O(1).
   const eventsByLocation = new Map<string, NearbyEvent[]>();
@@ -160,7 +232,11 @@ export function matchStudentLocation(input: MatchInput): LocationMatch[] {
       location: loc,
       distanceM,
       nearbyEvents,
-      confidence: nearbyEvents.length > 0 ? "at_event" : "near",
+      // A coarse fix keeps the events (they are real and the caller should say
+      // so) but loses the right to call this attendance.
+      confidence: nearbyEvents.length > 0 && !coarse ? "at_event" : "near",
+      accuracyM,
+      coarse,
     });
   }
 

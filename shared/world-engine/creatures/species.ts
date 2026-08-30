@@ -8,10 +8,20 @@
 // client just displays).
 //
 // Blueprints are drawn from the worked examples (examples.ts) — the same curated
-// body plans the seagull-dream lab exercised — but keyed by stable ids and
-// tagged with a `kind` so callers know whether they're standing up a creature, a
-// plant, or a fruit body. A game (or a future evolution simulator) can also add
-// its own species at runtime via `registerSpecies`.
+// body plans the seagull-dream lab exercised — and joined to these rows by the
+// SPECIES ID they carry, then tagged with a `kind` so callers know whether
+// they're standing up a creature, a plant, or a fruit body. A game (or a future
+// evolution simulator) can also add its own species at runtime via
+// `registerSpecies`.
+//
+// ONE LIST (2026-08-30). The join used to be by the example's DISPLAY TITLE
+// ("Crocodile (long jaw)"), which made this registry and examples.ts two
+// catalogues kept in step by hand — and they weren't: six fully authored bodies
+// (snake, fish, crocodile, spider, crab, octopus) sat unreachable in examples.ts
+// while the same six words were stubs here. The id IS the join now, and the
+// orphan check under the registry build makes the merge permanent: a worked
+// example no row claims throws at module load, so a body can never again be
+// authored into a file the world cannot reach.
 //
 // PURE DATA + a clamp — no three.js. Safe to import anywhere.
 
@@ -19,6 +29,7 @@ import type { Blueprint } from "./blueprint";
 import { clampBlueprint } from "./blueprint";
 import { CREATURE_EXAMPLES } from "./examples";
 import { ANIMAL_PEOPLE_BLUEPRINTS } from "./animals-people";
+import { LAB_BLUEPRINTS } from "./lab-blueprints";
 import { orchardPlants } from "../products";
 import type { ItemWords } from "../interaction/lang/core.js";
 
@@ -43,16 +54,30 @@ export interface Species {
    * nothing may materialise it.
    *
    * Same contract as `bodiless`, a different reason: a spark has no body BY
-   * NATURE, a stub has none YET. A stub graduates by gaining an `example` (and
-   * losing this flag) the moment a body plan is authored; nothing else about
-   * the row changes, so the word, the icon and the four translations a child
-   * already has never move.
+   * NATURE, a stub has none YET. A stub graduates the moment an examples.ts
+   * entry is authored UNDER ITS ID — this flag is derived from that, never
+   * hand-set — and nothing else about the row changes, so the word, the icon
+   * and the four translations a child already has never move.
    *
    * Anything that materialises bodies must check this (or `bodiless`) before
    * clamping the empty blueprint into an accidental default body — a lion
    * would otherwise stand up in the world as a nameless quadruped.
    */
   readonly stub?: boolean;
+  /**
+   * SAPIENT — this species uses the VERBAL system (animal-expansion.md: *"the
+   * core difference between a sapient species and an animal species is the
+   * canSpeak tag"*). A creature without it communicates in icons and gesture;
+   * it is somebody you can go to, follow and play with, never somebody you
+   * greet by name or ask for help.
+   *
+   * ⚠️ ABSENT MEANS FALSE, and that is the safe default: a species row nobody
+   * has classified is an animal, so a newly-authored body cannot accidentally
+   * arrive able to talk. The people species set it explicitly.
+   *
+   * Read it through `speciesCanSpeak`, which is tolerant of unknown ids.
+   */
+  readonly canSpeak?: boolean;
   /** Partial blueprint record in the interchange format — passed through
    *  `clampBlueprint` (which fills every unset field) at build time. EMPTY and
    *  unusable when `bodiless` or `stub`. */
@@ -67,15 +92,20 @@ export interface Species {
    *  houses — walls, doors, halls, furniture lanes — for ITS OWN adult size;
    *  see kernel/town/rooms.ts houseMetricsFor). Never hard-code a body size
    *  elsewhere. undefined = DEFAULT_BODY_RADIUS_M (the people default —
-   *  human_cute's capsule is exactly this wide). */
+   *  `human`'s capsule is exactly this wide). */
   readonly bodyRadiusM?: number;
   /** The species word's own lexemes, per locale (content/words.ts joiner),
    *  keyed under `id`. NOT `name` — `name` is a worked-example title
-   *  ("Cow (straight horns)"), never a word a sentence can carry. */
+   *  ("Cow (straight horns)"), never a word a sentence can carry.
+   *
+   *  ABSENT MEANS "a body the world builds, not a word a child says": the
+   *  sentence builder skips a species with no `words` (builder-surface.ts), so
+   *  `quadruped`, `ungulate` and the palaeo body plans stay off the animals tab
+   *  while still being buildable by id. */
   readonly words?: ItemWords;
 }
 
-/** The people default (human_cute's collision capsule). The FALLBACK when a
+/** The people default (the `human` collision capsule). The FALLBACK when a
  *  species doesn't author `bodyRadiusM` — not a number to reach for directly:
  *  resolve a real species through `speciesBodyRadius` wherever one is known. */
 export const DEFAULT_BODY_RADIUS_M = 0.4;
@@ -86,31 +116,44 @@ export const DEFAULT_BODY_RADIUS_M = 0.4;
  *  a species string, only size to it. */
 export function speciesBodyRadius(id: string | undefined | null): number {
   if (!id) return DEFAULT_BODY_RADIUS_M;
-  return REGISTRY.get(id)?.bodyRadiusM ?? DEFAULT_BODY_RADIUS_M;
+  return getSpecies(id)?.bodyRadiusM ?? DEFAULT_BODY_RADIUS_M;
 }
 
-// The curated catalogue: which worked example backs each stable id, plus its
-// kind. Extend freely — a species only needs a stable id + a body plan. Hard
+/** THE SAPIENCE RESOLVER: does this species use the verbal system? Tolerant
+ *  of undefined/unknown ids (an unclassified body is an animal) — nothing
+ *  that asks "can this one talk?" may throw on a species string. */
+export function speciesCanSpeak(id: string | undefined | null): boolean {
+  if (!id) return false;
+  return getSpecies(id)?.canSpeak === true;
+}
+
+// The curated catalogue: every stable id the engine knows, plus its kind. Hard
 // species parameters (per the design note) live HERE, not in game specs.
-// `example` is OPTIONAL: a row without one is a VOCABULARY STUB (Species.stub)
-// — a plant or an animal the sentence builder can name before anyone has drawn
-// it. Registry ORDER is the vocabulary's rank (vocab-order.ts walks it), so the
-// stub blocks are authored most-frequently-said first, and new rows append
-// rather than interleave.
+//
+// A row names NO blueprint: the body plan is whatever examples.ts authors under
+// the SAME id. A row with no such example is a VOCABULARY STUB (Species.stub) —
+// a plant or an animal the sentence builder can name before anyone has drawn it
+// — and that is derived below, never declared here, so the two files cannot
+// disagree about which words have bodies.
+//
+// Registry ORDER is the vocabulary's rank (vocab-order.ts walks it), so the
+// blocks are authored most-frequently-said first, and new rows append rather
+// than interleave.
 const CATALOGUE: ReadonlyArray<{
   id: string;
   kind: SpeciesKind;
-  example?: string;
   scale?: number;
   words?: ItemWords;
 }> = [
   // ── People + animals ──────────────────────────────────────────────────────
-  { id: "human", kind: "creature", example: "Human (biped + hands)" },
-  { id: "quadruped", kind: "creature", example: "Quadruped (default)" },
+  // `human`'s example is a worked biped; the LAB-AUTHORED human in
+  // animals-people.ts supersedes it below (see the override loop) — the example
+  // stays reachable so the creature lab can still show the plain body plan.
+  { id: "human", kind: "creature" },
+  { id: "quadruped", kind: "creature" },
   {
     id: "cow",
     kind: "creature",
-    example: "Cow (straight horns)",
     words: {
       en: { w: "cow" },
       he: { w: "פרה", g: "f" },
@@ -121,7 +164,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "deer",
     kind: "creature",
-    example: "Deer (branching antlers)",
     words: {
       en: { w: "deer", plw: "deer" },
       he: { w: "צבי", g: "m" },
@@ -132,7 +174,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "ram",
     kind: "creature",
-    example: "Ram (curled horns)",
     words: {
       en: { w: "ram" },
       he: { w: "איל", g: "m" },
@@ -143,7 +184,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "sheep",
     kind: "creature",
-    example: "Sheep (woolly)",
     words: {
       en: { w: "sheep", plw: "sheep" },
       he: { w: "כבשה", g: "f" },
@@ -151,7 +191,7 @@ const CATALOGUE: ReadonlyArray<{
       pt: { w: "ovelha", g: "f" },
     },
   },
-  { id: "ungulate", kind: "creature", example: "Ungulate (hooves)" },
+  { id: "ungulate", kind: "creature" },
   // The lab-tuned bodies. `dog` matters beyond the menu: it is a `friend` pool
   // WORD, so until now the one animal a child could most readily ask for had no
   // body plan behind it. Appended rather than interleaved — registry order is
@@ -159,7 +199,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "elephant",
     kind: "creature",
-    example: "Elephant (trunk)",
     words: {
       en: { w: "elephant" },
       he: { w: "פיל", g: "m" },
@@ -170,7 +209,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "horse",
     kind: "creature",
-    example: "Horse",
     words: {
       en: { w: "horse" },
       he: { w: "סוס", g: "m" },
@@ -181,7 +219,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "cat",
     kind: "creature",
-    example: "Cat",
     words: {
       en: { w: "cat" },
       he: { w: "חתול", g: "m" },
@@ -192,7 +229,6 @@ const CATALOGUE: ReadonlyArray<{
   {
     id: "dog",
     kind: "creature",
-    example: "Dog",
     words: {
       en: { w: "dog" },
       he: { w: "כלב", g: "m" },
@@ -201,11 +237,10 @@ const CATALOGUE: ReadonlyArray<{
     },
   },
   // ── Plants ────────────────────────────────────────────────────────────────
-  { id: "oak", kind: "plant", example: "Oak (tree)" },
+  { id: "oak", kind: "plant" },
   {
     id: "grass",
     kind: "plant",
-    example: "Grass tuft",
     words: {
       en: { w: "grass", mass: true },
       he: { w: "דשא", g: "m", mass: true },
@@ -213,11 +248,10 @@ const CATALOGUE: ReadonlyArray<{
       pt: { w: "grama", g: "f", mass: true },
     },
   },
-  { id: "bush", kind: "plant", example: "Bush (berries)" },
+  { id: "bush", kind: "plant" },
   {
     id: "mushroom",
     kind: "plant",
-    example: "Mushroom",
     words: {
       en: { w: "mushroom" },
       he: { w: "פטרייה", g: "f", plw: "פטריות" },
@@ -225,30 +259,36 @@ const CATALOGUE: ReadonlyArray<{
       pt: { w: "cogumelo", g: "m" },
     },
   },
-  { id: "saguaro", kind: "plant", example: "Saguaro (cactus)" },
+  { id: "saguaro", kind: "plant" },
   // Orchard plants — shoot growths that BEAR the fruit kinds below.
-  { id: "apple_tree", kind: "plant", example: "Apple tree" },
-  { id: "banana_plant", kind: "plant", example: "Banana plant" },
-  { id: "grape_vine", kind: "plant", example: "Grape vine" },
-  { id: "carrot_plant", kind: "plant", example: "Carrot plant" },
+  { id: "apple_tree", kind: "plant" },
+  { id: "banana_plant", kind: "plant" },
+  { id: "grape_vine", kind: "plant" },
+  { id: "carrot_plant", kind: "plant" },
   // ── Fruit bodies (market/ground items) ────────────────────────────────────
-  { id: "apple", kind: "fruit", example: "Apple" },
-  { id: "banana", kind: "fruit", example: "Banana" },
-  { id: "grape", kind: "fruit", example: "Grape" },
-  { id: "pear", kind: "fruit", example: "Pear" },
-  { id: "strawberry", kind: "fruit", example: "Strawberry" },
-  { id: "pumpkin", kind: "fruit", example: "Pumpkin" },
-  { id: "pineapple", kind: "fruit", example: "Pineapple" },
-  { id: "carrot", kind: "fruit", example: "Carrot (root)" },
-  { id: "beet", kind: "fruit", example: "Beet (root)" },
-  // ── AAC VOCABULARY STUBS: ANIMALS (2026-08-27) ────────────────────────────
+  { id: "apple", kind: "fruit" },
+  { id: "banana", kind: "fruit" },
+  { id: "grape", kind: "fruit" },
+  { id: "pear", kind: "fruit" },
+  { id: "strawberry", kind: "fruit" },
+  { id: "pumpkin", kind: "fruit" },
+  { id: "pineapple", kind: "fruit" },
+  { id: "carrot", kind: "fruit" },
+  { id: "beet", kind: "fruit" },
+  // ── AAC ANIMAL VOCABULARY (2026-08-27) ────────────────────────────────────
   //
   // Animals a child names long before the world can build one. Each is a real
   // species row — `isAnimal` files it, the sentence builder's [animals] chip
-  // opens it, the four lexemes are authored — with NO worked example, so
-  // `Species.stub` is set and nothing materialises a body. The one thing
-  // missing is the body plan; adding an `example` here is all a graduation
-  // takes, and the child's word never changes.
+  // opens it, the four lexemes are authored. Most have no examples.ts entry
+  // under the same id, so `Species.stub` is derived and nothing materialises a
+  // body; authoring an example with the SAME ID is all a graduation takes, and
+  // the child's word never changes.
+  //
+  // Six graduated that way on 2026-08-30 without touching this block at all —
+  // `fish`, `snake`, `crocodile`, `spider`, `crab`, `octopus` had bodies waiting
+  // in examples.ts the whole time, unreachable only because the join was by
+  // title. That is the merge working: the word, the icon and the translations
+  // stayed exactly where they were.
   //
   // ORDER IS RANK (vocab-order.ts walks this array): most-said first.
   {
@@ -771,17 +811,104 @@ const CATALOGUE: ReadonlyArray<{
       pt: { w: "broto", g: "m" },
     },
   },
+
+  // ── THE MERGE: examples that had no row (2026-08-30) ──────────────────────
+  //
+  // Nine worked body plans lived in examples.ts with nothing in this registry
+  // naming them, so nothing in the world could ever build one. Appended, not
+  // interleaved — registry order is vocabulary rank, and these are the newest
+  // words, not the most-said ones.
+  //
+  // SIX ARE ALSO BOARD WORDS (they carry `words`, so the [animals] chip opens
+  // them and `shared/glyph-registry.ts` gives each a picture and eleven
+  // translations). THREE ARE NOT: `raptor`, `dimetrodon` and `plesiosaur` are
+  // body plans the world can build and the lab can show, deliberately without
+  // `words` — a category tab lists its WHOLE category, and three more
+  // near-synonyms of the `dinosaur` a child already has would be three more
+  // buttons to page past for no new thing to say. Same shape as `quadruped` and
+  // `ungulate`: buildable by id, silent on the board.
+  {
+    id: "beetle",
+    kind: "creature",
+    words: {
+      en: { w: "beetle" },
+      he: { w: "חיפושית", g: "f", plw: "חיפושיות" },
+      es: { w: "escarabajo", g: "m" },
+      pt: { w: "besouro", g: "m" },
+    },
+  },
+  {
+    id: "jellyfish",
+    kind: "creature",
+    words: {
+      en: { w: "jellyfish", plw: "jellyfish" },
+      he: { w: "מדוזה", g: "f" },
+      es: { w: "medusa", g: "f" },
+      pt: { w: "água-viva", g: "f", plw: "águas-vivas" },
+    },
+  },
+  {
+    id: "stingray",
+    kind: "creature",
+    words: {
+      en: { w: "stingray" },
+      he: { w: "טריגון", g: "m" },
+      es: { w: "raya", g: "f" },
+      pt: { w: "arraia", g: "f" },
+    },
+  },
+  {
+    id: "centipede",
+    kind: "creature",
+    words: {
+      en: { w: "centipede" },
+      he: { w: "נדל", g: "m" },
+      es: { w: "ciempiés", g: "m", plw: "ciempiés" },
+      pt: { w: "centopeia", g: "f" },
+    },
+  },
+  {
+    id: "wasp",
+    kind: "creature",
+    words: {
+      en: { w: "wasp" },
+      he: { w: "צרעה", g: "f", plw: "צרעות" },
+      es: { w: "avispa", g: "f" },
+      pt: { w: "vespa", g: "f" },
+    },
+  },
+  {
+    id: "mantis",
+    kind: "creature",
+    words: {
+      en: { w: "mantis", plw: "mantises" },
+      he: { w: "גמל שלמה", g: "m" },
+      es: { w: "mantis", g: "f", plw: "mantis" },
+      pt: { w: "louva-a-deus", g: "m", plw: "louva-a-deus" },
+    },
+  },
+  // Bodies without words — see the note above.
+  { id: "raptor", kind: "creature" },
+  { id: "dimetrodon", kind: "creature" },
+  { id: "plesiosaur", kind: "creature" },
 ];
 
-function exampleBlueprint(name: string): Record<string, unknown> {
-  const ex = CREATURE_EXAMPLES.find((e) => e.name === name);
-  if (!ex) {
-    // Fail fast at module load: a renamed example would otherwise silently drop
-    // a species from the registry.
-    throw new Error(`species: no worked example named "${name}"`);
-  }
-  return ex.blueprint;
-}
+/** THE JOIN: worked example by SPECIES ID. Built once, and duplicate-checked —
+ *  two examples claiming one id means one of the bodies is silently dead, which
+ *  is precisely the failure mode the title-keyed lookup used to hide. */
+const EXAMPLE_BY_ID: ReadonlyMap<string, { title: string; blueprint: Record<string, unknown> }> =
+  (() => {
+    const m = new Map<string, { title: string; blueprint: Record<string, unknown> }>();
+    for (const ex of CREATURE_EXAMPLES) {
+      if (m.has(ex.id)) {
+        throw new Error(
+          `species: two worked examples claim id "${ex.id}" ("${m.get(ex.id)!.title}", "${ex.title}")`,
+        );
+      }
+      m.set(ex.id, { title: ex.title, blueprint: ex.blueprint });
+    }
+    return m;
+  })();
 
 /** THE PLAYER'S SPECIES. The player is a SPARK, not one of the people who live
  *  in the world: it is its own kind of entity — it can talk to creatures with no
@@ -806,33 +933,74 @@ REGISTRY.set(SPARK_SPECIES_ID, {
   blueprint: {},
 });
 for (const entry of CATALOGUE) {
-  // NO WORKED EXAMPLE ⇒ a vocabulary stub: the word is real, the body is not
-  // drawn yet. `blueprint` stays empty (never clamped into a default body) and
-  // `name` falls back to the id, since a stub has no worked-example title.
-  const stub = entry.example === undefined;
+  // NO WORKED EXAMPLE UNDER THIS ID ⇒ a vocabulary stub: the word is real, the
+  // body is not drawn yet. `blueprint` stays empty (never clamped into a default
+  // body) and `name` falls back to the id, since a stub has no example title.
+  const ex = EXAMPLE_BY_ID.get(entry.id);
   REGISTRY.set(entry.id, {
     id: entry.id,
-    name: entry.example ?? entry.id,
+    name: ex?.title ?? entry.id,
     kind: entry.kind,
-    ...(stub ? { stub: true } : {}),
-    blueprint: stub ? {} : exampleBlueprint(entry.example!),
+    ...(ex ? {} : { stub: true }),
+    blueprint: ex?.blueprint ?? {},
     scale: entry.scale,
     words: entry.words,
   });
 }
 
-// PEOPLE species authored in the lab (animals-people.ts): human_cute (the main
-// species now), the tuned "human" (kept for later), and the animal-people
-// (bear/frog/dog/rabbit) that stand in for animal puzzle characters. These are
-// full blueprints keyed by their own `name`; they OVERRIDE any same-named
-// example so the lab-authored body plan wins.
+// THE MERGE INVARIANT, checked at module load in the OTHER direction: every
+// worked example must be claimed by a registry row. Without this the two lists
+// drift apart exactly the way they did before — a fully authored body sitting in
+// examples.ts that nothing in the world can ever build, and no error anywhere.
+// (The first direction — a row with no example — is legitimate: that is a stub.)
+{
+  const orphans = [...EXAMPLE_BY_ID.entries()]
+    .filter(([id]) => !REGISTRY.has(id))
+    .map(([id, ex]) => `${id} ("${ex.title}")`);
+  if (orphans.length > 0) {
+    throw new Error(
+      `species: worked example(s) with no registry row: ${orphans.join(", ")} — ` +
+        "add a CATALOGUE row with that id (append; registry order is vocabulary rank)",
+    );
+  }
+}
+
+// PEOPLE species authored in the lab (animals-people.ts): the tuned "human"
+// (THE people species since `human_cute` was retired into the `cute` creature
+// mod) and the hand-drawn animal-people (bear/frog/dog/rabbit) that stand in
+// for animal puzzle characters. These are full blueprints keyed by their own
+// `name`, which IS a species id; they OVERRIDE the CATALOGUE row written just
+// above so the lab-authored body plan wins. That ordering is load-bearing for
+// two ids in particular: `human` and `dog` each have a worked example AND an
+// authored people body, and the people body is the one the world stands up. The
+// example stays reachable in the lab — it is the same id, one layer down.
+//
+// EVERY ROW HERE SPEAKS. This list IS the people, so `canSpeak` is set from
+// membership rather than repeated per row — the four animal-people are the
+// authored ancestors of what the `animal_people` mod now generates, and a
+// generated row never displaces an authored one.
 for (const bp of ANIMAL_PEOPLE_BLUEPRINTS) {
   const id = typeof bp.name === "string" ? bp.name : null;
   if (!id) continue;
   // The people are the design species — their size is AUTHORED here (the
   // 0.4 m capsule the whole town-metric arithmetic historically assumed),
   // not inherited from the fallback.
-  REGISTRY.set(id, { id, name: id, kind: "creature", blueprint: bp, bodyRadiusM: DEFAULT_BODY_RADIUS_M });
+  REGISTRY.set(id, {
+    id, name: id, kind: "creature", canSpeak: true,
+    blueprint: bp, bodyRadiusM: DEFAULT_BODY_RADIUS_M,
+  });
+}
+
+// Bodies currently being TUNED IN THE LAB (lab-blueprints.ts, machine-written)
+// win over everything above, so what the lab shows is what the game builds
+// without a round trip through the hand-authored sources. Normally empty.
+for (const bp of LAB_BLUEPRINTS) {
+  const id = typeof bp.name === "string" ? bp.name : null;
+  if (!id) continue;
+  const prior = REGISTRY.get(id);
+  REGISTRY.set(id, prior
+    ? { ...prior, blueprint: bp, stub: undefined }
+    : { id, name: id, kind: "creature", blueprint: bp, bodyRadiusM: DEFAULT_BODY_RADIUS_M });
 }
 
 // ── Orchards ────────────────────────────────────────────────────────────────
@@ -850,15 +1018,28 @@ export type OrchardFruit = "apple" | "banana" | "grape";
 export const FRUIT_TREES: ReadonlyArray<{ fruit: OrchardFruit; species: string }> =
   orchardPlants().map((r) => ({ fruit: r.fruit as OrchardFruit, species: r.species }));
 
-/** Look up a species by id, or undefined if unknown. */
+/**
+ * RETIRED IDS that must still resolve. A species id is written into stored
+ * world documents (`avatar_species`), saved games and spec JSON, so retiring
+ * one cannot be a delete — `requireSpecies` throws by design, and a world that
+ * loaded fine yesterday would refuse to open.
+ *
+ * `human_cute` (retired 2026-08-29) was `human` with one field changed; that
+ * re-skin is now the `cute` creature mod. An alias is NOT a registry row: it
+ * never appears in `listSpecies()`, so menus, vocabulary and validators see
+ * the retirement immediately, while old documents keep loading.
+ */
+const ALIASES: ReadonlyMap<string, string> = new Map([["human_cute", "human"]]);
+
+/** Look up a species by id, or undefined if unknown. Resolves retired ids. */
 export function getSpecies(id: string): Species | undefined {
-  return REGISTRY.get(id);
+  return REGISTRY.get(id) ?? REGISTRY.get(ALIASES.get(id) ?? "");
 }
 
 /** Look up a species by id; throws if unknown (a game spec that names a species
  *  the engine doesn't know is a certification error, not a runtime fallback). */
 export function requireSpecies(id: string): Species {
-  const s = REGISTRY.get(id);
+  const s = getSpecies(id);
   if (!s) throw new Error(`species: unknown id "${id}"`);
   return s;
 }
@@ -879,7 +1060,20 @@ export function registerSpecies(species: Species): void {
   REGISTRY.set(species.id, species);
 }
 
-/** The clamped, ready-to-build blueprint for a species id. */
+/** Drop a runtime-registered species. Returns whether anything was removed.
+ *
+ *  ⚠️ ONLY for rows a caller registered ITSELF — world-mods.ts uses it to
+ *  retract the species a mod derived when that mod is switched off (the
+ *  creature lab flips them constantly). Nothing may use it to delete an
+ *  authored row: the catalogue is the engine's, not a session's. */
+export function unregisterSpecies(id: string): boolean {
+  return REGISTRY.delete(id);
+}
+
+/** The clamped, ready-to-build blueprint for a species id — the AUTHORED
+ *  body, before any world appearance mod. The build path applies those at its
+ *  own door (creature-model.ts `dressedBlueprint`); a caller that wants to SEE
+ *  the modded body asks `applyAppearanceMods` for it. */
 export function speciesBlueprint(id: string): Blueprint {
   return clampBlueprint(requireSpecies(id).blueprint);
 }

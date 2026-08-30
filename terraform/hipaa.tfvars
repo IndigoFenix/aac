@@ -67,7 +67,9 @@ audit_log_retention_days  = 2192  # 6 years: CloudTrail, VPC flow, RDS, WAF log 
 # which is the state the 2026-08 audit found. Use a mailbox that EXISTS and
 # is read (a shared security alias is ideal); SNS sends a one-time
 # confirmation email after apply and delivers nothing until it is clicked.
-alert_email = ""   # TODO: set before the next apply
+# Own variable so security alerts can be re-pointed independently of customer
+# replies; same mailbox for now (one person). See ecs-lean.tfvars.
+alert_email = "cs@aivota.ai"
 
 # =============================================================================
 # Network - full isolation

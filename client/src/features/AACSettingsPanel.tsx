@@ -244,6 +244,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [allowNotes, setAllowNotes] = useState(true);
   const [shareMonitorNotesWithInstitute, setShareMonitorNotesWithInstitute] = useState(true);
   const [autoAddContacts, setAutoAddContacts] = useState(true);
+  const [deviceLocationEnabled, setDeviceLocationEnabled] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
   const [homeActions, setHomeActions] = useState<HomeAction[]>([]);
@@ -578,6 +579,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
+      setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
@@ -636,6 +638,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAllowNotes = aac?.allowNotes ?? true;
       const originalShareMonitorNotesWithInstitute = aac?.shareMonitorNotesWithInstitute ?? true;
       const originalAutoAddContacts = aac?.autoAddContacts ?? true;
+      const originalDeviceLocationEnabled = aac?.deviceLocationEnabled ?? false;
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
       // Normalized on BOTH sides of this comparison (state is seeded from the same
@@ -689,6 +692,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         allowNotes !== originalAllowNotes ||
         shareMonitorNotesWithInstitute !== originalShareMonitorNotesWithInstitute ||
         autoAddContacts !== originalAutoAddContacts ||
+        deviceLocationEnabled !== originalDeviceLocationEnabled ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
         JSON.stringify(homeActions) !== JSON.stringify(originalHomeActions) ||
@@ -702,7 +706,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, deviceLocationEnabled, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -743,6 +747,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowNotes: boolean;
       shareMonitorNotesWithInstitute: boolean;
       autoAddContacts: boolean;
+      deviceLocationEnabled: boolean;
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
       homeActions?: HomeAction[];
@@ -848,6 +853,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowNotes,
       shareMonitorNotesWithInstitute,
       autoAddContacts,
+      deviceLocationEnabled,
       appConfig,
       permittedWebsites,
       // Sanitized through the shared chokepoint so half-filled rows (a slot the
@@ -911,6 +917,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
+      setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
@@ -3375,6 +3382,24 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <Switch
                   checked={shareMonitorNotesWithInstitute}
                   onCheckedChange={setShareMonitorNotesWithInstitute}
+                />
+              </div>
+              {/* Device location. Off means the AAC client never asks the device
+                  for a position at all — so no OS permission prompt reaches the
+                  student either. */}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.deviceLocation')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.deviceLocationDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={deviceLocationEnabled}
+                  onCheckedChange={setDeviceLocationEnabled}
+                  data-testid="switch-device-location"
                 />
               </div>
 

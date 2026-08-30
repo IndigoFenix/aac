@@ -120,6 +120,11 @@ export const adminUsers = pgTable("admin_users", {
   mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
   mfaSecret: text("mfa_secret"),
   mfaEnforcedByAdmin: boolean("mfa_enforced_by_admin").default(false).notNull(),
+  // Mirrors `users.is_active`. Admins live in their own table, so before this
+  // existed a backoffice account could not be deactivated at all — the widest
+  // access in the system with no off switch. Enforced in every auth path via
+  // `canAuthenticate()` in server/userAuth.ts.
+  isActive: boolean("is_active").default(true).notNull(),
   lastActiveAt: timestamp("last_active_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -2743,3 +2748,137 @@ export const chatSessionsRelations = relations(chatSessions, ({ one }) => ({
     references: [userStudents.id]
   }),
 }));
+
+// =============================================================================
+// PUBLIC TABLES — Security incident register
+// =============================================================================
+// NOT to be confused with `incidents` in shared/schema-private.ts, which is the
+// per-student clinical/behavioural log. This is the organisation's security and
+// privacy breach register: the object that starts and holds the notification
+// clock, and the evidence trail behind the report we owe a customer afterwards.
+//
+// Backs the AKIM information-security appendix §6 ("חריגים ודיווחים"):
+// immediate verbal + written notice within 48 hours, and an investigation
+// report within 3 days of the event ending. Regulatory windows come from
+// shared/regime/regimes.ts (`resolveBreachNotificationHours`) rather than being
+// hardcoded, because they differ per regime and the strictest one wins.
+//
+// Deliberately holds NO subject identifiers: affected people are described by
+// count and scope only. Subject identity lives in the private schema, and a
+// register row is read by more people than a PHI row should be.
+// See docs/AKIM_REMEDIATION_PLAN.md.
+
+export const securityIncidentKindEnum = pgEnum("security_incident_kind", [
+  "phi_breach",      // unauthorised access to / disclosure of personal or health data
+  "security_breach", // intrusion, malware, availability loss; no confirmed data exposure
+  "vendor_incident", // an incident at a sub-processor that reaches data we hold
+]);
+
+// Separate from the clinical `incident_severity` enum on purpose: the scales
+// mean different things and must be free to diverge.
+export const securityIncidentSeverityEnum = pgEnum("security_incident_severity", [
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+
+export const securityIncidentStatusEnum = pgEnum("security_incident_status", [
+  "open",       // discovered, being assessed
+  "contained",  // no longer ongoing
+  "notified",   // required parties told
+  "closed",     // investigation report filed, incident concluded
+  "dismissed",  // investigated and found not to be an incident
+]);
+
+export const securityIncidents = pgTable("security_incidents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Human-readable handle for e-mails and phone calls ("INC-2026-0007").
+  // Rendered in code from this ordinal so the reference survives a restore.
+  seq: serial("seq").notNull().unique(),
+
+  kind: securityIncidentKindEnum("kind").notNull(),
+  severity: securityIncidentSeverityEnum("severity").notNull(),
+  status: securityIncidentStatusEnum("status").default("open").notNull(),
+
+  title: text("title").notNull(),
+  description: text("description"),
+
+  // --- the clock -----------------------------------------------------------
+  // Awareness, not occurrence, is what every notification window runs from.
+  discoveredAt: timestamp("discovered_at", { withTimezone: true }).notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }),
+  containedAt: timestamp("contained_at", { withTimezone: true }),
+  // When the event finished — the annex's 3-day investigation-report window
+  // runs from here, not from discovery.
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+
+  // Regime slugs in play (shared/regime/regimes.ts). Drives the regulator
+  // deadline below; stored so a later regime change cannot silently rewrite
+  // the deadline this incident was actually held to.
+  regimes: jsonb("regimes").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+
+  // Deadlines are computed once, at open time, and stored. The cron reads
+  // these columns; it does not re-derive policy.
+  regulatorNotifyDueAt: timestamp("regulator_notify_due_at", { withTimezone: true }),
+  regulatorNotifiedAt: timestamp("regulator_notified_at", { withTimezone: true }),
+  // Contractual window owed to the affected customer (48h under the AKIM
+  // appendix). Null when no contract imposes one.
+  customerNotifyDueAt: timestamp("customer_notify_due_at", { withTimezone: true }),
+  customerNotifiedAt: timestamp("customer_notified_at", { withTimezone: true }),
+  investigationReportDueAt: timestamp("investigation_report_due_at", { withTimezone: true }),
+  investigationReportSentAt: timestamp("investigation_report_sent_at", { withTimezone: true }),
+
+  // --- scope ---------------------------------------------------------------
+  // Which customers are affected. Institute IDs, not people.
+  affectedInstituteIds: jsonb("affected_institute_ids").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  affectedSubjectCount: integer("affected_subject_count"),
+  // Prose: what categories of data were involved, how exposure happened.
+  affectedScope: text("affected_scope"),
+
+  openedByAdminUserId: varchar("opened_by_admin_user_id").references(() => adminUsers.id),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  closureSummary: text("closure_summary"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_security_incidents_status").on(table.status),
+  index("idx_security_incidents_discovered_at").on(table.discoveredAt),
+  // The deadline sweep's access pattern: open incidents with a due date.
+  index("idx_security_incidents_regulator_due").on(table.regulatorNotifyDueAt),
+  index("idx_security_incidents_customer_due").on(table.customerNotifyDueAt),
+  index("idx_security_incidents_report_due").on(table.investigationReportDueAt),
+]);
+
+// Append-only timeline. Every status change, note and notification lands here,
+// so the investigation report can be assembled from record rather than memory.
+export const securityIncidentEventKindEnum = pgEnum("security_incident_event_kind", [
+  "opened",
+  "note",
+  "status_change",
+  "notification_sent",
+  "deadline_warning",
+  "deadline_missed",
+  "closed",
+]);
+
+export const securityIncidentEvents = pgTable("security_incident_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  incidentId: varchar("incident_id")
+    .references(() => securityIncidents.id, { onDelete: "cascade" })
+    .notNull(),
+  kind: securityIncidentEventKindEnum("kind").notNull(),
+  body: text("body"),
+  // Free-shaped detail: recipients of a notification, old/new status, the
+  // template that was rendered. Never subject identifiers.
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  // Null when the system wrote the row (cron warnings, automated dispatch).
+  actorAdminUserId: varchar("actor_admin_user_id").references(() => adminUsers.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_security_incident_events_incident").on(table.incidentId, table.createdAt),
+]);
+
+export type SecurityIncident = typeof securityIncidents.$inferSelect;
+export type SecurityIncidentEvent = typeof securityIncidentEvents.$inferSelect;

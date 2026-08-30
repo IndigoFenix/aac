@@ -8,6 +8,21 @@
 // its subpath. For pure lookups, import ./species directly (no THREE/mesh load).
 
 export * from "./species";
+export {
+  parseCreatureMod,
+  applyAppearanceMods,
+  appearanceModTag,
+  deriveModSpecies,
+  speciesMatches,
+  setActiveCreatureMods,
+  activeCreatureMods,
+  type CreatureMod,
+  type DerivedSpecies,
+  type FieldRule,
+  type SpeciesSelector,
+} from "./mods";
+export { listCreatureMods, getCreatureMod, resolveCreatureMods } from "./mod-library";
+export { applyWorldCreatureMods, previewModSpecies, type InstalledCreatureMods } from "./world-mods";
 export type { Blueprint } from "./blueprint";
 export { clampBlueprint, defaultBlueprint, plantBlueprint } from "./blueprint";
 export {

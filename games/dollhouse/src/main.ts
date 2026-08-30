@@ -23,6 +23,7 @@
  * Standalone keeps the whole panel in-iframe, unchanged.
  */
 import { avatarKind, loadWorldManifest, type LoadedWorld } from "@shared/world-engine/kernel/manifest";
+import { applyWorldCreatureMods } from "@shared/world-engine/creatures/world-mods";
 import { parseWorldCommand } from "@shared/world-engine/net";
 import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy/index";
 import type { CityHudChip, FamilyHudEntry, PocketEntry, QuestBoardView } from "@shared/world-engine/interaction/quest/quest-host";
@@ -583,6 +584,10 @@ function loadSpec(): LoadedWorld | null {
     );
     return null;
   }
+  // CREATURE MODS before anything builds a body: the mods reshape the species
+  // registry (deriving rows) and set the world's appearance transform, and a
+  // body baked before they land would be cached un-modded for the session.
+  applyWorldCreatureMods(loaded.game.mods);
   return loaded;
 }
 

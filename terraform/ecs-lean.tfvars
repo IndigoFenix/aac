@@ -53,11 +53,20 @@ enable_cloudtrail          = false
 enable_vpc_flow_logs       = false
 enable_cloudfront_logging  = true
 app_log_retention_days     = 14
-audit_log_retention_days   = 30    # RDS PostgreSQL log; the other audit groups are off in this profile
+# 180 days = the 6-month floor the AKIM information-security appendix asks for
+# (§5.8 "הרישום יישמר למשך 6 חודשים"). Applies to the RDS PostgreSQL log group;
+# the other audit groups (CloudTrail, VPC flow, WAF) are off in this profile, so
+# a customer who needs the full audit trail still needs the `hipaa` profile.
+# Cost of the bump is negligible — one low-volume log group.
+audit_log_retention_days   = 180
 
 # Alarm / GuardDuty delivery. Empty = alarms fire with nobody subscribed.
 # Use a mailbox that exists and is read; SNS sends a one-time confirmation.
-alert_email = ""   # TODO: set before the next apply
+# Deliberately its OWN variable rather than reusing email_reply_to: security
+# alerts and customer replies should be re-pointable independently. For now both
+# land in the same mailbox because there is one person reading mail.
+# Re-point this (not email_reply_to) the moment there is a security rota.
+alert_email = "cs@aivota.ai"
 
 # =============================================================================
 # Network - REDUCED for cost savings

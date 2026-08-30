@@ -9,6 +9,8 @@ import {
   matchStudentLocation,
   NEAR_RADIUS_M,
   EVENT_WINDOW_MS,
+  MAX_USABLE_ACCURACY_M,
+  PRECISE_FIX_ACCURACY_M,
   type LocationCandidate,
   type EventOccurrence,
 } from "@shared/location-matching";
@@ -131,5 +133,123 @@ describe("matchStudentLocation — ranking", () => {
     expect(
       matchStudentLocation({ gps: BASE, candidateLocations: [loc("far", north(5000))], events: [], now: NOW }),
     ).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE READING'S ACCURACY IS PART OF THE ANSWER
+//
+// The desktop (Electron) build resolves position from WiFi and measured
+// ±85-241m — the upper half of that is WIDER than NEAR_RADIUS_M itself. Under a
+// flat radius such a fix would confidently assert a place it cannot tell from
+// its neighbour, and the prompt turns 'at_event' into "very likely attending it
+// right now". See project memory: device location / GPS.
+describe("matchStudentLocation — fix accuracy", () => {
+  const candidates = [loc("school", north(100))];
+  const events = [event("assembly", ["school"], 0)];
+
+  it("still asserts at_event when the fix is precise", () => {
+    const [top] = matchStudentLocation({
+      gps: { ...BASE, accuracy: 20 },
+      candidateLocations: candidates,
+      events,
+      now: NOW,
+    });
+    expect(top.confidence).toBe("at_event");
+    expect(top.coarse).toBe(false);
+    expect(top.accuracyM).toBe(20);
+  });
+
+  it("refuses at_event when the fix is coarser than the match radius", () => {
+    // A ±240m desktop fix. The event is real and must still be reported — what
+    // it may NOT do is claim the student is attending it.
+    const [top] = matchStudentLocation({
+      gps: { ...BASE, accuracy: 240 },
+      candidateLocations: candidates,
+      events,
+      now: NOW,
+    });
+    expect(top.confidence).toBe("near");
+    expect(top.coarse).toBe(true);
+    // The events survive the downgrade: a caller that read `near` as "nothing
+    // is scheduled here" would be stating a falsehood into the system prompt.
+    expect(top.nearbyEvents.map((e) => e.id)).toEqual(["assembly"]);
+  });
+
+  it("treats the precision threshold as inclusive", () => {
+    const at = matchStudentLocation({
+      gps: { ...BASE, accuracy: PRECISE_FIX_ACCURACY_M },
+      candidateLocations: candidates,
+      events,
+      now: NOW,
+    });
+    expect(at[0].coarse).toBe(false);
+    const past = matchStudentLocation({
+      gps: { ...BASE, accuracy: PRECISE_FIX_ACCURACY_M + 1 },
+      candidateLocations: candidates,
+      events,
+      now: NOW,
+    });
+    expect(past[0].coarse).toBe(true);
+  });
+
+  it("widens the search by the accuracy, so a reachable place is not dropped", () => {
+    // 250m away is outside the flat 150m radius, but a ±150m fix genuinely
+    // cannot rule it out — the old behaviour silently lost it.
+    const far = [loc("clinic", north(250))];
+    expect(
+      matchStudentLocation({ gps: BASE, candidateLocations: far, events: [], now: NOW }),
+    ).toHaveLength(0);
+    const widened = matchStudentLocation({
+      gps: { ...BASE, accuracy: 150 },
+      candidateLocations: far,
+      events: [],
+      now: NOW,
+    });
+    expect(widened).toHaveLength(1);
+    // The distance reported back is the RAW centre-to-centre one, not the
+    // widened radius — callers print this number to the model.
+    expect(widened[0].distanceM).toBeGreaterThan(240);
+    expect(widened[0].distanceM).toBeLessThan(260);
+  });
+
+  it("discards a fix too vague to mean anything", () => {
+    // A half-kilometre error circle "matches" every place in a neighbourhood.
+    // Saying nothing beats placing a child somewhere they are not.
+    expect(
+      matchStudentLocation({
+        gps: { ...BASE, accuracy: MAX_USABLE_ACCURACY_M + 1 },
+        candidateLocations: candidates,
+        events,
+        now: NOW,
+      }),
+    ).toEqual([]);
+  });
+
+  it("ignores junk accuracy rather than reading it as a perfect fix", () => {
+    // 0 / negative / NaN mean "not reported", NOT "accurate to zero metres".
+    for (const accuracy of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const [top] = matchStudentLocation({
+        gps: { ...BASE, accuracy },
+        candidateLocations: candidates,
+        events,
+        now: NOW,
+      });
+      expect(top.confidence).toBe("at_event");
+      expect(top.coarse).toBe(false);
+      expect(top.accuracyM).toBeUndefined();
+    }
+  });
+
+  it("behaves exactly as before when the device reports no accuracy", () => {
+    const [top] = matchStudentLocation({
+      gps: BASE,
+      candidateLocations: candidates,
+      events,
+      now: NOW,
+    });
+    expect(top.confidence).toBe("at_event");
+    expect(top.coarse).toBe(false);
+    expect(top.accuracyM).toBeUndefined();
   });
 });

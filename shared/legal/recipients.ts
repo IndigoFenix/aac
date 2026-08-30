@@ -67,6 +67,23 @@ export const DEFAULT_RECIPIENTS: ReadonlyArray<ConsentRecipientCategory> = [
     name: "Email and SMS delivery (when configured)",
     purpose: "Transactional notifications, invites, and OTP verification.",
   },
+  {
+    category: "sub_processor",
+    name: "Stripe (only when purchasing directly)",
+    purpose:
+      "Payment processing for direct credit purchases. Card details are " +
+      "entered into Stripe's own embedded field and go from the payer's " +
+      "browser to Stripe — they never reach Aivota's servers, which keep only " +
+      "a transaction reference. No student information is sent.",
+  },
+  {
+    category: "sub_processor",
+    name: "Dropbox (only when the account holder connects it)",
+    purpose:
+      "Backs up files to the account holder's own Dropbox, at their request. " +
+      "Receives only the files they choose to back up; not used unless the " +
+      "connection is set up.",
+  },
 ];
 
 export function getDefaultRecipients(): ConsentRecipientCategory[] {

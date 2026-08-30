@@ -32,6 +32,7 @@ import { buildCreatureMesh, type BuiltCreature } from "./mesh";
 import { CreatureAnimator, type BodyActivity } from "./animation";
 import type { GaitPattern } from "./gait";
 import { requireSpecies, type Species } from "./species";
+import { activeCreatureMods, appearanceModTag, applyAppearanceMods } from "./mods";
 import { clampOutfit, outfitPresetFor, type OutfitBlueprint } from "./clothing";
 import { buildStickGeometry, creatureSticks, stickMaterial } from "./stick-lod";
 import { getShadingMode } from "../materials";
@@ -210,8 +211,17 @@ const STICK_WALK_FRAMES = 7;
 /** The species' clamped blueprint, dressed in `outfit` when given. Fresh
  *  object per call (bake steps mutate posture). Absent outfit = the species
  *  record untouched — the bare path stays byte-identical. */
+/** THE ONE DOOR from a species row to a buildable body — so the world's
+ *  APPEARANCE MODS (the `cute` art style) cannot be applied at some build
+ *  sites and missed at others. Everything downstream (skeleton, bake, stick
+ *  LOD, portraits) comes through here.
+ *
+ *  Mods run BEFORE the outfit is attached: clothing is fitted to the body it
+ *  is worn on, and a garment sized against the unmodded body would hang off a
+ *  chunkier one. */
 function dressedBlueprint(species: Species, outfit?: OutfitBlueprint): Blueprint {
-  return clampBlueprint(outfit ? { ...species.blueprint, outfit } : species.blueprint);
+  const modded = applyAppearanceMods(species, clampBlueprint(species.blueprint), activeCreatureMods());
+  return outfit ? clampBlueprint({ ...modded, outfit }) : modded;
 }
 
 function buildSpeciesAssets(
@@ -228,6 +238,14 @@ function buildSpeciesAssets(
   if (species.bodiless) {
     throw new Error(
       `creature-model: species "${species.id}" is bodiless — it renders as a light, not a mesh`,
+    );
+  }
+  // A VOCABULARY STUB has the same empty blueprint for a different reason: the
+  // word ships ahead of the body. Clamping it would stand a default quadruped
+  // in the world and call it a lion, which is worse than not building it.
+  if (species.stub) {
+    throw new Error(
+      `creature-model: species "${species.id}" is a vocabulary stub — no body plan is authored yet`,
     );
   }
   // NOT `!!look.toon` — an unset `toon` means "follow the engine-wide shading
@@ -301,7 +319,11 @@ function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint, deta
   // creature the cached assets of an explicitly-standard one.
   const toon = look.toon ?? (getShadingMode() === "toon");
   const lod = detail === "simple" ? "|lod:s" : detail === "stick" ? "|lod:k" : "";
-  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${lod}`;
+  // The world's APPEARANCE MODS reshape the body, so they are part of the
+  // cache's identity. Leaving them out would hand every viewer whichever
+  // variant happened to bake first — and the creature lab, which flips the
+  // mods on and off live, would show the same body forever.
+  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${lod}${appearanceModTag(activeCreatureMods())}`;
 }
 
 /** Get (building + caching on first call) the shared assets for a species. Call

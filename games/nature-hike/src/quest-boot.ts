@@ -896,7 +896,7 @@ export function bootPlanetHike(
     // own (a GoalTreeGame carries no manifest settings), so the boot that read
     // the manifest lowers it here — the exact same lowering path that turns
     // `avatarKind` into the `spirit` boolean. Always a string (the manifest
-    // defaults it to "human_cute"), so the host's settler-chain fallback is
+    // defaults it to "human"), so the host's settler-chain fallback is
     // simply never reached from this game.
     avatarSpecies: settings.avatarSpecies,
     // THE SESSION'S META: what the old shell's game.meta carried (same seed,

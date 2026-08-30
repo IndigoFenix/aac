@@ -62,6 +62,8 @@ export const POINT_ATTRIBUTION_R = 2.5;
  *  falls back to the id with underscores opened out. */
 const SPECIES_WORD_HEAD: Readonly<Record<string, string>> = {
   human: "person",
+  // Retired id, kept mapped: stored documents still name it (species.ts
+  // aliases it to `human`).
   human_cute: "person",
   spark: "spark",
 };

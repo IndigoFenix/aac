@@ -9,6 +9,12 @@
 //   - board-mirror / board-dwell / board-selection: the AAC streams the board
 //     the student is looking at so the clinician can SEE their screen (a
 //     read-only re-render — no screen-capture permission prompt).
+//   - board-indicate: the clinician POINTS at a button (press-and-hold on the
+//     mirror) so the student's own board marks it — the remote twin of the
+//     caretaker's hold-to-highlight gesture. Pointing is not pressing.
+//   - facilitator-ack: the AAC's answer to a facilitated press. Consent is off
+//     by default, so a refusal has to be visible on the clinician's screen or
+//     the feature reads as broken.
 //   - facilitator-press / facilitator-builder: the clinician presses a button
 //     on that mirrored surface; the AAC re-emits it through its own press
 //     pipeline (student-voice TTS + sentence builder), gated by a per-student
@@ -146,6 +152,50 @@ export interface FacilitatorBuilderMessage {
   at: number;
 }
 
+/**
+ * THE AAC'S ANSWER TO A FACILITATED PRESS.
+ *
+ * `allowFacilitatorControl` is OFF by default (schema-private.ts), so the first
+ * thing a clinician who arms "Interact" actually experiences is nothing at all:
+ * the press goes out, the AAC drops it, and the only trace is a console.warn on
+ * a device in another building. A refusal has to travel back, or the feature is
+ * indistinguishable from a broken link.
+ *
+ * `reason` is a code the clinician localizes — `consent` (the per-student flag
+ * is off) or `unavailable` (the surface that would have taken the press is not
+ * mounted, e.g. the child left the builder mid-press).
+ */
+export interface FacilitatorAckMessage {
+  k: "facilitator-ack";
+  ok: boolean;
+  reason?: "consent" | "unavailable";
+  at: number;
+}
+
+/**
+ * POINT AT A BUTTON WITHOUT PRESSING IT.
+ *
+ * The AAC already has this gesture for a caretaker in the room: press and HOLD
+ * a board button and it wears a yellow highlight and reads itself aloud,
+ * instead of being selected (HoldHighlightOverlay). A clinician on a call needs
+ * the same move — "look at this one" is a different act from "say this", and
+ * only one of them should put words in the child's mouth.
+ *
+ * Distinct from `board-dwell`, which is the clinician's CURSOR: that follows
+ * the mouse continuously and is ambient. This is deliberate and sticky, and it
+ * is what the hold commits to.
+ *
+ * `speak` asks the device to read the button aloud as well. It is the
+ * consent-gated half — pointing is not speaking.
+ */
+export interface BoardIndicateMessage {
+  k: "board-indicate";
+  /** The button to mark, or null to clear the mark. */
+  buttonId: string | null;
+  speak?: boolean;
+  at: number;
+}
+
 /** A getDisplayMedia screen capture was started (on) or stopped (off). `streamId`
  *  is the captured MediaStream's id — the MSID is signaled, so the receiver's
  *  inbound `stream.id` matches it, letting the screen be told apart from the
@@ -187,6 +237,8 @@ export type CallDataMessage =
   | BoardSelectionMessage
   | FacilitatorPressMessage
   | FacilitatorBuilderMessage
+  | FacilitatorAckMessage
+  | BoardIndicateMessage
   | ScreenShareMessage
   | ScreenRequestMessage
   | WorldCommandMessage;
@@ -249,6 +301,24 @@ export function parseCallDataMessage(raw: unknown): CallDataMessage | null {
       const target = parseBuilderTarget(v.target ? formatBuilderTarget(v.target) : null);
       if (!target) return null;
       return { k: "facilitator-builder", target, at: typeof v.at === "number" ? v.at : 0 };
+    }
+    case "facilitator-ack": {
+      const v = raw as Partial<FacilitatorAckMessage>;
+      return {
+        k: "facilitator-ack",
+        ok: !!v.ok,
+        reason: v.reason === "consent" || v.reason === "unavailable" ? v.reason : undefined,
+        at: typeof v.at === "number" ? v.at : 0,
+      };
+    }
+    case "board-indicate": {
+      const v = raw as Partial<BoardIndicateMessage>;
+      return {
+        k: "board-indicate",
+        buttonId: typeof v.buttonId === "string" ? v.buttonId : null,
+        speak: !!v.speak,
+        at: typeof v.at === "number" ? v.at : 0,
+      };
     }
     case "screen-share": {
       const v = raw as Partial<ScreenShareMessage>;

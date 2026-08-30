@@ -1,0 +1,210 @@
+# world-text v1   proto=1
+# world=homestead.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=4aa59e83+dirty
+# started=2026-08-27T20:54:38.584Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    person-5: "I will carry the stone to the storehouse."  [carry.will + stone + to + storehouse]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 5.0s.
+> scene
+SCENE  outdoors — 9 thing(s) in view.
+  person-5 (person), here west.
+  wood-1 (wood), here west.
+  person-1 (person), here east.
+  basket-1 (basket), here south.
+  basket-2 (basket), here south.
+  basket-3 (basket), here south.
+  3 people, there south.
+TICK   quiet after 1.0s.
+> say build house
+OK     said: build + house
+SAY    person-5: "We don't have the block."  [we + have.not + block]
+TOAST  💬 can't build the house — it needs 120 block and everything within reach comes to 92 (feedback)
+TICK   quiet after 1.5s.
+> wait 60
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+EXIT   person-5 left view there west.
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 60.0s.
+> /stock
+CHEAT  /stock
+> /orders
+CHEAT  /orders
+> wait 120
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-3: "Are you okay?"  [you + ok#question]
+ENTER  person-5 came into view there west.
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-3: "Where are you going?"  [place#question + you + go]
+SAY    person-4: "I'm going there."  [go + there]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+TOAST  📦 bring 6 stone — delivered (feedback)
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 120.0s.
+> /stock
+CHEAT  /stock
+> /orders
+CHEAT  /orders
+> wait 120
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 120.0s.
+> /stock
+CHEAT  /stock
+> /orders
+CHEAT  /orders
+> /convos
+CHEAT  /convos
+> wait 240
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-4: "Where are you going?"  [place#question + you + go]
+SAY    person-2: "I'm going there."  [go + there]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> /orders
+CHEAT  /orders
+> wait 240
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-2: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> /orders
+CHEAT  /orders
+> wait 240
+SAY    person-3: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm happy."  [i_me + happy]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-4: "Where are you going?"  [place#question + you + go]
+SAY    person-1: "I'm going to the basket."  [go + basket]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-1: "I'm happy."  [i_me + happy]
+SAY    person-2: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-2: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm happy."  [i_me + happy]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+SAY    person-4: "bye-bye"  [goodbye]
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-2: "bye-bye"  [goodbye]
+TICK   waited 240.0s.
+> /stock
+CHEAT  /stock
+> /orders
+CHEAT  /orders
+> /convos
+CHEAT  /convos
+> scene
+SCENE  outdoors — 8 thing(s) in view.
+  person-4 (person), there north.
+  person-1 (person), there east.
+  person-3 (person), there east.
+  person-5 (person), there west, holding basket-2.
+  person-2 (person), there west.
+  wood-1 (wood), here west.
+  2 baskets, here south.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=24  presses=0  screens=1  sim=1029.0s
+# events: SAY 117  CHEAT 14  TICK 10  SCENE 2  TOAST 2  BOARD 1  NOTE 1  OK 1  EXIT 1  ENTER 1

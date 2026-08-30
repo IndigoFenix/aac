@@ -155,9 +155,18 @@ function rootClose(lines: string[]): number {
 // Insertion
 // ---------------------------------------------------------------------------
 
+/**
+ * A leaf that is not a bare JS identifier must be quoted, or the emitted file
+ * does not parse — `security-incidents: "..."` is a syntax error, not a key.
+ * Section names created by insertKey go through the same check.
+ */
+function propName(leaf: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(leaf) ? leaf : JSON.stringify(leaf);
+}
+
 function valueLine(indent: string, leaf: string, value: string, markTodo: boolean): string {
   // JSON.stringify gives a correctly escaped double-quoted JS string literal
-  return `${indent}${leaf}: ${JSON.stringify(value)},${markTodo ? " " + TODO : ""}`;
+  return `${indent}${propName(leaf)}: ${JSON.stringify(value)},${markTodo ? " " + TODO : ""}`;
 }
 
 /**
@@ -202,7 +211,7 @@ function insertKey(lines: string[], key: string, value: string, markTodo: boolea
     const parent = depth === 1 ? null : findSection(lines, parts.slice(0, depth - 1));
     const at = parent ? parent.close : rootClose(lines);
     const indent = parent ? parent.indent : "  ";
-    lines.splice(at, 0, `${indent}${sub[depth - 1]}: {`, `${indent}},`);
+    lines.splice(at, 0, `${indent}${propName(sub[depth - 1])}: {`, `${indent}},`);
   }
 
   const section = findSection(lines, parts);

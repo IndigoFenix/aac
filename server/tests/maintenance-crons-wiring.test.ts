@@ -38,12 +38,14 @@ describe("maintenance cron wiring", () => {
     }
   });
 
-  it("registers the five daily crons", () => {
+  it("registers every maintenance cron", () => {
     expect([...MAINTENANCE_CRON_NAMES].sort()).toEqual([
       "activity-log-retention",
       "consent-thresholds",
       "package-link-reconcile",
       "provider-spend-threshold",
+      // Hourly, not daily — it guards the AKIM §6 48-hour notification window.
+      "security-incident-deadlines",
       "student-erasure",
     ]);
   });

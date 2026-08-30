@@ -667,6 +667,11 @@ export interface CraftJob {
    *  while somebody is there to do it, so an absence shifts the finish line
    *  rather than counting toward it. */
   lastWorkedAt?: number;
+  /** #44 COMMUNITY SLOT — the hand chosen to work a houseless (community
+   *  ground) craft, picked at order time and re-picked if the body leaves.
+   *  Absent = the house's own member (`resident_<hi>_0`, every house job
+   *  and every save before this field). */
+  crafter?: string;
   /**
    * 🚨 WHO COMMISSIONED IT — the stock endpoint the finished piece is OWED to
    * (`bfurn:<buildingKey>`, a shell's delivery pile). Absent = the house made
@@ -1348,6 +1353,49 @@ export function stagingMissing(b: {
     if (short > 0) missing[head] = short;
   }
   return missing;
+}
+
+/** ④ #43 (homestead-defect-round) — WHAT AN UNSTAGED SITE IS WAITING ON:
+ *  the least-covered head of its bill, as the pile's have/want. The founding
+ *  worlds measured an hour of honest hauling rendered as an eternal
+ *  "0% worked" because progress begins at STAGING — this is the gather
+ *  phase's own readout, for the SITE narrator and any renderer HUD. Null
+ *  once staged (labor is the story then), for a costless row, and for a
+ *  covered bill (mid-sweep, about to stage). Same head-folding as
+ *  `stagingMissing` — the two must never disagree about a bill. */
+export function orderGathering(b: {
+  costs?: Readonly<Record<string, number>>;
+  pile?: Readonly<Record<string, number>>;
+  laborStartDay?: number;
+}): { head: string; have: number; want: number } | null {
+  if (b.laborStartDay !== undefined || !b.costs) return null;
+  const need = new Map<string, number>();
+  for (const [glyph, n] of Object.entries(b.costs)) {
+    const head = stackHead(glyph);
+    need.set(head, (need.get(head) ?? 0) + Math.max(0, n));
+  }
+  let worst: { head: string; have: number; want: number } | null = null;
+  for (const [head, want] of need) {
+    if (want <= 0) continue;
+    const have = Math.min(want, stackUnits(b.pile ?? {}, head));
+    if (!worst || have / want < worst.have / worst.want) worst = { head, have, want };
+  }
+  return worst && worst.have < worst.want ? worst : null;
+}
+
+/** #44 RENDERED PILES — a stack map as the renderer's row list: glyph-sorted
+ *  (deterministic), zero rows dropped. ONE definition for every site/lot
+ *  pile emitter, so the drawn goods can never disagree with the ledger that
+ *  is their whole truth ("blocks carried to a lot should also be rendered —
+ *  right now they just disappear", the user's #44 opener). */
+export function pileEntries(
+  stack: Readonly<Record<string, number>> | undefined,
+): Array<{ glyph: string; n: number }> {
+  if (!stack) return [];
+  return Object.entries(stack)
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([glyph, n]) => ({ glyph, n }));
 }
 
 /** The town builder's-yard STOCK ENDPOINT id — the registered yard crate's

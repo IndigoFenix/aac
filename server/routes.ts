@@ -107,6 +107,7 @@ import { googleSmartHomeRouter } from "./services/smart-home/google/router";
 import { alexaSmartHomeRouter } from "./services/smart-home/alexa/router";
 import { activityLogService } from "./services/activityLogService";
 import { activityLogController } from "./controllers/activityLogController";
+import { securityIncidentController } from "./controllers/securityIncidentController";
 import { insuranceBridgeController } from "./controllers/insuranceBridgeController";
 import { identityController } from "./controllers/identityController";
 import { studentErasureController } from "./controllers/studentErasureController";
@@ -2480,6 +2481,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     activityLogController.getLogs(req, res)
   );
 
+  // Security / privacy incident register (AKIM appendix §6). Gated to admins
+  // holding the "security-incidents" section — deliberately a different
+  // permission from "admins": whoever is on call for a breach is not
+  // necessarily whoever manages backoffice accounts.
+  //
+  // Every write is CSRF-validated: opening an incident starts a legal clock and
+  // sending a notification is irreversible, so neither may be driven
+  // cross-origin.
+  app.get("/api/admin/security-incidents", requireAuth, requireAdminSection("security-incidents"), (req, res) =>
+    securityIncidentController.list(req, res)
+  );
+  app.get("/api/admin/security-incidents/:id", requireAuth, requireAdminSection("security-incidents"), (req, res) =>
+    securityIncidentController.get(req, res)
+  );
+  app.post("/api/admin/security-incidents", requireAuth, requireAdminSection("security-incidents"), validateCSRF, (req, res) =>
+    securityIncidentController.create(req, res)
+  );
+  app.patch("/api/admin/security-incidents/:id", requireAuth, requireAdminSection("security-incidents"), validateCSRF, (req, res) =>
+    securityIncidentController.update(req, res)
+  );
+  app.post("/api/admin/security-incidents/:id/notes", requireAuth, requireAdminSection("security-incidents"), validateCSRF, (req, res) =>
+    securityIncidentController.addNote(req, res)
+  );
+  app.post("/api/admin/security-incidents/:id/close", requireAuth, requireAdminSection("security-incidents"), validateCSRF, (req, res) =>
+    securityIncidentController.close(req, res)
+  );
+  // Preview by default; sending requires an explicit `dryRun: false` in the body.
+  app.post("/api/admin/security-incidents/:id/notify", requireAuth, requireAdminSection("security-incidents"), validateCSRF, (req, res) =>
+    securityIncidentController.notify(req, res)
+  );
+
   // Insurance Bridge — RTM rollup. Member-of-institute + insuranceBridgeEnabled
   // permission checked inside the controller.
   app.get("/api/insurance/rtm", requireAuth, (req, res) =>
@@ -2606,6 +2638,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.get("/api/admin/students/:id/erasure-status", requireAuth, requireSystemAdmin, (req, res) =>
     studentErasureController.getStatus(req, res)
+  );
+  // §8.4 written confirmation of deletion, derived from the audit trail.
+  app.get("/api/admin/students/:id/erasure-certificate", requireAuth, requireSystemAdmin, (req, res) =>
+    studentErasureController.getCertificate(req, res)
   );
 
   // Customer support (system admin)

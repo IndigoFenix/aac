@@ -30,7 +30,7 @@
 // wiring). Each button renders via the clinician-side <Glyph> (shared
 // GlyphCompositor), falling back to symbolPath image → emoji → label.
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { BoardButton, ParsedBoardData } from "@shared/schema";
 import type {
   MirrorHudSections,
@@ -40,6 +40,7 @@ import type {
 } from "@shared/call/call-data-messages";
 import { parseBuilderTarget, type BuilderTarget } from "@shared/call/builder-mirror";
 import { pageGrid } from "@shared/board-grid";
+import { resolveButtonBackground, resolveBorderClass } from "@shared/button-color";
 import { Glyph } from "@/components/Glyph";
 import { cn } from "@/lib/utils";
 import { MirroredHudStrip } from "./MirroredHudStrip";
@@ -72,6 +73,11 @@ interface Props {
   onPress?: (button: BoardButton, spokenText: string) => void;
   /** A press on a mirrored SENTENCE BUILDER cell (word, tab, chip, slot, control). */
   onBuilderPress?: (target: BuilderTarget) => void;
+  /** Press-and-hold POINTED at a button (or released — null). Offered even when
+   *  Interact is off: pointing is not pressing. */
+  onIndicate?: (buttonId: string | null) => void;
+  /** The button this clinician is currently pointing at. */
+  indicatedId?: string | null;
   /** Report the clinician's own hovered button id (or null) — sent to the AAC. */
   onHover?: (buttonId: string | null) => void;
   /** Localized surface badge — the caller owns the strings. */
@@ -84,27 +90,117 @@ function spokenTextFor(b: BoardButton): string {
   return (b.spokenText || b.sentence || b.label || "").trim();
 }
 
-/** One read-only board button: glyph → symbol image → emoji → label only. */
-function MirrorButton({ button, rtl, dwell, selected, interactive, onPress, onHover }: {
-  button: BoardButton; rtl?: boolean; dwell?: boolean; selected?: boolean;
+/**
+ * PRESS AND HOLD TO POINT. The AAC gives a caretaker in the room this gesture
+ * already (HoldHighlightOverlay): a tap selects, a HOLD marks the button
+ * instead. A clinician on a call needs the same distinction — "look at this
+ * one" must not put words in the child's mouth — so the mirror reproduces it,
+ * and the mark lives exactly as long as the press does, as it does there.
+ */
+const INDICATE_HOLD_MS = 500;
+
+/**
+ * The hold gesture, shared by everything a clinician can point at: a board
+ * button, a builder word, a category tab, a mode chip, the Play control.
+ *
+ * Returns the pointer handlers, a `fired()` the click handler must consult (a
+ * completed hold has to swallow the click that follows its release, or pointing
+ * would also press), and `arming` for the progress bar. `id` is what travels —
+ * a board button id, or a `bx:` builder target — and the AAC resolves it
+ * through the same `data-mirror-id` its cursor reporter already reads.
+ */
+function useIndicateHold(id: string, onIndicate?: (buttonId: string | null) => void) {
+  const [arming, setArming] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heldRef = useRef(false);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setArming(false);
+    if (heldRef.current) onIndicate?.(null);
+  }, [onIndicate]);
+
+  const start = useCallback(() => {
+    if (!onIndicate) return;
+    heldRef.current = false;
+    setArming(true);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      heldRef.current = true;
+      setArming(false);
+      onIndicate(id);
+    }, INDICATE_HOLD_MS);
+  }, [onIndicate, id]);
+
+  /** True once, when the click being handled is the tail of a completed hold. */
+  const fired = useCallback(() => {
+    if (!heldRef.current) return false;
+    heldRef.current = false;
+    return true;
+  }, []);
+
+  return { arming, start, cancel, fired, enabled: !!onIndicate };
+}
+
+/** The filling bar under a button being held. A CSS width transition, so the
+ *  gesture is visible without spending an animation frame on it. */
+function HoldBar({ arming }: { arming: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-yellow-400 transition-[width] ease-linear"
+      style={{ width: arming ? "100%" : "0%", transitionDuration: arming ? `${INDICATE_HOLD_MS}ms` : "0ms" }}
+    />
+  );
+}
+
+/**
+ * One board button, drawn the way the STUDENT's board draws it.
+ *
+ * 🚨 The fill comes from `resolveButtonBackground` and the label is dark, both
+ * copied from `BoardButtonVisual`. The AAC palette is pastel and MOST buttons
+ * are plain white (shared/button-color.ts) — an earlier version of this file
+ * painted white label text straight over `button.color`, which rendered the
+ * whole board as blank tiles. The mirror has to obey the board's colour rules,
+ * not invent its own.
+ */
+function MirrorButton({ button, rtl, dwell, selected, indicated, interactive, onPress, onHover, onIndicate }: {
+  button: BoardButton; rtl?: boolean; dwell?: boolean; selected?: boolean; indicated?: boolean;
   interactive?: boolean; onPress?: (b: BoardButton, t: string) => void; onHover?: (id: string | null) => void;
+  onIndicate?: (buttonId: string | null) => void;
 }) {
-  const Tag: any = interactive ? "button" : "div";
+  const hold = useIndicateHold(button.id, onIndicate);
+
+  // Pointing is not pressing, so the element has to be clickable whenever
+  // EITHER is on offer — not only when Interact is armed.
+  const Tag: any = interactive || onIndicate ? "button" : "div";
   const symbolIsUrl = button.symbolPath && /^(https?:|\/)/.test(button.symbolPath);
   const emoji = button.iconRef && !button.iconRef.includes(" ") && !button.iconRef.startsWith("fa") ? button.iconRef : null;
+  const background = resolveButtonBackground(button.color, button.glyph, button.buttonType, button.role);
   return (
     <Tag
-      {...(interactive ? { type: "button", onClick: () => onPress?.(button, spokenTextFor(button)) } : {})}
+      {...(Tag === "button" ? { type: "button" } : {})}
+      onClick={() => {
+        // A completed hold swallows its own click — it was a point, not a press.
+        if (hold.fired()) return;
+        if (interactive) onPress?.(button, spokenTextFor(button));
+      }}
+      onPointerDown={hold.start}
+      onPointerUp={hold.cancel}
+      onPointerCancel={hold.cancel}
       onPointerEnter={() => onHover?.(button.id)}
-      onPointerLeave={() => onHover?.(null)}
+      onPointerLeave={() => { hold.cancel(); onHover?.(null); }}
       className={cn(
         "relative flex h-full w-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden rounded-lg border-2 p-1 text-center",
-        "border-white/15 bg-white/10 text-white",
-        interactive && "cursor-pointer hover:bg-white/20",
+        // The student's own border vocabulary (guess / suggestion / more / link).
+        resolveBorderClass({ buttonType: button.buttonType }),
+        "text-gray-800",
+        (interactive || onIndicate) && "cursor-pointer hover:brightness-95",
         dwell && "ring-4 ring-amber-400",
         selected && "ring-4 ring-emerald-400",
+        indicated && "ring-4 ring-yellow-400",
       )}
-      style={{ backgroundColor: button.color || undefined }}
+      style={{ backgroundColor: background }}
       aria-label={button.label}
     >
       <div className="min-h-0 w-full flex-1">
@@ -121,6 +217,7 @@ function MirrorButton({ button, rtl, dwell, selected, interactive, onPress, onHo
         ) : null}
       </div>
       {button.label && <div className="w-full shrink-0 truncate text-xs font-medium">{button.label}</div>}
+      {hold.enabled && <HoldBar arming={hold.arming} />}
     </Tag>
   );
 }
@@ -131,28 +228,59 @@ function MirrorButton({ button, rtl, dwell, selected, interactive, onPress, onHo
  * says what they have said so far — which is the thing a clinician is watching
  * for.
  */
-function SentenceStrip({ items, interactive, onPress }: {
+function SentenceStrip({ items, interactive, onPress, onIndicate, indicatedId }: {
   items: MirrorStripItem[]; interactive?: boolean; onPress?: (t: BuilderTarget) => void;
+  onIndicate?: (buttonId: string | null) => void; indicatedId?: string | null;
 }) {
-  const fire = (item: MirrorStripItem) => {
-    const target = parseBuilderTarget(item.id);
-    if (target) onPress?.(target);
-  };
   return (
     <div className="mb-2 flex shrink-0 items-stretch gap-2 rounded-lg bg-black/30 p-2" style={{ height: "5.5rem" }}>
-      {items.map((item) => {
-        const Tag: any = interactive ? "button" : "div";
-        const isControl = item.kind === "control";
-        return (
+      {items.map((item) => (
+        <StripItem
+          key={item.id}
+          item={item}
+          interactive={interactive}
+          onPress={onPress}
+          // A SLOT is a word the child already placed; there is nothing to
+          // point them at. A CONTROL ("now press Say it") is exactly the kind
+          // of thing a clinician points at, so only those take the gesture.
+          onIndicate={item.kind === "control" ? onIndicate : undefined}
+          indicated={indicatedId === item.id}
+        />
+      ))}
+    </div>
+  );
+}
+
+function StripItem({ item, interactive, onPress, onIndicate, indicated }: {
+  item: MirrorStripItem; interactive?: boolean; onPress?: (t: BuilderTarget) => void;
+  onIndicate?: (buttonId: string | null) => void; indicated?: boolean;
+}) {
+  const hold = useIndicateHold(item.id, onIndicate);
+  const isControl = item.kind === "control";
+  const Tag: any = interactive || hold.enabled ? "button" : "div";
+  return (
           <Tag
-            key={item.id}
-            {...(interactive ? { type: "button", onClick: () => fire(item) } : {})}
+            {...(Tag === "button" ? { type: "button" } : {})}
+            onClick={() => {
+              if (hold.fired()) return;
+              if (!interactive) return;
+              const target = parseBuilderTarget(item.id);
+              if (target) onPress?.(target);
+            }}
+            onPointerDown={hold.start}
+            onPointerUp={hold.cancel}
+            onPointerCancel={hold.cancel}
+            onPointerLeave={hold.cancel}
             aria-label={item.label ?? item.glyph}
             className={cn(
-              "flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-lg border-2 p-1 text-white",
-              isControl ? "w-16 shrink-0 border-white/20 bg-white/10" : "aspect-square h-full border-white/15 bg-white/5",
-              interactive && "cursor-pointer hover:bg-white/20",
+              // Light tiles with dark text, like the builder's own sentence
+              // strip — glyph line-art is drawn to sit on white, not on a dark
+              // panel, and the control labels have to stay legible.
+              "relative flex min-w-0 flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-gray-200 bg-white p-1 text-gray-800",
+              isControl ? "w-16 shrink-0" : "aspect-square h-full",
+              (interactive || hold.enabled) && "cursor-pointer hover:brightness-95",
               item.active && "ring-4 ring-amber-400",
+              indicated && "ring-4 ring-yellow-400",
             )}
           >
             {item.kind === "slot" ? (
@@ -163,48 +291,71 @@ function SentenceStrip({ items, interactive, onPress }: {
               <span className="text-2xl leading-none">{item.emoji}</span>
             )}
             {isControl && item.label && <span className="w-full truncate text-[10px]">{item.label}</span>}
+            {hold.enabled && <HoldBar arming={hold.arming} />}
           </Tag>
-        );
-      })}
-    </div>
   );
 }
 
 /** A rail of small chips — the builder's mode chips, or the AAC's own bottom
  *  quick-action row. Quick actions are never pressable (they are the student's
  *  own chrome, not vocabulary); builder chips are, when Interact is armed. */
-function ChipRail({ items, height, interactive, onPress }: {
+function ChipRail({ items, height, interactive, onPress, onIndicate, indicatedId }: {
   items: MirrorQuickButton[]; height: string; interactive?: boolean; onPress?: (t: BuilderTarget) => void;
+  onIndicate?: (buttonId: string | null) => void; indicatedId?: string | null;
 }) {
   return (
     <div className="mt-2 grid shrink-0 gap-2" style={{ height, gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-      {items.map((q) => {
-        const target = interactive ? parseBuilderTarget(q.id) : null;
-        const Tag: any = target ? "button" : "div";
-        return (
-          <Tag
-            key={q.id}
-            {...(target ? { type: "button", onClick: () => onPress?.(target) } : {})}
-            className={cn(
-              "flex flex-col items-center justify-center overflow-hidden rounded-lg border p-1 text-center text-gray-900",
-              target && "cursor-pointer hover:brightness-110",
-              q.active && "ring-2 ring-violet-400",
-            )}
-            style={{ backgroundColor: q.color || "#E5E7EB" }}
-          >
-            {q.emoji && <span className="text-xl leading-none">{q.emoji}</span>}
-            <span className="w-full truncate text-[11px] font-semibold">{q.label}</span>
-          </Tag>
-        );
-      })}
+      {items.map((q) => (
+        <ChipRailItem
+          key={q.id}
+          chip={q}
+          interactive={interactive}
+          onPress={onPress}
+          onIndicate={onIndicate}
+          indicated={indicatedId === q.id}
+        />
+      ))}
     </div>
+  );
+}
+
+function ChipRailItem({ chip, interactive, onPress, onIndicate, indicated }: {
+  chip: MirrorQuickButton; interactive?: boolean; onPress?: (t: BuilderTarget) => void;
+  onIndicate?: (buttonId: string | null) => void; indicated?: boolean;
+}) {
+  const hold = useIndicateHold(chip.id, onIndicate);
+  const target = interactive ? parseBuilderTarget(chip.id) : null;
+  const Tag: any = target || hold.enabled ? "button" : "div";
+  return (
+    <Tag
+      {...(Tag === "button" ? { type: "button" } : {})}
+      onClick={() => {
+        if (hold.fired()) return;
+        if (target) onPress?.(target);
+      }}
+      onPointerDown={hold.start}
+      onPointerUp={hold.cancel}
+      onPointerCancel={hold.cancel}
+      onPointerLeave={hold.cancel}
+      className={cn(
+        "relative flex flex-col items-center justify-center overflow-hidden rounded-lg border p-1 text-center text-gray-900",
+        (target || hold.enabled) && "cursor-pointer hover:brightness-110",
+        chip.active && "ring-2 ring-violet-400",
+        indicated && "ring-2 ring-yellow-400",
+      )}
+      style={{ backgroundColor: chip.color || "#E5E7EB" }}
+    >
+      {chip.emoji && <span className="text-xl leading-none">{chip.emoji}</span>}
+      <span className="w-full truncate text-[11px] font-semibold">{chip.label}</span>
+      {hold.enabled && <HoldBar arming={hold.arming} />}
+    </Tag>
   );
 }
 
 export function MirroredBoardView({
   board, pageId, rtl, contextButtons, quickButtons,
   surface, title, strip, chips, hud, surfaceLabel,
-  dwellId, selection, interactive, onPress, onBuilderPress, onHover, className,
+  dwellId, selection, interactive, onPress, onBuilderPress, onHover, onIndicate, indicatedId, className,
 }: Props) {
   const page = useMemo(() => {
     const id = pageId ?? board.currentPageId;
@@ -248,9 +399,11 @@ export function MirroredBoardView({
             rtl={rtl}
             dwell={dwellId === b.id}
             selected={selection?.buttonId === b.id}
+            indicated={indicatedId === b.id}
             interactive={interactive}
             onPress={press}
             onHover={onHover}
+            onIndicate={onIndicate}
           />
         </div>
       ))}
@@ -280,7 +433,7 @@ export function MirroredBoardView({
       )}
 
       {strip && strip.length > 0 && (
-        <SentenceStrip items={strip} interactive={interactive} onPress={onBuilderPress} />
+        <SentenceStrip items={strip} interactive={interactive} onPress={onBuilderPress} onIndicate={onIndicate} indicatedId={indicatedId} />
       )}
 
       {/* Context sidebar (leading) + main board grid. */}
@@ -294,9 +447,11 @@ export function MirroredBoardView({
                   rtl={rtl}
                   dwell={dwellId === b.id}
                   selected={selection?.buttonId === b.id}
+                  indicated={indicatedId === b.id}
                   interactive={interactive}
                   onPress={press}
                   onHover={onHover}
+                  onIndicate={onIndicate}
                 />
               </div>
             ))}
@@ -314,7 +469,7 @@ export function MirroredBoardView({
 
       {/* The builder's mode-chip rail — pressable, unlike the quick actions. */}
       {chips && chips.length > 0 && (
-        <ChipRail items={chips} height="3.25rem" interactive={interactive} onPress={onBuilderPress} />
+        <ChipRail items={chips} height="3.25rem" interactive={interactive} onPress={onBuilderPress} onIndicate={onIndicate} indicatedId={indicatedId} />
       )}
 
       {/* Bottom quick-action row (read-only). */}

@@ -320,8 +320,14 @@ describe("what the Speaker is told", () => {
   });
 
   test("caretaker mode tells the Speaker there is no menu to read", async () => {
+    // The MODE token stays `caretaker` — it is a payload discriminant shared
+    // with the client and the server type. The user-facing vocabulary is
+    // "companion" (2026-08-30), so the prose must not say "caretaker" while the
+    // screens say something else: the Speaker reads this note aloud in its own
+    // words, and it is the one place the two vocabularies could drift apart.
     const note = restaurantOpenNote({ mode: "caretaker", reason: "browse_off" });
-    expect(note).toContain("caretaker");
+    expect(note).toContain("companion");
+    expect(note).not.toMatch(/caretaker|grown-?up/i);
     expect(note).toContain("no menu");
   });
 });

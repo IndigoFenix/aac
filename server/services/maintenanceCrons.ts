@@ -23,13 +23,22 @@ import { runActivityLogRetentionCheck } from "./activityLogRetentionCron";
 import { runStudentErasureSweep } from "./studentErasureCron";
 import { runSpendThresholdCheck } from "./providerAlertService";
 import { runPackageLinkReconcile } from "./packages/packageLinkCron";
+import { runSecurityIncidentDeadlineSweep } from "./securityIncidentSweepCron";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 interface MaintenanceCron {
   name: string;
   /** Delay before the first run after boot — staggered so they don't all hit the DB at once. */
   initialDelayMs: number;
+  /**
+   * How often to repeat. Defaults to daily, which suits a retention prune or an
+   * erasure sweep. A cron guarding a deadline measured in HOURS must set this
+   * explicitly — a 48-hour window checked once a day can be blown by nearly a
+   * full day before anyone is told.
+   */
+  intervalMs?: number;
   run: () => Promise<unknown>;
   /** One-line summary for the boot log; undefined = stay quiet on a clean run. */
   summarize?: (result: any) => string | undefined;
@@ -73,6 +82,17 @@ const CRONS: MaintenanceCron[] = [
     summarize: (r) => (r?.ran ? `${r.breached.length} provider(s) over ${r.thresholdPct}%` : undefined),
   },
   {
+    // Hourly: this one guards the AKIM §6 notification deadlines.
+    name: "security-incident-deadlines",
+    initialDelayMs: 45_000,
+    intervalMs: ONE_HOUR_MS,
+    run: () => runSecurityIncidentDeadlineSweep(),
+    summarize: (r) =>
+      r.raised.length > 0
+        ? `${r.raised.length} deadline finding(s) raised, ${r.suppressed} already announced, alerted=${r.alerted}`
+        : undefined,
+  },
+  {
     name: "package-link-reconcile",
     initialDelayMs: 150_000,
     run: () => runPackageLinkReconcile(),
@@ -101,7 +121,7 @@ let armed = false;
 const timers: NodeJS.Timeout[] = [];
 
 /**
- * Arm every daily maintenance cron. Idempotent; a no-op under NODE_ENV=test
+ * Arm every maintenance cron. Idempotent; a no-op under NODE_ENV=test
  * (tests drive the run functions directly). Call from EVERY long-lived
  * entrypoint — the wiring test enforces it.
  */
@@ -112,9 +132,11 @@ export function scheduleMaintenanceCrons(): void {
 
   for (const cron of CRONS) {
     timers.push(setTimeout(() => void runOne(cron, "initial"), cron.initialDelayMs));
-    timers.push(setInterval(() => void runOne(cron, "scheduled"), ONE_DAY_MS));
+    timers.push(
+      setInterval(() => void runOne(cron, "scheduled"), cron.intervalMs ?? ONE_DAY_MS),
+    );
   }
-  console.log(`[maintenanceCrons] armed ${CRONS.length} daily crons: ${CRONS.map((c) => c.name).join(", ")}`);
+  console.log(`[maintenanceCrons] armed ${CRONS.length} crons: ${CRONS.map((c) => c.name).join(", ")}`);
 }
 
 /** The cron names, for the wiring test and for ops docs. */

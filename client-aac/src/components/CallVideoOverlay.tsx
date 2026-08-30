@@ -28,6 +28,7 @@ import type { BuilderTarget } from "@shared/call/builder-mirror";
 import VideoTileLayout, { type VideoTileData } from "@shared/social-world/VideoTileLayout";
 import { pickSpotlightId, type VideoLayoutMode } from "@shared/call/video-layout";
 import { useCall } from "@/contexts/CallContext";
+import { useBoardAudio } from "@/contexts/BoardAudioContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { useBoardMirror } from "@/hooks/useBoardMirror";
@@ -118,9 +119,12 @@ export function CallCursorReporter() {
 }
 
 /** Applies a clinician facilitator press through the student's own press handler.
- *  `enabled` is the per-student consent flag; when off, presses are ignored. */
+ *  `enabled` is the per-student consent flag; when off, presses are REFUSED —
+ *  and the refusal is sent back. `allowFacilitatorControl` defaults to false, so
+ *  a clinician arming Interact for the first time gets a board that appears to
+ *  do nothing; a silent drop is indistinguishable from a broken call. */
 export function CallFacilitatorBridge({ enabled, onPress }: { enabled: boolean; onPress: (button: BoardButton, spokenText: string) => void }) {
-  const { facilitatorPress } = useCall();
+  const { facilitatorPress, sendData } = useCall();
   const lastAtRef = useRef(0);
   useEffect(() => {
     if (!facilitatorPress) return;
@@ -128,10 +132,52 @@ export function CallFacilitatorBridge({ enabled, onPress }: { enabled: boolean; 
     lastAtRef.current = facilitatorPress.at;
     if (!enabled) {
       console.warn("[CallFacilitatorBridge] facilitator press ignored (consent off)");
+      sendData({ k: "facilitator-ack", ok: false, reason: "consent", at: Date.now() });
       return;
     }
     onPress(facilitatorPress.button, facilitatorPress.spokenText || facilitatorPress.button.label);
-  }, [facilitatorPress, enabled, onPress]);
+    sendData({ k: "facilitator-ack", ok: true, at: Date.now() });
+  }, [facilitatorPress, enabled, onPress, sendData]);
+  return null;
+}
+
+/**
+ * A clinician POINTING at a button, without pressing it.
+ *
+ * Routed into `BoardAudioContext.highlight` — the very controller the in-room
+ * hold-to-highlight gesture and the audio scan already share — so the child
+ * sees ONE yellow box however the pointing arrived, and the remote gesture
+ * inherits the local one's behaviour for free.
+ *
+ * Pointing is NOT gated on facilitator consent: the clinician's cursor already
+ * highlights buttons on this board unconditionally (`peerDwellId`), and drawing
+ * attention to a word is not saying it. `speak` IS gated — reading the button
+ * aloud produces sound on the child's device, which is the part consent covers.
+ *
+ * ⚠️ The yellow box is DRAWN by `HoldHighlightOverlay`, which home mounts
+ * unconditionally. Only that component's own gesture is eyegaze-gated (`enabled`)
+ * — its render of `highlightEl` is not — so remote pointing works whether or not
+ * the child is on eye control. Unmounting that overlay would silently take this
+ * with it.
+ */
+export function CallIndicateBridge({ allowSpeech }: { allowSpeech: boolean }) {
+  const { peerIndicate } = useCall();
+  const { highlight } = useBoardAudio();
+  const lastAtRef = useRef(0);
+  useEffect(() => {
+    if (!peerIndicate) return;
+    if (peerIndicate.at <= lastAtRef.current) return;
+    lastAtRef.current = peerIndicate.at;
+    if (!peerIndicate.buttonId) { highlight(null); return; }
+    // The mirror addresses buttons by the same `data-mirror-id` the cursor
+    // reporter reads, so a button the clinician can see is a button we can find.
+    const el = document.querySelector<HTMLElement>(`[data-mirror-id="${CSS.escape(peerIndicate.buttonId)}"]`);
+    if (!el) {
+      console.warn("[CallIndicateBridge] no board element for", peerIndicate.buttonId);
+      return;
+    }
+    highlight(el, !!peerIndicate.speak && allowSpeech);
+  }, [peerIndicate, highlight, allowSpeech]);
   return null;
 }
 
@@ -141,9 +187,9 @@ export function CallFacilitatorBridge({ enabled, onPress }: { enabled: boolean; 
  *  could drift from what the child's own finger does. `enabled` is the same
  *  per-student consent flag that gates board presses. */
 export function CallBuilderFacilitatorBridge({ enabled, press }: {
-  enabled: boolean; press: (target: BuilderTarget) => void;
+  enabled: boolean; press: (target: BuilderTarget) => boolean;
 }) {
-  const { facilitatorBuilder } = useCall();
+  const { facilitatorBuilder, sendData } = useCall();
   const lastAtRef = useRef(0);
   useEffect(() => {
     if (!facilitatorBuilder) return;
@@ -151,10 +197,20 @@ export function CallBuilderFacilitatorBridge({ enabled, press }: {
     lastAtRef.current = facilitatorBuilder.at;
     if (!enabled) {
       console.warn("[CallBuilderFacilitatorBridge] builder press ignored (consent off)");
+      sendData({ k: "facilitator-ack", ok: false, reason: "consent", at: Date.now() });
       return;
     }
-    press(facilitatorBuilder.target);
-  }, [facilitatorBuilder, enabled, press]);
+    // `press` reports whether the builder was actually mounted to take it — a
+    // child who closed the builder mid-press must not leave the clinician
+    // believing the sentence grew.
+    const delivered = press(facilitatorBuilder.target);
+    sendData({
+      k: "facilitator-ack",
+      ok: delivered,
+      reason: delivered ? undefined : "unavailable",
+      at: Date.now(),
+    });
+  }, [facilitatorBuilder, enabled, press, sendData]);
   return null;
 }
 

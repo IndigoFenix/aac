@@ -96,6 +96,45 @@ describe("MonitorAgent.checkLocationContext", () => {
     expect(msg).toContain("likely at this event");
   });
 
+  it("will not claim attendance on a coarse fix, but still reports the event", async () => {
+    // A desktop WiFi fix (±240m) is wider than the 150m match radius, so it
+    // cannot tell this room from its neighbours. The old flat-radius behaviour
+    // said "likely at this event" anyway.
+    const now = new Date("2026-06-17T10:00:00Z");
+    mockGeo({
+      locations: [{ id: "l1", title: "Therapy Room", ...near(20) }],
+      events: [
+        {
+          id: "e1",
+          title: "Music Therapy",
+          startTime: new Date(now.getTime() + 15 * 60_000),
+          endTime: new Date(now.getTime() + 75 * 60_000),
+          locationIds: ["l1"],
+        },
+      ],
+    });
+    const agent = makeAgent();
+    agent.setGps({ latitude: BASE.lat, longitude: BASE.lng, accuracy: 240 });
+
+    const msg = await agent.checkLocationContext(now);
+    // The event is real and must not be dropped...
+    expect(msg).toContain("Music Therapy");
+    // ...but the certainty is gone, and the imprecision is stated outright.
+    expect(msg).not.toContain("likely at this event");
+    expect(msg).toContain("too imprecise");
+  });
+
+  it("says nothing at all when the fix is too vague to place anyone", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Clinic", ...near(30) }] });
+    const agent = makeAgent();
+    agent.setGps({ latitude: BASE.lat, longitude: BASE.lng, accuracy: 5000 });
+
+    // A 5km error circle covers half a city. First report from a fresh agent
+    // with no prior key is suppressed, so this is null either way — the point
+    // is that it never names the Clinic.
+    expect(await agent.checkLocationContext()).toBeNull();
+  });
+
   it("dedupes: a second check at the same place returns null", async () => {
     mockGeo({ locations: [{ id: "l1", title: "Clinic", ...near(25) }] });
     const agent = makeAgent();

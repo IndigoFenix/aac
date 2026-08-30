@@ -69,9 +69,14 @@ describe("sheep species", () => {
 
   it("is a stocky short-legged quadruped that builds a mesh", () => {
     const bp = speciesBlueprint("sheep");
-    // One bilateral limb group duplicated into front + rear pairs.
-    expect(bp.limbGroups.length).toBe(1);
-    expect(bp.limbGroups[0].count).toBe(2);
+    // TWO bilateral groups, one pair each: a forelimb and a hindlimb are not
+    // copies of one limb, because the knee's fore/aft fold is a per-GROUP dial
+    // and a tetrapod folds its two pairs opposite ways. See
+    // server/tests/world-engine/creature-limbs.test.ts for the law.
+    expect(bp.limbGroups.length).toBe(2);
+    expect(bp.limbGroups.map((g) => g.count)).toEqual([1, 1]);
+    expect(bp.limbGroups[0].restFlexion).toBeLessThan(0); // fore: elbow BACK
+    expect(bp.limbGroups[1].restFlexion).toBeGreaterThan(0); // hind: knee FORWARD
     const built = buildCreatureMesh(buildSkeleton(bp), bp);
     expect(built.mesh.isSkinnedMesh).toBe(true);
     expect(built.mesh.geometry.getAttribute("position").count).toBeGreaterThan(0);

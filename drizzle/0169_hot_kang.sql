@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "device_location_enabled" boolean DEFAULT false NOT NULL;

@@ -357,6 +357,11 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      <Route path="/admin/security-incidents">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
       <Route path="/admin/deep-analyses">
         <SystemAdminRoute>
           <AdminDashboard />

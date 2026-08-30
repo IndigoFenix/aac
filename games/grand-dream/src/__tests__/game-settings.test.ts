@@ -30,7 +30,8 @@ describe("game settings — the session shape parses", () => {
       world: { topology: { kind: "cube-sphere", faceN: 16 }, geologySeed: 7 },
       initialFocus: "town:riverton",
       avatar: true,
-      avatarSpecies: "human_cute",
+      avatarSpecies: "human",
+      mods: [],
       canFly: false,
       creativeMode: true,
       entities: null,
@@ -56,7 +57,8 @@ describe("game settings — the session shape parses", () => {
       world: { seed: 1 },
       initialFocus: null,
       avatar: false,
-      avatarSpecies: "human_cute",
+      avatarSpecies: "human",
+      mods: [],
       canFly: false,
       creativeMode: false,
       entities: null,
@@ -68,7 +70,7 @@ describe("game settings — the session shape parses", () => {
 
   it("avatar_species: defaults to human, or takes an explicit species id", () => {
     const def = loadWorldManifest(envelope({ scope: "town", world: { seed: 1 } }), []);
-    expect(def.game!.avatarSpecies).toBe("human_cute");
+    expect(def.game!.avatarSpecies).toBe("human");
     const explicit = loadWorldManifest(envelope({
       scope: "town", world: { seed: 1 }, avatar_species: "cow",
     }), []);

@@ -81,6 +81,58 @@ export interface ZoneCharter {
 }
 
 /**
+ * ⚖️ COMMUNITY GROUND (#44 instant lot designation) — the reserved category
+ * of a lot designated the moment houseless machinery needs a sublocation
+ * (the first houseless deposit, a houseless furniture craft): a virtual
+ * ground scope WITHOUT construction — the founding camp's community pile
+ * and open-air furniture ground. It rides the ordinary charter row (same
+ * save shape, same ord stability) but inverts the constraint: community
+ * ground PREFERS every structure (slotZoningFn grades it "match" for all —
+ * a later real building absorbs the camp and formalizes it) and no
+ * structure ANSWERS to it (no spec carries this type/district, so the
+ * growth step never treats it as a district zone).
+ */
+export const COMMUNITY_CATEGORY = "community";
+
+/** The camp's patch: room for the yard crate, a pile, and a bench or two —
+ *  small enough that the first real house still finds clear ground beside it. */
+export const COMMUNITY_GROUND_R = 7;
+
+/** The live community-ground charter, if any: the latest community row
+ *  whose own centre still answers community (a later charter painting over
+ *  it retires the camp exactly like any re-zoning). */
+export function communityGroundOf(zones: readonly ZoneCharter[]): ZoneCharter | null {
+  let last: ZoneCharter | null = null;
+  for (const z of zones) {
+    if (z.category === COMMUNITY_CATEGORY && (z.shape ?? "disc") === "disc") last = z;
+  }
+  if (!last) return null;
+  return zoneAt(zones, last.x, last.y)?.ord === last.ord ? last : null;
+}
+
+/** INSTANT LOT DESIGNATION (#44, the ruled opener): make sure community
+ *  ground exists, staking it at `at` (town-local) when none does. Automatic
+ *  and idempotent — no ask, one charter — and VISIBLE the moment it exists
+ *  (the stage renders the disc as marked ground; ghosts-are-the-bill
+ *  consistency). Returns the live charter either way. */
+export function ensureCommunityGround(
+  d: TownDeltas,
+  at: { x: number; y: number },
+  issuer: string,
+): ZoneCharter {
+  const live = communityGroundOf(d.zones());
+  if (live) return live;
+  d.addZone({
+    x: at.x,
+    y: at.y,
+    r: COMMUNITY_GROUND_R,
+    category: COMMUNITY_CATEGORY,
+    issuer,
+  });
+  return communityGroundOf(d.zones())!;
+}
+
+/**
  * The charter governing a point: charters apply in ord order and the
  * LATEST one covering the point wins (overlap rule — re-zoning paints
  * over). A winning CLEARING charter (category null) means the ground is
@@ -175,6 +227,9 @@ export function slotZoningFn(
   return (x, y) => {
     const z = zoneAt(zones, x, y);
     if (!z) return "open";
+    // Community ground prefers EVERYTHING (absorb-with-preference): the
+    // designated camp is the first place a real building offers to rise.
+    if (z.category === COMMUNITY_CATEGORY) return "match";
     return z.category !== null && categories.has(z.category) ? "match" : "blocked";
   };
 }

@@ -114,6 +114,7 @@ import {
   markPieceSetUp,
   nextPlacedSerial,
   pendingRoomKindOf,
+  pileEntries,
   placeFurniture,
   PROSPERITY_DAILY_CAP,
   requestAnnex,
@@ -158,6 +159,9 @@ import {
 import {
   candidateInZone,
   categoriesOfSpec,
+  COMMUNITY_CATEGORY,
+  communityGroundOf,
+  ensureCommunityGround,
   FOUNDING_PROSPERITY_DAILY_CAP,
   foundingGrowthStep,
   resolveZoneCategory,
@@ -474,6 +478,7 @@ import {
 import {
   SHELF_PREFIX,
   auditScopeTree,
+  lotScopeId,
   parseScopeId,
   scopeParentOf,
   scopeStockIndex,
@@ -2570,7 +2575,7 @@ export interface QuestSessionStartOpts {
    *  its players are built from (the spec's `avatar_species`, which the
    *  GoalTreeGame does not carry — a boot that reads the manifest lowers it
    *  here, exactly as it lowers `avatarKind` into `spirit`). Omitted =
-   *  resolve the settler chain (the town's own species, else "human_cute"). */
+   *  resolve the settler chain (the town's own species, else "human"). */
   avatarSpecies?: string;
   /** QUESTLESS PAD (game null, no `wilderness`): the flat pad's side in sim
    *  metres — the structure scope's `world.side`. Omitted = 240 (the
@@ -3354,7 +3359,7 @@ export function isCreatedPersonBodyId(id: string): boolean {
 function makePuzzleCharacterFactory(npcIcons: Map<string, string>): AvatarModelFactory {
   const emoji = makeNpcModelFactory(npcIcons);
   const animal = createCreatureAvatarFactory({
-    speciesFor: (id) => animalSpeciesForIcon(npcIcons.get(id)) ?? "human_cute",
+    speciesFor: (id) => animalSpeciesForIcon(npcIcons.get(id)) ?? "human",
     heightM: 1.7,
   });
   const naturalBody = makeNaturalBodyFactory();
@@ -3509,17 +3514,39 @@ function makeTownModelFactory(
     if (id.startsWith("npc_")) return puzzle(id, isLocal);
     // CAPSULE TIER (Phase 3): at far district range every town BODY renders as
     // the placeholder capsule — never the local walker, never trees (landscape).
-    if (
-      !isLocal &&
-      (id.startsWith("resident_") || id.startsWith("fauna:") || id.startsWith("pet_")) &&
-      tierFor?.(id) === "capsule"
-    ) {
+    // Membership is `retieringBodyId` — the ONE ladder list (⑤): a streamed
+    // body outside it built as a full skinned model at stick detail, the
+    // "ghost" look, and could never rebuild out of it.
+    if (!isLocal && retieringBodyId(id) && tierFor?.(id) === "capsule") {
       return defaultAvatarModelFactory(id, isLocal);
     }
     if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpecies(id))(id, isLocal);
     if (id.startsWith("pet_")) return petBody(id, isLocal);
     return people(id, isLocal);
   };
+}
+
+/** ⚖️ ⑤ WHICH BODIES RIDE THE PER-BODY LOD LADDER (homestead-defect-round).
+ *  ONE membership for all three consumers — the per-frame re-band sweep, the
+ *  town-clamp requeue (`setCreatureTier`) and the capsule-tier model swap —
+ *  because the ghost-caravan diagnosis was exactly this list existing three
+ *  times with the streamer prefixes missing from all of them: a `caravan_*`
+ *  body's tier was seeded once at first build (measured from the parked
+ *  plaza spark on the standalone town boot → capsule → an unlit stick
+ *  silhouette) and then NEVER re-banded or rebuilt, so walking the camera up
+ *  to it changed nothing. Every streamed AMBIENT body belongs here; the
+ *  local walker, quest bodies and the settler family keep their own model
+ *  paths (an `npc_*` body routes to `puzzle`/`people` before the capsule
+ *  swap ever asks). */
+function retieringBodyId(id: string): boolean {
+  return (
+    id.startsWith("resident_") ||
+    id.startsWith("fauna:") ||
+    id.startsWith("pet_") ||
+    id.startsWith("caravan_") ||
+    id.startsWith("hauler_") ||
+    id.startsWith("cohort_")
+  );
 }
 
 export function makeQuestSession(
@@ -5863,12 +5890,37 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const s = sess;
     if (!s) return null;
     const spots = buildMode ? buildSpotsNow(s) : [];
-    const sites = directorSites().filter((c) => (c.stage ?? 0) > 0 || c.glyph);
+    // #44 — COMMUNITY GROUND passes the bare-row filter: the camp's stage-0
+    // disc has no icon, but it is deliberate marked ground (automatic-but-
+    // VISIBLE is the ruling), so the narrator and overlay must carry it.
+    const sites = directorSites().filter(
+      (c) => (c.stage ?? 0) > 0 || c.glyph || c.type === "community",
+    );
     // THE BUILDER'S PLAN (phase 6): every unbuilt bay and wanted piece, drawn
     // where it will stand. Always on — a site's legibility is not a build-mode
     // feature, it is what makes construction watchable.
     const ghosts = buildGhostsNow(s);
-    if (!spots.length && !sites.length && !ghosts.length) return null;
+    // ⚖️ #44 — BOUNDARY SHELVES: cut goods waiting at a region's road render
+    // as piles (the one pile primitive), at the record's shelf point. No
+    // `word` (the SITE narrator skips wordless rows — a shelf is goods, not
+    // a build), no ground fill, no reservation: just the goods, visible.
+    const shelves: ConstructionSite[] = [];
+    for (const key of [...s.areaRecords.keys()].sort()) {
+      const shelf = s.partnerStock[wildAreaId(key)];
+      if (!shelf) continue;
+      const pile = pileEntries(shelf);
+      if (!pile.length) continue;
+      const rec = s.areaRecords.get(key)!;
+      const at = wildShelfPointOf(s, rec);
+      shelves.push({
+        id: `site_shelf_${key}`,
+        x: at.x - 1, y: at.y - 1, w: 2, h: 2,
+        type: "shelf",
+        stage: 0,
+        pile,
+      });
+    }
+    if (!spots.length && !sites.length && !ghosts.length && !shelves.length) return null;
     return {
       spots: spots.map((sp) => ({
         id: sp.id,
@@ -5886,7 +5938,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         ...(sp.kind === "lot" && sp.types ? { offers: [...sp.types] } : {}),
         ...(sp.kind === "room" && sp.roomKind ? { word: sp.roomKind } : {}),
       })),
-      sites: sites.map((c) => ({
+      sites: [...sites, ...shelves].map((c) => ({
         id: c.id,
         x: c.x, y: c.y, w: c.w, h: c.h,
         stage: c.stage ?? 0,
@@ -5895,6 +5947,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // composition `room(bed)`) — a narrator may only ever speak this one.
         ...(c.word ? { word: c.word } : {}),
         ...(c.progress !== undefined ? { progress: c.progress } : {}),
+        ...(c.gathering ? { gathering: c.gathering } : {}), // ④ #43
+        ...(c.pile ? { pile: c.pile } : {}), // #44 — the hauled goods, drawn
         ...(c.color ? { color: c.color } : {}),
       })),
       ghosts,
@@ -6040,6 +6094,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // readings; the TRAVEL tail below is this function's own addition.
     const own = ownActivity(session, cid);
     if (own) return own;
+    // ⚖️ #45b — A CLAIMED HAUL IS ITS LEG. "What are you doing?" at a hauler
+    // used to fall through to the going arm ("go there"); the claim knows the
+    // truth: getting the wood on the way out, putting it once loaded (a
+    // spoken haul keeps "carry" — its verb was the order's own word).
+    const claimed = session.taskPool.claimedBy(cid);
+    if (claimed?.goal.kind === "transfer" && claimed.goal.to.kind !== "creature") {
+      const agr = session.transfers.get(claimed.goal.agreementId);
+      if (agr && (agr.status === "pending" || agr.status === "moving")) {
+        const leg = Object.values(agr.carried ?? {}).some((n) => n > 0) ? "deliver" : "fetch";
+        const good = spokenWord(stackHead(Object.keys(claimed.goal.goods)[0] ?? "")) || "thing";
+        return {
+          verb: claimed.need ? (leg === "deliver" ? "put" : "get") : "carry",
+          object: good,
+        };
+      }
+    }
     const going = creatureGoing(session, cid);
     if (going) {
       if (going.kind === "fetch") return { verb: "get", object: spokenWord(going.good) };
@@ -6185,13 +6255,36 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // object of its own, so the SITE's word answers for it: the very word the
       // construction toast displays (`sitePlaceWord` reads the same `c.word`).
       const goal = task.goal;
-      const g = goalActivity(goal, intentLineSyms(session, { speaker: cid }));
+      // ⚖️ #45b — a transfer's order clause reads by its CURRENT leg: "to get
+      // the wood" while walking to the source, "to put the wood" once loaded.
+      // The agreement's own carried record is the leg (a restored mid-carry
+      // row resumes on the deliver leg for free).
+      const agr = goal.kind === "transfer" ? session.transfers.get(goal.agreementId) : undefined;
+      const transferLeg: "fetch" | "deliver" =
+        agr && Object.values(agr.carried ?? {}).some((n) => n > 0) ? "deliver" : "fetch";
+      const g = goalActivity(goal, intentLineSyms(session, { speaker: cid }), {
+        stockpile: !!task.need,
+        transferLeg,
+      });
       const object =
         g?.object ??
         (goal.kind === "buildwork" ? directorSites().find((c) => c.id === goal.site)?.word : undefined);
       // ⚖️ LAW ④ — a goal with no activity reading (a policy order) has no
       // speakable order clause; the authority above it still stands.
       if (g) chain.push({ kind: "because", clause: { subject: "house", verb: g.verb, ...(object ? { object } : {}) } });
+      // ⚖️ #45 — A CIVIC TASK ANSWERS WITH ITS NEED, NEVER AN AUTHORITY. The
+      // sweeps' rows all carry the player as issuer (reach + compliance read
+      // it), so "who wanted it" rendered as "because you asked" about
+      // stockpile errands nobody spoke (the user's dollhouse boot report).
+      // A row with `need` is the town's own appetite: say so, and say no
+      // more — there is no asker to name.
+      if (task.need) {
+        chain.push({
+          kind: "because",
+          clause: { subject: "town", verb: "need", object: spokenWord(stackHead(task.need)) },
+        });
+        return end();
+      }
       // …and one level up, WHO WANTED IT. The player is "you"; another creature
       // is named. `ask` is the issuing verb the whole engine already reads
       // (INTENT_LEXICON, the `ask` glyph) — see the law-④ note in the ledger.
@@ -7734,7 +7827,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *     PEOPLE are peeled off in front of it, onto the same creature builder a
    *     town would have used. Their species comes from the overrides row the
    *     spawn seeded, falling back to the session's avatar species — which
-   *     itself defaults to `human_cute` when a boot passes nothing.
+   *     itself defaults to `human` when a boot passes nothing.
    * There is no honest capsule fallback left to keep for these ids: a creature
    * factory can always be built, so one always is.
    */
@@ -7748,7 +7841,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (session.town) {
       return makeTownModelFactory(
         session.npcIcons,
-        session.town.plan.species ?? "human_cute", // the town's constructing species
+        session.town.plan.species ?? "human", // the town's constructing species
         overrides, // authored rows + the live avatar rows
         session.dress, // the town's culture palette
         tierFor, // Phase 3 view tier — PER BODY, read at every model build
@@ -18499,6 +18592,94 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (tr) spawnLooseProp(session, tr.route.rare.kind, tr.depot.x - 1.1, tr.depot.y + 1.0);
   }
 
+  /**
+   * ⚖️ NOTHING SPAWNS BESIDE THE FOUNDERS BY DEFAULT (user, 2026-08-28:
+   * "there shouldn't be any items spawned alongside the founders by default.
+   * That is a spec parameter."). THE CRATE IS A RENDERER, NOT AN ITEM — the
+   * standing anchor law (quoted at `stepStorehouseStock`): a stock place is
+   * one kind of thing, and the box around it renders it. So the builder's
+   * yard materializes ONLY when the yard LEDGER actually holds units — at
+   * boot when the spec declared `world.stock` (or a restored save carries
+   * some), or LAZILY the frame after the first milled goods land (the
+   * per-frame call beside `stepFoundedConstruction`). An empty-handed
+   * founding stands on bare ground with nothing beside it, and the
+   * from-nothing chain still closes: fell → haul → mill at the town centre →
+   * the first commit credits `deltas.stock` → this renders the crate over
+   * it → the site hauls draw. (Before this, the crate spawned
+   * unconditionally — which was ALSO the only thing making the deposit
+   * fallback reachable, since an unregistered `deltas.stock` is invisible
+   * to hauls and the audit alike.)
+   *
+   * BAGS ARE SPEC STOCK the same way: container-def glyphs declared in
+   * `world.stock` (e.g. `{ basket: 2 }`) POP out of the crate's stack as
+   * real loose bags when a FOUNDING yard renders — the unshelve door, unit-
+   * conserving (a registered empty bag audits as one unit of its glyph,
+   * exactly what the stack row held). An ESTABLISHED town (houses stand —
+   * that basket is worldgen furniture, not founders' luggage) keeps the
+   * legacy one-basket yard seed.
+   *
+   * Idempotent and cheap: one object-table lookup once standing.
+   */
+  function renderYardCrate(session: QuestSession): void {
+    const town = session.town;
+    if (!world || !town) return;
+    if (world.state.objects[TOWN_YARD_ID]) return; // standing — nothing to do
+    const stock = town.deltas.stock as Record<string, number>;
+    if (!Object.values(stock).some((n) => n > 0)) return; // empty ledger, bare ground
+    const hallIdx = town.plan.works.findIndex((wk) => wk.type === "hall");
+    const hallDoor =
+      hallIdx >= 0
+        ? workDoorstep(town.stage.center, town.plan.works[hallIdx]!)
+        : { x: town.stage.center.x, y: town.stage.center.y };
+    let at = { x: hallDoor.x - 2.2, y: hallDoor.y + 1.2 };
+    if (town.plan.houses.length === 0 && hallIdx < 0) {
+      // ⚖️ #44 INSTANT LOT DESIGNATION — the first houseless deposit IS the
+      // "houseless machinery needs a sublocation" moment: the ledger just
+      // gained a place in the world, so the camp's ground is partitioned the
+      // same instant (automatic-but-visible; the stage renders the disc as
+      // marked ground) and the crate anchors ON the lot instead of floating
+      // at an unpartitioned town centre. Idempotent — one charter, forever.
+      const lot = ensureCommunityGround(
+        town.deltas,
+        { x: hallDoor.x - town.stage.center.x, y: hallDoor.y - town.stage.center.y },
+        LOCAL_PLAYER_CID,
+      );
+      at = { x: town.stage.center.x + lot.x - 2.2, y: town.stage.center.y + lot.y + 1.2 };
+    }
+    world.addObject({
+      id: TOWN_YARD_ID,
+      x: at.x,
+      y: at.y,
+      shape: "box",
+      radius: 0.7,
+      fixture: "chest",
+      openable: true,
+      facing: 0,
+      interactions: [],
+      contains: [{ relation: "in", capacity: 99 }],
+      iconRef: "🏗️",
+      glyph: "wood",
+    });
+    registerContainer(session, TOWN_YARD_ID, "in", TOWN_SCOPE, town.deltas.stock); // stock ALIAS — the one stack map
+    if (town.plan.houses.length === 0) {
+      // FOUNDING: the spec's own bags step out of the crate as real objects.
+      let bi = 0;
+      for (const glyph of Object.keys(stock)) {
+        if (!containerDefOfGlyph(glyph)) continue;
+        while ((stock[glyph] ?? 0) > 0) {
+          const spot = { x: at.x + 1.1 + (bi % 2) * 0.9, y: at.y + 0.9 + Math.floor(bi / 2) * 0.9 };
+          const objId = seedContainerProp(session, { glyph, at: spot, owner: TOWN_SCOPE });
+          if (!objId) break; // no world — leave the units in the stack
+          bi++;
+          stock[glyph]! -= 1;
+          if (stock[glyph]! <= 0) delete stock[glyph];
+        }
+      }
+    } else {
+      for (const seed of yardBagSeeds(at)) seedContainerProp(session, seed);
+    }
+  }
+
   /** STORES + CONTAINERS — ONE abstraction. Register every openable container (its
    *  objectId → placement relation) and fill the ones that ship with stock:
    *   • MARKET stalls — a persistent box at each good's `sourceOf` (same spot "where is
@@ -18510,39 +18691,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stockContainers(session: QuestSession) {
     const town = session.town;
     if (!world || !town) return;
-    // THE BUILDER'S YARD registers FIRST — before the houses gate below. An
-    // age-0 town (a homestead: settlers, no plan houses yet) still has real
-    // stock in deltas.stock, and without this endpoint that wood was
-    // unreachable by every haul (the "age-0 supply crate" gap).
-    {
-      const hallIdx = town.plan.works.findIndex((wk) => wk.type === "hall");
-      const hallDoor =
-        hallIdx >= 0
-          ? workDoorstep(town.stage.center, town.plan.works[hallIdx]!)
-          : { x: town.stage.center.x, y: town.stage.center.y };
-      world!.addObject({
-        id: TOWN_YARD_ID,
-        x: hallDoor.x - 2.2,
-        y: hallDoor.y + 1.2,
-        shape: "box",
-        radius: 0.7,
-        fixture: "chest",
-        openable: true,
-        facing: 0,
-        interactions: [],
-        contains: [{ relation: "in", capacity: 99 }],
-        iconRef: "🏗️",
-        glyph: "wood",
-      });
-      registerContainer(session, TOWN_YARD_ID, "in", TOWN_SCOPE, town.deltas.stock); // stock ALIAS — the one stack map
-      // …and ONE basket beside it (step ③ seeding), communal at the same tier.
-      // Seeded HERE, inside the pre-houses block, for the same reason the yard
-      // is: an age-0 homestead has stock and no market, and it is the
-      // settlement most in need of something to haul with.
-      for (const seed of yardBagSeeds({ x: hallDoor.x - 2.2, y: hallDoor.y + 1.2 })) {
-        seedContainerProp(session, seed);
-      }
-    }
+    // THE BUILDER'S YARD first — before the houses gate below (the "age-0
+    // supply crate" gap: declared stock must be haulable from frame 1). A
+    // stockless founding renders NOTHING here; see renderYardCrate's law.
+    renderYardCrate(session);
     const refHouse = town.plan.houses[0];
     if (!refHouse) return;
     const vendorOf = (key: string): string | null =>
@@ -23155,6 +23307,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (!mpFollower()) {
           // FOUNDING: clear a still-empty site once the player leaves it.
           stepFoundedSite(session);
+          // …and the yard crate the moment its ledger first holds units — the
+          // lazy renderer half of "nothing spawns beside the founders"
+          // (renderYardCrate's law; one object lookup once standing).
+          renderYardCrate(session);
           // BUILD ORDERS (①b): finished construction completes off the clock,
           // and the contextual buildable-structure board stays current.
           stepFoundedConstruction(session, dt);
@@ -23274,7 +23430,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // CONSTRUCTION SITES (city-founding): marked plots, not walls —
             // painted flat by the view, reserved against drops by the engine.
             if (f.sites) {
-              townHost.setReservedGround(f.sites.map(({ x, y, w, h }) => ({ x, y, w, h })));
+              // #44 — COMMUNITY GROUND is never drop-reserved: the camp's lot
+              // exists to be dropped on (the community pile), the exact
+              // opposite of an ordered site's no-drop rect.
+              townHost.setReservedGround(
+                f.sites
+                  .filter((s) => s.type !== "community")
+                  .map(({ x, y, w, h }) => ({ x, y, w, h })),
+              );
               questView?.setSites?.(f.sites);
               setSites(f.sites); // the ⑦ overlay's stage geometry + icons (director-held)
             }
@@ -24510,7 +24673,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const focus = cameraFocus(); // the LOCAL camera, never PLAYER_ID ([LOD per-camera])
           if (focus) {
             for (const id in state.avatars) {
-              if (!id.startsWith("resident_") && !id.startsWith("fauna:") && !id.startsWith("pet_")) continue;
+              if (!retieringBodyId(id)) continue; // the ONE ladder list (⑤)
               const bd = state.avatars[id];
               const prev = bodyTiers.get(id);
               const d = Math.hypot(bd.x - focus.x, bd.y - focus.y);
@@ -25266,12 +25429,38 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // LOCAL ground. Teaching it to honour `rec.area` is a wild-area change
       // and is not this round's; this gate is what keeps the hole unreachable.
       if (!rec || !sameRect(rec.area, ground.area)) continue;
-      if (nearest(rec.area) < visibleR) {
+      // ⚖️ #44 D — NPC EXPAND-ON-APPROACH: a body working THIS record's own
+      // errand unfolds it on arrival, exactly like the player's approach —
+      // the logging party meets a real (already-depleted) forest instead of
+      // loading thin air at an invisible shelf. The fold law holds: a swap
+      // at the party's feet is unseen by definition (a WATCHED walk means
+      // the player's anchor already unfolded it at visibleR).
+      if (nearest(rec.area) < visibleR || regionErrandNear(session, key, rec.area)) {
         unfoldWildArea(session, key);
         wildLodFolded.delete(key);
         return; // v1 runs ONE live wilderness content per session
       }
     }
+  }
+
+  /** #44 D — is a body executing a haul FROM this record standing near its
+   *  ground? The unfold trigger's NPC half; small radius on purpose (a body
+   *  needs trees when it is nearly there, never from across the map). */
+  const NPC_UNFOLD_R = 40;
+  function regionErrandNear(
+    session: QuestSession,
+    key: string,
+    rect: { x: number; y: number; w: number; h: number },
+  ): boolean {
+    if (!world) return false;
+    const id = wildAreaId(key);
+    for (const a of session.transfers.active()) {
+      if (a.from !== id || a.status !== "moving" || !a.executor) continue;
+      const body = world.state.avatars[avatarIdOf(a.executor)];
+      if (!body) continue;
+      if (rectDistance(rect, { x: body.x, y: body.y }) < NPC_UNFOLD_R) return true;
+    }
+    return false;
   }
 
   /* ─────────────────── SESSION HANDOVER (N6c) — the two halves ────────────
@@ -25752,7 +25941,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // authored member, else the town's constructing species, else the
       // people default the model factory uses (quest view wiring).
       const species =
-        member?.species ?? town.config.species ?? town.plan.species ?? "human_cute";
+        member?.species ?? town.config.species ?? town.plan.species ?? "human";
       // The camp ring: around the supply crate at the site centre.
       const ang = (i / ids.length) * Math.PI * 2 + 0.7;
       const r = 5 + (i % 3) * 1.7;
@@ -25879,7 +26068,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  did before the opt existed. */
   function attachedAvatarSpecies(session: QuestSession): string {
     return (
-      avatarSpeciesOpt ?? session.town?.config.species ?? session.town?.plan.species ?? "human_cute"
+      avatarSpeciesOpt ?? session.town?.config.species ?? session.town?.plan.species ?? "human"
     );
   }
 
@@ -26230,6 +26419,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     /** ⚖️ WHAT THE POSTER THINKS THIS IS WORTH, hand-seconds (batch 2, L1) —
      *  see `PooledTask.valueS`. Omitted stays omitted. */
     valueS?: number,
+    /** ⚖️ #45 — the head a CIVIC sweep posted this to cover; see
+     *  `PooledTask.need`. Omitted = a real order (authority answers). */
+    need?: string,
   ) {
     if (!session.creatures) return null;
     return session.taskPool.post({
@@ -26239,6 +26431,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       now: session.taskClock,
       sourceGlyph,
       ...(valueS !== undefined ? { valueS } : {}),
+      ...(need !== undefined ? { need } : {}),
     });
   }
 
@@ -26259,11 +26452,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const fauna = /^fauna:([^:]+):/.exec(cid);
     if (fauna) return fauna[1]!;
     if (isPetCid(cid)) return "quadruped";
-    return session.town?.config.species ?? session.town?.plan.species ?? "human_cute";
+    return session.town?.config.species ?? session.town?.plan.species ?? "human";
   }
 
   /** Species id → the glyph WORD it renders as ("bear_person" → "bear",
-   *  "human_cute" → "person", "ungulate" → "animal"). The lang lexicons carry
+   *  "human" → "person", "ungulate" → "animal"). The lang lexicons carry
    *  these words, so a species is always speakable, never a bare id. */
   const SPECIES_WORD: Record<string, string> = { human: "person", quadruped: "animal", ungulate: "animal" };
   function speciesWordOf(speciesId: string | undefined): string {
@@ -26464,7 +26657,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  in the intent syntax ("I will get the wood"). */
   function announceIntent(session: QuestSession, ctx: AnnounceContext) {
     if (!announceCriteria(ctx)) return;
-    const line = goalIntentLine(ctx.goal, intentLineSyms(session, { deixis: true, speaker: ctx.creatureId }));
+    // ⚖️ #45b — a claimed NEED task announces as a stockpile errand ("I will
+    // get the wood"), never a carry-to: the claim is the fetch leg, and the
+    // hauler is walking AWAY from the destination the old line named.
+    const stockpile = !!(ctx.taskId && session.taskPool.get(ctx.taskId)?.need);
+    const line = goalIntentLine(
+      ctx.goal,
+      intentLineSyms(session, { deixis: true, speaker: ctx.creatureId }),
+      stockpile ? { stockpile } : undefined,
+    );
     if (!line) return;
     npcChatBubble(session, ctx.creatureId, asIntent(line)[session.meta.syntax]);
   }
@@ -26842,7 +27043,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           taskId: task.id,
           issuer: task.issuer,
         });
-        issueTransferHaul(session, winner, agreementId);
+        // ⚖️ #45 — the goal already names where this is going; the walk
+        // should answer with the same word.
+        issueTransferHaul(
+          session,
+          winner,
+          agreementId,
+          task.goal.to?.kind === "named" ? task.goal.to.id : undefined,
+        );
         session.lastDrive.set(avatarIdOf(winner), "task");
         continue;
       }
@@ -27041,10 +27249,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    */
   const CARRY_TOKEN_PREFIX = "carry:";
 
-  function scopeOfPoint(x: number, y: number): ScopeId | null {
+  /** ⚖️ #44 — the community-ground charter GOVERNING this WORLD point, if
+   *  any. Charters live town-local (the FoundedBuilding frame), so the test
+   *  shifts by the settlement centre — the town's stage centre or the
+   *  founded site's own point, whichever this session has. The zoning
+   *  overlap rule answers (latest charter over the point wins), so ground a
+   *  later charter painted over stops answering community exactly like any
+   *  re-zoning. Cheap: no charters ⇒ one array read. */
+  function communityLotAt(session: QuestSession, x: number, y: number): ZoneCharter | null {
+    const book = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!book) return null;
+    const zones = book.zones();
+    if (!zones.length) return null;
+    const c = session.town ? session.town.stage.center : session.foundedSite!.at;
+    const z = charterZoneAt(zones, x - c.x, y - c.y);
+    return z && z.category === COMMUNITY_CATEGORY ? z : null;
+  }
+
+  function scopeOfPoint(session: QuestSession, x: number, y: number): ScopeId | null {
     if (!world) return null;
     const b = buildingAt(world.state, x, y);
-    return b ? buildingIdOfRoomId(b.id) : null;
+    if (b) return buildingIdOfRoomId(b.id);
+    // ⚖️ PARTITIONED GROUND (#44 instant lot designation): a designated lot
+    // is a scope BEFORE any building stands on it, so a prop set down on the
+    // camp's ground hangs off `lot:<ord>` → town instead of falling out of
+    // every ledger. Ground no charter governs keeps the honest null — open
+    // ground still counts for nobody (the recorded census residual).
+    const lot = communityLotAt(session, x, y);
+    return lot ? lotScopeId(lot.ord) : null;
   }
 
   /**
@@ -27109,7 +27341,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     at: { x: number; y: number },
   ): boolean {
     void glyph; // the WHAT is the body's hand; the scope question is about WHERE
-    const landing = scopeOfPoint(at.x, at.y);
+    const landing = scopeOfPoint(session, at.x, at.y);
     if (!landing) return false; // open ground counts for nobody
     const owner = carryOwnerScopeOf(session, cid);
     if (!owner) return false; // nothing in this session owns it — any drop loses it
@@ -27164,7 +27396,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           id = boxId;
           continue;
         }
-        return scopeOfPoint(o.x, o.y);
+        return scopeOfPoint(session, o.x, o.y);
       }
       return null;
     };
@@ -27265,6 +27497,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // well, and an enumeration gated on `t` made every unit staged into
         // one read as LOST. Same one-boolean shape as the pocket gate below.
         if (book) for (const o of book.orders()) out.add(`${ORDER_PILE_EP}${o.ord}`);
+        // #44 — the DESIGNATED GROUND LOT is a node: props on the camp's
+        // ground bucket under `lot:<ord>` (scopeOfPoint's lot arm), and a
+        // bucket under an id nobody lists is a unit nobody counts.
+        if (book) {
+          const lot = communityGroundOf(book.zones());
+          if (lot) out.add(lotScopeId(lot.ord));
+        }
         // ⚖️ F5 — AND EVERY REGION SHED'S BOUNDARY SHELF. The folded stands
         // themselves are counted through their codec (`foldedStock("wild", …)`
         // in `sessionStockAudit`); the shelf a draw lands on is a live stack
@@ -27538,8 +27777,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // one rung out of town, aliasing its boundary shelf — what has been cut and
     // is waiting at the road. ONE-WAY by the endpoint's own capacity (0), which
     // is `scopeReceivesGoods`'s "a source only YIELDS" made executable rather
-    // than merely believed. No `at`: abstract and scheduled-only, exactly like
-    // a partner town's shelf — you do not walk to a region.
+    // than merely believed.
+    // ⚖️ #44 — the shelf gained its EDGE: `at` is the record's rect edge
+    // toward our gate (wildShelfPointOf), so a walked haul loads the cut
+    // goods at the road instead of failing `no-endpoint`. A recordless shelf
+    // keeps no `at` — scheduled-only, the old contract to the byte.
     // A STANDING feature (`wild:oak_3`) is a registered container and never
     // reaches this branch: only the AREA form does.
     //
@@ -27547,8 +27789,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // at the road is not standing timber, so an area that loads its stand back
     // in leaves the shelf (and any leg still owed against it) alone.
     if (ref.kind === "wild" && ref.form === "area") {
-      if (!session.areaRecords.has(ref.tag) && !session.partnerStock[id]) return null;
-      return wildSourceEndpoint(ref.tag, sourceShelf(session, ref.tag));
+      const rec = session.areaRecords.get(ref.tag);
+      if (!rec && !session.partnerStock[id]) return null;
+      return wildSourceEndpoint(
+        ref.tag,
+        sourceShelf(session, ref.tag),
+        rec ? wildShelfPointOf(session, rec) : undefined,
+      );
     }
     // A CONSTRUCTION ORDER's PILE (phase 2): `orderpile:<ord>` aliases the
     // order's live pile — the staked plot's material heap. Communal,
@@ -27932,6 +28179,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return best && best.per < perUnitBare ? best.bag : null;
   }
 
+  /** ⚖️ #45b — the PLACE WORD an endpoint answers to, best effort: the yard
+   *  and site crates are "yard", a wild source speaks its species (the
+   *  [plants]/[animals] vocabulary), a container standing inside a work
+   *  building speaks the building's type, one in a house "house". Null =
+   *  nothing honest to say (the caller keeps its own fallback). */
+  function endpointPlaceWord(session: QuestSession, id: string): string | null {
+    if (id === TOWN_YARD_ID || id === SITE_STOCK_ID) return "yard";
+    const wildSpecies =
+      /^flora:([^:]+):/.exec(id)?.[1] ?? /^fauna:([^:]+):/.exec(id)?.[1] ??
+      /^wild:([a-z_]+?)_\d+$/.exec(id)?.[1];
+    if (wildSpecies) return wildSpecies;
+    const t = session.town;
+    const at = containerAnchor(session, id);
+    if (t && at) {
+      const c = t.stage.center;
+      const inRect = (dx: number, dy: number, w: number, h: number) =>
+        at.x >= c.x + dx && at.x <= c.x + dx + w && at.y >= c.y + dy && at.y <= c.y + dy + h;
+      for (const wk of t.plan.works) {
+        if (!wk.vacated && inRect(wk.dx, wk.dy, wk.w, wk.h)) return wk.type;
+      }
+      for (const h of t.plan.houses) {
+        if (inRect(h.dx, h.dy, h.w, h.h)) return "house";
+      }
+    }
+    return null;
+  }
+
   /** Walk `cid` through one agreement's HAUL: LOAD at the source (stock
    *  leaves the real map into the hauler's hands — a visible carried prop),
    *  UNLOAD at the destination (hands → the real map; capacity overflow
@@ -27940,7 +28214,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *
    *  ④ prepends a BAG LEG when the arithmetic says one pays (`haulBagLeg`) —
    *  the same comparison the body rung makes before a shopping trip. */
-  function issueTransferHaul(session: QuestSession, cid: string, agreementId: string) {
+  function issueTransferHaul(
+    session: QuestSession,
+    cid: string,
+    agreementId: string,
+    /** ⚖️ #45 — the destination's PLACE WORD when the caller has one (a
+     *  pooled goal's own `to`), so "where are you going?" answers the place
+     *  and not the deictic "there". */
+    destWord?: string,
+  ) {
     if (!world) return;
     const a = session.transfers.get(agreementId);
     if (!a) return;
@@ -27956,10 +28238,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     clearNeedStep(session, cid);
     session.npcTasks.delete(npcId);
     session.lastDrive.set(npcId, "transfer");
-    session.npcGoing.set(cid, {
-      kind: "place",
-      place: a.to === TOWN_YARD_ID || a.to === SITE_STOCK_ID ? "yard" : "there",
-    });
+    // ⚖️ #45b — THE WALK ANSWERS FOR ITS CURRENT LEG. A hauler leaving the
+    // house to fetch wood is going to the SOURCE, not the destination it
+    // will eventually carry to (the user's report: "I'm going to the house"
+    // while visibly walking away from it). The deliver word takes over at
+    // the LOAD arrival below.
+    const deliverPlace =
+      a.to === TOWN_YARD_ID || a.to === SITE_STOCK_ID
+        ? "yard"
+        : (destWord ?? endpointPlaceWord(session, a.to) ?? "there");
+    const fetchPlace = endpointPlaceWord(session, a.from) ?? "there";
+    session.npcGoing.set(cid, { kind: "place", place: fetchPlace });
     // WALK TO THE FIXTURE'S EDGE, NOT ITS CENTRE (the reach law —
     // [[project_furniture_use_radius_blind_gates]]). A container endpoint reports
     // its object's CENTRE, and a cupboard/chest is a solid collider: a body sent
@@ -28075,6 +28364,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // its bag, or as the one thing in its hands, which `giveUnitsToBody`
           // already put there) — there is no separate display token to hang.
           fireCarryGesture(npcId, "pickup", from.at);
+          // ⚖️ #45b — LOADED: the walk's answer flips to the deliver leg.
+          session.npcGoing.set(cid, { kind: "place", place: deliverPlace });
           return;
         }
         // UNLOAD.
@@ -28417,6 +28708,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  the flat leg and books no direction (the place-less stub's honest null). */
   function sourceDrawOrigin(session: QuestSession): { x: number; y: number } | null {
     return session.town?.stage.center ?? session.foundedSite?.at ?? null;
+  }
+
+  /** ⚖️ #44 — THE SHELF POINT: where a region's cut goods wait at the road,
+   *  and where a walked haul stands to load them. The record's rect edge
+   *  nearest our own gate (clamp the origin into the rect); an origin INSIDE
+   *  the rect (the home area wraps the town) degenerates to the gate itself,
+   *  which the fold law keeps honest — the home record exists folded only
+   *  while nobody watches, so nothing visibly pops there. No origin at all
+   *  falls back to the rect's own centre. */
+  function wildShelfPointOf(
+    session: QuestSession,
+    rec: WildAreaRecord,
+  ): { x: number; y: number } {
+    const o = sourceDrawOrigin(session) ?? {
+      x: rec.area.x + rec.area.w / 2,
+      y: rec.area.y + rec.area.h / 2,
+    };
+    return {
+      x: Math.min(Math.max(o.x, rec.area.x), rec.area.x + rec.area.w),
+      y: Math.min(Math.max(o.y, rec.area.y), rec.area.y + rec.area.h),
+    };
   }
 
   /** One folded stand, read as a partner (its road measured from our gate).
@@ -30630,6 +30942,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     convoNodeId: () => convo?.nodeId ?? null,
     spiritFocusOf: () => spiritFocus,
     parkTown, townParked, bumpStockEpoch,
+    drawSourceShelf, // ⚖️ #44 — the ONE fell arm (record → boundary shelf)
   });
   const {
     setWorld, setSites, sites: directorSites, buildGhostsNow, clearSpotCache, shellFurnPilesOf,
@@ -32031,7 +32344,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // whole crowd both ways, seconds of staggered builds each time.)
       let queued = 0;
       for (const id of Object.keys(world?.state.avatars ?? {})) {
-        if (!id.startsWith("resident_") && !id.startsWith("fauna:") && !id.startsWith("pet_")) continue;
+        if (!retieringBodyId(id)) continue; // the ONE ladder list (⑤)
         const b = bodyTiers.get(id) ?? "full";
         const oldEff = TIER_RANK[b] > TIER_RANK[prevTown] ? b : prevTown;
         const newEff = TIER_RANK[b] > TIER_RANK[t] ? b : t;

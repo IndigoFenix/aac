@@ -18,6 +18,10 @@ import {
 import {
   candidateInZone,
   categoriesOfSpec,
+  communityGroundOf,
+  COMMUNITY_CATEGORY,
+  COMMUNITY_GROUND_R,
+  ensureCommunityGround,
   foundingGrowthStep,
   FOUNDING_PROSPERITY_DAILY_CAP,
   FOUNDING_PROSPERITY_THRESHOLD,
@@ -504,5 +508,55 @@ describe("town preference steers growth (laws steer, need builds)", () => {
       expect(foundingGrowthStep(growthInput(deltas, { day: d }))).toBeNull();
     }
     expect(deltas.founded()).toHaveLength(0);
+  });
+});
+
+// ═══ #44 — COMMUNITY GROUND (instant lot designation) ═══
+// The reserved category inverts the constraint: community ground PREFERS
+// every structure (absorb-with-preference — the later real building
+// formalizes the camp) and no structure answers to it (the growth step
+// never treats it as a district zone).
+describe("#44 community ground charter", () => {
+  it("grades 'match' for EVERY structure — preferred ground, never a constraint", () => {
+    const deltas = createTownDeltas();
+    deltas.addZone({ x: 0, y: 0, r: COMMUNITY_GROUND_R, category: COMMUNITY_CATEGORY, issuer: "p" });
+    const grade = slotZoningFn(deltas.zones(), new Set(["house"]));
+    expect(grade(0, 0)).toBe("match");
+    const other = slotZoningFn(deltas.zones(), new Set(["farm"]));
+    expect(other(1, 1)).toBe("match"); // any category — the camp welcomes all
+    expect(other(50, 50)).toBe("open"); // beyond the disc — virgin ground
+  });
+
+  it("ensureCommunityGround is idempotent — one charter, forever", () => {
+    const deltas = createTownDeltas();
+    const a = ensureCommunityGround(deltas, { x: 2, y: 3 }, "p");
+    const b = ensureCommunityGround(deltas, { x: 90, y: 90 }, "q");
+    expect(b.ord).toBe(a.ord);
+    expect(deltas.zones()).toHaveLength(1);
+    expect(a.category).toBe(COMMUNITY_CATEGORY);
+    expect(a.r).toBe(COMMUNITY_GROUND_R);
+  });
+
+  it("a later charter painting over the camp retires it (re-zoning law)", () => {
+    const deltas = createTownDeltas();
+    const lot = ensureCommunityGround(deltas, { x: 0, y: 0 }, "p");
+    expect(communityGroundOf(deltas.zones())?.ord).toBe(lot.ord);
+    deltas.addZone({ x: 0, y: 0, r: COMMUNITY_GROUND_R + 2, category: "farm", issuer: "p" });
+    expect(communityGroundOf(deltas.zones())).toBeNull();
+    // …and a re-designation stakes a FRESH charter (ords never reused).
+    const again = ensureCommunityGround(deltas, { x: 20, y: 0 }, "p");
+    expect(again.ord).toBeGreaterThan(lot.ord);
+  });
+
+  it("no structure ANSWERS to the community category (no district growth)", () => {
+    const spec = resolveStructure(TOWN_PLAY_STRUCTURES, "house")!;
+    expect(categoriesOfSpec(spec, () => null).has(COMMUNITY_CATEGORY)).toBe(false);
+  });
+
+  it("round-trips through the serialized charter list like any row", () => {
+    const deltas = createTownDeltas();
+    ensureCommunityGround(deltas, { x: 1, y: 2 }, "p");
+    const back = createTownDeltas(JSON.parse(JSON.stringify(deltas.toJSON())));
+    expect(communityGroundOf(back.zones())?.category).toBe(COMMUNITY_CATEGORY);
   });
 });

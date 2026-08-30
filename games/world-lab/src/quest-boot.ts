@@ -265,6 +265,20 @@ function bootQuestGame(
     // The spirit ladder is a GUEST of the host's own frame: sim ticks, then
     // the ladder poses the camera (setExternalCamera), then the view draws.
     onFrame: (dt) => {
+      // PER-BODY LOD ANCHOR ([LOD per-camera] law) — #43 ⑤b. The STANDALONE town
+      // boot never fed the host a camera, so every per-body tier was measured
+      // from `cameraFocus()`'s fallback (the parked plaza spark): bodies at arm's
+      // length seeded as far-band sticks while the crowd across town rendered
+      // full — the inverted-LoD defect the embedded/planet path already fixed
+      // (main.ts's live-town branch). Here the host OWNS the scene, so its own
+      // camera is already in sim coords and needs no anchor transform; (x, z) is
+      // the sim's (x, y), exactly the mapping `setSpiritPosition` uses below.
+      // Pushed on EVERY rung, ladder or possessed — whoever poses the camera,
+      // LOD measures from it. One frame of latency by construction (this hook
+      // runs before the ladder re-poses), which the tier bands' own hysteresis
+      // absorbs.
+      const cam = host?.camera;
+      if (cam) host?.setViewPoint({ x: cam.position.x, y: cam.position.z });
       if (!ladder) return;
       // INTERIORS FOLLOW WHETHER A REAL BODY IS IN THE HOUSE — never the rung
       // alone, and never the glide's parked stand-in (the planet path's rule,
@@ -719,6 +733,7 @@ function planetSiteGround(seed: number): {
     initialFocus: null,
     avatar: false,
     avatarSpecies: "human",
+    mods: [],
     canFly: false,
     creativeMode: false,
     entities: null,

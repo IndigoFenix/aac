@@ -8,7 +8,7 @@
  * Data only. Kept deliberately small: Spirit Dollhouse is the one demo still in
  * active use; the rest showcase what the tree editor can now author.
  */
-import type { TreeWorld } from "./spec-form";
+import type { TreeWorld } from "./lower-world";
 
 export interface NamedWorld {
   id: string;
@@ -46,7 +46,9 @@ export const TEST_WORLDS: NamedWorld[] = [
           ],
         }],
       },
-      session: { avatar: "spirit", scale: STREET_CLOCK },
+      // `cute` keeps the dollhouse's people on the chunky build the retired
+      // `human_cute` row used to carry (creature-mods.md §5).
+      session: { avatar: "spirit", mods: ["cute"], scale: STREET_CLOCK },
     },
   },
   {
@@ -88,14 +90,63 @@ export const TEST_WORLDS: NamedWorld[] = [
       // areas come from the world's own partitioning, never a painted disc;
       // nations-and-empires §3c) and the day-tick growth loops run on the
       // town machinery from day one.
+      // ⚖️ FOUNDERS CARRY WHAT THE SPEC SAYS AND NOTHING ELSE (user law,
+      // 2026-08-28 — no default items beside a founding; the supply crate
+      // itself renders only because this stock is declared, and the baskets
+      // are the party's own haulage, stepped out of the crate at boot).
       tree: {
         kind: "town",
-        params: { seed: 11, days: 0, population: 5, stock: { wood: 14, stone: 6 } },
+        params: { seed: 11, days: 0, population: 5, stock: { wood: 14, stone: 6, basket: 2 } },
       },
       // Construction 720 (vs the street clock's 180): a house rises in ~60 s
       // real time — founding is WATCHED, so builds must finish while the
       // player's attention holds.
       session: { avatar: "spirit", scale: { ...STREET_CLOCK, construction: 720 } },
+    },
+  },
+  {
+    id: "frontier-planet",
+    name: "Frontier Homestead — on the planet",
+    world: {
+      // ⚖️ #44 E — THE FOUNDING PREMISE ON PLANET GROUND (the homestead ①
+      // ruling, built): the same age-0 founding party, but the world is the
+      // earthlike streaming planet — an effectively infinite expanse whose
+      // forests belong to the ONE geography authority (real trees near,
+      // region records beyond), so the town this homestead grows into has
+      // something to be built OUT of. The boot seeds a pre-registered
+      // FoundedSite at a FOREST founding cell (main.ts stepFoundingPremise,
+      // through the save-restore door) and parks the spirit over it; the
+      // approach mounts the town with terrain "planet" — no walls, no edge.
+      // The walled `frontier-homestead` above stays as the fast-boot test
+      // world (its size premise is the thing this preset retires).
+      tree: {
+        kind: "solar_system",
+        params: {
+          seed: 1337,
+          premise: "founding",
+          // ⚖️ FOUNDERS CARRY WHAT THE SPEC SAYS AND NOTHING ELSE (the #43
+          // rider law) — the same declared kit as the walled preset.
+          premise_stock: { wood: 14, stone: 6, basket: 2 },
+          premise_population: 5,
+        },
+        exhaustive: ["body"],
+        contains: [
+          { kind: "body", params: { mass: 333000, age: 4.6 } },
+          { kind: "body", params: { orbitAU: 1, mass: 1, radius: 10000, geology: { seed: 42 } } },
+        ],
+      },
+      // The earthlike dials (gap 10 / resource 7.5 — food-scale-round.md)
+      // PLUS the founding's watched-construction clock (construction 720:
+      // builds must finish while the player's attention holds).
+      session: {
+        avatar: "spirit",
+        scale: {
+          ...STREET_CLOCK,
+          construction: 720,
+          gap_compression: 10,
+          resource_compression: 7.5,
+        },
+      },
     },
   },
   {
@@ -234,7 +285,9 @@ export const TEST_WORLDS: NamedWorld[] = [
       // must read exactly the gap declared above (planetFoundingOpts) —
       // declaring both is how the two came to disagree on the older presets.
       session: {
-        avatar: true, avatar_species: "human_cute",
+        // `human` + the `cute` mod IS the retired `human_cute` build (the mod
+        // lands its girth exactly on 0.45) — creature-mods.md §5.
+        avatar: true, avatar_species: "human", mods: ["cute"],
         scale: { rotation: 360, sleep_fraction: 0.05, gap_compression: 10, resource_compression: 7.5, locomotion: 2 },
       },
     },

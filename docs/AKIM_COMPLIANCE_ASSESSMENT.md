@@ -107,7 +107,7 @@ Canonical list: `shared/legal/recipients.ts`. Data classification reflects **act
 ### 4. Information transfer process
 | Clause | Status | Evidence / notes |
 |---|---|---|
-| 4.1 Encrypted channel, current TLS | 🟡 | TLS 1.2+ at ALB/CloudFront; `rds.force_ssl = 1`. Two internal hops are weaker and should be disclosed: the ALB→ECS-task hop is plaintext HTTP inside the private subnets, and the DB client does not verify the RDS server certificate (`server/db.ts` `rejectUnauthorized: false`). Both are tracked open items. |
+| 4.1 Encrypted channel, current TLS | 🟡 | TLS 1.2+ at ALB/CloudFront; `rds.force_ssl = 1`. **Fixed 2026-08-30:** the runtime DB connections now verify the RDS server certificate against the CA bundle the Dockerfile already shipped — `server/db-ssl.ts`, used by `server/db.ts` and `services/realtime/postgres-bus.ts`, pinned by `server/tests/db-ssl.test.ts`. Verification applies to `*.rds.amazonaws.com` hosts only, so Render-hosted staging and local Postgres are unaffected. One hop remains open and should be disclosed: ALB→ECS-task is plaintext HTTP inside the private subnets. |
 | 4.2 Strong mutual auth (e.g. certificate) | ✅ | TLS server cert; SSO via SAML/OIDC; session + MFA. |
 | 4.3 Interface config approved by AKIM IT | 📋 | Per-engagement sign-off. |
 | 4.4 No cleartext transfer over internet | ✅ | All ingress/egress HTTPS. |
@@ -240,11 +240,11 @@ Canonical list: `shared/legal/recipients.ts`. Data classification reflects **act
 
 **Engineering:**
 - [ ] 🔶 Execute SCCs/TIA (or obtain AKIM written approval) for cross-border PHI sub-processors: **Gemini Live** (audio/video), **Anthropic Claude Monitor** (conversation transcripts), and **Google TTS/ElevenLabs**. Draft a BAA/DPA template — none exists in the repo.
-- [x] ✅ Split the `recipients.ts` "OpenAI / Anthropic" entry: Anthropic = Monitor/transcript processor (PHI); OpenAI = icon-only (no PHI). **Done** — but bump the consent-notice version to match, and add the missing Dropbox and session-recording entries.
+- [x] ✅ Split the `recipients.ts` "OpenAI / Anthropic" entry: Anthropic = Monitor/transcript processor (PHI); OpenAI = icon-only (no PHI). **Done.** Stripe and Dropbox added 2026-08-30. Session recording is **not** a recipient — `shared/aac/session-recording.ts` uploads nothing; it belongs in the notice body as a local-storage disclosure. **Still open: the consent-notice version has not been bumped**, so records signed before 2026-08-30 do not name Stripe or Dropbox. Bumping means a new `consent-notices/il-2026-08.ts` variant + `ACTIVE_VERSION_BY_COUNTRY`, and triggers re-consent for every IL family.
 - [x] ✅ Maintenance crons run in production (`maintenanceCrons.ts` + `cron-lock.ts`, both entrypoints). The legacy Lambda path still needs `enable_cron_scheduler = true` if it is ever used again.
 - [ ] 🟡 Document EDR/antivirus compensating controls (WAF + GuardDuty + serverless no-persistent-host) for §5.11.6.
 - [ ] 🟡 Generate a §17.4 deletion-confirmation certificate output from the erasure audit events.
-- [ ] 🔶 Verify the RDS server certificate (`server/db.ts`, `postgres-bus.ts` — currently `rejectUnauthorized: false`) for §4.1.
+- [x] ✅ Verify the RDS server certificate for §4.1 — **done 2026-08-30** (`server/db-ssl.ts`). Non-RDS hosts keep the previous relaxed config by design.
 - [ ] 🔶 Build a §10 dispatcher for `fillIncidentTemplate` plus a breach register, and add a Business-Associate→covered-entity notice template.
 - [ ] 🔶 Produce contingency-plan evidence for §17: a restore runbook, a dated recovery drill, and cross-region snapshot copies.
 - [ ] 🟡 Build the §18.4 "produce" and "correct" flows (designated-record-set export; amendment request/denial).

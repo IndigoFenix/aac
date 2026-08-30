@@ -60,6 +60,7 @@ import type {
 } from "@/hooks/dual-agent-types";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import {
+  formatBuilderTarget,
   serializeBuilderMirror,
   type BuilderMirrorCell,
   type BuilderMirrorSnapshot,
@@ -370,7 +371,9 @@ export interface SentenceConstructorBoardProps {
 
 /** What a facilitated (clinician-driven) press can do to this board. */
 export interface BuilderRemote {
-  press: (target: BuilderTarget) => void;
+  /** True when the press landed on a live target; false when it did not (the
+   *  surface moved on). The caller turns that into the clinician's ack. */
+  press: (target: BuilderTarget) => boolean;
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
@@ -1292,10 +1295,37 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   /** Whichever of the builder's several word views is on screen right now. */
   const photosActive = engineUiActive ? enginePhotos : activeTab === "who" && modeChip === "photos";
 
+  /**
+   * WORD FINDER buttons, filtered exactly as the grid below filters them.
+   * Hoisted out of the render because three things now need the same list: the
+   * grid, the call mirror, and a clinician's remote press.
+   */
+  const guessGridButtons = useMemo<BoardButton[]>(() => {
+    if (!guessingActive) return [];
+    const all = guessingBoard?.pages?.[0]?.buttons ?? [];
+    return all.filter((b) => {
+      const bt = (b as any).buttonType;
+      const sk = (b as any).suggestionKey;
+      const nd = (b as any).narrowDimension;
+      return (bt === "suggestion" && sk) || (bt === "narrow" && nd) || bt === "guess" || (!bt && !sk && !nd);
+    });
+  }, [guessingActive, guessingBoard]);
+
+  /** The one dispatch for a Word Finder press — three button flavours, three
+   *  destinations. Local clicks and a clinician's remote press share it, so a
+   *  facilitated narrowing step is the same event as the child's own. */
+  const pressGuessButton = useCallback((b: BoardButton) => {
+    const sk = (b as any).suggestionKey as string | undefined;
+    const nd = (b as any).narrowDimension as string | undefined;
+    const nv = (b as any).narrowValue as string | undefined;
+    if (sk) onGuessingPress?.(sk);
+    else if (nd && nv) onNarrowPress?.(nd, nv, (b as any).sentence ?? (b as any).speech);
+    else onGuessButtonPress?.(b);
+  }, [onGuessingPress, onNarrowPress, onGuessButtonPress]);
+
   const mirrorCells = useMemo<BuilderMirrorCell[]>(() => {
-    // Word Finder replaces the grid with server-sent narrowing buttons that are
-    // not builder vocabulary. Sending none is the honest answer — the surface
-    // badge and the sentence strip still tell the clinician where the child is.
+    // Word Finder hands the grid to a server-authored board; it travels whole
+    // through `guessButtons` below rather than as builder vocabulary cells.
     if (guessingActive) return [];
 
     if (photosActive) {
@@ -1337,6 +1367,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   const mirrorSnapshot = useMemo<BuilderMirrorSnapshot>(() => serializeBuilderMirror({
     cells: mirrorCells,
+    // The child's Word Finder board IS the clinician's Word Finder board — the
+    // same buttons the server sent, not a second rendering of them.
+    guessButtons: guessingActive ? guessGridButtons : undefined,
     paging: photosActive ? whoTilesNeedMore : engineGridActive ? engineNeedsMore : gridNeedsMore,
     engine: engineUiActive,
     tabs: engineUiActive
@@ -1363,7 +1396,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       clear: t("common.delete"),
     },
   }), [
-    mirrorCells, photosActive, whoTilesNeedMore, engineGridActive, engineNeedsMore, gridNeedsMore,
+    mirrorCells, guessingActive, guessGridButtons,
+    photosActive, whoTilesNeedMore, engineGridActive, engineNeedsMore, gridNeedsMore,
     engineUiActive, visibleEngineTabs, engineCategory, visibleEngineChips, engineChip,
     visibleChips, activeTab, modeChip, displayedGlyph, activeSlot, t,
   ]);
@@ -1389,49 +1423,65 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   /** Drive this board from the clinician's mirror. Every branch lands on the
    *  handler a local press would have called. */
   useImperativeHandle(props.remoteRef, () => ({
-    press(target: BuilderTarget) {
+    /** Returns whether the press actually landed — a target whose surface is
+     *  not on screen (a word from a page that has since changed, a Word Finder
+     *  button after the child left guessing) must be reported as undelivered,
+     *  not silently swallowed. */
+    press(target: BuilderTarget): boolean {
       switch (target.kind) {
         case "word": {
-          if (target.key.startsWith("face:")) { handlePersonPress(target.key.slice(5)); return; }
+          if (target.key.startsWith("face:")) { handlePersonPress(target.key.slice(5)); return true; }
           const item = getVocabularyItem(target.key);
-          if (item) handleGridPress(item);
-          return;
+          if (!item) return false;
+          handleGridPress(item);
+          return true;
         }
         case "engineWord": {
           const word =
             engineGridWords.find((w) => w.key === target.key) ??
             enginePersonWords.find((w) => w.key === target.key) ??
             engineSurface?.buttons.find((w) => w.key === target.key);
-          if (word) handleEngineWordPress(word);
-          return;
+          if (!word) return false;
+          handleEngineWordPress(word);
+          return true;
+        }
+        case "guess": {
+          // Same list, same dispatch, same effect as the child's own tap.
+          const button = guessGridButtons.find((b) => b.id === target.buttonId);
+          if (!button) return false;
+          pressGuessButton(button);
+          return true;
         }
         case "tab":
-          if ((TABS as readonly string[]).includes(target.tab)) handleTabSelect(target.tab as GlyphCategory);
-          return;
+          if (!(TABS as readonly string[]).includes(target.tab)) return false;
+          handleTabSelect(target.tab as GlyphCategory);
+          return true;
         case "engineTab":
           handleEngineTabSelect(target.tab === "all" ? null : target.tab);
-          return;
+          return true;
         case "chip":
           handleModeChipSelect(target.chip);
-          return;
+          return true;
         case "engineChip":
-          handleEngineChipSelect(target.chip);
-          return;
+          // "all" is the PINNED chip, and clearing the filter is what it does —
+          // the same sentinel the engine tab above uses for the same reason.
+          handleEngineChipSelect(target.chip === "all" ? null : target.chip);
+          return true;
         case "page":
           setGridPage((page) => page + (target.dir === "more" ? 1 : -1));
-          return;
+          return true;
         case "slot":
           handleSlotPress(target.index);
-          return;
+          return true;
         case "play":
           handlePlay();
-          return;
+          return true;
         case "backspace":
           handleBackspace();
-          return;
+          return true;
         case "clear":
           handleClearSelected();
-          return;
+          return true;
       }
     },
   }), [
@@ -1439,6 +1489,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     handleEngineTabSelect, handleModeChipSelect, handleEngineChipSelect,
     handleSlotPress, handlePlay, handleBackspace, handleClearSelected,
     engineGridWords, enginePersonWords, engineSurface,
+    guessGridButtons, pressGuessButton,
   ]);
 
   // How tight each sidebar column has to draw itself — the count includes the
@@ -1646,6 +1697,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             <motion.button
               data-dwell
               data-testid="engine-tab-all"
+              data-mirror-id={formatBuilderTarget({ kind: "engineTab", tab: "all" })}
               role="tab"
               aria-selected={engineCategory == null}
               tabIndex={0}
@@ -1675,6 +1727,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                   key={cat}
                   data-dwell
                   data-testid={`engine-tab-${cat}`}
+                  data-mirror-id={formatBuilderTarget({ kind: "engineTab", tab: cat })}
                   role="tab"
                   aria-selected={active}
                   tabIndex={0}
@@ -1718,6 +1771,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               <motion.button
                 key={tab}
                 data-dwell
+                data-mirror-id={formatBuilderTarget({ kind: "tab", tab })}
                 role="tab"
                 aria-selected={active}
                 tabIndex={0}
@@ -1760,6 +1814,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           <>
             <motion.button
               data-dwell
+              data-mirror-id={formatBuilderTarget({ kind: "engineChip", chip: "all" })}
               data-testid="engine-chip-all"
               onClick={() => handleEngineChipSelect(null)}
               whileTap={{ scale: 0.95 }}
@@ -1784,6 +1839,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 <motion.button
                   key={chip.id}
                   data-dwell
+                  data-mirror-id={formatBuilderTarget({ kind: "engineChip", chip: chip.id })}
                   data-testid={`engine-chip-${chip.id}`}
                   onClick={() => handleEngineChipSelect(chip.id)}
                   whileTap={{ scale: 0.95 }}
@@ -1838,6 +1894,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             {engineCategory === "person" && (
               <motion.button
                 data-dwell
+                data-mirror-id={formatBuilderTarget({ kind: "engineChip", chip: ENGINE_PHOTOS_CHIP })}
                 data-testid="engine-chip-photos"
                 onClick={() => handleEngineChipSelect(ENGINE_PHOTOS_CHIP)}
                 whileTap={{ scale: 0.95 }}
@@ -1874,6 +1931,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             <motion.button
               key={chip.key}
               data-dwell
+              data-mirror-id={formatBuilderTarget({ kind: "chip", chip: chip.key })}
               onClick={() => handleModeChipSelect(chip.key)}
               whileTap={{ scale: 0.95 }}
               className={[
@@ -1964,6 +2022,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               icon="✕"
               onPress={handleClearSelected}
               testId="construction-clear"
+              mirrorId={formatBuilderTarget({ kind: "clear" })}
             />
           ) : displayedGlyph.slots.length > 0 ? (
             <ActionButton
@@ -1972,6 +2031,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               mirrorIcon={isRTL}
               onPress={handleBackspace}
               testId="construction-backspace"
+              mirrorId={formatBuilderTarget({ kind: "backspace" })}
             />
           ) : null}
 
@@ -1995,6 +2055,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             disabled={displayedGlyph.slots.length === 0}
             onPress={handlePlay}
             testId="construction-play"
+            mirrorId={formatBuilderTarget({ kind: "play" })}
           />
 
           {/* Close button (optional) */}
@@ -2356,13 +2417,11 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               //       — routes via onNarrowPress with the speech as sourceText.
               //   (3) guess: a free-form AI guess (untagged or `buttonType="guess"`)
               //       — routes through the normal board-button click path.
-              const allButtons = guessingBoard?.pages?.[0]?.buttons ?? [];
-              const guessButtons = allButtons.filter((b) => {
-                const bt = (b as any).buttonType;
-                const sk = (b as any).suggestionKey;
-                const nd = (b as any).narrowDimension;
-                return (bt === "suggestion" && sk) || (bt === "narrow" && nd) || bt === "guess" || (!bt && !sk && !nd);
-              });
+              // The list and the dispatch both live above (`guessGridButtons`
+              // / `pressGuessButton`) — the call mirror and a clinician's
+              // facilitated press use the same two, so a remote narrowing step
+              // is the same event as the child's own.
+              const guessButtons = guessGridButtons;
               const localizeGuess = (b: BoardButton): BoardButton => {
                 const key = (b as any).suggestionKey as string | undefined;
                 const parsed = key ? parseSuggestionKey(key) : null;
@@ -2393,11 +2452,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                         variant="board"
                         button={localizeGuess(b)}
                         getFaceImage={getFaceImage ?? undefined}
-                        onClick={() => {
-                          if (sk) onGuessingPress?.(sk);
-                          else if (nd && nv) onNarrowPress?.(nd, nv, (b as any).sentence ?? (b as any).speech);
-                          else onGuessButtonPress?.(b);
-                        }}
+                        extraButtonProps={{ "data-mirror-id": formatBuilderTarget({ kind: "guess", buttonId: b.id }) }}
+                        onClick={() => pressGuessButton(b)}
                       />
                     );
                   })}
@@ -2525,6 +2581,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               <GridButton
                 key={item.key}
                 item={item}
+                mirrorId={formatBuilderTarget({ kind: "word", key: item.key })}
                 onPress={() => handleGridPress(item)}
               />
             ))}
@@ -2593,10 +2650,14 @@ function ActionButton(props: {
    *  iPad shell falls back to that a mirrored ⌫ is the safer draw.) */
   mirrorIcon?: boolean;
   testId?: string;
+  /** Encoded builder target, so a clinician on a call can POINT at this control
+   *  from their mirror (`data-mirror-id`, resolved by CallIndicateBridge). */
+  mirrorId?: string;
 }) {
   return (
     <motion.button
       data-dwell
+      data-mirror-id={props.mirrorId}
       data-testid={props.testId}
       data-active={props.active ? "true" : undefined}
       data-ready={props.ready ? "true" : undefined}
@@ -2677,7 +2738,7 @@ function ModifierButton(props: {
 }
 
 
-function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
+function GridButton(props: { item: VocabularyItem; onPress: () => void; mirrorId?: string }) {
   const { isRTL } = useLanguage();
   const { item } = props;
   const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
@@ -2685,6 +2746,7 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
   return (
     <motion.button
       data-dwell
+      data-mirror-id={props.mirrorId}
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
       className="rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex flex-col items-center justify-center min-h-0 overflow-hidden"
@@ -2723,6 +2785,8 @@ function GridButton(props: { item: VocabularyItem; onPress: () => void }) {
  * as the camera-seen contacts in the person list.
  */
 function EngineWordButton(props: { word: BuilderWord; onPress: () => void }) {
+  // The mirror addresses an engine word by its key, the same way its target is
+  // encoded — no id has to be threaded from the call site.
   const { t, isRTL } = useLanguage();
   const { word } = props;
   const item = getVocabularyItem(word.key);
@@ -2737,6 +2801,7 @@ function EngineWordButton(props: { word: BuilderWord; onPress: () => void }) {
   return (
     <motion.button
       data-dwell
+      data-mirror-id={formatBuilderTarget({ kind: "engineWord", key: word.key })}
       data-testid={`engine-word-${word.key}`}
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
@@ -2836,6 +2901,7 @@ function PersonButton(props: {
   return (
     <motion.button
       data-dwell
+      data-mirror-id={formatBuilderTarget({ kind: "word", key: `face:${person.id}` })}
       data-testid={`person-${person.id}`}
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
@@ -3101,6 +3167,7 @@ function PageBackButton(props: { onPress: () => void; testId?: string; disabled?
   return (
     <motion.button
       data-dwell
+      data-mirror-id={formatBuilderTarget({ kind: "page", dir: "back" })}
       data-testid={props.testId}
       onClick={props.onPress}
       disabled={props.disabled}
@@ -3123,6 +3190,7 @@ function MoreButton(props: { onPress: () => void; testId?: string; disabled?: bo
   return (
     <motion.button
       data-dwell
+      data-mirror-id={formatBuilderTarget({ kind: "page", dir: "more" })}
       data-testid={props.testId}
       onClick={props.onPress}
       disabled={props.disabled}

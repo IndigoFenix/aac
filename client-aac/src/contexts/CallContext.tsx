@@ -29,7 +29,7 @@ import {
   type IncomingCall,
 } from "@shared/call/call-client";
 import type { CallGame, CallMediaFlags } from "@shared/realtime-events";
-import { parseCallDataMessage, type CallDataMessage, type FacilitatorBuilderMessage, type FacilitatorPressMessage } from "@shared/call/call-data-messages";
+import { parseCallDataMessage, type BoardIndicateMessage, type CallDataMessage, type FacilitatorBuilderMessage, type FacilitatorPressMessage } from "@shared/call/call-data-messages";
 import CallAudioSinks from "@shared/call/CallAudioSinks";
 import type { WorldNetMessage } from "@shared/world-engine/index";
 import { CallWorldHub, CallNpcHub } from "@shared/social-world/call-game-net";
@@ -159,6 +159,10 @@ interface CallContextValue {
   facilitatorBuilder: FacilitatorBuilderMessage | null;
   /** Button id the clinician is hovering (their cursor), or null — highlight it. */
   peerDwellId: string | null;
+  /** The clinician is POINTING at a button (press-and-hold on their mirror),
+   *  or released. Stronger and more deliberate than `peerDwellId`, and the
+   *  remote twin of the caretaker's in-room hold-to-highlight gesture. */
+  peerIndicate: BoardIndicateMessage | null;
   /** True while this device is sharing its screen (clinician requested it). */
   screenSharing: boolean;
   /** Fan-out of inbound peer world messages (fed by the CallClient). */
@@ -220,6 +224,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // Button id the clinician is hovering on their mirrored view — highlighted on
   // the student's real board so they see the clinician's "cursor".
   const [peerDwellId, setPeerDwellId] = useState<string | null>(null);
+  const [peerIndicate, setPeerIndicate] = useState<BoardIndicateMessage | null>(null);
   // The participant currently speaking (loudest remote stream) — drives the
   // "auto" large-video layout.
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
@@ -398,6 +403,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         else if (m?.k === "facilitator-builder") setFacilitatorBuilder(m);
         else if (m?.k === "world-cmd") worldCmdHubRef.current.emit(event.personId, m);
         else if (m?.k === "board-dwell") setPeerDwellId(m.buttonId);
+        else if (m?.k === "board-indicate") setPeerIndicate(m);
         else if (m?.k === "screen-request") {
           if (m.on) {
             clientRef.current?.startScreenShare()
@@ -795,6 +801,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     facilitatorPress,
     facilitatorBuilder,
     peerDwellId,
+    peerIndicate,
     screenSharing,
     worldHub: worldHubRef.current,
     sendNpc,
@@ -809,7 +816,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callState, incoming, selfPersonId, localStream, remoteStreams, activeContact,
     error, audioEnabled, videoEnabled, contacts, contactsLoading, refreshContacts,
     startCallToContact, accept, decline, cancel, hangUp, toggleAudio, toggleVideo, outputMuted,
-    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, facilitatorBuilder, peerDwellId, screenSharing, sendNpc,
+    game, startSoloGame, inviteIntoCall, endGame, startGameWithContact, startGame, stopGame, sendWorld, sendData, facilitatorPress, facilitatorBuilder, peerDwellId, peerIndicate, screenSharing, sendNpc,
     publishPresence, getAudibleIds, peerGains, activeSpeakerId,
   ]);
 

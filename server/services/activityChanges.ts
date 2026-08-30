@@ -23,7 +23,14 @@
  */
 
 import { getTableColumns } from "drizzle-orm";
-import { students, aacSettings } from "@shared/schema";
+import {
+  students,
+  aacSettings,
+  medicalRecords,
+  functionalReports,
+  educationalReports,
+  studentContacts,
+} from "@shared/schema";
 import { SENSITIVE_FIELDS } from "../external-storage/registry";
 
 /** One field's before/after. `redacted` means from/to are descriptors, not values. */
@@ -75,10 +82,28 @@ const VALUE_SAFE: Record<string, Set<string>> = {
   ]),
 };
 
-/** Drizzle tables we can introspect column types for, by DB table name. */
+/**
+ * Drizzle tables we can introspect column types for, by DB table name.
+ *
+ * A table absent from here still diffs, but every column falls back to
+ * presence/shape because the data type is unknown — safe, just less useful.
+ * Registering a table is what lets its booleans and numbers report real values.
+ *
+ * The clinical record tables were added for AKIM appendix §5.8, which asks the
+ * audit log to carry "the value that changed". Note that NONE of them
+ * contribute entries to VALUE_SAFE: their text columns are diagnoses, notes and
+ * clinical narrative, so they stay redacted to presence. What the log gains is
+ * an accurate list of WHICH fields a clinician changed, plus literal values for
+ * the flags — which is the part that is safe to keep and usually the part being
+ * traced.
+ */
 const TABLE_COLUMNS: Record<string, Record<string, { dataType: string }>> = {
   students: getTableColumns(students) as any,
   aac_settings: getTableColumns(aacSettings) as any,
+  medical_records: getTableColumns(medicalRecords) as any,
+  functional_reports: getTableColumns(functionalReports) as any,
+  educational_reports: getTableColumns(educationalReports) as any,
+  student_contacts: getTableColumns(studentContacts) as any,
 };
 
 /** A runaway write shouldn't turn one log row into a megabyte of jsonb. */

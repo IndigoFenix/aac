@@ -777,9 +777,14 @@ describe("② the unobserved twin credits the map every reader reads", () => {
     expect(big.pile).toEqual({ wood: 86 });
     expect(small.pile).toEqual({});
     expect(stagingMissing(mid)).toEqual({});
+    // ⚖️ #43 ②b: these three piles stand on ONE spot, so the release is a
+    // LEDGER move — silent by law (a porter walking wood from the yard to
+    // the yard was the measured "circling the crate" disease). The far-apart
+    // release still walks and still speaks: pinned in
+    // town-construction-phase4.test.ts (#43 ②b).
+    expect(h.toasts.some((t) => t.startsWith("🔁"))).toBe(false);
     // 🚨 CONSERVATION: a release MOVES units, it never mints or burns one.
     expect(total()).toBe(120);
-    expect(h.toasts.some((t) => t.includes("🔁 28 wood goes to the"))).toBe(true);
 
     // …and the point of the whole exercise: a mill can now RUN. Pre-fix this
     // line is unreachable — the site sat at 0 % for the entire 1 237 s run
@@ -798,7 +803,10 @@ describe("② the unobserved twin credits the map every reader reads", () => {
     // release path is not a treadmill, it stops when it can do no more good.
     expect(small.pile).toEqual({ wood: 50 });
     expect(big.pile).toEqual({ wood: 36 });
-    expect(h.toasts.filter((t) => t.startsWith("🔁")).length).toBe(2);
+    // ⚖️ #43 ②b: both releases are co-located ledger moves now — silent, so
+    // the cascade leaves NO 🔁 lines (was 2). The movement assertions above
+    // are the pin's real content; the voice belongs to far-apart releases.
+    expect(h.toasts.filter((t) => t.startsWith("🔁")).length).toBe(0);
     // 🚨 ONE-WAY DOOR: a staged recipient leaves the arbitration pool, so
     // nothing it received can ever be released back out of it.
     expect(mid.laborStartDay).not.toBeUndefined();

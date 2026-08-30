@@ -191,6 +191,7 @@ export function buildPlanetGeography(
     initialFocus: null,
     avatar: false,
     avatarSpecies: "human",
+    mods: [],
     canFly: false,
     creativeMode: false,
     entities: null,

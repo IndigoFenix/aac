@@ -184,9 +184,21 @@ export class MonitorAgent {
       lines.push(
         `The user's device GPS places them at **${title}**${addr}, about ${dist}m away. The event "${defangSectionContent(ev.title)}" is scheduled there around ${this.formatEventWhen(ev.startTime)} — the user is very likely attending it right now. Build the session around being at this place and activity.`,
       );
-    } else {
+    } else if (top.nearbyEvents.length > 0) {
+      // Events ARE scheduled here, but the fix was too coarse to claim the user
+      // is at them (a desktop WiFi fix can be ±250m — wider than the match
+      // radius itself). Saying "nothing is scheduled" here would be false, and
+      // saying "very likely attending" would be unfounded; say what is true and
+      // let the AI wait to be told.
+      const ev = top.nearbyEvents[0];
+      const margin = top.accuracyM ? ` (accurate only to about ${Math.round(top.accuracyM)}m)` : "";
       lines.push(
-        `The user's device GPS places them at or near **${title}**${addr}, about ${dist}m away. Nothing is scheduled there at this time, but the setting is a strong clue to where they are.`,
+        `The user's device GPS puts them somewhere around **${title}**${addr}, about ${dist}m away${margin}. The event "${defangSectionContent(ev.title)}" is scheduled there around ${this.formatEventWhen(ev.startTime)}. The reading is too imprecise to be sure they are actually there — treat this as a possibility worth gently checking, not a fact to build the session on.`,
+      );
+    } else {
+      const margin = top.coarse && top.accuracyM ? ` (accurate only to about ${Math.round(top.accuracyM)}m)` : "";
+      lines.push(
+        `The user's device GPS places them at or near **${title}**${addr}, about ${dist}m away${margin}. Nothing is scheduled there at this time, but the setting is a ${top.coarse ? "rough" : "strong"} clue to where they are.`,
       );
     }
     if (matches.length > 1) {
@@ -219,7 +231,13 @@ export class MonitorAgent {
       const ev = top.nearbyEvents[0];
       return `[LOCATION] The user now appears to be at ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. They are likely at this event.`;
     }
-    return `[LOCATION] The user now appears to be at or near ${title} (~${dist}m away).`;
+    // Same hedge as the startup section: a coarse fix may not omit a real event,
+    // and may not assert attendance either.
+    if (top.nearbyEvents.length > 0) {
+      const ev = top.nearbyEvents[0];
+      return `[LOCATION] The user may be somewhere near ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. The reading is too imprecise to be sure.`;
+    }
+    return `[LOCATION] The user now appears to be ${top.coarse ? "somewhere near" : "at or near"} ${title} (~${dist}m away).`;
   }
 
   /**

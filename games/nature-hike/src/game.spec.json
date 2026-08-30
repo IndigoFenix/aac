@@ -13,7 +13,10 @@
       "rain": 1.5
     },
     "avatar": true,
-    "avatar_species": "human_cute",
+    "avatar_species": "human",
+    "mods": [
+      "cute"
+    ],
     "scale": {
       "rotation": 360,
       "sleep_fraction": 0.05,

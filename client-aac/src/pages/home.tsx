@@ -23,7 +23,7 @@ import { IncomingCallPopup } from "@/components/IncomingCallPopup";
 import { GroupChatHeader } from "@/components/GroupChatHeader";
 import PhoneCallApp from "@/components/PhoneCallApp";
 import { SocialWorldOverlay, SocialGameReporter, SocialWorldPeople } from "@/components/social-world/SocialWorldOverlay";
-import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallBuilderFacilitatorBridge, CallVideoLarge, CallCursorReporter, CallPeerCursorReporter, CallScreenShareIndicator } from "@/components/CallVideoOverlay";
+import { CallStateReporter, CallBoardMirror, CallFacilitatorBridge, CallBuilderFacilitatorBridge, CallIndicateBridge, CallVideoLarge, CallCursorReporter, CallPeerCursorReporter, CallScreenShareIndicator } from "@/components/CallVideoOverlay";
 import { quickActionsMirror } from "@/components/QuickActions";
 import type { CallGame } from "@shared/realtime-events";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
@@ -531,8 +531,9 @@ function renderAppContent(
   onSpeak?: (label: string, sentence: string) => void,
   /** Re-run an app open server-side (the restaurant app after a menu capture). */
   onRequestAppOpen?: (appId: string, appData?: any) => void,
-  /** Per-student board rendering settings, for the menu lane. */
-  boardRender?: { language?: string; iconTextRatio?: number; selectionMethod?: any; restSpace?: any },
+  /** Per-student board rendering settings, for the menu lane — plus the
+   *  student's device-location setting, which gates the venue search. */
+  boardRender?: { language?: string; iconTextRatio?: number; selectionMethod?: any; restSpace?: any; locationEnabled?: boolean },
 ): React.ReactNode {
   if (!activeApp) return null;
   if (activeApp.appId === "youtube") {
@@ -587,6 +588,7 @@ function renderAppContent(
         iconTextRatio={boardRender?.iconTextRatio}
         selectionMethod={boardRender?.selectionMethod}
         restSpace={boardRender?.restSpace}
+        locationEnabled={boardRender?.locationEnabled ?? false}
       />
     );
   }
@@ -851,7 +853,10 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Stable identity so the bridge's effect doesn't re-fire on every render; the
   // press only lands while the builder is actually mounted.
   const facilitateBuilderPress = useCallback((target: BuilderTarget) => {
-    builderRemoteRef.current?.press(target);
+    // No builder mounted = the child closed it mid-press. Report that rather
+    // than swallowing it, so the clinician is not left believing the sentence
+    // grew when it did not.
+    return builderRemoteRef.current?.press(target) ?? false;
   }, []);
   // Backend-busy state lifted out of the provider (Home renders outside it) to
   // drive the subtle ambient processing indicators.
@@ -1156,13 +1161,17 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // bridged from DualAgentContext (the Apps overlay renders outside the provider).
   const requestAppOpenFnRef = useRef<((appId: string, appData?: any) => void) | null>(null);
   /** Per-student board rendering settings, shared with the restaurant app's
-   *  menu lane so a menu looks like every other board the student uses. */
+   *  menu lane so a menu looks like every other board the student uses.
+   *  Carries `locationEnabled` too: the venue lanes are the second consumer of
+   *  device location, and they must obey the same per-student setting the live
+   *  session does. */
   const restaurantBoardRender = useMemo(() => ({
     language: currentLanguage,
     iconTextRatio: userProfile?.aacSettings?.iconTextRatio ?? 3,
     selectionMethod: eyegazeSettings.enabled ? eyegazeSettings.selectionMethod : "whole_button",
     restSpace: eyegazeSettings.enabled ? eyegazeSettings.restSpace : "none",
-  }), [currentLanguage, userProfile?.aacSettings?.iconTextRatio, eyegazeSettings]);
+    locationEnabled: userProfile?.aacSettings?.deviceLocationEnabled ?? false,
+  }), [currentLanguage, userProfile?.aacSettings?.iconTextRatio, userProfile?.aacSettings?.deviceLocationEnabled, eyegazeSettings]);
   // request_board_open round-trip (a board-launch button the AI put on the
   // board), bridged the same way — the board renders outside the provider.
   const requestBoardOpenFnRef = useRef<((boardKey: string) => void) | null>(null);
@@ -3571,6 +3580,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           studentId={studentId}
           classroomId={classroomId}
           language={currentLanguage}
+          locationEnabled={userProfile?.aacSettings?.deviceLocationEnabled ?? false}
           pitchByTag={{
             ...(userProfile?.aacSettings?.aiVoicePitch ? { avatar: userProfile.aacSettings.aiVoicePitch } : {}),
             ...(userProfile?.aacSettings?.studentVoicePitch ? { utterance: userProfile.aacSettings.studentVoicePitch } : {}),
@@ -3771,6 +3781,11 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
             enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
             press={facilitateBuilderPress}
           />
+          {/* A clinician POINTING at a button (press-and-hold on their mirror).
+              Not consent-gated — their cursor already highlights buttons here,
+              and showing a child a word is not saying it — but reading the
+              button ALOUD is, so that half follows the same flag. */}
+          <CallIndicateBridge allowSpeech={!!userProfile?.aacSettings?.allowFacilitatorControl} />
           {/* Cursor sharing: stream the student's gaze/pointer to the clinician,
               and lift the clinician's cursor down to highlight the student's board. */}
           <CallCursorReporter />

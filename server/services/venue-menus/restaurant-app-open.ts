@@ -20,7 +20,7 @@
 //               they need to say "hungry" and "this is too hot" long before
 //               anyone has photographed anything.
 //   search    — not at a venue. Show what kinds of food are nearby.
-//   caretaker — nothing else is available. Show the adult's half.
+//   caretaker — nothing else is available. Show the companion's half.
 //
 // The AI knows the student said "pizza". It does not know whether a caretaker
 // confirmed a venue an hour ago, whether that venue's menu is still inside its
@@ -124,7 +124,7 @@ export async function resolveRestaurantOpen(
     // about whether they are allowed to say "I want pizza".
     //
     // It used to return the caretaker lane here, so anyone who reached the app
-    // with browsing off got an adult text screen: a paragraph they cannot read,
+    // with browsing off got a companion's text screen: a paragraph they cannot read,
     // a button that starts a camera, and nothing they can say. That was the
     // DEFAULT, because `studentBrowse` ships false.
     //
@@ -257,8 +257,8 @@ export function restaurantOpenNote(payload: RestaurantAppPayload): string {
   }
 
   return (
-    `[RESTAURANT] Opened on the grown-up's screen — finding the restaurant and photographing ` +
-    `its menu is the caretaker's job. There is no menu for the student yet, so do not offer to ` +
+    `[RESTAURANT] Opened on the companion's screen — finding the restaurant and photographing ` +
+    `its menu is the companion's job. There is no menu for the student yet, so do not offer to ` +
     `read one.`
   );
 }

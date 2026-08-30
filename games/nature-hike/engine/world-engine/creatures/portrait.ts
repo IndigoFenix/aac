@@ -35,7 +35,8 @@ import { clampBlueprint, type Blueprint } from "./blueprint";
 import { outfitPresetFor } from "./clothing";
 import { getSpeciesAssets, type CreatureLook } from "./creature-model";
 import { buildSkeleton, type CreatureSkeleton } from "./skeleton";
-import { getSpecies } from "./species";
+import { getSpecies, type Species } from "./species";
+import { activeCreatureMods, applyAppearanceMods } from "./mods";
 
 /** Square edge (px) a portrait bakes at. Sized for the biggest a board button
  *  ever draws it (~128 CSS px at 2× DPR); the compositor downsamples. */
@@ -245,10 +246,14 @@ function aim(forward: THREE.Vector3, yaw: number, pitch: number): THREE.Vector3 
 }
 
 /** The species' clamped blueprint, dressed — the same body creature-model bakes
- *  its idle clip from, so the skeleton this measures matches that geometry. */
-function dressedBlueprint(base: Record<string, unknown>, outfit?: number): Blueprint {
-  if (outfit === undefined) return clampBlueprint(base);
-  return clampBlueprint({ ...base, outfit: outfitPresetFor(outfit) });
+ *  its idle clip from, so the skeleton this measures matches that geometry.
+ *  That equality is why the world's APPEARANCE MODS have to run here too: the
+ *  geometry comes from the modded bake, and a portrait framed off the unmodded
+ *  skeleton would crop a chunkier body by an unmodded body's measurements. */
+function dressedBlueprint(species: Species, outfit?: number): Blueprint {
+  const modded = applyAppearanceMods(species, clampBlueprint(species.blueprint), activeCreatureMods());
+  if (outfit === undefined) return modded;
+  return clampBlueprint({ ...modded, outfit: outfitPresetFor(outfit) });
 }
 
 /** A portrait scene + its camera. `dispose` drops what THIS view made and NOT
@@ -271,7 +276,8 @@ export interface PortraitView {
  */
 export function buildPortraitView(spec: CreaturePortraitSpec, angle: PortraitAngle = {}): PortraitView | null {
   const species = getSpecies(spec.speciesId);
-  if (!species || species.bodiless) return null;
+  // A stub is a word with no body plan yet — there is nothing to photograph.
+  if (!species || species.bodiless || species.stub) return null;
 
   const look = spec.look ?? {};
   const assets = getSpeciesAssets(
@@ -282,7 +288,7 @@ export function buildPortraitView(spec: CreaturePortraitSpec, angle: PortraitAng
   const geometry = assets.clips.get("idle")?.frames[0]?.geometry;
   if (!geometry) return null;
 
-  const skel = buildSkeleton(dressedBlueprint(species.blueprint, spec.outfit));
+  const skel = buildSkeleton(dressedBlueprint(species, spec.outfit));
   const frame = framePortrait(skel, angle);
 
   // Camera distance only has to clear the body — an ortho frustum's scale comes

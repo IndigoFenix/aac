@@ -208,6 +208,11 @@ export interface TextSiteEntry {
   word: string;
   stage: 0 | 1 | 2;
   progress?: number;
+  /** ④ #43 — the gather phase, copied from the renderer's own
+   *  `ConstructionSite.gathering` (law ①: the view is the fidelity line):
+   *  an unstaged site narrates what it is waiting on ("gathering block
+   *  84/120") instead of an eternal 0%. */
+  gathering?: { head: string; have: number; want: number };
   band: Proximity;
   cardinal: Cardinal;
   distance: number;

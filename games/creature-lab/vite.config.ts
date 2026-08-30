@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import path from "path";
+import { labStore } from "./lab-store";
 
 const GAME_NAME = "creature-lab";
 
@@ -7,7 +8,10 @@ const GAME_NAME = "creature-lab";
 // models (blueprint / skeleton / gait / animation), migrated out of
 // seagull-dream so the models it drives are the shared canonical ones. Pure
 // three.js + vanilla TS (no React). Served at /games/creature-lab.
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
+
 export default defineConfig({
+  plugins: [labStore(REPO_ROOT)],
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "..", "..", "shared"),

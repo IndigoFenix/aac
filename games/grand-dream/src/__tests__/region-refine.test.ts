@@ -27,7 +27,7 @@ const game: GameSettings = {
     radius: 6_371_000,
     founding: { threshold: 60, radius: 2, minSpacing: 2, maxHarvest: 600 },
   },
-  initialFocus: null, avatar: false, avatarSpecies: "human", canFly: false, creativeMode: false, entities: null, scale: null,
+  initialFocus: null, avatar: false, avatarSpecies: "human", mods: [], canFly: false, creativeMode: false, entities: null, scale: null,
 };
 
 describe("region refinement — tier 1 of the hierarchical substrate", () => {

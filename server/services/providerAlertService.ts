@@ -28,6 +28,7 @@
 
 import { emailService } from "./emailService";
 import { chatRepository } from "../repositories/chatRepository";
+import { sendOperationalAlert } from "./operationalAlert";
 
 // The three provider "accounts" we bill against. Labels match the admin Cost &
 // Usage dashboard so figures line up with what an operator sees there.
@@ -263,38 +264,13 @@ export function scheduleSpendThresholdCheck(): void {
 
 // ─── Email plumbing ──────────────────────────────────────────────────────────
 
+// The shell (recipient handling, HTML wrapper, never-throw) lives in
+// operationalAlert.ts so the security-incident sweep uses the same one.
+// RECIPIENT stays honoured here: PROVIDER_ALERT_EMAIL is an existing knob and
+// provider alerts may want a different mailbox from incident alerts.
 async function sendAlertEmail(subject: string, lines: string[]): Promise<void> {
-  if (!emailService.isReady()) {
-    console.warn(`[providerAlert] Email not configured; would have sent to ${RECIPIENT}: ${subject}`);
-    return;
-  }
-  const text = lines.join("\n");
-  const html = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background-color:#f4f4f5;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:0 auto;padding:20px;">
-    <tr><td>
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#dc2626;border-radius:12px 12px 0 0;padding:24px;text-align:center;">
-        <tr><td><h1 style="color:#ffffff;margin:0;font-size:20px;">Aivota — Operational Alert</h1></td></tr>
-      </table>
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#ffffff;padding:32px 30px;border-radius:0 0 12px 12px;">
-        <tr><td>
-          <pre style="color:#18181b;font-size:14px;line-height:1.6;margin:0;white-space:pre-wrap;font-family:inherit;">${escapeHtml(text)}</pre>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`.trim();
-
-  await emailService.sendEmail({ to: RECIPIENT, subject, text, html });
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  await sendOperationalAlert(subject, lines, {
+    recipient: RECIPIENT,
+    logPrefix: "[providerAlert]",
+  });
 }

@@ -68,6 +68,10 @@ import { bakePlantImpostor, buildPlantLods, makeImpostorMesh, plantMaterial } fr
 import { buildStickGeometry, creatureSticks, stickMaterial } from "@shared/world-engine/creatures/stick-lod";
 import { propMaterial, terrainMaterial } from "@shared/world-engine/materials";
 import { CREATURE_EXAMPLES } from "@shared/world-engine/creatures/examples";
+import { getSpecies, listSpecies, requireSpecies, speciesBlueprint, type Species } from "@shared/world-engine/creatures/species";
+import { activeCreatureMods, applyAppearanceMods } from "@shared/world-engine/creatures/mods";
+import { listCreatureMods } from "@shared/world-engine/creatures/mod-library";
+import { applyWorldCreatureMods } from "@shared/world-engine/creatures/world-mods";
 import { DEFAULT_GAIT, GAIT_PATTERNS, type GaitParams, type GaitPattern } from "@shared/world-engine/creatures/gait";
 import { CreatureAnimator, type AnimFrame } from "@shared/world-engine/creatures/animation";
 
@@ -124,6 +128,26 @@ scene.add(soilPlane);
 // ── State ────────────────────────────────────────────────────────────────
 
 let blueprint: Blueprint = defaultBlueprint();
+/** The creature mods switched on in the lab, in declaration order. Held here
+ *  (not read back off the engine) because it is the panel's own state: the
+ *  engine only ever sees the result of `applyWorldCreatureMods`. */
+let modIds: string[] = [];
+
+/** Load a species the way THE GAME would see it under the active mods: a
+ *  derived species is already a registry row (the derivation baked its
+ *  transform in), and an appearance mod is applied on top at build time — so
+ *  the lab has to apply it here too, or the lab shows a body the world does
+ *  not. */
+function loadSpeciesBlueprint(id: string): Blueprint {
+  return applyAppearanceMods(requireSpecies(id), speciesBlueprint(id), activeCreatureMods());
+}
+
+/** The species id a save targets — set by loading one, editable in the panel
+ *  so a variant can be saved under a new id instead of over the original. */
+let speciesId = "";
+let statusEl: HTMLElement | null = null;
+let statusText = "";
+let statusIsError = false;
 let built: BuiltCreature | null = null;
 let skeletonHelper: THREE.SkeletonHelper | null = null;
 let seed = 1;
@@ -623,31 +647,253 @@ function enumSel<T extends string>(
   sel.addEventListener("change", () => { set(sel.value as T); rebuild(); });
 }
 
+// ── Species save / load ──────────────────────────────────────────────────
+// The store lives in the DEV SERVER (games/creature-lab/lab-store.ts), which
+// rewrites shared/world-engine/creatures/lab-blueprints.ts. The built page has
+// no server behind it, so every call here reports the failure plainly and
+// leaves export/import as the way out — it never pretends a save landed.
+
+function setStatus(text: string, isError = false): void {
+  statusText = text;
+  statusIsError = isError;
+  if (!statusEl) return;
+  statusEl.textContent = text;
+  statusEl.style.color = isError ? "" : "#9fd6a0";
+}
+
+const STORE_ROUTE = "/api/lab-blueprints";
+
+async function saveSpecies(id: string, bp: Blueprint): Promise<void> {
+  setStatus(`saving "${id}"…`);
+  try {
+    const res = await fetch(STORE_ROUTE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: id, blueprint: bp }),
+    });
+    const data = (await res.json()) as { error?: string; count?: number };
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    setStatus(`saved "${id}" → lab-blueprints.ts (${data.count} overrides)`);
+  } catch (err) {
+    setStatus(
+      `save failed (dev server only): ${err instanceof Error ? err.message : String(err)}`,
+      true,
+    );
+  }
+}
+
+/** Drop a species' lab override, so the registry falls back to its authored
+ *  body again. The panel then reloads whatever the registry now says. */
+async function revertSpecies(id: string): Promise<void> {
+  try {
+    const res = await fetch(STORE_ROUTE, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: id }),
+    });
+    const data = (await res.json()) as { error?: string };
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+    setStatus(`reverted "${id}" — reload to see the authored body`);
+  } catch (err) {
+    setStatus(
+      `revert failed (dev server only): ${err instanceof Error ? err.message : String(err)}`,
+      true,
+    );
+  }
+}
+
 function buildPanel(): void {
   controlsRoot.innerHTML = "";
+  statusEl = null;
 
-  // Examples — curated showcase blueprints (creatures/examples.ts). Loaded
-  // through clampBlueprint, exactly like an AI-emitted description→blueprint.
+  // Creature mods — the optional world modifiers (creatures/mod-library.ts) a
+  // world template declares in `game.mods`. Switching one on here does EXACTLY
+  // what a world declaring it does (`applyWorldCreatureMods`): derived species
+  // join the registry below, and appearance mods reshape every body that is
+  // built from here on. That is the point of putting them in the lab — the
+  // thing being checked is the thing that ships.
   {
-    const s = section("examples", true);
+    const s = section("mods", true);
+    for (const mod of listCreatureMods()) {
+      const row = el("div", "lab-row", s);
+      const lbl = el("label", undefined, row);
+      lbl.textContent = mod.id;
+      lbl.title = mod.description;
+      const input = el("input", undefined, row);
+      input.type = "checkbox";
+      input.checked = modIds.includes(mod.id);
+      input.addEventListener("change", () => {
+        // Declaration ORDER is semantic (mods compose left to right), so the
+        // set is rebuilt in library order rather than push/splice order.
+        modIds = listCreatureMods()
+          .map((m) => m.id)
+          .filter((id) => (id === mod.id ? input.checked : modIds.includes(id)));
+        const { derived } = applyWorldCreatureMods(modIds);
+        // Re-read the loaded body under the new mod set. Guarded because
+        // `speciesId` is also the editable SAVE TARGET, so it may be a name
+        // the registry never had — or a derived row that just went away with
+        // its mod. Either way, keep what is on screen rather than throwing.
+        if (speciesId && getSpecies(speciesId)) blueprint = loadSpeciesBlueprint(speciesId);
+        buildPanel();
+        rebuild();
+        setStatus(
+          modIds.length
+            ? `mods: ${modIds.join(", ")} — ${derived.length} derived species`
+            : "mods: none (the authored registry)",
+        );
+      });
+    }
+    // The lab EDITS what it shows, and an appearance mod is a transform over
+    // the authored body — so a save while one is on would write the modded
+    // body back over the authored row. Say so where the button is.
+    if (activeCreatureMods().some((m) => m.appearance)) {
+      const warn = el("div", "lab-row", s);
+      warn.textContent = "⚠ appearance mods reshape the loaded body — \"save to species\" would store the MODDED one";
+      warn.style.color = "#d8b45a";
+    }
+  }
+
+  // Species — the REGISTRY the game itself builds from (species.ts), so what
+  // is tuned here is what a town spawns, not a look-alike. Bodiless and stub
+  // species are listed but disabled: they have no blueprint on purpose, and
+  // clamping their empty record would invent a default body for them.
+  //
+  // "save to species" writes the current blueprint to lab-blueprints.ts via
+  // the dev server, which the registry applies LAST — so a save takes effect
+  // on the next reload with no copy-paste. Export/import cover the built page,
+  // where there is no dev server behind the fetch.
+  {
+    const s = section("species", true);
     const row = el("div", "lab-row", s);
     el("label", undefined, row).textContent = "load";
     const sel = el("select", undefined, row) as HTMLSelectElement;
     const ph = el("option", undefined, sel) as HTMLOptionElement;
     ph.value = "";
-    ph.textContent = "— pick a creature —";
-    for (const ex of CREATURE_EXAMPLES) {
-      const opt = el("option", undefined, sel) as HTMLOptionElement;
-      opt.value = ex.name;
-      opt.textContent = ex.name;
+    ph.textContent = "— pick a species —";
+    const byKind = new Map<string, Species[]>();
+    for (const sp of listSpecies()) {
+      const list = byKind.get(sp.kind) ?? [];
+      list.push(sp);
+      byKind.set(sp.kind, list);
+    }
+    for (const [kind, list] of [...byKind].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const grp = el("optgroup", undefined, sel) as HTMLOptGroupElement;
+      grp.label = kind;
+      for (const sp of [...list].sort((a, b) => a.id.localeCompare(b.id))) {
+        const opt = el("option", undefined, grp) as HTMLOptionElement;
+        const drawable = !sp.stub && !sp.bodiless;
+        opt.value = sp.id;
+        // A mod-derived row is marked, so a body that only exists because a
+        // mod is on can never be mistaken for an authored species.
+        const from = (sp as { fromMod?: string }).fromMod;
+        const tag = from ? ` [${from}]` : "";
+        opt.textContent = drawable ? `${sp.id}${tag}` : `${sp.id}${tag} (no body)`;
+        opt.disabled = !drawable;
+        if (sp.id === speciesId) opt.selected = true;
+      }
     }
     sel.addEventListener("change", () => {
-      const ex = CREATURE_EXAMPLES.find((e) => e.name === sel.value);
+      if (!sel.value) return;
+      blueprint = loadSpeciesBlueprint(sel.value);
+      speciesId = sel.value;
+      buildPanel();
+      rebuild();
+      setStatus(`loaded species "${speciesId}"`);
+    });
+
+    // Curated showcase blueprints (creatures/examples.ts) — worked examples
+    // that back the registry entries, browsable on their own.
+    const exRow = el("div", "lab-row", s);
+    el("label", undefined, exRow).textContent = "example";
+    const exSel = el("select", undefined, exRow) as HTMLSelectElement;
+    const exPh = el("option", undefined, exSel) as HTMLOptionElement;
+    exPh.value = "";
+    exPh.textContent = "— pick an example —";
+    for (const ex of CREATURE_EXAMPLES) {
+      const opt = el("option", undefined, exSel) as HTMLOptionElement;
+      // The option's VALUE is the species id (the join key); its label is the
+      // worked example's title.
+      opt.value = ex.id;
+      opt.textContent = ex.title;
+    }
+    exSel.addEventListener("change", () => {
+      const ex = CREATURE_EXAMPLES.find((e) => e.id === exSel.value);
       if (!ex) return;
       blueprint = clampBlueprint(ex.blueprint);
       buildPanel();
       rebuild();
+      setStatus(`loaded example "${ex.title}"`);
     });
+
+    // Save target — defaults to whatever was loaded, editable so a tweak can
+    // be saved under a NEW species id without clobbering the original.
+    const nameRow = el("div", "lab-row", s);
+    el("label", undefined, nameRow).textContent = "save as";
+    const nameInput = el("input", undefined, nameRow) as HTMLInputElement;
+    nameInput.type = "text";
+    nameInput.placeholder = "species id";
+    nameInput.value = speciesId;
+    nameInput.addEventListener("change", () => { speciesId = nameInput.value.trim(); });
+
+    const btnRow = el("div", "lab-row", s);
+    const save = el("button", undefined, btnRow);
+    save.textContent = "save to species";
+    save.addEventListener("click", () => {
+      const id = nameInput.value.trim();
+      if (!id) { setStatus("save needs a species id", true); return; }
+      speciesId = id;
+      void saveSpecies(id, blueprint);
+    });
+    const revert = el("button", undefined, btnRow);
+    revert.textContent = "revert";
+    revert.addEventListener("click", () => {
+      const id = nameInput.value.trim();
+      if (!id) return;
+      void revertSpecies(id);
+    });
+
+    const fileRow = el("div", "lab-row", s);
+    const dl = el("button", undefined, fileRow);
+    dl.textContent = "export .json";
+    dl.addEventListener("click", () => {
+      const id = nameInput.value.trim() || "creature";
+      const blob = new Blob([JSON.stringify({ ...blueprint, name: id }, null, 2)],
+        { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${id}.blueprint.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus(`exported ${a.download}`);
+    });
+    const up = el("button", undefined, fileRow);
+    up.textContent = "import .json";
+    up.addEventListener("click", () => {
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = "application/json,.json";
+      picker.addEventListener("change", () => {
+        const f = picker.files?.[0];
+        if (!f) return;
+        void f.text().then((text) => {
+          try {
+            const parsed = JSON.parse(text) as Record<string, unknown>;
+            blueprint = clampBlueprint(parsed);
+            if (typeof parsed.name === "string") speciesId = parsed.name;
+            buildPanel();
+            rebuild();
+            setStatus(`imported ${f.name}`);
+          } catch (err) {
+            setStatus(`import failed: ${err instanceof Error ? err.message : String(err)}`, true);
+          }
+        });
+      });
+      picker.click();
+    });
+
+    statusEl = el("div", "lab-errors", s);
+    statusEl.textContent = statusText;
+    statusEl.style.color = statusIsError ? "" : "#9fd6a0";
   }
 
   // Seed / re-roll.
@@ -1194,7 +1440,9 @@ rebuild();
 const labApi = {
   skeleton(): ReturnType<typeof buildSkeleton> { return rebuildGeometry(); },
   loadExample(name: string): boolean {
-    const ex = CREATURE_EXAMPLES.find((e) => e.name === name || e.name.startsWith(name));
+    const ex = CREATURE_EXAMPLES.find(
+      (e) => e.id === name || e.title === name || e.title.startsWith(name),
+    );
     if (!ex) return false;
     blueprint = clampBlueprint(ex.blueprint);
     buildPanel();

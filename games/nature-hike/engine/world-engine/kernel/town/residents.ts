@@ -214,6 +214,18 @@ export interface ResidentModel {
     bodyPos: (id: string) => Pt | null,
     isVisible?: (houseIndex: number) => boolean,
   ): string;
+  /**
+   * ⚖️ #43 ⑤c — THE CULL RULE, LENT OUT. May a body standing at `at`, embodied
+   * since `since`, be removed at `when`? This is the SAME pair of guards
+   * `update`'s despawn loop applies to residents — never remove a body the
+   * camera can SEE (a visible pop-out is a teleport), and never inside the
+   * embodiment dwell — offered to the street's other streamers (the intercity
+   * caravan's carriers, the dawn-cart haulers) so "when may a body vanish" has
+   * ONE owner. Reads the camera armed by the LAST `update`, so call it from the
+   * same frame; `true` before the first update (nothing is embodied yet), and
+   * `true` for an unknown position (there is nothing to protect).
+   */
+  mayCull(at: Pt | null, since: number, when: number): boolean;
   /** Drop the model's embodiment record for `id` (ghost self-heal): the next
    *  update re-decides it from scratch and spawns it properly. */
   dropBody(id: string): void;
@@ -352,6 +364,11 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
   const embodiedAt = new Map<string, number>();
   const abstractedAt = new Map<string, number>();
   let lastNow = 0; // last update() clock — dwell anchor for out-of-frame drops
+  /** ⚖️ #43 ⑤c — THE CULL RULE, armed by each `update` and lent out through
+   *  `mayCull` so the street's OTHER streamers (caravan carriers, dawn-cart
+   *  haulers — town-stage.ts) can never grow a second, weaker copy of it.
+   *  Null before the first update (nothing is embodied yet either). */
+  let cullRule: ((at: Pt | null, since: number, when: number) => boolean) | null = null;
   /** Last observed in-shift state per body — commute trips fire on the edge. */
   const jobPhase = new Map<string, boolean>();
   /** Houses whose interior was on show LAST update — a homecoming into a
@@ -381,6 +398,56 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     // signal supplied ⇒ fall back to the raw footprint test.
     const isHouseVisible = (h: TownHouse): boolean =>
       isVisible ? isVisible(h.index) : inHouseRect(p, h);
+    // THE VIEW GUARD's "can the camera see this point": within the renderer's
+    // world reach (`visibleR` — a circle approximating the frustum) and NOT
+    // hidden inside a concealed interior (an unwatched house, any work
+    // building). Bodies may appear/disappear ONLY where this is false — a
+    // spawn or cull the player can watch is a teleport, and teleports are the
+    // one thing the fiction can never survive. No visibleR (a headless/2D
+    // caller) leaves the guards inert.
+    //
+    // ⚖️ DEFINED BEFORE THE ORBIT SHORT-CIRCUIT (#43 ⑤c) so `cullRule` below is
+    // armed on EVERY frame, including the one that returns early: the caravan
+    // and dawn-cart streamers borrow it from outside this function, and a rule
+    // measured off a stale camera is worse than none.
+    const hiddenIndoors = (pt: Pt): boolean => {
+      for (const h of plan.houses) {
+        if (!inHouseRect(pt, h)) continue;
+        if (!isHouseVisible(h)) return true;
+        // ROOM GRANULARITY (round 4 — a house is one building PER ROOM):
+        // "house visible" means SOME room is on show, not the whole
+        // interior. Standing in the living room, the camera cannot see
+        // into a closed bedroom — an unrevealed room of a visible house
+        // is legitimate concealment (the round-3c spawn cover), and
+        // blocking it was why re-entered houses spawned their members a
+        // whole view-radius up the road instead of at home. Callers
+        // without a per-room signal (2D) keep the house-granular read.
+        if (isRoomVisible) {
+          const room = roomPlanOf(h).rooms.find(
+            (r) =>
+              pt.x >= r.rect.x && pt.x <= r.rect.x + r.rect.w &&
+              pt.y >= r.rect.y && pt.y <= r.rect.y + r.rect.h,
+          );
+          if (room && !isRoomVisible(room.id)) return true;
+        }
+        return false;
+      }
+      return plan.works.some(
+        (wk) =>
+          pt.x > center.x + wk.dx && pt.x < center.x + wk.dx + wk.w &&
+          pt.y > center.y + wk.dy && pt.y < center.y + wk.dy + wk.h,
+      );
+    };
+    const inView = (pt: Pt): boolean =>
+      visibleR !== undefined && Math.hypot(pt.x - p.x, pt.y - p.y) < visibleR && !hiddenIndoors(pt);
+    // ⚖️ #43 ⑤c — THE CULL RULE ITSELF, in ONE place: the two guards the
+    // despawn loop below applies, read off THIS frame's camera. A body may go
+    // only when the camera cannot see it AND its embodiment dwell has run out
+    // (a concealed interior is exempt from the dwell exactly as it is below —
+    // the despawn is invisible there, and re-embodiment is paced by the
+    // abstract dwell anyway). Unknown position ⇒ nothing to protect.
+    cullRule = (at, since, when) =>
+      !at || (!inView(at) && (hiddenIndoors(at) || when - since >= EMBODY_HOLD_S));
     // THE ORBIT SHORT-CIRCUIT (large-city perf, 2026-08-25): budget 0 with no
     // body standing and no interior on show is the streamer's OFF state — the
     // candidate walk below (goods.errand + creatureActivityAt per member, the
@@ -415,43 +482,6 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     const firstFrame = !primed;
     primed = true;
     lastNow = now; // dwell anchor for dropBody (called outside update's frame)
-    // THE VIEW GUARD's "can the camera see this point": within the renderer's
-    // world reach (`visibleR` — a circle approximating the frustum) and NOT
-    // hidden inside a concealed interior (an unwatched house, any work
-    // building). Bodies may appear/disappear ONLY where this is false — a
-    // spawn or cull the player can watch is a teleport, and teleports are the
-    // one thing the fiction can never survive. No visibleR (a headless/2D
-    // caller) leaves the guards inert.
-    const hiddenIndoors = (pt: Pt): boolean => {
-      for (const h of plan.houses) {
-        if (!inHouseRect(pt, h)) continue;
-        if (!isHouseVisible(h)) return true;
-        // ROOM GRANULARITY (round 4 — a house is one building PER ROOM):
-        // "house visible" means SOME room is on show, not the whole
-        // interior. Standing in the living room, the camera cannot see
-        // into a closed bedroom — an unrevealed room of a visible house
-        // is legitimate concealment (the round-3c spawn cover), and
-        // blocking it was why re-entered houses spawned their members a
-        // whole view-radius up the road instead of at home. Callers
-        // without a per-room signal (2D) keep the house-granular read.
-        if (isRoomVisible) {
-          const room = roomPlanOf(h).rooms.find(
-            (r) =>
-              pt.x >= r.rect.x && pt.x <= r.rect.x + r.rect.w &&
-              pt.y >= r.rect.y && pt.y <= r.rect.y + r.rect.h,
-          );
-          if (room && !isRoomVisible(room.id)) return true;
-        }
-        return false;
-      }
-      return plan.works.some(
-        (wk) =>
-          pt.x > center.x + wk.dx && pt.x < center.x + wk.dx + wk.w &&
-          pt.y > center.y + wk.dy && pt.y < center.y + wk.dy + wk.h,
-      );
-    };
-    const inView = (pt: Pt): boolean =>
-      visibleR !== undefined && Math.hypot(pt.x - p.x, pt.y - p.y) < visibleR && !hiddenIndoors(pt);
     interface Candidate extends ResidentSpawn {
       d: number;
       rank: number;
@@ -933,6 +963,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     update,
     runnerId,
     explain,
+    mayCull: (at, since, when) => (cullRule ? cullRule(at, since, when) : true),
     dropBody: (id: string) => {
       bodies.delete(id);
       tripSent.delete(id);
@@ -944,6 +975,7 @@ export function createResidentModel(opts: ResidentModelOpts): ResidentModel {
     },
     reset: () => {
       primed = false; // a fresh host repopulates freely again
+      cullRule = null; // and re-arms its guards off the fresh host's camera
       bodies.clear();
       tripSent.clear();
       jobPhase.clear();

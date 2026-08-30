@@ -197,6 +197,36 @@ describe("§4 the chain seam — one ladder, mirroring creatureActivity's first 
     }
   });
 
+  it("④b a CIVIC task (need) → the ORDER, then the town's NEED — never an authority (#45)", () => {
+    // The sweeps' rows all carry the player as issuer (reach + volunteer
+    // compliance read it), so a stockpile errand nobody spoke answered
+    // "because you asked" — the user's dollhouse boot report. A row with
+    // `need` answers with the town's own appetite and names no asker.
+    const cid = memberCid();
+    clearBody(cid);
+    const task = run.session.taskPool.post({
+      goal: { kind: "craft", glyph: "furn.door", cap: 1 },
+      issuer: "player",
+      focus: { x: 0, y: 0, radius: 999 },
+      now: run.session.taskClock,
+      sourceGlyph: "bring 6 wood",
+      need: "wood",
+    });
+    expect(run.session.taskPool.claim(task.id, cid)).toBe(true);
+    plants.push(() => run.session.taskPool.complete(task.id));
+    run.session.pursuits.set(cid, { source: "command", goal: { kind: "goHome" }, glyph: "-" });
+    try {
+      const c = chain(cid)!;
+      expect(kinds(c)).toEqual(["activity", "because", "because", "end"]);
+      expect(c[2]).toEqual({
+        kind: "because",
+        clause: { subject: "town", verb: "need", object: "wood" },
+      });
+    } finally {
+      undoAll();
+    }
+  });
+
   it("⑤ SCHEDULED SHOPPING → 'I am getting the food because the house wants food'", () => {
     const cid = memberCid();
     clearBody(cid);

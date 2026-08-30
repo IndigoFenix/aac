@@ -552,6 +552,24 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🪱" },
   { key: "dinosaur", tKey: "aac.glyph.dinosaur", pos: "animal", categories: ["who"],
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦖" },
+  // THE MERGED-EXAMPLE ANIMALS (2026-08-30). Six creatures whose BODIES were
+  // already authored in `world-engine/creatures/examples.ts` but which no
+  // species row named, so nothing could build them and nothing could say them.
+  // Merging the two lists gave each a species row; these are their pictures.
+  // `wasp` shares the bee's emoji and `mantis` the cricket's — nearest honest
+  // mark, not a match, so both head the art queue for this block.
+  { key: "beetle", tKey: "aac.glyph.beetle", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🪲" },
+  { key: "jellyfish", tKey: "aac.glyph.jellyfish", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🪼" },
+  { key: "stingray", tKey: "aac.glyph.stingray", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐠" },
+  { key: "centipede", tKey: "aac.glyph.centipede", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐛" },
+  { key: "wasp", tKey: "aac.glyph.wasp", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐝" },
+  { key: "mantis", tKey: "aac.glyph.mantis", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦗" },
 
   // ── DO ───────────────────────────────────────────────────────────────────
   { key: "want", tKey: "aac.glyph.want", pos: "verb", categories: ["do"],

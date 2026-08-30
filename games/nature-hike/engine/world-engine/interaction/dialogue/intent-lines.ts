@@ -109,7 +109,13 @@ export function asIntent(line: LeveledGlyphs): LeveledGlyphs {
 /** The "{I'll} {do the thing}" line for a goal, or null when the goal has no
  *  speakable shape. Levels follow phrase(): a = the key slot, c = the full
  *  first-person sentence. */
-export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGlyphs | null {
+export function goalIntentLine(
+  goal: GoalSpec,
+  syms: IntentLineSyms,
+  /** ⚖️ #45b — HOW A TRANSFER SPEAKS. `stockpile` marks a civic need-task
+   *  (PooledTask.need): the errand announces as "get", never "carry". */
+  opts?: { stockpile?: boolean },
+): LeveledGlyphs | null {
   switch (goal.kind) {
     case "fetch":
       // The SOURCE rides the line when the order named one ("I'll take the
@@ -382,6 +388,14 @@ export function goalIntentLine(goal: GoalSpec, syms: IntentLineSyms): LeveledGly
       const heads = Object.keys(goal.goods).map((g) => spokenWord(g));
       const obj = heads[0] ?? "thing";
       const toCreature = goal.to.kind === "creature";
+      // ⚖️ #45b — A STOCKPILE ERRAND SAYS "GET" (user ruling: stockpiling is
+      // referred to as get, never carry). Announced at CLAIM time — the fetch
+      // leg by definition — so the line is "I will get the wood": no
+      // destination tail, because the hauler is walking AWAY from it and the
+      // where-question answers the leg it is actually on.
+      if (opts?.stockpile && !toCreature) {
+        return phrase({ subject: "i_me", verb: "get", object: obj });
+      }
       // A creature recipient resolves deixis-ready ("you"/its symbol); a
       // place destination through the place resolver ("yard", "house").
       const dest = toCreature && goal.to.kind === "creature" ? syms.creature(goal.to.id) : syms.place(goal.to);
@@ -496,7 +510,13 @@ export function needActivity(key: string): { verb: string; object?: string } | u
  * dog eating?" answers "dog + eat + apple" from the live pursuit. Null = the
  * goal has no activity reading (host-policy orders).
  */
-export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: string; object?: string } | null {
+export function goalActivity(
+  goal: GoalSpec,
+  syms: IntentLineSyms,
+  /** ⚖️ #45b — a STOCKPILE transfer reads per LEG: "get" walking to the
+   *  source, "put" walking the load home. Absent = the shipped "carry". */
+  opts?: { stockpile?: boolean; transferLeg?: "fetch" | "deliver" },
+): { verb: string; object?: string } | null {
   switch (goal.kind) {
     case "fetch":
       return { verb: "get", object: syms.item(goal.item) };
@@ -504,13 +524,22 @@ export function goalActivity(goal: GoalSpec, syms: IntentLineSyms): { verb: stri
       return { verb: "get", object: goal.category || goal.affords || "thing" };
     case "give":
       return { verb: "give", object: syms.item(goal.item) };
-    case "transfer":
+    case "transfer": {
       // Same verb split the announcement makes: a haul to a PLACE is a carry,
       // a hand-off to a creature is a give ("the builder is carrying wood").
+      // ⚖️ #45b — a stockpile errand reads by its CURRENT leg: "getting wood"
+      // on the way out, "putting wood" on the way home.
+      const stockVerb =
+        opts?.stockpile && goal.to.kind !== "creature"
+          ? opts.transferLeg === "deliver"
+            ? "put"
+            : "get"
+          : null;
       return {
-        verb: goal.to.kind === "creature" ? "give" : "carry",
+        verb: stockVerb ?? (goal.to.kind === "creature" ? "give" : "carry"),
         object: spokenWord(Object.keys(goal.goods)[0] ?? "") || "thing",
       };
+    }
     case "putIn":
     case "place":
       return { verb: "put", object: syms.item(goal.item) };

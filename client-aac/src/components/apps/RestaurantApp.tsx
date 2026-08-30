@@ -10,10 +10,10 @@
 //
 // It is deliberately plain and text-heavy, unlike everything else in this
 // client, and NOTHING in it is dwellable. A board is designed for a child who
-// cannot read; this is designed for an adult holding a phone in a noisy
+// cannot read; this is designed for a companion holding a phone in a noisy
 // restaurant, and dressing it up as an AAC board would make it worse at both
 // jobs. Confirming which venue we are at is also the step that attaches a menu
-// to a kitchen (§3.1a), so it stays a deliberate adult touch.
+// to a kitchen (§3.1a), so it stays a deliberate companion touch.
 //
 // The STUDENT lanes are MenuLane (the venue's menu, and the generic eating-out
 // words behind a toggle) and FoodBrowseLane ("what do you want to eat?"). Both
@@ -38,6 +38,8 @@
 
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import { getCurrentGps, mayReadDeviceLocation } from "@/lib/geolocation";
+import { getHost } from "@/lib/platform";
 import { useLanguage } from "@/contexts/LanguageContext";
 import type { RestaurantAppPayload } from "@shared/venue-cuisine";
 import type { ParsedBoardData } from "@shared/schema";
@@ -71,6 +73,10 @@ interface RestaurantAppProps {
   iconTextRatio?: number;
   selectionMethod?: any;
   restSpace?: any;
+  /** Per-student `deviceLocationEnabled`. False (the default) means this app
+   *  never asks the device where it is — "find nearby" says so instead of
+   *  raising a permission prompt nobody authorised. */
+  locationEnabled?: boolean;
 }
 
 type Phase = "start" | "picking" | "chosen";
@@ -102,11 +108,12 @@ export function RestaurantApp({
   iconTextRatio,
   selectionMethod,
   restSpace,
+  locationEnabled = false,
 }: RestaurantAppProps) {
   const { t } = useLanguage();
 
   // The server already decided. A missing payload means the app was opened by
-  // some path that did not resolve one, and the adult's screen is the only
+  // some path that did not resolve one, and the companion's screen is the only
   // honest default — it is the one lane that works with no data at all.
   const [lane, setLane] = useState<Lane>(payload?.mode ?? "caretaker");
 
@@ -138,65 +145,69 @@ export function RestaurantApp({
 
   // ── 1. Where are we? ──────────────────────────────────────────────────────
 
-  const findNearby = () => {
+  const findNearby = async () => {
     if (!studentId) return;
     setError(null);
     setNote(null);
-    setBusy("locate");
 
-    if (!navigator.geolocation) {
+    // Off for this student, or a host that can never answer (iPad ships no
+    // location usage-description key). Say so rather than spinning: the raw
+    // getCurrentPosition here used to rely on the PLATFORM timeout, and on the
+    // Capacitor host neither callback ever fires — this button hung forever.
+    // See docs/IPAD_BUILD.md and client-aac/src/lib/geolocation.ts.
+    if (!mayReadDeviceLocation({ enabled: locationEnabled, host: getHost() })) {
+      setError(t("aac.restaurant.noLocation"));
+      return;
+    }
+
+    setBusy("locate");
+    // getCurrentGps ALWAYS settles (its own watchdog) and never rejects, so
+    // `busy` cannot be stranded on.
+    const position = await getCurrentGps();
+    if (!position) {
       setBusy(null);
       setError(t("aac.restaurant.noLocation"));
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          // The coordinate goes in the BODY, never a query string.
-          const response = await apiRequest("POST", "/api/venue-menus/nearby", {
-            studentId,
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            // This press IS the caretaker asking, which is what unlocks the
-            // one outbound search tier.
-            allowOutboundSearch: true,
-          });
+    try {
+      // The coordinate goes in the BODY, never a query string.
+      const response = await apiRequest("POST", "/api/venue-menus/nearby", {
+        studentId,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        // This press IS the companion asking, which is what unlocks the
+        // one outbound search tier.
+        allowOutboundSearch: true,
+      });
 
-          if (!response.ok) {
-            await showError(response);
-            return;
-          }
+      if (!response.ok) {
+        await showError(response);
+        return;
+      }
 
-          const data = await response.json();
-          setSources(data.sources ?? sources);
-          setCandidates(data.candidates ?? []);
+      const data = await response.json();
+      setSources(data.sources ?? sources);
+      setCandidates(data.candidates ?? []);
 
-          if (!data.candidates?.length) {
-            setNote(t("aac.restaurant.noneFound"));
-            return;
-          }
+      if (!data.candidates?.length) {
+        setNote(t("aac.restaurant.noneFound"));
+        return;
+      }
 
-          // `resolved` is non-null only when the server was willing to decide
-          // without us. Otherwise the picker is the answer, not a fallback.
-          if (data.resolved) {
-            setChosen(data.resolved);
-            setPhase("chosen");
-          } else {
-            setPhase("picking");
-          }
-        } catch {
-          setError(t("aac.restaurant.failed"));
-        } finally {
-          setBusy(null);
-        }
-      },
-      () => {
-        setBusy(null);
-        setError(t("aac.restaurant.noLocation"));
-      },
-      { enableHighAccuracy: true, timeout: 15000 },
-    );
+      // `resolved` is non-null only when the server was willing to decide
+      // without us. Otherwise the picker is the answer, not a fallback.
+      if (data.resolved) {
+        setChosen(data.resolved);
+        setPhase("chosen");
+      } else {
+        setPhase("picking");
+      }
+    } catch {
+      setError(t("aac.restaurant.failed"));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const choose = async (candidate: VenueCandidate) => {
@@ -217,6 +228,27 @@ export function RestaurantApp({
       // nothing to photograph — hand it straight over.
       setMenuReady(candidate.hasMenu);
       sendContextOnly?.(`We are at ${candidate.venue.name}.`);
+
+      // ── Straight to the menu when there already IS one ──────────────────
+      //
+      // Confirming the venue is the whole job on this screen when its menu is
+      // already cached and approved. Landing on the "chosen" panel instead
+      // showed a companion a screen whose only useful control was one more
+      // button saying "Open the menu" — a press that exists purely because the
+      // code had a state to leave, and one the student is waiting through.
+      //
+      // Safe HERE and nowhere else: this tap is the binding tap. It is what
+      // attaches a menu to a kitchen, which is what makes the allergen filter
+      // mean anything, so the venue is confirmed by the time we navigate. The
+      // student's browse lane deliberately cannot do this — pressing a place
+      // there is a WANT, not an arrival, and it binds nothing.
+      //
+      // Re-opens through the SERVER rather than pushing a screen, so the one
+      // place that decides what a student sees stays the one place: the
+      // resolver now finds the bound venue and picks menu mode itself.
+      if (candidate.hasMenu && onReopen) {
+        onReopen();
+      }
     } finally {
       setBusy(null);
     }
@@ -335,6 +367,7 @@ export function RestaurantApp({
           // False when the clinician left venue searching off. The grid still
           // renders in full and still speaks — only the places half is withheld.
           canSearch={payload?.canSearch !== false}
+          locationEnabled={locationEnabled}
           onSpeak={onSpeak}
           onSwitchToCaretaker={() => setLane("caretaker")}
           onDisabled={() => setLane("caretaker")}
@@ -349,7 +382,7 @@ export function RestaurantApp({
       ) : (
         <>
       <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-        {t("aac.restaurant.forCaretaker")}
+        {t("aac.restaurant.companionIntro")}
       </p>
 
       {phase === "start" && (
@@ -357,7 +390,7 @@ export function RestaurantApp({
           type="button"
           className={button}
           disabled={busy !== null}
-          onClick={findNearby}
+          onClick={() => { void findNearby(); }}
           data-testid="restaurant-find"
         >
           {busy === "locate" ? t("aac.restaurant.locating") : t("aac.restaurant.findNearby")}

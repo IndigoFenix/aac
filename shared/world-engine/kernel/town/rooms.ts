@@ -134,7 +134,7 @@ export interface HouseRoomPlan {
  *
  * The body radius is THE CONSTRUCTING SPECIES' (speciesBodyRadius — a
  * species builds houses for its own adult size; the MODEL's visual
- * proportions never enter collision, human_cute is exactly as wide as a
+ * proportions never enter collision, `human` is exactly as wide as a
  * capsule of 0.4). With the people default and 0.4 walls the keep-out is
  * 1.2 m: a 1.5 m hall left a 0.3 m strip and a 1.2 m door left NOTHING —
  * the round-5 narrow doors were impassable by arithmetic, which is why

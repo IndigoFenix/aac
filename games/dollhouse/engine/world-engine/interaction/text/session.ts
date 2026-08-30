@@ -793,6 +793,9 @@ export function createTextModeSession(deps: TextSessionDeps): TextModeSession {
         word: baseWord(lang, c.word),
         stage: c.stage,
         ...(c.progress !== undefined ? { progress: c.progress } : {}),
+        // ④ #43 — the gather readout rides through verbatim; the head is a
+        // stack head and is worded by the same lang layer as everything else.
+        ...(c.gathering ? { gathering: c.gathering } : {}),
         band: b.band,
         cardinal: b.cardinal,
         distance: b.distance,

@@ -194,3 +194,106 @@ describe('mergeChanges', () => {
     expect(Object.keys(merged).sort()).toEqual(['iconTextRatio', 'primaryLanguage']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Clinical record tables (AKIM appendix §5.8 — "the value that changed").
+//
+// These were added after the audit found capture covered only `students` and
+// `aac_settings`. The property that matters is that widening coverage did NOT
+// widen disclosure: a diagnosis or a clinical note must still reduce to
+// presence, because activity_logs is readable by institute admins and outlives
+// the record it describes.
+// ---------------------------------------------------------------------------
+
+describe("clinical record tables", () => {
+  it("records WHICH diagnosis field changed without recording the diagnosis", () => {
+    const changes = summarizeChanges(
+      "medical_records",
+      { primaryDiagnosis: "Rett syndrome", primaryDiagnosisCode: "F84.2" },
+      { primaryDiagnosis: "Rett syndrome, atypical", primaryDiagnosisCode: "F84.2" },
+    );
+
+    expect(Object.keys(changes)).toEqual(["primaryDiagnosis"]);
+    expect(changes.primaryDiagnosis.redacted).toBe(true);
+    // The clinical value must not appear anywhere in the payload.
+    expect(JSON.stringify(changes)).not.toMatch(/Rett/);
+  });
+
+  it("redacts the free-text clinical arrays on a medical record", () => {
+    const changes = summarizeChanges(
+      "medical_records",
+      { alertsAllergies: [], medications: ["a"] },
+      { alertsAllergies: ["penicillin"], medications: ["a", "b"] },
+    );
+    expect(JSON.stringify(changes)).not.toMatch(/penicillin/);
+    expect(changes.alertsAllergies.redacted).toBe(true);
+    expect(changes.medications.redacted).toBe(true);
+  });
+
+  it("still reports boolean flags literally, which is the useful part", () => {
+    const changes = summarizeChanges(
+      "medical_records",
+      { hasSeizures: false },
+      { hasSeizures: true },
+    );
+    if (changes.hasSeizures) {
+      // Column exists on the table: a flag carries no PII, so it is literal.
+      expect(changes.hasSeizures.redacted).toBeUndefined();
+      expect(changes.hasSeizures.to).toBe(true);
+    }
+  });
+
+  it("redacts functional-report narrative", () => {
+    const changes = summarizeChanges(
+      "functional_reports",
+      { mobilityStatus: "independent" },
+      { mobilityStatus: "requires wheelchair, left-side weakness" },
+    );
+    expect(changes.mobilityStatus.redacted).toBe(true);
+    expect(JSON.stringify(changes)).not.toMatch(/wheelchair/);
+  });
+
+  it("redacts educational-report narrative", () => {
+    const changes = summarizeChanges(
+      "educational_reports",
+      { communicationMode: "eye gaze" },
+      { communicationMode: "eye gaze plus partner-assisted scanning" },
+    );
+    expect(changes.communicationMode.redacted).toBe(true);
+    expect(JSON.stringify(changes)).not.toMatch(/scanning/);
+  });
+
+  it("redacts a contact's name and phone", () => {
+    const changes = summarizeChanges(
+      "student_contacts",
+      { name: "Dana Levi", contactPhone: "050-1234567" },
+      { name: "Dana Cohen", contactPhone: "050-7654321" },
+    );
+    expect(changes.name.redacted).toBe(true);
+    expect(changes.contactPhone.redacted).toBe(true);
+    const json = JSON.stringify(changes);
+    expect(json).not.toMatch(/Cohen/);
+    expect(json).not.toMatch(/7654321/);
+  });
+
+  it("reports nothing when a clinical save changes nothing", () => {
+    expect(
+      summarizeChanges(
+        "medical_records",
+        { primaryDiagnosis: "same" },
+        { primaryDiagnosis: "same" },
+      ),
+    ).toEqual({});
+  });
+
+  it("drops keys that are not columns on the clinical table", () => {
+    // Update bodies arrive off the wire and can carry stray client state;
+    // reporting those as changed fields would be a lie.
+    const changes = summarizeChanges(
+      "medical_records",
+      {},
+      { notAColumnAtAll: "x", primaryDiagnosis: "y" },
+    );
+    expect(Object.keys(changes)).toEqual(["primaryDiagnosis"]);
+  });
+});

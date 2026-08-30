@@ -56,6 +56,27 @@ const LEG_SEGS = 4; // femur 2 + tibia 2 loft bones
 const PROTRACT_MAX = 1.3; // rad — full fore/aft swing
 const FLEX_MAX = 2.4; // rad — full knee fold
 const LOAD_GAIN = 26; // how hard the borne weight straightens the knee vs. the joints' springs
+/** How far a digit must run PAST the ball it grows from, in multiples of its
+ *  own radius. Feeds a floor in `addDigits`, never a target: it is the point
+ *  below which a digit stops reading as a digit and becomes a bump on the
+ *  ankle. 1.5 is the largest value at which every hand-tuned body (human,
+ *  quadruped, dog, cat, deer, ram, cow, ungulate) still clears the floor on
+ *  its own authored `toeLengthFrac` — so the bodies somebody posed in the lab
+ *  are untouched and only the ones the floor exists for move. */
+const DIGIT_MIN_ASPECT = 1.5;
+/** How mesh.ts's loft turns a bone's `flatten` into a CROSS-SECTION: a ring of
+ *  radius r and flatten f lofts at half-WIDTH `r * (1 + XSECTION_WIDEN * f)` and
+ *  half-HEIGHT `r * (1 - XSECTION_FLATTEN * f)`. Owned here, re-exported by
+ *  mesh.ts's `LOFT`, because the SKELETON has to place digits against the
+ *  sole's RENDERED width: a foot is flattened, so its bone radius is NOT its
+ *  half-width, and sizing toes off the radius made them (and their spread)
+ *  1.56x too small on every footed limb. */
+export const XSECTION_WIDEN = 1.6;
+export const XSECTION_FLATTEN = 0.7;
+/** Half-width of a lofted ring, per unit of bone radius, at this `flatten`. */
+export const halfWidthFactor = (flatten: number): number => 1 + XSECTION_WIDEN * flatten;
+/** The sole's own flatten: a foot is about twice as wide as it is tall. */
+export const FOOT_FLATTEN = 0.35;
 /** Femur elevation angle from straight-down for a rest levation in [-1,1]:
  *  -1 → ~down (mammal tuck), 0 → out to the side, +1 → up (wing / raised). */
 const levationElevation = (restLevation: number): number =>
@@ -689,18 +710,79 @@ export function buildSkeleton(
   const snoutAspect = Math.max(0.35, Math.min(3, g.head.snoutFlatten * g.head.crossSection));
   const snoutUR = snoutBaseR / Math.sqrt(snoutAspect);
   const tipFrac = Math.max(0.06, lerp(0.1, 1.0, g.head.muzzleSquash) - 0.3 * g.head.beak);
-  const tipR = snoutBaseR * tipFrac;
-  const rostrumDir0 = normalize(rotate(braincaseAxis, faceSide, -g.head.facePitch));
+  // A muzzle cannot TAPER faster than it PROJECTS. Shrinking the radius by
+  // more than the rostrum advances turns it into a disc, and a disc lofts as
+  // a stack of near-coincident rings with wildly different radii — vertical
+  // annuli, which read as the indentations a short muzzle shows above and
+  // below the jaw. Capping the taper at ~45° lets a short muzzle degenerate
+  // into a rounded stub (the cap rounds it off) instead of a pancake, and
+  // leaves any muzzle long enough to carry its own taper untouched.
+  const tipR = Math.max(snoutBaseR * tipFrac, snoutBaseR - snoutLen);
+  const snoutSR = snoutBaseR * Math.sqrt(snoutAspect);
   const hasSnout = snoutLen > 1e-4;
+  const nSeg = Math.max(1, Math.round(g.head.snoutSegments));
 
-  // Red dot / muzzle root — where the snout springs off the cranium's
-  // lower-front (foreheadHeight = vertical seat, foreheadLength = forward).
-  const dotUp = lerp(-bH * 0.85, bH * 0.7, g.head.foreheadHeight);
-  const dotFront = aL * Math.sqrt(Math.max(0, 1 - (dotUp / bH) ** 2));
-  const redDot = add(headCenter, add(
-    scale(braincaseAxis, dotFront + g.head.foreheadLength * headR),
-    scale(faceUp, dotUp)));
-  const muzzleRoot = add(redDot, scale(faceUp, -snoutUR));
+  // TURN IS PAID FOR IN LENGTH. A tube of radius R that turns by θ over a
+  // length L folds in on itself once θ > L/R: the inside of the curve turns
+  // inside out. A short muzzle therefore cannot pitch or curve much — trying
+  // to is what pinched a stubby snout into the indentations above and below
+  // the jaw, and it got worse the harder the dials were pushed because the
+  // whole turn was being spent across almost no distance.
+  //
+  // So both dials are capped by what the rostrum's LENGTH can carry. A muzzle
+  // long enough to afford its turn is untouched; a stub simply stays straight.
+  // Both dials read as a FRACTION OF WHAT IS ALLOWED, not as an absolute
+  // that gets clipped: clipping leaves a dead zone at the top of the slider
+  // where turning it further does nothing, and two blueprints that look
+  // different on paper render identically. Scaling keeps the whole range
+  // live and still cannot fold the tube.
+  const segLen = snoutLen / nSeg;
+  const turnBudget = hasSnout ? (0.9 * segLen) / Math.max(1e-6, snoutBaseR) : Infinity;
+  /** Full-scale bend each dial asks for at ±1, before the budget applies. */
+  const PITCH_FULL = 0.9; // facePitch's own range, radians
+  const CURVE_FULL = 1.2; // snoutCurve's full-scale bend, radians
+  // `facePitch` is spent entirely between the skull-owned root ring and the
+  // FIRST muzzle station, so it gets one segment's allowance; `snoutCurve`
+  // accumulates along the whole rostrum, so it gets every segment's.
+  const facePitchUsed = (g.head.facePitch / PITCH_FULL) * Math.min(PITCH_FULL, turnBudget);
+  const curveTotal = g.head.snoutCurve * Math.min(CURVE_FULL, turnBudget * nSeg);
+  const rostrumDir0 = normalize(rotate(braincaseAxis, faceSide, -facePitchUsed));
+  /** Cumulative muzzle bend at fraction `f` along the rostrum — a genuine
+   *  CURVATURE: zero at the root, so the muzzle always leaves the skull
+   *  along the axis `facePitch` set, and accumulating along its length.
+   *
+   *  The old form was `snoutCurve·(0.3 + 0.9f) + 0.5·max(0, f − 0.6)`. The
+   *  0.3 meant a third of the full bend was already applied AT THE ROOT, so
+   *  `snoutCurve` mostly acted as a second pitch dial — which is why it and
+   *  `facePitch` looked like the same control and compounded when pushed the
+   *  same way. The trailing term was worse: an unconditional hook drooping
+   *  every muzzle tip by up to 0.2 rad whatever the dials said. */
+  const snoutBend = (f: number): number => curveTotal * f;
+  /** Direction of the FIRST muzzle segment (its midpoint bend) — the tangent
+   *  the forehead bridge must arrive along. */
+  const snoutDir0 = normalize(rotate(rostrumDir0, faceSide, snoutBend(0.5 / nSeg)));
+
+  // MUZZLE ROOT — an X/Y POINT in the sagittal face plane, not a walk around
+  // the cranium. `foreheadHeight` sets its HEIGHT and `foreheadLength` its
+  // FORWARD REACH, independently: raising the brow must never drag the snout
+  // backward. The reach is measured from the cranium's FRONT POLE, so however
+  // the two dials are set the root sits at or ahead of the skull — the bridge
+  // always runs forward, and the loft's dorsal/ventral anchor sweeps can never
+  // cross (a crossed sweep inverts every ring: the caved-in face).
+  //
+  // The root is the ring's CENTRE (a fat snout no longer drops its own seat)
+  // and its cross-section belongs to the CRANIUM, square to the braincase
+  // axis: `facePitch` hinges only what grows OUT of the seat. rootTop is then
+  // always above rootBot at a z ahead of the centre, which is what makes the
+  // no-crossing guarantee hold at every pitch.
+  // 0 = the muzzle roots at or below the floor of the cranium (a horse, a
+  // long-faced grazer), 1 = at the crown (a whale's blowhole, a stargazer).
+  // The seat may sit outside the skull at either end: the bridge spans it.
+  const rootY = lerp(-1 * bH, 0.9 * bH, g.head.foreheadHeight);
+  const rootZ = aL + g.head.foreheadLength * headR;
+  const muzzleRoot = add(headCenter, add(scale(braincaseAxis, rootZ), scale(faceUp, rootY)));
+  /** The "red dot" landmark other layers hang off: the TOP of the root ring. */
+  const redDot = add(muzzleRoot, scale(faceUp, snoutUR));
 
   // UPPER JAW chain "snout" = FOREHEAD bones (cranium front → muzzle root,
   // dipping, bowed by foreheadSlope) + SNOUT bones (muzzle root → tip). One
@@ -710,81 +792,18 @@ export function buildSkeleton(
   const snoutCenters: Vec3[] = [];
   const snoutR: { rx: number; ry: number }[] = [];
   const snoutDirs: Vec3[] = []; // per joint, aligned with snoutCenters
+  /** Forehead-bridge guide stations (interior only), cranium → muzzle root. */
+  const bridge: SkullPrim[] = [];
+  /** Dorsal edge of the forehead bridge, cranium contact (0) → root top (1). */
+  let bridgeDorsal: ((t: number) => Vec3) | null = null;
+  /** Ellipse angle where the bridge leaves the cranium (the dorsal contact). */
+  let bridgeContactAng = 0;
   let rostrumTip = muzzleRoot;
-  if (hasSnout) {
-    // Forehead: cranium front → muzzle root, cubic bezier bowed by slope.
-    const A = craniumFront, B = muzzleRoot;
-    const chord = sub(B, A);
-    const chordLen = Math.max(1e-4, length(chord));
-    let perp = normalize(cross(faceSide, chord));
-    if (perp.y < 0) perp = scale(perp, -1);
-    const bow = (0.1 + 0.5 * g.head.foreheadSlope) * chordLen;
-    const c1 = add(add(A, scale(chord, 0.35)), scale(perp, bow));
-    const c2 = add(sub(B, scale(rostrumDir0, chordLen * 0.35)), scale(perp, bow * 0.5));
-    const bez = (t: number): Vec3 => {
-      const mt = 1 - t;
-      const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
-      return v3(a * A.x + b * c1.x + c * c2.x + d * B.x,
-        a * A.y + b * c1.y + c * c2.y + d * B.y,
-        a * A.z + b * c1.z + c * c2.z + d * B.z);
-    };
-    const nFore = 2;
-    let parent = headBoneIdx;
-    let prevF = bez(0);
-    for (let i = 0; i < nFore; i++) {
-      const f0 = i / nFore, f1 = (i + 1) / nFore;
-      const next = bez(f1);
-      bones.push({
-        id: `forehead${i}`, parent, kind: "head", chain: "snout",
-        head: prevF, tail: next,
-        radiusHead: lerp(headR * 0.6, snoutBaseR, f0),
-        radiusTail: lerp(headR * 0.6, snoutBaseR, f1),
-        flatten: 0, aspect: lerp(g.head.crossSection, snoutAspect, f1),
-      });
-      parent = bones.length - 1;
-      prevF = next;
-    }
-    // Snout bones.
-    let prev = muzzleRoot;
-    const nSeg = Math.max(1, Math.round(g.head.snoutSegments));
-    let prevDir: Vec3 | null = null;
-    for (let i = 0; i < nSeg; i++) {
-      const f0 = i / nSeg, f1 = (i + 1) / nSeg;
-      const rHead = snoutBaseR * (1 - f0) + tipR * f0;
-      const rTail = snoutBaseR * (1 - f1) + tipR * f1;
-      const bend = g.head.snoutCurve * (0.3 + 0.9 * f1) + 0.5 * Math.max(0, f1 - 0.6);
-      const dir = normalize(rotate(rostrumDir0, faceSide, bend));
-      const next = add(prev, scale(dir, snoutLen / nSeg));
-      bones.push({
-        id: `snout${i}`, parent, kind: "head", chain: "snout",
-        head: prev, tail: next, radiusHead: rHead, radiusTail: rTail,
-        flatten: 0, aspect: snoutAspect,
-      });
-      parent = bones.length - 1;
-      snoutCenters.push(prev);
-      snoutR.push({ rx: rHead * Math.sqrt(snoutAspect), ry: rHead / Math.sqrt(snoutAspect) });
-      snoutDirs.push(prevDir ? normalize(add(prevDir, dir)) : dir);
-      prevDir = dir;
-      prev = next;
-    }
-    snoutCenters.push(prev);
-    snoutR.push({ rx: tipR * Math.sqrt(snoutAspect), ry: tipR / Math.sqrt(snoutAspect) });
-    snoutDirs.push(prevDir!);
-    rostrumTip = prev;
-  }
-
-  // FACE LINES — how the muzzle connects to the cranium (see
-  // forehead-diagram.png). The DORSAL (forehead) line runs from the muzzle
-  // root's top rim to its TANGENCY on the cranium guide ellipse — the
-  // lowest line that doesn't clip the head — bowed by foreheadSlope. The
-  // VENTRAL (jaw) line mirrors it from the chin rim to the underside. On a
-  // flat face (human) the rims sit against the cranium, the lines all but
-  // vanish, and the forehead IS the front of the cranium.
+  // Sagittal guide ellipse of the cranium, and the tangency of a line drawn
+  // to it from a point outside — the contact where the face can leave the
+  // skull with NO corner (`upper` picks the higher of the two contacts).
   const ellipseAt = (ang: number): Vec3 =>
     add(headCenter, add(scale(braincaseAxis, aL * Math.cos(ang)), scale(faceUp, bH * Math.sin(ang))));
-  /** Tangency (ellipse angle) of the line from sagittal point `p` to the
-   *  cranium guide ellipse; `upper` picks the higher of the two contacts.
-   *  Nearest surface angle when `p` is inside (no tangent exists). */
   const tangentAngle = (p: Vec3, upper: boolean): number => {
     const rel = sub(p, headCenter);
     const qz = dot3(rel, braincaseAxis) / aL;
@@ -796,90 +815,102 @@ export function buildSkeleton(
     const y2 = (qy - qz * r) / q2, z2 = (qz + qy * r) / q2;
     return (y1 >= y2) === upper ? Math.atan2(y1, z1) : Math.atan2(y2, z2);
   };
-  const faceSamples: { T: Vec3; B: Vec3; n: Vec3 }[] = [];
-  let faceMeta: { cTop: Vec3; cBot: Vec3; rootTop: Vec3; rootBot: Vec3; topAng: number } | null = null;
   if (hasSnout) {
-    const up0 = normalize(cross(snoutDirs[0], faceSide));
-    const rootTop = add(snoutCenters[0], scale(up0, snoutR[0].ry));
-    const rootBot = sub(snoutCenters[0], scale(up0, snoutR[0].ry));
+    // FOREHEAD BRIDGE — the cranium→muzzle ramp, built ONCE and shared by the
+    // bones, the guide stations and the dorsal rail. Those were three separate
+    // constructions that quietly disagreed about where the face is, which is
+    // why a sharp wall appeared above the snout at unpredictable ratios.
+    //
+    // Its DORSAL edge is the TANGENT line from the muzzle root's top rim to
+    // the cranium: tangency means the face leaves the skull with no corner,
+    // whatever the dials say. Its VENTRAL edge mirrors that underneath. The
+    // bridge's own cross-section is the gap BETWEEN those two edges, so it can
+    // never bulge past the cranium it grows out of — the old bug where a
+    // forehead station poked through the brow.
+    const rootTop = add(muzzleRoot, scale(faceUp, snoutUR));
+    const rootBot = sub(muzzleRoot, scale(faceUp, snoutUR));
     const topAng = tangentAngle(rootTop, true);
-    const botAng = tangentAngle(rootBot, false);
     const cTop = ellipseAt(topAng);
-    const cBot = ellipseAt(botAng);
-    faceMeta = { cTop, cBot, rootTop, rootBot, topAng };
+    const cBot = ellipseAt(tangentAngle(rootBot, false));
+    bridgeContactAng = topAng;
+    // `foreheadSlope` bows the dorsal edge — with a profile that is zero in
+    // BOTH value and slope at each end, so the tangency at the cranium and
+    // the seat at the root survive any bow. It can shape the brow; it can no
+    // longer detach the face from the skull.
     const chordT = sub(rootTop, cTop);
     let perpT = normalize(cross(faceSide, chordT));
     if (perpT.y < 0) perpT = scale(perpT, -1);
     const bowT = 0.35 * g.head.foreheadSlope * length(chordT);
-    const nF = 3;
-    for (let k = 1; k <= nF; k++) {
-      const t = k / (nF + 1); // strictly between contact (0) and root (1)
-      faceSamples.push({
-        T: add(add(scale(cTop, 1 - t), scale(rootTop, t)), scale(perpT, Math.sin(Math.PI * t) * bowT)),
-        B: add(scale(cBot, 1 - t), scale(rootBot, t)),
-        n: perpT,
+    const dorsalAt = (t: number): Vec3 => add(
+      add(scale(cTop, 1 - t), scale(rootTop, t)),
+      scale(perpT, Math.sin(Math.PI * t) ** 2 * bowT));
+    const ventralAt = (t: number): Vec3 => add(scale(cBot, 1 - t), scale(rootBot, t));
+    const midAt = (t: number): Vec3 => scale(add(dorsalAt(t), ventralAt(t)), 0.5);
+    const halfAt = (t: number): number => length(sub(dorsalAt(t), ventralAt(t))) * 0.5;
+    bridgeDorsal = dorsalAt;
+    // Sample density follows the TURN: an under-sampled turn IS the sharp
+    // wall above the snout, so a steep bridge earns more stations.
+    const drop = Math.acos(Math.max(-1, Math.min(1,
+      dot3(normalize(sub(rootTop, cTop)), braincaseAxis))));
+    const nFore = Math.max(2, Math.min(6, Math.round(2 + (drop / (Math.PI / 2)) * 4)));
+    let parent = headBoneIdx;
+    let prevF = midAt(0);
+    for (let i = 0; i < nFore; i++) {
+      const f0 = i / nFore, f1 = (i + 1) / nFore;
+      const next = midAt(f1);
+      bones.push({
+        id: `forehead${i}`, parent, kind: "head", chain: "snout",
+        head: prevF, tail: next,
+        radiusHead: Math.max(halfAt(f0), 1e-4),
+        radiusTail: Math.max(halfAt(f1), 1e-4),
+        flatten: 0, aspect: lerp(g.head.crossSection, snoutAspect, f1),
+      });
+      parent = bones.length - 1;
+      prevF = next;
+    }
+    // Interior guide stations on the SAME ramp. The ends are omitted: the
+    // cranium owns t = 0 and the muzzle's own station 0 owns t = 1, so the
+    // union ramps monotonically with nothing to overlap or step against.
+    const nBridge = Math.max(2, nFore);
+    for (let k = 0; k < nBridge; k++) {
+      const t = (k + 1) / (nBridge + 1);
+      const tan = normalize(sub(midAt(Math.min(1, t + 0.05)), midAt(Math.max(0, t - 0.05))));
+      bridge.push({
+        center: midAt(t), dir: tan,
+        rx: lerp(aW * 0.9, snoutSR, t), ry: Math.max(halfAt(t), 1e-4), halfLen: 0,
+        boneA: headBoneIdx, boneB: headBoneIdx, weightA: 1,
       });
     }
-  }
-
-  // Dorsal contour — the FULL skull profile add-ons slide along and
-  // protrude from: snout tip → snout tops → forehead line → crown →
-  // occiput → the base of the skull, with outward surface normals.
-  const dorsal: { p: Vec3; n: Vec3 }[] = [];
-  if (hasSnout) {
-    for (let i = snoutCenters.length - 1; i >= 0; i--) {
-      const up = normalize(cross(snoutDirs[i], faceSide));
-      dorsal.push({ p: add(snoutCenters[i], scale(up, snoutR[i].ry)), n: up });
-    }
-    for (let k = faceSamples.length - 1; k >= 0; k--) {
-      dorsal.push({ p: faceSamples[k].T, n: faceSamples[k].n });
-    }
-  }
-  // Cranium arc from the forehead contact over the crown down to the base
-  // of the skull (θ 90° = crown, 180° = rear pole, 250° = the base).
-  const startDeg = faceMeta ? (faceMeta.topAng * 180) / Math.PI : 5;
-  const arcDegs: number[] = [];
-  for (const d of [startDeg, (startDeg + 90) / 2, 90, 130, 170, 210, 250]) {
-    if (arcDegs.length === 0 || d > arcDegs[arcDegs.length - 1] + 5) arcDegs.push(d);
-  }
-  const crownDorsalIdx = dorsal.length + Math.max(0, arcDegs.findIndex((d) => d >= 89.9));
-  for (const deg of arcDegs) {
-    const th = (deg * Math.PI) / 180;
-    dorsal.push({
-      p: ellipseAt(th),
-      n: normalize(v3(0, Math.sin(th) / bH, Math.cos(th) / aL)),
-    });
-  }
-
-  // Nose — slides its ROOT along the dorsal contour: 0 = beak tip … 1 =
-  // crown … 1.5 = the base of the skull. It rides the real surface and
-  // protrudes along the LOCAL outward normal, drooping by noseDroop.
-  const noseLen = g.head.noseLengthFrac * headR;
-  if (noseLen > 1e-4 && dorsal.length >= 2) {
-    const noseR = g.head.noseRadiusFrac * headR;
-    const nSeg = Math.max(1, Math.round(g.head.noseSegments));
-    const h = Math.max(0, Math.min(1.5, g.head.noseHeight));
-    const u = h <= 1
-      ? h * crownDorsalIdx
-      : crownDorsalIdx + ((h - 1) / 0.5) * (dorsal.length - 1 - crownDorsalIdx);
-    const i0 = Math.max(0, Math.min(dorsal.length - 2, Math.floor(u)));
-    const ft = u - i0;
-    const root = add(scale(dorsal[i0].p, 1 - ft), scale(dorsal[i0 + 1].p, ft));
-    const protrude = normalize(add(scale(dorsal[i0].n, 1 - ft), scale(dorsal[i0 + 1].n, ft)));
-    let prevN = root;
+    // Snout bones.
+    let prev = muzzleRoot;
+    let prevDir: Vec3 | null = null;
     for (let i = 0; i < nSeg; i++) {
       const f0 = i / nSeg, f1 = (i + 1) / nSeg;
-      const dir = normalize(rotate(protrude, faceSide, g.head.noseDroop * (0.3 + 0.9 * f1)));
-      const next = add(prevN, scale(dir, noseLen / nSeg));
+      const rHead = snoutBaseR * (1 - f0) + tipR * f0;
+      const rTail = snoutBaseR * (1 - f1) + tipR * f1;
+      // A segment's direction is the bend at its MIDPOINT, so the chain
+      // integrates the curvature instead of running one step ahead of it.
+      const dir = normalize(rotate(rostrumDir0, faceSide, snoutBend((f0 + f1) / 2)));
+      const next = add(prev, scale(dir, snoutLen / nSeg));
       bones.push({
-        id: `nose${i}`, parent: i === 0 ? headBoneIdx : bones.length - 1,
-        kind: "head", chain: "nose",
-        head: prevN, tail: next,
-        radiusHead: noseR * (1 - 0.55 * f0), radiusTail: noseR * (1 - 0.55 * f1),
-        flatten: 0, aspect: 1,
+        id: `snout${i}`, parent, kind: "head", chain: "snout",
+        head: prev, tail: next, radiusHead: rHead, radiusTail: rTail,
+        flatten: 0, aspect: snoutAspect,
       });
-      prevN = next;
+      parent = bones.length - 1;
+      snoutCenters.push(prev);
+      snoutR.push({ rx: rHead * Math.sqrt(snoutAspect), ry: rHead / Math.sqrt(snoutAspect) });
+      // The ROOT ring is skull-owned — square to the braincase axis, so no
+      // amount of facePitch can tilt the seat into the cranium and cross the
+      // loft's sweeps. Every ring after it follows the pitched muzzle.
+      snoutDirs.push(prevDir ? normalize(add(prevDir, dir)) : braincaseAxis);
+      prevDir = dir;
+      prev = next;
     }
+    snoutCenters.push(prev);
+    snoutR.push({ rx: tipR * Math.sqrt(snoutAspect), ry: tipR / Math.sqrt(snoutAspect) });
+    snoutDirs.push(prevDir!);
+    rostrumTip = prev;
   }
 
   // LOWER JAW chain "jaw": the muzzle's outer shape cut at the bite, deepened
@@ -895,24 +926,37 @@ export function buildSkeleton(
     const biteFrac = Math.max(-1, Math.min(1, g.head.mouthVertical)); // bite-line offset
     const jawOffZ = g.head.jawOffset * snoutBaseR * 0.5;            // over/underbite (fore/aft)
     const jawJoint = add(headCenter, add(scale(braincaseAxis, -aL * 0.1), scale(faceUp, -bH * 0.35)));
+    // The mandible DEEPENS FORWARD, from flush with the muzzle at the root
+    // to `jawDepth` at the chin, along a smoothstep. These bones are the
+    // skinning spine of the shell mesh.ts lofts, and they follow the same
+    // law it does: a constant +jawExtra put a V in the chain at the root —
+    // the ramus descending, the jaw body immediately climbing again.
+    const nJawSeg = Math.max(1, snoutCenters.length - 1);
+    const jawDepthAt = (i: number): number => {
+      const f = Math.min(1, i / nJawSeg / 0.6); // full depth by 60% along, then held
+      return jawExtra * (f * f * (3 - 2 * f));
+    };
     // Ramus: joint (merged into the cranium) → the jaw body root, curving up
-    // and back so the mandible links to the skull instead of floating.
+    // and back so the mandible links to the skull instead of floating. Its
+    // tail radius IS the jaw body's head radius, so the chain is continuous
+    // across the junction.
     const jawRoot = add(snoutCenters[0], scale(braincaseAxis, jawOffZ));
-    const ry0j = snoutR[0].ry + jawExtra;
+    const ry0j = snoutR[0].ry + jawDepthAt(0);
+    const jawRootR = Math.sqrt(snoutR[0].rx * ry0j);
     bones.push({
       id: "ramus0", parent: headBoneIdx, kind: "head", chain: "jaw",
       head: jawJoint, tail: jawRoot,
-      radiusHead: ry0j * 0.55, radiusTail: Math.sqrt(snoutR[0].rx * ry0j) * 0.85,
+      radiusHead: ry0j * 0.55, radiusTail: jawRootR,
       flatten: 0, aspect: 1,
     });
     let parent = bones.length - 1;
-    // Jaw body: along the snout centerline (shifted by jawOffset), deeper by
-    // jawExtra. Its ring shares the muzzle WIDTH (rx) so it fits the upper jaw.
+    // Jaw body: along the snout centerline (shifted by jawOffset). Its ring
+    // shares the muzzle WIDTH (rx) so it fits the upper jaw.
     for (let i = 0; i < snoutCenters.length - 1; i++) {
       const c0 = add(snoutCenters[i], scale(braincaseAxis, jawOffZ));
       const c1 = add(snoutCenters[i + 1], scale(braincaseAxis, jawOffZ));
-      const rx0 = snoutR[i].rx, ry0 = snoutR[i].ry + jawExtra;
-      const rx1 = snoutR[i + 1].rx, ry1 = snoutR[i + 1].ry + jawExtra;
+      const rx0 = snoutR[i].rx, ry0 = snoutR[i].ry + jawDepthAt(i);
+      const rx1 = snoutR[i + 1].rx, ry1 = snoutR[i + 1].ry + jawDepthAt(i + 1);
       bones.push({
         id: `jaw${i}`, parent, kind: "head", chain: "jaw",
         head: c0, tail: c1,
@@ -930,28 +974,10 @@ export function buildSkeleton(
   // ray-casts their UNION to loft one fused surface, and add-ons ray-cast
   // it to seat on the real contour.
   const skullGuidePre: SkullGuide = (() => {
-    const stations: SkullPrim[] = [];
+    // The forehead bridge's own stations, straight off the shared C1 curve —
+    // no second construction to disagree with the bones.
+    const stations: SkullPrim[] = bridge.map((pr) => ({ ...pr }));
     const snout0Idx = bones.findIndex((b) => b.id === "snout0");
-    if (faceMeta && snoutR.length > 0) {
-      // Face stations along the tangent forehead/jaw lines: they carry the
-      // bridge between the cranium and the muzzle root (a cow's long slope,
-      // a bird's cere) — near-degenerate on a flat human face.
-      const rootMid = scale(add(faceMeta.rootTop, faceMeta.rootBot), 0.5);
-      const contactMid = scale(add(faceMeta.cTop, faceMeta.cBot), 0.5);
-      const faceDir0 = sub(rootMid, contactMid);
-      const faceDir = length(faceDir0) > 1e-6 ? normalize(faceDir0) : braincaseAxis;
-      faceSamples.forEach((fs, k) => {
-        const t = (k + 1) / (faceSamples.length + 1);
-        stations.push({
-          center: scale(add(fs.T, fs.B), 0.5),
-          dir: faceDir,
-          rx: Math.max(lerp(aW * 0.75, snoutR[0].rx, t), snoutR[0].rx * 0.95),
-          ry: Math.max(length(sub(fs.T, fs.B)) * 0.5, snoutR[0].ry * 0.35),
-          halfLen: 0,
-          boneA: headBoneIdx, boneB: headBoneIdx, weightA: 1,
-        });
-      });
-    }
     const muzzleFrom = stations.length;
     const nJaw = snoutCenters.length; // snout joints (0 when no snout)
     // Commissure: the lips part only over the front `mouthOpen` fraction of
@@ -1012,11 +1038,133 @@ export function buildSkeleton(
       const span = Math.max(dPrev, dNext);
       stations[i].halfLen = Math.max(span * 0.72, Math.min(stations[i].rx, stations[i].ry) * 0.35, 1e-4);
     }
-    return {
-      cranium: { center: headCenter, dir: braincaseAxis, rx: aW, ry: bH, halfLen: aL },
-      stations, muzzleFrom, mouthCorner, dorsal,
+    const cranium: SkullPrim = {
+      center: headCenter, dir: braincaseAxis, rx: aW, ry: bH, halfLen: aL,
     };
+    // DORSAL RAIL — the profile noses, horns and hats slide along, front to
+    // back: the muzzle tops (tip → root), the bridge's own dorsal edge (root
+    // → cranium contact), then the cranium arc over the crown to the base of
+    // the skull. Every stretch is the SAME curve the surface is built from,
+    // and the bridge meets the cranium at a tangency, so the rail has no
+    // corner for an add-on to straddle.
+    const dorsal: SkullContourPt[] = [];
+    const pushPt = (p: Vec3, n: Vec3): void => { dorsal.push({ p, n }); };
+    if (stations.length > muzzleFrom) {
+      // The rail STARTS at the muzzle's forward POLE — a point on the surface,
+      // one station half-length ahead of the tip ring — whose outward normal
+      // is the muzzle AXIS, not the tip ring's "up". On a pitched muzzle that
+      // up points back over the head, so anything seated at position 0 (the
+      // snout tip, where a nose usually goes) grew straight into the skull.
+      const tip = stations[stations.length - 1];
+      pushPt(add(tip.center, scale(tip.dir, tip.halfLen)), tip.dir);
+    }
+    for (let i = snoutCenters.length - 1; i >= 0; i--) {
+      const up = normalize(cross(snoutDirs[i], faceSide));
+      pushPt(add(snoutCenters[i], scale(up, snoutR[i].ry)), up);
+    }
+    if (bridgeDorsal) {
+      const nB = 4;
+      for (let k = nB - 1; k >= 1; k--) {
+        const t = k / nB;
+        const p = bridgeDorsal(t);
+        const tan = normalize(sub(bridgeDorsal(Math.min(1, t + 0.05)), bridgeDorsal(Math.max(0, t - 0.05))));
+        // Outward normal of a sagittal profile: rotate the tangent a quarter
+        // turn about the face axis, pointing away from the skull.
+        let n = normalize(cross(tan, faceSide));
+        if (dot3(n, sub(p, headCenter)) < 0) n = scale(n, -1);
+        pushPt(p, n);
+      }
+    }
+    // Cranium arc from the bridge's contact (the front pole when there is no
+    // muzzle) over the crown to the base of the skull.
+    const startAng = hasSnout ? bridgeContactAng : 0;
+    const endAng = (250 * Math.PI) / 180;
+    const nArc = 12;
+    for (let k = 0; k <= nArc; k++) {
+      const th = startAng + ((endAng - startAng) * k) / nArc;
+      pushPt(ellipseAt(th), normalize(v3(0, Math.sin(th) / bH, Math.cos(th) / aL)));
+    }
+    return { cranium, stations, muzzleFrom, mouthCorner, dorsal };
   })();
+  /** Index of the crown on the dorsal rail — its highest point, by
+   *  definition — the hinge `nosePosition`/`noseHeight` 1.0 maps to. */
+  const crownDorsalIdx = skullGuidePre.dorsal.reduce(
+    (best, d, i) => (d.p.y > skullGuidePre.dorsal[best].p.y ? i : best), 0);
+
+  /** Half-thickness of the surface a point sits ON — the guide prim whose
+   *  boundary it is nearest. Add-ons are sized against THIS, never against
+   *  the head: a nose measured in head radii can be fatter than the snout it
+   *  grows out of, which reads as a ball stuck on a stick. */
+  const hostRadiusAt = (p: Vec3): number => {
+    let best = Infinity;
+    let r = skullGuidePre.cranium.ry;
+    for (const pr of [skullGuidePre.cranium, ...skullGuidePre.stations]) {
+      const U = normalize(cross(pr.dir, faceSide));
+      const rel = sub(p, pr.center);
+      const q = Math.hypot(rel.x / pr.rx, dot3(rel, U) / pr.ry, dot3(rel, pr.dir) / pr.halfLen);
+      if (Math.abs(q - 1) < best) {
+        best = Math.abs(q - 1);
+        r = Math.min(pr.rx, pr.ry);
+      }
+    }
+    return r;
+  };
+
+  // Nose — slides its ROOT along the dorsal contour: 0 = beak tip … 1 =
+  // crown … 1.5 = the base of the skull. It rides the real surface and
+  // protrudes along the LOCAL outward normal, bending by noseDroop.
+  {
+    const dorsal = skullGuidePre.dorsal;
+    const noseLen = g.head.noseLengthFrac * headR;
+    if (noseLen > 1e-4 && dorsal.length >= 2) {
+      const nNose = Math.max(1, Math.round(g.head.noseSegments));
+      const h = Math.max(0, Math.min(1.5, g.head.nosePosition));
+      const u = h <= 1
+        ? h * crownDorsalIdx
+        : crownDorsalIdx + ((h - 1) / 0.5) * (dorsal.length - 1 - crownDorsalIdx);
+      const i0 = Math.max(0, Math.min(dorsal.length - 2, Math.floor(u)));
+      const ft = u - i0;
+      const railP = add(scale(dorsal[i0].p, 1 - ft), scale(dorsal[i0 + 1].p, ft));
+      const protrude = normalize(add(scale(dorsal[i0].n, 1 - ft), scale(dorsal[i0 + 1].n, ft)));
+      // Seat the root on the REAL surface. The rail is sampled from the guide,
+      // but a neighbouring station's ellipsoid can still swallow the sample
+      // when the stations are unevenly spaced — a stub muzzle on a long
+      // bridge inherits the bridge's spacing and reaches past the whole
+      // muzzle. Casting out along the protrusion puts the root where the
+      // surface actually is, so a nose can never start inside the head.
+      const exit = skullRaycast(skullGuidePre, railP, protrude);
+      const root = exit ? add(railP, scale(protrude, exit.t)) : railP;
+      // Sized against its HOST, so it always reads as part of that surface.
+      const noseR = Math.max(1e-4, g.head.noseRadiusFrac * hostRadiusAt(root));
+      const tipFracN = Math.max(0, Math.min(1, g.head.noseTaper));
+      // Droop is a FRACTION of what the nose's own length can carry — the
+      // same turn-vs-length law the muzzle obeys — and it accumulates from
+      // ZERO at the root. The old form applied 0.3 of it immediately, which
+      // TILTED the nose off its seat rather than bending it, and at a large
+      // value curled the first segment straight back into the face.
+      const noseSegLen = noseLen / nNose;
+      const noseBudget = (0.9 * noseSegLen) / noseR;
+      const DROOP_FULL = 1.5; // noseDroop's own range, radians
+      const droopTotal = (g.head.noseDroop / DROOP_FULL)
+        * Math.min(DROOP_FULL, noseBudget * nNose);
+      let prevN = root;
+      for (let i = 0; i < nNose; i++) {
+        const f0 = i / nNose, f1 = (i + 1) / nNose;
+        // Bend at the segment's MIDPOINT, so the chain integrates the curve.
+        const dir = normalize(rotate(protrude, faceSide, droopTotal * (f0 + f1) * 0.5));
+        const next = add(prevN, scale(dir, noseSegLen));
+        bones.push({
+          id: `nose${i}`, parent: i === 0 ? headBoneIdx : bones.length - 1,
+          kind: "head", chain: "nose",
+          head: prevN, tail: next,
+          radiusHead: noseR * lerp(1, tipFracN, f0),
+          radiusTail: noseR * lerp(1, tipFracN, f1),
+          flatten: 0, aspect: g.head.noseFlatten,
+        });
+        prevN = next;
+      }
+    }
+  }
 
   // 5) Limbs — ONE kind: a leg. Every limb is built as a leg that tries
   //    to reach the ground. Leg LENGTH is fixed; the posture engine
@@ -1089,6 +1237,19 @@ export function buildSkeleton(
   // the limb-tip girth, so feet line up with the limb. Single-bone chains
   // (`<chain>d<k>`) parented to `parentIdx`. grounded=false → a hanging
   // hand (digits curl down-forward).
+  //
+  // ⚖️ DIGIT LENGTH IS TIED TO THE LIMB, NOT ONLY TO THE FOOT. `toeLengthFrac`
+  // measures a digit against the FOOT, which says nothing about how THICK the
+  // limb is — so the same human toe fraction carried onto a bear-thick leg
+  // (exactly what `bipedalize` does: posture from the template, girth kept from
+  // the animal) produced a toe shorter than the ball it sprouts from, i.e. a
+  // bump buried in the ankle. Every digit therefore also clears its own ball
+  // and runs `DIGIT_MIN_ASPECT` of its own thickness beyond it; whichever of
+  // the two lengths is longer wins, so a slender hoof or a long claw authored
+  // through `toeLengthFrac` is untouched and only the buried cases grow.
+  // Because the digit's own radius is 1/n of the foot, the floor is
+  // count-aware for free: a lone hoof has to run far to clear the ball it IS,
+  // five toes barely have to.
   const addDigits = (o: {
     ball: Vec3;
     fwd: Vec3;
@@ -1108,9 +1269,31 @@ export function buildSkeleton(
     const span = footLen > 1e-6 ? footLen : legLen * 0.18;
     const n = Math.max(1, Math.round(o.limb.toeCount));
     const curl = o.curl ?? o.limb.toeCurl;
-    // Digit radius so the fanned row spans roughly the limb-tip girth
-    // (1 digit ≈ a hoof matching the tip; many digits get thinner).
-    const rBase = ballR * (1.15 / Math.sqrt(n));
+    // ⚖️ A DIGIT IS A SPLIT IN THE FOOT. The whole row spans the foot, so each
+    // digit takes 1/n of it: one digit is the full width (a hoof), two are half
+    // each, five are a fifth each. (It used to be `1.15/√n`, which claimed to
+    // match the tip girth but didn't — at five digits the row came out 2.6× the
+    // foot's width, so the digits overlapped into one blob instead of reading
+    // as toes.)
+    const rBase = ballR / n;
+    // ⚠️ THE FOOT IS NOT AS WIDE AS ITS BONE RADIUS. A sole lofts FLATTENED, so
+    // its half-width is `ballR * halfWidthFactor(FOOT_FLATTEN)` — 1.56x the bone
+    // radius — while a `flatten: 0` digit lofts at exactly its radius. Splitting
+    // the BONE radius therefore laid a row only 1/1.56 of the sole across it:
+    // toes too thin, too close together, on a foot they were meant to tile. The
+    // digits take the sole's own flatten (a toe is wider than tall too), which
+    // makes their WIDTHS tile for free, and the root spread below is widened by
+    // the same factor.
+    const ballFlatten = footLen > 1e-6 ? FOOT_FLATTEN : o.limb.membrane;
+    const widen = halfWidthFactor(ballFlatten);
+    // Across-the-foot axis. `cross(Y, fwd)` IS the derivative of
+    // `rotate(fwd, Y, ang)` at ang=0, so a digit's root and its splay lean the
+    // same way. A hand hanging straight down has no horizontal `fwd` to take a
+    // side from (its digits get no angular splay either, and hang parallel like
+    // fingers on a palm) — fall back to the body's lateral axis so the row
+    // still lies ACROSS the palm instead of collapsing onto one point.
+    const sideRaw = cross(Y_AXIS, o.fwd);
+    const sideAxis = length(sideRaw) > 1e-3 ? normalize(sideRaw) : X_AXIS;
     for (let k = 0; k < n; k++) {
       const t = n > 1 ? k / (n - 1) : 0.5; // 0..1 across the row
       const mult = 1 - o.limb.toeContrast * (Math.abs(t - 0.5) / 0.5);
@@ -1118,7 +1301,24 @@ export function buildSkeleton(
       let ang = n > 1 ? (t - 0.5) * o.limb.toeSpread : 0;
       if (isThumb) ang -= o.sideSign * o.limb.opposition * 1.6; // swing back/in
       const dir = rotate(o.fwd, Y_AXIS, ang);
-      const dlen = o.limb.toeLengthFrac * span * mult * (isThumb ? 0.8 : 1);
+      // ...and the split is a split in POSITION too: the row of roots TILES the
+      // sole's width rather than every digit sprouting from its centre. Slot
+      // centres run from -(ballR - rBase) to +(ballR - rBase), scaled by the
+      // sole's `widen`, so the outer digits' outer edges land on its rim.
+      // Rooting them all at one point left a wide foot ending in a narrow
+      // tassel; this is what makes four toes read as a foot SPLIT four ways.
+      // mesh.ts then cuts each digit's BASE RING out of the sole's end polygon
+      // at this slot, so the toes join the foot instead of sitting on it.
+      const root =
+        n > 1
+          ? add(o.ball, scale(sideAxis, (t - 0.5) * 2 * (ballR - rBase) * widen))
+          : o.ball;
+      // The digit still runs FORWARD out of the ball, so a length under `ballR`
+      // is swallowed by it whatever the lateral offset. Both terms shrink with
+      // `mult`, so the outer-digit contrast survives the floor.
+      const minLen = (ballR + rBase * DIGIT_MIN_ASPECT) * mult;
+      const dlen =
+        Math.max(o.limb.toeLengthFrac * span * mult, minLen) * (isThumb ? 0.8 : 1);
       const dr = Math.max(rBase * mult, 1e-4);
       const tipDr = dr * 0.55;
       const name = `${o.chain}d${k}`;
@@ -1127,23 +1327,23 @@ export function buildSkeleton(
         // On the ground; curl digs the tip down and shortens the run
         // (claws); an opposed thumb lifts off the ground.
         const run = dlen * (1 - 0.45 * curl);
-        const y = isThumb ? o.ball.y + dlen * 0.4 : tipDr * 0.85 - curl * tipDr * 0.6;
-        tail = v3(o.ball.x + dir.x * run, Math.max(y, tipDr * 0.2), o.ball.z + dir.z * run);
+        const y = isThumb ? root.y + dlen * 0.4 : tipDr * 0.85 - curl * tipDr * 0.6;
+        tail = v3(root.x + dir.x * run, Math.max(y, tipDr * 0.2), root.z + dir.z * run);
       } else {
         // Hanging hand: curl down-forward; the thumb opposes inward.
         const drop = dlen * (0.4 + 0.5 * curl);
-        tail = v3(o.ball.x + dir.x * dlen, o.ball.y - drop, o.ball.z + dir.z * dlen);
+        tail = v3(root.x + dir.x * dlen, root.y - drop, root.z + dir.z * dlen);
       }
       bones.push({
         id: name,
         parent: o.parentIdx,
         kind: "limb",
         chain: name,
-        head: o.ball,
+        head: root,
         tail,
         radiusHead: dr,
         radiusTail: tipDr,
-        flatten: 0,
+        flatten: ballFlatten,
         aspect: 1,
       });
     }
@@ -1224,7 +1424,7 @@ export function buildSkeleton(
           tail: add(point, v3(0, -statics.footLen, 0)),
           radiusHead: tipR,
           radiusTail: statics.ballR,
-          flatten: 0.35,
+          flatten: FOOT_FLATTEN,
           aspect: 1,
         });
       }
@@ -1566,19 +1766,47 @@ export function buildSkeleton(
       // about the leg axis by legTwist (out-of-plane curl).
       const k = Math.max(0, Math.min(1, (leg.limb.restLevation + 1) / 2));
       const w0 = (1 - k) * (1 - k), w1 = 2 * k * (1 - k), w2 = k * k;
-      const bend = leg.limb.restFlexion;
+      // The ARCH — how far the knee is carried OUT and UP. Fore/aft is added
+      // below, in the perpendicular plane, not here.
       let pole = normalize(v3(
         leg.outDir.x * (w1 * 0.9 + w2 * 0.5),
         w0 * 0.1 + w1 * 0.45 + w2 * 1.2,
-        leg.outDir.z * (w1 * 0.9 + w2 * 0.5) + bend * (w0 + w1 * 0.4),
+        leg.outDir.z * (w1 * 0.9 + w2 * 0.5),
       ));
       // Mirror the twist by side so L/R pronate symmetrically (a +legTwist
       // curls both claws inward, not one in and one out).
       const gTwist = leg.sideSign * leg.limb.legTwist;
       if (Math.abs(gTwist) > 1e-4) pole = rotate(pole, dirN, gTwist);
-      const pd = pole.x * dirN.x + pole.y * dirN.y + pole.z * dirN.z;
-      let perp = v3(pole.x - dirN.x * pd, pole.y - dirN.y * pd, pole.z - dirN.z * pd);
-      perp = length(perp) > 1e-6 ? normalize(perp) : normalize(v3(0, -dirN.z, dirN.y));
+      // The knee can only sit in the plane ⊥ hip→ankle, so everything that
+      // aims it has to be expressed THERE.
+      const perpOf = (v: Vec3): Vec3 => {
+        const d = v.x * dirN.x + v.y * dirN.y + v.z * dirN.z;
+        return v3(v.x - dirN.x * d, v.y - dirN.y * d, v.z - dirN.z * d);
+      };
+      const arch = perpOf(pole);
+      // ⚖️ THE FOLD IS TAKEN IN THAT PLANE, NOT BEFORE IT. Mixing `restFlexion`
+      // into a world-space pole and projecting afterwards let the projection
+      // strip out more fore/aft than the fold put in — so the knee could point
+      // the OPPOSITE way from the dial, silently, and the smaller the fold the
+      // likelier it was. Splitting the plane into a fore/aft axis and an arch
+      // axis makes the sign of `restFlexion` the knee's direction BY
+      // CONSTRUCTION. (Bilateral only: "fore/aft" is the axis the dial names,
+      // and a RADIAL spoke — an octopus arm — has no fore/aft of its own, so it
+      // keeps arching along its own azimuth.)
+      const fwdRaw = leg.limb.placement === "bilateral" ? perpOf(v3(0, 0, 1)) : v3(0, 0, 0);
+      const bend = Math.max(-1, Math.min(1, leg.limb.restFlexion * (w0 + w1 * 0.4)));
+      let perp: Vec3;
+      if (length(fwdRaw) > 1e-6) {
+        const fwdPerp = normalize(fwdRaw);
+        const ad = arch.x * fwdPerp.x + arch.y * fwdPerp.y + arch.z * fwdPerp.z;
+        const side = v3(arch.x - fwdPerp.x * ad, arch.y - fwdPerp.y * ad, arch.z - fwdPerp.z * ad);
+        const mixed = length(side) > 1e-6
+          ? add(scale(normalize(side), 1 - Math.abs(bend)), scale(fwdPerp, bend))
+          : scale(fwdPerp, bend >= 0 ? 1 : -1);
+        perp = length(mixed) > 1e-6 ? normalize(mixed) : fwdPerp;
+      } else {
+        perp = length(arch) > 1e-6 ? normalize(arch) : normalize(v3(0, -dirN.z, dirN.y));
+      }
       const knee = add(add(hip, scale(dirN, a)), scale(perp, h));
       placeChain(leg.firstBone, hip, knee, ankle);
 
@@ -1933,15 +2161,15 @@ export function buildSkeleton(
     // Seat the orbits on the BRAINCASE ellipsoid (not the muzzle) — the
     // half-axes are the real skull dimensions, so an eye never sinks into a
     // long snout or floats off a flat face. `eyeAngle` is the convergence
-    // (frontal↔lateral), `faceHeight`+`eyeHeight` the elevation, `eyeBulge`
-    // how proud the globe sits.
+    // (frontal↔lateral), `eyeHeight` the elevation, `eyeBulge` how proud the
+    // globe sits.
     const aW = headR * g.head.crossSection;      // width half-axis
     const bH = headR * g.head.braincaseDome;     // height half-axis
     const cL = aL;                               // length half-axis
     for (let p = 0; p < g.head.eyePairs; p++) {
       for (const side of [-1, 1] as const) {
         const az = g.head.eyeAngle;
-        const el = g.head.faceHeight * 0.6 + g.head.eyeHeight + p * 0.5;
+        const el = g.head.eyeHeight + p * 0.5;
         // Direction cosines in the (side, up, forward) = (X, Y, Z) frame.
         const ns = side * Math.sin(az) * Math.cos(el);
         const nu = Math.sin(el);

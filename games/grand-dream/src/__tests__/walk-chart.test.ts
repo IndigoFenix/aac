@@ -16,7 +16,7 @@ const game: GameSettings = {
     settle: true,
     radius: 6_371_000,
   },
-  initialFocus: null, avatar: false, avatarSpecies: "human", canFly: false, creativeMode: false, entities: null, scale: null,
+  initialFocus: null, avatar: false, avatarSpecies: "human", mods: [], canFly: false, creativeMode: false, entities: null, scale: null,
 };
 
 describe("walk-chart — the sphere under a walking session", () => {

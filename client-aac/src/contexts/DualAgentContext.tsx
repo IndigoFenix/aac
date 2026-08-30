@@ -400,6 +400,9 @@ interface DualAgentProviderProps {
   // so the server can stamp chat_sessions.classroom_id.
   classroomId?: string | null;
   language?: string;
+  /** Per-student `deviceLocationEnabled` (aac_settings). Off by default; when
+   *  off the live session never asks the device where it is. */
+  locationEnabled?: boolean;
   /** Function to capture a camera frame - returns Blob */
   captureFrame?: () => Promise<Blob | null>;
   /** Function to capture a frame from the environment camera (optional) */
@@ -458,6 +461,7 @@ function DualAgentProviderInner({
   studentId,
   classroomId,
   language = "en",
+  locationEnabled = false,
   captureFrame: captureFrameProp,
   captureEnvFrame: captureEnvFrameProp,
   getUnmatchedFaceDescriptors,
@@ -634,6 +638,7 @@ function DualAgentProviderInner({
     studentId,
     classroomId,
     language,
+    locationEnabled,
     onBoardUpdate: handleBoardUpdate,
     onInputGlyphs: handleInputGlyphs,
     onContextBoardUpdate: useCallback((buttonData: any) => {

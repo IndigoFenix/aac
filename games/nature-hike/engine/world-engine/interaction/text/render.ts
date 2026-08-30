@@ -220,9 +220,14 @@ export function renderEvent(ev: TextEvent): string[] {
       const lines = [head("SITE", `${ev.entries.length} thing(s) being built.`)];
       for (const e of ev.entries) {
         const pct = e.progress !== undefined ? `, ${Math.round(e.progress * 100)}% worked` : "";
+        // ④ #43 — an unstaged site says what it is WAITING on; "0% worked"
+        // alone read as a stall through an hour of honest hauling.
+        const gather = e.gathering
+          ? `, gathering ${e.gathering.head} ${e.gathering.have}/${e.gathering.want}`
+          : "";
         lines.push(
           cont(
-            `${e.textId}: a ${e.word} — ${STAGE[e.stage]}${pct}, ${e.band} ${e.cardinal}, ${Math.round(e.distance)} m`,
+            `${e.textId}: a ${e.word} — ${STAGE[e.stage]}${pct}${gather}, ${e.band} ${e.cardinal}, ${Math.round(e.distance)} m`,
           ),
         );
       }

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, Hand, MonitorUp } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { GameJsonEditor } from "./GameJsonEditor";
@@ -103,6 +103,8 @@ export function CallView() {
     mirroredSelection,
     sendData,
     sendBuilderPress,
+    facilitatorAck,
+    indicateButton,
     screenStreams,
     screenRequested,
     requestScreenShare,
@@ -118,6 +120,9 @@ export function CallView() {
   // reading intent needs the two together. "Interact" arms facilitator presses.
   const [studentView, setStudentView] = useState<StudentViewMode>("video");
   const [interactArmed, setInteractArmed] = useState(false);
+  // The button this clinician is POINTING at (press-and-hold), so their own
+  // copy shows the mark they just put on the child's screen.
+  const [indicatedId, setIndicatedId] = useState<string | null>(null);
   // Live game-JSON editor (testing affordance): edit the running game and reload
   // it for everyone in the call.
   const [jsonEditorOpen, setJsonEditorOpen] = useState(false);
@@ -205,6 +210,24 @@ export function CallView() {
   const facilitate = useCallback((button: BoardButton, spokenText: string) => {
     sendData({ k: "facilitator-press", button, spokenText, at: Date.now() });
   }, [sendData]);
+
+  // A refusal is news, not a state: show it for a few seconds and let it go,
+  // rather than leaving a red badge pinned to the call for its duration.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => {
+    if (!facilitatorAck || facilitatorAck.ok) { setRefusal(null); return; }
+    setRefusal(facilitatorAck.reason ?? "unavailable");
+    const timer = setTimeout(() => setRefusal(null), 6000);
+    return () => clearTimeout(timer);
+  }, [facilitatorAck]);
+
+  // Press-and-hold on a mirrored button POINTS at it on the student's own
+  // board, without pressing it. Available whether or not Interact is armed —
+  // showing a child a word is not saying it for them.
+  const indicate = useCallback((buttonId: string | null) => {
+    setIndicatedId(buttonId);
+    indicateButton(buttonId);
+  }, [indicateButton]);
 
   // The board mirror is only meaningful for a 1:1 student call; offer it when one
   // has arrived. Dropping out of the student view also disarms Interact.
@@ -374,6 +397,8 @@ export function CallView() {
       interactive={interactArmed}
       onPress={facilitate}
       onBuilderPress={sendBuilderPress}
+      onIndicate={indicate}
+      indicatedId={indicatedId}
       onHover={(buttonId) => sendData({ k: "board-dwell", buttonId, at: Date.now() })}
       className="h-full w-full"
     />
@@ -449,6 +474,17 @@ export function CallView() {
         </div>
       )}
 
+      {/* THE AAC REFUSED A FACILITATED PRESS. `allowFacilitatorControl` is off
+          by default, so without this the clinician arms Interact, clicks, and
+          watches nothing happen — indistinguishable from a broken call. */}
+      {isActive && refusal && (
+        <div className="flex justify-center px-4 pb-1">
+          <span role="status" className="rounded-full bg-rose-500/90 px-3 py-1 text-sm font-medium text-white shadow">
+            {t(`call.facilitatorRefused.${refusal}`)}
+          </span>
+        </div>
+      )}
+
       {/* Student-view picker — video / both / their screen. Only once a mirror
           has arrived (a 1:1 student call); until then there is no second thing
           to show and the control would be three ways of saying "video". */}
@@ -472,6 +508,9 @@ export function CallView() {
               {t(`call.studentView.${m}`)}
             </button>
           ))}
+          {studentView !== "video" && (
+            <span className="ms-2 text-xs text-white/50">{t("call.indicateHint")}</span>
+          )}
         </div>
       )}
 

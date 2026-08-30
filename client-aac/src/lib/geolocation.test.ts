@@ -5,7 +5,12 @@
 // with no location usage-description key in Info.plist, WKWebView invokes
 // NEITHER the success nor the error callback.
 
-import { getCurrentGps, metersBetween } from "./geolocation";
+// Native ESM: jest's globals are NOT injected, so every name used here has to
+// be imported. Without this the whole `getCurrentGps` block died on
+// `ReferenceError: jest is not defined` — i.e. the watchdog these tests exist
+// to protect was not actually being exercised.
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { getCurrentGps, mayReadDeviceLocation, metersBetween } from "./geolocation";
 
 type PositionCallback = (pos: unknown) => void;
 type ErrorCallback = () => void;
@@ -132,5 +137,32 @@ describe("metersBetween", () => {
     const b = { latitude: 32.001, longitude: 34.78 };
     expect(metersBetween(a, b)).toBeGreaterThan(100);
     expect(metersBetween(a, b)).toBeLessThan(120);
+  });
+});
+
+// The gate in front of every reading. It is ONE function on purpose: the same
+// two conditions used to be re-typed at each call site, and the venue lanes
+// duly ended up without the Capacitor half — a "find nearby" press that could
+// hang forever on an iPad. See docs/IPAD_BUILD.md.
+describe("mayReadDeviceLocation", () => {
+  it("is off unless the student's setting is explicitly on", () => {
+    expect(mayReadDeviceLocation({ enabled: false, host: "web" })).toBe(false);
+    expect(mayReadDeviceLocation({ enabled: false, host: "electron" })).toBe(false);
+    // Default-off is the whole point: a child's whereabouts is a clinician
+    // decision, so anything but a true must read as "do not ask".
+    expect(mayReadDeviceLocation({ enabled: undefined as any, host: "web" })).toBe(false);
+    expect(mayReadDeviceLocation({ enabled: "yes" as any, host: "web" })).toBe(false);
+  });
+
+  it("allows a reading on the hosts that can actually produce one", () => {
+    expect(mayReadDeviceLocation({ enabled: true, host: "web" })).toBe(true);
+    expect(mayReadDeviceLocation({ enabled: true, host: "electron" })).toBe(true);
+  });
+
+  it("refuses on the Capacitor host even when the setting is on", () => {
+    // No NSLocationWhenInUseUsageDescription in the iPad shell: a reading can
+    // never succeed, and iPadOS fires neither callback. Flip this test only
+    // together with adding the plist key in scripts/ios-configure.mjs.
+    expect(mayReadDeviceLocation({ enabled: true, host: "capacitor" })).toBe(false);
   });
 });

@@ -186,6 +186,22 @@ export function isAnimal(symbol: string): boolean {
 }
 
 /**
+ * A PLANT — the growing things, read off the SAME registry that answers
+ * `isAnimal`: a species row tagged `kind: "plant"`. The sentence builder's
+ * [plants] chip is exactly this predicate over the noun library, which is why
+ * it is a spec question and not a word list: authoring a plant species (even a
+ * `stub`, with no body plan yet) puts it on the board, and nothing else has to
+ * hear about it.
+ *
+ * NOT a property. A plant is not something a cupboard holds or a hand carries —
+ * it is a KIND of thing, filed beside `isAnimal` for the same reason animals
+ * are not filed as "furniture with legs".
+ */
+export function isPlant(symbol: string): boolean {
+  return getSpecies(head(symbol))?.kind === "plant";
+}
+
+/**
  * THE CONFORMANCE HELPER (user law: concrete nouns get their properties from
  * the spec side): of the given noun symbols, which are neither core engine
  * concepts, nor living things, nor spec-derived? Each one is a thing the board

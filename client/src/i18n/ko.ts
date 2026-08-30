@@ -2608,6 +2608,8 @@ export const ko = {
     allowNotesDesc: "비활성화 시 AI는 세션 메모를 읽거나 쓸 수 없습니다 (메시지 로그 외에 저장되는 기억 없음)",
     shareMonitorNotesWithInstitute: "내 기관과 AAC 메모 공유",
     shareMonitorNotesWithInstituteDesc: "활성화하면 이 기관의 임상의가 AAC 세션 중 기록된 메모(관심사, 선호도, 관찰)를 볼 수 있습니다. 명시적인 공유 권한을 요구하려면 비활성화하세요.",
+    deviceLocation: "기기 위치",
+    deviceLocationDesc: "이 기기가 자신의 위치를 보고하도록 허용하여 세션이 등록된 장소(학교, 치료실, 집)를 인식하고 식당 앱이 근처를 찾을 수 있게 합니다. 끄면 기기에 위치를 묻지 않습니다.",
     aiLearning: "AI 학습 설정",
     aiLearningDesc: "세션 중 AI가 스스로 기록할 수 있는 항목입니다.",
     autoAddContacts: "새 연락처 학습",
@@ -3658,6 +3660,7 @@ export const ko = {
       "public-symbols": "공개 심볼",
       crm: "CRM 채팅",
       admins: "관리자",
+      "security-incidents": "Security Incidents", // TODO-i18n
     },
     admins: {
       title: "관리자",
@@ -3684,6 +3687,88 @@ export const ko = {
       updatedToast: "관리자가 업데이트되었습니다",
       deletedToast: "관리자가 삭제되었습니다",
       errorGeneric: "문제가 발생했습니다",
+    },
+    incidents: {
+      addNote: "Add note", // TODO-i18n
+      clockStartsNow: "The notification clock starts now, from the moment of discovery.", // TODO-i18n
+      column: {
+        customerDue: "Customer notice due", // TODO-i18n
+        discovered: "Discovered", // TODO-i18n
+        reference: "Reference", // TODO-i18n
+        reportDue: "Report due", // TODO-i18n
+        severity: "Severity", // TODO-i18n
+        status: "Status", // TODO-i18n
+        title: "Title", // TODO-i18n
+      },
+      empty: "No incidents recorded.", // TODO-i18n
+      event: {
+        closed: "Closed", // TODO-i18n
+        deadline_missed: "Deadline missed", // TODO-i18n
+        deadline_warning: "Deadline approaching", // TODO-i18n
+        note: "Note", // TODO-i18n
+        notification_sent: "Notification sent", // TODO-i18n
+        opened: "Opened", // TODO-i18n
+        status_change: "Status changed", // TODO-i18n
+      },
+      field: {
+        affectedScope: "What data was affected", // TODO-i18n
+        description: "What happened", // TODO-i18n
+        endedAt: "Event ended", // TODO-i18n
+        kind: "Type", // TODO-i18n
+        locale: "Letter language", // TODO-i18n
+        recipients: "Recipients", // TODO-i18n
+        severity: "Severity", // TODO-i18n
+        status: "Status", // TODO-i18n
+        target: "Notify", // TODO-i18n
+        title: "Title", // TODO-i18n
+      },
+      fillTokens: "Fill in the remaining placeholders before sending:", // TODO-i18n
+      hideClosed: "Hide closed", // TODO-i18n
+      kind: {
+        phi_breach: "Personal data breach", // TODO-i18n
+        security_breach: "Security breach", // TODO-i18n
+        vendor_incident: "Sub-processor incident", // TODO-i18n
+      },
+      locale: {
+        en: "English", // TODO-i18n
+        he: "Hebrew", // TODO-i18n
+      },
+      markEnded: "Mark event ended", // TODO-i18n
+      notify: "Notify", // TODO-i18n
+      notifyFailed: "Notification could not be delivered", // TODO-i18n
+      notifySent: "Notification sent", // TODO-i18n
+      obligation: {
+        customer: "Customer (contractual)", // TODO-i18n
+        investigation_report: "Investigation report", // TODO-i18n
+        regulator: "Regulator", // TODO-i18n
+      },
+      opened: "Incident opened", // TODO-i18n
+      openFailed: "Could not open the incident", // TODO-i18n
+      openIncident: "Open incident", // TODO-i18n
+      overdueBanner: "{count} incident(s) have a deadline that has passed with nothing sent.", // TODO-i18n
+      overdueList: "Past due:", // TODO-i18n
+      preview: "Preview", // TODO-i18n
+      recipientsPlaceholder: "Comma-separated email addresses", // TODO-i18n
+      sendFailedDetail: "Could not reach:", // TODO-i18n
+      sendForReal: "Send now", // TODO-i18n
+      sentAt: "sent", // TODO-i18n
+      severity: {
+        critical: "Critical", // TODO-i18n
+        high: "High", // TODO-i18n
+        low: "Low", // TODO-i18n
+        medium: "Medium", // TODO-i18n
+      },
+      showClosed: "Show closed", // TODO-i18n
+      status: {
+        closed: "Closed", // TODO-i18n
+        contained: "Contained", // TODO-i18n
+        dismissed: "Dismissed", // TODO-i18n
+        notified: "Notified", // TODO-i18n
+        open: "Open", // TODO-i18n
+      },
+      subtitle: "Breach register and notification deadlines.", // TODO-i18n
+      timeline: "Timeline", // TODO-i18n
+      title: "Security Incidents", // TODO-i18n
     },
   },
 
@@ -3910,6 +3995,11 @@ export const ko = {
       builder: "문장 만들기",
       game: "게임",
     },
+    facilitatorRefused: {
+      consent: "이 학생은 안내된 의사소통이 꺼져 있습니다",
+      unavailable: "그 버튼은 더 이상 화면에 없습니다",
+    },
+    indicateHint: "버튼을 길게 눌러 가리키기",
   },
 
   personChat: {

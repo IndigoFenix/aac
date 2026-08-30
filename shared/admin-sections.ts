@@ -24,6 +24,10 @@ export const ADMIN_SECTIONS = [
   "deep-analyses",
   "public-symbols",
   "crm",
+  // The security/privacy incident register (AKIM appendix §6). Separate
+  // permission from `admins` on purpose: whoever is on call for a breach is
+  // not necessarily who manages backoffice accounts.
+  "security-incidents",
   "admins",
 ] as const;
 

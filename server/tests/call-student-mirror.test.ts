@@ -1,4 +1,6 @@
 import { describe, it, expect } from "@jest/globals";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 /**
  * What the clinician's split view is allowed to believe about the student's
  * screen. Every rule here exists because the mirror had already been wrong
@@ -39,6 +41,7 @@ const ALL_TARGETS: BuilderTarget[] = [
   { kind: "play" },
   { kind: "backspace" },
   { kind: "clear" },
+  { kind: "guess", buttonId: "wf-3" },
 ];
 
 const cells = (n: number): BuilderMirrorCell[] =>
@@ -182,6 +185,78 @@ describe("serializeBuilderMirror", () => {
   });
 });
 
+describe("Word Finder", () => {
+  const wf = [
+    { id: "s1", row: 3, col: 2, label: "Food", buttonType: "suggestion", suggestionKey: "cat:food" },
+    { id: "n1", row: 0, col: 0, label: "Hot", buttonType: "narrow", narrowDimension: "temp", narrowValue: "hot" },
+    { id: "g1", row: 9, col: 9, label: "Juice", colSpan: 3 },
+  ] as any[];
+
+  it("shows the SAME board the student is looking at", () => {
+    // The word finder's buttons are authored by the server and sent to the
+    // child; the clinician gets those, not a second rendering of them. Before
+    // this the mirror sent an empty grid and a badge.
+    const snap = serializeBuilderMirror({ cells: [], guessButtons: wf });
+    expect(snap.board.pages[0].buttons.map((b) => b.label)).toEqual(["Food", "Hot", "Juice"]);
+  });
+
+  it("re-flows four across, the way the student's own grid does", () => {
+    // The student's grid is `repeat(4, …)` + gridAutoRows: it FLOWS, so the
+    // buttons' authored row/col (and spans) are ignored there and must be here.
+    const snap = serializeBuilderMirror({ cells: [], guessButtons: wf });
+    const buttons = snap.board.pages[0].buttons;
+    expect(buttons.map((b) => [b.row, b.col])).toEqual([[0, 0], [0, 1], [0, 2]]);
+    expect(buttons.every((b) => b.colSpan === 1 && b.rowSpan === 1)).toBe(true);
+    expect(snap.board.grid.cols).toBe(4);
+  });
+
+  it("routes a press back as a guess target carrying the button's own id", () => {
+    // A word-finder button means one of three different things
+    // (suggestion / narrow / free guess) and only the builder's dispatch can
+    // tell them apart — so the id travels and the builder decides.
+    const snap = serializeBuilderMirror({ cells: [], guessButtons: wf });
+    expect(snap.board.pages[0].buttons.map((b) => parseBuilderTarget(b.id))).toEqual([
+      { kind: "guess", buttonId: "s1" },
+      { kind: "guess", buttonId: "n1" },
+      { kind: "guess", buttonId: "g1" },
+    ]);
+  });
+
+  it("keeps the chrome around it — the sentence so far is still the point", () => {
+    const snap = serializeBuilderMirror({
+      cells: [],
+      guessButtons: wf,
+      slots: ["i_me", "want"],
+      tabs: [{ id: "who", label: "Who", active: true }],
+    });
+    expect(snap.strip.filter((x) => x.kind === "slot")).toHaveLength(2);
+    expect(snap.contextButtons).toHaveLength(1);
+  });
+});
+
+describe("mirrored colours", () => {
+  it("never paints a fill dark enough to swallow the label", () => {
+    // Every mirrored button is DARK text on the fill, exactly as
+    // BoardButtonVisual paints the real board. A saturated tint here is
+    // invisible text — which is how the first version rendered a whole board.
+    const snap = serializeBuilderMirror({
+      cells: [{ key: "bess", label: "Bess", present: true }],
+      tabs: [{ id: "who", label: "Who", active: true }],
+    });
+    const fills = [
+      snap.board.pages[0].buttons[0].color,
+      snap.contextButtons[0].color,
+    ];
+    for (const hex of fills) {
+      expect(hex).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      const n = parseInt(hex!.slice(1), 16);
+      // ITU-R BT.709 luminance, the same proxy the builder's own swatches use.
+      const lum = 0.2126 * ((n >> 16) & 0xff) + 0.7152 * ((n >> 8) & 0xff) + 0.0722 * (n & 0xff);
+      expect(lum).toBeGreaterThan(160);
+    }
+  });
+});
+
 describe("parseCallDataMessage", () => {
   const mirror = (extra: Record<string, unknown>) =>
     parseCallDataMessage({ k: "board-mirror", board: { pages: [] }, at: 1, ...extra });
@@ -228,6 +303,67 @@ describe("parseCallDataMessage", () => {
     for (const target of [undefined, null, "water", { kind: "detonate" }, { kind: "slot", index: -1 }]) {
       expect(parseCallDataMessage({ k: "facilitator-builder", target, at: 1 })).toBeNull();
     }
+  });
+
+  it("carries a refusal back to the clinician", () => {
+    // `allowFacilitatorControl` is off by default, so the FIRST thing a
+    // clinician who arms Interact sees is a dropped press. A refusal has to be
+    // able to travel or the feature reads as a broken call.
+    expect(parseCallDataMessage({ k: "facilitator-ack", ok: false, reason: "consent", at: 2 }))
+      .toEqual({ k: "facilitator-ack", ok: false, reason: "consent", at: 2 });
+    expect(parseCallDataMessage({ k: "facilitator-ack", ok: true, at: 2 }))
+      .toEqual({ k: "facilitator-ack", ok: true, reason: undefined, at: 2 });
+    // An unknown reason must not reach a `t()` lookup as a raw key.
+    expect((parseCallDataMessage({ k: "facilitator-ack", ok: false, reason: "banana", at: 2 }) as any).reason)
+      .toBeUndefined();
+  });
+
+  it("carries a POINT, and its release", () => {
+    expect(parseCallDataMessage({ k: "board-indicate", buttonId: "btn-9", speak: true, at: 3 }))
+      .toEqual({ k: "board-indicate", buttonId: "btn-9", speak: true, at: 3 });
+    // Release: an explicit null, not an absent field.
+    expect(parseCallDataMessage({ k: "board-indicate", buttonId: null, at: 3 }))
+      .toEqual({ k: "board-indicate", buttonId: null, speak: false, at: 3 });
+  });
+});
+
+/**
+ * POINTING ONLY WORKS IF BOTH SIDES AGREE ON THE ID.
+ *
+ * A clinician's press-and-hold sends a `bx:` target; the AAC resolves it with
+ * `document.querySelector('[data-mirror-id=…]')`. That lookup fails SILENTLY —
+ * the button just never lights — so a pointable surface added to the mirror
+ * without a matching tag on the builder is invisible until someone tries it on
+ * a live call with a child.
+ *
+ * Asserted on the SOURCE because the repo's unit config is `testEnvironment:
+ * 'node'` and declines jsdom (see call-audio-ownership.test.ts, same trade).
+ */
+describe("builder pointing targets are tagged on both sides", () => {
+  const builder = readFileSync(
+    resolve(process.cwd(), "client-aac/src/components/SentenceConstructorBoard.tsx"),
+    "utf8",
+  );
+
+  // Every kind the mirror can draw as a pointable element. `slot` is absent on
+  // purpose: sentence slots are drawn inside GlyphCompositor's SVG, so there is
+  // no per-slot element to tag — and pointing at a word the child already
+  // placed is not a "look here" anyway.
+  const POINTABLE: Array<BuilderTarget["kind"]> = [
+    "word", "engineWord", "guess", "tab", "engineTab", "chip", "engineChip",
+    "page", "play", "backspace", "clear",
+  ];
+
+  it.each(POINTABLE)("the builder tags its %s elements with data-mirror-id", (kind) => {
+    // Either inline on the element, or handed down as a `mirrorId` prop.
+    expect(builder).toContain(`formatBuilderTarget({ kind: "${kind}"`);
+  });
+
+  it("routes those ids through data-mirror-id, the attribute the AAC looks up", () => {
+    expect(builder).toContain("data-mirror-id");
+    // The Word Finder's buttons come from a shared renderer, so their tag rides
+    // the same passthrough AppMiniBoard uses.
+    expect(builder).toContain('extraButtonProps={{ "data-mirror-id"');
   });
 });
 

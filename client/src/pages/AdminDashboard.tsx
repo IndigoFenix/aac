@@ -16,6 +16,7 @@ import { LicenseList } from '@/components/admin/LicenseList';
 import { LicenseStudents } from '@/components/admin/LicenseStudents';
 import { StudentBudgetPanel } from '@/components/admin/StudentBudgetPanel';
 import { ActivityLog } from '@/components/admin/ActivityLog';
+import { SecurityIncidents } from '@/components/admin/SecurityIncidents';
 import { IdentityProviderList } from '@/components/admin/IdentityProviderList';
 import { DeepAnalysisAdmin } from '@/components/admin/DeepAnalysisAdmin';
 import { PublicSymbolsAdmin } from '@/components/admin/PublicSymbolsAdmin';
@@ -63,6 +64,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/licenses')) return 'licenses';
     if (location.startsWith('/admin/identity-providers')) return 'identity-providers';
     if (location.startsWith('/admin/activity-log')) return 'activity-log';
+    if (location.startsWith('/admin/security-incidents')) return 'security-incidents';
     if (location.startsWith('/admin/deep-analyses')) return 'deep-analyses';
     if (location.startsWith('/admin/public-symbols')) return 'public-symbols';
     if (location.startsWith('/admin/crm')) return 'crm';
@@ -115,6 +117,8 @@ export function AdminDashboard() {
       navigate('/admin/identity-providers');
     } else if (section === 'activity-log') {
       navigate('/admin/activity-log');
+    } else if (section === 'security-incidents') {
+      navigate('/admin/security-incidents');
     } else if (section === 'deep-analyses') {
       navigate('/admin/deep-analyses');
     } else if (section === 'public-symbols') {
@@ -182,6 +186,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'activity-log') {
       return <ActivityLog />;
+    }
+
+    if (activeSection === 'security-incidents') {
+      return <SecurityIncidents />;
     }
 
     if (activeSection === 'deep-analyses') {

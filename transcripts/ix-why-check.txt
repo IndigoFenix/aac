@@ -1,0 +1,57 @@
+# world-text v1   proto=1
+# world=homestead.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=4aa59e83+dirty
+# started=2026-08-28T06:41:13.005Z
+# ─────────────────────────────────────────
+> wait 8
+SAY    person-5: "I will carry the stone to the yard."  [carry.will + stone + to + yard]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 8.0s.
+> scene
+SCENE  outdoors — 7 thing(s) in view.
+  person-5 (person), here south, holding basket-2.
+  basket-1 (basket), here south.
+  wood-1 (wood), here west.
+  4 people, there east.
+SAY    person-1: "Are you okay?"  [you + ok#question]
+TICK   quiet after 2.0s.
+> approach person-5
+ERR    you are a bodiless spirit here — act through a creature (family/send) or claim a body.
+> say place#question + you + go
+OK     said: place#question + you + go
+SAY    person-5: "I don't understand."  [i_me + understand.not]
+SAY    person-3: "I'm happy."  [i_me + happy]
+TICK   quiet after 2.0s.
+> wait 4
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> say why
+OK     said: why
+SAY    person-3: "I don't know."  [i_me + think.not]
+TICK   quiet after 1.5s.
+> wait 4
+TICK   waited 4.0s.
+> say why
+OK     said: why
+SAY    person-1: "I don't know."  [i_me + think.not]
+TICK   quiet after 1.5s.
+> wait 4
+TICK   waited 4.0s.
+# ─────────────────────────────────────────
+# commands=9  presses=0  screens=1  sim=27.5s
+# events: TICK 8  SAY 7  OK 3  BOARD 1  NOTE 1  SCENE 1  ERR 1

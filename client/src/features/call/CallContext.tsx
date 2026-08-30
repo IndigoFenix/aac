@@ -12,6 +12,7 @@ import { CallClient, type CallClientEvent, type CallState, type IncomingCall } f
 import {
   parseCallDataMessage,
   type CallDataMessage,
+  type FacilitatorAckMessage,
   type MirrorHudSections,
   type MirrorQuickButton,
   type MirrorStripItem,
@@ -143,6 +144,13 @@ interface CallContextValue {
   /** Facilitate a press on the mirrored SENTENCE BUILDER (consent-gated on the
    *  AAC side, like every other facilitator press). */
   sendBuilderPress: (target: BuilderTarget) => void;
+  /** The AAC's answer to the last facilitated press. A refusal has to reach the
+   *  screen: `allowFacilitatorControl` is off by default, so without this the
+   *  first thing a clinician sees after arming Interact is nothing at all. */
+  facilitatorAck: FacilitatorAckMessage | null;
+  /** POINT at a button on the student's own board without pressing it (or pass
+   *  null to stop pointing) — the remote twin of the in-room hold gesture. */
+  indicateButton: (buttonId: string | null, speak?: boolean) => void;
   /** Inbound screen-share streams (getDisplayMedia), keyed by personId. */
   screenStreams: Map<string, MediaStream>;
   /** Whether a screen-share has been requested/active for this call. */
@@ -244,6 +252,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [game, setGameState] = useState<CallGame | null>(null);
   const [peerGains, setPeerGains] = useState<Map<string, number>>(new Map());
   const [mirroredBoard, setMirroredBoard] = useState<MirroredBoardState | null>(null);
+  const [facilitatorAck, setFacilitatorAck] = useState<FacilitatorAckMessage | null>(null);
   const [mirroredDwell, setMirroredDwell] = useState<string | null>(null);
   const [mirroredSelection, setMirroredSelection] = useState<{ buttonId: string; at: number } | null>(null);
   // Inbound screen-share streams (getDisplayMedia), kept separate from camera
@@ -436,6 +445,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           });
         } else if (m.k === "board-dwell") {
           setMirroredDwell(m.buttonId);
+        } else if (m.k === "facilitator-ack") {
+          setFacilitatorAck(m);
         } else if (m.k === "board-selection") {
           setMirroredSelection({ buttonId: m.buttonId, at: m.at });
         } else if (m.k === "world-cmd") {
@@ -662,6 +673,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     clientRef.current?.sendData({ k: "facilitator-builder", target, at: Date.now() });
   }, []);
 
+  const indicateButton = useCallback((buttonId: string | null, speak = true) => {
+    clientRef.current?.sendData({ k: "board-indicate", buttonId, speak, at: Date.now() });
+  }, []);
+
   const requestScreenShare = useCallback((on: boolean) => {
     setScreenRequested(on);
     clientRef.current?.requestScreenShare(on);
@@ -813,6 +828,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     mirroredSelection,
     sendData,
     sendBuilderPress,
+    facilitatorAck,
+    indicateButton,
     screenStreams,
     screenRequested,
     requestScreenShare,
@@ -830,7 +847,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia, outputMuted,
     error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech,
     game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains, activeSpeakerId,
-    mirroredBoard, mirroredDwell, mirroredSelection, sendData, sendBuilderPress, screenStreams, screenRequested, requestScreenShare,
+    mirroredBoard, mirroredDwell, mirroredSelection, sendData, sendBuilderPress, facilitatorAck, indicateButton, screenStreams, screenRequested, requestScreenShare,
     startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,
   ]);
 

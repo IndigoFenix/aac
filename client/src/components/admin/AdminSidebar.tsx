@@ -18,6 +18,7 @@ import {
   KeyRound,
   ClipboardList,
   ShieldCheck,
+  ShieldAlert,
   LogOut,
   Sparkles,
   Image as ImageIcon,
@@ -73,6 +74,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: t('admin.sections.activity-log'),
       section: 'activity-log' as AdminSection,
       testId: 'admin-nav-activity-log',
+    },
+    {
+      icon: ShieldAlert,
+      label: t('admin.sections.security-incidents'),
+      section: 'security-incidents' as AdminSection,
+      testId: 'admin-nav-security-incidents',
     },
     {
       icon: History,

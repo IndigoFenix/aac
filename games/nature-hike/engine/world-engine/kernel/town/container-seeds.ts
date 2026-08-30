@@ -86,12 +86,20 @@ export function marketBagSeeds(market: { x: number; y: number }): ContainerSeed[
 }
 
 /**
- * THE BUILDER'S YARD — ONE basket, owned by the `town`.
+ * THE BUILDER'S YARD — the ESTABLISHED town's one worldgen basket.
  *
- * Its own seed and not part of the market's, because the yard is registered
- * BEFORE the houses gate: an age-0 homestead (settlers, no plan houses, no
- * market yet) has a yard with real stock in it, and that is the settlement most
- * in need of something to haul with.
+ * Its own seed and not part of the market's, because the yard registers
+ * BEFORE the houses gate and an established town's stock deserves something
+ * to haul with.
+ *
+ * ⚖️ A FOUNDING town gets NOTHING from here (user law, 2026-08-28: "there
+ * shouldn't be any items spawned alongside the founders by default. That is
+ * a spec parameter."). Founders' bags are declared in the world's own
+ * `stock` (`{ basket: 2, … }`) and step out of the crate as real objects
+ * when the yard renders — quest-host `renderYardCrate`. The haul machinery
+ * already prices the basket detour (`haulBagLeg`); supply is the spec's
+ * call, not the engine's. This seed fires only for towns whose houses
+ * already stand — worldgen furniture, not founders' luggage.
  */
 export function yardBagSeeds(yard: { x: number; y: number }): ContainerSeed[] {
   return [{ glyph: "basket", at: { x: yard.x + 1.1, y: yard.y + 0.9 }, owner: TOWN_SCOPE }];

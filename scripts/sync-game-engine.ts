@@ -67,10 +67,11 @@ cpSync(join(SHARED, "world-engine"), join(ENGINE_DIR, "world-engine"), {
 for (const f of SHARED_ROOT_DEPS) cpSync(join(SHARED, f), join(ENGINE_DIR, f));
 
 // ── 2. Lower the game's world spec from the world-lab preset ────────────────
-// Same fold as world-lab spec-form's getDocument(): lower the tree, then fold
-// the session fields into doc.game.
+// THE SAME fold the world-lab's own "run" button uses — one function, because
+// this used to be a hand-copied duplicate of it and a session field added to
+// the form was silently dropped from every generated spec.
 const { TEST_WORLDS } = await import("../games/world-lab/src/worlds.ts");
-const { lowerObjectDef } = await import("../shared/world-engine/object-def.ts");
+const { lowerTreeWorld } = await import("../games/world-lab/src/lower-world.ts");
 const { parseGameSettings } = await import("../shared/world-engine/kernel/manifest.ts");
 
 const preset = TEST_WORLDS.find((w: { id: string }) => w.id === syncManifest.worldId);
@@ -80,17 +81,10 @@ if (!preset) {
 }
 
 type Dict = Record<string, unknown>;
-const doc = lowerObjectDef(preset.world.tree) as Dict;
-const g = doc.game as Dict;
-const session: Dict = (preset.world.session ?? {}) as Dict;
-if (session.avatar !== undefined) g.avatar = session.avatar;
-if (session.can_fly) g.can_fly = true;
-if (typeof session.avatar_species === "string") g.avatar_species = session.avatar_species;
-if (session.scale && typeof session.scale === "object") g.scale = session.scale;
-if (session.culture && typeof session.culture === "object") g.culture = session.culture;
+const doc = lowerTreeWorld(preset.world) as Dict;
 
 // Fail the sync, not the game boot, on a document the engine won't accept.
-parseGameSettings(g, "game");
+parseGameSettings(doc.game as Dict, "game");
 
 const specPath = join(GAME_DIR, syncManifest.specOut);
 mkdirSync(dirname(specPath), { recursive: true });

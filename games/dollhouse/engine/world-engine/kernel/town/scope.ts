@@ -78,6 +78,16 @@ export const WILD_AREA_PREFIX = "wild:area:";
  *  condensed record of a mobile scatter scope (kernel/civ/bands.ts `Band`),
  *  foldable through the generic dispatch like any other scope kind. */
 export const BAND_PREFIX = "band:";
+/** ⚖️ A DESIGNATED GROUND LOT (#44 instant lot designation) — partitioned
+ *  open ground: the community-ground charter's own patch, a scope BEFORE any
+ *  building stands on it. Keyed by the charter ord (stable forever — the
+ *  zoning row's own promise), so the id survives paint-overs and saves. */
+export const LOT_PREFIX = "lot:";
+
+/** The scope id of a designated ground lot (by its charter ord). */
+export function lotScopeId(ord: number): ScopeId {
+  return `${LOT_PREFIX}${ord}`;
+}
 
 /** The scope id of an offloaded wild area. */
 export function wildAreaId(key: string): ScopeId {
@@ -143,6 +153,11 @@ export type ScopeRef =
    *  kind (B-①, band-settlement-round.md). It RECEIVES goods (a band banks a
    *  store — that is Gate A's whole subject), unlike a natural source. */
   | { kind: "band"; key: string }
+  /** A DESIGNATED GROUND LOT — the community-ground charter's patch (#44):
+   *  a prop set down on it hangs off the LOT, which hangs off the town —
+   *  the scope walk's answer to the outdoor-census hole on partitioned
+   *  ground. Holds no stack of its own, exactly like a building. */
+  | { kind: "lot"; ord: number }
   /** Any registered container object — the fallback. */
   | { kind: "container"; objectId: string };
 
@@ -236,6 +251,10 @@ export function parseScopeId(id: ScopeId): ScopeRef {
     return { kind: "buildingFurnPile", buildingKey: afterPrefix(id, BUILDING_FURN_PREFIX) };
   }
   if (id.startsWith(BAND_PREFIX)) return { kind: "band", key: afterPrefix(id, BAND_PREFIX) };
+  if (id.startsWith(LOT_PREFIX)) {
+    const ord = Number(afterPrefix(id, LOT_PREFIX));
+    if (Number.isFinite(ord)) return { kind: "lot", ord };
+  }
   if (id.startsWith(TOWN_PREFIX)) return { kind: "town", key: afterPrefix(id, TOWN_PREFIX) };
   return { kind: "container", objectId: id };
 }
@@ -269,6 +288,7 @@ export function scopeIdOf(ref: ScopeRef): ScopeId {
     case "annexPile": return `${ANNEX_PILE_PREFIX}${ref.ord}`;
     case "buildingFurnPile": return `${BUILDING_FURN_PREFIX}${ref.buildingKey}`;
     case "band": return `${BAND_PREFIX}${ref.key}`;
+    case "lot": return `${LOT_PREFIX}${ref.ord}`;
     case "siteStock": return SITE_STOCK_ID;
     case "container": return ref.objectId;
   }
@@ -373,6 +393,10 @@ export function scopeParentOf(ref: ScopeRef, ctx: ScopeContext = {}): ScopeId | 
       // A mobile collective hangs off the REGION it walks — nothing this
       // session models: the same honest null a partner's town answers.
       return null;
+    case "lot":
+      // Partitioned ground hangs off the settlement that partitioned it —
+      // prop → lot → town, the walk the community charter buys (#44).
+      return localTown(ctx);
     case "depot":
     case "produce":
     case "shelf":
