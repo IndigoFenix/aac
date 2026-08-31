@@ -9,6 +9,7 @@
 // override with GOOGLE_STT_ENDPOINT) so audio is processed in-region.
 
 import { SpeechClient } from "@google-cloud/speech";
+import { recordDisclosure } from "../processorDisclosure";
 
 /** A single word with its timing — carried so a downstream re-segmenter (the
  *  caption idea pass) can split a line on REAL word boundaries instead of
@@ -337,6 +338,10 @@ export async function transcribeSegments(
   audioBuffer: Buffer,
   opts: SttOptions = {},
 ): Promise<SttResult> {
+  // AKIM §18.5 — the child's recorded speech is PHI, and it is about to leave
+  // for Google. Ids come from the ambient disclosure context entered at the
+  // session/request boundary.
+  recordDisclosure({ processor: "google", channel: "stt", model: "google-speech-v1", endpoint: "api" });
   const languageCode = toBcp47(opts.languageHint);
   const client = getClient();
   const wav = parseWav(audioBuffer, opts.sampleRateHertz ?? 16000);
@@ -482,6 +487,10 @@ const STREAM_TAIL_MS = 3_000;
  * STREAM_*_MS constants), so one session can outlive Google's 305s cap.
  */
 export function createStreamingSession(opts: SttStreamOptions = {}): SttStreamSession {
+  // AKIM §18.5 — a streaming recognize session sends live microphone audio to
+  // Google for as long as it is open. Recorded once at session open; the
+  // coalescer's five-minute window is the right granularity for a stream.
+  recordDisclosure({ processor: "google", channel: "stt", model: "google-speech-streaming", endpoint: "api" });
   const client = getClient();
   const languageCode = toBcp47(opts.languageHint);
   const speechContexts = (opts.speechContexts ?? [])
@@ -657,6 +666,8 @@ export async function detectLanguage(
   audioBuffer: Buffer,
   opts: { candidates?: string[]; sampleRateHertz?: number } = {},
 ): Promise<DetectLanguageResult> {
+  // AKIM §18.5 — language detection sends a real speech sample to Google.
+  recordDisclosure({ processor: "google", channel: "stt", model: "google-speech-detect", endpoint: "api" });
   const client = getClient();
   const wav = parseWav(audioBuffer, opts.sampleRateHertz ?? 16000);
   const sampleRateHertz = opts.sampleRateHertz ?? wav.sampleRate;

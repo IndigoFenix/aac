@@ -5,7 +5,10 @@ import type { Request, Response } from "express";
 import { licenseService } from "../services/licenseService";
 import { studentService } from "../services/studentService";
 import { studentRepository } from "../repositories";
+import { activityLogService } from "../services/activityLogService";
+import type { License } from "@shared/schema";
 import { licensePermissionsSchema } from "@shared/license-permissions";
+import { ADMIN_WILDCARD_PERMISSION } from "@shared/admin-sections";
 import type { StudentWithAacSettings } from "@shared/schema";
 import { z } from "zod";
 
@@ -39,6 +42,7 @@ const createLicenseSchema = z.object({
   licenseType: z.string().optional(),
   subscriptionType: z.string().optional(),
   permissions: licensePermissionsSchema.optional(),
+  allowSessionRecording: z.boolean().optional(),
   isTrial: z.boolean().optional(),
   trialExpiresAt: z.string().optional(),
   inviteEmail: z.string().email(),
@@ -64,6 +68,7 @@ const updateLicenseSchema = z.object({
   licenseType: z.string().optional(),
   subscriptionType: z.string().optional(),
   permissions: licensePermissionsSchema.optional().nullable(),
+  allowSessionRecording: z.boolean().optional(),
   isActive: z.boolean().optional(),
   isTrial: z.boolean().optional(),
   trialExpiresAt: z.string().nullable().optional(),
@@ -74,12 +79,80 @@ function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
 }
 
+/**
+ * Whether this admin is a FULL system admin rather than a section-scoped one.
+ *
+ * Not `user.isSystemAdmin`: `adaptAdminAsUser` sets that to `true`
+ * unconditionally for every admin identity, so it cannot tell the two apart.
+ * The wildcard permission is the real discriminator — it is what
+ * `requireAdminSection` itself measures against — and these routes are only
+ * reachable by an admin identity in the first place.
+ */
+function isFullSystemAdmin(user: any): boolean {
+  return Array.isArray(user?.adminPermissions)
+    && user.adminPermissions.includes(ADMIN_WILDCARD_PERMISSION);
+}
+
+/**
+ * Guard the one license field that is NOT a licenses-section privilege.
+ *
+ * `allowSessionRecording` turns on a camera pointed at a child (see
+ * shared/aac/session-recording.ts). It is an operator-granted marketing
+ * entitlement, so it stays with whoever holds the whole backoffice rather than
+ * with anyone who happens to have been given the Licenses page. Returns true
+ * when the request has been refused and the caller must stop.
+ */
+function refusedSessionRecordingField(req: Request, res: Response): boolean {
+  if (!("allowSessionRecording" in (req.body ?? {}))) return false;
+  if (isFullSystemAdmin(req.user)) return false;
+  res.status(403).json({
+    message: "Only a full system admin may change the session-recording entitlement",
+    code: "SESSION_RECORDING_ADMIN_ONLY",
+  });
+  return true;
+}
+
+/**
+ * Audit a change to the session-recording entitlement.
+ *
+ * License rows have no subject type of their own, and adding one would be a
+ * database enum migration for a single row shape — so the subject is the party
+ * the license belongs to (its institute, or the user for a private license),
+ * with the license id in the details. An unassigned license (a pending invite,
+ * belonging to neither yet) still logs, with a null subject id, because a
+ * silent grant is worse than an imprecisely-addressed one.
+ */
+function auditSessionRecordingGrant(
+  req: Request,
+  license: License,
+  allowSessionRecording: boolean,
+  route: string,
+): void {
+  const admin = req.user as any;
+  activityLogService.log({
+    instituteId: license.instituteId ?? null,
+    userId: admin?.id ?? null,
+    eventType: "update",
+    subjectType1: license.instituteId ? "institute" : "user",
+    subjectId1: license.instituteId ?? license.userId ?? null,
+    details: {
+      route,
+      licenseId: license.id,
+      field: "allowSessionRecording",
+      allowSessionRecording,
+    },
+  });
+}
+
 /** Parse multipart form body where JSON fields arrive as strings */
 function parseMultipartBody(body: Record<string, any>): Record<string, any> {
   const parsed = { ...body };
   // Boolean fields sent as strings from FormData
   if (typeof parsed.isTrial === "string") parsed.isTrial = parsed.isTrial === "true";
   if (typeof parsed.createInstitute === "string") parsed.createInstitute = parsed.createInstitute === "true";
+  if (typeof parsed.allowSessionRecording === "string") {
+    parsed.allowSessionRecording = parsed.allowSessionRecording === "true";
+  }
   // JSON fields
   if (typeof parsed.permissions === "string") {
     try { parsed.permissions = JSON.parse(parsed.permissions); } catch { delete parsed.permissions; }
@@ -115,6 +188,11 @@ class LicenseController {
   async createLicense(req: Request & { file?: Express.Multer.File }, res: Response): Promise<void> {
     try {
       const body = req.is("multipart/form-data") ? parseMultipartBody(req.body) : req.body;
+      // Measured against the PARSED body: over multipart the field arrives as a
+      // string, and a guard reading req.body directly would see "false" (truthy)
+      // as an attempt to set it.
+      req.body = body;
+      if (refusedSessionRecordingField(req, res)) return;
       const parsed = createLicenseSchema.safeParse(body);
       if (!parsed.success) {
         res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
@@ -135,6 +213,9 @@ class LicenseController {
         baseUrl,
         currentUser.id,
       );
+      if (license.allowSessionRecording) {
+        auditSessionRecordingGrant(req, license, true, "POST /api/admin/licenses");
+      }
       res.status(201).json({ license });
     } catch (error: any) {
       console.error("Error creating license:", error);
@@ -148,6 +229,7 @@ class LicenseController {
 
   async updateLicense(req: Request, res: Response): Promise<void> {
     try {
+      if (refusedSessionRecordingField(req, res)) return;
       const parsed = updateLicenseSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
@@ -163,6 +245,14 @@ class LicenseController {
       if (!license) {
         res.status(404).json({ message: "License not found" });
         return;
+      }
+      if (parsed.data.allowSessionRecording !== undefined) {
+        auditSessionRecordingGrant(
+          req,
+          license,
+          license.allowSessionRecording,
+          "PATCH /api/admin/licenses/:id",
+        );
       }
       res.json({ license });
     } catch (error: any) {

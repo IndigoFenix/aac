@@ -16,7 +16,7 @@
  * DB-free (test:unit): both provider services are mocked at the module seam.
  */
 
-import { describe, it, expect, beforeEach, jest } from "@jest/globals";
+import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
 
 const elSynthesize = jest.fn<(text: string, opts: any) => Promise<Buffer>>();
 // Generator-shaped mock: swapped per-test via elStreamImpl.
@@ -58,6 +58,18 @@ async function collect(gen: AsyncGenerator<Buffer>): Promise<Buffer[]> {
   for await (const chunk of gen) out.push(chunk);
   return out;
 }
+
+const { setDisclosureSink } = await import("../services/processorDisclosure.js");
+
+// These suites drive the REAL egress code, which now writes an AKIM §18.5
+// disclosure row per send. With no sink installed the default one lazily
+// imports activityLogService → server/db.ts, dragging a Postgres pool into a
+// DB-free suite; and with no student context attached every call prints the
+// PROCESSOR_DISCLOSURE_CONTEXT_MISSING marker. That marker is a CloudWatch
+// alarm in production — routine test noise would teach people to ignore it.
+// Neither is this suite's subject, so the rows go nowhere.
+beforeEach(() => setDisclosureSink(() => {}));
+afterEach(() => setDisclosureSink(null));
 
 beforeEach(() => {
   jest.clearAllMocks();

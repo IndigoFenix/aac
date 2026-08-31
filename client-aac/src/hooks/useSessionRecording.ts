@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  normalizeSessionRecordingSettings,
+  applySessionRecordingLicense,
   type SessionRecordingSettings,
 } from "@shared/aac/session-recording.js";
 import { capabilities, getRecordingBridge } from "@/lib/platform";
@@ -24,6 +24,17 @@ import { SessionRecorder, type RecorderStatus } from "@/lib/session-recorder/rec
 export interface UseSessionRecordingOptions {
   /** Raw `aacSettings.sessionRecording` for the active student. */
   raw: unknown;
+  /**
+   * `sessionRecordingLicensed` from the student profile — whether the licence
+   * carries the entitlement at all.
+   *
+   * The server already forces `enabled: false` into `raw` when this is false,
+   * so re-checking it here is redundant on a good day. It exists for the bad
+   * one: this profile is cached to localStorage, and a cached copy taken while
+   * the entitlement was live outlives its revocation. Defence in depth, on the
+   * one feature where the failure mode is a camera nobody meant to run.
+   */
+  licensed: boolean;
   /** The SHARED camera stream from MultiCameraProvider — never a fresh capture. */
   cameraStream: MediaStream | null;
   studentId: string | null;
@@ -46,9 +57,12 @@ const IDLE_STATUS: RecorderStatus = {
 export function useSessionRecording(
   opts: UseSessionRecordingOptions,
 ): UseSessionRecordingResult {
-  const { raw, cameraStream, studentId, sessionId } = opts;
+  const { raw, licensed, cameraStream, studentId, sessionId } = opts;
 
-  const settings = normalizeSessionRecordingSettings(raw);
+  // Gated, not merely normalized: an unlicensed student's settings read as
+  // disabled here no matter what the (possibly stale) profile said, and the
+  // caretaker view downstream shows the same thing the encoders obey.
+  const settings = applySessionRecordingLicense(raw, licensed);
   const supported = capabilities().sessionRecording && !!getRecordingBridge();
   const [status, setStatus] = useState<RecorderStatus>(IDLE_STATUS);
 
@@ -68,7 +82,7 @@ export function useSessionRecording(
   const hasCamera = !!cameraStream?.getVideoTracks().length;
 
   useEffect(() => {
-    if (!supported || !settings.enabled || !hasCamera || !studentId) {
+    if (!licensed || !supported || !settings.enabled || !hasCamera || !studentId) {
       setStatus((prev) => (prev === IDLE_STATUS ? prev : IDLE_STATUS));
       return;
     }
@@ -100,7 +114,7 @@ export function useSessionRecording(
     // `settings` is captured by value via settingsKey — a settings change is a
     // deliberate restart of the encoders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supported, settingsKey, hasCamera, studentId]);
+  }, [licensed, supported, settingsKey, hasCamera, studentId]);
 
   return { status, settings, supported };
 }

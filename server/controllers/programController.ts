@@ -4,6 +4,7 @@ import { activityLogService } from "../services/activityLogService";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 import { canWriteObject } from "../services/sharing/visibility";
 import { requireConsentForResponse } from "../services/consent/consentGate";
+import { summarizeChanges, changeDetails } from "../services/activityChanges";
 import {
   insertProgramSchema,
   updateProgramSchema,
@@ -275,6 +276,7 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "program",
           subjectId1: id,
+          details: changeDetails(summarizeChanges("programs", program as any, validatedData as any)),
         });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
@@ -328,7 +330,10 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "program",
           subjectId1: id,
-          details: { action: "activate" },
+          details: {
+            action: "activate",
+            ...(changeDetails(summarizeChanges("programs", program as any, { status: updated.status })) ?? {}),
+          },
         });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
@@ -370,7 +375,10 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "program",
           subjectId1: id,
-          details: { action: "archive" },
+          details: {
+            action: "archive",
+            ...(changeDetails(summarizeChanges("programs", program as any, { status: updated.status })) ?? {}),
+          },
         });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
@@ -705,6 +713,7 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "goal",
           subjectId1: id,
+          details: changeDetails(summarizeChanges("goals", goal as any, validatedData as any)),
         });
       } else {
         res.status(404).json({ success: false, message: "Goal not found" });
@@ -789,7 +798,15 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "goal",
           subjectId1: id,
-          details: { action: "achieve" },
+          details: {
+            action: "achieve",
+            ...(changeDetails(
+              summarizeChanges("goals", goal as any, {
+                status: updated.status,
+                achievedDate: updated.achievedDate,
+              }),
+            ) ?? {}),
+          },
         });
       } else {
         res.status(404).json({ success: false, message: "Goal not found" });
@@ -918,6 +935,7 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "objective",
           subjectId1: id,
+          details: changeDetails(summarizeChanges("objectives", objective as any, validatedData as any)),
         });
       } else {
         res.status(404).json({ success: false, message: "Objective not found" });
@@ -1505,6 +1523,7 @@ export class ProgramController {
           eventType: "update",
           subjectType1: "progress_report",
           subjectId1: id,
+          details: changeDetails(summarizeChanges("progress_reports", report as any, validatedData as any)),
         });
       } else {
         res.status(404).json({ success: false, message: "Progress report not found" });

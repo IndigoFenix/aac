@@ -10,6 +10,7 @@ import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
+import { purgeStudentRecordings } from "@/lib/platform";
 
 import ProfileSetup from "@/components/ProfileSetup";
 import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
@@ -1265,6 +1266,9 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // See shared/aac/session-recording.ts.
   const { status: recordingStatus } = useSessionRecording({
     raw: userProfile?.aacSettings?.sessionRecording,
+    // Absent means NO. The profile can arrive from a cache written before the
+    // licence changed, so anything other than an explicit true is unlicensed.
+    licensed: userProfile?.sessionRecordingLicensed === true,
     cameraStream: userStream,
     studentId: studentId ?? null,
     sessionId: liveSessionId,
@@ -2325,6 +2329,31 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           // The server profile is the only source of truth for debug mode, so
           // it must be able to turn the panel OFF as well as on.
           setDebugMode(profile.debugMode === true);
+        } else if (response.status === 403 || response.status === 404) {
+          // THE OFFLINE ARM OF ERASURE.
+          //
+          // If session recording was on, video of this child is sitting in this
+          // device's Videos folder, where no server-side delete can reach it.
+          // The relay pushes `purge_recordings` when the device is live — but
+          // the device that most needs purging is the one that was switched off
+          // when the erasure happened and never heard it. This is that device,
+          // the moment it comes back.
+          //
+          // ONLY these two statuses, and the distinction is the whole safety
+          // of it:
+          //   403 — "Access denied to this student". A tombstone deactivates
+          //         every user_students link and institute enrolment, so a
+          //         soft-deleted student's profile fetch lands exactly here.
+          //         It is a decision the server made about THIS student.
+          //   404 — the row is physically gone (the hard delete ran).
+          // A bare 401 is deliberately NOT included: it means "no valid
+          // session", which is an expired cookie far more often than a revoked
+          // device, and purging on it would destroy a caretaker's footage every
+          // time a tablet's login lapsed. A 5xx is likewise not a verdict.
+          //
+          // Silent by design: no toast, no caption. Whoever is at the device
+          // may be the child, and this is not news to break to her.
+          void purgeStudentRecordings(studentId);
         }
       } catch (error) {
         console.error('Failed to load user profile:', error);

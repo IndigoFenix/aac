@@ -4,6 +4,7 @@
 import * as tiktoken from "js-tiktoken";
 import type { LLMProviderKey } from "@shared/llm-options";
 import { getStructuredProvider } from "../providers/provider-factory";
+import type { DisclosureContext } from "../processorDisclosure";
 
 const { getEncoding, getEncodingNameForModel } = tiktoken as any;
 
@@ -176,21 +177,39 @@ export function GPTToolsToRSP(tools: GPTTool[]): any[] {
 // GPT CLASS
 // ──────────────────────────────────────────────────────────────────────────────
 
+/** Per-instance provider routing + audit attribution for a GPT helper. */
+export interface GPTProviderConfig {
+  provider: LLMProviderKey;
+  model: string;
+  background?: boolean;
+  /** AKIM §18.5 — who these calls are about. See the constructor. */
+  disclosure?: DisclosureContext;
+}
+
 export class GPT {
   lastPrompt: string;
   promptTokens: number;
   completionTokens: number;
   model: string;
-  providerConfig?: { provider: LLMProviderKey; model: string; background?: boolean };
+  providerConfig?: GPTProviderConfig;
+  /** AKIM §18.5 attribution for every call this instance makes. */
+  disclosure?: DisclosureContext;
 
   /** `background: true` marks every call from this instance as work nobody is
-   *  waiting on a screen for — see `StructuredRequest.background`. */
-  constructor(providerConfig?: { provider: LLMProviderKey; model: string; background?: boolean }) {
+   *  waiting on a screen for — see `StructuredRequest.background`.
+   *
+   *  `disclosure` names the student/session this instance's calls are about,
+   *  so the provider can write the AKIM §18.5 row without the ids having to
+   *  survive the async chain. Omit it only where an ambient
+   *  `runWithDisclosureContext` covers the call — a path with neither is
+   *  logged as `contextMissing` and shows up as a coverage gap. */
+  constructor(providerConfig?: GPTProviderConfig, disclosure?: DisclosureContext) {
     this.lastPrompt = "";
     this.promptTokens = 0;
     this.completionTokens = 0;
     this.model = "gpt-4o-mini";
     this.providerConfig = providerConfig;
+    this.disclosure = providerConfig?.disclosure ?? disclosure;
   }
 
   tokenCount(text: string) {
@@ -242,6 +261,7 @@ export class GPT {
       searchContextSize,
       vectorStoreId,
       ...(this.providerConfig?.background ? { background: true } : {}),
+      disclosure: this.disclosure,
     });
   }
 

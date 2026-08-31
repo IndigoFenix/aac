@@ -23,6 +23,7 @@ import {
   import type { LLMProviderKey } from "@shared/llm-options";
   import { extractDocument } from "./file-extractor";
   import { storeFile } from "./tools/media-file-cache";
+import type { DisclosureContext } from "../processorDisclosure";
 
   const isProd = process.env.NODE_ENV === 'production';
   
@@ -109,6 +110,9 @@ import {
       agent: AgentTemplate;
       session?: ChatSession;
       gpt: GPT;
+      /** AKIM §18.5 — who this conversation is about; attached to every
+       *  provider request this manager makes. */
+      disclosure?: DisclosureContext;
       maxCredits: number;
       openedTopics: string[] = [];
       memoryValues: any = {}; // Memory values from User, Student, UserStudent
@@ -198,7 +202,11 @@ import {
           currentImage?: CurrentImage;
           images?: string[];
           documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>;
-          providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
+          providerConfig?: import("./gpt").GPTProviderConfig;
+          /** AKIM §18.5 — who this conversation is about. Inherited by the
+           *  manager's own internal summarization calls, which run on their
+           *  own GPT instances. */
+          disclosure?: DisclosureContext;
           timezone?: string;
           creditCategory?: string;
       }){
@@ -206,7 +214,8 @@ import {
           this.log = JSON.parse(JSON.stringify(settings.log));
           this.memoryValues = settings.memoryValues ? JSON.parse(JSON.stringify(settings.memoryValues)) : {};
           this.maxCredits = settings.maxCredits;
-          this.gpt = new GPT(settings.providerConfig);
+          this.disclosure = settings.providerConfig?.disclosure ?? settings.disclosure;
+          this.gpt = new GPT(settings.providerConfig, this.disclosure);
           this.onUpdateMemoryValues = async (memoryValues: any) => {
               memoryValues = JSON.parse(JSON.stringify(memoryValues));
               console.log('[ChatMsgMgr] onUpdateMemoryValues — Context_Board name:', memoryValues?.Context_Board?.name ?? '(none)', 'pages:', memoryValues?.Context_Board?.pages?.length ?? 0);
@@ -771,7 +780,7 @@ import {
        */
       private async resummarize(longSummary: string): Promise<string> {
           try {
-              const summaryGpt = new GPT();
+              const summaryGpt = new GPT(undefined, this.disclosure);
               const inputItems: GPTInputItem[] = [{
                   type: 'message',
                   role: 'user',
@@ -850,7 +859,7 @@ import {
 
               if (texts.length === 0) return 'Earlier conversation messages were removed to save context space.';
 
-              const summaryGpt = new GPT();
+              const summaryGpt = new GPT(undefined, this.disclosure);
               const inputItems: GPTInputItem[] = [{
                   type: 'message',
                   role: 'user',
@@ -1453,6 +1462,7 @@ import {
               let usage: { promptTokens: number; completionTokens: number; cachedTokens?: number; cacheCreationTokens?: number } | undefined;
 
               const stream = chatProvider.streamChat({
+                  disclosure: this.disclosure,
                   model,
                   messages: providerMessages,
                   tools: chatTools.length > 0 ? chatTools : undefined,

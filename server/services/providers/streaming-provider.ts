@@ -1,6 +1,8 @@
 // server/services/providers/streaming-provider.ts
 // Interface for providers that handle the streaming chat + tools path (interactive agent)
 
+import type { DisclosureContext } from "../processorDisclosure";
+
 /**
  * A single message in the chat format (matches OpenAI ChatCompletionMessageParam shape).
  */
@@ -46,6 +48,14 @@ export interface ChatRequest {
   cachedContent?: string;
   /** Abort signal — when triggered, the stream should stop as soon as possible */
   signal?: AbortSignal;
+  /**
+   * AKIM §18.5 — who this request's content is about, for the disclosure log.
+   * The provider records the send; the ids ride on the request because a DTO
+   * survives queue hops and generator boundaries that AsyncLocalStorage does
+   * not. Omitted ⇒ the ambient `runWithDisclosureContext` is used; absent
+   * both, the send is logged as `contextMissing` rather than dropped.
+   */
+  disclosure?: DisclosureContext;
 }
 
 /**

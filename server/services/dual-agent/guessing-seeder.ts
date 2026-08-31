@@ -23,6 +23,7 @@
 import { getChatProvider } from "../providers/provider-factory";
 import type { ChatTool } from "../providers/streaming-provider";
 import { GUESSING_CATEGORIES, type GuessingCategory } from "@shared/guessing-mode/types";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /**
  * Parse the student's interests from monitor memory (`Student_Interests`) into
@@ -117,6 +118,10 @@ export async function seedGuessingFromConversation(input: {
   lastAIQuestion: string;
   signal?: AbortSignal;
   onUsage?: (usage: GuessingSeedUsage) => void;
+  /** AKIM §18.5 — who the conversation being classified is about. The prompt
+   *  quotes a real question the AI asked this child, so the send is a
+   *  disclosure like any other. */
+  disclosure?: DisclosureContext;
 }): Promise<GuessingSeedResult | null> {
   const question = input.lastAIQuestion.trim();
   if (!question) return null;
@@ -125,6 +130,7 @@ export async function seedGuessingFromConversation(input: {
   try {
     const provider = getChatProvider(SEEDER_PROVIDER);
     result = await provider.completeChat({
+      disclosure: input.disclosure,
       model: SEEDER_MODEL,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },

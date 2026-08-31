@@ -25,12 +25,20 @@ resource "aws_cloudtrail" "main" {
     # base, so a write there is a fleet-wide change worth a CloudTrail record.
     # The logs bucket is deliberately NOT here: it is write-only log delivery
     # at high volume, and data events are billed per event.
+    # aws_s3_bucket.aac_updates is count-gated on var.enable_aac_auto_update, so
+    # it MUST be indexed and MUST be dropped when the bucket does not exist.
+    # Written unindexed on 2026-08-26 (commit c32a1a83), which is a static
+    # config error: `terraform validate` AND `terraform plan` fail for every
+    # profile — including the ecs-lean one deploy.yml runs — with "Missing
+    # resource instance key", so the infrastructure job (and every job that
+    # needs it) has been failing since. Fixed here because nothing else in this
+    # repo can be planned until it is.
     data_resource {
       type = "AWS::S3::Object"
-      values = [
-        "${aws_s3_bucket.uploads.arn}/",
-        "${aws_s3_bucket.aac_updates.arn}/",
-      ]
+      values = concat(
+        ["${aws_s3_bucket.uploads.arn}/"],
+        var.enable_aac_auto_update ? ["${aws_s3_bucket.aac_updates[0].arn}/"] : [],
+      )
     }
   }
 

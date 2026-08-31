@@ -3475,6 +3475,7 @@ export const ar = {
       createInstitute: "إنشاء مؤسسة",
       instituteName: "اسم المؤسسة",
       instituteNamePlaceholder: "مثال: منطقة سبرينغفيلد التعليمية",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "نوع المؤسسة",
       school: "مدرسة",
       clinic: "عيادة",
@@ -3500,6 +3501,8 @@ export const ar = {
       complianceRegimes: "أطر الامتثال",
       complianceRegimesHint: "اختر الأطر التنظيمية (HIPAA وGDPR ووزارة التعليم الإسرائيلية وغيرها) التي تنطبق على هذه المؤسسة. كل اختيار يحدد مدة الاحتفاظ بسجلات التدقيق، والموعد النهائي للإبلاغ عن خرق البيانات، ومعيار إمكانية الوصول الذي يعلنه التطبيق، ومزوّد الهوية المتوقع لتسجيل الدخول. وعند انطباق أكثر من إطار، تسود القاعدة الأكثر صرامة.",
       insuranceBridgeEnabled: "جسر التأمين",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "نظام الفوترة",
       billingRegimeNone: "بلا",
       billingRegimeUsCpt: "الولايات المتحدة (رموز CPT)",

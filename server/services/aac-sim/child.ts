@@ -21,6 +21,19 @@
 import { getStructuredProvider } from "../providers/provider-factory.js";
 import type { JSONSchema } from "../chat/gpt.js";
 import type { ChildProfile } from "@shared/aac/sim-profiles";
+import type { DisclosureContext } from "../processorDisclosure";
+
+/**
+ * AKIM §18.5 — the simulation's disclosure context.
+ *
+ * DECLARED non-PHI, not merely context-free. The "child" here is a generated
+ * persona in a script: no row in `students` backs it, and nothing on the wire
+ * came from a real person. Attaching this makes the recorder skip the send
+ * EXPLICITLY (see NON_PHI_USE_CASES in services/processorDisclosure.ts), which
+ * is the point — a genuine PHI path that merely forgot its ids still fails
+ * loud, while this one is silent because someone asserted it is safe.
+ */
+const SIM_DISCLOSURE: DisclosureContext = { studentId: null, useCase: "aac_sim" };
 
 /** The catalog key for the child model — cheapest per token of the Gemini tier. */
 export const CHILD_MODEL = "gemini-2.5-flash";
@@ -158,7 +171,9 @@ export async function childTurn(input: ChildTurnInput): Promise<ChildTurn> {
     "Reply with one action.",
   ].join("\n");
 
-  const body = [
+  
+
+const body = [
     history.length ? `What you have already done:\n${recap}\n` : "",
     pressesSoFar > 0 ? `You have pressed ${pressesSoFar} time(s) so far.\n` : "",
     "THE SCREEN:",
@@ -169,6 +184,7 @@ export async function childTurn(input: ChildTurnInput): Promise<ChildTurn> {
 
   const provider = getStructuredProvider("gemini");
   const res = await provider.structuredComplete({
+    disclosure: SIM_DISCLOSURE,
     model: CHILD_MODEL,
     instructions,
     input: [{ type: "message", role: "user", content: body }],

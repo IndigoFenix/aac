@@ -21,11 +21,21 @@
 // Cross-instance duplicates would need DB-backed coordination — acceptable for
 // now because both runaway sessions came from one household hitting one host.
 
+import type { RecordingPurgeReason } from "@shared/aac/session-recording.js";
+
 export interface LiveSessionHandle {
   /** Ask the AAC client to reload itself (e.g. to pick up changed settings). */
   requestReload(): void;
   /** Force this session inert — a newer session for the same student took over. */
   supersede(reason: string): void;
+  /**
+   * Ask the device to delete its LOCAL session-recording clips of this student
+   * (erasure, or a revoked device slot). Optional: only the three-agent
+   * coordinator implements it — the legacy relay never registers here at all —
+   * so callers must go through `requestRecordingPurge` in
+   * ../recordingPurge.ts rather than assuming it is present.
+   */
+  requestRecordingPurge?(reason: RecordingPurgeReason): void;
   /** Classroom sessions are never stolen from or by (see module comment). */
   isClassroom: boolean;
 }

@@ -45,6 +45,49 @@ export function canAuthenticate(user: { isActive?: boolean | null } | null | und
   return user.isActive !== false;
 }
 
+/**
+ * How stale `last_active_at` is allowed to get before a request refreshes it.
+ *
+ * The column was stamped ONLY at fresh login, and sessions live a week
+ * (`sessionTtl` below), so a user who signs in on Monday and works every day
+ * still reads as "last active Monday" the following Sunday. Every access
+ * review built on that column was reviewing the wrong number.
+ *
+ * 15 minutes is the trade: a dormancy threshold measured in months does not
+ * care about quarter-hour resolution, and one write per user per quarter-hour
+ * is nothing next to a write on every request.
+ */
+const LAST_ACTIVE_STAMP_INTERVAL_MS = 15 * 60 * 1000;
+
+/**
+ * Refresh `last_active_at` for the deserialized principal, at most once per
+ * `LAST_ACTIVE_STAMP_INTERVAL_MS`.
+ *
+ * Fire-and-forget on purpose: this is bookkeeping on the hot path of EVERY
+ * authenticated request. It is never awaited, and a failure is logged and
+ * swallowed — a database hiccup on an activity stamp must not log anybody out.
+ */
+function stampLastActive(
+  kind: "user" | "admin",
+  id: string,
+  lastActiveAt: Date | null | undefined,
+): void {
+  if (
+    lastActiveAt instanceof Date &&
+    Date.now() - lastActiveAt.getTime() < LAST_ACTIVE_STAMP_INTERVAL_MS
+  ) {
+    return;
+  }
+  const now = new Date();
+  const write =
+    kind === "admin"
+      ? adminUserRepository.update(id, { lastActiveAt: now } as any)
+      : storage.updateUser(id, { lastActiveAt: now });
+  void Promise.resolve(write).catch((err) => {
+    console.error(`[userAuth] last_active_at stamp failed for ${kind} ${id}:`, err);
+  });
+}
+
 export function getUserSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);
@@ -303,6 +346,7 @@ export async function setupUserAuth(app: Express) {
         if (!admin || !canAuthenticate(admin)) {
           return done(null, false);
         }
+        stampLastActive("admin", admin.id, admin.lastActiveAt);
         return done(null, adaptAdminAsUser(admin));
       }
 
@@ -313,6 +357,7 @@ export async function setupUserAuth(app: Express) {
       if (user && !canAuthenticate(user)) {
         return done(null, false);
       }
+      if (user) stampLastActive("user", user.id, user.lastActiveAt);
       done(null, user);
     } catch (error) {
       done(error);

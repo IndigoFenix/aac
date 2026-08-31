@@ -1,0 +1,1 @@
+ALTER TABLE "licenses" ADD COLUMN "allow_session_recording" boolean DEFAULT false NOT NULL;

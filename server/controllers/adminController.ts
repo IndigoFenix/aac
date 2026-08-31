@@ -6,6 +6,7 @@ import { userRepository, interpretationRepository, settingsRepository, institute
 import { chatRepository } from "../repositories/chatRepository";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
 import { MODEL_OPTIONS, USE_CASES, modelAllowedForUseCase, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
+import { providerPolicyReason } from "@shared/llm-policy";
 import { CRM_DEFAULT_SYSTEM_PROMPT } from "../services/crmChat/prompts";
 import type { CrmPotentialCustomer } from "@shared/schema";
 
@@ -502,7 +503,23 @@ export class AdminController {
           return;
         }
 
-        await settingsRepository.updateLLMConfig(useCase as UseCaseKey, config);
+        // Transfer policy (AKIM §14): a PHI-bearing use case may only be
+        // pointed at a disclosed processor. Checked before ANY write in the
+        // batch lands, so a rejected save is atomic from the admin's side.
+        const policyReason = providerPolicyReason(useCase as UseCaseKey, config.provider);
+        if (policyReason) {
+          res.status(400).json({
+            success: false,
+            code: "LLM_PROVIDER_NOT_PERMITTED",
+            message: policyReason,
+          });
+          return;
+        }
+      }
+
+      const actor = (req as any).user?.id as string | undefined;
+      for (const [useCase, config] of Object.entries(configs)) {
+        await settingsRepository.updateLLMConfig(useCase as UseCaseKey, config, actor);
       }
 
       const updated = await settingsRepository.getAllLLMConfigs();

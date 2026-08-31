@@ -79,6 +79,7 @@ import { phiReadAudit } from "./middleware/phi-read-audit";
 
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { apiProviderRepository } from "./repositories";
+import { accessReviewController } from "./controllers/accessReviewController";
 import { chatController } from "./controllers/chatController";
 import { chatStreamController } from "./controllers/chatStreamController";
 import { chatSessionsController } from "./controllers/chatSessionsController";
@@ -111,6 +112,7 @@ import { securityIncidentController } from "./controllers/securityIncidentContro
 import { insuranceBridgeController } from "./controllers/insuranceBridgeController";
 import { identityController } from "./controllers/identityController";
 import { studentErasureController } from "./controllers/studentErasureController";
+import { dataSubjectRequestController } from "./controllers/dataSubjectRequestController";
 import { cronController } from "./controllers/cronController";
 
 // Configure multer for image uploads
@@ -511,6 +513,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.post("/api/institutes/:id/leave", requireAuth, (req, res) =>
     instituteController.leaveInstitute(req, res)
+  );
+
+  // AKIM §2.8 periodic access review for one institute. Institute-admin gated
+  // (the same check updateMember/removeMember make) because the list exists to
+  // drive those two actions. Reading it is itself logged as a `view`.
+  app.get("/api/institutes/:id/access-review", requireAuth, (req, res) =>
+    accessReviewController.getInstituteReview(req, res)
   );
   
   // Institute Invites (admin actions)
@@ -2321,6 +2330,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/users/:id", requireAdmin, (req, res) =>
     adminController.getUser(req, res)
   );
+  // An `isActive` change is claimed FIRST: deactivation has to evict live
+  // sessions and record the before/after, which the general profile update
+  // below does neither of. Anything else falls straight through to it.
+  app.patch("/api/admin/users/:id", requireAdmin, (req, res, next) =>
+    accessReviewController.setUserActive(req, res, next)
+  );
   app.patch("/api/admin/users/:id", requireAdmin, (req, res) =>
     adminController.updateUser(req, res)
   );
@@ -2348,6 +2363,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MFA enforcement
   app.patch("/api/admin/users/:id/mfa-enforcement", requireAdmin, (req, res) =>
     adminController.setMfaEnforcement(req, res)
+  );
+
+  // Global dormant-account list (users + backoffice admins). Same 'admins'
+  // section as the account management it feeds — whoever can disable an
+  // account is who needs to see which ones look abandoned.
+  app.get("/api/admin/access-review", requireAuth, requireAdminSection("admins"), (req, res) =>
+    accessReviewController.getGlobalReview(req, res)
   );
 
   // Admins (backoffice admin management). Gated by the 'admins' section
@@ -2642,6 +2664,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // §8.4 written confirmation of deletion, derived from the audit trail.
   app.get("/api/admin/students/:id/erasure-certificate", requireAuth, requireSystemAdmin, (req, res) =>
     studentErasureController.getCertificate(req, res)
+  );
+
+  // Data-subject ACCESS ("produce", AKIM §18.4) and AMENDMENT ("correct", §18.3).
+  // The register + its 72-hour forward deadline; the deadline sweep runs hourly
+  // from maintenanceCrons. Writes carry validateCSRF — these are state changes
+  // driven from the admin console, same as the incident register's.
+  app.get("/api/admin/data-subject-requests", requireAuth, requireSystemAdmin, (req, res) =>
+    dataSubjectRequestController.list(req, res)
+  );
+  app.post("/api/admin/data-subject-requests", requireAuth, requireSystemAdmin, validateCSRF, (req, res) =>
+    dataSubjectRequestController.open(req, res)
+  );
+  app.get("/api/admin/data-subject-requests/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    dataSubjectRequestController.get(req, res)
+  );
+  app.post("/api/admin/data-subject-requests/:id/forward", requireAuth, requireSystemAdmin, validateCSRF, (req, res) =>
+    dataSubjectRequestController.forward(req, res)
+  );
+  app.post("/api/admin/data-subject-requests/:id/decide", requireAuth, requireSystemAdmin, validateCSRF, (req, res) =>
+    dataSubjectRequestController.decide(req, res)
+  );
+  // Returns the bundle AND marks the request answered — PHI leaves here, so the
+  // `export` audit row is written before the response.
+  app.post("/api/admin/data-subject-requests/:id/fulfil", requireAuth, requireSystemAdmin, validateCSRF, (req, res) =>
+    dataSubjectRequestController.fulfil(req, res)
+  );
+  app.post("/api/admin/data-subject-requests/:id/withdraw", requireAuth, requireSystemAdmin, validateCSRF, (req, res) =>
+    dataSubjectRequestController.withdraw(req, res)
+  );
+  // The bundle without a register row behind it — a phone request answered
+  // first and filed second. Still logged as `export`.
+  app.get("/api/admin/students/:id/data-subject-export", requireAuth, requireSystemAdmin, (req, res) =>
+    dataSubjectRequestController.exportStudent(req, res)
   );
 
   // Customer support (system admin)

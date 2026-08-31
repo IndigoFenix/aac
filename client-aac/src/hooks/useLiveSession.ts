@@ -14,7 +14,7 @@ import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache
 import { useAacCaption } from "./useAacCaption";
 import { API_BASE_URL } from "@/lib/api-base";
 import { apiRequest } from "@/lib/queryClient";
-import { getHost } from "@/lib/platform";
+import { getHost, purgeStudentRecordings } from "@/lib/platform";
 import { getCurrentGps, mayReadDeviceLocation, metersBetween, type GpsReading } from "@/lib/geolocation";
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -688,6 +688,25 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             setClientConfig(prev => prev ? { ...prev, ...(msg as any).config } : (msg as any).config);
           }
           break;
+
+        case "purge_recordings": {
+          // The student was erased, or this device's slot was revoked. Delete
+          // the local session-recording clips of that student and tell the
+          // server what went — silently: nothing about an erasure belongs on
+          // the screen of whoever is sitting at the device.
+          //
+          // The ack is sent on EVERY host, including the ones that cannot
+          // record at all (iPad, browser tab), where the bridge answers with an
+          // empty list. A server waiting for an acknowledgement must not be
+          // left waiting by a platform that had nothing to delete.
+          const purgeStudent = String((msg as any).studentId ?? "");
+          if (purgeStudent) {
+            void purgeStudentRecordings(purgeStudent).then(({ clipIds }) => {
+              wsSend({ type: "recordings_purged", studentId: purgeStudent, clipIds });
+            });
+          }
+          break;
+        }
 
         case "text": {
           // WHAT THE MODEL ACTUALLY SAID. The decision — scaffold restarts, tag

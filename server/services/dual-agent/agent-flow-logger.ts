@@ -22,7 +22,7 @@ import { fileURLToPath } from "url";
 import { db } from "../../db";
 import { sessionDebugLogs } from "../../../shared/schema-private";
 import { sessionContextStore } from "./dual-agent-logger";
-import { fileDebugLoggingEnabled, sessionDebugPersistenceEnabled } from "../file-debug-log";
+import { fileDebugLoggingEnabled, sessionDebugPersistenceEnabled, safeAppend, safeTruncate } from "../file-debug-log";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -52,7 +52,7 @@ const DB_NOISY_SECTIONS = new Set<string>([
 function ensureSize(): void {
   try {
     if (fs.existsSync(FLOW_LOG_FILE) && fs.statSync(FLOW_LOG_FILE).size > MAX_SIZE) {
-      fs.writeFileSync(FLOW_LOG_FILE, "");
+      safeTruncate(FLOW_LOG_FILE);
     }
   } catch { /* ignore */ }
 }
@@ -89,7 +89,7 @@ function appendLine(line: string): void {
   if (!fileDebugLoggingEnabled) return;
   try {
     ensureSize();
-    fs.appendFileSync(FLOW_LOG_FILE, line + "\n");
+    safeAppend(FLOW_LOG_FILE, line + "\n");
   } catch { /* ignore */ }
 }
 

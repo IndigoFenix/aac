@@ -14,6 +14,19 @@
 import { getStructuredProvider } from "../providers/provider-factory.js";
 import type { JSONSchema } from "../chat/gpt.js";
 import type { RunTranscript } from "./runner.js";
+import type { DisclosureContext } from "../processorDisclosure";
+
+/**
+ * AKIM §18.5 — the simulation's disclosure context.
+ *
+ * DECLARED non-PHI, not merely context-free. The "child" here is a generated
+ * persona in a script: no row in `students` backs it, and nothing on the wire
+ * came from a real person. Attaching this makes the recorder skip the send
+ * EXPLICITLY (see NON_PHI_USE_CASES in services/processorDisclosure.ts), which
+ * is the point — a genuine PHI path that merely forgot its ids still fails
+ * loud, while this one is silent because someone asserted it is safe.
+ */
+const SIM_DISCLOSURE: DisclosureContext = { studentId: null, useCase: "aac_sim" };
 
 /** Catalog key for the judge. Stronger than the child, and it runs once. */
 export const JUDGE_MODEL = "claude-haiku";
@@ -132,6 +145,7 @@ export function renderForJudge(t: RunTranscript): string {
   return lines.join("\n");
 }
 
+
 export async function judgeRun(
   transcript: RunTranscript,
 ): Promise<{
@@ -142,6 +156,7 @@ export async function judgeRun(
 }> {
   const provider = getStructuredProvider("claude");
   const res = await provider.structuredComplete({
+    disclosure: SIM_DISCLOSURE,
     model: JUDGE_MODEL,
     instructions:
       "You are reviewing one session of a child using an AAC communication device. " +

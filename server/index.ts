@@ -117,6 +117,12 @@ app.get('/health', (_req, res) => {
     );
   }
 
+  // AKIM §18.5 — flush any half-open processor-disclosure windows when the
+  // task is asked to stop, so a deploy does not drop a live session's trailing
+  // send count. See services/processorDisclosure.ts.
+  const { installDisclosureShutdownFlush } = await import("./services/processorDisclosure");
+  installDisclosureShutdownFlush();
+
   // Resume any deep analyses that were interrupted by a prior server restart.
   import("./services/deepAnalysisService").then(({ resumeStalledAnalyses }) => {
     resumeStalledAnalyses().catch(err => log(`resumeStalledAnalyses error: ${err?.message || err}`));

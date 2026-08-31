@@ -24,9 +24,14 @@ import { runStudentErasureSweep } from "./studentErasureCron";
 import { runSpendThresholdCheck } from "./providerAlertService";
 import { runPackageLinkReconcile } from "./packages/packageLinkCron";
 import { runSecurityIncidentDeadlineSweep } from "./securityIncidentSweepCron";
+import { runDataSubjectRequestSweep } from "./dataSubjectRequestSweepCron";
+import { runAccessReview } from "./accessReviewCron";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
+// Well inside setInterval's ~24.8-day maximum delay (a longer period would
+// silently fire immediately and forever, since the delay overflows to 1ms).
+const SEVEN_DAYS_MS = 7 * ONE_DAY_MS;
 
 interface MaintenanceCron {
   name: string;
@@ -90,6 +95,32 @@ const CRONS: MaintenanceCron[] = [
     summarize: (r) =>
       r.raised.length > 0
         ? `${r.raised.length} deadline finding(s) raised, ${r.suppressed} already announced, alerted=${r.alerted}`
+        : undefined,
+  },
+  {
+    // Hourly: AKIM §18.3's 72-hour window for forwarding a data-subject access
+    // or amendment request to the controlling institute. Daily would let a
+    // 72-hour deadline be blown by nearly a day before anyone was told.
+    name: "data-subject-deadlines",
+    initialDelayMs: 75_000,
+    intervalMs: ONE_HOUR_MS,
+    run: () => runDataSubjectRequestSweep(),
+    summarize: (r) =>
+      r.raised.length > 0
+        ? `${r.raised.length} forward-deadline finding(s) raised, ${r.suppressed} already announced, alerted=${r.alerted}`
+        : undefined,
+  },
+  {
+    // Weekly: AKIM §2.8's periodic access review. Dormancy is measured in
+    // months, so a daily mail about the same accounts would be ignored by the
+    // second week — which is the same as not sending it.
+    name: "access-review",
+    initialDelayMs: 180_000,
+    intervalMs: SEVEN_DAYS_MS,
+    run: () => runAccessReview(),
+    summarize: (r) =>
+      r.flagged.length > 0
+        ? `${r.flagged.length} dormant account(s), ${r.deactivated.length} auto-deactivated, alerted=${r.alerted}`
         : undefined,
   },
   {

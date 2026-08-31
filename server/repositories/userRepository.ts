@@ -11,13 +11,14 @@ import {
   personChatPushTokens,
   callSessions,
   callParticipants,
+  userStudents,
   type User,
   type InsertUser,
 } from "@shared/schema";
 import { db } from "../db";
 import { personRepository } from "./personRepository";
 import { releaseBiometricDataAndImage } from "../services/biometric/recognition-service";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, and, or, isNull, lt, inArray } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -149,6 +150,51 @@ export class UserRepository {
   async getAllUsers(): Promise<User[]> {
     const rows = await db.select().from(users).orderBy(desc(users.createdAt));
     return hydrateRecords("users", rows);
+  }
+
+  /**
+   * Accounts that have not been seen since `cutoff` — the AKIM §2.8 access
+   * review candidates. Already-deactivated rows are excluded: they are not
+   * pending decisions.
+   *
+   * Filtered in SQL rather than in the caller because the review runs over the
+   * whole user table on a background timer; hydrating every row to throw most
+   * of them away would be the expensive half of the job.
+   */
+  async listInactiveSince(cutoff: Date): Promise<User[]> {
+    const rows = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.isActive, true),
+          or(isNull(users.lastActiveAt), lt(users.lastActiveAt, cutoff)),
+        ),
+      )
+      .orderBy(users.lastActiveAt);
+    return hydrateRecords("users", rows);
+  }
+
+  /**
+   * How many students each of `userIds` can currently reach, via live
+   * `user_students` links. The access-review list is only actionable if it
+   * says what an account still has access TO.
+   */
+  async countActiveStudentLinks(userIds: string[]): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    if (userIds.length === 0) return counts;
+    const rows = await db
+      .select({ userId: userStudents.userId, n: count() })
+      .from(userStudents)
+      .where(
+        and(
+          inArray(userStudents.userId, userIds),
+          eq(userStudents.isActive, true),
+        ),
+      )
+      .groupBy(userStudents.userId);
+    for (const row of rows) counts[row.userId] = Number(row.n);
+    return counts;
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {

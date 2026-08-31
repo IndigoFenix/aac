@@ -42,6 +42,40 @@ resource "aws_ecr_lifecycle_policy" "main" {
 }
 
 # =============================================================================
+# Image the Terraform TEMPLATE points at
+# =============================================================================
+# The running revision is NOT set here. The deploy workflow builds
+# <repo>:<git sha>, registers a revision with that image and points the service
+# at it, and aws_ecs_service.main ignores task_definition changes precisely so
+# an apply cannot yank the service back. What this data source fixes is the
+# other path: a fresh apply (new account, DR rebuild) or a `terraform apply`
+# that recreates the task definition would otherwise bake in the MUTABLE
+# `:latest` tag, so the revision Terraform owns says nothing about which build
+# it actually is, and the ECR lifecycle policy can expire whatever `latest`
+# meant at the time.
+#
+# `image_tag_mutability` stays MUTABLE on purpose: the deploy pushes `:latest`
+# on every run and IMMUTABLE would fail that push.
+#
+# Gated on var.ecr_image_exists for the same reason as var.lambda_image_exists:
+# the data source errors on an empty repository, which would make the very
+# first apply of a new environment unrunnable.
+data "aws_ecr_image" "app" {
+  count = var.ecr_image_exists ? 1 : 0
+
+  repository_name = aws_ecr_repository.main.name
+  most_recent     = true
+}
+
+locals {
+  ecs_app_image = (
+    var.ecr_image_exists
+    ? "${aws_ecr_repository.main.repository_url}@${data.aws_ecr_image.app[0].image_digest}"
+    : "${aws_ecr_repository.main.repository_url}:latest"
+  )
+}
+
+# =============================================================================
 # ECS Cluster
 # =============================================================================
 resource "aws_ecs_cluster" "main" {
@@ -52,14 +86,20 @@ resource "aws_ecs_cluster" "main" {
     value = "enabled"  # Enhanced monitoring
   }
 
-  configuration {
-    execute_command_configuration {
-      kms_key_id = aws_kms_key.main.arn
-      logging    = "OVERRIDE"
+  # Only meaningful when ECS Exec is enabled; kept coupled to the same flag so
+  # the pair can never drift into "exec on, sessions unlogged". The log group
+  # below survives either way (an empty CloudWatch group costs nothing).
+  dynamic "configuration" {
+    for_each = var.enable_ecs_exec ? [1] : []
+    content {
+      execute_command_configuration {
+        kms_key_id = aws_kms_key.main.arn
+        logging    = "OVERRIDE"
 
-      log_configuration {
-        cloud_watch_encryption_enabled = true
-        cloud_watch_log_group_name     = aws_cloudwatch_log_group.ecs_exec.name
+        log_configuration {
+          cloud_watch_encryption_enabled = true
+          cloud_watch_log_group_name     = aws_cloudwatch_log_group.ecs_exec.name
+        }
       }
     }
   }
@@ -91,11 +131,37 @@ resource "aws_ecs_task_definition" "main" {
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
+  # Writable scratch space for a read-only root filesystem. On Fargate a volume
+  # with no configuration block is a bind mount onto the task's ephemeral
+  # storage — the 20 GB every Fargate task already gets, at no additional
+  # charge. Declared unconditionally so the task definition shape does not
+  # change when ecs_readonly_root_fs flips; an unused mount costs nothing.
+  volume {
+    name = "tmp"
+  }
+
   container_definitions = jsonencode([
     {
       name  = "aivota-app"
-      image = "${aws_ecr_repository.main.repository_url}:latest"
-      
+      image = local.ecs_app_image
+
+      # §5.11.4 hardening: nothing in the image is writable at runtime, so a
+      # compromised process cannot drop a payload next to the server bundle or
+      # rewrite dist/. The ONLY writable path is /tmp below, which the video
+      # frame extractor needs (server/services/chat/tools/video-frame-extractor.ts
+      # writes into os.tmpdir()). Every other runtime writer is a debug-log
+      # sink under the app directory and must be gated off before this is
+      # turned on — see docs/INFRASTRUCTURE.md 'Access & hardening'.
+      readonlyRootFilesystem = var.ecs_readonly_root_fs
+
+      mountPoints = [
+        {
+          sourceVolume  = "tmp"
+          containerPath = "/tmp"
+          readOnly      = false
+        }
+      ]
+
       portMappings = [
         {
           containerPort = var.container_port
@@ -275,8 +341,13 @@ resource "aws_ecs_service" "main" {
     rollback = true
   }
 
-  # Enable ECS Exec for debugging (uses IAM for auth)
-  enable_execute_command = true
+  # ECS Exec (interactive shell into a running task). Hardcoded `true` until
+  # 2026-08-30 while aws_iam_role.ecs_task never carried ssmmessages:* /
+  # ssm:StartSession, so it advertised a shell into a PHI container that could
+  # not actually be opened — a finding with no operational benefit. Off by
+  # default now; flip var.enable_ecs_exec (and add the ssmmessages grants to
+  # the task role) for a deliberate debugging window.
+  enable_execute_command = var.enable_ecs_exec
 
   # The deploy workflow registers a new revision per image (sha-tagged) and
   # points the service at it. Terraform still owns the task definition

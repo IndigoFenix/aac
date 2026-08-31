@@ -98,6 +98,14 @@ export interface RecordingBridge {
     clips: Array<{ id: string; startedAtMs: number; bytes: number }>;
   }>;
   reveal: () => Promise<{ folder: string; opened: boolean; error: string | null }>;
+  /**
+   * Erasure: delete every clip on this device belonging to `studentId`, plus
+   * any unattributable clip already past retention. Returns what actually went,
+   * so the server can be told. Best-effort — see `planStudentPurge` in
+   * shared/aac/session-recording.ts for what a manifest without a studentId
+   * means. Optional: an older shell has no such handler.
+   */
+  purgeStudent?: (opts: { studentId: string }) => Promise<{ clipIds: string[]; bytes: number }>;
 }
 
 export interface ElectronBridge {
@@ -132,6 +140,33 @@ export function getInstancesBridge(): InstancesBridge | null {
 /** Session-recording file store, or null on a host that cannot record. */
 export function getRecordingBridge(): RecordingBridge | null {
   return getElectronBridge()?.recording ?? null;
+}
+
+/**
+ * Delete this device's recordings of one student.
+ *
+ * Total by design: a host that cannot record (iPad, browser tab) and an older
+ * shell without the handler both answer with an empty list rather than
+ * throwing, because every caller's next act is to tell the server what
+ * happened — and "nothing here" is a perfectly good answer that must still be
+ * delivered. A thrown error would instead leave the server waiting forever for
+ * an acknowledgement that a web client was never going to be able to send.
+ */
+export async function purgeStudentRecordings(
+  studentId: string,
+): Promise<{ clipIds: string[]; bytes: number }> {
+  const purge = getRecordingBridge()?.purgeStudent;
+  if (!purge || !studentId) return { clipIds: [], bytes: 0 };
+  try {
+    const result = await purge({ studentId });
+    return {
+      clipIds: Array.isArray(result?.clipIds) ? result.clipIds : [],
+      bytes: typeof result?.bytes === "number" ? result.bytes : 0,
+    };
+  } catch (err) {
+    console.warn("[recording] purge failed", err);
+    return { clipIds: [], bytes: 0 };
+  }
 }
 
 /**

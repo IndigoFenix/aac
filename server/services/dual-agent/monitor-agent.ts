@@ -49,6 +49,7 @@ import {
   type PlanGroupKey,
   type PlanGroupEntry,
 } from "./session-plan";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /**
  * Monitor Agent
@@ -58,6 +59,20 @@ import {
  * Initializes the Interactive Agent and can inject commands into the conversation.
  */
 export class MonitorAgent {
+  /**
+   * AKIM §18.5 — the Monitor sees the densest PHI in the system (full
+   * transcript, memory, notes), so every one of its calls names the student
+   * it is about. `aac_moderator` is the use case its LLM config resolves.
+   */
+  private disclosureContext(): DisclosureContext {
+    return {
+      studentId: this.studentId,
+      sessionId: this.sessionId ?? null,
+      userId: this.userId ?? null,
+      useCase: "aac_moderator",
+    };
+  }
+
   private config: DualAgentConfig;
   private studentId: string;
   private userId?: string;
@@ -572,7 +587,7 @@ export class MonitorAgent {
     // Background: the Monitor runs on a heartbeat and its notes shape the NEXT
     // board, not the one a child is waiting for. It must never consume
     // reserved capacity the live path needs.
-    const gpt = new GPT({ provider, model, background: true });
+    const gpt = new GPT({ provider, model, background: true, disclosure: this.disclosureContext() });
 
     const totals = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheCreationTokens: 0 };
     let anyCallReturned = false;
@@ -925,6 +940,7 @@ ${transcript}`;
         model: llmConfig?.model || 'claude-haiku',
         // Background: moderation of a stored transcript, not a live turn.
         background: true,
+        disclosure: this.disclosureContext(),
       });
 
       const inputItems: GPTInputItem[] = [{

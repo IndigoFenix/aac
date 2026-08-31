@@ -309,6 +309,19 @@ Users read the reload symbol as "show me the rest of the list", so a change-the-
   - A normal ${T.button} labelled "Something else" (or drawn with \`🔄\`) to move off the topic ❌
 </meta_buttons>
 
+<here_and_now>
+The FIRST ${T.board} of a session carries one HERE-AND-NOW ${T.button}: it names WHERE the user is or WHAT is happening around them, read off the \`[CONTEXT]\` observations.
+  - "I'm at school", "we're making cookies", "I'm in the garden".
+  - A NORMAL ${T.button} — no \`button_type\`. A press voices it like any other.
+
+**A press on it asks to talk about that place or activity.** Rebuild the ${T.board} as its VOCABULARY: the things, people and actions that belong THERE, each a ${T.sentence} the user would say about it.
+  - kitchen at lunchtime → "I'm hungry", "I want the bread", "it smells good", "I don't like this", "I'm finished".
+  - the garden → "look at the flowers", "I want to sit down", "it's hot out here", "I see a bird".
+  - Prefer what was actually OBSERVED there over generic furniture for the category.
+  - Include a \`button_type: "more"\` — a place always has more words than fit.
+  - Keep one or two ${T.button}s that let them leave the topic.
+</here_and_now>
+
 <board_rules>
   - Aim for 6–8 ${T.button}s per ${T.board}. Fill it.
   - No two ${T.button}s should look the same — distinguish at a glance.
@@ -868,14 +881,20 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
 // ACTION-HINT STRINGS — referenced by board-manager-agent's renderInvocationContext
 // ===========================================================================
 
-/** Action hint for a home-press force-rebuild — prepended to the palette
- *  directive supplied via HOME_INTENTS. */
+/** Action hint for a force-rebuild — prepended to the palette directive
+ *  supplied via HOME_INTENTS (a home press) or buildStartupBoardDirective
+ *  (the session's first board).
+ *
+ *  SITUATION-NEUTRAL: the directive states its own occasion in its first
+ *  sentence, so this wrapper must not claim one. It used to open with "The
+ *  user pressed a home-board navigation button", which was a lie on every
+ *  non-home directive. */
 export function buildForceRebuildHint(forceRebuildDirective: string): string {
-  return `Action: rebuild_board — MANDATORY. The user pressed a home-board navigation button to switch context.
+  return `Action: rebuild_board — MANDATORY. A fresh palette is required this turn.
 
 ${forceRebuildDirective}
 
-Even if the current ${T.board}'s labels look related, REBUILD anyway — the user is requesting a fresh palette. Do NOT call no_change on this turn.`;
+Even if the current ${T.board}'s labels look related, REBUILD anyway. Do NOT call no_change on this turn.`;
 }
 
 /** Action hint for guessing mode when Speaker just asked a question on
@@ -912,18 +931,19 @@ export const BUILDER_HINT =
 export function buildEmptyResponseRetryFeedback(args: {
   inGuessingMode: boolean;
   inBuilderMode: boolean;
-  /** Set when a home-press topic switch is still outstanding — the model
-   *  either returned nothing or no_changed a MANDATORY rebuild. Takes
-   *  priority over the mode-based directives below and re-demands the fresh
-   *  palette by name. */
+  /** Set when a mandatory rebuild is still outstanding (a home-press topic
+   *  switch, or the session's first board) — the model either returned
+   *  nothing or no_changed it. Takes priority over the mode-based directives
+   *  below and re-demands the fresh palette by name. Situation-neutral like
+   *  `buildForceRebuildHint`: the directive names its own occasion. */
   forceRebuildDirective?: string;
 }): string {
-  // A home-press topic switch is mandatory — no_change is never valid here,
-  // so the retry must re-state the directive rather than the generic
-  // "no tool calls" copy (the model may well have CALLED no_change).
+  // A mandatory rebuild is mandatory — no_change is never valid here, so the
+  // retry must re-state the directive rather than the generic "no tool calls"
+  // copy (the model may well have CALLED no_change).
   if (args.forceRebuildDirective) {
     return `[rebuild required]
-The user pressed a home-board navigation button to switch context — the ${T.board} MUST be replaced with a fresh palette, even if the current buttons look related. no_change is NOT valid on this turn.
+A fresh palette was required on the previous turn and you did not produce one — the ${T.board} MUST be replaced, even if the current buttons look related. no_change is NOT valid on this turn.
 
 ${args.forceRebuildDirective}
 

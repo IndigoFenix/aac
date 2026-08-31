@@ -4,6 +4,7 @@
 // escaping here would be wrong in three places at once.
 
 import {
+  applySessionRecordingLicense,
   DEFAULT_SESSION_RECORDING,
   IDLE_TAIL_SECONDS_MAX,
   IDLE_TAIL_SECONDS_MIN,
@@ -13,9 +14,12 @@ import {
   cameraConstraintsFor,
   normalizeSessionRecordingSettings,
   planEviction,
+  planStudentPurge,
+  type PurgeCandidate,
   type StoredClip,
 } from "@shared/aac/session-recording.js";
 import { AAC_SETTINGS_FIELDS } from "../services/studentService.js";
+import { AAC_SETTINGS_FIELD } from "../services/memory-schema/aac-settings-memory-schema.js";
 
 describe("normalizeSessionRecordingSettings", () => {
   it("returns the safe defaults for an absent column", () => {
@@ -192,6 +196,131 @@ describe("planEviction", () => {
   });
 });
 
+describe("planStudentPurge", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 1_800_000_000_000;
+  const MB = 1024 * 1024;
+  const clip = (
+    id: string, ageDays: number, studentId: string | null, mb = 10,
+  ): PurgeCandidate =>
+    ({ id, startedAtMs: NOW - ageDays * DAY, bytes: mb * MB, studentId });
+
+  const plan = (clips: PurgeCandidate[], studentId = "s1", retentionDays = 30, open?: string[]) =>
+    planStudentPurge(clips, { studentId, retentionDays, nowMs: NOW, protectedIds: open });
+
+  it("takes every clip the manifest attributes to the student", () => {
+    const clips = [clip("a", 1, "s1"), clip("b", 2, "s2"), clip("c", 3, "s1")];
+    const result = plan(clips);
+    expect(result.clipIds).toEqual(["c", "a"]); // oldest first
+    expect(result.bytes).toBe(20 * MB);
+  });
+
+  it("takes footage of the erased student however new it is", () => {
+    // Age retention is irrelevant here: this is erasure, not housekeeping.
+    expect(plan([clip("fresh", 0, "s1")]).clipIds).toEqual(["fresh"]);
+  });
+
+  it("never touches another student's footage", () => {
+    const clips = [clip("theirs", 200, "s2"), clip("mine", 1, "s1")];
+    expect(plan(clips).clipIds).toEqual(["mine"]);
+  });
+
+  it("takes an unattributable clip only once it is past retention", () => {
+    // A crash-recovered manifest has studentId null (recoverOrphans cannot know
+    // whose session it was). Deleting every orphan would destroy a DIFFERENT,
+    // still-enrolled child's footage; deleting the ones the age sweep would
+    // take anyway is the safe half.
+    const clips = [clip("young-orphan", 5, null), clip("old-orphan", 45, null)];
+    expect(plan(clips).clipIds).toEqual(["old-orphan"]);
+  });
+
+  it("uses the retention window it is given for the orphan rule", () => {
+    const clips = [clip("orphan", 45, null)];
+    expect(plan(clips, "s1", 90).clipIds).toEqual([]);
+    expect(plan(clips, "s1", 7).clipIds).toEqual(["orphan"]);
+  });
+
+  it("falls back to the default window when retention is nonsense", () => {
+    const clips = [clip("orphan", 45, null)];
+    expect(planStudentPurge(clips, {
+      studentId: "s1", retentionDays: Number.NaN, nowMs: NOW,
+    }).clipIds).toEqual(["orphan"]);
+    expect(planStudentPurge(clips, {
+      studentId: "s1", retentionDays: 0, nowMs: NOW,
+    }).clipIds).toEqual(["orphan"]);
+  });
+
+  it("never deletes a clip that is still being written", () => {
+    const clips = [clip("open", 0, "s1"), clip("closed", 1, "s1")];
+    expect(plan(clips, "s1", 30, ["open"]).clipIds).toEqual(["closed"]);
+  });
+
+  it("refuses a blank student id rather than matching everything", () => {
+    // A purge message with an empty studentId must be inert, not a wipe.
+    const clips = [clip("a", 1, "s1"), clip("b", 400, null)];
+    for (const id of ["", "   "]) {
+      expect(planStudentPurge(clips, { studentId: id, retentionDays: 30, nowMs: NOW }))
+        .toEqual({ clipIds: [], bytes: 0 });
+    }
+  });
+
+  it("handles a device that never recorded", () => {
+    expect(plan([])).toEqual({ clipIds: [], bytes: 0 });
+  });
+});
+
+describe("applySessionRecordingLicense", () => {
+  // The licence gate itself. It runs in three places — the server's settings
+  // read path, the server's settings write path, and the AAC client before it
+  // will start an encoder — so this is the one piece of the entitlement whose
+  // behaviour has to be identical everywhere.
+
+  it("forces the switch off when the licence does not carry the entitlement", () => {
+    // The case that matters: a row that says ON, a licence that says NO.
+    // Whatever is stored, an unlicensed student does not record.
+    expect(applySessionRecordingLicense({ enabled: true }, false).enabled).toBe(false);
+  });
+
+  it("leaves a licensed student's settings alone", () => {
+    expect(applySessionRecordingLicense({ enabled: true }, true).enabled).toBe(true);
+    expect(applySessionRecordingLicense({ enabled: false }, true).enabled).toBe(false);
+  });
+
+  it("keeps the rest of the object intact while unlicensed", () => {
+    // A lapsed licence is not a reason to throw away a caretaker's disk budget
+    // and folder — those have to come back unchanged if the licence returns.
+    const gated = applySessionRecordingLicense(
+      { enabled: true, quality: "1080p", maxStorageMb: 4096, maxAgeDays: 7, folder: "D:\\clips" },
+      false,
+    );
+    expect(gated).toEqual({
+      ...DEFAULT_SESSION_RECORDING,
+      enabled: false,
+      quality: "1080p",
+      maxStorageMb: 4096,
+      maxAgeDays: 7,
+      folder: "D:\\clips",
+    });
+  });
+
+  it("still normalizes — the gate does not skip the clamps", () => {
+    // Licensed input goes through the same sanitization as everything else;
+    // gating must not become a way to smuggle an unclamped object through.
+    const licensed = applySessionRecordingLicense(
+      { enabled: true, idleTailSeconds: 99_999, quality: "8k" },
+      true,
+    );
+    expect(licensed.idleTailSeconds).toBe(IDLE_TAIL_SECONDS_MAX);
+    expect(licensed.quality).toBe(DEFAULT_SESSION_RECORDING.quality);
+  });
+
+  it("treats an absent column as off under either licence", () => {
+    for (const licensed of [true, false]) {
+      expect(applySessionRecordingLicense(undefined, licensed)).toEqual(DEFAULT_SESSION_RECORDING);
+    }
+  });
+});
+
 describe("the settings save path", () => {
   it("routes sessionRecording to the aac_settings table", () => {
     // THE footgun this repo keeps stepping on: splitUpdateBody drops any field
@@ -200,5 +329,15 @@ describe("the settings save path", () => {
     // success, and the setting is silently gone on the next load. The header
     // comment in AACSettingsPanel.tsx warns about it; this asserts it.
     expect(AAC_SETTINGS_FIELDS.has("sessionRecording")).toBe(true);
+  });
+
+  it("keeps sessionRecording out of the AI-editable settings schema", () => {
+    // The module docblock promises this and the promise is load-bearing: the
+    // AI's write path (institute-memory-schema's pickDeclaredAacFields) keeps
+    // only keys DECLARED in this schema, so a declaration here would be enough
+    // to let an assistant start a camera recording of a child. Asserted rather
+    // than trusted, because nothing else would notice the day someone adds it
+    // "for completeness".
+    expect(Object.keys(AAC_SETTINGS_FIELD.properties ?? {})).not.toContain("sessionRecording");
   });
 });

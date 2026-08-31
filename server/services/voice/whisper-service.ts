@@ -2,6 +2,7 @@
 // Whisper Speech-to-Text service using OpenAI's Whisper API
 
 import OpenAI from "openai";
+import { recordDisclosure } from "../processorDisclosure";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -56,6 +57,8 @@ export async function transcribe(
   mimeType: string,
   options: TranscriptionOptions = {}
 ): Promise<TranscriptionResult> {
+  // AKIM §18.5 — recorded speech leaving for OpenAI.
+  recordDisclosure({ processor: "openai", channel: "stt", model: "whisper-1", endpoint: "api" });
   const extension = getFileExtension(mimeType);
   const filename = `audio.${extension}`;
 

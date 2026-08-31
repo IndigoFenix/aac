@@ -48,7 +48,14 @@ import {
   personChatRoomParticipants,
   callSessions,
   callParticipants,
+  sessions,
+  studentDevices,
 } from '@shared/schema';
+import {
+  registerLiveSession,
+  unregisterLiveSession,
+  type LiveSessionHandle,
+} from '../../services/dual-agent/live-session-registry.js';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -116,6 +123,76 @@ describe('student erasure', () => {
       const second = await studentErasureService.softDeleteStudent(student.id, owner.id, null);
 
       expect(first.scheduledHardDeleteAt!.getTime()).toBe(second.scheduledHardDeleteAt!.getTime());
+    });
+
+    it('evicts the AAC device sessions it used to leave alive', async () => {
+      // A tombstone deactivates user_students, which stops a CLINICIAN. The
+      // tablet authenticates by its own cookie on a sliding year-long session,
+      // so without this eviction a de-facto-erased child's device kept full PHI
+      // access — boards, notes, the live agents, the whole profile.
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+
+      await db.insert(studentDevices).values({
+        studentId: student.id, deviceId: 'device-abc', deviceName: 'Tablet',
+      });
+      const expire = new Date(Date.now() + 30 * ONE_DAY_MS);
+      await db.insert(sessions).values([
+        { sid: 'sid-device', sess: { aacDeviceId: 'device-abc' }, expire },
+        // A different device's session must survive: eviction is scoped to the
+        // erased student's registrations, not to every AAC session on the box.
+        { sid: 'sid-other', sess: { aacDeviceId: 'someone-else' }, expire },
+      ]);
+
+      await studentErasureService.softDeleteStudent(student.id, owner.id, null);
+
+      const rows = await db.select().from(sessions);
+      expect(rows.map((r) => r.sid)).toEqual(['sid-other']);
+    });
+
+    it('asks a live device to purge its local session recordings', async () => {
+      // The optional recording feature writes video of the child to the
+      // device's own Videos folder, which no server-side delete can see. This
+      // is the only arm of erasure that reaches it while the device is live.
+      const owner = await makeUser();
+      const { student } = await makeStudent(owner.id);
+
+      const reasons: string[] = [];
+      const handle: LiveSessionHandle = {
+        requestReload: () => {},
+        supersede: () => {},
+        requestRecordingPurge: (reason) => { reasons.push(reason); },
+        isClassroom: false,
+      };
+      registerLiveSession(student.id, handle);
+      try {
+        await studentErasureService.softDeleteStudent(student.id, owner.id, null);
+      } finally {
+        unregisterLiveSession(student.id, handle);
+      }
+
+      expect(reasons).toEqual(['erasure']);
+    });
+
+    it('does not ask on a student that was not tombstoned', async () => {
+      // "missing" is not an erasure — nothing to purge, and asking would send a
+      // delete order keyed on an id the platform never had.
+      const owner = await makeUser();
+      const reasons: string[] = [];
+      const missingId = '00000000-0000-4000-8000-000000000001';
+      const handle: LiveSessionHandle = {
+        requestReload: () => {},
+        supersede: () => {},
+        requestRecordingPurge: (reason) => { reasons.push(reason); },
+        isClassroom: false,
+      };
+      registerLiveSession(missingId, handle);
+      try {
+        await studentErasureService.softDeleteStudent(missingId, owner.id, null);
+      } finally {
+        unregisterLiveSession(missingId, handle);
+      }
+      expect(reasons).toEqual([]);
     });
 
     it('returns state="missing" for an unknown studentId', async () => {

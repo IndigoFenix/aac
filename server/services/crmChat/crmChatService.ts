@@ -228,6 +228,10 @@ async function prepareCrmTurn(input: CrmOnMessageInput): Promise<PreparedTurn> {
       });
     },
     providerConfig: llmConfig,
+    // AKIM §18.5 — an anonymous marketing conversation carries no PHI. It
+    // declares `crm_chat` so the disclosure recorder SKIPS it explicitly; a
+    // path with no context at all is treated as a coverage gap and logged.
+    disclosure: { studentId: null, sessionId, useCase: "crm_chat" as const },
     memoryProcessor,
   });
 

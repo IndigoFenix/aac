@@ -254,3 +254,37 @@ output "aac_update_cloudfront_distribution_id" {
   description = "CloudFront distribution ID for the AAC update channel. Use with `aws cloudfront create-invalidation` if you ever need to force-purge `latest.yml` ahead of its no-cache TTL."
   value       = var.enable_aac_auto_update ? aws_cloudfront_distribution.aac_updates[0].id : null
 }
+
+# =============================================================================
+# Access & hardening (Track G)
+# =============================================================================
+
+output "github_actions_role_arn" {
+  description = "THE deploy role. Set the repo secret AWS_ROLE_ARN to this to move production off the out-of-band cliniaccian-github-actions-bootstrap (AdministratorAccess) role. Trusts repo:IndigoFenix/aac:ref:refs/heads/main only."
+  value       = aws_iam_role.github_actions.arn
+}
+
+output "github_actions_plan_role_arn" {
+  description = "Read-only role for pull-request `terraform plan`. Set the repo secret AWS_PLAN_ROLE_ARN to this. Trusts repo:IndigoFenix/aac:pull_request only. Has no live consumer until the infrastructure job's `if: github.ref == 'refs/heads/main'` gate is relaxed to allow PR events."
+  value       = aws_iam_role.github_actions_plan.arn
+}
+
+output "ssm_session_log_location" {
+  description = "S3 URI where interactive SSM shell transcripts land. Empty when session logging is off. Port-forwarding sessions (npm run db-tunnel) produce no transcript — see CloudTrail StartSession/TerminateSession for those."
+  value       = var.enable_ssm_session_logging ? "s3://${aws_s3_bucket.logs.bucket}/${local.ssm_session_log_prefix}/" : ""
+}
+
+output "rds_iam_connect_policy_arn" {
+  description = "Attach to an engineer (or an engineers group) to let them connect to Postgres as the aivota_engineer DB user with an IAM auth token. Inert until the one-time CREATE USER / GRANT rds_iam SQL in docs/INFRASTRUCTURE.md has been run."
+  value       = aws_iam_policy.rds_iam_connect.arn
+}
+
+output "rds_resource_id" {
+  description = "RDS resource id (db-XXXX). The stable half of the rds-db:connect ARN — survives a rename, does not survive a restore."
+  value       = aws_db_instance.main.resource_id
+}
+
+output "coturn_patch_association_id" {
+  description = "State Manager association that installs AL2023 security patches on the coturn relay every Saturday 00:00 UTC (03:00 Israel summer time). Null when coturn is disabled."
+  value       = var.enable_coturn ? aws_ssm_association.coturn_patch[0].association_id : null
+}

@@ -95,15 +95,24 @@ describe("photo assignments", () => {
       const { student } = await makeStudent(user.id);
       const scope = { kind: "student" as const, studentId: student.id };
 
-      for (let i = 0; i < PHOTO_CAP_PER_STUDENT; i++) {
-        const asset = await makeAsset(`hash-fill-${i}`);
-        const res = await photoRepository.createAssignmentWithinCap(
-          scope,
-          { photoId: asset.id },
-          PHOTO_CAP_PER_STUDENT,
-        );
-        expect(res).not.toBeNull();
-      }
+      // Seed cap-1 assignments in bulk: the boundary is what this test is
+      // about, and 2×cap sequential round trips blew the 120 s budget on a
+      // loaded box (seen 2026-08-30). The repository path is still exercised
+      // for the last admitted slot and for the refusal.
+      const fill = await Promise.all(
+        Array.from({ length: PHOTO_CAP_PER_STUDENT - 1 }, (_, i) => makeAsset(`hash-fill-${i}`)),
+      );
+      await db
+        .insert(photoAssignments)
+        .values(fill.map((a) => ({ photoId: a.id, studentId: student.id })));
+
+      const last = await makeAsset("hash-fill-last");
+      const admitted = await photoRepository.createAssignmentWithinCap(
+        scope,
+        { photoId: last.id },
+        PHOTO_CAP_PER_STUDENT,
+      );
+      expect(admitted).not.toBeNull();
 
       const overflow = await makeAsset("hash-overflow");
       const result = await photoRepository.createAssignmentWithinCap(

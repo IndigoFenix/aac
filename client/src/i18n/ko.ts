@@ -3475,6 +3475,7 @@ export const ko = {
       createInstitute: "기관 만들기",
       instituteName: "기관명",
       instituteNamePlaceholder: "예: 스프링필드 교육구",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "기관 유형",
       school: "학교",
       clinic: "클리닉",
@@ -3500,6 +3501,8 @@ export const ko = {
       complianceRegimes: "규정 준수 체계",
       complianceRegimesHint: "이 기관에 적용되는 규제 체계(HIPAA, GDPR, 이스라엘 교육부 등)를 선택하세요. 각 선택은 감사 로그 보관 기간, 데이터 유출 신고 기한, 앱이 표방하는 접근성 표준, 로그인에 예상되는 ID 공급자를 결정합니다. 여러 체계가 적용될 경우 가장 엄격한 규칙이 우선합니다.",
       insuranceBridgeEnabled: "보험 브리지",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "청구 체계",
       billingRegimeNone: "없음",
       billingRegimeUsCpt: "미국 (CPT 코드)",

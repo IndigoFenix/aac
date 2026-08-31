@@ -16,8 +16,63 @@ import {
   type UseCaseKey,
   type LLMConfigValue,
 } from "@shared/llm-options";
+import {
+  LLM_CONFIG_POLICY_FALLBACK,
+  assertProviderAllowed,
+  isProviderAllowed,
+  providerPolicyReason,
+} from "@shared/llm-policy";
+import { activityLogService } from "../services/activityLogService";
 import { db } from "../db";
 import { eq, sql, desc } from "drizzle-orm";
+
+/** Why `getLLMConfig` returned what it returned. */
+export type LLMConfigSource = "stored" | "absent" | "invalid_json" | "policy";
+
+export interface ResolvedLLMConfig {
+  config: LLMConfigValue;
+  source: LLMConfigSource;
+  /** The stored value that was refused — only set when source === "policy". */
+  rejected?: LLMConfigValue;
+}
+
+/**
+ * Turn the raw `system_settings` value into the config the system will
+ * actually use. PURE — exported so the policy fallback (the interesting half)
+ * is testable without a database.
+ *
+ * The allowlist is enforced HERE and not only at write time: a row saved
+ * before the check existed, or by a path that skips the admin controller, must
+ * not keep routing student data to a provider we have never disclosed as a
+ * processor. Falling back to the use-case default degrades the model choice;
+ * honouring the row would degrade the transfer posture.
+ */
+export function resolveStoredLLMConfig(
+  useCase: UseCaseKey,
+  raw: string | null,
+): ResolvedLLMConfig {
+  const info = USE_CASES[useCase];
+  const fallback: LLMConfigValue = {
+    provider: info.defaultProvider,
+    model: info.defaultModel,
+  };
+  if (!raw) return { config: fallback, source: "absent" };
+
+  let stored: unknown;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    return { config: fallback, source: "invalid_json" };
+  }
+  const candidate = stored as Partial<LLMConfigValue> | null;
+  if (!candidate || typeof candidate.provider !== "string" || typeof candidate.model !== "string") {
+    return { config: fallback, source: "invalid_json" };
+  }
+  if (!isProviderAllowed(useCase, candidate.provider as LLMConfigValue["provider"])) {
+    return { config: fallback, source: "policy", rejected: candidate as LLMConfigValue };
+  }
+  return { config: candidate as LLMConfigValue, source: "stored" };
+}
 
 export class SettingsRepository {
   // System settings
@@ -57,21 +112,73 @@ export class SettingsRepository {
   async getLLMConfig(useCase: UseCaseKey): Promise<LLMConfigValue> {
     const key = SETTING_KEYS[useCase];
     const raw = await this.getSetting(key);
-    if (raw) {
-      try {
-        return JSON.parse(raw) as LLMConfigValue;
-      } catch {
+    const resolved = resolveStoredLLMConfig(useCase, raw);
+    switch (resolved.source) {
+      case "invalid_json":
         console.warn(`[SettingsRepository] Invalid JSON for ${key}, using default`);
-      }
+        break;
+      case "policy":
+        this.warnPolicyFallbackOnce(useCase, resolved.rejected!, resolved.config);
+        break;
     }
-    // Fall back to defaults from USE_CASES
-    const info = USE_CASES[useCase];
-    return { provider: info.defaultProvider, model: info.defaultModel };
+    return resolved.config;
   }
 
-  async updateLLMConfig(useCase: UseCaseKey, config: LLMConfigValue): Promise<void> {
+  /**
+   * One warning per use case per process. The marker is stable so a CloudWatch
+   * metric filter can alarm on it — a stored config that violates the transfer
+   * policy is a finding, not noise, but it would otherwise be emitted on every
+   * session start.
+   */
+  private policyFallbackWarned = new Set<UseCaseKey>();
+
+  private warnPolicyFallbackOnce(
+    useCase: UseCaseKey,
+    rejected: LLMConfigValue,
+    fallback: LLMConfigValue,
+  ): void {
+    if (this.policyFallbackWarned.has(useCase)) return;
+    this.policyFallbackWarned.add(useCase);
+    console.warn(
+      `${LLM_CONFIG_POLICY_FALLBACK} useCase=${useCase} stored=${rejected.provider}/${rejected.model} ` +
+        `falling back to ${fallback.provider}/${fallback.model} — ` +
+        (providerPolicyReason(useCase, rejected.provider) ?? ""),
+    );
+  }
+
+  /**
+   * Write a use-case → provider/model routing setting.
+   *
+   * Two things happen here that did not before: the pairing is checked against
+   * the transfer policy (callers that skip the admin controller — a persona
+   * override, a script — are covered too), and the change is written to the
+   * audit log with both sides of it. Changing where PHI goes is a
+   * transfer-destination change; it must be visible after the fact.
+   *
+   * @param actor id of the acting admin, threaded from the controller.
+   */
+  async updateLLMConfig(
+    useCase: UseCaseKey,
+    config: LLMConfigValue,
+    actor?: string | null,
+  ): Promise<void> {
+    assertProviderAllowed(useCase, config.provider);
     const key = SETTING_KEYS[useCase];
+    // Read the previous value BEFORE the write so the audit row carries both
+    // sides. Uses getLLMConfig so a policy-violating stored row is reported as
+    // what the system was actually using.
+    const previous = await this.getLLMConfig(useCase);
     await this.updateSetting(key, JSON.stringify(config));
+    activityLogService.log({
+      userId: actor ?? null,
+      eventType: "update",
+      subjectType1: "llm_config",
+      subjectId1: useCase,
+      details: {
+        from: { provider: previous.provider, model: previous.model },
+        to: { provider: config.provider, model: config.model },
+      },
+    });
   }
 
   async getAllLLMConfigs(): Promise<Record<UseCaseKey, LLMConfigValue>> {

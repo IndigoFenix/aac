@@ -83,6 +83,7 @@ import {
 } from "../chat/memory-types";
 import { programService } from "../programService";
 import { activityLogService } from "../activityLogService";
+import { summarizeChanges, changeDetails } from "../activityChanges";
 import { PROGRAM_TEAM_CONTACTS_FIELD } from "./contacts-memory-schema";
 import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
 import { canWriteObject, withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
@@ -396,7 +397,12 @@ const programOps: MemoryDBOperations<Program> = {
         eventType: "update",
         subjectType1: "program",
         subjectId1: updated?.id,
-        details: { studentId },
+        // AI-initiated writes are the ones most worth being able to replay, so
+        // carry the same field-level summary the clinician path does.
+        details: changeDetails(
+          summarizeChanges("programs", existing as any, value as any),
+          { studentId },
+        ) ?? { studentId },
         isAiInitiated: true,
       });
       return updated;
@@ -757,7 +763,10 @@ const goalsOps: MemoryDBOperations<Goal> = {
       eventType: "update",
       subjectType1: "goal",
       subjectId1: updated.id,
-      details: { studentId: ctx.all.studentId },
+      details: changeDetails(
+        summarizeChanges("goals", goal as any, value as any),
+        { studentId: ctx.all.studentId },
+      ) ?? { studentId: ctx.all.studentId },
       isAiInitiated: true,
     });
 
@@ -896,6 +905,10 @@ const objectivesOps: MemoryDBOperations<Objective> = {
       eventType: "update",
       subjectType1: "goal",
       subjectId1: goalId,
+      // A bulk replace of the whole objective list has no single before-row to
+      // diff against, so it stays a count rather than a field-level summary —
+      // forcing it through summarizeChanges would invent per-field history the
+      // write does not have.
       details: { studentId: ctx.all.studentId, action: "set_objectives", count: results.length },
       isAiInitiated: true,
     });
@@ -975,7 +988,10 @@ const objectivesOps: MemoryDBOperations<Objective> = {
       eventType: "update",
       subjectType1: "objective",
       subjectId1: updated.id,
-      details: { studentId: ctx.all.studentId },
+      details: changeDetails(
+        summarizeChanges("objectives", items[0] as any, sanitizedValue as any),
+        { studentId: ctx.all.studentId },
+      ) ?? { studentId: ctx.all.studentId },
       isAiInitiated: true,
     });
 

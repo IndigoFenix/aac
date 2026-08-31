@@ -3475,6 +3475,7 @@ export const ru = {
       createInstitute: "Создать организацию",
       instituteName: "Название организации",
       instituteNamePlaceholder: "напр. Школьный округ Спрингфилд",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "Тип организации",
       school: "Школа",
       clinic: "Клиника",
@@ -3500,6 +3501,8 @@ export const ru = {
       complianceRegimes: "Нормативные режимы",
       complianceRegimesHint: "Выберите нормативные требования (HIPAA, GDPR, Министерство образования Израиля и т. д.), применимые к этому учреждению. Каждый выбор задаёт срок хранения журналов аудита, срок уведомления об утечке данных, стандарт доступности, заявляемый приложением, и ожидаемого поставщика идентификации для входа. Если применимо несколько, действует самое строгое правило.",
       insuranceBridgeEnabled: "Страховой мост",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "Режим выставления счетов",
       billingRegimeNone: "Нет",
       billingRegimeUsCpt: "США (коды CPT)",

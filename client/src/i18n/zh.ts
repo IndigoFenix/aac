@@ -3475,6 +3475,7 @@ export const zh = {
       createInstitute: "创建组织",
       instituteName: "组织名称",
       instituteNamePlaceholder: "例如：斯普林菲尔德学区",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "组织类型",
       school: "学校",
       clinic: "诊所",
@@ -3500,6 +3501,8 @@ export const zh = {
       complianceRegimes: "合规制度",
       complianceRegimesHint: "选择适用于本机构的监管框架（如 HIPAA、GDPR、以色列教育部等）。每项选择都会决定审计日志的保留时长、数据泄露的上报期限、应用所声明的无障碍标准，以及登录所需的身份提供方。当多项同时适用时，以最严格的规则为准。",
       insuranceBridgeEnabled: "保险桥接",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "计费制度",
       billingRegimeNone: "无",
       billingRegimeUsCpt: "美国（CPT 代码）",

@@ -17,6 +17,7 @@ import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { AsyncLocalStorage } from "async_hooks";
+import { fileDebugLoggingEnabled, safeAppend, safeTruncate } from "../file-debug-log";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,10 +31,14 @@ const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 // the planned ECS/HIPAA path is long-lived, so gate on more than just isLambda.
 // Opt back in explicitly with DEBUG_LIVE_SESSIONS=true for local debugging only.
 // Mirrors the isLambda guard in server/services/chat/memory-debug-log.ts.
-const isLambda = !!process.env.AWS_LAMBDA_EXEC_WRAPPER;
+// The generic half of this predicate now lives in ../file-debug-log.ts — this
+// file is where it was first written correctly, and batch 5 hoisted it there.
+// Keeping the DEBUG_LIVE_SESSIONS override ON TOP of the shared predicate lets
+// a developer turn THIS log on without turning every other PHI debug file on
+// with it. Sharing the base also picks up the NODE_ENV=test exclusion, so jest
+// runs stop dropping a live-session-debug.log into the repo root.
 const fileLoggingEnabled =
-  process.env.DEBUG_LIVE_SESSIONS === "true" ||
-  (!isLambda && process.env.NODE_ENV !== "production");
+  process.env.DEBUG_LIVE_SESSIONS === "true" || fileDebugLoggingEnabled;
 
 // NOTE: live-session-debug.log is file-only as of 2026-06. The admin
 // session-debug view reads from agent-flow-logger persistence instead.
@@ -79,7 +84,7 @@ function currentAgentTag(): string | undefined {
 function ensureSize(): void {
   try {
     if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_SIZE) {
-      fs.writeFileSync(LOG_FILE, ""); // truncate
+      safeTruncate(LOG_FILE); // truncate
     }
   } catch { /* ignore */ }
 }
@@ -93,7 +98,7 @@ export function logDualAgent(section: string, data: Record<string, any>): void {
     ensureSize();
     const timestamp = new Date().toISOString();
     const entry = `\n${"=".repeat(60)}\n[${timestamp}] ${displaySection}\n${"-".repeat(40)}\n${JSON.stringify(data, null, 2)}\n`;
-    fs.appendFileSync(LOG_FILE, entry);
+    safeAppend(LOG_FILE, entry);
   } catch {
     /* ignore logging errors */
   }
@@ -110,7 +115,7 @@ function flushCoalesced(): void {
   }
   try {
     const entry = `\n${"=".repeat(80)}\n[${lastEntry.firstTimestamp} → ${lastEntry.lastTimestamp}] ${lastEntry.section} (×${lastEntry.count})\n${"─".repeat(80)}\n${lastEntry.content}\n`;
-    fs.appendFileSync(LOG_FILE, entry);
+    safeAppend(LOG_FILE, entry);
   } catch { /* ignore */ }
   lastEntry = null;
 }
@@ -127,7 +132,7 @@ export function logLiveSession(section: string, content: string, truncate = fals
   try {
     if (truncate) {
       flushCoalesced();
-      fs.writeFileSync(LOG_FILE, ""); // fresh file for new session
+      safeTruncate(LOG_FILE); // fresh file for new session
     }
     ensureSize();
     const timestamp = new Date().toISOString();
@@ -142,7 +147,7 @@ export function logLiveSession(section: string, content: string, truncate = fals
     flushCoalesced();
 
     const entry = `\n${"=".repeat(80)}\n[${timestamp}] ${displaySection}\n${"─".repeat(80)}\n${content}\n`;
-    fs.appendFileSync(LOG_FILE, entry);
+    safeAppend(LOG_FILE, entry);
     lastEntry = { section: displaySection, content, count: 1, firstTimestamp: timestamp, lastTimestamp: timestamp };
   } catch {
     /* ignore logging errors */

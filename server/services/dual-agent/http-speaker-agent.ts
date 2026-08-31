@@ -57,6 +57,7 @@ import type {
   ThoughtLeakEvent,
   ContextLeakEvent,
 } from "./agent-events";
+import type { DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -117,6 +118,14 @@ function buildToolList(toolConfig: SpeakerToolConfig): ChatTool[] {
 // ---------------------------------------------------------------------------
 
 export class HttpSpeakerAgent implements ISpeakerAgent {
+  /** AKIM §18.5 — who this agent's LLM traffic is about. Rides on each
+   *  request DTO (see ChatRequest.disclosure) rather than AsyncLocalStorage,
+   *  because turns are queued and streamed across async boundaries. */
+  private disclosureCtx: DisclosureContext | null = null;
+  setDisclosureContext(ctx: DisclosureContext | null): void {
+    this.disclosureCtx = ctx;
+  }
+
   private readonly callbacks: SpeakerCallbacks;
   private readonly provider: ChatProvider;
   private readonly providerKey: LLMProviderKey;
@@ -332,6 +341,7 @@ export class HttpSpeakerAgent implements ISpeakerAgent {
 
     try {
       const stream = this.provider.streamChat({
+        disclosure: this.disclosureCtx ?? undefined,
         model: this.model,
         messages,
         tools: this.tools.length > 0 ? this.tools : undefined,

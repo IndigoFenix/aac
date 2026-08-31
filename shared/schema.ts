@@ -391,6 +391,24 @@ export const licenses = pgTable("licenses", {
   // Permissions
   permissions: jsonb("permissions").$type<LicensePermissions>(),
 
+  // Session recording (shared/aac/session-recording.ts) — whether devices under
+  // this license may record a student on camera to the device's own disk.
+  //
+  // A REAL COLUMN, deliberately NOT a key inside `permissions`, and the reason
+  // is mechanical rather than stylistic: `permissions` is resolved through
+  // resolvePermissions(), where `all: true` — which the admin form's "Grant All
+  // Permissions" switch sets — expands to MAX_LICENSE_PERMISSIONS wholesale,
+  // and getInstituteLicenseInfo() hands that same MAX object to every system
+  // admin. A key placed there would therefore switch itself on for whole
+  // classes of license nobody meant to grant it to.
+  //
+  // This is not a customer-facing permission at all. It is an operator-granted
+  // marketing entitlement, handed to the few people who cut promotional
+  // material out of real sessions; it is never sold, never appears on a pricing
+  // page, and is set only by a system admin (never a section admin). Off for
+  // everyone else, permanently.
+  allowSessionRecording: boolean("allow_session_recording").default(false).notNull(),
+
   // Email of invited user (for linking license when user registers)
   inviteEmail: text("invite_email"),
 

@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import { vertexClientOptions } from "./vertex-config";
+import { recordDisclosure } from "../processorDisclosure";
 import type {
   ChatProvider,
   ChatRequest,
@@ -64,6 +65,18 @@ export class GeminiChatProvider implements ChatProvider {
       }
       this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
     }
+  }
+
+  /** AKIM §18.5 — the conversation about to be sent is PHI leaving for
+   *  Google. Coalesced inside recordDisclosure. */
+  private recordEgress(request: ChatRequest): void {
+    recordDisclosure({
+      processor: "google",
+      channel: "chat",
+      model: request.model,
+      endpoint: this.usingVertex ? "vertex" : "api",
+      context: request.disclosure,
+    });
   }
 
   // Safety settings to prevent Gemini from blocking legitimate AAC content
@@ -181,6 +194,7 @@ export class GeminiChatProvider implements ChatProvider {
   }
 
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
+    this.recordEgress(request);
     const { systemInstruction, contents, tools, toolConfig } = this.buildRequest(request);
 
     const config: any = {
@@ -264,6 +278,7 @@ export class GeminiChatProvider implements ChatProvider {
   }
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
+    this.recordEgress(request);
     const { systemInstruction, contents, tools, toolConfig } = this.buildRequest(request);
 
     const config: any = {

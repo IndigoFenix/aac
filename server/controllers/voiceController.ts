@@ -11,6 +11,7 @@ import { studentService } from "../services";
 import { studentRepository } from "../repositories";
 import { voiceRecordRepository } from "../repositories/voiceRecordRepository";
 import { ChatPersona } from "@shared/schema";
+import type { DisclosureContext } from "../services/processorDisclosure";
 
 // Validation schemas
 const transcribeSchema = z.object({
@@ -140,7 +141,13 @@ export class VoiceController {
       );
 
       // Synthesize full audio (not streaming)
-      const audioBuffer = await ttsFacade.synthesize(text, resolvedVoice);
+      const audioBuffer = await ttsFacade.synthesize(
+        text,
+        resolvedVoice,
+        undefined,
+        // AKIM §18.5 — the student's own sentence going to a voice vendor.
+        { studentId: studentId ?? null, userId: (req.user as any)?.id ?? null, useCase: "tts" } satisfies DisclosureContext,
+      );
 
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Content-Length", audioBuffer.length.toString());
@@ -181,7 +188,13 @@ export class VoiceController {
       res.flushHeaders();
 
       // Stream audio chunks
-      for await (const audioChunk of ttsFacade.synthesizeStream(text, resolvedVoice)) {
+      for await (const audioChunk of ttsFacade.synthesizeStream(
+        text,
+        resolvedVoice,
+        undefined,
+        undefined,
+        { studentId: studentId ?? null, userId: (req.user as any)?.id ?? null, useCase: "tts" } satisfies DisclosureContext,
+      )) {
         sendSSEEvent(res, "audio", {
           chunk: audioChunk.toString("base64"),
           format: "mp3",
@@ -339,7 +352,13 @@ export class VoiceController {
       // 4. Stream audio response (wrapped in try-catch so TTS failure doesn't break the flow)
       if (responseText.trim()) {
         try {
-          for await (const audioChunk of ttsFacade.synthesizeStream(responseText, resolvedVoice)) {
+          for await (const audioChunk of ttsFacade.synthesizeStream(
+            responseText,
+            resolvedVoice,
+            undefined,
+            undefined,
+            { studentId: studentId ?? null, userId: (req.user as any)?.id ?? null, useCase: "tts" } satisfies DisclosureContext,
+          )) {
             sendSSEEvent(res, "audio", {
               chunk: audioChunk.toString("base64"),
               format: "mp3",

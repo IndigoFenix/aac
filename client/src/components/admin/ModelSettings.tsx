@@ -18,6 +18,26 @@ import {
   type ModelOption,
   type UseCaseInfo,
 } from '@shared/llm-options';
+import { isProviderAllowed, useCaseCarriesPhi } from '@shared/llm-policy';
+
+/**
+ * `apiRequest` throws `Error("<status>: <raw body>")` on a non-2xx, so the
+ * server's own explanation IS reachable — it just arrives glued to the status
+ * code and still JSON-encoded. The policy refusal is the first 400 here whose
+ * text an admin actually needs to read, so unwrap it rather than showing
+ * "400: {"success":false,...}".
+ */
+function saveErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  const body = raw.replace(/^\d{3}:\s*/, '').trim();
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed.message === 'string') return parsed.message;
+  } catch {
+    // Not JSON (proxy error page, plain text) — fall through to the raw text.
+  }
+  return body || 'Failed to save model settings.';
+}
 
 const TIER_COLORS: Record<string, string> = {
   economy: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -76,7 +96,12 @@ export function ModelSettings() {
     const info = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey];
     // HTTP-only per-agent overrides are wired for Gemini only.
     if (info?.requiresHttp) return ['gemini'];
-    return getProvidersWithModels(info?.requiresLive);
+    // Transfer policy: a PHI-bearing use case can only be pointed at a
+    // disclosed processor. The server refuses the save either way (see the
+    // banner below) — this keeps the uncoverable option off the menu.
+    return getProvidersWithModels(info?.requiresLive).filter((p) =>
+      isProviderAllowed(useCaseKey, p),
+    );
   };
 
   const handleProviderChange = (useCase: string, provider: LLMProviderKey) => {
@@ -98,8 +123,9 @@ export function ModelSettings() {
   };
 
   const handleSave = () => {
-    updateConfigs.mutate(localConfigs);
-    setHasChanges(false);
+    // Clear `hasChanges` only once the server has ACCEPTED the write —
+    // otherwise a refused save hides the Save button and strands the edit.
+    updateConfigs.mutate(localConfigs, { onSuccess: () => setHasChanges(false) });
   };
 
   const useCaseEntries = Object.entries(useCases || {}) as [UseCaseKey, UseCaseInfo][];
@@ -128,6 +154,17 @@ export function ModelSettings() {
         )}
       </div>
 
+      {updateConfigs.isError && (
+        <div
+          className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+          role="alert"
+          data-testid="model-settings-save-error"
+        >
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{saveErrorMessage(updateConfigs.error)}</span>
+        </div>
+      )}
+
       <div className="grid gap-6">
         {useCaseEntries.map(([useCaseKey, useCaseInfo]) => {
           const config = localConfigs[useCaseKey];
@@ -146,6 +183,15 @@ export function ModelSettings() {
                   {useCaseInfo.requiresLive && (
                     <Badge variant="outline" className="ms-2 text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
                       Live
+                    </Badge>
+                  )}
+                  {useCaseCarriesPhi(useCaseKey) && (
+                    <Badge
+                      variant="outline"
+                      className="ms-2 text-xs bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200"
+                      title="Carries student personal/health data — only disclosed processors are selectable."
+                    >
+                      Student data
                     </Badge>
                   )}
                 </CardDescription>

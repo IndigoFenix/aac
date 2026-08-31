@@ -200,6 +200,14 @@ async function startServer(): Promise<void> {
       log("No client bundle at dist/public — running API-only (frontend served by CloudFront)");
     }
 
+    // AKIM §18.5 — ECS drains a task with SIGTERM. Flush any half-open
+    // processor-disclosure windows before the process goes, so a deploy does
+    // not drop a live session's trailing send count. Registered before
+    // listening so a task killed during a slow startup is still covered.
+    // See services/processorDisclosure.ts.
+    const { installDisclosureShutdownFlush } = await import("./services/processorDisclosure");
+    installDisclosureShutdownFlush();
+
     const port = process.env.PORT || 5000;
     server.listen({ port: Number(port), host: "0.0.0.0" }, () => {
       log(`Server listening on port ${port}`);

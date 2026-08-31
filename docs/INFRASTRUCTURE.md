@@ -149,11 +149,13 @@ All infrastructure is tagged for compliance tracking:
 | CloudWatch Logs | KMS encryption (all Terraform-managed groups) |
 | TURN control channel | Plaintext (coturn). Media itself is DTLS-SRTP end-to-end; the relay never decrypts it |
 
-**Open gap — RDS server-certificate verification.** The connection is TLS but the
-application does not verify the server certificate: `server/db.ts` (and
-`server/services/realtime/postgres-bus.ts`) set `ssl: { rejectUnauthorized: false }`.
-Bundling the RDS CA and flipping this to `true` is **not implemented — planned**
-(§164.312(e)(2)(ii)).
+**RDS server-certificate verification — closed 2026-08-30.** `server/db.ts` and
+`server/services/realtime/postgres-bus.ts` resolve their TLS config through
+`server/db-ssl.ts`: `*.rds.amazonaws.com` hosts are verified against the AWS
+**global** CA bundle (`rds-ca-bundle.pem`) with `rejectUnauthorized: true`;
+non-RDS hosts (Render staging, local Postgres) keep the relaxed config by
+design. Pinned by `server/tests/db-ssl.test.ts`, including a test that the
+bundle stays global (il-central-1 roots present).
 
 ---
 
@@ -297,11 +299,14 @@ allowed requests would duplicate the ALB access log at WAF prices.
   pull request** of the repo can assume the role. Narrowing the `sub` claim to
   `ref:refs/heads/main` plus a GitHub environment claim is **not implemented —
   planned**.
-- **The role's effective permissions are not in Terraform.** The policy declared
-  in `terraform/iam.tf` cannot perform the `terraform apply` the workflow runs
-  (it creates VPC/RDS/KMS/IAM/WAF resources), so a broader policy is attached out
-  of band. Treat "limited scope" as aspirational until that policy is brought
-  under Terraform and split into separate deploy / release / manifest roles.
+- **Two roles are now declared in `terraform/iam.tf`** — a deploy role trusted
+  only from `refs/heads/main` with a policy that can actually run the apply, and
+  a read-only plan role trusted from `pull_request`. Until the `AWS_ROLE_ARN`
+  repo secret is repointed at the deploy role's ARN, the workflow still
+  authenticates as the out-of-band `cliniaccian-github-actions-bootstrap`
+  (`AdministratorAccess`) role — so treat "limited scope" as declared-but-not-yet-
+  in-force. See Access & hardening → CI roles for the rollout and the residual
+  self-modification caveat.
 
 ### Workflow Jobs
 
@@ -338,12 +343,311 @@ environments.
 | WAF / CloudTrail / flow logs / VPC endpoints | On | Off |
 | App log retention | 90 days | 14 days |
 | Audit log retention | 2192 days (6 years) | 30 days |
+| `enable_ssm_session_logging` | On | On |
+| `enable_ecs_exec` | Off | Off |
+| `ecs_readonly_root_fs` | On | On |
+| `ecr_image_exists` (digest-pinned task template) | On | On |
+| `coturn_image_tag` | `4.17.2` | `4.17.2` |
+
+The last five are deliberately the SAME in both profiles: they are hardening
+with no recurring cost, so there is no lean-mode reason to run without them.
+What actually differs is the *evidence* they produce — SSM shell transcripts
+land in the logs bucket under either profile, but the CloudTrail
+`StartSession` / `TerminateSession` records that cover the DB tunnel only exist
+under `hipaa`.
 
 A second axis is `var.environment`, which both ECS profiles set to `prod`. It —
 not the profile — is what selects RDS Multi-AZ (on), 35-day RDS backup retention,
 RDS deletion protection (on) and a 30-day Secrets Manager recovery window. A
 `staging`/`dev` value would drop those to single-AZ, 7 days, off and 7 days
 respectively, but no such AWS environment is currently deployed.
+
+---
+
+## Access & hardening
+
+Who can reach a running system, as what, and what evidence that leaves.
+
+### SSM Session Manager logging
+
+`terraform/ssm.tf` creates `SSM-SessionManagerRunShell` — the account/region
+DEFAULT session document, so a plain `aws ssm start-session` picks it up without
+anyone naming it. Interactive shell sessions are transcribed to
+`s3://aivota-prod-logs-<account>/ssm-sessions/`, inside the existing 6-year
+lifecycle. **No CloudWatch log group**: ingestion is the expensive half of
+session logging and adds nothing S3 does not already give us.
+
+Be precise about coverage, because the difference matters for §5.7 evidence:
+
+| Session type | How it is started | Transcript? | Evidence |
+|---|---|---|---|
+| Interactive shell | `aws ssm start-session --target <id>` | Yes — full stream to S3 | The transcript object |
+| Port forwarding (the DB tunnel) | `npm run db-tunnel` → `AWS-StartPortForwardingSessionToRemoteHost` | **No** — there is no shell to record | CloudTrail `StartSession` / `TerminateSession` (who, when, target, document) — requires `enable_cloudtrail`, i.e. the `hipaa` profile |
+
+`scripts/db-tunnel.sh` is unaffected by this change. It passes
+`--document-name AWS-StartPortForwardingSessionToRemoteHost` explicitly, so it
+never resolves `SSM-SessionManagerRunShell`, and the preferences document sets
+only S3 fields. Session-level KMS encryption is deliberately **not** enabled: it
+applies to every session type including port forwarding, and would break the
+tunnel for any engineer whose IAM lacks `kms:GenerateDataKey`.
+
+One non-obvious dependency: once a session document names an S3 destination, a
+session whose **target instance** cannot write there refuses to start. Both
+SSM-managed hosts (bastion, coturn) therefore carry an inline `s3:PutObject` +
+`s3:GetEncryptionConfiguration` grant. The logs bucket is SSE-S3, not the CMK,
+so no KMS grant is needed — if the bucket is ever moved to SSE-KMS, add
+`kms:Decrypt` + `kms:GenerateDataKey` to both roles at the same time or every
+session in the account stops starting.
+
+### Per-engineer database authentication (IAM auth)
+
+`iam_database_authentication_enabled = true` is set on the RDS instance. It is
+purely additive: password auth keeps working for the application, migrations and
+the tunnel, and with `apply_immediately = false` in prod the modify is applied
+at the next maintenance window (Mon 04:00–05:00 UTC). No reboot is required.
+
+Terraform also creates — but attaches to nobody — the managed policy
+`aivota-prod-rds-iam-connect` (output `rds_iam_connect_policy_arn`), granting
+`rds-db:connect` on `dbuser:<db resource id>/aivota_engineer`.
+
+**One-time manual step — ✅ done 2026-08-31** (run over the tunnel as the
+master user, at the operator's request; verified `member_of: {rds_iam}`).
+Grants as applied: DML-only on `public` (tables + sequences, plus matching
+default privileges for future migration-created tables), no DDL, no role
+management. For reference, the minimal form:
+
+```sql
+CREATE USER aivota_engineer;
+GRANT rds_iam TO aivota_engineer;
+-- then grant it whatever the role should actually be able to read/write, e.g.
+-- GRANT CONNECT ON DATABASE aivota TO aivota_engineer;
+-- GRANT USAGE ON SCHEMA public TO aivota_engineer;
+```
+
+Afterwards, with the policy attached to their IAM identity, an engineer connects
+without a shared password:
+
+```bash
+npm run db-tunnel          # in another terminal — the tunnel is unchanged
+
+export PGPASSWORD="$(aws rds generate-db-auth-token \
+  --region il-central-1 --profile aac \
+  --hostname aivota-prod-postgres.<...>.il-central-1.rds.amazonaws.com \
+  --port 5432 --username aivota_engineer)"
+
+psql "host=localhost port=5432 dbname=aivota user=aivota_engineer sslmode=require"
+```
+
+The token is minted against the **RDS endpoint hostname**, not `localhost`, even
+though the tunnel is local — it is signed for the real host. Tokens last 15
+minutes. Attribution then comes from two places together: CloudTrail records the
+IAM principal that generated the token, and the PostgreSQL connection log records
+the DB user. Scripts and the app stay on the shared password until someone opts
+in; the two paths coexist indefinitely.
+
+### coturn: patching and a pinned image
+
+The coturn relay is the only internet-facing EC2 host we run (public subnet,
+EIP, 3478/5349 and the relay port range open to `0.0.0.0/0`). It now has:
+
+- **A patch baseline** (`aws_ssm_patch_baseline.coturn`, AL2023, Security
+  classification, Critical+Important severity, auto-approved 7 days after
+  release) bound by the instance's `Patch Group` tag.
+- **A weekly State Manager association** running `AWS-RunPatchBaseline` with
+  `Operation=Install`, `RebootOption=RebootIfNeeded`, at
+  `cron(0 0 ? * SAT *)` — **Saturday 00:00 UTC = 03:00 Israel summer time
+  (IDT, UTC+3) / 02:00 Israel winter time (IST, UTC+2)**. SSM cron has no
+  timezone field, so the wall-clock hour shifts by one across the DST boundary;
+  both land in the quiet window. `apply_only_at_cron_interval = true` stops
+  State Manager from running the association once immediately on creation, which
+  would otherwise reboot the relay during the apply that creates it.
+- **A pinned container image**: `coturn/coturn:${var.coturn_image_tag}`
+  (currently `4.17.2`) instead of the untagged `coturn/coturn`, which resolved
+  to `:latest` at boot — so the relay's version depended on the day the host was
+  last replaced.
+
+**The pin does not take effect until the host is replaced.** `user_data` is in
+the instance's `ignore_changes`, because it is paired with
+`user_data_replace_on_change = true` and editing the script would otherwise
+destroy and recreate the relay on the very next apply, dropping every live call.
+To adopt a new image tag deliberately: change `coturn_image_tag`, bump
+`null_resource.coturn_version` in `terraform/coturn.tf`, and apply during a
+quiet window. Both changes must be in the same apply — the bump alone re-runs
+whatever `user_data` currently says.
+
+Patch installs are free (Patch Manager and State Manager carry no charge for EC2
+instances) and no S3/CloudWatch output location is configured for the
+association.
+
+### Container hardening (ECS)
+
+- **ECS Exec is OFF** (`var.enable_ecs_exec`, false in both profiles). It was
+  hardcoded `true` while the task role never carried `ssmmessages:*` — an
+  advertised interactive path into a PHI container that could not actually be
+  used. Turning it on requires adding those actions to
+  `aws_iam_role.ecs_task` as well as flipping the variable; do that for a
+  debugging window, not as a standing state.
+- **The Terraform task-definition template is digest-pinned**
+  (`var.ecr_image_exists` → `data.aws_ecr_image.app`). This does not change what
+  is running: the deploy workflow registers its own revision with the sha-tagged
+  image and `aws_ecs_service.main` ignores `task_definition` changes. It fixes
+  what a *fresh apply* or a DR rebuild would create, which previously baked in
+  the mutable `:latest` tag. `image_tag_mutability` stays `MUTABLE` because the
+  workflow pushes `:latest` on every deploy.
+- **`readonlyRootFilesystem` is ON** in both ECS profiles
+  (`var.ecs_readonly_root_fs`), with a `tmp` volume mounted at `/tmp` — a
+  Fargate bind mount onto the 20 GB ephemeral storage every task already has,
+  at no extra charge. Nothing in the image is writable at runtime, so a
+  compromised process cannot drop a payload beside the server bundle or
+  rewrite `dist/`.
+
+  `/tmp` is the only writable path the runtime needs:
+  `server/services/chat/tools/video-frame-extractor.ts` calls
+  `mkdtemp(path.join(tmpdir(), …))`. Node writes nothing under `HOME` and npm
+  never runs at runtime (the entrypoint is `node dist/index.prod.js`).
+
+  Every OTHER writer opens a file under the app directory, and each is a
+  debug log gated on `server/services/file-debug-log.ts` —
+  `fileDebugLogEnabled()` is `DEBUG_FILE_LOGS=true` OR (not Lambda and
+  `NODE_ENV` is neither `production` nor `test`), so it is **false in
+  production**. The writers are `caption-debug-log.ts`,
+  `chat/memory-debug-log.ts`, `dual-agent/dual-agent-logger.ts` (which keeps
+  its own `DEBUG_LIVE_SESSIONS` override on top of the shared predicate),
+  `dual-agent/agent-flow-logger.ts`, `deepAnalysisService.ts`,
+  `sessionSummary.ts`, `memory-schema/quest-game-log.ts`,
+  `symbol/auto-symbol-service.ts` and `aac-sim/trace.ts`;
+  `providers/claude-structured.ts` is gated on its own `CLAUDE_CACHE_DEBUG`.
+
+  Belt as well as braces: all of them write through `safeAppend` /
+  `safeTruncate`, which swallow `EROFS` (and memoise the dead path so a
+  leaked gate costs one failed syscall, not one per log line) — a debug log
+  must never be able to fail a request. `server/tests/readonly-root-fs.test.ts`
+  pins all of it as a source check, so a new `fs.appendFileSync` added to one
+  of these modules fails CI rather than production.
+
+### Disclosed: the ALB → task hop is plaintext HTTP
+
+TLS terminates at the ALB (TLS 1.2+, `ELBSecurityPolicy-TLS13-1-2-2021-06`) and
+at CloudFront. From the load balancer to the Fargate task, and for the ALB
+health check on `/health`, traffic is **plain HTTP on port 5000**. PHI in
+request and response bodies therefore crosses that hop unencrypted.
+
+This is disclosed rather than fixed. The compensating controls are: the tasks
+sit in private subnets with no public IP; `aws_security_group.ecs` accepts
+traffic on 5000 only from `aws_security_group.alb`; the VPC is single-tenant to
+this account. Closing it properly means terminating TLS inside the container
+(certificate provisioning, rotation and distribution into the task) — a real
+project, not a Terraform flag, and out of scope here.
+
+### CI roles: the deploy role, the plan role, and the admin role we are leaving
+
+The situation the 2026-08-30 audit found: the role Terraform declared was **not**
+the role the deploy used.
+
+| Role | Trust | Permissions | Assumed? |
+|---|---|---|---|
+| `aivota-prod-github-actions-role` (Terraform, `iam.tf`) | `repo:IndigoFenix/aac:*` | scoped inline policy that could not run the apply | **never, since 2026-03** |
+| `cliniaccian-github-actions-bootstrap` (created out of band) | `repo:IndigoFenix/aac:*` | **`AdministratorAccess`** | every deploy |
+
+`secrets.AWS_ROLE_ARN` pointed at the bootstrap role, and had to — the declared
+policy had no VPC, RDS, KMS or IAM permissions at all, so a `terraform apply`
+under it would have failed on its first resource. The declared role was
+decoration.
+
+What is now in Terraform:
+
+- **`aivota-prod-github-actions-role` is repurposed in place** as the real deploy
+  role — the same resource, so the apply is an in-place update, not a
+  destroy/create. Trust narrowed from `repo:IndigoFenix/aac:*` (every branch,
+  every PR, every tag) to an exact `repo:IndigoFenix/aac:ref:refs/heads/main`. A
+  `workflow_dispatch` run started against main mints the same `ref:` subject, so
+  the manual "deploy with the hipaa profile" run is unaffected.
+- **`aivota-prod-github-actions-plan`** is new: trust
+  `repo:IndigoFenix/aac:pull_request`, policy `Describe*/Get*/List*` over the
+  same service list, read-only on the state bucket, read-write on the lock table
+  only (a plan takes the lock), with `s3:PutObject`/`DeleteObject` on the state
+  explicitly denied. Fork PRs receive no secrets, so no fork can attempt the
+  assume.
+
+Both policies derive from **one** list of service namespaces
+(`local.github_service_namespaces`) — the deploy role gets `<ns>:*`, the plan
+role gets the three read verbs. That is deliberate: the old hand-written list
+drifted out of usefulness and nobody noticed for five months, because a broader
+role was quietly doing the work. Outside that list, three resource-scoped
+statements (S3 on `aivota-*`, DynamoDB on the lock table, IAM on
+`role|policy|instance-profile/aivota-*`) and an explicit **Deny** on
+`organizations`, `account`, `aws-portal`, `billing`, `ce`, and every IAM action
+matching `*User*`, `*AccessKey*`, `*LoginProfile*`, `*SAMLProvider*`,
+`*MFADevice*`. So a compromised workflow cannot mint a user or an access key and
+cannot reach the payer account.
+
+Two things to be honest about:
+
+- The deploy role can rewrite **its own** policy — it is an `aivota-*` role and
+  Terraform has to be able to manage it. The control is that any such change has
+  to land on `main` through a pull request. A permissions boundary would close it
+  properly; that is the next step if this is audited harder.
+- `apigateway` does not use `Describe/Get/List` — reading an HTTP API is
+  `apigateway:GET`, granted explicitly in the plan policy. Without it a plan
+  would fail on the legacy Lambda path's resources.
+
+One correction to the original design note: the "redundant" unconditioned
+`ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition` statement in the old
+policy was **not** redundant. `ecs:DescribeTaskDefinition` supports neither
+resource-level permissions nor the `aws:ResourceTag` condition key, so the
+tag-scoped statement above it could never have authorized it — dropping it would
+have broken the workflow's `Fetch current task definition` step. The new policy
+grants `ecs:*` and the question disappears.
+
+**Rollout order.** Nothing breaks at any step, because the repo secret is what
+selects the role and it does not change on merge:
+
+1. **Merge.** The apply still runs as `cliniaccian-github-actions-bootstrap`
+   (the secret is unchanged), and it updates the deploy role's trust + policy and
+   creates the plan role. Deploys keep working throughout.
+2. **Set the secrets.** Point `AWS_ROLE_ARN` at the `github_actions_role_arn`
+   output, and add `AWS_PLAN_ROLE_ARN` from `github_actions_plan_role_arn`. The
+   next push to main is the first deploy that runs on the scoped role.
+3. **Keep the bootstrap role as break-glass.** Do not delete
+   `cliniaccian-github-actions-bootstrap`. If a scoped apply ever fails with
+   `AccessDenied`, repoint `AWS_ROLE_ARN` back to it, merge the permission fix
+   (usually one more namespace in `local.github_service_namespaces`), then
+   repoint forward again. Deleting it removes the only way back.
+
+**The plan role has no consumer yet.** The `infrastructure` job is gated
+`if: github.ref == 'refs/heads/main'`, and a `pull_request` event's ref is
+`refs/pull/<n>/merge` — so no job runs on PRs today, and the PR branch of the
+workflow's `role-to-assume` expression is unreachable. The role and the
+expression are in place so that turning PR plans on is a one-line change to that
+`if:`; enabling it was not done here because it adds a CI run that does not
+exist today. Until then the plan role is inert, and the transition-safe
+`|| secrets.AWS_ROLE_ARN` fallback means an unset `AWS_PLAN_ROLE_ARN` degrades to
+the deploy role rather than to a broken job.
+
+### Before the next apply: one blocked resource
+
+`terraform plan` shows `aws_cloudwatch_log_group.rds_postgresql` as a **create**,
+but `/aws/rds/instance/aivota-prod-postgres/postgresql` already exists in the
+account — RDS auto-created it (no CMK, no expiry) before Terraform declared it.
+An apply would fail with `ResourceAlreadyExistsException` — the exact situation
+the comment in `terraform/rds.tf` warns about. **No manual step is needed:** the
+`Terraform Adopt Pre-existing Resources` step in `deploy.yml` imports it before
+the plan, is idempotent (already-in-state and absent-in-AWS both fall through),
+and is gated to non-PR runs so it always executes under the deploy role. Adopting
+another such resource later means adding one `address=id` line to its list.
+
+Only this one group is affected — `/aws/rds/instance/aivota-prod-postgres/upgrade`
+does not exist and creates cleanly. After adoption the apply sets the CMK and the
+retention on the group RDS had created bare.
+
+If you ever need to do it by hand instead (from a workstation with admin
+credentials):
+
+```bash
+cd terraform
+AWS_PROFILE=aac terraform import aws_cloudwatch_log_group.rds_postgresql \
+  /aws/rds/instance/aivota-prod-postgres/postgresql
+```
 
 ---
 
@@ -424,6 +728,35 @@ make that reach a human (`terraform/alerting.tf`, `terraform/secrets.tf`):
 
 ---
 
+## Backups & disaster recovery
+
+Full runbook: **[DISASTER_RECOVERY.md](DISASTER_RECOVERY.md)**. Summary:
+
+- **RDS:** automated backups + PITR, **35 days** in prod (`terraform/rds.tf:109`),
+  Multi-AZ (`:114`), CMK-encrypted, deletion protection on (`:127`).
+- **S3 uploads:** versioning on, noncurrent versions expire after 30 days
+  (`terraform/storage.tf:18-23`, `:111-139`) — that window is also the recovery
+  window for an accidental overwrite or delete.
+- **Secrets Manager:** 30-day soft-delete recovery in prod (`terraform/secrets.tf:133`, `:150`).
+- **Redis:** daily snapshots, `redis_snapshot_retention_days` (default 7), only
+  under the `hipaa` profile (`terraform/redis.tf:119`).
+- **Not backed up:** on-device AAC session recordings, and staging (Render).
+
+**DR is in-region only, deliberately.** `il-central-1` is the only AWS region in
+Israel, so a cross-region snapshot copy or CRR would itself be a transfer of PHI
+out of the country (AKIM §14). Region loss is an accepted, documented risk.
+
+**Cutover after a restore** is a Secrets Manager edit plus a rolling deploy — no
+`terraform apply`, no image rebuild: change `DATABASE_URL` in `aivota-prod/database`
+(the ECS task reads it from there, `terraform/ecs.tf:215-216`) then
+`aws ecs update-service --cluster aivota-prod-cluster --service aivota-prod-service --force-new-deployment`.
+
+**Drill:** `npm run dr:drill` (plan) / `-- --execute` restores the latest snapshot
+in-region to a throwaway `aivota-dr-drill-*` instance, smoke-checks it, tears it
+down and writes dated evidence to `docs/dr/drills/`. Quarterly.
+
+---
+
 ## Terraform State
 
 - **Backend:** S3 with encryption (SSE-S3, not the CMK)
@@ -452,26 +785,33 @@ policy, no access logging and no Object Lock** — hardening it is not implement
    logs bucket is **not implemented**.
 
 5. **Bastion Access** - No ingress rules at all; access is SSM Session Manager
-   only. SSM session logging to CloudWatch/S3 is not configured, and human DB
-   access still uses the shared `aivota_admin` role rather than per-engineer IAM
-   database authentication.
+   only. Interactive shell sessions are now transcribed to the logs bucket
+   (`ssm-sessions/`); port-forwarding sessions produce no transcript by
+   construction and are only evidenced by CloudTrail, which is off under
+   `ecs-lean`. Human DB access still uses the shared `aivota_admin` role in
+   practice: the `aivota_engineer` DB user exists (created 2026-08-31,
+   DML-only) and the `rds-db:connect` policy exists, but IAM-token logins only
+   work once the `iam_database_authentication_enabled` apply lands, and the
+   policy still has to be attached to each engineer's IAM identity. See
+   Access & hardening.
 
-6. **RDS TLS certificate not verified** - `server/db.ts` sets
-   `rejectUnauthorized: false`. Encrypted, but not authenticated.
+6. **RDS TLS certificate verified since 2026-08-30** - `server/db-ssl.ts`
+   validates RDS hosts against the AWS global CA bundle
+   (`rejectUnauthorized: true`); non-RDS hosts keep the relaxed config by
+   design. See the Encryption section.
 
-7. **Container hardening** - The task definition sets no
-   `readonlyRootFilesystem`, so the container root FS is writable (ephemeral per
-   task). `enable_execute_command = true` means a principal with
-   `ecs:ExecuteCommand` can shell into a running task. The image is deployed by
-   the mutable `:latest` tag.
+7. **Container hardening** - ECS Exec is off, the Terraform template is
+   digest-pinned, and `readonlyRootFilesystem` is on in both ECS profiles with
+   `/tmp` as the only writable path. See Access & hardening.
 
 8. **Secrets rotation** - Not configured for the RDS master or the app secrets
    (see Secrets Management).
 
-9. **coturn** - The TURN control channel is plaintext, its shared secret is
-   passed through `user_data`, and the host ships no log forwarding or patch
-   automation. Media is DTLS-SRTP end-to-end, so the relay never sees decrypted
-   audio/video.
+9. **coturn** - The TURN control channel is plaintext and its shared secret is
+   passed through `user_data`. The host now has a weekly AL2023 security patch
+   association and a pinned container image (Access & hardening), but still no
+   log forwarding. Media is DTLS-SRTP end-to-end, so the relay never sees
+   decrypted audio/video.
 
 10. **Security scan job cannot fail the build** - the `security-scan` job in
     `deploy.yml` runs with `continue-on-error: true`.

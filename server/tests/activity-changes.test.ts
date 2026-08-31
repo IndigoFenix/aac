@@ -297,3 +297,208 @@ describe("clinical record tables", () => {
     expect(Object.keys(changes)).toEqual(["primaryDiagnosis"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Care-plan tables (AKIM appendix §5.8, Track C).
+//
+// programs / goals / objectives / progress_reports carry the workflow skeleton
+// an auditor needs — who moved a plan to active, when a due date slipped, when
+// a report was shared with parents — wrapped around narrative that a clinician
+// or a parent wrote. That split is the whole point: the skeleton is literal,
+// the narrative never is.
+// ---------------------------------------------------------------------------
+
+describe('care-plan tables', () => {
+  describe('programs', () => {
+    it('records a program status transition literally', () => {
+      const changes = summarizeChanges('programs', { status: 'draft' }, { status: 'active' });
+      expect(changes.status).toEqual({ from: 'draft', to: 'active' });
+    });
+
+    it('records framework and dates literally, since an auditor needs the timeline', () => {
+      const changes = summarizeChanges(
+        'programs',
+        { framework: 'us_iep', dueDate: '2026-11-15', approvalDate: null },
+        { framework: 'tala', dueDate: '2027-01-30', approvalDate: '2026-12-01' },
+      );
+      expect(changes.framework).toEqual({ from: 'us_iep', to: 'tala' });
+      expect(changes.dueDate).toEqual({ from: '2026-11-15', to: '2027-01-30' });
+      expect(changes.approvalDate).toEqual({ from: null, to: '2026-12-01' });
+    });
+
+    it('redacts the program notes and the ICF factor blobs', () => {
+      const changes = summarizeChanges(
+        'programs',
+        { notes: '', personalFactors: {} },
+        {
+          notes: 'Mother reports night seizures since October.',
+          personalFactors: { motivators: 'music', temperament: 'anxious' },
+        },
+      );
+      expect(changes.notes).toEqual({ from: 'empty', to: 'set', redacted: true });
+      expect(changes.personalFactors).toEqual({ from: '{0 fields}', to: '{2 fields}', redacted: true });
+      const json = JSON.stringify(changes);
+      expect(json).not.toContain('Mother reports night seizures since October.');
+      expect(json).not.toContain('anxious');
+    });
+
+    it('redacts a program title, because clinicians type a child name into it', () => {
+      const changes = summarizeChanges('programs', { title: null }, { title: 'Noa 2027 plan' });
+      expect(changes.title).toEqual({ from: 'empty', to: 'set', redacted: true });
+      expect(JSON.stringify(changes)).not.toContain('Noa');
+    });
+  });
+
+  describe('goals', () => {
+    it('records the goal lifecycle enums and dates literally', () => {
+      const changes = summarizeChanges(
+        'goals',
+        { status: 'draft', interventionLevel: null, targetDate: '2026-06-01', achievedDate: null },
+        {
+          status: 'achieved',
+          interventionLevel: 'participation',
+          targetDate: '2026-06-01',
+          achievedDate: '2026-05-20',
+        },
+      );
+      expect(changes.status).toEqual({ from: 'draft', to: 'achieved' });
+      expect(changes.interventionLevel).toEqual({ from: null, to: 'participation' });
+      expect(changes.achievedDate).toEqual({ from: null, to: '2026-05-20' });
+      expect(changes.targetDate).toBeUndefined();
+    });
+
+    it('keeps the GAS scale identifiers and the numeric ratings literal', () => {
+      const changes = summarizeChanges(
+        'goals',
+        { useGas: false, gasBaselineLevel: null, progress: 0, setJointlyWithFamily: false },
+        {
+          useGas: true,
+          gasBaselineLevel: 'less_than_expected',
+          progress: 40,
+          setJointlyWithFamily: true,
+        },
+      );
+      expect(changes.useGas).toEqual({ from: false, to: true });
+      expect(changes.gasBaselineLevel).toEqual({ from: null, to: 'less_than_expected' });
+      expect(changes.progress).toEqual({ from: 0, to: 40 });
+      expect(changes.setJointlyWithFamily).toEqual({ from: false, to: true });
+    });
+
+    it('redacts the goal statement and its criteria', () => {
+      const changes = summarizeChanges(
+        'goals',
+        { goalStatement: 'Old statement', criteria: null },
+        {
+          goalStatement: 'Yael will request a break on her AAC device in 4 of 5 opportunities.',
+          criteria: '4 of 5 trials across 3 consecutive sessions',
+        },
+      );
+      expect(changes.goalStatement).toEqual({ from: 'set', to: 'set', redacted: true });
+      expect(changes.criteria).toEqual({ from: 'empty', to: 'set', redacted: true });
+      const json = JSON.stringify(changes);
+      expect(json).not.toContain('Yael will request a break on her AAC device in 4 of 5 opportunities.');
+      expect(json).not.toContain('4 of 5 trials across 3 consecutive sessions');
+    });
+
+    it('redacts familyInput, which a parent wrote and never offered to an audit trail', () => {
+      const changes = summarizeChanges(
+        'goals',
+        { familyInput: null },
+        { familyInput: 'Father says she uses the device at home but never at school.' },
+      );
+      expect(changes.familyInput).toEqual({ from: 'empty', to: 'set', redacted: true });
+      expect(JSON.stringify(changes)).not.toContain('Father says she uses the device at home but never at school.');
+    });
+
+    it('reduces the GAS level definitions to a shape, not their behaviour text', () => {
+      const changes = summarizeChanges(
+        'goals',
+        { gasLevels: {} },
+        { gasLevels: { less_than_expected: { behavior: 'refuses the device and cries' } } },
+      );
+      expect(changes.gasLevels).toEqual({ from: '{0 fields}', to: '{1 fields}', redacted: true });
+      expect(JSON.stringify(changes)).not.toContain('refuses the device and cries');
+    });
+  });
+
+  describe('objectives', () => {
+    it('records the objective status, GAS target level and dates literally', () => {
+      const changes = summarizeChanges(
+        'objectives',
+        { status: 'draft', gasTargetLevel: null, achievedDate: null },
+        { status: 'in_progress', gasTargetLevel: 'better_than_expected', achievedDate: '2026-04-02' },
+      );
+      expect(changes.status).toEqual({ from: 'draft', to: 'in_progress' });
+      expect(changes.gasTargetLevel).toEqual({ from: null, to: 'better_than_expected' });
+      expect(changes.achievedDate).toEqual({ from: null, to: '2026-04-02' });
+    });
+
+    it('redacts the objective statement and its measurement narrative', () => {
+      const changes = summarizeChanges(
+        'objectives',
+        { objectiveStatement: 'Old text', measurementMethod: null },
+        {
+          objectiveStatement: 'Ari will hold head control for 30 seconds during circle time.',
+          measurementMethod: 'Therapist tally sheet, weekly',
+        },
+      );
+      expect(changes.objectiveStatement).toEqual({ from: 'set', to: 'set', redacted: true });
+      expect(changes.measurementMethod).toEqual({ from: 'empty', to: 'set', redacted: true });
+      const json = JSON.stringify(changes);
+      expect(json).not.toContain('Ari will hold head control for 30 seconds during circle time.');
+      expect(json).not.toContain('Therapist tally sheet, weekly');
+    });
+  });
+
+  describe('progress reports', () => {
+    it('records the parent-disclosure flag and its date literally, which is the audit event', () => {
+      const changes = summarizeChanges(
+        'progress_reports',
+        { sharedWithParents: false, sharedDate: null, reportDate: '2026-03-01' },
+        { sharedWithParents: true, sharedDate: '2026-03-05', reportDate: '2026-03-01' },
+      );
+      expect(changes.sharedWithParents).toEqual({ from: false, to: true });
+      expect(changes.sharedDate).toEqual({ from: null, to: '2026-03-05' });
+      expect(changes.reportDate).toBeUndefined();
+    });
+
+    it('redacts the summary, the recommendations and the reporting period', () => {
+      const changes = summarizeChanges(
+        'progress_reports',
+        { overallSummary: null, recommendedChanges: null, reportingPeriod: 'Q1' },
+        {
+          overallSummary: 'Regression in fine motor control after the November hospitalization.',
+          recommendedChanges: 'Increase OT to twice weekly.',
+          // Open text by design, so it can carry a clinical remark, not just "Q2".
+          reportingPeriod: 'Q2 post-hospitalization',
+        },
+      );
+      expect(changes.overallSummary).toEqual({ from: 'empty', to: 'set', redacted: true });
+      expect(changes.recommendedChanges).toEqual({ from: 'empty', to: 'set', redacted: true });
+      expect(changes.reportingPeriod).toEqual({ from: 'set', to: 'set', redacted: true });
+      const json = JSON.stringify(changes);
+      expect(json).not.toContain('Regression in fine motor control after the November hospitalization.');
+      expect(json).not.toContain('Increase OT to twice weekly.');
+      expect(json).not.toContain('post-hospitalization');
+    });
+  });
+
+  describe('reorder noise', () => {
+    it('logs nothing when a drag-to-reorder moves a goal', () => {
+      expect(summarizeChanges('goals', { sortOrder: 1 }, { sortOrder: 7 })).toEqual({});
+    });
+
+    it('logs nothing when a drag-to-reorder moves an objective', () => {
+      expect(summarizeChanges('objectives', { sequenceOrder: 2 }, { sequenceOrder: 1 })).toEqual({});
+    });
+
+    it('still reports the real edit that rode along with a reorder', () => {
+      const changes = summarizeChanges(
+        'goals',
+        { sortOrder: 1, status: 'draft' },
+        { sortOrder: 4, status: 'active' },
+      );
+      expect(Object.keys(changes)).toEqual(['status']);
+    });
+  });
+});

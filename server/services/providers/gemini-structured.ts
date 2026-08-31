@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import type { StructuredLLMProvider, StructuredRequest } from "./structured-provider";
 import type { GPTResponse, GPTFunctionToolCall, GPTInputItem } from "../chat/gpt";
 import { vertexClientOptions } from "./vertex-config";
+import { recordDisclosure } from "../processorDisclosure";
 import { getModelOption } from "@shared/llm-options";
 
 export class GeminiStructuredProvider implements StructuredLLMProvider {
@@ -85,6 +86,20 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
   }
 
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
+    // `clientFor` decides Vertex vs the public API key PER MODEL, so resolve
+    // it once here: the disclosure row must name the endpoint the call
+    // actually used, not the instance-wide default, and resolving twice would
+    // repeat its not-on-Vertex warning.
+    const client = this.clientFor(request.model);
+    // AKIM §18.5: the prompt about to be sent is PHI leaving for Google.
+    recordDisclosure({
+      processor: "google",
+      channel: "structured",
+      model: request.model,
+      endpoint: client === this.vertexClient ? "vertex" : "api",
+      context: request.disclosure,
+    });
+
     // Build Gemini contents from GPTInputItem[]
     const { systemInstruction, contents } = this.convertInputItems(
       request.input,
@@ -122,7 +137,7 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
       };
     }
 
-    const response = await this.clientFor(request.model).models.generateContent({
+    const response = await client.models.generateContent({
       model: request.model,
       config,
       contents,

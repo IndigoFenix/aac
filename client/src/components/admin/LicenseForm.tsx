@@ -33,7 +33,9 @@ import {
   type UpdateLicenseData,
 } from '@/hooks/useAdminData';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/hooks/useAuth';
 import { KNOWN_REGIMES, getRegimeBundle, type RegimeSlug } from '@shared/regime';
+import { ADMIN_WILDCARD_PERMISSION } from '@shared/admin-sections';
 import type { BillingRegime } from '@shared/license-permissions';
 
 interface LicenseFormProps {
@@ -59,8 +61,17 @@ const USER_TYPES = [
 export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const { toast } = useToast();
   const { t, language } = useLanguage();
+  const { user } = useAuth();
   const { createLicense, updateLicense } = useLicenseMutations();
   const isEdit = !!license;
+
+  // Session recording is a FULL-system-admin control, not a licenses-section
+  // one. `user.isSystemAdmin` cannot express that — every admin identity
+  // carries it — so this reads the wildcard permission, which is the same thing
+  // the server checks (licenseController.isFullSystemAdmin). Hiding the switch
+  // is cosmetic: a section admin who sends the field anyway gets a 403.
+  const canGrantSessionRecording =
+    user?.adminPermissions?.includes(ADMIN_WILDCARD_PERMISSION) === true;
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Recipient fields (create only)
@@ -119,6 +130,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   // always round-trip them (otherwise create 400s and edits wipe the values).
   const [insuranceBridgeEnabled, setInsuranceBridgeEnabled] = useState(false);
   const [billingRegime, setBillingRegime] = useState<BillingRegime>('none');
+  // NOT part of `permissions` — a column on the license row. See the column
+  // comment in shared/schema.ts for why it must not live in that blob.
+  const [allowSessionRecording, setAllowSessionRecording] = useState(false);
 
   // Reset form when dialog opens/closes or license changes
   useEffect(() => {
@@ -129,6 +143,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         setSubscriptionType(license.subscriptionType || 'monthly');
         setIsTrial(license.isTrial || false);
         setTrialExpiresAt(license.trialExpiresAt ? license.trialExpiresAt.split('T')[0] : '');
+        setAllowSessionRecording(license.allowSessionRecording === true);
 
         const perms = license.permissions;
         if (perms) {
@@ -199,6 +214,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setSubscriptionType('monthly');
     setIsTrial(false);
     setTrialExpiresAt('');
+    setAllowSessionRecording(false);
     resetPermissions();
   }
 
@@ -272,6 +288,12 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : null,
           permissions: buildPermissions(),
         };
+        // Only ever SENT by an admin allowed to set it. The server refuses the
+        // whole request when the field is present without the privilege, so a
+        // section admin renaming a license must not carry it along unasked.
+        if (canGrantSessionRecording) {
+          data.allowSessionRecording = allowSessionRecording;
+        }
         await updateLicense.mutateAsync({ id: license!.id, data });
         toast({ title: t('admin.licenses.updated') });
       } else {
@@ -280,7 +302,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           return;
         }
         if (!instituteName.trim()) {
-          toast({ title: t('admin.licenses.instituteNameRequired') || 'Institute name is required', variant: 'destructive' });
+          // The `t(...) || 'fallback'` idiom this replaced was dead code: a
+          // missing key makes t() return the KEY, which is truthy, so the
+          // fallback never rendered and the user saw the raw key instead.
+          toast({ title: t('admin.licenses.instituteNameRequired'), variant: 'destructive' });
           return;
         }
         const data: CreateLicenseData = {
@@ -313,6 +338,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
             identityProvenanceNote: identityProvenanceNote.trim() || undefined,
           }),
         };
+        // Same rule as the edit path: present only when this admin may set it.
+        if (canGrantSessionRecording) {
+          data.allowSessionRecording = allowSessionRecording;
+        }
         await createLicense.mutateAsync(data);
         toast({ title: t('admin.licenses.created') });
       }
@@ -731,6 +760,27 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                     <Switch checked={insuranceBridgeEnabled} onCheckedChange={setInsuranceBridgeEnabled} />
                   </div>
                 </div>
+
+                {/* Session recording. Set apart from the grid above on purpose:
+                    everything up there is a feature the customer bought, and
+                    this is an internal entitlement that points a camera at a
+                    child. It is also the one control here a section admin
+                    cannot use. */}
+                {canGrantSessionRecording && (
+                  <div className="flex items-start justify-between gap-4 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
+                    <div className="space-y-1">
+                      <Label className="text-sm">{t('admin.licenses.allowSessionRecording')}</Label>
+                      <p className="text-xs text-muted-foreground">
+                        {t('admin.licenses.allowSessionRecordingHint')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={allowSessionRecording}
+                      onCheckedChange={setAllowSessionRecording}
+                      data-testid="switch-allow-session-recording"
+                    />
+                  </div>
+                )}
 
                 {/* Dashboard Level */}
                 <div className="flex items-center justify-between">

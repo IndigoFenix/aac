@@ -135,10 +135,16 @@ jobs:
             echo "::notice::Using ECS-LEAN profile (security/monitoring add-ons disabled)"
           fi
 
+      # Pull requests plan with the READ-ONLY role; everything else deploys with
+      # the write role. The `|| secrets.AWS_ROLE_ARN` fallback is what keeps the
+      # transition safe: until AWS_PLAN_ROLE_ARN is set the expression yields the
+      # existing role, so nothing changes. (Today the whole job is gated to
+      # refs/heads/main, so the pull_request branch of this expression is not yet
+      # reachable — see terraform/iam.tf.)
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ github.event_name == 'pull_request' && (secrets.AWS_PLAN_ROLE_ARN || secrets.AWS_ROLE_ARN) || secrets.AWS_ROLE_ARN }}
           role-session-name: github-actions-terraform
           aws-region: ${{ env.AWS_REGION }}
 
@@ -219,6 +225,34 @@ jobs:
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=aivota/${{ env.ENVIRONMENT }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
+
+      # Adopt resources that already exist in the account but are missing from
+      # state (e.g. log groups AWS services auto-create). Without this, apply
+      # fails with ResourceAlreadyExistsException and the only local recourse
+      # is a terraform install nobody has. Idempotent: already-in-state and
+      # not-in-AWS both fall through to plan/apply, which then reconcile.
+      # To adopt another resource later, add an "address=id" line to the list.
+      - name: Terraform Adopt Pre-existing Resources
+        if: github.event_name != 'pull_request'
+        working-directory: terraform
+        run: |
+          ADOPT=(
+            "aws_cloudwatch_log_group.rds_postgresql=/aws/rds/instance/aivota-prod-postgres/postgresql"
+          )
+          for pair in "${ADOPT[@]}"; do
+            addr="${pair%%=*}"; id="${pair#*=}"
+            if terraform state show "$addr" >/dev/null 2>&1; then
+              echo "already in state: $addr"
+            elif terraform import \
+                -var-file="${{ steps.profile.outputs.profile }}.tfvars" \
+                -var="environment=${{ env.ENVIRONMENT }}" \
+                -var="aws_region=${{ env.AWS_REGION }}" \
+                "$addr" "$id"; then
+              echo "imported: $addr <- $id"
+            else
+              echo "not imported (likely absent in AWS — apply will create it): $addr"
+            fi
+          done
 
       - name: Terraform Plan
         working-directory: terraform

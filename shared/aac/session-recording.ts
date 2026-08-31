@@ -17,6 +17,13 @@
  * docs/SECURITY_ARCHITECTURE.md governs. Getting footage off the device is a
  * human copying files out of a folder — a deliberate act by a caretaker.
  *
+ * WHO MAY USE IT. The feature is an operator-granted entitlement carried on the
+ * LICENCE (`licenses.allow_session_recording`), not a customer-facing setting:
+ * it exists so the people who make promotional material can cut it from real
+ * sessions. {@link applySessionRecordingLicense} is the one expression of that
+ * rule; the server applies it on the settings read path and the AAC client
+ * applies it again before starting an encoder.
+ *
  * These settings are deliberately EXCLUDED from the AI-editable whitelists in
  * `server/services/memory-schema/aac-settings-memory-schema.ts`. The AI must
  * never be able to start a camera recording of a student.
@@ -198,6 +205,46 @@ export function normalizeSessionRecordingSettings(raw: unknown): SessionRecordin
   };
 }
 
+// ---------------------------------------------------------------------------
+// Licensing
+// ---------------------------------------------------------------------------
+
+/**
+ * A payload carrying the licence verdict alongside whatever it decorates —
+ * a student row, most of the time.
+ *
+ * The flag is EXPLICIT rather than implied by `enabled: false`, because the two
+ * mean different things to a UI: "off" is a switch a caretaker may flip, "not
+ * available" is a section that should not be on the screen at all.
+ */
+export type WithSessionRecordingLicense<T> = T & { sessionRecordingLicensed: boolean };
+
+/**
+ * The licence gate. Normalize as usual, then force the master switch off when
+ * the student's licence does not carry the entitlement.
+ *
+ * Session recording exists to cut promotional material out of real sessions, so
+ * it is granted per LICENCE (`licenses.allow_session_recording`) to the handful
+ * of people who make that material — not sold to customers. This function is
+ * the single expression of that rule, and it runs on BOTH sides of the wire:
+ * the server applies it on the way out of the settings read path (so an
+ * already-enabled row stops recording the moment the entitlement lapses, with
+ * no write anywhere) and the AAC client applies it again before it will start
+ * an encoder (so a stale cached profile cannot resurrect a camera).
+ *
+ * Only `enabled` is touched. The rest of the object stays clamped and intact:
+ * a lapsed licence is not a reason to throw away a caretaker's disk budget and
+ * folder choice, which have to be there unchanged if the entitlement returns.
+ */
+export function applySessionRecordingLicense(
+  raw: unknown,
+  licensed: boolean,
+): SessionRecordingSettings {
+  const settings = normalizeSessionRecordingSettings(raw);
+  if (licensed) return settings;
+  return { ...settings, enabled: false };
+}
+
 /**
  * Video constraints for the camera track at a given quality. Applied to the
  * SHARED camera track via `applyConstraints` — never a fresh `getUserMedia`,
@@ -297,6 +344,101 @@ export function planEviction(
   return {
     deleteIds,
     shortfallBytes: remaining > maxBytes ? remaining - maxBytes : 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Erasure purge
+// ---------------------------------------------------------------------------
+
+/**
+ * One clip on disk as the ERASURE planner sees it: the budget planner only
+ * needs size and age, but deciding whose footage this is needs the manifest's
+ * `studentId` too.
+ */
+export interface PurgeCandidate extends StoredClip {
+  /**
+   * `studentId` from the clip's manifest, or null when the manifest is
+   * missing, unreadable, or was rebuilt by the orphan recovery pass (which has
+   * no way to know whose session it was). See {@link planStudentPurge} for what
+   * a null means for erasure.
+   */
+  studentId: string | null;
+}
+
+/**
+ * Why a device is being asked to delete its footage of a student.
+ *
+ * `erasure` — the student was tombstoned (right-to-erasure). `device_revoked`
+ * — this device's registration slot was taken away, or it is switching to a
+ * different student; either way its copy of the previous child's sessions has
+ * no basis to stay. Carried on the wire so the audit row says which.
+ */
+export type RecordingPurgeReason = "erasure" | "device_revoked";
+
+export interface StudentPurgePlan {
+  /** Clips to delete whole — camera, screen and manifest together. */
+  clipIds: string[];
+  /** Total bytes those clips occupy, for the ack the device sends back. */
+  bytes: number;
+}
+
+/**
+ * Decide which clips go when a student is erased or a device slot is revoked.
+ *
+ * Two rules, and the second exists because the first cannot be complete:
+ *
+ *  1. Every clip whose manifest names this student. That is the erasure.
+ *  2. Every ORPHAN clip — manifest `studentId: null` — older than the
+ *     retention window. A clip left half-written by a crash gets its manifest
+ *     rebuilt by the store's recovery pass, which has no idea whose session it
+ *     was, so rule 1 can never match it. Deleting every orphan outright would
+ *     throw away footage of a DIFFERENT, still-enrolled child that merely
+ *     happened to crash; deleting the ones past retention is the part that is
+ *     both safe and already policy — the age sweep would take them anyway.
+ *
+ * So a purge is BEST-EFFORT by construction: an orphan inside the retention
+ * window survives a purge aimed at the child it actually shows. The honest fix
+ * is the one the store already does — write the manifest with the studentId as
+ * soon as the clip closes — not a heuristic here.
+ *
+ * `protectedIds` are clips currently being written; those are never touched by
+ * a plan, the caller stops the recorder instead.
+ */
+export function planStudentPurge(
+  clips: readonly PurgeCandidate[],
+  opts: {
+    studentId: string;
+    /** `maxAgeDays` from the last-known settings; the orphan rule's cutoff. */
+    retentionDays: number;
+    nowMs: number;
+    protectedIds?: readonly string[];
+  },
+): StudentPurgePlan {
+  const guarded = new Set(opts.protectedIds ?? []);
+  const wanted = typeof opts.studentId === "string" ? opts.studentId.trim() : "";
+  if (!wanted) return { clipIds: [], bytes: 0 };
+
+  const days = Number.isFinite(opts.retentionDays) && opts.retentionDays > 0
+    ? Math.round(opts.retentionDays)
+    : MAX_AGE_DAYS_DEFAULT;
+  const orphanCutoff = opts.nowMs - days * 24 * 60 * 60 * 1000;
+
+  const chosen: PurgeCandidate[] = [];
+  for (const clip of clips) {
+    if (guarded.has(clip.id)) continue;
+    if (clip.studentId === wanted) {
+      chosen.push(clip);
+      continue;
+    }
+    if (clip.studentId === null && clip.startedAtMs < orphanCutoff) chosen.push(clip);
+  }
+
+  // Oldest first, so the ack reads in the same order the folder does.
+  chosen.sort((a, b) => a.startedAtMs - b.startedAtMs);
+  return {
+    clipIds: chosen.map((c) => c.id),
+    bytes: chosen.reduce((sum, c) => sum + c.bytes, 0),
   };
 }
 

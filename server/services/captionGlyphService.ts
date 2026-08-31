@@ -24,6 +24,7 @@ import { serializeGlyph, type GlyphSym, type GlyphOp } from "./dual-agent/intera
 import { captionDebug, captionDebugSeparator } from "./caption-debug-log";
 import { getVocabularyItem } from "@shared/glyph-registry";
 import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
+import type { DisclosureContext } from "./processorDisclosure";
 
 /** One caption line to convert. `index` ties the result back to its segment. */
 export interface CaptionGlyphInput {
@@ -223,6 +224,15 @@ async function runGlyphModel(
   captionDebug("USER INPUT (sent to model)", input);
 
   const response = await provider.structuredComplete({
+    // AKIM §18.5 — caption text about the student is PHI leaving for the
+    // clinician-path processor.
+    disclosure: {
+      studentId: opts.studentId ?? null,
+      sessionId: opts.sessionId ?? null,
+      userId: opts.userId ?? null,
+      instituteId: opts.instituteId ?? null,
+      useCase: "clinician",
+    } satisfies DisclosureContext,
     // Background: caption glyphs are precomputed, not awaited.
     background: true,
     model: cfg.model,

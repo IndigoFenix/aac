@@ -14,6 +14,7 @@ import type {
 } from "./live-provider";
 import { logLiveSession, runInSessionContext } from "./dual-agent-logger";
 import type { LiveUsage } from "./live-provider";
+import { recordDisclosure } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -173,6 +174,26 @@ export class GeminiLiveProvider implements LiveProvider {
   // Lifecycle
   // -------------------------------------------------------------------------
 
+  /**
+   * AKIM §18.5 — one call per PHI send on this socket. `recordDisclosure`
+   * coalesces per (student, session, processor, use-case, channel) over five
+   * minutes, so the ten-frames-a-second video path costs a map increment and
+   * the row's `count` still reflects the real volume.
+   *
+   * The ids come from `config.disclosure`, not the ambient AsyncLocalStorage:
+   * these methods are called from socket/timer callbacks that have long since
+   * left the async chain the session was opened on.
+   */
+  private recordEgress(): void {
+    recordDisclosure({
+      processor: "google",
+      channel: "live",
+      model: this.config.model,
+      endpoint: this.useVertexAI ? "vertex" : "api",
+      context: this.config.disclosure,
+    });
+  }
+
   async connect(systemPrompt: string, config: LiveProviderConfig): Promise<void> {
     this.closedIntentionally = false;
     this.lastCloseWasSafety = false;
@@ -180,6 +201,11 @@ export class GeminiLiveProvider implements LiveProvider {
     this.onopenFired = false;
     this.systemPrompt = systemPrompt;
     this.config = config;
+
+    // The system prompt itself carries PHI (student profile, goals, sometimes
+    // a diagnosis), so the connect IS a disclosure — recorded before the
+    // socket opens, independently of any frame that follows.
+    this.recordEgress();
 
     const triggerTokens = config.compressionTriggerTokens ?? 100_000;
     const targetTokens = config.compressionTargetTokens ?? 50_000;
@@ -517,6 +543,7 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendFrame(jpegBase64: string, _turnComplete = false): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     try {
       logLiveSession("CLIENT → sendFrame", `via sendRealtimeInput (video)`);
       // Use sendRealtimeInput for video frames instead of sendClientContent.
@@ -538,6 +565,7 @@ export class GeminiLiveProvider implements LiveProvider {
     extraImages?: Array<{ data: string; mimeType: string; label?: string }>,
   ): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     try {
       if (this.isPreview31) {
         // 3.1: split into individual realtime inputs. Order: frames first,
@@ -585,6 +613,7 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendAudioWithPrompt(audioBase64: string, mimeType: string, prompt: string): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     try {
       if (this.isPreview31) {
         // 3.1: audio as realtime input, then the prompt text (triggers the turn).
@@ -605,6 +634,7 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendAudio(audioBase64: string, mimeType = "audio/pcm;rate=16000"): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     try {
       this.session.sendRealtimeInput({
         audio: { data: audioBase64, mimeType },
@@ -638,6 +668,7 @@ export class GeminiLiveProvider implements LiveProvider {
     opts: { interrupt?: boolean } = {},
   ): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     const interrupt = !!opts.interrupt;
     try {
       if (this.isPreview31) {
@@ -675,6 +706,7 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendContextInjection(text: string): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     // No structural prefix on the wire. The native-audio Speaker was
     // voicing the literal "[SYSTEM CONTEXT UPDATE]" tag aloud — same
     // failure mode as the earlier [GUESSING STATE] echo. Callers already
@@ -721,6 +753,7 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendToolResponse(responses: ToolResponse[]): void {
     if (!this.session || !this.connected) return;
+    this.recordEgress();
     try {
       // Convert from provider-agnostic ToolResponse to Gemini FunctionResponse
       // scheduling is a top-level field on FunctionResponse, serialized via JSON.stringify
@@ -770,6 +803,7 @@ export class GeminiLiveProvider implements LiveProvider {
   sendToolResponseAsContent(responses: ToolResponse[]): void {
     if (!this.session || !this.connected) return;
     if (responses.length === 0) return;
+    this.recordEgress();
     try {
       const parts = responses.map(r => ({
         functionResponse: {

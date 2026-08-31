@@ -64,7 +64,9 @@ export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
     log: ["strengths", "needs", "impactStatement", "adverseEffectStatement"],
   },
   goals: {
-    log: ["goalStatement", "targetBehavior", "criteria", "methods", "measurementMethod", "relevance"],
+    // familyInput is free-form narrative written by a parent/caregiver about
+    // this goal — the same tier as the clinician-authored narrative beside it.
+    log: ["goalStatement", "targetBehavior", "criteria", "methods", "measurementMethod", "relevance", "familyInput"],
   },
   objectives: {
     log: ["objectiveStatement", "targetBehavior", "methods", "criteria", "measurementMethod", "relevance"],

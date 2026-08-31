@@ -47,6 +47,7 @@ import {
 
 import { pickVoice } from "./voice-pick";
 import { buildSocialBotGenAIClient } from "./genai-client";
+import type { DisclosureContext } from "../processorDisclosure";
 
 const FLUSH_INTERVAL_MS = 250;
 /** Hard cap on TTS time before we give up on the turn. */
@@ -373,10 +374,18 @@ export class SocialBotRelay {
     try {
       // Per-synthesis billing — user-only, same attribution as the LLM
       // turns (no session/student rows for the standalone trainer).
+      // AKIM §18.5 — the standalone social trainer has no student row; the
+      // subject is the authenticated USER, and the row says so rather than
+      // claiming a student it does not have.
+      const ttsDisclosure: DisclosureContext = {
+        studentId: null,
+        userId: this.authedUser.id,
+        useCase: "social_bot_tts",
+      };
       const stream = ttsFacade.synthesizeStream(text, voice, aborter.signal, (usage) => {
         dualAgentService.trackTtsUsage("", "", this.authedUser.id, usage.provider, usage.characters)
           .catch((err) => logLiveSession("SOCIAL BOT: TTS usage tracking failed", err?.message || String(err)));
-      });
+      }, ttsDisclosure);
       for await (const wav of stream) {
         if (aborter.signal.aborted) {
           logLiveSession("SOCIAL BOT: TTS aborted mid-stream", `chunks=${chunkCount}`);

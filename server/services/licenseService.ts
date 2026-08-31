@@ -24,6 +24,14 @@ interface CreateLicenseInput {
   subscriptionType?: string;
   permissions?: LicensePermissions;
 
+  /**
+   * On-device session recording (shared/aac/session-recording.ts). An
+   * operator-granted marketing entitlement, not a sold permission — which is
+   * why it rides here as its own field rather than inside `permissions`.
+   * Settable by a SYSTEM admin only; the controller enforces that.
+   */
+  allowSessionRecording?: boolean;
+
   // Recipient
   inviteEmail: string;
   firstName?: string;
@@ -127,6 +135,7 @@ class LicenseService {
       licenseType: data.licenseType || "standard",
       subscriptionType: data.subscriptionType || "monthly",
       permissions: data.permissions || null,
+      allowSessionRecording: data.allowSessionRecording === true,
       isTrial: data.isTrial || false,
       trialExpiresAt: data.trialExpiresAt ? new Date(data.trialExpiresAt) : null,
       inviteEmail: normalizedEmail,
@@ -332,6 +341,33 @@ class LicenseService {
     }
 
     return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
+  }
+
+  /**
+   * Which of these students may record sessions to their device's disk.
+   *
+   * Deliberately NOT routed through getInstituteLicenseInfo / resolvePermissions
+   * above, for two reasons that would each be a silent bug:
+   *   1. That path only considers a license whose `permissions` jsonb is
+   *      non-null, and this entitlement is a column on the license row.
+   *   2. It returns MAX_LICENSE_PERMISSIONS for system admins and expands
+   *      `all: true` for everyone else — so an entitlement resolved that way
+   *      would switch itself on for licenses nobody granted it to. See the
+   *      column comment on `licenses.allowSessionRecording`.
+   *
+   * The whole rule is therefore: an ACTIVE license the student actually sits
+   * under has the flag set. Nothing else grants it — not the license type, not
+   * `all`, not being a system admin.
+   */
+  async sessionRecordingLicensedFor(studentIds: readonly string[]): Promise<Set<string>> {
+    return licenseRepository.getSessionRecordingLicensedStudentIds(studentIds);
+  }
+
+  /** Single-student form of {@link sessionRecordingLicensedFor}. Prefer the
+   *  batch when answering for a list — this is 2 queries per call. */
+  async isSessionRecordingLicensed(studentId: string): Promise<boolean> {
+    const allowed = await this.sessionRecordingLicensedFor([studentId]);
+    return allowed.has(studentId);
   }
 
   /** Convenience: just the permissions for an institute */

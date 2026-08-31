@@ -44,6 +44,7 @@ import { flowInput, flowTool, flowNote, type FlowAgent } from "./agent-flow-logg
 // One owner for "is this a refusal or a fumble" — see board-manager-agent.
 import { classifyProviderFailure } from "./board-manager-agent";
 import { runInSessionContext } from "./dual-agent-logger";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /** Convert one Gemini-format FunctionDeclaration into the provider-agnostic
  *  ChatTool shape used by the HTTP chat providers. Mirrors the Board Manager's
@@ -67,6 +68,14 @@ type ContentPart =
   | { type: "input_audio"; input_audio: { data: string; format: string } };
 
 export class HttpObserverAgent implements IObserverAgent {
+  /** AKIM §18.5 — who this agent's LLM traffic is about. Rides on each
+   *  request DTO (see ChatRequest.disclosure) rather than AsyncLocalStorage,
+   *  because turns are queued and streamed across async boundaries. */
+  private disclosureCtx: DisclosureContext | null = null;
+  setDisclosureContext(ctx: DisclosureContext | null): void {
+    this.disclosureCtx = ctx;
+  }
+
   private readonly provider: ChatProvider;
   private readonly callbacks: ObserverCallbacks;
 
@@ -291,6 +300,7 @@ export class HttpObserverAgent implements IObserverAgent {
 
     try {
       const result = await this.provider.completeChat({
+        disclosure: this.disclosureCtx ?? undefined,
         model: config.model,
         messages,
         tools: this.tools,

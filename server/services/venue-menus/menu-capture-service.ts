@@ -17,6 +17,7 @@ import { extractMenuFromFrames, type CameraExtractionOptions } from "./camera-ex
 import { cacheMenu, type CacheReviewReason, type MenuStatus } from "./menu-cache.js";
 import type { RefinedMenuItem } from "./menu-refinement.js";
 import type { VenueMenu } from "@shared/schema";
+import type { DisclosureContext } from "../processorDisclosure";
 
 export interface CaptureMenuInput {
   venueId: string;
@@ -32,6 +33,9 @@ export interface CaptureMenuInput {
    * whatever the policy says.
    */
   requireReview: boolean;
+  /** AKIM §18.5 — who this menu work is for; rides down to the vision /
+   *  extraction / refinement calls that leave for a processor. */
+  disclosure?: DisclosureContext;
 }
 
 export interface CaptureMenuResult {
@@ -70,6 +74,7 @@ export class MenuCaptureService {
 
     const extractOptions: CameraExtractionOptions = {
       ...(input.expectedLanguage ? { expectedLanguage: input.expectedLanguage } : {}),
+      ...(input.disclosure ? { disclosure: input.disclosure } : {}),
     };
     const extracted = await extractMenuFromFrames(frames, extractOptions);
 
@@ -89,6 +94,7 @@ export class MenuCaptureService {
       requireReview: input.requireReview,
       extractionRequiresReview: extracted.requiresReview,
       ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
+      ...(input.disclosure ? { disclosure: input.disclosure } : {}),
     });
 
     return {

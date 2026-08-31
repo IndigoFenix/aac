@@ -359,6 +359,14 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "security_incident_updated",
   "security_incident_notification_sent",
   "security_incident_closed",
+  // PHI sent to an external processor (LLM, TTS, STT) — the accounting of
+  // disclosures a data subject or customer can demand (AKIM §18.5 / §14).
+  // Subject is the student; subject2 the chat session when there is one.
+  // Details carry `{ processor, useCase, model, channel, count }`, or
+  // `{ contextMissing: true }` when a send happened with no student context
+  // attached — logged loudly rather than dropped, so a coverage gap shows up
+  // in the log instead of in an audit.
+  "processor_disclosure",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -385,6 +393,14 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   // A row in the security/privacy incident register (schema.ts). Not the
   // per-student clinical `incident` above — different table, different meaning.
   "security_incident",
+  // A per-use-case LLM routing setting (`system_settings.llm_*`). Changing it
+  // changes which processor receives PHI, so the change is audited; the
+  // subject id is the use-case key.
+  "llm_config",
+  // A data-subject access ("produce") or amendment ("correct") request
+  // (`dataSubjectRequests`). AKIM §18.3 / §18.4. Subject 2 is the student the
+  // request is about.
+  "data_subject_request",
 ]);
 
 // =============================================================================
@@ -3855,3 +3871,112 @@ export const insertPhotoAssignmentSchema = createInsertSchema(photoAssignments).
   createdAt: true,
   updatedAt: true,
 });
+
+// =============================================================================
+// DATA-SUBJECT REQUESTS — access ("produce") and amendment ("correct")
+// AKIM appendix §18.3 / §18.4.
+// =============================================================================
+//
+// Erasure already has a home: two tombstone columns on `students` plus a cron.
+// Produce and correct do not fit that shape.
+//
+//  * produce is a READ that must be evidenced — nothing on the student row
+//    changes, so without a request row there is no record that a copy was ever
+//    demanded, or when, or whether we answered inside the window;
+//  * correct has a life of its own — a proposed value, a decision, a reason for
+//    a refusal, and (when refused) the data subject's own statement of
+//    disagreement, which the law says we keep BESIDE the record we declined to
+//    change. None of that is a boolean on `students`.
+//
+// We are a PROCESSOR for institute-held records: the substantive decision on an
+// amendment is the customer's, and our obligation is to forward the request
+// within 72 hours of receiving it. `forwardDeadlineAt` is therefore computed
+// once, at open, and stored — never re-derived on read. If the policy hours
+// change next year, a request opened today must still show the deadline it was
+// actually held to. Same rule as the incident register's notification windows.
+//
+// Deliberately holds NO copy of any identity document used to authenticate the
+// requester: `requesterDescription` is prose ("mother, ID verified by R.K. on
+// the phone"). Collecting an ID scan to service a privacy request would create
+// a new pile of sensitive data to protect for as long as the request row lives.
+export const dataSubjectRequestKindEnum = pgEnum("data_subject_request_kind", [
+  "produce", // §18.4 — subject access: a copy of the data held about them
+  "correct", // §18.3 — amendment: a claim that a specific record is wrong
+]);
+
+export const dataSubjectRequestStatusEnum = pgEnum("data_subject_request_status", [
+  "open",      // received, nothing done yet — the 72h clock is running
+  "forwarded", // handed to the controller (the institute) inside the window
+  "fulfilled", // produce: the bundle was generated; correct: the change was made
+  "denied",    // correct only: refused, with a reason and (optionally) a statement
+  "withdrawn", // the requester dropped it
+]);
+
+export const dataSubjectRequests = pgTable("data_subject_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // The person the data is ABOUT. Cascades: once the student is erased there is
+  // no data left to produce or correct, and a request row pointing at a deleted
+  // record would itself be an orphaned identifier.
+  studentId: varchar("student_id")
+    .references(() => students.id, { onDelete: "cascade" })
+    .notNull(),
+  // The controller we forward to. Nullable — a family-held record has no
+  // institute behind it, and we are then the controller ourselves.
+  // Cross-schema FK: institutes.id lives in schema.ts — constraint via migration.
+  instituteId: varchar("institute_id"),
+
+  kind: dataSubjectRequestKindEnum("kind").notNull(),
+  status: dataSubjectRequestStatusEnum("status").default("open").notNull(),
+
+  // --- the clock -----------------------------------------------------------
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+  // receivedAt + FORWARD_DEADLINE_HOURS, frozen at open. See the header.
+  forwardDeadlineAt: timestamp("forward_deadline_at", { withTimezone: true }).notNull(),
+  forwardedAt: timestamp("forwarded_at", { withTimezone: true }),
+
+  // Who asked and how we satisfied ourselves it was them. PROSE, never a scan.
+  requesterDescription: text("requester_description"),
+
+  // --- correct only --------------------------------------------------------
+  // Which record is claimed to be wrong. Free text rather than a FK: the target
+  // may be any of ~50 PHI tables, and the request must survive the row it names
+  // being deleted (that outcome is itself part of the decision record).
+  targetTable: text("target_table"),
+  targetRecordId: varchar("target_record_id"),
+  targetField: text("target_field"),
+  proposedValue: text("proposed_value"),
+  // What the field held when the request was opened. Without it, a later reader
+  // cannot tell what was actually being disputed.
+  currentValueSnapshot: text("current_value_snapshot"),
+
+  decision: text("decision"),
+  decisionReason: text("decision_reason"),
+  // The DATA SUBJECT's words, not ours. When an amendment is refused, this is
+  // filed beside the disputed record; it is never edited on their behalf.
+  statementOfDisagreement: text("statement_of_disagreement"),
+  decidedByUserId: varchar("decided_by_user_id").references(() => users.id),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+
+  fulfilledAt: timestamp("fulfilled_at", { withTimezone: true }),
+  notes: text("notes"),
+
+  // Set by the deadline sweep so an hourly cron does not send an hourly mail
+  // about the same request. Survives a restart because it is a column, not
+  // memory. Null = nothing announced yet.
+  lastAlertKind: text("last_alert_kind"),
+  lastAlertAt: timestamp("last_alert_at", { withTimezone: true }),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_data_subject_requests_student").on(table.studentId),
+  index("idx_data_subject_requests_status").on(table.status),
+  // The sweep's access pattern: unforwarded requests with a due date.
+  index("idx_data_subject_requests_forward_deadline").on(table.forwardDeadlineAt),
+]);
+
+export type DataSubjectRequest = typeof dataSubjectRequests.$inferSelect;
+export type InsertDataSubjectRequest = typeof dataSubjectRequests.$inferInsert;
+export type DataSubjectRequestKind = (typeof dataSubjectRequestKindEnum.enumValues)[number];
+export type DataSubjectRequestStatus = (typeof dataSubjectRequestStatusEnum.enumValues)[number];

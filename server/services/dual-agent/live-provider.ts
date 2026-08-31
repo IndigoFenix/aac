@@ -2,6 +2,8 @@
 // Provider-agnostic interface for live/realtime API sessions.
 // Implementations: GeminiLiveProvider
 
+import type { DisclosureContext } from "../processorDisclosure";
+
 // ---------------------------------------------------------------------------
 // Provider-agnostic types
 // ---------------------------------------------------------------------------
@@ -113,6 +115,14 @@ export interface LiveProviderConfig {
   proactiveAudio?: boolean;
   /** Gemini voice name for native audio output (e.g. "Puck", "Kore", "Charon") */
   voiceName?: string;
+  /**
+   * AKIM §18.5 — who this session is about, so every frame/audio/text send on
+   * the socket can be attributed in the disclosure log. The SDK's callbacks
+   * run outside our async chain, so the AsyncLocalStorage context cannot be
+   * relied on here: the ids travel explicitly. Omitting it is a coverage gap
+   * and is logged loudly (see services/processorDisclosure.ts).
+   */
+  disclosure?: DisclosureContext;
 }
 
 // ---------------------------------------------------------------------------

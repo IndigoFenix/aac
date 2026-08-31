@@ -54,6 +54,8 @@ import { SpeakerAgent, type SpeakerOutputEvent } from "./speaker-agent";
 import { getContactById, listCallableContacts, resolveContactPersonId } from "../call/callContacts";
 import { isPersonOnline } from "../realtime/room-registry";
 import { registerLiveSession, unregisterLiveSession, shouldStealFrom, type LiveSessionHandle } from "./live-session-registry";
+import { recordRecordingsPurged } from "../recordingPurge";
+import type { RecordingPurgeReason } from "@shared/aac/session-recording.js";
 import { personRepository } from "../../repositories/personRepository";
 import { resolveAddressee } from "./addressee";
 import { getPeerFacePhotoDataUrl } from "./peer-photo";
@@ -206,6 +208,7 @@ import {
   resolveStartupMode,
   decideStartupAction,
   buildStartupGreetingTurn,
+  buildStartupBoardDirective,
   type StartupBehavior,
 } from "./startup-mode";
 import type { AACMuteState, DualAgentSessionState } from "./types";
@@ -311,6 +314,7 @@ import {
   type GameOptions,
 } from "./game-options";
 import { recordUtterance } from "../insurance/utteranceLogger";
+import { runWithDisclosureContext, type DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Defaults — Board Manager is hardcoded to a fast model for the MVP. Move
@@ -370,7 +374,10 @@ interface HomeIntent {
    *  usual "if existing board covers it, no_change" escape. Phrased as
    *  a description of WHAT buttons; the "REBUILD even if it looks
    *  covered" instruction is added by BoardManager's action-hint
-   *  builder. Observer + Monitor do NOT see this. */
+   *  builder, and the "the user pressed a home button" SITUATION
+   *  sentence is prepended by routeHomeTopicPressInner (the hint itself
+   *  is situation-neutral — the same channel also carries the session's
+   *  first board). Observer + Monitor do NOT see this. */
   boardManager: string;
   /** When true, skip the student-voice TTS for this press AND skip
    *  delivering it to Speaker as a user_turn. The button is a mode /
@@ -434,8 +441,9 @@ const SOCIAL_REPLY_HOLD_MS = Number(process.env.AAC_SOCIAL_REPLY_HOLD_MS ?? 1800
 /** Facilitator: after a BID press (the user asked the human something), how long
  *  to wait for the human to answer before offering the user a fresh board. */
 const FACILITATOR_BID_WAIT_MS = Number(process.env.AAC_FACILITATOR_BID_WAIT_MS ?? 4000);
-/** Sampling temperature for the Board Manager on a home-press topic switch
- *  (a `forceRebuildDirective` turn). Higher than the structured-precision
+/** Sampling temperature for the Board Manager on a forced rebuild — a
+ *  home-press topic switch or the session's first board (a
+ *  `forceRebuildDirective` turn). Higher than the structured-precision
  *  default (0.2) so repeated presses on a fresh conversation produce a VARIED
  *  set of conversation starters instead of the same near-deterministic board.
  *  Kept moderate to avoid the MALFORMED_FUNCTION_CALL brittleness a high temp
@@ -2149,6 +2157,19 @@ export class AgentCoordinator {
     this.state = "closed";
   }
 
+  /**
+   * Ask the device to delete its LOCAL session-recording clips of this student.
+   *
+   * Sent on erasure and on device-slot revocation (see
+   * ../recordingPurge.ts). The client answers `recordings_purged` with what it
+   * actually deleted; nothing here waits for that, because a device that is
+   * closing its socket must not be able to hold up an erasure.
+   */
+  private requestRecordingPurge(reason: RecordingPurgeReason): void {
+    if (!this.studentId) return;
+    this.send({ type: "purge_recordings", studentId: this.studentId, reason });
+  }
+
   /** Ask the AAC client to reload itself (clinician "reload AAC" action). */
   private requestReload(): void {
     if (this.ws.readyState !== this.ws.OPEN) return;
@@ -2431,7 +2452,29 @@ export class AgentCoordinator {
    * yet) bind with "?" so logs still get attributed somewhere stable.
    */
   private withSessionContext<T>(fn: () => T): T {
-    return runInSessionContext(this.sessionId || "?", this.debugMode, fn);
+    return runInSessionContext(this.sessionId || "?", this.debugMode, () =>
+      runWithDisclosureContext(this.disclosureContext(), fn),
+    );
+  }
+
+  /**
+   * AKIM §18.5 — who any PHI leaving this session is about. Entered on every
+   * inbound client message (see withSessionContext) so an HTTP agent call
+   * made anywhere down that chain is attributed without threading ids
+   * through a dozen signatures; also handed EXPLICITLY to each agent (see
+   * setDisclosureContext) because the Live SDK's callbacks and the
+   * reconnect timers fire outside this async chain.
+   *
+   * `useCase` is the AAC live conversation, which is what every agent on
+   * this coordinator serves.
+   */
+  private disclosureContext(): DisclosureContext {
+    return {
+      studentId: this.studentId ?? null,
+      sessionId: this.sessionId ?? null,
+      userId: this.userId ?? null,
+      useCase: "aac_chat",
+    };
   }
 
   private async handleClientMessage(msg: ClientMessage): Promise<void> {
@@ -2660,6 +2703,20 @@ export class AgentCoordinator {
         // is the client saying synthesis failed; the waiter falls back to
         // server-side TTS. Absent `ok` (older client) is treated as success.
         this.resolveClientTts(msg.id, msg.ok !== false);
+        return;
+      case "recordings_purged":
+        // The device answering `purge_recordings`. Audited even when the list
+        // is empty — "the device was asked and answered nothing to delete" is
+        // the fact the erasure record needs. Only accepted for the student
+        // THIS session is for: a socket must not be able to write delete rows
+        // against an arbitrary child.
+        if (this.studentId && msg.studentId === this.studentId) {
+          recordRecordingsPurged({
+            studentId: this.studentId,
+            clipIds: Array.isArray(msg.clipIds) ? msg.clipIds : [],
+            userId: this.userId ?? null,
+          });
+        }
         return;
       case "board_exit":
         this.handleBoardExit(msg);
@@ -3018,6 +3075,7 @@ export class AgentCoordinator {
       this.liveHandle = {
         requestReload: () => this.requestReload(),
         supersede: (reason) => this.handleSuperseded(reason),
+        requestRecordingPurge: (reason) => this.requestRecordingPurge(reason),
         isClassroom: !!state.classroomId,
       };
       const displaced = registerLiveSession(this.studentId, this.liveHandle);
@@ -4584,7 +4642,12 @@ export class AgentCoordinator {
     if (speakerHint) {
       this.speaker?.sendContextInjection(`[HINT] ${speakerHint}`);
     }
-    this.pendingForceRebuildDirective = intent.boardManager;
+    // The directive states its own OCCASION: `buildForceRebuildHint` is
+    // situation-neutral because the same channel now also carries the
+    // session's first board (buildStartupBoardDirective), which is not a
+    // press at all.
+    this.pendingForceRebuildDirective =
+      `The user pressed a home-board navigation button to switch context.\n\n${intent.boardManager}`;
 
     if (intent.silent) {
       // Silent home press — the button is a navigation/mode signal, not
@@ -6415,10 +6478,30 @@ export class AgentCoordinator {
       // a reply; the scene context was already injected before this. Board
       // follows with openers.
       this.speakerRespond(buildStartupGreetingTurn(this.currentStudentName || "the user"));
+      this.armStartupBoardDirective();
       this.invokeBoardManager([]);
     } else {
       flowNote("COORDINATOR", `Startup resolved without greeting — identified=${identified} force=${!!opts.force} mode=${this.startupBehavior}`);
     }
+  }
+
+  /**
+   * Arm the palette directive for the session's FIRST auto-generated board —
+   * a varied opening set that MUST include one HERE-AND-NOW button naming
+   * where the user is / what is happening, built from the Observer's
+   * `[CONTEXT]` lines. Pressing it opens that place's vocabulary (the
+   * `<here_and_now>` block in the BM system prompt owns the press side; this
+   * one-shot directive is already cleared by then).
+   *
+   * Rides the same `pendingForceRebuildDirective` channel as a home press, so
+   * it inherits the mandatory-rebuild hint, the retry that re-demands the
+   * palette, and the raised sampling temperature. Never overwrites an
+   * outstanding directive: the user pressing a home button before the startup
+   * board lands is the newer, explicit ask.
+   */
+  private armStartupBoardDirective(): void {
+    if (this.pendingForceRebuildDirective) return;
+    this.pendingForceRebuildDirective = buildStartupBoardDirective();
   }
 
   /** Cancel the pending startup greeting because the user acted first (pressed
@@ -6571,6 +6654,7 @@ export class AgentCoordinator {
       } else if (this.startupBoardGated) {
         this.startupBoardGated = false;
         flowNote("COORDINATOR", "Startup fallback — board unblocked; greeting still armed pending identification.");
+        this.armStartupBoardDirective();
         this.invokeBoardManager([]);
       }
     }, STARTUP_FALLBACK_MS);
@@ -7201,10 +7285,13 @@ export class AgentCoordinator {
     };
     if (isEconomy) {
       flowNote("COORDINATOR", `Observer mode=economy (HTTP ${this.observerHttpModel})`);
-      return new HttpObserverAgent(BOARD_MANAGER_DEFAULT_PROVIDER, callbacks, this.useVertex);
+      const http = new HttpObserverAgent(BOARD_MANAGER_DEFAULT_PROVIDER, callbacks, this.useVertex);
+      http.setDisclosureContext(this.disclosureContext());
+      return http;
     }
     flowNote("COORDINATOR", `Observer mode=live (Gemini Live ${this.observerModel})`);
     const live = new ObserverAgent("gemini", callbacks);
+    live.setDisclosureContext(this.disclosureContext());
     if (!this.visionSplitEnabled) return live;
     // Vision split: the Live half keeps hearing/continuity; every frame goes
     // to a stateless HTTP pass on the economy model, billed under its own
@@ -7365,10 +7452,12 @@ export class AgentCoordinator {
     };
     if (this.speakerMode === "http") {
       flowNote("COORDINATOR", `Speaker mode=http (Gemini chat completion + streaming TTS)`);
-      return new HttpSpeakerAgent(provider, callbacks, this.useVertex);
+      const httpSpeaker = new HttpSpeakerAgent(provider, callbacks, this.useVertex);
+      httpSpeaker.setDisclosureContext(this.disclosureContext());
+      return httpSpeaker;
     }
     flowNote("COORDINATOR", `Speaker mode=live (Gemini Live, useDirectAudio=${this.useDirectAudio})`);
-    return new SpeakerAgent(provider, {
+    const liveSpeaker = new SpeakerAgent(provider, {
       onEvent: (e) => this.onSpeakerEvent(e),
       onAudioChunk: (data) => this.onSpeakerAudioChunk(data),
       onTranscriptionDelta: (text) => this.onSpeakerTranscriptionDelta(text),
@@ -7378,6 +7467,8 @@ export class AgentCoordinator {
       onClose: () => console.log("[AgentCoordinator] Speaker closed"),
       onUsage: (usage) => this.trackLiveUsage("speaker", aacChatProvider, speakerModel, usage),
     });
+    liveSpeaker.setDisclosureContext(this.disclosureContext());
+    return liveSpeaker;
   }
 
   /** Build the Board Manager backend — HTTP (stateless completions) or Live
@@ -7400,7 +7491,7 @@ export class AgentCoordinator {
       if (!bmUseVertex && !process.env.GEMINI_API_KEY) {
         console.warn(`[AgentCoordinator] Live Board Manager wants the public Gemini API (model ${LIVE_BOARD_MANAGER_MODEL} not on Vertex) but GEMINI_API_KEY is unset — connection will fail.`);
       }
-      return new LiveBoardManagerAgent({
+      const liveBm = new LiveBoardManagerAgent({
         providerKey: BOARD_MANAGER_DEFAULT_PROVIDER,
         model: LIVE_BOARD_MANAGER_MODEL,
         useVertex: bmUseVertex,
@@ -7410,16 +7501,20 @@ export class AgentCoordinator {
         onUsage: (usage) =>
           this.trackLiveUsage("board-manager", BOARD_MANAGER_DEFAULT_PROVIDER, LIVE_BOARD_MANAGER_MODEL, usage),
       });
+      liveBm.setDisclosureContext(this.disclosureContext());
+      return liveBm;
     }
     flowNote("COORDINATOR", `Board Manager mode=http (${BOARD_MANAGER_DEFAULT_PROVIDER}/${this.boardManagerHttpModel})`);
     // Same Vertex signal the live agents get. Without it the Board Manager was
     // the one agent left on the AI Studio key, and its daily cap took every
     // board rebuild down while the Speaker kept talking (2026-08-20).
-    return new BoardManagerAgent(
+    const httpBm = new BoardManagerAgent(
       BOARD_MANAGER_DEFAULT_PROVIDER,
       this.boardManagerHttpModel,
       this.useVertex,
     );
+    httpBm.setDisclosureContext(this.disclosureContext());
+    return httpBm;
   }
 
   private routeFocusRequest(event: FocusRequestEvent): void {
@@ -8435,6 +8530,7 @@ export class AgentCoordinator {
     return {
       spec,
       trigger,
+      disclosure: this.disclosureContext(),
       studentDisplayName: student?.firstName || student?.name?.split(" ")[0] || undefined,
       languageName: language ? getLanguageName(language) : undefined,
       persona: sections?.persona,
@@ -9575,6 +9671,7 @@ ${customDetail}` : ""));
             model: analysisModel,
             characterName: peerName,
             transcript: transcriptLines,
+            disclosure: this.disclosureContext(),
           });
           analysis = result.analysis;
           if (result.usage && this.sessionId && this.studentId) {
@@ -9816,7 +9913,7 @@ ${customDetail}` : ""));
     if (!this.aiTtsAbortController) this.aiTtsAbortController = new AbortController();
     const signal = this.aiTtsAbortController.signal;
     if (signal.aborted) return;
-    const iter = ttsFacade.synthesizeStream(text, voice, signal, this.ttsUsageCallback())[Symbol.asyncIterator]();
+    const iter = ttsFacade.synthesizeStream(text, voice, signal, this.ttsUsageCallback(), this.disclosureContext())[Symbol.asyncIterator]();
     const firstChunk = iter.next();
     const prior = this.aiTtsChain;
     this.aiSpeakPending++;
@@ -10035,7 +10132,7 @@ ${customDetail}` : ""));
       flowNote("COORDINATOR", `Client-direct TTS failed for [${source}] — falling back to server-side synthesis.`);
     }
 
-    const iter = ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, this.ttsUsageCallback())[Symbol.asyncIterator]();
+    const iter = ttsFacade.synthesizeStream(text, this.studentVoice, controller.signal, this.ttsUsageCallback(), this.disclosureContext())[Symbol.asyncIterator]();
     const firstChunk = iter.next();
     try {
       const count = await this.drainTtsToClient({
@@ -10293,7 +10390,9 @@ ${customDetail}` : ""));
       const promptSuffixParts: string[] = [];
       if (this.builderState || hasComposedTrigger) promptSuffixParts.push(this.boardManagerBuilderBlock);
       if (this.guessingState) promptSuffixParts.push(this.boardManagerGuessingBlock);
-      // Read the home-press directive (set by routeHomeTopicPressInner).
+      // Read the pending force-rebuild directive — a home press
+      // (routeHomeTopicPressInner) or the session's first board
+      // (armStartupBoardDirective).
       // Don't clear here — if BM MALFORMEDs or no_changes the first
       // attempt and the retry chain runs, we want the directive on
       // every retry, not just the first. The directive is cleared by
@@ -10329,7 +10428,7 @@ ${customDetail}` : ""));
         signal: controller.signal,
         forceRebuildDirective: forceRebuildDirective ?? undefined,
         interlocutorRegister: this.resolveInterlocutorRegister(),
-        // Home-press topic switches want VARIETY across repeated presses —
+        // Force-rebuild turns want VARIETY across repeated presses —
         // especially the "I'm talking" → facilitator opener on a fresh
         // conversation, where the input barely changes press-to-press. Raise
         // the sampling temperature so the model produces a different set of
@@ -10340,7 +10439,7 @@ ${customDetail}` : ""));
       if (forceRebuildDirective) {
         flowNote(
           "COORDINATOR",
-          `Home-press force-rebuild directive forwarded to BM (${forceRebuildDirective.slice(0, 60)}…)`,
+          `Force-rebuild directive forwarded to BM (${forceRebuildDirective.slice(0, 60)}…)`,
         );
       }
       let result;
@@ -10771,7 +10870,7 @@ ${customDetail}` : ""));
   }
 
   private applyBoardRebuilt(event: BoardRebuiltEvent): void {
-    // Home-press directive was honored — clear it so subsequent
+    // Force-rebuild directive was honored — clear it so subsequent
     // invocations fall back to the normal action-hint flow. (Clearing
     // here, not at invocation time, lets the directive survive across
     // BM retry chains so a MALFORMED first attempt still gets the
@@ -11251,8 +11350,8 @@ ${customDetail}` : ""));
     this.boardMgrPendingFeedback = buildEmptyResponseRetryFeedback({
       inGuessingMode: this.guessingState !== null,
       inBuilderMode: this.builderState !== null,
-      // An outstanding home-press directive means the model either produced
-      // nothing or no_changed a mandatory topic switch — tailor the feedback
+      // An outstanding force-rebuild directive means the model either produced
+      // nothing or no_changed a mandatory rebuild — tailor the feedback
       // to re-demand the fresh palette rather than the generic "no tool
       // calls" message (which is inaccurate when it DID call no_change).
       forceRebuildDirective: this.pendingForceRebuildDirective ?? undefined,

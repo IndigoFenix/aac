@@ -2,7 +2,8 @@
 // Claude implementation of ChatProvider
 
 import { resolveModelId } from "@shared/llm-options";
-import { getAnthropicClient } from "./anthropic-client";
+import { getAnthropicClient, isUsingVertex } from "./anthropic-client";
+import { recordDisclosure } from "../processorDisclosure";
 import type {
   ChatProvider,
   ChatRequest,
@@ -12,6 +13,19 @@ import type {
 
 export class ClaudeChatProvider implements ChatProvider {
   private client = getAnthropicClient();
+
+  /** AKIM §18.5 — the conversation about to be sent is PHI leaving for
+   *  Anthropic. Coalesced inside recordDisclosure, so calling it per request
+   *  costs a map lookup. */
+  private recordEgress(request: ChatRequest, model: string): void {
+    recordDisclosure({
+      processor: "anthropic",
+      channel: "chat",
+      model,
+      endpoint: isUsingVertex() ? "vertex" : "api",
+      context: request.disclosure,
+    });
+  }
 
   /**
    * Apply prompt-cache breakpoints. The system block is cached inline where
@@ -43,6 +57,7 @@ export class ClaudeChatProvider implements ChatProvider {
 
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
     const model = resolveModelId("claude", request.model);
+    this.recordEgress(request, model);
     const { system, messages, tools, toolChoice } = this.buildRequest(request);
     this.applyCacheBreakpoints(tools, messages);
 
@@ -96,6 +111,7 @@ export class ClaudeChatProvider implements ChatProvider {
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
     const model = resolveModelId("claude", request.model);
+    this.recordEgress(request, model);
     const { system, messages, tools, toolChoice } = this.buildRequest(request);
     this.applyCacheBreakpoints(tools, messages);
 

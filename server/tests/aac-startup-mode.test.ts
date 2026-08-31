@@ -13,9 +13,14 @@ import {
   resolveStartupMode,
   decideStartupAction,
   buildStartupGreetingTurn,
+  buildStartupBoardDirective,
 } from "../services/dual-agent/startup-mode.js";
 import { OBSERVER_STARTUP_PROMPT } from "../services/dual-agent/prompts/observer.js";
 import { buildSpeakerPrompt } from "../services/dual-agent/prompts/speaker.js";
+import {
+  buildBoardManagerPrompt,
+  buildForceRebuildHint,
+} from "../services/dual-agent/prompts/board-manager.js";
 
 describe("resolveStartupMode", () => {
   it("defaults to CONTEXTUAL on a personal device", () => {
@@ -80,5 +85,61 @@ describe("Speaker stay-on-context hardening", () => {
     const block = prompt.slice(prompt.indexOf("<stay_on_context>"), prompt.indexOf("</stay_on_context>"));
     expect(block.toLowerCase()).toContain("never");
     expect(block.toLowerCase()).toMatch(/leav|go (somewhere|outside)|unrelated/);
+  });
+});
+
+describe("buildStartupBoardDirective", () => {
+  const directive = buildStartupBoardDirective();
+
+  it("states its own SITUATION first — buildForceRebuildHint is situation-neutral", () => {
+    // The hint no longer claims a home press, so a directive that never says
+    // what happened would reach the model as a palette with no occasion.
+    expect(directive.slice(0, 80).toLowerCase()).toContain("session has just started");
+    const hint = buildForceRebuildHint(directive);
+    expect(hint).toContain(directive);
+    expect(hint).not.toMatch(/pressed a home-board navigation button/i);
+    expect(hint).toMatch(/Do NOT call no_change/i);
+  });
+
+  it("REQUIRES exactly one here-and-now button grounded in the observations", () => {
+    expect(directive).toMatch(/REQUIRED: exactly ONE/);
+    expect(directive).toContain("HERE-AND-NOW");
+    // Read off the Observer's scene lines, not invented.
+    expect(directive).toContain("[CONTEXT]");
+    expect(directive.toLowerCase()).toContain("actually observed");
+    expect(directive.toLowerCase()).toMatch(/rather than inventing/);
+  });
+
+  it("hands the press behavior off to the system prompt's <here_and_now> block", () => {
+    // The directive is one-shot (cleared once BM honors it), so the press
+    // itself lands on a turn that only has the system prompt to go on.
+    expect(directive).toContain("<here_and_now>");
+  });
+});
+
+describe("Board Manager <here_and_now> block", () => {
+  const { base } = buildBoardManagerPrompt({
+    studentName: "Alex",
+    language: "en",
+    muteState: "unmuted",
+  });
+  const block = base.slice(base.indexOf("<here_and_now>"), base.indexOf("</here_and_now>"));
+
+  it("is present in the BASE prompt, not a mode block", () => {
+    // The press arrives long after the startup directive was cleared — if the
+    // rule only lived in a suffix block it would not be loaded on that turn.
+    expect(block).toContain("<here_and_now>");
+  });
+
+  it("turns a press on the here-and-now button into that place's vocabulary", () => {
+    expect(block.toLowerCase()).toContain("press");
+    expect(block).toContain("VOCABULARY");
+    expect(block.toLowerCase()).toContain("observed");
+    // A place always overflows one board.
+    expect(block).toContain('button_type: "more"');
+  });
+
+  it("keeps it a NORMAL button — the meta button_types render fixed art", () => {
+    expect(block.toLowerCase()).toContain("no `button_type`");
   });
 });

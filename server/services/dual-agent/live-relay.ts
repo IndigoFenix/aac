@@ -80,6 +80,7 @@ import { resolveEmoji, isEmoji } from "@shared/emoji-registry";
 import { parseGlyph, stripBrackets } from "@shared/glyph-compositor.js";
 import { validateBoardButtons, collectGlyphImageKeys } from "./board-button-validator";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
+import { runWithDisclosureContext, type DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Helper functions
@@ -690,6 +691,7 @@ export type ClientMessage =
   | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any }
   | { type: "game_press"; text: string; glyph?: string; voice?: boolean }  // press on an ENGINE-generated world-engine game board — a REAL student utterance (voiced in the student's voice, logged, published to the group chat) that must NOT wake any agent into a model turn. `text` = the localized spoken sentence, `glyph` = the composed glyph string (informational), `voice` = client wants server student-voice TTS (absent → server falls back to the resolved gameOptions.studentVoice setting). See AgentCoordinator.handleGamePress.
   | { type: "tts_done"; id: string; ok?: boolean }  // client-side TTS (client_tts) finished playing — releases the server's wait so the AI's reply doesn't land on top of the student's own voice
+  | { type: "recordings_purged"; studentId: string; clipIds: string[] }  // ack for `purge_recordings`: the local session-recording clips this device actually deleted. An EMPTY list is a real answer (nothing of that student's here, or a host that cannot record at all) and is still logged — the audit trail needs "the device answered", not just "clips went".
   | { type: "board_exit"; label: string; instruction: string }  // exit button pressed on loaded board
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
@@ -812,6 +814,14 @@ export type ServerMessage =
   | { type: "voices_identified"; data: IdentifiedVoiceWire[] } // Server-side voice matching results
   | { type: "sleep_state_change"; data: { state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" } }  // AI-driven sleep state change
   | { type: "session_superseded"; data: { reason: string } }  // a newer session for the same student took over — this one is inert until deliberate input steals it back
+  // Erasure reaching the DISK. The optional session-recording feature writes
+  // video of the child to the device's own Videos folder, where no server-side
+  // delete can see it (shared/aac/session-recording.ts). This asks the device
+  // to delete its clips of `studentId`; the client replies `recordings_purged`.
+  // Best-effort by construction: a device that is offline at erasure time never
+  // hears this, which is why the client ALSO purges when the student's profile
+  // fetch comes back definitively unauthorised (see client-aac home.tsx).
+  | { type: "purge_recordings"; studentId: string; reason: import("@shared/aac/session-recording.js").RecordingPurgeReason }
   | { type: "false_wake_report"; data: { reason: string } }   // AI flagged the recent wake from Asleep as a false alarm
   | { type: "alarm"; data: { level: "alert" | "emergency"; reason: string } }  // Observer raised a caretaker alarm: "alert" = short attention nudge, "emergency" = rising urgent alarm with on-screen cancel
   | { type: "construction_suggestions"; data: ConstructionSuggestionsWire }  // AI's response to a construction_state injection — populates the AI strip
@@ -1332,10 +1342,14 @@ export class LiveRelay {
       // Bind logger context to this session so DB persistence routes to the
       // right row. For the very first message (initialize) sessionId is null,
       // so DB writes start once initialize sets it (see handleClientMessage).
+      // AKIM §18.5: attach the disclosure context too, so any PHI that leaves
+      // for a processor while handling this message is attributed without
+      // threading ids through every call.
+      const withDisclosure = () => runWithDisclosureContext(this.disclosureContext(), handle);
       if (this.sessionId) {
-        runInSessionContext(this.sessionId, this.debugMode, handle);
+        runInSessionContext(this.sessionId, this.debugMode, withDisclosure);
       } else {
-        handle();
+        withDisclosure();
       }
     });
 
@@ -1354,6 +1368,19 @@ export class LiveRelay {
     });
 
     this.startPingTimer();
+  }
+
+  /**
+   * AKIM §18.5 — who any PHI leaving this relay is about. `aac_chat` is the
+   * use case this legacy single-agent live path serves.
+   */
+  private disclosureContext(): DisclosureContext {
+    return {
+      studentId: this.studentId,
+      sessionId: this.sessionId,
+      userId: this.userId ?? null,
+      useCase: "aac_chat",
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -1855,6 +1882,24 @@ export class LiveRelay {
               chatSessionId: this.sessionId,
               text: gameText,
               source: "board_press",
+            });
+          }
+          break;
+        }
+
+        case "recordings_purged": {
+          // A device answering `purge_recordings`. This class can never SEND
+          // that message — the legacy relay does not register in
+          // live-session-registry, so nothing can reach it by studentId — but
+          // the ack is handled anyway: a client that purged because IT decided
+          // to (a definitively-rejected profile fetch) still owes the audit
+          // trail a row, whichever socket it happens to be holding.
+          if (this.studentId && msg.studentId === this.studentId) {
+            const { recordRecordingsPurged } = await import("../recordingPurge");
+            recordRecordingsPurged({
+              studentId: this.studentId,
+              clipIds: Array.isArray(msg.clipIds) ? msg.clipIds : [],
+              userId: this.authedUser?.id ?? null,
             });
           }
           break;
@@ -2725,6 +2770,12 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
         responseModality: "AUDIO",
         proactiveAudio: true,
         voiceName: geminiVoice,
+        disclosure: {
+          studentId: msg.studentId,
+          sessionId: state.sessionId,
+          userId: this.userId ?? null,
+          useCase: "aac_chat",
+        },
       };
 
       this.provider = new GeminiLiveProvider(callbacks, useVertexForLive /* useVertexAI */);
@@ -5386,7 +5437,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
           dualAgentService.trackTtsUsage(this.sessionId, this.studentId, this.userId, usage.provider, usage.characters)
             .catch(err => console.error("[LiveRelay] trackTtsUsage failed:", err));
         };
-        for await (const chunk of ttsFacade.synthesizeStream(text, voice, signal, onUsage)) {
+        for await (const chunk of ttsFacade.synthesizeStream(text, voice, signal, onUsage, this.disclosureContext())) {
           if (signal?.aborted) return;
           this.send({ type: msgType, data: chunk.toString("base64") } as any);
         }
@@ -5935,6 +5986,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       responseModality: "AUDIO",
       proactiveAudio: true,
       voiceName: this.geminiVoiceName,
+      disclosure: this.disclosureContext(),
     };
 
     const from = this.sessionProfile;

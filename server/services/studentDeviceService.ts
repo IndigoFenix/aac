@@ -14,6 +14,7 @@ import { studentDeviceRepository } from "../repositories/studentDeviceRepository
 import { licenseService } from "./licenseService";
 import { activityLogService } from "./activityLogService";
 import { deleteSessionsForDevice } from "./sessionInvalidation";
+import { requestRecordingPurge } from "./recordingPurge";
 import { deviceExpiryCutoff, evaluateDeviceRegistration, sumDeviceLimits } from "./student-device-logic";
 
 export interface DeviceRegistrationResult {
@@ -107,6 +108,13 @@ export class StudentDeviceService {
       // device lives a year and slides, so without this a lost or retired
       // tablet kept a working cookie after its slot was taken away.
       await deleteSessionsForDevice(removed.deviceId);
+      // And ACCESS is not the whole of it. If session recording was on, video
+      // of the child is in that tablet's Videos folder, which no server-side
+      // delete can see. Ask it to drop the clips while it may still be
+      // listening. Best-effort — see recordingPurge.ts; the device also purges
+      // itself the next time its profile fetch is definitively refused, which
+      // is what covers a tablet that was off when the slot was taken.
+      requestRecordingPurge(studentId, "device_revoked");
     }
     return !!removed;
   }
@@ -114,9 +122,16 @@ export class StudentDeviceService {
   /** De-register the calling device itself (AAC logout / student switch). */
   async deregisterByDeviceId(studentId: string, deviceId: string, userId?: string | null): Promise<boolean> {
     const removed = await studentDeviceRepository.deleteDeviceByDeviceId(studentId, deviceId);
-    if (removed) this.logDeregistration(studentId, removed, userId);
-    // Not a session purge here: this is the device's own "switch student"
-    // path, and the caller's session is what it is about to reuse.
+    if (removed) {
+      this.logDeregistration(studentId, removed, userId);
+      // Not a session purge here: this is the device's own "switch student"
+      // path, and the caller's session is what it is about to reuse.
+      //
+      // The RECORDINGS are a different question. This device is about to serve
+      // a different child, and the footage of the previous one has no reason to
+      // stay on it — so ask for the purge even though the cookie survives.
+      requestRecordingPurge(studentId, "device_revoked");
+    }
     return !!removed;
   }
 

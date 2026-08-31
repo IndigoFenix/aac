@@ -17,6 +17,7 @@ import { getChatProvider } from "../providers/provider-factory";
 import type { ChatMessage } from "../providers/streaming-provider";
 import type { LLMProviderKey } from "@shared/llm-options";
 import { COMPETENCY_LABEL, type SessionReport } from "@shared/social-bot/state";
+import type { DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Post-session debrief directive (for the restored companion Speaker)
@@ -111,6 +112,8 @@ export async function runSocialSkillAnalysis(opts: {
   characterName: string;
   /** Conversation lines in order, already speaker-tagged. */
   transcript: string[];
+  /** AKIM §18.5 — who the analysed conversation is about. */
+  disclosure?: DisclosureContext;
 }): Promise<SocialSkillAnalysisResult> {
   const usable = opts.transcript.filter(l => l.trim());
   if (usable.length === 0) return { analysis: null };
@@ -129,6 +132,7 @@ export async function runSocialSkillAnalysis(opts: {
 
   const provider = getChatProvider(opts.providerKey);
   const result = await provider.completeChat({
+    disclosure: opts.disclosure,
     model: opts.model,
     messages,
     temperature: 0.4,

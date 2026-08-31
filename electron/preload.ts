@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("recording:finish", opts),
     abort: (opts: { clipId: string }) => ipcRenderer.invoke("recording:abort", opts),
     list: () => ipcRenderer.invoke("recording:list"),
+    /**
+     * Erasure: delete this device's footage of one student. Called when the
+     * server pushes `purge_recordings`, and when the client sees the student's
+     * profile come back definitively gone — the offline-at-erasure case.
+     */
+    purgeStudent: (opts: { studentId: string }) =>
+      ipcRenderer.invoke("recording:purgeStudent", opts),
     /** Open the recordings folder in the OS file manager. */
     reveal: () => ipcRenderer.invoke("recording:reveal"),
   },

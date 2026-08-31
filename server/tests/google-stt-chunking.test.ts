@@ -9,6 +9,15 @@ import {
   normalizeSttConfidence,
   __setSttClientForTests,
 } from '../services/voice/google-stt-service';
+import { setDisclosureSink } from '../services/processorDisclosure';
+
+// This suite drives the REAL egress code, which now writes an AKIM §18.5
+// disclosure row per send. Without a sink the default one lazily imports
+// activityLogService -> server/db.ts, dragging a Postgres pool into a DB-free
+// suite (and failing late, after the test env has torn down). The rows are not
+// this suite's subject, so they go nowhere.
+beforeEach(() => setDisclosureSink(() => {}));
+afterEach(() => setDisclosureSink(null));
 
 const SAMPLE_RATE = 16000;
 const FRAME_BYTES = 2; // mono 16-bit

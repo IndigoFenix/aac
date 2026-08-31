@@ -40,6 +40,25 @@ alb_idle_timeout_seconds = 300
 # Single task → Postgres LISTEN/NOTIFY is enough for realtime fanout.
 enable_redis = false
 
+# The Terraform template pins the image by digest (the repo has been populated
+# since the 2026-08 ECS cutover). Does not affect what is running — the deploy
+# workflow still renders its own sha-tagged image onto the revision it
+# registers — it only stops a fresh apply from baking in mutable `:latest`.
+ecr_image_exists = true
+
+# ECS Exec was hardcoded on but never functional (task role had no
+# ssmmessages:*). Off explicitly rather than by default, so the state is a
+# decision and not an accident.
+enable_ecs_exec = false
+
+# Read-only container root; the ephemeral `tmp` volume mounted at /tmp is the
+# only writable path. Safe as of 2026-08-30: every app-dir debug-log writer is
+# gated on server/services/file-debug-log.ts (false in production) and writes
+# through safeAppend, which swallows EROFS — pinned by
+# server/tests/readonly-root-fs.test.ts. The one runtime writer that genuinely
+# needs a filesystem, the video frame extractor, uses os.tmpdir().
+ecs_readonly_root_fs = true
+
 # =============================================================================
 # Security & Compliance - DISABLED for cost savings
 # =============================================================================
@@ -69,6 +88,16 @@ audit_log_retention_days   = 180
 alert_email = "cs@aivota.ai"
 
 # =============================================================================
+# Operational access (SSM)
+# =============================================================================
+# Interactive SSM shell transcripts → the existing logs bucket (6-year
+# lifecycle), no CloudWatch group. Costs the transcript bytes and nothing else.
+# NOTE: with enable_cloudtrail = false there is no record of the DB-tunnel
+# port-forwarding sessions, which produce no transcript by construction — that
+# evidence only exists under the `hipaa` profile.
+enable_ssm_session_logging = true
+
+# =============================================================================
 # Network - REDUCED for cost savings
 # =============================================================================
 single_nat_gateway             = true    # one NAT instead of one per AZ
@@ -87,6 +116,10 @@ enable_rds_enhanced_monitoring = false
 # =============================================================================
 enable_coturn        = true
 coturn_instance_type = "t4g.micro"
+# Pinned container (was untagged, i.e. whatever :latest meant at last boot).
+# Takes effect the next time the host is deliberately replaced — see the
+# ignore_changes note on aws_instance.coturn.
+coturn_image_tag = "4.17.2"
 
 # =============================================================================
 # Other

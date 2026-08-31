@@ -7,7 +7,7 @@
 //   - system-role history items (memory snapshots, summaries) go into the
 //     first user message, never into the cached system block.
 
-import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 
 const created: any[] = [];
 const fakeClient = {
@@ -23,11 +23,18 @@ const fakeClient = {
   },
 };
 
+// The factory must export EVERYTHING the module under test imports — under
+// ESM a missing name is a hard link error at import time, not an undefined at
+// call time, so the whole suite fails to load. `isUsingVertex` is read by the
+// provider's AKIM §18.5 disclosure record (it decides `endpoint: vertex|api`);
+// false is the production default (ANTHROPIC_USE_VERTEX unset).
 jest.unstable_mockModule("../services/providers/anthropic-client", () => ({
   getAnthropicClient: () => fakeClient,
+  isUsingVertex: () => false,
 }));
 
 const { ClaudeStructuredProvider } = await import("../services/providers/claude-structured.js");
+const { setDisclosureSink } = await import("../services/processorDisclosure.js");
 
 const TOOLS = [
   { type: "function", function: { name: "manageMemory", description: "memory ops", parameters: { type: "object", properties: { ops: { type: "array" } }, required: ["ops"] } } },
@@ -48,7 +55,13 @@ function request(userText: string, memorySnapshot: string) {
   };
 }
 
-beforeEach(() => { created.length = 0; delete process.env.CLAUDE_CACHE_DEBUG; });
+// Swallow the disclosure row this provider now writes. Without a sink the
+// default one lazily imports activityLogService → server/db.ts, which would
+// drag a Postgres pool into a DB-free unit suite; and with no student context
+// attached it would print the contextMissing marker on every call. Neither is
+// this suite's subject.
+beforeEach(() => { setDisclosureSink(() => {}); created.length = 0; delete process.env.CLAUDE_CACHE_DEBUG; });
+afterEach(() => { setDisclosureSink(null); });
 
 describe("ClaudeStructuredProvider — prompt-cache breakpoints", () => {
   it("marks system, last tool and last message block as cacheable", async () => {

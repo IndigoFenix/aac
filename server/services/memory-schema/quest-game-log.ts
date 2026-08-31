@@ -13,11 +13,10 @@
 // summary, result, and the game's LIVE certify status after the op), and every
 // validateQuestGame result.
 
-import fs from "fs";
 import path from "path";
 import { certifyGoalTreeGame } from "@shared/world-engine/solver/index";
 import type { MemoryProcessor } from "../chat/tool-router";
-import { fileDebugLoggingEnabled } from "../file-debug-log";
+import { fileDebugLoggingEnabled, safeAppend } from "../file-debug-log";
 
 // Development only: the memory-op lines carry raw memory write values (up to
 // 800 chars) from the clinician chat — see file-debug-log.ts.
@@ -36,15 +35,16 @@ function truncate(value: unknown, max = 800): string {
 }
 
 export function questGameLog(event: string, detail?: unknown): void {
-  try {
-    const line =
-      `[${new Date().toISOString()}] ${event}` +
-      (detail === undefined ? "" : ` :: ${truncate(detail)}`) +
-      "\n";
-    fs.appendFileSync(LOG_FILE, line);
-  } catch {
-    /* logging must never break a chat turn */
-  }
+  // This file IMPORTED the shared predicate but never consulted it, so it was
+  // the one app-dir debug writer still running in production — raw memory-write
+  // values from the clinician chat, appended next to the server bundle. Under
+  // readonlyRootFilesystem it would also have been an EROFS per chat turn.
+  if (!fileDebugLoggingEnabled) return;
+  const line =
+    `[${new Date().toISOString()}] ${event}` +
+    (detail === undefined ? "" : ` :: ${truncate(detail)}`) +
+    "\n";
+  safeAppend(LOG_FILE, line);
 }
 
 /** One-line "does this game certify right now" summary for the log. */

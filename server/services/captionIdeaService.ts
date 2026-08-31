@@ -17,6 +17,7 @@ import type { JSONSchema, GPTInputItem } from "./chat/gpt";
 import { settingsRepository } from "../repositories/settingsRepository";
 import { chargeCaptionModelUsage } from "./captionCost";
 import { captionDebug, captionDebugSeparator } from "./caption-debug-log";
+import type { DisclosureContext } from "./processorDisclosure";
 
 /** One word with its timing — supplied by the STT path so the idea pass can
  *  split on REAL word boundaries instead of estimating sub-line timings. */
@@ -205,6 +206,15 @@ export async function extractCaptionIdeas(
   captionDebug("USER INPUT (sent to model)", input);
 
   const response = await provider.structuredComplete({
+    // AKIM §18.5 — a video transcript of the student is PHI leaving for the
+    // clinician-path processor.
+    disclosure: {
+      studentId: opts.studentId ?? null,
+      sessionId: opts.sessionId ?? null,
+      userId: opts.userId ?? null,
+      instituteId: opts.instituteId ?? null,
+      useCase: "clinician",
+    } satisfies DisclosureContext,
     // Background: caption ideas are precomputed, not awaited.
     background: true,
     model: cfg.model,

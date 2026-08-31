@@ -50,6 +50,7 @@ import type {
 } from "./agent-events";
 import { isDeviceTarget, isUserTarget } from "./speech-party";
 import type { IObserverAgent } from "./observer-interface";
+import type { DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -350,6 +351,14 @@ export function parseToolCall(call: ToolCall, now: number): ObserverOutputEvent 
 // ---------------------------------------------------------------------------
 
 export class ObserverAgent implements IObserverAgent {
+  /** AKIM §18.5 — ids for the disclosure log. Handed to the Live provider in
+   *  the connect config, because the SDK's send/callback paths run outside
+   *  the AsyncLocalStorage chain this session was opened on. */
+  private disclosureCtx: DisclosureContext | null = null;
+  setDisclosureContext(ctx: DisclosureContext | null): void {
+    this.disclosureCtx = ctx;
+  }
+
   private provider: LiveProvider | null = null;
   private readonly callbacks: ObserverCallbacks;
   private readonly providerKey: LLMProviderKey;
@@ -419,6 +428,7 @@ export class ObserverAgent implements IObserverAgent {
       voiceName: config.voiceName,
       compressionTriggerTokens: config.compressionTriggerTokens,
       compressionTargetTokens: config.compressionTargetTokens,
+      disclosure: this.disclosureCtx ?? undefined,
     };
 
     await provider.connect(config.systemPrompt, providerConfig);
@@ -446,6 +456,7 @@ export class ObserverAgent implements IObserverAgent {
       voiceName: config.voiceName,
       compressionTriggerTokens: config.compressionTriggerTokens,
       compressionTargetTokens: config.compressionTargetTokens,
+      disclosure: this.disclosureCtx ?? undefined,
     };
     await this.provider.reconnectWithConfig(config.systemPrompt, providerConfig);
   }

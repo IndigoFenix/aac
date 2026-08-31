@@ -6,7 +6,8 @@
 // tool_choice is set to "any" so the model MUST call a tool on every turn.
 
 import { resolveModelId } from "@shared/llm-options";
-import { getAnthropicClient } from "./anthropic-client";
+import { getAnthropicClient, isUsingVertex } from "./anthropic-client";
+import { recordDisclosure } from "../processorDisclosure";
 import type { StructuredLLMProvider, StructuredRequest } from "./structured-provider";
 import type { GPTResponse, GPTFunctionToolCall, GPTInputItem } from "../chat/gpt";
 
@@ -21,6 +22,15 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
 
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
     const model = resolveModelId("claude", request.model);
+
+    // AKIM §18.5: the prompt about to be sent is PHI leaving for Anthropic.
+    recordDisclosure({
+      processor: "anthropic",
+      channel: "structured",
+      model,
+      endpoint: isUsingVertex() ? "vertex" : "api",
+      context: request.disclosure,
+    });
 
     // Build system prompt (no schema instructions needed — the tool enforces it)
     let systemPrompt = request.instructions || "";

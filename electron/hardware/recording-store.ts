@@ -44,7 +44,11 @@ import path from "path";
 import log from "electron-log";
 import { finalizeWebmFile } from "./webm-finalize.js";
 import {
+  MAX_AGE_DAYS_DEFAULT,
+  MAX_STORAGE_MB_DEFAULT,
   planEviction,
+  planStudentPurge,
+  type PurgeCandidate,
   type RecordingManifest,
   type RecordingTrack,
   type StoredClip,
@@ -273,6 +277,48 @@ function parseClipIdTime(id: string): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/**
+ * Delete whole clips — every file of each, then the clip's own directory.
+ *
+ * A clip is only reported deleted when every one of its files went; a partial
+ * delete stays counted so the next pass tries again rather than leaving footage
+ * behind that nothing believes is there. The directory is removed
+ * non-recursively and only after the files, so anything a person put in there
+ * themselves survives instead of being swept away with the footage.
+ */
+async function deleteClips(
+  clips: readonly InventoryEntry[],
+  ids: Iterable<string>,
+): Promise<{ deleted: string[]; bytes: number }> {
+  const deleted: string[] = [];
+  let bytes = 0;
+  for (const id of ids) {
+    const entry = clips.find((c) => c.id === id);
+    if (!entry) continue;
+    let ok = true;
+    for (const file of entry.files) {
+      try {
+        await fs.promises.unlink(file);
+      } catch (err) {
+        ok = false;
+        log.warn(`[recording] could not delete ${file}: ${String(err)}`);
+      }
+    }
+    if (ok && entry.dir) {
+      try {
+        await fs.promises.rmdir(entry.dir);
+      } catch (err) {
+        log.warn(`[recording] could not remove ${entry.dir}: ${String(err)}`);
+      }
+    }
+    if (ok) {
+      deleted.push(id);
+      bytes += entry.bytes;
+    }
+  }
+  return { deleted, bytes };
+}
+
 export interface SweepResult {
   totalBytes: number;
   clipCount: number;
@@ -304,31 +350,7 @@ async function sweep(folder: string, maxStorageMb: number, maxAgeDays?: number):
     }
   }
 
-  const deleted: string[] = [];
-  for (const id of deleteIds) {
-    const entry = clips.find((c) => c.id === id);
-    if (!entry) continue;
-    let ok = true;
-    for (const file of entry.files) {
-      try {
-        await fs.promises.unlink(file);
-      } catch (err) {
-        ok = false;
-        log.warn(`[recording] could not delete ${file}: ${String(err)}`);
-      }
-    }
-    // The clip's own directory goes with it — but only if emptying it worked,
-    // and only non-recursively, so anything a person put in there themselves
-    // survives instead of being swept away with the footage.
-    if (ok && entry.dir) {
-      try {
-        await fs.promises.rmdir(entry.dir);
-      } catch (err) {
-        log.warn(`[recording] could not remove ${entry.dir}: ${String(err)}`);
-      }
-    }
-    if (ok) deleted.push(id);
-  }
+  const { deleted } = await deleteClips(clips, deleteIds);
   if (deleted.length) {
     log.info(`[recording] evicted ${deleted.length} clip(s) to stay under ${maxStorageMb} MB`);
   }
@@ -340,6 +362,222 @@ async function sweep(folder: string, maxStorageMb: number, maxAgeDays?: number):
     deletedIds: deleted,
     shortfallBytes: plan.shortfallBytes,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Retention: last-known settings, and the timer that applies them
+// ---------------------------------------------------------------------------
+
+/**
+ * The sweep's inputs, kept on disk.
+ *
+ * Age retention is a promise about how long a video of a child may sit on a
+ * device, and until now the only thing that could keep it was the recorder
+ * running again: `sweep` was reachable from `recording:prepare` and
+ * `recording:finish` and nowhere else. A device that recorded a term's worth of
+ * sessions and was then set aside — the student moved, the feature was turned
+ * off, the app is simply open on the board screen — kept every clip forever.
+ *
+ * So the settings the renderer last normalized are persisted here (a small
+ * JSON beside the device id in userData, matching that file's precedent — there
+ * is no electron-store in this app), and the timer below reads them without
+ * needing a renderer, a logged-in student, or a network.
+ */
+interface PersistedSweepSettings {
+  folder: string | null;
+  maxStorageMb: number;
+  maxAgeDays: number;
+  savedAtMs: number;
+}
+
+function sweepSettingsFile(): string {
+  return path.join(app.getPath("userData"), "recording-sweep.json");
+}
+
+function rememberSweepSettings(folder: string | null, maxStorageMb: number, maxAgeDays: number): void {
+  const next: PersistedSweepSettings = { folder, maxStorageMb, maxAgeDays, savedAtMs: Date.now() };
+  // Fire-and-forget: nothing the recorder does may wait on this write, and a
+  // failure only costs the NEXT unattended sweep its tuning, not this one.
+  void fs.promises
+    .writeFile(sweepSettingsFile(), JSON.stringify(next, null, 2), "utf8")
+    .catch((err) => log.warn(`[recording] could not persist sweep settings: ${String(err)}`));
+}
+
+/** Last-known settings, or the shared defaults when nothing was ever saved. */
+async function loadSweepSettings(): Promise<PersistedSweepSettings> {
+  const fallback: PersistedSweepSettings = {
+    folder: null,
+    maxStorageMb: MAX_STORAGE_MB_DEFAULT,
+    maxAgeDays: MAX_AGE_DAYS_DEFAULT,
+    savedAtMs: 0,
+  };
+  try {
+    const raw = JSON.parse(await fs.promises.readFile(sweepSettingsFile(), "utf8")) as unknown;
+    const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    return {
+      folder: typeof o.folder === "string" && o.folder.trim() ? o.folder.trim() : null,
+      maxStorageMb: typeof o.maxStorageMb === "number" && Number.isFinite(o.maxStorageMb)
+        ? o.maxStorageMb : fallback.maxStorageMb,
+      maxAgeDays: typeof o.maxAgeDays === "number" && Number.isFinite(o.maxAgeDays)
+        ? o.maxAgeDays : fallback.maxAgeDays,
+      savedAtMs: typeof o.savedAtMs === "number" ? o.savedAtMs : 0,
+    };
+  } catch {
+    // Never saved, or unreadable. The defaults are the conservative answer:
+    // 30 days, 20 GB — the same numbers a fresh install would sweep with.
+    return fallback;
+  }
+}
+
+/** How often the unattended sweep runs while the app is open. */
+const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+let sweepTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Run one unattended sweep against the last-known settings.
+ *
+ * Deliberately total: an app that cannot prune its recordings folder must still
+ * be an app a child can talk through, so every failure here is logged and
+ * swallowed. `resolveFolder` is not used — it MKDIRS, and an unattended sweep
+ * has no business creating a recordings folder on a device that has never
+ * recorded (nor re-pointing `activeFolder` out from under a live clip).
+ */
+async function sweepUnattended(): Promise<void> {
+  try {
+    const settings = await loadSweepSettings();
+    let folder = activeFolder;
+    if (!folder) {
+      const wanted = settings.folder ?? defaultFolder();
+      // A folder the settings chokepoint would refuse today (someone moved the
+      // path into OneDrive since) is not a folder to go deleting inside.
+      if (settings.folder && isDisallowedRecordingFolder(wanted)) return;
+      try {
+        await fs.promises.stat(wanted);
+      } catch {
+        return; // Nothing has ever been recorded here.
+      }
+      folder = wanted;
+    }
+    const result = await sweep(folder, settings.maxStorageMb, settings.maxAgeDays);
+    if (result.deletedIds.length) {
+      log.info(
+        `[recording] scheduled sweep removed ${result.deletedIds.length} clip(s) ` +
+        `past ${settings.maxAgeDays}d / ${settings.maxStorageMb} MB`,
+      );
+    }
+  } catch (err) {
+    log.warn(`[recording] scheduled sweep failed: ${String(err)}`);
+  }
+}
+
+/**
+ * Start the retention timer: once at startup, then every six hours.
+ *
+ * Six hours rather than daily because the window a clip can outlive its
+ * retention by is what this bounds, and rather than hourly because the sweep
+ * stats every file in the folder — on an external drive holding a term of
+ * footage that is not free.
+ */
+function startSweepTimer(): void {
+  if (sweepTimer) return;
+  void sweepUnattended();
+  sweepTimer = setInterval(() => { void sweepUnattended(); }, SWEEP_INTERVAL_MS);
+  // Never be the reason the process stays alive.
+  sweepTimer.unref?.();
+}
+
+// ---------------------------------------------------------------------------
+// Erasure purge
+// ---------------------------------------------------------------------------
+
+/**
+ * A clip's manifest `studentId`, or null when there is no readable manifest.
+ *
+ * `folder` is the root actually being inventoried and must be passed in, not
+ * re-derived: a clip from the OLD FLAT LAYOUT has no directory of its own, so
+ * its manifest is `<root>/<id>.json`, and re-deriving the root from
+ * `activeFolder` would look in the wrong place on exactly the path this
+ * feature exists for — a purge on a device that has not recorded this run, so
+ * `activeFolder` is still null and the root came from the persisted settings.
+ * The clip would then read as unattributable and quietly survive the erasure
+ * it was named in.
+ */
+async function readClipStudentId(entry: InventoryEntry, folder: string): Promise<string | null> {
+  const file = manifestFile(entry.dir ?? folder, entry.id);
+  try {
+    const raw = JSON.parse(await fs.promises.readFile(file, "utf8")) as Partial<RecordingManifest>;
+    return typeof raw.studentId === "string" && raw.studentId ? raw.studentId : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface PurgeResult {
+  clipIds: string[];
+  bytes: number;
+}
+
+/**
+ * Delete this device's footage of one student.
+ *
+ * This is the arm of erasure that reaches the disk. It runs on a signal from
+ * the server (the relay's `purge_recordings`) and, crucially, ALSO on the
+ * client noticing that the student's profile has become definitively
+ * unreachable — because the device that most needs purging is the one that was
+ * switched off when the erasure happened and never heard the message.
+ *
+ * Best-effort, and the selection rule says why: see `planStudentPurge` in
+ * shared/aac/session-recording.ts. A clip whose manifest never got a studentId
+ * cannot be attributed, so it goes only once it is past retention anyway.
+ *
+ * LEGACY FLAT CLIPS are in scope on the same terms as any other. `inventory`
+ * returns them (loose files in the root, no directory of their own), and one
+ * that still has its `<id>.json` is matched by NAME like anything else — the
+ * old layout wrote the same manifest, just beside the videos instead of under
+ * them. One with no readable manifest has no studentId to match, so it falls
+ * to the orphan rule and goes only once past retention. That is the same
+ * treatment a crash-recovered clip gets, and for the same reason: deleting
+ * every unattributable clip outright would destroy footage of a different,
+ * still-enrolled child.
+ */
+export async function purgeStudentRecordings(studentId: string): Promise<PurgeResult> {
+  const id = typeof studentId === "string" ? studentId.trim() : "";
+  if (!id) return { clipIds: [], bytes: 0 };
+
+  const settings = await loadSweepSettings();
+  const folder = activeFolder ?? settings.folder ?? defaultFolder();
+  try {
+    await fs.promises.stat(folder);
+  } catch {
+    return { clipIds: [], bytes: 0 }; // Nothing was ever recorded on this device.
+  }
+
+  const clips = await inventory(folder);
+  const candidates: PurgeCandidate[] = [];
+  for (const clip of clips) {
+    candidates.push({
+      id: clip.id,
+      startedAtMs: clip.startedAtMs,
+      bytes: clip.bytes,
+      studentId: await readClipStudentId(clip, folder),
+    });
+  }
+
+  const plan = planStudentPurge(candidates, {
+    studentId: id,
+    retentionDays: settings.maxAgeDays,
+    nowMs: Date.now(),
+    // A clip being written right now is not deleted out from under its encoder;
+    // it closes normally and the NEXT purge or sweep takes it.
+    protectedIds: [...openClips.keys()],
+  });
+
+  const { deleted, bytes } = await deleteClips(clips, plan.clipIds);
+  if (deleted.length) {
+    log.info(`[recording] purged ${deleted.length} clip(s) (${bytes} bytes) for an erased student`);
+  }
+  return { clipIds: deleted, bytes };
 }
 
 /**
@@ -454,7 +692,10 @@ export function setupRecordingStore(): void {
     const maxStorageMb = typeof o.maxStorageMb === "number" ? o.maxStorageMb : 20480;
     // A renderer that predates the setting sends no maxAgeDays; fall back to
     // the shared default rather than to "keep forever".
-    const maxAgeDays = typeof o.maxAgeDays === "number" ? o.maxAgeDays : 30;
+    const maxAgeDays = typeof o.maxAgeDays === "number" ? o.maxAgeDays : MAX_AGE_DAYS_DEFAULT;
+    // Remember what to sweep with when no renderer is around to say — see
+    // PersistedSweepSettings.
+    rememberSweepSettings(folder, maxStorageMb, maxAgeDays);
     const result = await sweep(folder, maxStorageMb, maxAgeDays);
     return { folder, isDefault: folder === defaultFolder(), ...result };
   });
@@ -574,7 +815,8 @@ export function setupRecordingStore(): void {
     }
 
     const maxStorageMb = typeof o.maxStorageMb === "number" ? o.maxStorageMb : 20480;
-    const maxAgeDays = typeof o.maxAgeDays === "number" ? o.maxAgeDays : 30;
+    const maxAgeDays = typeof o.maxAgeDays === "number" ? o.maxAgeDays : MAX_AGE_DAYS_DEFAULT;
+    rememberSweepSettings(clip.folder, maxStorageMb, maxAgeDays);
     const swept = await sweep(clip.folder, maxStorageMb, maxAgeDays);
     return { ok: true, clipId, folder: clip.folder, dir: clip.dir, ...swept };
   });
@@ -610,6 +852,24 @@ export function setupRecordingStore(): void {
     };
   });
 
+  /**
+   * Delete this device's footage of one student — the erasure path.
+   *
+   * Returns what actually went, so the renderer can acknowledge it to the
+   * server; an empty list is a legitimate answer (nothing of theirs is here).
+   */
+  ipcMain.handle("recording:purgeStudent", async (_e, opts: unknown) => {
+    const o = (opts ?? {}) as { studentId?: unknown };
+    const studentId = typeof o.studentId === "string" ? o.studentId : "";
+    if (!studentId.trim()) return { clipIds: [], bytes: 0 };
+    try {
+      return await purgeStudentRecordings(studentId);
+    } catch (err) {
+      log.warn(`[recording] purge failed: ${String(err)}`);
+      return { clipIds: [], bytes: 0 };
+    }
+  });
+
   /** Open the recordings folder in the OS file manager. */
   ipcMain.handle("recording:reveal", async () => {
     const folder = activeFolder ?? defaultFolder();
@@ -620,8 +880,12 @@ export function setupRecordingStore(): void {
     return { folder, opened: !err, error: err || null };
   });
 
+  // Retention no longer waits for the recorder to run again.
+  startSweepTimer();
+
   // A quit with clips still open must still leave playable files behind.
   app.on("before-quit", () => {
+    if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
     for (const clip of openClips.values()) {
       for (const entry of clip.tracks.values()) {
         try { entry.stream.end(); } catch { /* shutting down */ }
@@ -633,6 +897,7 @@ export function setupRecordingStore(): void {
 
 /** Close every open clip. Exposed for teardown paths other than `before-quit`. */
 export async function stopRecordingStore(): Promise<void> {
+  if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
   for (const clip of [...openClips.values()]) {
     openClips.delete(clip.id);
     await closeClip(clip);

@@ -234,6 +234,17 @@ export class InstituteService {
       instituteId,
       userId
     );
+    if (removed) {
+      // Termination must end access NOW, not when the cookie expires (up to
+      // 30 days): evict every live session the removed member holds. They
+      // re-authenticate; the removed institute is simply no longer theirs.
+      //
+      // Same contract as removeMember above. Leaving voluntarily removes the
+      // same access as being removed, so it cannot leave a live session with
+      // the old institute still resolved on it.
+      const { deleteUserSessions } = await import("./sessionInvalidation");
+      await deleteUserSessions(userId);
+    }
     return { success: removed, error: removed ? undefined : "Failed to leave institute" };
   }
 

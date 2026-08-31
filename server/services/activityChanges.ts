@@ -30,6 +30,10 @@ import {
   functionalReports,
   educationalReports,
   studentContacts,
+  programs,
+  goals,
+  objectives,
+  progressReports,
 } from "@shared/schema";
 import { SENSITIVE_FIELDS } from "../external-storage/registry";
 
@@ -49,6 +53,11 @@ const SKIP_FIELDS = new Set([
   "createdAt",
   "updatedAt",
   "deletedAt",
+  // Drag-to-reorder rewrites these across a whole list; the noise would bury
+  // the one clinical field a clinician actually edited. Reordering is not
+  // audit signal.
+  "sortOrder",
+  "sequenceOrder",
 ]);
 
 /**
@@ -80,6 +89,48 @@ const VALUE_SAFE: Record<string, Set<string>> = {
     "selectionMethod",
     "restSpace",
   ]),
+
+  // Care-plan tables (AKIM appendix §5.8, Track C). Only closed enums, dates
+  // and FK ids appear here. Drizzle reports `date`/`timestamp` columns as
+  // dataType "date" and pgEnum columns as "string", so both would fall back to
+  // presence without an explicit listing — and "the due date moved from
+  // 2026-11-15 to 2027-01-30" is exactly what an audit of a care plan needs.
+  // Every narrative column (titles, statements, criteria, notes, jsonb) is
+  // deliberately absent: it stays presence-only.
+  programs: new Set([
+    "framework",
+    "status",
+    "startDate",
+    "endDate",
+    "dueDate",
+    "approvalDate",
+    "instituteId",
+  ]),
+  goals: new Set([
+    "status",
+    "interventionLevel",
+    "targetDate",
+    "achievedDate",
+    "gasVaryingVariable",
+    "gasBaselineLevel",
+    "programId",
+  ]),
+  objectives: new Set([
+    "status",
+    "targetDate",
+    "achievedDate",
+    "gasTargetLevel",
+    "goalId",
+    "profileDomainId",
+  ]),
+  progress_reports: new Set([
+    "reportDate",
+    "sharedDate",
+    "programId",
+    // `reportingPeriod` is NOT here: the column is open text ("Q1" by
+    // convention, but nothing enforces it), so a clinician can type a child's
+    // name or a clinical remark into it. Presence-only.
+  ]),
 };
 
 /**
@@ -96,6 +147,11 @@ const VALUE_SAFE: Record<string, Set<string>> = {
  * an accurate list of WHICH fields a clinician changed, plus literal values for
  * the flags — which is the part that is safe to keep and usually the part being
  * traced.
+ *
+ * The care-plan tables (programs / goals / objectives / progress_reports) went
+ * in for the same clause. They DO contribute to VALUE_SAFE, but only their
+ * lifecycle enums, dates and FK ids — the workflow skeleton. Every statement,
+ * criterion, note and jsonb blob on them stays presence-only.
  */
 const TABLE_COLUMNS: Record<string, Record<string, { dataType: string }>> = {
   students: getTableColumns(students) as any,
@@ -104,6 +160,10 @@ const TABLE_COLUMNS: Record<string, Record<string, { dataType: string }>> = {
   functional_reports: getTableColumns(functionalReports) as any,
   educational_reports: getTableColumns(educationalReports) as any,
   student_contacts: getTableColumns(studentContacts) as any,
+  programs: getTableColumns(programs) as any,
+  goals: getTableColumns(goals) as any,
+  objectives: getTableColumns(objectives) as any,
+  progress_reports: getTableColumns(progressReports) as any,
 };
 
 /** A runaway write shouldn't turn one log row into a megabyte of jsonb. */

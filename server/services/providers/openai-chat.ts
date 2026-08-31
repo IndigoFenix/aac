@@ -2,6 +2,7 @@
 // OpenAI implementation of ChatProvider (extracts logic from interactive-agent.ts)
 
 import OpenAI from "openai";
+import { recordDisclosure } from "../processorDisclosure";
 import type {
   ChatProvider,
   ChatRequest,
@@ -67,6 +68,13 @@ export class OpenAIChatProvider implements ChatProvider {
   }
 
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
+    recordDisclosure({
+      processor: "openai",
+      channel: "chat",
+      model: request.model,
+      endpoint: "api",
+      context: request.disclosure,
+    });
     const sanitized = this.sanitizeMessages(request.messages);
     const messages = this.convertMessages(sanitized);
     const params: any = {
@@ -107,6 +115,13 @@ export class OpenAIChatProvider implements ChatProvider {
   }
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
+    recordDisclosure({
+      processor: "openai",
+      channel: "chat",
+      model: request.model,
+      endpoint: "api",
+      context: request.disclosure,
+    });
     const sanitized = this.sanitizeMessages(request.messages);
     const messages = this.convertMessages(sanitized);
     const params: any = {

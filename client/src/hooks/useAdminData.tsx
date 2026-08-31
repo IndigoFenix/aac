@@ -640,6 +640,8 @@ export interface AdminLicense {
   isTrial: boolean;
   trialExpiresAt: string | null;
   permissions: any | null;
+  /** Operator-granted marketing entitlement (a real column, not a permissions key). */
+  allowSessionRecording?: boolean;
   inviteEmail: string | null;
   instituteId: string | null;
   userId: string | null;
@@ -662,6 +664,7 @@ export interface CreateLicenseData {
   isTrial?: boolean;
   trialExpiresAt?: string;
   permissions?: any;
+  allowSessionRecording?: boolean;
   inviteEmail: string;
   firstName?: string;
   lastName?: string;
@@ -689,6 +692,7 @@ export interface UpdateLicenseData {
   isTrial?: boolean;
   trialExpiresAt?: string | null;
   permissions?: any | null;
+  allowSessionRecording?: boolean;
   isActive?: boolean;
   inviteEmail?: string | null;
 }

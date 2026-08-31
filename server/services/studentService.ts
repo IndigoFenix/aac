@@ -45,6 +45,11 @@ import {
 import { db } from "../db";
 import type { PersistedBaseline } from "@shared/aac/seizure-config";
 import { ADMIN_ONLY_AAC_FIELDS } from "@shared/aac/admin-budget-fields";
+import {
+  applySessionRecordingLicense,
+  type WithSessionRecordingLicense,
+} from "@shared/aac/session-recording";
+import { licenseService } from "./licenseService";
 import { eq, inArray } from "drizzle-orm";
 import { deleteExternalData, type EntityRef } from "../external-storage";
 import { summarizeChanges, mergeChanges, type ChangeMap } from "./activityChanges";
@@ -116,6 +121,67 @@ function splitUpdateBody(body: Record<string, any>): {
   return { studentUpdates, aacUpdates };
 }
 
+/** A student row as this service hands it out: with the session-recording
+ *  licence verdict attached and the setting already gated by it. */
+export type LicensedStudent = WithSessionRecordingLicense<StudentWithAacSettings>;
+
+/**
+ * Stamp the session-recording licence verdict onto a student payload, and gate
+ * the stored setting by it.
+ *
+ * TWO things happen here and both matter:
+ *
+ *  1. `sessionRecordingLicensed` is added, so a client can tell "the caretaker
+ *     turned it off" from "this licence never had it" — one is a switch to
+ *     render, the other is a section that should not exist on screen.
+ *  2. `aacSettings.sessionRecording.enabled` is forced false when unlicensed.
+ *     This is the half that has teeth: a student whose entitlement lapsed while
+ *     the setting was on stops recording on the NEXT READ, with nobody having
+ *     to write anything anywhere. Without it, revoking a licence would leave
+ *     cameras running until someone happened to open the settings panel.
+ *
+ * Applied at the SERVICE boundary rather than in studentRepository: the
+ * repository is consulted from dozens of internal paths that have no business
+ * paying for a licence lookup, while everything that leaves the building for a
+ * client goes through here. studentController spreads whatever this returns, so
+ * both `GET /api/students/:id` and the institute list carry it with no
+ * controller change.
+ */
+function stampRecordingLicense(
+  student: StudentWithAacSettings,
+  licensed: boolean,
+): LicensedStudent {
+  const aacSettings = student.aacSettings
+    ? {
+        ...student.aacSettings,
+        sessionRecording: applySessionRecordingLicense(
+          (student.aacSettings as any).sessionRecording,
+          licensed,
+        ),
+      }
+    : null;
+  return { ...student, aacSettings, sessionRecordingLicensed: licensed };
+}
+
+/** {@link stampRecordingLicense} for one student (2 queries). */
+async function withRecordingLicense<T extends StudentWithAacSettings | undefined>(
+  student: T,
+): Promise<T extends undefined ? undefined : LicensedStudent> {
+  if (!student) return undefined as any;
+  const licensed = await licenseService.isSessionRecordingLicensed(student.id);
+  return stampRecordingLicense(student, licensed) as any;
+}
+
+/** {@link stampRecordingLicense} for a list — ONE licence lookup for the whole
+ *  page, not one per child. */
+async function withRecordingLicenseAll(
+  students: readonly StudentWithAacSettings[],
+): Promise<LicensedStudent[]> {
+  if (students.length === 0) return [];
+  const allowed = await licenseService.sessionRecordingLicensedFor(students.map((s) => s.id));
+  return students.map((s) => stampRecordingLicense(s, allowed.has(s.id)));
+}
+
 export class StudentService {
   // ==================== AAC User Operations ====================
 
@@ -163,8 +229,10 @@ export class StudentService {
   /**
    * Get all AAC users linked to a specific user (with AAC settings)
    */
-  async getStudentsByUserId(userId: string): Promise<StudentWithAacSettings[]> {
-    return studentRepository.getStudentsWithAacSettingsByUserId(userId);
+  async getStudentsByUserId(userId: string): Promise<LicensedStudent[]> {
+    return withRecordingLicenseAll(
+      await studentRepository.getStudentsWithAacSettingsByUserId(userId),
+    );
   }
 
   /**
@@ -172,7 +240,7 @@ export class StudentService {
    */
   async getStudentsWithLinksByUserId(
     userId: string
-  ): Promise<{ student: StudentWithAacSettings; link: UserStudent }[]> {
+  ): Promise<{ student: LicensedStudent; link: UserStudent }[]> {
     const results = await studentRepository.getStudentsWithLinksByUserId(userId);
     // Enrich each student with their AAC settings
     const enriched = await Promise.all(
@@ -181,7 +249,9 @@ export class StudentService {
         return { student: withSettings || { ...student, aacSettings: null }, link };
       })
     );
-    return enriched;
+    // One licence lookup for the whole list, then re-pair with the links.
+    const licensed = await withRecordingLicenseAll(enriched.map((e) => e.student));
+    return enriched.map((e, i) => ({ student: licensed[i], link: e.link }));
   }
 
   /**
@@ -191,7 +261,7 @@ export class StudentService {
   async getStudentsForUserInInstitute(
     userId: string,
     instituteId: string
-  ): Promise<{ student: StudentWithAacSettings; link: UserStudent | null }[]> {
+  ): Promise<{ student: LicensedStudent; link: UserStudent | null }[]> {
     const results = await studentRepository.getStudentsForUserInInstitute(userId, instituteId);
     const enriched = await Promise.all(
       results.map(async ({ student, link }) => {
@@ -199,14 +269,15 @@ export class StudentService {
         return { student: withSettings || { ...student, aacSettings: null }, link };
       })
     );
-    return enriched;
+    const licensed = await withRecordingLicenseAll(enriched.map((e) => e.student));
+    return enriched.map((e, i) => ({ student: licensed[i], link: e.link }));
   }
 
   /**
    * Get an AAC user by their ID (with AAC settings)
    */
-  async getStudentById(studentId: string): Promise<StudentWithAacSettings | undefined> {
-    return studentRepository.getStudentWithAacSettings(studentId);
+  async getStudentById(studentId: string): Promise<LicensedStudent | undefined> {
+    return withRecordingLicense(await studentRepository.getStudentWithAacSettings(studentId));
   }
 
   /**
@@ -219,8 +290,8 @@ export class StudentService {
   /**
    * @deprecated Use getStudentById instead
    */
-  async getStudentByStudentId(studentId: string): Promise<StudentWithAacSettings | undefined> {
-    return studentRepository.getStudentWithAacSettings(studentId);
+  async getStudentByStudentId(studentId: string): Promise<LicensedStudent | undefined> {
+    return withRecordingLicense(await studentRepository.getStudentWithAacSettings(studentId));
   }
 
   /**
@@ -247,7 +318,7 @@ export class StudentService {
        */
       onChanges?: (changes: ChangeMap) => void;
     } = {}
-  ): Promise<StudentWithAacSettings | undefined> {
+  ): Promise<LicensedStudent | undefined> {
     const parsedNames = this.parseStudentNames(updates);
     const merged = { ...parsedNames, ...updates };
     const { studentUpdates, aacUpdates } = splitUpdateBody(merged);
@@ -278,6 +349,12 @@ export class StudentService {
       if ("seizureDetection" in aacUpdates) {
         aacUpdates.seizureDetection = await this.mergeSeizureDetection(studentId, aacUpdates.seizureDetection);
       }
+      if ("sessionRecording" in aacUpdates) {
+        aacUpdates.sessionRecording = await this.gateSessionRecordingWrite(
+          studentId,
+          aacUpdates.sessionRecording,
+        );
+      }
       await aacSettingsRepository.upsert(studentId, aacUpdates as UpdateAacSettings);
 
       // Google requires a Request Sync whenever the device list may have
@@ -307,7 +384,34 @@ export class StudentService {
     }
 
     // Return the full updated student with settings
-    return studentRepository.getStudentWithAacSettings(studentId);
+    return withRecordingLicense(await studentRepository.getStudentWithAacSettings(studentId));
+  }
+
+  /**
+   * Gate an incoming `sessionRecording` write against the student's licence.
+   *
+   * FORCE-OFF, NOT REJECT, and that is a considered choice rather than
+   * laziness: PATCH /api/students/:id carries the whole settings panel in one
+   * body and has no per-field refusal shape, so a 4xx here would fail a
+   * clinician's save of something unrelated. It also matches the precedent
+   * immediately upstream — ADMIN_ONLY_AAC_FIELDS are silently stripped from the
+   * clinician path rather than refused. The warning is what makes it visible:
+   * an attempt to enable recording without the entitlement is worth a line in
+   * the logs even though the request itself succeeds.
+   *
+   * Everything else in the object is preserved, so a caretaker's disk budget
+   * and folder survive a lapse and come back intact if the licence returns.
+   */
+  private async gateSessionRecordingWrite(studentId: string, incoming: any): Promise<any> {
+    const licensed = await licenseService.isSessionRecordingLicensed(studentId);
+    const gated = applySessionRecordingLicense(incoming, licensed);
+    if (!licensed && incoming && (incoming as any).enabled === true) {
+      console.warn(
+        `[studentService] session recording is not licensed for student ${studentId} — ` +
+          `forcing enabled=false (licenses.allow_session_recording)`,
+      );
+    }
+    return gated;
   }
 
   /** Merge an incoming partial seizureDetection ({config} OR {baseline}) onto the
@@ -332,9 +436,19 @@ export class StudentService {
   async updateAacSettings(
     studentId: string,
     updates: UpdateAacSettings
-  ): Promise<StudentWithAacSettings | undefined> {
-    await aacSettingsRepository.upsert(studentId, updates);
-    return studentRepository.getStudentWithAacSettings(studentId);
+  ): Promise<LicensedStudent | undefined> {
+    // The second writer of `sessionRecording`, and it bypasses updateStudent
+    // entirely — so it carries the same licence gate. A gate on one of two
+    // doors is not a gate.
+    const safe: UpdateAacSettings = { ...updates };
+    if ("sessionRecording" in safe) {
+      (safe as any).sessionRecording = await this.gateSessionRecordingWrite(
+        studentId,
+        (safe as any).sessionRecording,
+      );
+    }
+    await aacSettingsRepository.upsert(studentId, safe);
+    return withRecordingLicense(await studentRepository.getStudentWithAacSettings(studentId));
   }
 
   /**
@@ -566,7 +680,7 @@ export class StudentService {
     return age;
   }
 
-  async getStudentWithAge(studentId: string): Promise<(StudentWithAacSettings & { age: number | null }) | undefined> {
+  async getStudentWithAge(studentId: string): Promise<(LicensedStudent & { age: number | null }) | undefined> {
     const student = await this.getStudentById(studentId);
     if (!student) return undefined;
 

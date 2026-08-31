@@ -40,16 +40,16 @@ import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
 import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
 import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
 import { buildSessionAccessCtx } from "./sharing/sessionCtx";
-import fs from "fs";
 import path from "path";
-import { fileDebugLoggingEnabled } from "./file-debug-log";
+import { fileDebugLoggingEnabled, safeAppend } from "./file-debug-log";
+import type { DisclosureContext } from "./processorDisclosure";
 
 // Development-only file log (raw LLM session-summary text) — see file-debug-log.ts.
 const LOG_FILE = path.resolve(process.cwd(), "server", "session-summary-debug.log");
 function log(msg: string) {
   if (!fileDebugLoggingEnabled) return;
   try {
-    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
+    safeAppend(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
   } catch {}
 }
 
@@ -167,6 +167,17 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     const cfg = await settingsRepository.getLLMConfig("clinician");
     const provider = getStructuredProvider(cfg.provider);
 
+    // AKIM §18.5 — the transcript about to be summarized is PHI. A CRM
+    // landing chat is anonymous, so it declares `crm_chat` and is skipped by
+    // recordDisclosure rather than being skipped by having no context at all.
+    const disclosure: DisclosureContext = {
+      studentId: session.studentId ?? null,
+      sessionId,
+      userId: session.userId ?? null,
+      instituteId: session.instituteId ?? null,
+      useCase: session.crmPotentialCustomerId ? "crm_chat" : "clinician",
+    };
+
     // Ground the summarizer in WHO the session is about. Without this, a
     // transcript in another language left the model free to confabulate the
     // subject's identity from medical priors — a hospitalized child was once
@@ -245,6 +256,7 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
           userContent,
           baseInstructions,
           chargeResponse,
+          disclosure,
         });
       } catch (err) {
         log(`[${sessionId}] context-aware summary failed — falling back to light path: ${err instanceof Error ? err.message : String(err)}`);
@@ -252,6 +264,7 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
     }
     if (!response) {
       response = await provider.structuredComplete({
+        disclosure,
         // Background: a summary written after the session; nobody is on a screen.
         background: true,
         model: cfg.model,
@@ -338,6 +351,8 @@ async function runContextAwareSummary(opts: {
   userContent: string;
   baseInstructions: string[];
   chargeResponse: (r: GPTResponse) => Promise<void>;
+  /** AKIM §18.5 — who this summary is about. */
+  disclosure?: DisclosureContext;
 }): Promise<GPTResponse> {
   const fields = summarizerMemoryFields(opts.privacy);
   const memoryValues: Record<string, unknown> = {};
@@ -369,6 +384,7 @@ async function runContextAwareSummary(opts: {
   for (let step = 0; step <= MAX_CONTEXT_STEPS; step++) {
     const finalStep = step === MAX_CONTEXT_STEPS;
     const response = await opts.provider.structuredComplete({
+      disclosure: opts.disclosure,
       model: opts.model,
       input,
       instructions,

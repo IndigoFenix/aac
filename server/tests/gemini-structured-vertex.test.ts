@@ -38,18 +38,28 @@ let GeminiStructuredProvider: typeof import("../services/providers/gemini-struct
 const ENV_KEYS = ["GOOGLE_CLOUD_PROJECT_ID", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GEMINI_API_KEY"] as const;
 const saved: Record<string, string | undefined> = {};
 
+let setDisclosureSink: (fn: ((e: any) => void) | null) => void;
+
 beforeAll(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
   ({ GeminiStructuredProvider } = await import("../services/providers/gemini-structured"));
+  ({ setDisclosureSink } = await import("../services/processorDisclosure"));
 });
 
+// This suite drives the REAL egress code, which now writes an AKIM §18.5
+// disclosure row per send. Without a sink the default one lazily imports
+// activityLogService -> server/db.ts, dragging a Postgres pool into a DB-free
+// suite (and failing late, after the test env has torn down). The rows are not
+// this suite's subject, so they go nowhere.
 beforeEach(() => {
+  setDisclosureSink(() => {});
   constructed.length = 0;
   generateContent.mockClear();
   for (const k of ENV_KEYS) delete process.env[k];
 });
 
 afterEach(() => {
+  setDisclosureSink(null);
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k]!;

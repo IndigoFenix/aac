@@ -119,6 +119,24 @@ variable "ecs_autoscaling_max" {
   default     = 10
 }
 
+variable "enable_ecs_exec" {
+  description = "Allow `aws ecs execute-command` into a running task. Default OFF: it was hardcoded on for over a year while the task role never had ssmmessages:*, so it advertised an interactive path into a PHI container that could not actually be used. Turning it on means granting those actions to the task role AND accepting a shell into the container — do that deliberately, for a debugging window, not as a standing state."
+  type        = bool
+  default     = false
+}
+
+variable "ecs_readonly_root_fs" {
+  description = "Mount the task's root filesystem read-only, with an ephemeral /tmp volume as the only writable path. Default false because it is a runtime break, not a config flip: every debug-log writer that opens a file under the app directory must be gated off first (see docs/INFRASTRUCTURE.md 'Access & hardening'). Both ECS profiles set it explicitly."
+  type        = bool
+  default     = false
+}
+
+variable "ecr_image_exists" {
+  description = "Pin the Terraform task-definition template to the digest of the newest image in the ECR repo instead of the mutable `:latest` tag. Default false so the very first apply into an empty repository still works (same reason as lambda_image_exists); set true in the ECS profiles, where the repo has been populated since 2026-08. Does NOT change what is running — the deploy workflow renders its own sha-tagged image onto the revision it registers — it only fixes what a fresh apply or a rollback would create."
+  type        = bool
+  default     = false
+}
+
 # =============================================================================
 # RDS Variables (for existing database connection)
 # =============================================================================
@@ -235,6 +253,16 @@ variable "enable_rds_enhanced_monitoring" {
 }
 
 # =============================================================================
+# Operational access (SSM)
+# =============================================================================
+
+variable "enable_ssm_session_logging" {
+  description = "Record interactive SSM shell sessions to the existing logs bucket under ssm-sessions/ (terraform/ssm.tf). Default true — it costs nothing but the transcript bytes, and it is the only evidence that a human shell on the bastion ever happened. Port-forwarding sessions (npm run db-tunnel) have no shell and are NOT transcribed; they are evidenced by CloudTrail StartSession/TerminateSession, which needs enable_cloudtrail."
+  type        = bool
+  default     = true
+}
+
+# =============================================================================
 # Redis / ElastiCache Variables
 # =============================================================================
 # Redis backs the cross-instance realtime fanout (server/services/realtime/
@@ -340,6 +368,12 @@ variable "coturn_relay_port_max" {
   description = "High end of the UDP relay port range. coturn_relay_port_max - coturn_relay_port_min bounds concurrent relayed media streams."
   type        = number
   default     = 49260
+}
+
+variable "coturn_image_tag" {
+  description = "Docker Hub tag for the coturn container. Was untagged (i.e. `:latest`), so what the relay ran depended on the day the host was last replaced. Pinned to a specific 4.x release instead — a TURN relay reachable from the whole internet should not silently change version. The pin only takes effect the next time the host is REPLACED (bump null_resource.coturn_version deliberately); user_data is in the instance's ignore_changes for exactly that reason."
+  type        = string
+  default     = "4.17.2"
 }
 
 variable "coturn_credential_ttl_seconds" {

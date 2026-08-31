@@ -33,6 +33,7 @@ import { venueRepository } from "../../repositories/venueRepository";
 import { requestMenuRefinement } from "./refinement-agent.js";
 import { applyMenuRefinement, type RawMenuItem, type RefinedMenuItem } from "./menu-refinement.js";
 import type { VenueMenu } from "@shared/schema";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /** How the menu text was obtained. */
 export type MenuProvenance = "camera" | "web" | "manual";
@@ -144,6 +145,9 @@ export interface CacheMenuInput {
   extractionRequiresReview?: boolean;
   /** Language to render item names into — normally the student's. */
   targetLanguage?: string;
+  /** AKIM §18.5 — who this menu work is for; rides down to the vision /
+   *  extraction / refinement calls that leave for a processor. */
+  disclosure?: DisclosureContext;
 }
 
 export interface CacheMenuResult {
@@ -193,6 +197,7 @@ export async function cacheMenu(
   // ── Refine (§4.2a). Annotations only; facts are re-read from rawItems. ──
   const entries = await deps.requestRefinement(rawItems, {
     ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
+    ...(input.disclosure ? { disclosure: input.disclosure } : {}),
   });
   const refined = applyMenuRefinement(rawItems, entries);
 

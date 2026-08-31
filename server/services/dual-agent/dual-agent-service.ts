@@ -3,8 +3,8 @@
 
 import { randomUUID } from "node:crypto";
 import { db } from "../../db";
-import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { chatSessions, students, users, userStudents } from "@shared/schema";
+import { and, eq, sql } from "drizzle-orm";
 import type { ChatMessage, HomeAction, ParsedBoardData, PermittedWebsite } from "@shared/schema";
 import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
 import { normalizeHomeActions } from "@shared/home-actions";
@@ -48,6 +48,8 @@ import { buildBoardKeys } from "@shared/board-keys";
 import { HOME_BOARD_KEY } from "./default-home-board";
 import { flowCost } from "./agent-flow-logger";
 import { buildMonitorChatState } from "./monitor-chat-state";
+import { loadDiagnosisForPrompt, loadDiagnosesForPrompt } from "./diagnosis-for-prompt";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /**
  * Simple promise-based mutex for per-session concurrency control.
@@ -440,6 +442,7 @@ export class DualAgentService {
     voice: ResolvedVoice,
     eventType: T,
     voiceRole: "ai" | "student",
+    disclosure?: DisclosureContext,
   ): AsyncGenerator<{ type: T | "client_tts"; data: any; voiceRole?: string; text?: string }> {
     if (this.isClientTts(voice)) {
       yield {
@@ -453,7 +456,17 @@ export class DualAgentService {
         },
       };
     } else {
-      for await (const chunk of ttsFacade.synthesizeStream(text, voice)) {
+      // AKIM §18.5 — server-side synthesis sends the text to a voice vendor.
+      // The client-TTS branch above deliberately records nothing: the device
+      // calls ElevenLabs with the FAMILY's own key, so no PHI leaves this
+      // system on that path.
+      for await (const chunk of ttsFacade.synthesizeStream(
+        text,
+        voice,
+        undefined,
+        undefined,
+        disclosure,
+      )) {
         yield { type: eventType, data: chunk.toString("base64") };
       }
     }
@@ -542,6 +555,14 @@ export class DualAgentService {
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
     this.config.interactiveModel = aacChatConfig.model;
     this.config.interactiveProvider = aacChatConfig.provider;
+    // NOTE (AKIM §18.5): this handle is acquired but never sends. The
+    // InteractiveAgent is the legacy two-agent path — it stores the provider
+    // and has no completeChat/streamChat call left anywhere in
+    // interactive-agent.ts. There is therefore no disclosure to attribute
+    // here; the live traffic all runs through the four-agent path, which
+    // records at its own providers. If a send is ever restored to
+    // InteractiveAgent, it must take a `disclosure` on its ChatRequest —
+    // otherwise it will surface as PROCESSOR_DISCLOSURE_CONTEXT_MISSING.
     const chatProvider = getChatProvider(aacChatConfig.provider);
 
     // Mint a proper UUID for the new session up front and hand it to the
@@ -598,15 +619,14 @@ export class DualAgentService {
       } catch { return []; }
     })();
 
-    const diagnosisPromise = (async (): Promise<string | null> => {
-      try {
-        const [record] = await db.select({ primaryDiagnosis: medicalRecords.primaryDiagnosis })
-          .from(medicalRecords)
-          .where(eq(medicalRecords.studentId, studentId))
-          .limit(1);
-        return record?.primaryDiagnosis || null;
-      } catch { return null; }
-    })();
+    // Diagnosis for the system prompt. Goes through the gated loader: it
+    // honours `allowReadReports`, reads only FINAL records, and writes the
+    // `view` audit row. Never throws.
+    const diagnosisPromise = loadDiagnosisForPrompt({
+      studentId,
+      sessionId: newSessionId,
+      userId,
+    });
 
     // Classroom context when this session runs on a shared classroom device.
     // The roster (with short per-student entries) is injected into the system
@@ -618,18 +638,13 @@ export class DualAgentService {
         const classroom = await classroomRepository.getClassroomById(classroomId);
         if (classroom && classroom.isActive) {
           const rosterRows = await classroomRepository.getStudentsInClassroom(classroomId);
-          // Batch-fetch primary diagnosis for the whole roster in one query.
+          // Batch-fetch primary diagnosis for the whole roster. Every child on
+          // a shared device is judged by their OWN allowReadReports setting,
+          // and each read that lands in the prompt is audited separately.
           const rosterIds = rosterRows.map(r => r.student.id);
-          const diagByStudent = new Map<string, string>();
-          if (rosterIds.length > 0) {
-            const diagRows = await db
-              .select({ studentId: medicalRecords.studentId, primaryDiagnosis: medicalRecords.primaryDiagnosis })
-              .from(medicalRecords)
-              .where(inArray(medicalRecords.studentId, rosterIds));
-            for (const row of diagRows) {
-              if (row.primaryDiagnosis) diagByStudent.set(row.studentId, row.primaryDiagnosis);
-            }
-          }
+          const diagByStudent = await loadDiagnosesForPrompt(
+            rosterIds.map(id => ({ studentId: id, sessionId: newSessionId, userId })),
+          );
           return {
             name: classroom.name,
             grade: classroom.grade || undefined,
@@ -979,6 +994,14 @@ export class DualAgentService {
       const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
       this.config.interactiveModel = aacChatConfig.model;
       this.config.interactiveProvider = aacChatConfig.provider;
+      // NOTE (AKIM §18.5): this handle is acquired but never sends. The
+      // InteractiveAgent is the legacy two-agent path — it stores the provider
+      // and has no completeChat/streamChat call left anywhere in
+      // interactive-agent.ts. There is therefore no disclosure to attribute
+      // here; the live traffic all runs through the four-agent path, which
+      // records at its own providers. If a send is ever restored to
+      // InteractiveAgent, it must take a `disclosure` on its ChatRequest —
+      // otherwise it will surface as PROCESSOR_DISCLOSURE_CONTEXT_MISSING.
       const chatProvider = getChatProvider(aacChatConfig.provider);
 
       // Recreate agents
@@ -1036,14 +1059,15 @@ export class DualAgentService {
           state.cachedSymbols = symbols.map(s => ({ id: s.id, key: s.key, description: s.description }));
         } catch { state.cachedSymbols = []; }
 
-        // Fetch primary diagnosis
-        try {
-          const [record] = await db.select({ primaryDiagnosis: medicalRecords.primaryDiagnosis })
-            .from(medicalRecords)
-            .where(eq(medicalRecords.studentId, state.studentId))
-            .limit(1);
-          state.cachedDiagnosis = record?.primaryDiagnosis || null;
-        } catch { state.cachedDiagnosis = null; }
+        // Fetch primary diagnosis through the gated loader (privacy switch +
+        // final-only + audit). The student row is already in hand, so its
+        // allowReadReports is passed rather than re-read.
+        state.cachedDiagnosis = await loadDiagnosisForPrompt({
+          studentId: state.studentId,
+          allowReadReports: student.aacSettings?.allowReadReports,
+          sessionId,
+          userId: state.userId,
+        });
 
         // Load auto-selectable boards (student-scoped — see createNewSession)
         try {

@@ -13,7 +13,7 @@
 import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { fileDebugLoggingEnabled } from "./file-debug-log";
+import { fileDebugLoggingEnabled, safeAppend, safeTruncate } from "./file-debug-log";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -26,7 +26,7 @@ let sessionStarted = false;
 function ensureSize(): void {
   try {
     if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_SIZE) {
-      fs.writeFileSync(LOG_FILE, ""); // truncate
+      safeTruncate(LOG_FILE); // truncate
     }
   } catch { /* ignore */ }
 }
@@ -36,7 +36,7 @@ export function captionDebug(label: string, data?: unknown): void {
   try {
     if (!sessionStarted) {
       sessionStarted = true;
-      fs.writeFileSync(LOG_FILE, ""); // fresh file per process
+      safeTruncate(LOG_FILE); // fresh file per process
     }
     ensureSize();
     const timestamp = new Date().toISOString().slice(11, 23);
@@ -47,7 +47,7 @@ export function captionDebug(label: string, data?: unknown): void {
           : JSON.stringify(data, null, 2)
         : "";
     const entry = `[${timestamp}] ${label}${payload ? "\n" + payload : ""}\n`;
-    fs.appendFileSync(LOG_FILE, entry);
+    safeAppend(LOG_FILE, entry);
   } catch { /* ignore */ }
 }
 
@@ -57,6 +57,6 @@ export function captionDebugSeparator(title?: string): void {
     const line = title
       ? `\n${"=".repeat(70)}\n  ${title}\n${"=".repeat(70)}\n`
       : `\n${"─".repeat(70)}\n`;
-    fs.appendFileSync(LOG_FILE, line);
+    safeAppend(LOG_FILE, line);
   } catch { /* ignore */ }
 }

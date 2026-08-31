@@ -22,6 +22,11 @@
 locals {
   coturn_count = var.enable_coturn ? 1 : 0
 
+  # Patch Manager group membership. The instance carries this as its
+  # `Patch Group` tag; aws_ssm_patch_group (ssm.tf) binds the AL2023 security
+  # baseline to the same string.
+  coturn_patch_group = "${local.name_prefix}-coturn"
+
   # Public host clients dial. Prefer the DNS name (needed for future TLS); fall
   # back to the raw EIP when no domain is configured.
   coturn_host = var.enable_coturn ? (
@@ -186,7 +191,10 @@ resource "aws_instance" "coturn" {
     dnf install -y docker
     systemctl enable --now docker
     # host networking so the relay's UDP port range is reachable directly.
-    docker run -d --name coturn --restart always --network host coturn/coturn \
+    # Image is PINNED (var.coturn_image_tag): an untagged `coturn/coturn` meant
+    # the relay's version was whatever :latest happened to be on the day the
+    # host last booted.
+    docker run -d --name coturn --restart always --network host coturn/coturn:${var.coturn_image_tag} \
       -n \
       --use-auth-secret \
       --static-auth-secret=${random_password.turn_secret[0].result} \
@@ -204,10 +212,27 @@ resource "aws_instance" "coturn" {
 
   tags = {
     Name = "${local.name_prefix}-coturn"
+
+    # Binds the host to the AL2023 security patch baseline (ssm.tf). The key is
+    # literally "Patch Group" (with the space) — that is the name Patch Manager
+    # looks for; anything else is silently ignored. Tags update in place, so
+    # adding this does NOT replace the instance.
+    "Patch Group" = local.coturn_patch_group
   }
 
   lifecycle {
     replace_triggered_by = [null_resource.coturn_version]
+
+    # user_data is ignored on UPDATE, not on create. Combined with
+    # user_data_replace_on_change above, editing the script would otherwise
+    # replace the relay on the very next apply and drop every live call — an
+    # unacceptable side effect of, say, pinning the container image. So:
+    # changes to the boot script land in the config now and take effect the
+    # next time the host is deliberately replaced by bumping
+    # null_resource.coturn_version below (which re-runs the CURRENT user_data,
+    # ignore_changes affecting only diff detection). Do that during a quiet
+    # window, not as a drive-by.
+    ignore_changes = [user_data]
   }
 }
 

@@ -49,6 +49,7 @@ import {
 import type { BoardManagerToolConfig } from "./prompts/board-manager";
 import type { IBoardManagerAgent } from "./board-manager-interface";
 import { flowInput, flowNote } from "./agent-flow-logger";
+import type { DisclosureContext } from "../processorDisclosure";
 
 // Hard ceiling on a single Board Manager turn. We resolve a turn on its tool
 // call (no_change included), so this only fires when the model produces NO
@@ -101,6 +102,14 @@ export interface LiveBoardManagerOptions {
 }
 
 export class LiveBoardManagerAgent implements IBoardManagerAgent {
+  /** AKIM §18.5 — ids for the disclosure log. Handed to the Live provider in
+   *  the connect config, because the SDK's send/callback paths run outside
+   *  the AsyncLocalStorage chain this session was opened on. */
+  private disclosureCtx: DisclosureContext | null = null;
+  setDisclosureContext(ctx: DisclosureContext | null): void {
+    this.disclosureCtx = ctx;
+  }
+
   private provider: GeminiLiveProvider | null = null;
   private readonly providerKey: LLMProviderKey;
   private readonly model: string;
@@ -262,6 +271,7 @@ export class LiveBoardManagerAgent implements IBoardManagerAgent {
       voiceName: this.voiceName,
       compressionTriggerTokens: BM_LIVE_COMPRESSION_TRIGGER,
       compressionTargetTokens: BM_LIVE_COMPRESSION_TARGET,
+      disclosure: this.disclosureCtx ?? undefined,
     };
 
     flowNote("BOARD_MGR", `Live (re)connect — model=${this.model} tools=${declarations[0]?.functionDeclarations?.length ?? 0} temp=${temperature}`);

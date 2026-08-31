@@ -8,6 +8,7 @@ import { elevenlabsTtsService } from "./elevenlabs-tts-service";
 import type { GeminiLiveTtsSession } from "./gemini-live-tts-service";
 import type { Voice } from "@shared/schema";
 import type { TtsProvider } from "../chat/cost-helpers";
+import { recordDisclosure, type DisclosureContext } from "../processorDisclosure";
 
 export type { TtsProvider } from "../chat/cost-helpers";
 
@@ -73,6 +74,24 @@ export function isClientSideTtsVoice(voice: ResolvedVoice): boolean {
 }
 
 /**
+ * AKIM §18.5 — the sentence about to be spoken is the student's own words (or
+ * the AI's words about them); sending it to a voice vendor is a disclosure.
+ *
+ * Recorded HERE rather than at the call sites because routing (ElevenLabs vs
+ * Gemini Live vs Google) is decided inside this facade, per call, with
+ * fallbacks — a caller cannot know which vendor actually received the text.
+ * Recorded BEFORE the attempt, not after: a request that fails mid-flight has
+ * already left the building.
+ */
+function recordTtsDisclosure(
+  processor: "elevenlabs" | "google",
+  model: string,
+  disclosure?: DisclosureContext,
+): void {
+  recordDisclosure({ processor, channel: "tts", model, context: disclosure });
+}
+
+/**
  * Synthesize text to a full audio buffer, routing to the correct TTS provider.
  * Reports the resolved provider + char count via `onUsage` after the chosen
  * branch returns successfully (used for credit tracking).
@@ -81,11 +100,13 @@ export async function synthesize(
   text: string,
   voice: ResolvedVoice,
   onUsage?: (usage: TtsUsageReport) => void,
+  disclosure?: DisclosureContext,
 ): Promise<Buffer> {
   const chars = text.length;
   const studentKey = sanitizeElevenLabsApiKey(voice.elevenlabsApiKey);
   // Student-level ElevenLabs voice (direct voice ID + API key)
   if (voice.elevenlabsVoiceId && studentKey) {
+    recordTtsDisclosure("elevenlabs", voice.elevenlabsVoiceId, disclosure);
     try {
       const buf = await elevenlabsTtsService.synthesize(text, {
         voiceId: voice.elevenlabsVoiceId,
@@ -105,6 +126,7 @@ export async function synthesize(
 
   // Admin-level custom voice from voices table
   if (voice.customVoice && voice.customVoice.active) {
+    recordTtsDisclosure("elevenlabs", voice.customVoice.externalId, disclosure);
     try {
       const buf = await elevenlabsTtsService.synthesize(text, {
         voiceId: voice.customVoice.externalId,
@@ -130,6 +152,7 @@ export async function synthesize(
 
   // Google TTS — Chirp 3 HD when a Gemini-style voice name is set
   // (same voice library), otherwise language-mapped Neural2/Standard.
+  recordTtsDisclosure("google", voice.geminiVoiceName ?? voice.fallbackType, disclosure);
   const buf = await googleTtsService.synthesize(text, voice.language, {
     voiceType: voice.fallbackType,
     voiceName: voice.geminiVoiceName,
@@ -154,6 +177,7 @@ export async function* synthesizeStream(
   voice: ResolvedVoice,
   signal?: AbortSignal,
   onUsage?: (usage: TtsUsageReport) => void,
+  disclosure?: DisclosureContext,
 ): AsyncGenerator<Buffer> {
   const chars = text.length;
   // Once a provider has yielded audio the listener has started hearing the
@@ -165,6 +189,7 @@ export async function* synthesizeStream(
   const studentKey = sanitizeElevenLabsApiKey(voice.elevenlabsApiKey);
   // Student-level ElevenLabs voice (direct voice ID + API key)
   if (voice.elevenlabsVoiceId && studentKey) {
+    recordTtsDisclosure("elevenlabs", voice.elevenlabsVoiceId, disclosure);
     try {
       for await (const chunk of elevenlabsTtsService.synthesizeStream(text, {
         voiceId: voice.elevenlabsVoiceId,
@@ -188,6 +213,7 @@ export async function* synthesizeStream(
 
   // Admin-level custom voice from voices table
   if (voice.customVoice && voice.customVoice.active) {
+    recordTtsDisclosure("elevenlabs", voice.customVoice.externalId, disclosure);
     try {
       for await (const chunk of elevenlabsTtsService.synthesizeStream(text, {
         voiceId: voice.customVoice.externalId,
@@ -211,6 +237,7 @@ export async function* synthesizeStream(
   // Persistent Gemini Live session — preferred for student voice (no
   // per-call connection overhead, native Gemini voice quality)
   if (voice.geminiLiveSession) {
+    recordTtsDisclosure("google", "gemini-live-tts", disclosure);
     try {
       for await (const chunk of voice.geminiLiveSession.synthesizeStream(text, signal)) {
         yielded = true;
@@ -231,6 +258,7 @@ export async function* synthesizeStream(
 
   // Google TTS — Chirp 3 HD when a Gemini-style voice name is set
   // (same voice library, faster), otherwise language-mapped Neural2/Standard.
+  recordTtsDisclosure("google", voice.geminiVoiceName ?? voice.fallbackType, disclosure);
   yield* googleTtsService.synthesizeStream(text, voice.language, {
     voiceType: voice.fallbackType,
     voiceName: voice.geminiVoiceName,

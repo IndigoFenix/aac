@@ -65,6 +65,35 @@ const MB = 1024 * 1024;
 /** Roomy enough that nothing is evicted while a test is setting up. */
 const MAX_MB = 1024;
 
+/**
+ * A clip id `hoursAgo` hours before now, with `suffix` as its four-char tail.
+ *
+ * Fixture ids MUST be relative to the clock, and this helper exists because
+ * they were not. The store applies AGE retention on every `recording:prepare`
+ * and `recording:finish` — clips older than `maxAgeDays` (default 30) are
+ * deleted regardless of the disk budget — so a hardcoded absolute date is a
+ * time bomb: the fixture works until wall-clock time drifts past the window,
+ * and then it is swept away before the assertion that wanted it ever runs.
+ *
+ * That is precisely what happened to the old-flat-layout case, whose
+ * `20260101-…` id silently aged out and turned a clip-COUNT assertion into a
+ * mysterious 0. The other fixtures, all minted on one day in August, were the
+ * same bomb with a longer fuse.
+ *
+ * The id is formatted in LOCAL time because that is how the store mints them
+ * and how `parseClipIdTime` reads them back. Lexicographic order over this
+ * format is chronological order, so string-sorted `readdir` output still
+ * matches oldest-first expectations.
+ */
+function clipIdHoursAgo(hoursAgo: number, suffix: string): string {
+  const d = new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
+  const p = (n: number, width = 2) => String(n).padStart(width, "0");
+  return (
+    `${p(d.getFullYear(), 4)}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+    `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${suffix}`
+  );
+}
+
 describe("recording store", () => {
   let root: string;
 
@@ -86,7 +115,7 @@ describe("recording store", () => {
     const folder = path.join(root, "clips");
     await call("recording:prepare", { folder, maxStorageMb: 1024 });
 
-    const clipId = "20260821-101530-ab12";
+    const clipId = clipIdHoursAgo(1, "ab12");
     const begun = await call<{ ok: boolean; dir: string }>("recording:begin", { clipId });
     expect(begun.ok).toBe(true);
     expect(begun.dir).toBe(path.join(folder, clipId));
@@ -118,7 +147,7 @@ describe("recording store", () => {
   it("finalizes both files and records what each one's sound is", async () => {
     const folder = path.join(root, "clips");
     await call("recording:prepare", { folder, maxStorageMb: 1024 });
-    const clipId = "20260821-101530-cd34";
+    const clipId = clipIdHoursAgo(1, "cd34");
     await call("recording:begin", { clipId });
     await appendFile(clipId, "camera", liveMuxedWebm());
     await appendFile(clipId, "screen", liveMuxedWebm());
@@ -154,7 +183,9 @@ describe("recording store", () => {
     const folder = path.join(root, "clips");
     await call("recording:prepare", { folder, maxStorageMb: MAX_MB });
     // Three clips, each far too big for the budget below.
-    const ids = ["20260821-090000-aaaa", "20260821-100000-bbbb", "20260821-110000-cccc"];
+    const ids = [
+      clipIdHoursAgo(5, "aaaa"), clipIdHoursAgo(4, "bbbb"), clipIdHoursAgo(3, "cccc"),
+    ];
     const big = Buffer.alloc(2 * MB, 7);
     for (const clipId of ids) {
       await call("recording:begin", { clipId });
@@ -165,7 +196,7 @@ describe("recording store", () => {
 
     // A fourth clip takes the folder to 8 MB against a 5 MB budget, so whole
     // folders go oldest-first — footage and manifest together — until it fits.
-    const clipId = "20260821-120000-dddd";
+    const clipId = clipIdHoursAgo(2, "dddd");
     await call("recording:begin", { clipId });
     await appendFile(clipId, "camera", big);
     const done = await call<{ deletedIds: string[]; clipCount: number }>("recording:finish", {
@@ -181,7 +212,10 @@ describe("recording store", () => {
   it("still counts and evicts clips written in the old flat layout", async () => {
     const folder = path.join(root, "clips");
     await fs.promises.mkdir(folder, { recursive: true });
-    const oldId = "20260101-080000-eeee";
+    // Old relative to the clip written below, but still inside the retention
+    // window — this test is about the LAYOUT and the disk budget, and an id
+    // that has aged out is deleted by retention before it can be counted.
+    const oldId = clipIdHoursAgo(48, "eeee");
     // Exactly what the store used to write: three loose files in the root.
     await fs.promises.writeFile(path.join(folder, `${oldId}.camera.webm`), Buffer.alloc(2 * MB, 1));
     await fs.promises.writeFile(path.join(folder, `${oldId}.screen.webm`), Buffer.alloc(2 * MB, 2));
@@ -193,7 +227,7 @@ describe("recording store", () => {
     expect(prepared.clipCount).toBe(1);
     expect(prepared.totalBytes).toBeGreaterThanOrEqual(4 * MB);
 
-    const clipId = "20260821-130000-ffff";
+    const clipId = clipIdHoursAgo(1, "ffff");
     await call("recording:begin", { clipId });
     await appendFile(clipId, "camera", Buffer.alloc(2 * MB, 3));
     const done = await call<{ deletedIds: string[] }>("recording:finish", {
@@ -205,7 +239,7 @@ describe("recording store", () => {
 
   it("rebuilds a manifest for a clip a crash left without one", async () => {
     const folder = path.join(root, "clips");
-    const clipId = "20260821-140000-9999";
+    const clipId = clipIdHoursAgo(1, "9999");
     await fs.promises.mkdir(path.join(folder, clipId), { recursive: true });
     // A clip whose renderer died before `finish`: files on disk, no manifest.
     await fs.promises.writeFile(
@@ -225,7 +259,7 @@ describe("recording store", () => {
   it("deletes the folder of an aborted clip", async () => {
     const folder = path.join(root, "clips");
     await call("recording:prepare", { folder, maxStorageMb: 1024 });
-    const clipId = "20260821-150000-1234";
+    const clipId = clipIdHoursAgo(1, "1234");
     await call("recording:begin", { clipId });
     await appendFile(clipId, "camera", liveMuxedWebm());
     expect(await call<{ ok: boolean }>("recording:abort", { clipId })).toEqual({ ok: true });
@@ -234,7 +268,7 @@ describe("recording store", () => {
 
   it("removes a temp file left behind by a killed finalize", async () => {
     const folder = path.join(root, "clips");
-    const clipId = "20260821-160000-5678";
+    const clipId = clipIdHoursAgo(1, "5678");
     await fs.promises.mkdir(path.join(folder, clipId), { recursive: true });
     await fs.promises.writeFile(path.join(folder, clipId, `${clipId}.camera.webm`), liveMuxedWebm());
     // A half-written rewrite: nothing counts it, so nothing would ever clear it.
@@ -244,6 +278,95 @@ describe("recording store", () => {
     await call("recording:prepare", { folder, maxStorageMb: 1024 });
     expect(fs.existsSync(stale)).toBe(false);
     expect(fs.existsSync(path.join(folder, clipId, `${clipId}.camera.webm`))).toBe(true);
+  });
+
+  describe("purging one student's footage", () => {
+    /** Write a clip in the OLD FLAT layout: loose files in the root. */
+    async function writeFlatClip(
+      folder: string, id: string, studentId: string | null | "none",
+    ): Promise<void> {
+      await fs.promises.mkdir(folder, { recursive: true });
+      await fs.promises.writeFile(path.join(folder, `${id}.camera.webm`), Buffer.alloc(MB, 1));
+      if (studentId === "none") return; // a clip whose manifest never got written
+      await fs.promises.writeFile(
+        path.join(folder, `${id}.json`),
+        JSON.stringify({ clipId: id, version: 1, studentId, tracks: {} }),
+        "utf8",
+      );
+    }
+
+    it("purges a legacy flat clip whose manifest names the student", async () => {
+      // The old layout wrote the SAME manifest, just beside the videos instead
+      // of under them. A clip is no less this child's footage for predating a
+      // directory rename, so name-matching has to reach it.
+      const folder = path.join(root, "clips");
+      const mine = clipIdHoursAgo(6, "aaaa");
+      const theirs = clipIdHoursAgo(5, "bbbb");
+      await writeFlatClip(folder, mine, "s1");
+      await writeFlatClip(folder, theirs, "s2");
+      await call("recording:prepare", { folder, maxStorageMb: 1024 });
+
+      const result = await call<{ clipIds: string[]; bytes: number }>(
+        "recording:purgeStudent", { studentId: "s1" },
+      );
+      expect(result.clipIds).toEqual([mine]);
+      expect(result.bytes).toBeGreaterThan(0);
+      // Every loose file of the clip went, and the other child's stayed.
+      expect(fs.existsSync(path.join(folder, `${mine}.camera.webm`))).toBe(false);
+      expect(fs.existsSync(path.join(folder, `${mine}.json`))).toBe(false);
+      expect(fs.existsSync(path.join(folder, `${theirs}.camera.webm`))).toBe(true);
+    });
+
+    it("takes both layouts in one pass", async () => {
+      const folder = path.join(root, "clips");
+      const flat = clipIdHoursAgo(6, "cccc");
+      await writeFlatClip(folder, flat, "s1");
+
+      const foldered = clipIdHoursAgo(2, "dddd");
+      await call("recording:prepare", { folder, maxStorageMb: 1024 });
+      await call("recording:begin", { clipId: foldered });
+      await appendFile(foldered, "camera", liveMuxedWebm());
+      await call("recording:finish", {
+        clipId: foldered, manifest: { studentId: "s1" }, maxStorageMb: 1024,
+      });
+
+      const result = await call<{ clipIds: string[] }>(
+        "recording:purgeStudent", { studentId: "s1" },
+      );
+      // Oldest first, and the folder of the newer clip goes with its footage.
+      expect(result.clipIds).toEqual([flat, foldered]);
+      expect(await fs.promises.readdir(folder)).toEqual([]);
+    });
+
+    it("keeps an unattributable clip that is still inside retention", async () => {
+      // A crash-recovered manifest has no studentId, and the old layout could
+      // leave one with no manifest at all. Deleting those outright would
+      // destroy a DIFFERENT, still-enrolled child's footage — so they go only
+      // once past retention, which is when the age sweep would take them anyway.
+      const folder = path.join(root, "clips");
+      const nulled = clipIdHoursAgo(4, "eeee");
+      const manifestless = clipIdHoursAgo(3, "ffff");
+      await writeFlatClip(folder, nulled, null);
+      await writeFlatClip(folder, manifestless, "none");
+      await call("recording:prepare", { folder, maxStorageMb: 1024 });
+
+      const result = await call<{ clipIds: string[] }>(
+        "recording:purgeStudent", { studentId: "s1" },
+      );
+      expect(result.clipIds).toEqual([]);
+      expect(fs.existsSync(path.join(folder, `${nulled}.camera.webm`))).toBe(true);
+      expect(fs.existsSync(path.join(folder, `${manifestless}.camera.webm`))).toBe(true);
+    });
+
+    it("answers empty rather than throwing on a blank id or an unused device", async () => {
+      // Both are ordinary answers: the ack still has to be sent.
+      const folder = path.join(root, "clips");
+      await call("recording:prepare", { folder, maxStorageMb: 1024 });
+      expect(await call("recording:purgeStudent", { studentId: "" }))
+        .toEqual({ clipIds: [], bytes: 0 });
+      expect(await call("recording:purgeStudent", { studentId: "nobody" }))
+        .toEqual({ clipIds: [], bytes: 0 });
+    });
   });
 
   it("refuses a clip id it did not mint", async () => {

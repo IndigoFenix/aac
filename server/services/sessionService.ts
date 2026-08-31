@@ -13,7 +13,7 @@
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import { settingsRepository } from "../repositories/settingsRepository";
-import type { UseCaseKey } from "@shared/llm-options";
+import type { LLMProviderKey, UseCaseKey } from "@shared/llm-options";
 import {
   users,
   students,
@@ -452,6 +452,12 @@ function aacStudentMemoryFields(aacSettings: any): AgentMemoryFieldWithDB[] {
 // The sensitive-key filter lives in its own pure module so it can be unit
 // tested without this file's DB imports. Re-exported here for existing callers.
 import { SENSITIVE_FIELD_PATTERNS, isSensitiveFieldId } from "./sensitive-fields";
+import type { DisclosureContext } from "./processorDisclosure";
+import {
+  isProviderAllowed,
+  providerPolicyReason,
+  LLM_CONFIG_POLICY_FALLBACK,
+} from "@shared/llm-policy";
 export { SENSITIVE_FIELD_PATTERNS, isSensitiveFieldId };
 
 /**
@@ -1859,12 +1865,25 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   const llmUseCase: UseCaseKey = isAACFeature ? 'aac_moderator' : 'clinician';
   let llmConfig = await settingsRepository.getLLMConfig(llmUseCase);
 
-  // Per-persona LLM override (non-AAC only)
+  // Per-persona LLM override (non-AAC only).
+  //
+  // This override never passed through the admin controller, so it was the one
+  // route that could point a PHI-bearing use case at an uncovered processor
+  // (AKIM §14). It is now policy-checked here. It FALLS BACK rather than
+  // throwing: a persona misconfiguration must degrade the model choice, not
+  // kill a clinician's session.
   if (!isAACFeature && personaResult.persona?.llmProvider && personaResult.persona?.llmModel) {
-    llmConfig = {
-      provider: personaResult.persona.llmProvider as any,
+    const override = {
+      provider: personaResult.persona.llmProvider as LLMProviderKey,
       model: personaResult.persona.llmModel,
     };
+    if (isProviderAllowed(llmUseCase, override.provider)) {
+      llmConfig = override;
+    } else {
+      console.warn(
+        `${LLM_CONFIG_POLICY_FALLBACK} persona=${personaResult.persona.id} ${providerPolicyReason(llmUseCase, override.provider)}`,
+      );
+    }
   }
 
   // Quest-game authoring capabilities. Gated on the customApps feature (NOT
@@ -2066,6 +2085,16 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
     currentImage: input.currentImage,
     providerConfig: llmConfig,
+    // AKIM §18.5 — a clinician/AAC chat carries the student's record into the
+    // prompt. The ids stop here otherwise (the manager gets none), so they are
+    // attached to the provider config every request inherits.
+    disclosure: {
+      studentId: input.studentId ?? null,
+      sessionId: input.sessionId ?? null,
+      userId: input.userId ?? null,
+      instituteId: input.instituteId ?? null,
+      useCase: llmUseCase,
+    } satisfies DisclosureContext,
     timezone: input.timezone,
     creditCategory: input.creditCategory,
   });

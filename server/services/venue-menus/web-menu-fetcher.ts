@@ -35,6 +35,7 @@ import { checkMenuBinding, type BindingResult } from "@shared/venue-binding";
 import { fetchPageHtml, isBrightDataConfigured } from "./brightdata-client.js";
 import { extractMenuFromText } from "./web-menu-extraction.js";
 import type { RawMenuItem } from "./menu-refinement.js";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /** Paths a restaurant site keeps its menu on, in the order we would try them. */
 const MENU_PATHS = ["/menu", "/menus", "/תפריט", "/our-menu", "/food"];
@@ -140,6 +141,10 @@ export function htmlToText(html: string): string {
 const MAX_TEXT_CHARS = 24_000;
 
 export interface FetchWebMenuOptions {
+  /** AKIM §18.5 — who this menu work is for; rides down to the vision /
+   *  extraction / refinement calls that leave for a processor. */
+  disclosure?: DisclosureContext;
+
   /** Language to hint the extractor with — normally the student's. */
   expectedLanguage?: string;
 }
@@ -187,6 +192,7 @@ export async function fetchWebMenu(
     if (text.length < 80) continue; // a shell page, not a menu
 
     const extracted = await extractMenuFromText(text, {
+      ...(options.disclosure ? { disclosure: options.disclosure } : {}),
       venueName: venue.name,
       ...(options.expectedLanguage ? { expectedLanguage: options.expectedLanguage } : {}),
     });

@@ -3475,6 +3475,7 @@ export const pt = {
       createInstitute: "Criar organização",
       instituteName: "Nome da organização",
       instituteNamePlaceholder: "ex.: Rede Municipal de Ensino de Springfield",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "Tipo de organização",
       school: "Escola",
       clinic: "Clínica",
@@ -3500,6 +3501,8 @@ export const pt = {
       complianceRegimes: "Regimes de conformidade",
       complianceRegimesHint: "Selecione os marcos regulatórios (HIPAA, GDPR, Ministério da Educação de Israel, etc.) que se aplicam a esta instituição. Cada escolha define por quanto tempo os registros de auditoria são mantidos, o prazo para notificar uma violação de dados, o padrão de acessibilidade que o aplicativo declara e o provedor de identidade de login esperado. Quando vários se aplicam, prevalece a regra mais rigorosa.",
       insuranceBridgeEnabled: "Ponte de seguros",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "Regime de faturamento",
       billingRegimeNone: "Nenhum",
       billingRegimeUsCpt: "EUA (códigos CPT)",

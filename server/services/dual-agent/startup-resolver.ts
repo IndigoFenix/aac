@@ -21,6 +21,7 @@ import type {
 import { validateAndMergeParams, AI_OPEN_DECISION_SCHEMA } from "@shared/app-startup";
 import { GPT, type GPTInputItem } from "../chat/gpt";
 import { vertexConfigured } from "../providers/vertex-config";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /**
  * Can we reach Gemini at all?
@@ -53,6 +54,9 @@ export interface StartupResolveContext {
   spec: AppStartupSpec;
   /** Who/what is opening the app. */
   trigger: { source: "ai" | "student"; data?: string };
+  /** AKIM §18.5 — the resolver prompt carries session goals, memory context
+   *  and recent turns, so it is PHI. Supplied by the coordinator. */
+  disclosure?: DisclosureContext;
 
   // ── Student context (same material the live agents receive) ──
   studentDisplayName?: string;
@@ -247,7 +251,7 @@ export async function decideAiOpen(ctx: AiOpenDecisionContext): Promise<AiOpenDe
   if (!geminiReachable()) return allow;
 
   try {
-    const gpt = new GPT({ provider: "gemini", model: resolverModel() });
+    const gpt = new GPT({ provider: "gemini", model: resolverModel(), disclosure: ctx.disclosure });
     const response = await withTimeout(
       () => gpt.getStructuredResponse(
         [{ type: "message", role: "user", content: buildUserMessage(ctx) }],
@@ -311,7 +315,7 @@ export async function resolveAppStartupParams(
   }
 
   try {
-    const gpt = new GPT({ provider: "gemini", model: resolverModel() });
+    const gpt = new GPT({ provider: "gemini", model: resolverModel(), disclosure: ctx.disclosure });
     const input: GPTInputItem[] = [
       { type: "message", role: "user", content: buildUserMessage(ctx) },
     ];

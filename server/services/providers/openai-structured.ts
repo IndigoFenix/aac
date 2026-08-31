@@ -2,6 +2,7 @@
 // OpenAI implementation of StructuredLLMProvider (extracts logic from gpt.ts)
 
 import OpenAI from "openai";
+import { recordDisclosure } from "../processorDisclosure";
 import type { StructuredLLMProvider, StructuredRequest } from "./structured-provider";
 import type { GPTResponse, GPTFunctionToolCall } from "../chat/gpt";
 import { GPTToolsToRSP } from "../chat/gpt";
@@ -14,6 +15,15 @@ export class OpenAIStructuredProvider implements StructuredLLMProvider {
   }
 
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
+    // AKIM §18.5: the prompt about to be sent leaves for OpenAI.
+    recordDisclosure({
+      processor: "openai",
+      channel: "structured",
+      model: request.model,
+      endpoint: "api",
+      context: request.disclosure,
+    });
+
     // Convert tools to Responses API format
     const rspTools = request.tools ? GPTToolsToRSP(request.tools) : [];
 

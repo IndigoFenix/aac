@@ -3475,6 +3475,7 @@ export const yue = {
       createInstitute: "建立機構",
       instituteName: "機構名稱",
       instituteNamePlaceholder: "例如：斯普林菲爾德學區",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "機構類型",
       school: "學校",
       clinic: "診所",
@@ -3500,6 +3501,8 @@ export const yue = {
       complianceRegimes: "合規制度",
       complianceRegimesHint: "揀選適用於呢間機構嘅監管框架（例如 HIPAA、GDPR、以色列教育部等）。每項揀選都會決定審計日誌嘅保留時間、數據外洩嘅通報期限、應用程式所聲明嘅無障礙標準，以及登入所需嘅身份提供方。若果同時適用多項，以最嚴格嘅規則為準。",
       insuranceBridgeEnabled: "保險橋接",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "計費制度",
       billingRegimeNone: "無",
       billingRegimeUsCpt: "美國（CPT 代碼）",

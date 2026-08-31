@@ -49,6 +49,7 @@ import type {
   ContextLeakEvent,
 } from "./agent-events";
 import type { ISpeakerAgent } from "./speaker-interface";
+import type { DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -185,6 +186,14 @@ export interface SpeakerStartConfig {
 export const APP_OPEN_ACK_TIMEOUT_MS = 4500;
 
 export class SpeakerAgent implements ISpeakerAgent {
+  /** AKIM §18.5 — ids for the disclosure log. Handed to the Live provider in
+   *  the connect config, because the SDK's send/callback paths run outside
+   *  the AsyncLocalStorage chain this session was opened on. */
+  private disclosureCtx: DisclosureContext | null = null;
+  setDisclosureContext(ctx: DisclosureContext | null): void {
+    this.disclosureCtx = ctx;
+  }
+
   private provider: LiveProvider | null = null;
   /** Held `open_app` functionResponses, keyed by live tool-call id. */
   private pendingAppOpenAcks = new Map<string, { name: string; timer: ReturnType<typeof setTimeout> }>();
@@ -277,6 +286,7 @@ export class SpeakerAgent implements ISpeakerAgent {
       voiceName: config.voiceName,
       compressionTriggerTokens: config.compressionTriggerTokens,
       compressionTargetTokens: config.compressionTargetTokens,
+      disclosure: this.disclosureCtx ?? undefined,
     };
 
     await provider.connect(config.systemPrompt, providerConfig);
@@ -304,6 +314,7 @@ export class SpeakerAgent implements ISpeakerAgent {
       voiceName: config.voiceName,
       compressionTriggerTokens: config.compressionTriggerTokens,
       compressionTargetTokens: config.compressionTargetTokens,
+      disclosure: this.disclosureCtx ?? undefined,
     };
     await this.provider.reconnectWithConfig(config.systemPrompt, providerConfig);
   }

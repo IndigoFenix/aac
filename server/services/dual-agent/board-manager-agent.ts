@@ -71,6 +71,7 @@ import {
   mergeFusedToolCalls,
   type FusionEntry,
 } from "./tool-fusion-normalizer";
+import type { DisclosureContext } from "../processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Structured-button input shapes — what the AI returns inside a tool call's
@@ -1069,6 +1070,14 @@ function failureResult(err: Error, where?: string): BoardManagerInvocationResult
  * (typically they won't — but the optionality keeps tests easy).
  */
 export class BoardManagerAgent {
+  /** AKIM §18.5 — who this agent's LLM traffic is about. Rides on the request
+   *  DTO (ChatRequest.disclosure); board builds are queued and retried across
+   *  async boundaries an AsyncLocalStorage context does not survive. */
+  private disclosureCtx: DisclosureContext | null = null;
+  setDisclosureContext(ctx: DisclosureContext | null): void {
+    this.disclosureCtx = ctx;
+  }
+
   private readonly defaultProvider: ChatProvider;
   /** Model used for the prompt-cache prewarm key. Kept in sync with the
    *  model the Coordinator passes on each `invoke()` (input.model) so the
@@ -1234,6 +1243,7 @@ export class BoardManagerAgent {
       maxTokens: 3500,
       thinkingBudget: 512,
       signal: input.signal,
+      disclosure: this.disclosureCtx ?? undefined,
     };
     // "required" → Gemini functionCallingConfig.mode = "ANY". Forces
     // the model to emit a tool call every turn. Without this, AUTO

@@ -123,6 +123,23 @@ resource "aws_db_instance" "main" {
   # Logs
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
+  # IAM database authentication. Purely ADDITIVE: password auth keeps working
+  # for every existing connection (the app's DATABASE_URL, migrations, the SSM
+  # tunnel), and no DB user changes until someone runs the one-time
+  # `CREATE USER aivota_engineer; GRANT rds_iam TO aivota_engineer;` documented
+  # in docs/INFRASTRUCTURE.md. It exists so human sessions can stop sharing the
+  # `aivota_admin` password (§5.11.2) — with rds-db:connect (iam.tf) an engineer
+  # authenticates as themselves and CloudTrail records who minted the token.
+  # Enabling it needs no reboot; with apply_immediately = false in prod the
+  # modify is queued for the next maintenance window (Mon 04:00-05:00 UTC).
+  iam_database_authentication_enabled = true
+
+  # Snapshots inherit the instance's tags (Project/Environment/DataClass=PHI).
+  # Without this a restored or shared snapshot arrives unlabelled, and the
+  # PHI marker that drives our tag-based scoping is exactly what a copy of the
+  # whole database should never lose.
+  copy_tags_to_snapshot = true
+
   # Protection
   deletion_protection = var.environment == "prod"
   skip_final_snapshot = var.environment != "prod"

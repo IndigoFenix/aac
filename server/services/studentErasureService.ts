@@ -79,6 +79,9 @@ import {
 } from "@shared/schema";
 import { eq, and, lte, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { activityLogService } from "./activityLogService";
+import { deleteSessionsForDevice } from "./sessionInvalidation";
+import { requestRecordingPurge } from "./recordingPurge";
+import { studentDeviceRepository } from "../repositories/studentDeviceRepository";
 import { s3Service } from "./storage/s3-service";
 import { deleteStudentPackageLinks } from "./packages/packageLinks";
 import { releaseBiometricData } from "./biometric/recognition-service";
@@ -126,7 +129,7 @@ export class StudentErasureService {
     const now = new Date();
     const eta = new Date(now.getTime() + resolveWindowDays() * 86_400_000);
 
-    return db.transaction(async (tx) => {
+    const status: ErasureStatus = await db.transaction(async (tx): Promise<ErasureStatus> => {
       const [existing] = await tx.select().from(students).where(eq(students.id, studentId));
       if (!existing) {
         return {
@@ -197,8 +200,51 @@ export class StudentErasureService {
         scheduledHardDeleteAt: eta,
         cancellable: true,
         hardDeleteEta: eta.toISOString(),
-      };
+      } satisfies ErasureStatus;
     });
+
+    // Everything above revoked access on the SERVER. Two things live on the
+    // student's own tablet that none of it reaches, and both are handled here
+    // — after the commit, so a device can never be evicted for a tombstone
+    // that then rolled back.
+    if (status.state === "tombstoned") await this.revokeDevices(studentId);
+    return status;
+  }
+
+  /**
+   * Evict the AAC devices of a tombstoned student.
+   *
+   * Deactivating `user_students` stops a CLINICIAN. It does nothing to the
+   * tablet: an AAC session lives for a year and slides on use, and it
+   * authenticates by its own cookie, so before this a device kept full PHI
+   * access — boards, notes, the live agents, the child's whole profile — to a
+   * child the platform had just been told to erase. Deleting the session rows
+   * is what makes the tombstone true on the device's next request.
+   *
+   * The recording purge is the same problem one layer down: if session
+   * recording was on, video of the child is sitting in that tablet's Videos
+   * folder, invisible to every server-side delete. See
+   * ./recordingPurge.ts for why it is best-effort — chiefly that a device
+   * switched off right now hears nothing, which is why the AAC client also
+   * purges on its own when its profile fetch comes back definitively refused.
+   *
+   * Best-effort throughout: an erasure must not fail because a socket was
+   * closing or a session row was already gone.
+   */
+  private async revokeDevices(studentId: string): Promise<void> {
+    try {
+      const devices = await studentDeviceRepository.getDevicesForStudent(studentId);
+      for (const device of devices) {
+        await deleteSessionsForDevice(device.deviceId);
+      }
+    } catch (err) {
+      console.error("[erasure] could not evict AAC device sessions:", err);
+    }
+    try {
+      requestRecordingPurge(studentId, "erasure");
+    } catch (err) {
+      console.error("[erasure] could not request an on-device recording purge:", err);
+    }
   }
 
   /**

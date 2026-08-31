@@ -32,7 +32,7 @@ symbolEvents.setMaxListeners(50);
 // Debug file logger — writes to server/symbol-generation-debug.log
 // ---------------------------------------------------------------------------
 
-import { fileDebugLoggingEnabled } from "../file-debug-log";
+import { fileDebugLoggingEnabled, safeAppend, safeTruncate } from "../file-debug-log";
 
 const __filename_local = fileURLToPath(import.meta.url);
 const __dirname_local = dirname(__filename_local);
@@ -44,10 +44,10 @@ function debugLog(section: string, message: string): void {
   if (!fileDebugLoggingEnabled) return;
   try {
     if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_LOG_SIZE) {
-      fs.writeFileSync(LOG_FILE, "");
+      safeTruncate(LOG_FILE);
     }
     const ts = new Date().toISOString();
-    fs.appendFileSync(LOG_FILE, `[${ts}] [${section}] ${message}\n`);
+    safeAppend(LOG_FILE, `[${ts}] [${section}] ${message}\n`);
   } catch { /* ignore */ }
 }
 

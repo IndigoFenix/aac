@@ -40,8 +40,13 @@ describe("maintenance cron wiring", () => {
 
   it("registers every maintenance cron", () => {
     expect([...MAINTENANCE_CRON_NAMES].sort()).toEqual([
+      // Weekly, not daily — AKIM §2.8's periodic access review.
+      "access-review",
       "activity-log-retention",
       "consent-thresholds",
+      // Hourly, not daily — AKIM §18.3's 72-hour forward window on a
+      // data-subject access/amendment request.
+      "data-subject-deadlines",
       "package-link-reconcile",
       "provider-spend-threshold",
       // Hourly, not daily — it guards the AKIM §6 48-hour notification window.

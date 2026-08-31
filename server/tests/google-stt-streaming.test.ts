@@ -7,6 +7,15 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 import { createStreamingSession, __setSttClientForTests } from '../services/voice/google-stt-service';
+import { setDisclosureSink } from '../services/processorDisclosure';
+
+// This suite drives the REAL egress code, which now writes an AKIM §18.5
+// disclosure row per send. Without a sink the default one lazily imports
+// activityLogService -> server/db.ts, dragging a Postgres pool into a DB-free
+// suite (and failing late, after the test env has torn down). The rows are not
+// this suite's subject, so they go nowhere.
+beforeEach(() => setDisclosureSink(() => {}));
+afterEach(() => setDisclosureSink(null));
 
 class FakeStream extends EventEmitter {
   written: Buffer[] = [];

@@ -23,6 +23,7 @@ export {
   getInstancesBridge,
   getNativeVersion,
   getRecordingBridge,
+  purgeStudentRecordings,
 } from "./bridge";
 export type {
   DeviceIdStore, GazeBridge, GazeSidecarStatus, InstancesBridge, RecordingBridge,

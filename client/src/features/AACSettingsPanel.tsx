@@ -187,6 +187,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const queryClient = useQueryClient();
   const isDark = theme === 'dark';
 
+  // Session recording is an operator-granted entitlement carried on the
+  // LICENCE, not a setting every customer has — so the whole section is absent
+  // rather than disabled for anyone without it. The server stamps this onto the
+  // student payload (studentService) and enforces it independently on both the
+  // read and the write path, so hiding here is presentation, never the gate.
+  const sessionRecordingLicensed = (student as any)?.sessionRecordingLicensed === true;
+
 
   // Form state
   const [aiName, setAiName] = useState('');
@@ -3406,182 +3413,187 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               {/* Session recording. It sits under Privacy because that is what
                   it is: a camera pointed at a child, writing to a disk. What it
                   produces never leaves the device — no route uploads it. See
-                  shared/aac/session-recording.ts. */}
-              <CollapsibleSubSection
-                icon={<Video className="w-4 h-4" />}
-                title={t('aacSettings.sessionRecordingTitle')}
-                description={t('aacSettings.sessionRecordingDesc')}
-              >
-                <CardContent className="space-y-4">
-                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    {t('aacSettings.sessionRecordingConsentNotice')}
-                  </div>
+                  shared/aac/session-recording.ts.
 
-                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <div className="space-y-0.5">
-                      <Label className="text-base font-medium">
-                        {t('aacSettings.sessionRecordingEnable')}
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        {t('aacSettings.sessionRecordingEnableDesc')}
-                      </p>
+                  Shown only to licences that carry the entitlement — see
+                  `sessionRecordingLicensed` above. */}
+              {sessionRecordingLicensed && (
+                <CollapsibleSubSection
+                  icon={<Video className="w-4 h-4" />}
+                  title={t('aacSettings.sessionRecordingTitle')}
+                  description={t('aacSettings.sessionRecordingDesc')}
+                >
+                  <CardContent className="space-y-4">
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                      {t('aacSettings.sessionRecordingConsentNotice')}
                     </div>
-                    <Switch
-                      checked={sessionRecording.enabled}
-                      onCheckedChange={(enabled) =>
-                        setSessionRecording((prev) => ({ ...prev, enabled }))}
-                      data-testid="switch-session-recording"
-                    />
-                  </div>
-
-                  {sessionRecording.enabled && (
-                    <div className="space-y-4 border-s-2 border-muted ps-4">
-                      <div className="space-y-1.5">
-                        <Label className="text-sm font-medium">
-                          {t('aacSettings.sessionRecordingQuality')}
+  
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-base font-medium">
+                          {t('aacSettings.sessionRecordingEnable')}
                         </Label>
-                        <Select
-                          value={sessionRecording.quality}
-                          onValueChange={(quality) =>
-                            setSessionRecording((prev) => ({
-                              ...prev, quality: quality as RecordingQuality,
-                            }))}
-                        >
-                          <SelectTrigger data-testid="select-session-recording-quality">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="720p">{t('aacSettings.sessionRecordingQuality720')}</SelectItem>
-                            <SelectItem value="1080p">{t('aacSettings.sessionRecordingQuality1080')}</SelectItem>
-                            <SelectItem value="max">{t('aacSettings.sessionRecordingQualityMax')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {t('aacSettings.sessionRecordingQualityDesc')}
+                        <p className="text-sm text-muted-foreground">
+                          {t('aacSettings.sessionRecordingEnableDesc')}
                         </p>
                       </div>
-
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <Label className="text-sm font-medium">
-                            {t('aacSettings.sessionRecordingPreRoll')}
-                          </Label>
-                          <Input
-                            type="number"
-                            min={PRE_ROLL_SECONDS_MIN}
-                            max={PRE_ROLL_SECONDS_MAX}
-                            value={sessionRecording.preRollSeconds}
-                            onChange={(e) => setSessionRecording((prev) => ({
-                              ...prev, preRollSeconds: Number(e.target.value),
-                            }))}
-                            data-testid="input-session-recording-preroll"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            {t('aacSettings.sessionRecordingPreRollDesc')}
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label className="text-sm font-medium">
-                            {t('aacSettings.sessionRecordingIdleTail')}
-                          </Label>
-                          <Input
-                            type="number"
-                            min={IDLE_TAIL_SECONDS_MIN}
-                            max={IDLE_TAIL_SECONDS_MAX}
-                            value={sessionRecording.idleTailSeconds}
-                            onChange={(e) => setSessionRecording((prev) => ({
-                              ...prev, idleTailSeconds: Number(e.target.value),
-                            }))}
-                            data-testid="input-session-recording-idle-tail"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            {t('aacSettings.sessionRecordingIdleTailDesc')}
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label className="text-sm font-medium">
-                            {t('aacSettings.sessionRecordingMaxClip')}
-                          </Label>
-                          <Input
-                            type="number"
-                            min={MAX_CLIP_MINUTES_MIN}
-                            max={MAX_CLIP_MINUTES_MAX}
-                            value={sessionRecording.maxClipMinutes}
-                            onChange={(e) => setSessionRecording((prev) => ({
-                              ...prev, maxClipMinutes: Number(e.target.value),
-                            }))}
-                            data-testid="input-session-recording-max-clip"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            {t('aacSettings.sessionRecordingMaxClipDesc')}
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label className="text-sm font-medium">
-                            {t('aacSettings.sessionRecordingStorage')}
-                          </Label>
-                          <Input
-                            type="number"
-                            min={MAX_STORAGE_MB_MIN}
-                            max={MAX_STORAGE_MB_MAX}
-                            step={1024}
-                            value={sessionRecording.maxStorageMb}
-                            onChange={(e) => setSessionRecording((prev) => ({
-                              ...prev, maxStorageMb: Number(e.target.value),
-                            }))}
-                            data-testid="input-session-recording-storage"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            {t('aacSettings.sessionRecordingStorageDesc')
-                              .replace('{gb}', String(Math.round(sessionRecording.maxStorageMb / 1024)))}
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label className="text-sm font-medium">
-                            {t('aacSettings.sessionRecordingMaxAge')}
-                          </Label>
-                          <Input
-                            type="number"
-                            min={MAX_AGE_DAYS_MIN}
-                            max={MAX_AGE_DAYS_MAX}
-                            step={1}
-                            value={sessionRecording.maxAgeDays}
-                            onChange={(e) => setSessionRecording((prev) => ({
-                              ...prev, maxAgeDays: Number(e.target.value),
-                            }))}
-                            data-testid="input-session-recording-max-age"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            {t('aacSettings.sessionRecordingMaxAgeDesc')
-                              .replace('{days}', String(sessionRecording.maxAgeDays))}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label className="text-sm font-medium">
-                          {t('aacSettings.sessionRecordingFolder')}
-                        </Label>
-                        <Input
-                          value={sessionRecording.folder ?? ''}
-                          onChange={(e) => setSessionRecording((prev) => ({
-                            ...prev, folder: e.target.value,
-                          }))}
-                          placeholder={t('aacSettings.sessionRecordingFolderPlaceholder')}
-                          data-testid="input-session-recording-folder"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {t('aacSettings.sessionRecordingFolderDesc')}
-                        </p>
-                      </div>
+                      <Switch
+                        checked={sessionRecording.enabled}
+                        onCheckedChange={(enabled) =>
+                          setSessionRecording((prev) => ({ ...prev, enabled }))}
+                        data-testid="switch-session-recording"
+                      />
                     </div>
-                  )}
-                </CardContent>
-              </CollapsibleSubSection>
+  
+                    {sessionRecording.enabled && (
+                      <div className="space-y-4 border-s-2 border-muted ps-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingQuality')}
+                          </Label>
+                          <Select
+                            value={sessionRecording.quality}
+                            onValueChange={(quality) =>
+                              setSessionRecording((prev) => ({
+                                ...prev, quality: quality as RecordingQuality,
+                              }))}
+                          >
+                            <SelectTrigger data-testid="select-session-recording-quality">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="720p">{t('aacSettings.sessionRecordingQuality720')}</SelectItem>
+                              <SelectItem value="1080p">{t('aacSettings.sessionRecordingQuality1080')}</SelectItem>
+                              <SelectItem value="max">{t('aacSettings.sessionRecordingQualityMax')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingQualityDesc')}
+                          </p>
+                        </div>
+  
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.sessionRecordingPreRoll')}
+                            </Label>
+                            <Input
+                              type="number"
+                              min={PRE_ROLL_SECONDS_MIN}
+                              max={PRE_ROLL_SECONDS_MAX}
+                              value={sessionRecording.preRollSeconds}
+                              onChange={(e) => setSessionRecording((prev) => ({
+                                ...prev, preRollSeconds: Number(e.target.value),
+                              }))}
+                              data-testid="input-session-recording-preroll"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t('aacSettings.sessionRecordingPreRollDesc')}
+                            </p>
+                          </div>
+  
+                          <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.sessionRecordingIdleTail')}
+                            </Label>
+                            <Input
+                              type="number"
+                              min={IDLE_TAIL_SECONDS_MIN}
+                              max={IDLE_TAIL_SECONDS_MAX}
+                              value={sessionRecording.idleTailSeconds}
+                              onChange={(e) => setSessionRecording((prev) => ({
+                                ...prev, idleTailSeconds: Number(e.target.value),
+                              }))}
+                              data-testid="input-session-recording-idle-tail"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t('aacSettings.sessionRecordingIdleTailDesc')}
+                            </p>
+                          </div>
+  
+                          <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.sessionRecordingMaxClip')}
+                            </Label>
+                            <Input
+                              type="number"
+                              min={MAX_CLIP_MINUTES_MIN}
+                              max={MAX_CLIP_MINUTES_MAX}
+                              value={sessionRecording.maxClipMinutes}
+                              onChange={(e) => setSessionRecording((prev) => ({
+                                ...prev, maxClipMinutes: Number(e.target.value),
+                              }))}
+                              data-testid="input-session-recording-max-clip"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t('aacSettings.sessionRecordingMaxClipDesc')}
+                            </p>
+                          </div>
+  
+                          <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.sessionRecordingStorage')}
+                            </Label>
+                            <Input
+                              type="number"
+                              min={MAX_STORAGE_MB_MIN}
+                              max={MAX_STORAGE_MB_MAX}
+                              step={1024}
+                              value={sessionRecording.maxStorageMb}
+                              onChange={(e) => setSessionRecording((prev) => ({
+                                ...prev, maxStorageMb: Number(e.target.value),
+                              }))}
+                              data-testid="input-session-recording-storage"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t('aacSettings.sessionRecordingStorageDesc')
+                                .replace('{gb}', String(Math.round(sessionRecording.maxStorageMb / 1024)))}
+                            </p>
+                          </div>
+  
+                          <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">
+                              {t('aacSettings.sessionRecordingMaxAge')}
+                            </Label>
+                            <Input
+                              type="number"
+                              min={MAX_AGE_DAYS_MIN}
+                              max={MAX_AGE_DAYS_MAX}
+                              step={1}
+                              value={sessionRecording.maxAgeDays}
+                              onChange={(e) => setSessionRecording((prev) => ({
+                                ...prev, maxAgeDays: Number(e.target.value),
+                              }))}
+                              data-testid="input-session-recording-max-age"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t('aacSettings.sessionRecordingMaxAgeDesc')
+                                .replace('{days}', String(sessionRecording.maxAgeDays))}
+                            </p>
+                          </div>
+                        </div>
+  
+                        <div className="space-y-1.5">
+                          <Label className="text-sm font-medium">
+                            {t('aacSettings.sessionRecordingFolder')}
+                          </Label>
+                          <Input
+                            value={sessionRecording.folder ?? ''}
+                            onChange={(e) => setSessionRecording((prev) => ({
+                              ...prev, folder: e.target.value,
+                            }))}
+                            placeholder={t('aacSettings.sessionRecordingFolderPlaceholder')}
+                            data-testid="input-session-recording-folder"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('aacSettings.sessionRecordingFolderDesc')}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </CollapsibleSubSection>
+              )}
 
               {/* Caretaker PIN — the AAC device stays signed in for a year;
                   this is what keeps switch-student / manage-devices / sign-out

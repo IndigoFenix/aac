@@ -3475,6 +3475,7 @@ export const de = {
       createInstitute: "Organisation erstellen",
       instituteName: "Organisationsname",
       instituteNamePlaceholder: "z. B. Schulbezirk Springfield",
+      instituteNameRequired: "Organization name is required", // TODO-i18n
       instituteType: "Organisationstyp",
       school: "Schule",
       clinic: "Klinik",
@@ -3500,6 +3501,8 @@ export const de = {
       complianceRegimes: "Compliance-Vorgaben",
       complianceRegimesHint: "Wählen Sie die rechtlichen Rahmenwerke (HIPAA, DSGVO, israelisches Bildungsministerium usw.), die für diese Einrichtung gelten. Jede Auswahl legt fest, wie lange Audit-Protokolle aufbewahrt werden, die Frist zur Meldung einer Datenpanne, den von der App angegebenen Barrierefreiheitsstandard und den erwarteten Identitätsanbieter für die Anmeldung. Gelten mehrere, hat die strengste Regel Vorrang.",
       insuranceBridgeEnabled: "Versicherungs-Bridge",
+      allowSessionRecording: "On-device session recording", // TODO-i18n
+      allowSessionRecordingHint: "Lets caretakers under this license record a {{STUDENT}} on camera, to the device's own disk, for promotional material. Grant it only to people who make that material. Off for every customer.", // TODO-i18n
       billingRegime: "Abrechnungsregime",
       billingRegimeNone: "Keines",
       billingRegimeUsCpt: "USA (CPT-Codes)",

@@ -18,6 +18,7 @@ import type { JSONSchema } from "../chat/gpt";
 import { getStructuredProvider } from "../providers/provider-factory";
 import { extractStructuredPayload } from "./structured-payload.js";
 import { mergeExtractedPages, type ExtractedPage, type MergeResult } from "./page-merge.js";
+import type { DisclosureContext } from "../processorDisclosure";
 
 const PROVIDER = "gemini" as const;
 const MODEL = "gemini-2.5-flash";
@@ -84,6 +85,8 @@ Emitted:    name "רול אנטריקוט", priceText "₪48", price 48,
 export interface WebExtractionOptions {
   venueName: string;
   expectedLanguage?: string;
+  /** AKIM §18.5 — who this menu work is being done for. */
+  disclosure?: DisclosureContext;
 }
 
 /**
@@ -107,6 +110,7 @@ export async function extractMenuFromText(
   try {
     const response = await getStructuredProvider(PROVIDER).structuredComplete({
       // Background: web extraction runs once per venue, behind the cache write.
+      disclosure: options.disclosure,
       background: true,
       model: MODEL,
       instructions: `${EXTRACTION_PROMPT}\n\nThis page is for: ${options.venueName}.${language}`,

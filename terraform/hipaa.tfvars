@@ -45,6 +45,17 @@ redis_node_type               = "cache.t4g.micro"
 redis_num_cache_clusters      = 2      # primary + replica, automatic failover
 redis_snapshot_retention_days = 7
 
+# Task-definition template pinned by digest rather than mutable `:latest`.
+ecr_image_exists = true
+
+# No standing interactive shell into a PHI container. Enabling this also
+# requires ssmmessages:* on the task role, which it does not have.
+enable_ecs_exec = false
+
+# Read-only container root; /tmp (ephemeral volume) is the only writable path.
+# See ecs-lean.tfvars for why this is safe to have on.
+ecs_readonly_root_fs = true
+
 # =============================================================================
 # Security & Compliance - ALL ENABLED
 # =============================================================================
@@ -72,6 +83,15 @@ audit_log_retention_days  = 2192  # 6 years: CloudTrail, VPC flow, RDS, WAF log 
 alert_email = "cs@aivota.ai"
 
 # =============================================================================
+# Operational access (SSM)
+# =============================================================================
+# Interactive SSM shell transcripts → the logs bucket under ssm-sessions/.
+# Together with CloudTrail above this is the complete remote-access record:
+# transcripts for shell sessions, StartSession/TerminateSession events for the
+# port-forwarding (DB tunnel) sessions, which have no shell to transcribe.
+enable_ssm_session_logging = true
+
+# =============================================================================
 # Network - full isolation
 # =============================================================================
 single_nat_gateway             = false   # one NAT per AZ
@@ -90,6 +110,9 @@ enable_rds_enhanced_monitoring = true
 # =============================================================================
 enable_coturn        = true
 coturn_instance_type = "t4g.micro"
+# Pinned container image; the host also joins the AL2023 weekly security patch
+# baseline (terraform/ssm.tf) — it is the only internet-facing EC2 host we run.
+coturn_image_tag = "4.17.2"
 
 # =============================================================================
 # Other

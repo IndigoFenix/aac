@@ -23,6 +23,7 @@ import { webMenuService } from "../services/venue-menus/web-menu-service";
 import { MAX_FRAMES } from "../services/venue-menus/camera-extraction";
 import { resolveVenueMenuSettings, needsReview, isSourceEnabled } from "@shared/venue-menus";
 import { venueBrowseService } from "../services/venue-menus/venue-browse-service";
+import type { DisclosureContext } from "../services/processorDisclosure";
 
 /** A base64 JPEG, with or without its data-URL prefix. */
 const frameSchema = z.string().min(1);
@@ -143,6 +144,14 @@ class VenueMenuController {
       const result = await menuCaptureService.captureFromCamera({
         venueId,
         frames,
+        // AKIM §18.5 — these frames come off the student's own device camera
+        // and go to a vision model. Recorded against the student, like any
+        // other disclosure.
+        disclosure: {
+          studentId,
+          userId: user.id,
+          useCase: "venue_menu_camera",
+        } satisfies DisclosureContext,
         requireReview: needsReview(settings.requireReview, "camera", {
           hasAllergies: allergies.length > 0,
           requireReviewWithAllergies: settings.requireReviewWithAllergies,
@@ -419,6 +428,14 @@ class VenueMenuController {
 
       const result = await webMenuService.fetchForVenue({
         venueId,
+        // AKIM §18.5 — the page text itself is public, but the extraction and
+        // refinement calls are made ON BEHALF OF this student and are
+        // attributed to them, so the §18.5 report for a child is complete.
+        disclosure: {
+          studentId,
+          userId: user.id,
+          useCase: "venue_menu_web",
+        } satisfies DisclosureContext,
         requireReview: needsReview(settings.requireReview, "web", {
           hasAllergies: allergies.length > 0,
           requireReviewWithAllergies: settings.requireReviewWithAllergies,

@@ -16,6 +16,7 @@ import type { JSONSchema } from "../chat/gpt";
 import { getStructuredProvider } from "../providers/provider-factory";
 import type { RawMenuItem } from "./menu-refinement.js";
 import { extractStructuredPayload } from "./structured-payload.js";
+import type { DisclosureContext } from "../processorDisclosure";
 
 const PROVIDER = "claude" as const;
 /** Resolved by shared/llm-options to claude-haiku-4-5. */
@@ -82,6 +83,8 @@ export interface RefinementAgentOptions {
   /** Language to translate names into. Omit to skip translation. */
   targetLanguage?: string;
   model?: string;
+  /** AKIM §18.5 — who this menu work is being done for. */
+  disclosure?: DisclosureContext;
 }
 
 /**
@@ -118,6 +121,7 @@ export async function requestMenuRefinement(
   try {
     const response = await getStructuredProvider(PROVIDER).structuredComplete({
       // Background: refinement runs once per venue, behind the cache write.
+      disclosure: options.disclosure,
       background: true,
       model: options.model ?? MODEL,
       instructions: REFINEMENT_PROMPT + target,

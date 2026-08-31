@@ -21,6 +21,7 @@ import type { LLMProviderKey } from "@shared/llm-options";
 import { getStructuredProvider } from "../providers/provider-factory";
 import { mergeExtractedPages, type ExtractedPage, type MergeResult } from "./page-merge.js";
 import { extractStructuredPayload } from "./structured-payload.js";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /** Extraction is a read, not a judgement — the cheap tier is the right tier. */
 const DEFAULT_PROVIDER: LLMProviderKey = "gemini";
@@ -122,6 +123,9 @@ export interface CameraExtractionOptions {
   model?: string;
   /** Hint from the venue record; the model still reports what it actually sees. */
   expectedLanguage?: string;
+  /** AKIM §18.5 — who this capture is about. A menu photo comes off the
+   *  student's own device camera, so the send is recorded like any other. */
+  disclosure?: DisclosureContext;
 }
 
 export interface CameraExtractionResult extends MergeResult {
@@ -151,6 +155,7 @@ export async function extractMenuPage(
     : "";
 
   const response = await provider.structuredComplete({
+    disclosure: options.disclosure,
     // Background: menu extraction runs once per venue and is reviewed before use.
     background: true,
     model: options.model ?? DEFAULT_MODEL,

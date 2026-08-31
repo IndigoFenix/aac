@@ -16,7 +16,6 @@
  *   marks the analysis row complete.
  */
 
-import fs from "fs";
 import path from "path";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -35,7 +34,8 @@ import { settingsRepository } from "../repositories/settingsRepository";
 import { resolveModelId, getModelOption } from "@shared/llm-options";
 import { creditsForModelUsage } from "./chat/cost-helpers";
 import { chargeCreditsToLedger } from "./credit-ledger";
-import { getAnthropicClient } from "./providers/anthropic-client";
+import { getAnthropicClient, isUsingVertex } from "./providers/anthropic-client";
+import { assertProviderAllowed } from "@shared/llm-policy";
 import { buildMemoryTool, processMemoryToolResponse } from "./chat/memory-system";
 import { processMemoryToolWithDB, createDBContext, createMemoryLoadState } from "./chat/memory-db-bridge";
 import type { MemoryState, MemoryLoadState } from "./chat/memory-types";
@@ -44,7 +44,8 @@ import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
 import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
 import { ANALYSIS_MEMORY_FIELDS } from "./memory-schema/analysis-memory-schema";
 import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
-import { fileDebugLoggingEnabled } from "./file-debug-log";
+import { fileDebugLoggingEnabled, safeAppend } from "./file-debug-log";
+import { recordDisclosure } from "./processorDisclosure";
 
 // ---------------------------------------------------------------------------
 // Logging — development only. Lines carry the report title + summary of a
@@ -56,7 +57,7 @@ function log(analysisId: string, msg: string, obj?: unknown) {
   if (!fileDebugLoggingEnabled) return;
   try {
     const line = obj !== undefined ? `${msg} ${JSON.stringify(obj).slice(0, 2000)}` : msg;
-    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] [${analysisId}] ${line}\n`);
+    safeAppend(LOG_FILE, `[${new Date().toISOString()}] [${analysisId}] ${line}\n`);
   } catch {}
 }
 
@@ -250,8 +251,20 @@ export async function createDeepAnalysis(input: CreateDeepAnalysisInput): Promis
   if (!student) throw new Error(`Unknown studentId: ${input.studentId}`);
 
   const cfg = await settingsRepository.getLLMConfig("deep_analysis");
+  // AKIM §14 — deep analysis reads the WHOLE student record, so its provider
+  // must be a disclosed processor. This used to be a hardcoded `!== "claude"`
+  // throw, which conflated a compliance rule with a capability one; the policy
+  // now lives in shared/llm-policy.ts and is enforced identically at the admin
+  // write path and at resolution.
+  assertProviderAllowed("deep_analysis", cfg.provider);
+  // Separate CAPABILITY requirement: the agent loop below drives Anthropic's
+  // extended-thinking + tool-use surface directly (client.messages.stream with
+  // `thinking: {type:"adaptive"}`), which no other provider exposes here.
+  // Phrased as a capability error, not a compliance one.
   if (cfg.provider !== "claude") {
-    throw new Error(`Deep analysis currently requires a Claude model, got provider=${cfg.provider}. Set it in admin settings.`);
+    throw new Error(
+      `Deep analysis needs Anthropic extended thinking; provider=${cfg.provider} has no equivalent path. Set it in admin settings.`,
+    );
   }
 
   const [row] = await db
@@ -391,6 +404,22 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
       // count against max_tokens, hence the roomier MAX_OUTPUT_TOKENS. The
       // cast is only because @anthropic-ai/sdk 0.72 predates the `adaptive`
       // type — the API accepts it as-is.
+      // AKIM §18.5 — this path holds the raw Anthropic SDK, bypassing the
+      // provider factory, so it records its own disclosure. The whole student
+      // record can be in the context window by now; ids are local (`row`), so
+      // they are passed explicitly rather than via AsyncLocalStorage.
+      recordDisclosure({
+        processor: "anthropic",
+        channel: "chat",
+        model: modelId,
+        endpoint: isUsingVertex() ? "vertex" : "api",
+        context: {
+          studentId: row.studentId,
+          userId: row.createdByUserId,
+          instituteId: row.instituteId ?? null,
+          useCase: "deep_analysis",
+        },
+      });
       const stream = client.messages.stream({
         model: modelId,
         max_tokens: MAX_OUTPUT_TOKENS,

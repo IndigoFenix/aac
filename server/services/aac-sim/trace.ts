@@ -18,8 +18,9 @@
  * channel around the projection.
  */
 
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { fileDebugLogEnabled, safeAppend } from "../file-debug-log";
 
 export type TraceKind =
   | "run"          // run metadata, first line
@@ -48,8 +49,20 @@ export class SimTrace {
   private readonly events: TraceEvent[] = [];
   private file: string | null = null;
 
-  /** Stream to disk as well as buffering, so a crash still leaves the trail. */
+  /** Stream to disk as well as buffering, so a crash still leaves the trail.
+   *
+   *  Only `scripts/aac-sim-play.ts` calls this — the server-side runner takes
+   *  `NO_TRACE` or a file-less SimTrace, so nothing on a request path writes
+   *  here. The guard makes that a GUARANTEE rather than a fact about the
+   *  current call graph: under a read-only root filesystem (ECS,
+   *  var.ecs_readonly_root_fs) the mkdir/write below would throw, and the
+   *  trace holds the child model's raw payloads. In-memory buffering and
+   *  tail() keep working; only the disk stream is refused. */
   openFile(path: string): void {
+    if (!fileDebugLogEnabled()) {
+      console.warn("[aac-sim] trace file refused: file debug logging is off (production or NODE_ENV=test)");
+      return;
+    }
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, "", "utf-8");
     this.file = path;
@@ -59,11 +72,9 @@ export class SimTrace {
     const ev: TraceEvent = { t: Date.now() - this.startedAt, kind, ...data };
     this.events.push(ev);
     if (this.file) {
-      try {
-        appendFileSync(this.file, JSON.stringify(ev) + "\n", "utf-8");
-      } catch {
-        // A trace that cannot write must never take the run down with it.
-      }
+      // safeAppend cannot throw: a trace that cannot write must never take
+      // the run down with it.
+      safeAppend(this.file, JSON.stringify(ev) + "\n");
     }
   }
 

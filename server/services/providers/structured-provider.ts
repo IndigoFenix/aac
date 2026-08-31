@@ -7,6 +7,7 @@ import type {
   GPTTool,
   JSONSchema,
 } from "../chat/gpt";
+import type { DisclosureContext } from "../processorDisclosure";
 
 /**
  * Request for a structured LLM completion (used by clinician + AAC moderator paths).
@@ -37,6 +38,14 @@ export interface StructuredRequest {
    * without anyone noticing, which is exactly what shared capacity offers.
    */
   background?: boolean;
+  /**
+   * AKIM §18.5 — who this request's content is about, for the disclosure log.
+   * The provider records the send; the ids ride on the request because a DTO
+   * survives queue hops and generator boundaries that AsyncLocalStorage does
+   * not. Omitted ⇒ the ambient `runWithDisclosureContext` is used; absent
+   * both, the send is logged as `contextMissing` rather than dropped.
+   */
+  disclosure?: DisclosureContext;
 }
 
 /**

@@ -19,6 +19,7 @@ import { fetchWebMenu, type WebFetchFailure } from "./web-menu-fetcher.js";
 import { cacheMenu, type CacheReviewReason, type MenuStatus } from "./menu-cache.js";
 import type { RefinedMenuItem } from "./menu-refinement.js";
 import type { VenueMenu } from "@shared/schema";
+import type { DisclosureContext } from "../processorDisclosure";
 
 export interface FetchWebMenuInput {
   venueId: string;
@@ -26,6 +27,9 @@ export interface FetchWebMenuInput {
   requireReview: boolean;
   /** Language to render item names in — normally the student's. */
   targetLanguage?: string;
+  /** AKIM §18.5 — who this menu work is for; rides down to the vision /
+   *  extraction / refinement calls that leave for a processor. */
+  disclosure?: DisclosureContext;
 }
 
 export interface WebMenuServiceResult {
@@ -61,6 +65,7 @@ export class WebMenuService {
 
     const fetched = await fetchWebMenu(venue, {
       ...(input.targetLanguage ? { expectedLanguage: input.targetLanguage } : {}),
+      ...(input.disclosure ? { disclosure: input.disclosure } : {}),
     });
 
     if (!fetched.ok) {
@@ -85,6 +90,7 @@ export class WebMenuService {
       requireReview: input.requireReview,
       extractionRequiresReview: fetched.requiresReview,
       ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
+      ...(input.disclosure ? { disclosure: input.disclosure } : {}),
     });
 
     return {
