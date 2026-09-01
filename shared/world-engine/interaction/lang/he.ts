@@ -168,6 +168,7 @@ const CENTRAL: Record<string, Lexeme> = {
   street: { w: "רחוב", g: "m" },
   animal: { w: "חיה", g: "f", plw: "חיות" },
   plants: { w: "צמח", g: "m", plw: "צמחים" },
+  individuals: { w: "האנשים שלי", g: "m" },
   creature: { w: "יצור", g: "m" },
   water: { w: "מים", g: "m", pl: true, mass: true },
   fire: { w: "אש", g: "f", mass: true },

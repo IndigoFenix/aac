@@ -108,6 +108,27 @@ export interface RecordingBridge {
   purgeStudent?: (opts: { studentId: string }) => Promise<{ clipIds: string[]; bytes: number }>;
 }
 
+/**
+ * Start-with-the-device, as the OS sees it.
+ *
+ * `supported` is the runtime truth and is NOT the same as
+ * `capabilities().launchOnBoot`: a dev (unpackaged) Electron run has the bridge
+ * but answers false, because registering the dev electron.exe would put a bare
+ * Electron in a developer's sign-in list. Callers must read it rather than
+ * assume the host row.
+ */
+export interface AutoLaunchState {
+  supported: boolean;
+  enabled: boolean;
+  /** Set when the OS refused the write — a locked-down machine. */
+  error: string | null;
+}
+
+export interface AutoLaunchBridge {
+  get: () => Promise<AutoLaunchState>;
+  set: (enabled: boolean) => Promise<AutoLaunchState>;
+}
+
 export interface ElectronBridge {
   isElectron?: boolean;
   getVersion?: () => Promise<string>;
@@ -117,6 +138,8 @@ export interface ElectronBridge {
   update?: UpdateBridge;
   instances?: InstancesBridge;
   recording?: RecordingBridge;
+  /** Optional: an older shell predates the setting and simply cannot autostart. */
+  autoLaunch?: AutoLaunchBridge;
   deviceId?: { get: () => Promise<string | null>; set: (id: string) => Promise<boolean> };
 }
 
@@ -135,6 +158,34 @@ export function getBrowserBridge(): BrowserBridge | null {
 
 export function getInstancesBridge(): InstancesBridge | null {
   return getElectronBridge()?.instances ?? null;
+}
+
+/** OS login-item control, or null on a host that cannot start with the device. */
+export function getAutoLaunchBridge(): AutoLaunchBridge | null {
+  return getElectronBridge()?.autoLaunch ?? null;
+}
+
+/**
+ * Mirror the student's `launchOnBoot` setting into the OS.
+ *
+ * Total by design, like purgeStudentRecordings: a host with no autostart (iPad,
+ * browser tab, an older shell) answers "unsupported" rather than throwing. The
+ * caller is a settings-sync effect running inside a live session — nothing it
+ * learns here is worth an exception reaching a child's board.
+ *
+ * Applied unconditionally rather than only on change: the write is what keeps a
+ * login-item entry pointing at the CURRENT executable after the app is
+ * reinstalled somewhere else, and it is a registry poke, not work.
+ */
+export async function applyLaunchOnBoot(enabled: boolean): Promise<AutoLaunchState> {
+  const bridge = getAutoLaunchBridge();
+  if (!bridge) return { supported: false, enabled: false, error: null };
+  try {
+    return await bridge.set(enabled);
+  } catch (err) {
+    console.warn("[autolaunch] could not apply setting", err);
+    return { supported: false, enabled: false, error: String(err) };
+  }
 }
 
 /** Session-recording file store, or null on a host that cannot record. */

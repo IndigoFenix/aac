@@ -36,6 +36,23 @@ import { localModelBase, hasLocalModel, withTransformersEnv } from "@/lib/transf
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 
+/** Version prefix on the CDN. MUST match MODEL_VERSION in
+ *  scripts/publish-voice-models.mjs — the client builds its fetch URL from
+ *  this, so a mismatch 404s every device and they all silently keep
+ *  speechSynthesis. Published paths are immutable: new weights = new version. */
+const MODEL_VERSION = "v1.0";
+
+/** Where a DEVICE downloads weights from: our own CloudFront distribution, not
+ *  HuggingFace. A school network may well block HF, and an upstream file that
+ *  changes under us would alter a child's voice with no deploy on our side.
+ *  See terraform/aac-updates.tf (`models/*` behavior: CORS + immutable cache).
+ *
+ *  transformers.js composes `remoteHost` + `remotePathTemplate` + the file
+ *  path, so pointing remoteHost here makes the whole loader fetch from us. */
+const MODEL_HOST =
+  (import.meta as any).env?.VITE_VOICE_MODEL_HOST ?? "https://updates.aivota.ai";
+const MODEL_REMOTE_PATH = `/models/kokoro/${MODEL_VERSION}`;
+
 /** q8 → onnx/model_quantized.onnx (~92 MB).
  *
  *  Chosen for SIZE and portability, NOT speed — and it is worth knowing that it
@@ -118,7 +135,7 @@ type KokoroModel = { generate: (text: string, opts: { voice: string; speed?: num
  *  build never reaches for HuggingFace. Best-effort: CacheStorage is absent in
  *  insecure contexts and some test environments, and a miss just means kokoro-js
  *  fetches the vector itself (online) or the utterance falls back (offline). */
-async function seedVoiceCache(base: string): Promise<void> {
+async function seedVoiceCache(voiceSource: (voice: string) => string): Promise<void> {
   if (typeof caches === "undefined") return;
   let cache: Cache;
   try {
@@ -130,7 +147,7 @@ async function seedVoiceCache(base: string): Promise<void> {
     const url = VOICE_URL(voice);
     try {
       if (await cache.match(url)) continue; // already seeded (or genuinely cached)
-      const res = await fetch(`${base}${MODEL_ID}/voices/${voice}.bin`, { cache: "no-store" });
+      const res = await fetch(voiceSource(voice), { cache: "no-store" });
       // A 200 of index.html is the SPA fallback, not a style vector — the
       // byte length check catches it (a real vector is ~510 KB).
       if (!res.ok) continue;
@@ -143,7 +160,11 @@ async function seedVoiceCache(base: string): Promise<void> {
   }
 }
 
-async function instantiate(useLocal: boolean, base: string): Promise<KokoroModel> {
+async function instantiate(
+  useLocal: boolean,
+  base: string,
+  onProgress?: (p: any) => void,
+): Promise<KokoroModel> {
   const { KokoroTTS } = await import("kokoro-js");
   const tf: any = await import("@huggingface/transformers");
   const env = tf?.env;
@@ -161,9 +182,27 @@ async function instantiate(useLocal: boolean, base: string): Promise<KokoroModel
   const load = () => withTransformersEnv(
     env,
     useLocal
+      // Weights staged into the build (npm run kokoro:model before a build).
+      // Not the normal path — it exists for a site that must install fully
+      // offline and can't download anything at runtime.
       ? { allowLocal: true, allowRemote: false, localModelPath: base }
-      : { allowLocal: false, allowRemote: true },
-    () => KokoroTTS.from_pretrained(MODEL_ID, { dtype: MODEL_DTYPE, device: "wasm" } as any) as Promise<any>,
+      // The normal path: fetch from OUR CloudFront and let transformers.js
+      // persist the result in the browser Cache API, so this download happens
+      // once per device rather than once per launch.
+      : {
+          allowLocal: false,
+          allowRemote: true,
+          remoteHost: MODEL_HOST,
+          // A literal path with no {model}/{revision} placeholders — every
+          // file request resolves under our versioned prefix.
+          remotePathTemplate: MODEL_REMOTE_PATH,
+          useBrowserCache: true,
+        },
+    () => KokoroTTS.from_pretrained(MODEL_ID, {
+      dtype: MODEL_DTYPE,
+      device: "wasm",
+      progress_callback: onProgress,
+    } as any) as Promise<any>,
   );
 
   try {
@@ -249,6 +288,39 @@ async function warmup(model: KokoroModel): Promise<void> {
 
 let loader: ModelLoader<KokoroModel> | null = null;
 
+/** Download progress, 0..1, or null when no download is running. Rendered by
+ *  the AAC so a ~94 MB fetch on a school connection isn't a silent stall. */
+let downloadProgress: number | null = null;
+const progressSubscribers = new Set<(p: number | null) => void>();
+
+function setProgress(p: number | null): void {
+  downloadProgress = p;
+  for (const cb of progressSubscribers) {
+    try { cb(p); } catch { /* subscriber's problem */ }
+  }
+}
+
+/** Current download progress (0..1), or null when nothing is downloading. */
+export function getDownloadProgress(): number | null {
+  return downloadProgress;
+}
+
+/** Watch download progress. Fires immediately with the current value. */
+export function subscribeDownloadProgress(cb: (p: number | null) => void): () => void {
+  progressSubscribers.add(cb);
+  cb(downloadProgress);
+  return () => progressSubscribers.delete(cb);
+}
+
+/** transformers.js emits one progress event per file; the ONNX weights dwarf
+ *  everything else, so tracking the largest active file is a good proxy for
+ *  overall progress and avoids pretending to a precision we don't have. */
+function handleLoadProgress(p: any): void {
+  if (!p || p.status !== "progress" || typeof p.progress !== "number") return;
+  if (typeof p.total === "number" && p.total < 10_000_000) return; // ignore the small config files
+  setProgress(Math.max(0, Math.min(1, p.progress / 100)));
+}
+
 /** The retrying loader for the Kokoro model. Shared with the rest of the app's
  *  on-device models (lib/modelLoader.ts) so a transient failure retries on
  *  backoff instead of disabling the voice for the whole session. */
@@ -256,47 +328,68 @@ export function getKokoroLoader(): ModelLoader<KokoroModel> {
   if (!loader) {
     loader = createModelLoader("kokoro-tts", async () => {
       const base = localModelBase();
+      // Staged-into-the-build weights win when present (offline installs);
+      // otherwise the device downloads them from our CDN.
       const useLocal = await hasLocalModel(base, MODEL_ID);
-      if (useLocal) await seedVoiceCache(base);
-      const model = await instantiate(useLocal, base);
-      console.log(`[KokoroTTS] loaded from ${useLocal ? "bundle" : "CDN"}: ${MODEL_ID}`);
-      await warmup(model);
-      return model;
+      await seedVoiceCache(
+        useLocal
+          ? (v) => `${base}${MODEL_ID}/voices/${v}.bin`
+          : (v) => `${MODEL_HOST}${MODEL_REMOTE_PATH}/voices/${v}.bin`,
+      );
+      setProgress(useLocal ? null : 0);
+      try {
+        const model = await instantiate(useLocal, base, handleLoadProgress);
+        console.log(`[KokoroTTS] loaded from ${useLocal ? "bundle" : "CDN"}: ${MODEL_ID}`);
+        await warmup(model);
+        return model;
+      } finally {
+        setProgress(null);
+      }
     });
   }
   return loader;
 }
 
 /**
- * Start loading in the background — but ONLY if the weights are actually staged
- * on this device.
+ * Acquire the voice on THIS DEVICE.
  *
- * The gate matters: the quantized model is ~92 MB, and an ungated preload would
- * pull that from HuggingFace on every dev session and every unstaged
- * deployment, to improve a voice that is only ever reached when the cloud
- * providers are already down. So local presence is the switch — stage the model
- * (`npm run kokoro:model`) and the neural voice turns itself on; don't, and the
- * client behaves exactly as it did before, on speechSynthesis.
+ * The enable switch is a per-STUDENT setting (aac_settings.localVoiceEnabled)
+ * that lives on the server, but the weights are per-DEVICE — a clinician
+ * flipping the toggle downloads nothing by itself. So the AAC calls this when
+ * it sees the setting on, and every device the student uses acquires the model
+ * once, on its own, into its own browser cache.
  *
- * `speak()` only ever calls tryGet(), so nothing else can trigger a load: this
- * function is the single place the model is allowed to start downloading.
+ * Idempotent and safe to call on every session start: after the first success
+ * the model is in memory, and after the first download the bytes are in the
+ * Cache API, so subsequent calls cost nothing. Never throws — the loader
+ * retries on backoff and `speak()` keeps declining until something lands.
  */
-export function preloadKokoroTts(): void {
-  void (async () => {
-    const base = localModelBase();
-    if (!(await hasLocalModel(base, MODEL_ID))) {
-      console.log("[KokoroTTS] weights not staged — local voice stays on speechSynthesis");
-      return;
-    }
-    getKokoroLoader().preload();
-  })();
+export function ensureVoiceDownloaded(): void {
+  allowedForCurrentStudent = true;
+  getKokoroLoader().preload();
+}
+
+/** Whether the student at the device RIGHT NOW is allowed the neural voice.
+ *
+ *  Downloading and using are separate permissions because the model is cached
+ *  per device but the setting is per student. On a shared classroom tablet, one
+ *  student enabling the voice loads it into memory for the whole app — without
+ *  this flag the next student would inherit a voice their clinician never chose.
+ *  Defaults to false, so a student is opted in only by their own setting. */
+let allowedForCurrentStudent = false;
+
+/** Called when the active student changes or their setting is off. The weights
+ *  stay cached (re-downloading 94 MB per student switch would be absurd); only
+ *  permission to speak with them is withdrawn. */
+export function setVoiceAllowed(allowed: boolean): void {
+  allowedForCurrentStudent = allowed;
 }
 
 /** Whether a Kokoro utterance can be produced RIGHT NOW. Callers use this to
  *  decide without waiting: the fallback voice is already the unhappy path, so
  *  blocking a press on a model download would make a bad moment worse. */
 export function isReady(): boolean {
-  if (disabledReason) return false;
+  if (disabledReason || !allowedForCurrentStudent) return false;
   return getKokoroLoader().tryGet() !== null;
 }
 
@@ -375,6 +468,7 @@ export async function speak(
 ): Promise<boolean> {
   if (!text.trim()) return false;
   if (!supportsLanguage(lang)) return false;
+  if (!allowedForCurrentStudent) return false;
   if (disabledReason) return false;
 
   // Deliberately tryGet, not get(): get() waits for a download that may be
@@ -397,4 +491,45 @@ export async function speak(
     console.warn("[KokoroTTS] synthesis failed, falling back to speechSynthesis:", err);
     return false;
   }
+}
+
+// -----------------------------------------------------------------------------
+// Debug helpers
+// -----------------------------------------------------------------------------
+//
+// The path this service sits on only fires when EVERY cloud TTS provider has
+// already failed, which is not a state anyone can conjure on demand. Without a
+// way in, "does the neural voice work" is untestable short of breaking the
+// providers on purpose. So, matching the window-hook convention used elsewhere
+// in the client (see SocialBotContext), in the browser console:
+//
+//   await window.__kokoroSay("I want to go outside")   // hear it; true = neural
+//   window.__kokoroStatus()                            // loader + speed verdict
+//
+// __kokoroSay reports FALSE when the service declined — the reason is in
+// __kokoroStatus() and in the console warnings above it.
+
+export function installKokoroDebugHooks(): void {
+  if (typeof window === "undefined") return;
+  (window as any).__kokoroSay = async (text: string, role: "ai" | "student" = "student") => {
+    const t0 = Date.now();
+    const spoke = await speak(text, "en-US", role);
+    console.log(
+      spoke
+        ? `[KokoroTTS] __kokoroSay spoke "${text}" as ${role} in ${Date.now() - t0}ms (incl. playback)`
+        : `[KokoroTTS] __kokoroSay DECLINED — see __kokoroStatus()`,
+    );
+    return spoke;
+  };
+  (window as any).__kokoroStatus = () => {
+    const status = {
+      loader: getKokoroLoader().status(),
+      ready: isReady(),
+      disabled: speedGateReason(),
+      voices: VOICE_BY_ROLE,
+      dtype: MODEL_DTYPE,
+    };
+    console.log("[KokoroTTS] status:", status);
+    return status;
+  };
 }

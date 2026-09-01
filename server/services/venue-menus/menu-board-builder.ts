@@ -62,7 +62,7 @@ const KIND_EMOJI: Record<string, string> = {
 export interface VenueMenuBoardSettings {
   categoryPages: boolean;
   showPrices: boolean;
-  readingModeDefault: boolean;
+
 }
 
 export interface VenueMenuBoardInput {
@@ -81,8 +81,7 @@ export interface VenueMenuBoardInput {
   /** Items as stored on the `venue_menus` row (post-refinement, post-review). */
   items: readonly RefinedMenuItem[];
   settings: VenueMenuBoardSettings;
-  /** `medical_records.alerts_allergies`, free text, one line per allergy. */
-  allergies?: readonly string[] | null;
+
   grid?: { cols?: number; itemRows?: number };
 }
 
@@ -100,9 +99,11 @@ export interface VenueMenuBoardResult {
     total: number;
     /** Notice/section rows dropped as junk. */
     notices: number;
-    /** Items the allergen filter removed, with the term that matched. */
+    /** Always empty since 2026-09-01 — allergen filtering is out of the
+     *  serving path (see step 2 in the build). Field kept so stored stats and
+     *  the later allergen design have a stable shape to return to. */
     removedByAllergy: AllergenFilterResult["removed"];
-    /** Kept items the filter had only a bare name to inspect (honesty field). */
+    /** Always zero since the same decision — see removedByAllergy. */
     uninspectableCount: number;
     /** Items dropped for having no readable text at all. */
     unreadableCount: number;
@@ -157,9 +158,21 @@ function essentialButton(key: string, row: number, col: number): BoardButton | n
   } as BoardButton;
 }
 
+/**
+ * A page-navigation button, localized through the glyph registry.
+ *
+ * `glyphKey` must be a registry key (`return`, `next`) so the client renders
+ * `aac.glyph.<key>` in the student's language — the server has no t(), and a
+ * hardcoded "Back" reached Hebrew boards in English (2026-09-01). The emoji is
+ * passed EXPLICITLY rather than taken from the registry: the registry's
+ * `return` fallback is 🔙, whose baked-in "BACK" lettering mirrors into
+ * gibberish under RTL. ↩️/➡️ are pure arrows — mirroring them is exactly
+ * what a direction should do when the reading order flips.
+ */
 function navButton(
   id: string,
-  label: string,
+  glyphKey: string,
+  labelEn: string,
   toPageId: string,
   row: number,
   col: number,
@@ -169,11 +182,13 @@ function navButton(
     id,
     row,
     col,
-    label,
+    label: labelEn,
+    glyph: glyphKey,
+    localizeFromGlyph: true,
     iconRef: emoji,
     glyphFallback: emoji,
-    // Navigation stays live in reading mode — browsing IS the point of the
-    // mode, and a student who cannot turn the page cannot read the menu.
+    // Navigation is always live (the reading-mode gate is gone from menus,
+    // but the flag is harmless and correct if it ever returns).
     readingModeSafe: true,
     action: { type: "link" as const, toPageId },
   } as BoardButton;
@@ -268,7 +283,8 @@ function layoutPages(content: readonly PlacedButton[], opts: LayoutOptions): Boa
       buttons.push(
         navButton(
           `${pageId}_next`,
-          "More",
+          "next",
+          "Next",
           `${pageIdPrefix}_${pageNo + 2}`,
           Math.floor(capacity / cols),
           capacity % cols,
@@ -279,7 +295,7 @@ function layoutPages(content: readonly PlacedButton[], opts: LayoutOptions): Boa
 
     let col = 0;
     if (indexPageId) {
-      buttons.push(navButton(`${pageId}_back`, "Back", indexPageId, itemRows, col++, "🔙"));
+      buttons.push(navButton(`${pageId}_back`, "return", "Back", indexPageId, itemRows, col++, "↩️"));
     }
     for (const key of ESSENTIAL_KEYS) {
       const button = essentialButton(key, itemRows, col);
@@ -315,7 +331,7 @@ function layoutPages(content: readonly PlacedButton[], opts: LayoutOptions): Boa
 export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardResult {
   const cols = Math.max(2, input.grid?.cols ?? DEFAULT_COLS);
   const itemRows = Math.max(1, input.grid?.itemRows ?? DEFAULT_ITEM_ROWS);
-  const { categoryPages, readingModeDefault } = input.settings;
+  const { categoryPages } = input.settings;
 
   // Web prices are suppressed regardless of the setting — see `provenance`.
   // A manual menu is a caretaker typing what they read at the table, so it
@@ -330,8 +346,16 @@ export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardR
   const boardable = boardableItems(asResult);
   const notices = total - boardable.length;
 
-  // 2. Allergens (§3.3). Absent, not greyed.
-  const filtered = filterItemsForAllergies(boardable, input.allergies);
+  // 2. NO allergen filtering (Daniel's decision, 2026-09-01). The
+  //    string-matching filter proved unreliable in both directions the day the
+  //    pipeline suite first ran it end to end — פסטו (pesto) erased the whole
+  //    pasta category, and a filter that cannot inspect a bare dish name gives
+  //    false confidence on exactly the menus that need it most. Allergen
+  //    handling belongs to the companion at the table, and later to the AI
+  //    refinement pass or ask-the-waiter buttons — never to a term list. The
+  //    pass still runs with NO terms because it also drops unreadable rows,
+  //    and an empty term list is structurally incapable of removing a dish.
+  const filtered = filterItemsForAllergies(boardable, []);
 
   const stats: VenueMenuBoardResult["stats"] = {
     total,
@@ -418,7 +442,10 @@ export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardR
       currentPageId: pages[0]?.id,
       // Reading mode by default (§4.5). Opening a dense menu with dwell live
       // means the first dish the student's eyes settle on gets ordered.
-      ...(readingModeDefault ? { openInReadingMode: true } : {}),
+      // No reading mode (Daniel, 2026-09-01): the "Start ordering" unlock was
+      // small enough to miss, and until it was pressed every dish button was
+      // simply silent — a board that looks pressable and is not. The menu
+      // opens live; every press speaks.
     },
     stats,
   };

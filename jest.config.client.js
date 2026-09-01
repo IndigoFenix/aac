@@ -9,12 +9,17 @@
 //            npm run test:client -- platform      (single suite)
 //
 // Same ts-jest native-ESM preset as the server config — see the header of
-// jest.config.js for why NODE_OPTIONS=--experimental-vm-modules is required.
+// jest.config.js for why --experimental-vm-modules is required, and
+// jest.esm-guard.js for what happens when it is missing.
 //
 // SCOPE: `testEnvironment: 'node'`, so these are for logic that does NOT touch
 // the DOM — pure modules, reducers, formatters, capability matrices. Component
 // tests would need jsdom + @testing-library; add a second project here if and
 // when that's wanted, rather than making every unit pay for a DOM.
+
+import { assertVmModules } from './jest.esm-guard.js';
+
+assertVmModules();
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 export default {

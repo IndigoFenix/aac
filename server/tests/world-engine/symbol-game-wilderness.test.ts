@@ -10,6 +10,7 @@ import {
   buildWilderness,
   dueGrowthAdvance,
   dueHarvestRegrowth,
+  faunaForBiome,
   growthClassPeriodS,
   homesteadWildMix,
   reseedGrowthStock,
@@ -18,9 +19,15 @@ import {
   wildFeatureEmbodied,
   wildFeatureRadius,
   wildFeatureSizeRank,
+  wildMixForBiome,
   type WildernessFeature,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
-import { naturalSourceOf } from "@shared/world-engine/products.js";
+import {
+  naturalSourceOf,
+  nicheSuitabilityOf,
+  usefulPlants,
+  type ClimateSample,
+} from "@shared/world-engine/products.js";
 import { REAL_SCALE } from "@shared/world-engine/scale.js";
 
 describe("buildWilderness", () => {
@@ -231,16 +238,257 @@ describe("buildWilderness", () => {
   });
 });
 
-describe("homesteadWildMix — multiplier ⑤ (the dial, the same × direction as yield)", () => {
-  it("dial 1 (default AND explicit) is byte-identical", () => {
-    expect(homesteadWildMix("farmland", 1)).toEqual(homesteadWildMix("farmland", 1, 1));
-    expect(homesteadWildMix("mining", 5)).toEqual(homesteadWildMix("mining", 5, 1));
+describe("homesteadWildMix — multiplier ⑤ (standing counts, and they are DIAL-FREE)", () => {
+  // ⚖️ INVARIANCE (S3 review): wild counts are DIAL-FREE — abundance is not
+  // conversion, so the dial seat never survived review into this signature.
+  // These cases used to pass a third argument the function has never had (JS
+  // ignored it, and tests are not typechecked), which read as a pin on a
+  // parameter that did not exist; the third seat is now `climate`, so the
+  // invariance is stated the only way it can be — the mix is a pure function
+  // of (biome, seed), with no third input in the abundance story at all.
+  it("counts depend on nothing but the biome and the seed", () => {
+    expect(homesteadWildMix("farmland", 1)).toEqual(homesteadWildMix("farmland", 1));
+    expect(homesteadWildMix("mining", 5)).toEqual(homesteadWildMix("mining", 5));
+    const counts = homesteadWildMix("farmland", 1).map((e) => e.count);
+    expect(counts).toEqual([8, 2, 4, 2, 1]); // oak, fruit, rock, sheep, cow
+    expect(homesteadWildMix("mining", 5).map((e) => e.count)).toEqual([8, 2, 10]);
+  });
+});
+
+// ── THE NICHE JOIN (2026-09-01) — what a scatter site plants ────────────────
+// The bearer used to be picked off the FOOD vocabulary by seed alone, so a
+// homestead could stand a banana in the snow. Both pick sites now read the
+// GROWER'S query (products.ts `usefulPlants` — plants carrying a live
+// renewable take), optionally filtered by the cell's climate. The no-climate
+// arm is the legacy contract and must stay byte-identical: the headless bench
+// transcripts byte-hold on it.
+describe("the pick sites — usefulPlants, with and without a climate", () => {
+  const TEMPERATE: ClimateSample = { rain: 1.0, tempC: 18, elevation: 0, fertility: 5 };
+
+  it("no climate: the fruit is the seed's pick off the unfiltered grower's query", () => {
+    // Stated as the FORMULA, not a literal species: the pin is that the
+    // legacy arm still picks `(seed >>> 3) % rows.length` over the whole
+    // list, whatever the catalogue happens to hold.
+    const rows = usefulPlants();
+    for (const seed of [0, 1, 9, 17, 1234567]) {
+      const want = rows[(seed >>> 3) % rows.length]!.species;
+      const mix = homesteadWildMix("farmland", seed);
+      expect(mix.map((e) => e.species)).toEqual(["oak", want, "rock", "sheep", "cow"]);
+      expect(homesteadWildMix("mining", seed).map((e) => e.species)).toEqual([
+        "oak", want, "rock",
+      ]);
+    }
   });
 
-  it("⚖️ INVARIANCE (S3 review): counts are dial-free — abundance is not conversion", () => {
-    const base = homesteadWildMix("farmland", 1);
-    expect(homesteadWildMix("farmland", 1, 2)).toEqual(base);
-    expect(homesteadWildMix("farmland", 1, 0.01)).toEqual(base);
+  it("with a temperate sample the homestead never stands a banana — at any seed", () => {
+    for (let seed = 0; seed <= 40; seed++) {
+      const species = homesteadWildMix("farmland", seed, TEMPERATE).map((e) => e.species);
+      expect(species).not.toContain("banana_plant");
+      // …and something still bears: a filtered list is not an empty one here.
+      expect(species.length).toBe(5);
+    }
+  });
+
+  it("the climate arm picks from the FILTERED list, and only ever from it", () => {
+    // ⚖️ THE FORMULA MOVED (2026-09-01, layer-1 completion): this case used to
+    // pin `(seed >>> 3) % rows.length` on BOTH arms. The climate arm now
+    // weights the pick by suitability (see the weighted-pick case below), so
+    // what survives here is the part that is actually about the filter — the
+    // bearer is always one of the rows this cell admits, at every seed. The
+    // no-climate arm's modulo is pinned verbatim two cases up, where it
+    // belongs: that is the arm the bench transcripts hold.
+    const admitted = usefulPlants(TEMPERATE).map((s) => s.species);
+    for (let seed = 0; seed <= 60; seed++) {
+      expect(admitted).toContain(homesteadWildMix("farmland", seed, TEMPERATE)[1]!.species);
+    }
+  });
+
+  it("dead ground bears nothing AND grazes nothing — never a fallback to the unfiltered mix", () => {
+    const dead: ClimateSample = { rain: 0.05, tempC: -20, elevation: 100, fertility: 0 };
+    expect(usefulPlants(dead)).toEqual([]);
+    // ⚖️ THE LIVESTOCK JOINED THE FILTER (2026-09-01): sheep and cow declared
+    // no niche until this round, so they used to stand on dead scree exactly
+    // the way the banana used to — this case pinned that hole. Both rows now
+    // have real windows and both close here, leaving the structural content
+    // (the switch's oak and rock) untouched.
+    expect(homesteadWildMix("farmland", 7, dead).map((e) => e.species)).toEqual(["oak", "rock"]);
+    expect(homesteadWildMix("mining", 7, dead).map((e) => e.species)).toEqual(["oak", "rock"]);
+  });
+
+  it("wildMixForBiome keeps the legacy per-biome shape (forest = oak 10, fruit, rock 6)", () => {
+    // MOVED HERE FROM TWO GAMES (2026-09-01): world-lab and nature-hike
+    // carried byte-identical copies, both still calling the removed
+    // `orchardPlants()`. The counts and the DEFAULT_BIOSPHERE biome indices
+    // (0 barren / 1 tree / 2 grass / 3 horse) are the game copies' own.
+    const forest = wildMixForBiome(1, 0);
+    expect(forest.map((e) => e.species)).toEqual(["oak", usefulPlants()[0]!.species, "rock"]);
+    expect(forest.map((e) => e.count)).toEqual([10, 2, 6]); // forest bears 2, elsewhere 1
+    expect(wildMixForBiome(2, 0).map((e) => e.count)).toEqual([3, 1, 5, 2]);
+    expect(wildMixForBiome(3, 0).map((e) => e.count)).toEqual([3, 1, 5, 2, 1]);
+    expect(wildMixForBiome(2, 0).map((e) => e.species)).toContain("sheep");
+    expect(wildMixForBiome(3, 0).map((e) => e.species)).toContain("cow");
+  });
+
+  it("barren (biome 0) never bears fruit, climate or no climate", () => {
+    // The biome switch already said nothing grows; a climate that would
+    // otherwise admit a bearer must not put one on bare scree.
+    expect(wildMixForBiome(0, 3)).toEqual([{ species: "rock", count: 8 }]);
+    expect(wildMixForBiome(0, 3, TEMPERATE)).toEqual([{ species: "rock", count: 8 }]);
+  });
+
+  it("faunaForBiome grazes the open biomes only", () => {
+    expect(faunaForBiome(0)).toEqual({ horses: 0 });
+    expect(faunaForBiome(1)).toEqual({ horses: 0 }); // closed forest
+    expect(faunaForBiome(2)).toEqual({ horses: 4 });
+    expect(faunaForBiome(3)).toEqual({ horses: 6 });
+  });
+});
+
+// ── ⛏️ LAYER-1 COMPLETION (2026-09-01) — the climate arm gets honest ────────
+// Round #46 filtered the FRUIT by climate and left everything else alone, so
+// the arm was half-honest in two ways: the biome switch's livestock still
+// stood wherever the switch named them (sheep and cow declared no niche at
+// all), and a bearer that merely SCRAPED past the filter stood as often as the
+// one that peaks here. Both are the same fix — ask `nicheSuitabilityOf`, the
+// one uniform Layer-1 answer, and use the whole number rather than just its
+// sign. Both live ONLY in the climate arm; the last case here re-asserts that.
+describe("the climate arm — livestock filtering and the suitability-weighted pick", () => {
+  const TEMPERATE: ClimateSample = { rain: 1.0, tempC: 18, elevation: 0, fertility: 5 };
+  const MILD_STEPPE: ClimateSample = { rain: 0.5, tempC: 16, elevation: 0, fertility: 5 };
+  /** Cold dry grassland — the sward the flock keeps and the herd cannot. */
+  const FRIGID_DRY: ClimateSample = { rain: 0.3, tempC: -8, elevation: 0, fertility: 5 };
+  const HOSTILE: ClimateSample = { rain: 0.05, tempC: -20, elevation: 100, fertility: 0 };
+
+  it("grazer range on a MILD steppe carries both flock and herd (the control)", () => {
+    const mix = wildMixForBiome(3, 0, MILD_STEPPE);
+    expect(mix.map((e) => e.species)).toContain("sheep");
+    expect(mix.map((e) => e.species)).toContain("cow");
+    // The switch's own counts are untouched by a filter that keeps a row.
+    expect(mix.find((e) => e.species === "sheep")!.count).toBe(2);
+    expect(mix.find((e) => e.species === "cow")!.count).toBe(1);
+  });
+
+  it("🎯 a FRIGID steppe keeps the sheep and drops the cattle", () => {
+    // THE HEADLINE CASE. The biome index says "grazer range — flocks and wild
+    // cattle", which is true of the CLASS of ground; this particular cell is a
+    // Mongolian winter, and the class cannot know that. Nothing grows here at
+    // all either (every bearer freezes out), so there is no fruit line.
+    expect(usefulPlants(FRIGID_DRY)).toEqual([]);
+    expect(wildMixForBiome(3, 0, FRIGID_DRY)).toEqual([
+      { species: "oak", count: 3 },
+      { species: "rock", count: 5 },
+      { species: "sheep", count: 2 },
+    ]);
+    // Steppe (biome 2) never listed cattle to begin with — the flock stands.
+    expect(wildMixForBiome(2, 0, FRIGID_DRY).map((e) => e.species)).toEqual([
+      "oak", "rock", "sheep",
+    ]);
+    // …and the homestead does the same thing off its LAND-USE label: a
+    // charter's "farmland" says a holding keeps animals, never which ones.
+    expect(homesteadWildMix("farmland", 0, FRIGID_DRY).map((e) => e.species)).toEqual([
+      "oak", "rock", "sheep",
+    ]);
+  });
+
+  it("hostile ground drops BOTH animals and leaves oak/rock counts alone", () => {
+    // The filter removes lines; it never rewrites the ones it keeps. Structural
+    // content (what the biome switch says the ground IS) is not re-litigated.
+    expect(wildMixForBiome(3, 0, HOSTILE)).toEqual([
+      { species: "oak", count: 3 },
+      { species: "rock", count: 5 },
+    ]);
+    expect(wildMixForBiome(1, 0, HOSTILE)).toEqual([
+      { species: "oak", count: 10 },
+      { species: "rock", count: 6 },
+    ]);
+    expect(homesteadWildMix("mining", 0, HOSTILE)).toEqual([
+      { species: "oak", count: 8 },
+      { species: "rock", count: 10 },
+    ]);
+  });
+
+  it("a nicheless / uncatalogued entry passes through — the band convention", () => {
+    // `rock` declares no niche (stone is substrate) and must survive the most
+    // hostile sample there is; that is the same convention that lets a future
+    // row join without declaring anything.
+    expect(wildMixForBiome(0, 3, HOSTILE)).toEqual([{ species: "rock", count: 8 }]);
+  });
+
+  it("🎯 the pick is SUITABILITY-WEIGHTED: a range-edge plant is RARE here, not equally likely", () => {
+    const rows = usefulPlants(TEMPERATE);
+    const weightOf = (species: string): number =>
+      nicheSuitabilityOf(naturalSourceOf(species)!, TEMPERATE);
+    const ranked = [...rows].sort((a, b) => weightOf(a.species) - weightOf(b.species));
+    const marginal = ranked[0]!.species;
+    const peak = ranked[ranked.length - 1]!.species;
+    expect(weightOf(marginal)).toBeLessThan(weightOf(peak));
+
+    const counts: Record<string, number> = {};
+    for (let seed = 0; seed <= 60; seed++) {
+      const s = homesteadWildMix("farmland", seed, TEMPERATE)[1]!.species;
+      counts[s] = (counts[s] ?? 0) + 1;
+    }
+    // The whole point: admission is not abundance. The plant clinging to its
+    // range edge here appears strictly less often than the one that peaks.
+    expect(counts[marginal] ?? 0).toBeLessThan(counts[peak] ?? 0);
+    // A ZERO-weight plant is not rare, it is impossible — filtered before the
+    // walk, and stepped over by the walk even if it were not.
+    expect(nicheSuitabilityOf(naturalSourceOf("banana_plant")!, TEMPERATE)).toBe(0);
+    expect(counts["banana_plant"] ?? 0).toBe(0);
+    // …and the weighting BITES: at least one seed answers differently from the
+    // uniform modulo the no-climate arm still uses.
+    const uniform = (seed: number): string => rows[(seed >>> 3) % rows.length]!.species;
+    const moved = Array.from({ length: 61 }, (_, seed) => seed).some(
+      (seed) => homesteadWildMix("farmland", seed, TEMPERATE)[1]!.species !== uniform(seed),
+    );
+    expect(moved).toBe(true);
+  });
+
+  it("deterministic per (seed, climate) — the same cell answers the same species forever", () => {
+    for (const seed of [0, 3, 11, 64, 1234567]) {
+      expect(homesteadWildMix("farmland", seed, TEMPERATE)).toEqual(
+        homesteadWildMix("farmland", seed, TEMPERATE),
+      );
+      expect(wildMixForBiome(3, seed, MILD_STEPPE)).toEqual(
+        wildMixForBiome(3, seed, MILD_STEPPE),
+      );
+      // No rng, no clock: the pick is a pure hash of the seed walked over the
+      // cell's own weights, so two callers standing on one cell agree.
+      expect(homesteadWildMix("farmland", seed, MILD_STEPPE)[1]!.species).toBe(
+        wildMixForBiome(3, seed, MILD_STEPPE)[1]!.species,
+      );
+    }
+  });
+
+  it("⚖️ NOTHING REACHABLE WITHOUT A CLIMATE MOVED — the bench law, re-asserted", () => {
+    // The headless text harness founds with `homesteadWildMix(biome, seed)` and
+    // no third argument at all, and its transcripts byte-hold below the fence.
+    // Neither the animal filter nor the weighted pick may be reachable from a
+    // call that passed no sample — so the legacy arm is re-pinned here, whole:
+    // the modulo over the UNFILTERED grower's query, every switch line intact.
+    const rows = usefulPlants();
+    for (let seed = 0; seed <= 60; seed++) {
+      const want = rows[(seed >>> 3) % rows.length]!.species;
+      expect(homesteadWildMix("farmland", seed).map((e) => e.species)).toEqual([
+        "oak", want, "rock", "sheep", "cow",
+      ]);
+      expect(homesteadWildMix("mining", seed).map((e) => e.species)).toEqual([
+        "oak", want, "rock",
+      ]);
+      expect(wildMixForBiome(1, seed).map((e) => e.species)).toEqual(["oak", want, "rock"]);
+      expect(wildMixForBiome(2, seed).map((e) => e.species)).toEqual([
+        "oak", want, "rock", "sheep",
+      ]);
+      expect(wildMixForBiome(3, seed).map((e) => e.species)).toEqual([
+        "oak", want, "rock", "sheep", "cow",
+      ]);
+      expect(wildMixForBiome(0, seed)).toEqual([{ species: "rock", count: 8 }]);
+    }
+    // Counts too — the filter is the only new step and it never runs here.
+    expect(homesteadWildMix("farmland", 1).map((e) => e.count)).toEqual([8, 2, 4, 2, 1]);
+    expect(homesteadWildMix("mining", 5).map((e) => e.count)).toEqual([8, 2, 10]);
+    expect(wildMixForBiome(1, 0).map((e) => e.count)).toEqual([10, 2, 6]);
+    expect(wildMixForBiome(3, 0).map((e) => e.count)).toEqual([3, 1, 5, 2, 1]);
   });
 });
 

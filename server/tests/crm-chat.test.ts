@@ -5,7 +5,29 @@
  * later; this file should run fast and need no DB.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+
+// topicService is the only DB-touching dependency in this file. Mock it at
+// MODULE scope: under ESM `jest.unstable_mockModule` is not hoisted and takes
+// effect only for imports that happen after it, so registering it inside a
+// beforeEach (as `jest.doMock` allowed) is too late. The factory closes over
+// `topicCalls`, which each test clears, so one registration serves them all.
+const topicCalls: Array<{ parentId: string | null; options: any }> = [];
+const FAKE_TOPICS = [
+  { id: 'public-1', title: 'Public', content: 'p', active: true, crmAccessible: true },
+  { id: 'internal-1', title: 'Internal', content: 'i', active: true, crmAccessible: false },
+];
+jest.unstable_mockModule('../services/topicService', () => ({
+  topicService: {
+    getActiveTopicsByParentId: jest.fn(async (parentId: string | null, options: any = {}) => {
+      topicCalls.push({ parentId, options });
+      const topics = options.crmAccessibleOnly
+        ? FAKE_TOPICS.filter((t) => t.crmAccessible)
+        : FAKE_TOPICS;
+      return { success: true, topics };
+    }),
+  },
+}));
 
 describe('CRM identify — IP hashing', () => {
   const ORIGINAL_SALT = process.env.CRM_IP_SALT;
@@ -244,36 +266,13 @@ describe('CRM agent template', () => {
 });
 
 describe('CRM library access — crmAccessible filter', () => {
-  // Capture every call topic-memory-schema makes to topicService so we can
-  // assert it propagates the crmAccessibleOnly flag from the context.
-  let calls: Array<{ parentId: string | null; options: any }> = [];
-  const fakeTopics = [
-    { id: 'public-1', title: 'Public', content: 'p', active: true, crmAccessible: true },
-    { id: 'internal-1', title: 'Internal', content: 'i', active: true, crmAccessible: false },
-  ];
+  // Every call topic-memory-schema makes to topicService is captured by the
+  // module-scope mock above, so we can assert it propagates crmAccessibleOnly
+  // from the context.
+  const calls = topicCalls;
 
   beforeEach(() => {
-    calls = [];
-    jest.resetModules();
-    jest.doMock('../services/topicService', () => ({
-      __esModule: true,
-      topicService: {
-        getActiveTopicsByParentId: jest
-          .fn()
-          .mockImplementation(async (parentId: string | null, options: any = {}) => {
-            calls.push({ parentId, options });
-            const topics = options.crmAccessibleOnly
-              ? fakeTopics.filter((t) => t.crmAccessible)
-              : fakeTopics;
-            return { success: true, topics };
-          }),
-      },
-    }));
-  });
-
-  afterEach(() => {
-    jest.dontMock('../services/topicService');
-    jest.resetModules();
+    calls.length = 0;
   });
 
   it('passes crmAccessibleOnly:true when ctx.all.crmAccessibleOnly is set', async () => {

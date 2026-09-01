@@ -290,6 +290,39 @@ resource "aws_cloudfront_distribution" "aac_updates" {
     response_headers_policy_id = aws_cloudfront_response_headers_policy.aac_updates_cors[0].id
   }
 
+  # On-device voice models (`models/**`) — the Kokoro neural TTS weights the
+  # AAC downloads per DEVICE when a student has the local voice enabled.
+  #
+  # Two reasons this needs its own behavior rather than riding the default:
+  #
+  #  1. CORS. Weights are fetched by the packaged apps from their app://aac and
+  #     capacitor://localhost origins, which browsers treat as cross-origin —
+  #     without Access-Control-Allow-Origin the fetch is blocked and no device
+  #     can ever get a voice. Same reasoning (and same policy) as the JSON
+  #     manifests above.
+  #  2. Immutability. Model paths carry the version (`models/kokoro/v1.0/...`),
+  #     so a published file NEVER changes — a new model version is a new path.
+  #     That makes these the most cacheable objects in the bucket, which matters
+  #     when the payload is ~94 MB per device.
+  #
+  # Public, non-PHI, read-only — exactly the data class this bucket already
+  # holds. No new toggle: gated by `enable_aac_auto_update` like everything else
+  # here, so it works identically under the ecs-lean, hipaa and legacy profiles.
+  ordered_cache_behavior {
+    path_pattern               = "models/*"
+    target_origin_id           = "aac-updates-s3"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    # Weights are already compressed; re-compressing at the edge burns CPU for
+    # nothing and can defeat range requests on a resumed download.
+    compress                   = false
+    # AWS-managed "CachingOptimized" — respects the immutable Cache-Control the
+    # publisher sets, up to a 365-day edge TTL.
+    cache_policy_id            = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.aac_updates_cors[0].id
+  }
+
   restrictions {
     geo_restriction {
       restriction_type = "none"

@@ -19,14 +19,17 @@
 
 import type { CellGrid } from "../kernel/cells/index.js";
 import type { GridTopology } from "../kernel/cells/topology.js";
+import { band, type ClimateSample, type SpeciesNiche } from "../products.js";
 
-/** A smooth tolerance window: 0 outside [lo, hi], 1 at `opt`, cosine-eased
- *  on each shoulder. Undefined bounds = one-sided (no limit that way). */
-export interface Tolerance {
-  lo?: number;
-  opt: number;
-  hi?: number;
-}
+// ⚖️ THE NICHE VOCABULARY LIVES IN products.ts (2026-09-01). `Tolerance` and
+// `band()` were defined here; the natural-sources catalogue needed them so
+// its own rows could say where a plant grows, and that module is a PURE LEAF
+// that may not import. They moved DOWN and are re-exported here verbatim —
+// this module's public surface is unchanged (planet-game.ts, the games'
+// ecology suites), and one band() serves both registries, which is what lets
+// a catalogue niche be calibrated against TREE/GRASS below and mean it.
+export { band } from "../products.js";
+export type { Tolerance, SpeciesNiche, ClimateSample } from "../products.js";
 
 export type SpeciesKind = "plant" | "animal";
 
@@ -48,13 +51,11 @@ export interface SpeciesDef {
   key: string;
   kind: SpeciesKind;
   /** Niche tolerances over the fields (any subset). rain ~0..1.3,
-   *  tempC in °C, elevation in height units above sea, fertility 0..15. */
-  niche: {
-    rain?: Tolerance;
-    tempC?: Tolerance;
-    elevation?: Tolerance;
-    fertility?: Tolerance;
-  };
+   *  tempC in °C, elevation in height units above sea, fertility 0..15.
+   *  ONE OWNER OF THE SHAPE (products.ts `SpeciesNiche`) — the natural-
+   *  sources catalogue declares its niches in the same type, so "where a
+   *  species lives" is one fact with one definition, not two. */
+  niche: SpeciesNiche;
   interactions?: SpeciesInteraction[];
   /** The GROUND COLOUR a cell this species dominates reads as from orbit
    *  (linear RGB) — the biome tint IS the dominant plant. An animal uses
@@ -68,18 +69,6 @@ export interface SpeciesDef {
    *  species' biome cells (not a stand-in). The ecology field is the
    *  distribution; this is what grows there. */
   model?: string;
-}
-
-/** Cosine-eased tolerance window → 0..1. */
-export function band(v: number, t: Tolerance | undefined): number {
-  if (!t) return 1;
-  if (t.lo !== undefined && v < t.lo) return 0;
-  if (t.hi !== undefined && v > t.hi) return 0;
-  const side = v <= t.opt ? t.lo : t.hi;
-  if (side === undefined) return 1; // one-sided: full suitability past the opt
-  const span = Math.abs(t.opt - side) || 1;
-  const x = Math.min(1, Math.abs(v - t.opt) / span);
-  return 0.5 + 0.5 * Math.cos(x * Math.PI); // 1 at opt, 0 at the bound
 }
 
 export interface EcologyOpts {
@@ -213,6 +202,42 @@ export function applyEcology(
     }
   }
   return res;
+}
+
+/**
+ * ONE CELL as a niche query's input (products.ts `ClimateSample`, consumed by
+ * `nicheSuitabilityOf` / `usefulPlants`). Reads the BIOSPHERE FIELDS exactly
+ * as `ecologyFields` does — elevation is height above the sea line, fertility
+ * falls back to 0 on a substrate that carries none — so "what can grow here"
+ * and "what the biosphere actually put here" are answered off the same
+ * numbers. The one honest way a caller turns a cell into a niche question:
+ * anything else re-derives these units and starts the drift.
+ *
+ * ⛏️ AND THE SUBSTRATE AXES RIDE ALONG (2026-09-01): `ore` is exposed-ore
+ * richness (`grid.fields.ore`, 0..15 — worldgen writes it, runtime only
+ * depletes it), optional-with-0 exactly like fertility. The biosphere above
+ * does NOT read it — no shipped species is lode-bound, and inventing an ore
+ * term in `suitability` would move biomes — but a catalogue niche may
+ * (products.ts `SpeciesNiche.ore`), and it must get its number from the SAME
+ * builder every other axis comes from. Rain/tempC/height stay the REQUIRED
+ * trio: un-climated ground is still an error, never a silent zero sample.
+ */
+export function climateSampleAt(grid: CellGrid, cell: number, seaHeight = 3): ClimateSample {
+  const height = grid.fields.height;
+  const rain = grid.fields.rain;
+  const tempC = grid.fields.tempC;
+  const fert = grid.fields.fertility;
+  const ore = grid.fields.ore;
+  if (!height || !rain || !tempC) {
+    throw new Error("climateSampleAt: needs a climated substrate (height/rain/tempC — run applyClimate first)");
+  }
+  return {
+    rain: rain[cell],
+    tempC: tempC[cell],
+    elevation: Math.max(0, height[cell] - seaHeight),
+    fertility: fert ? fert[cell] : 0,
+    ore: ore ? ore[cell] : 0,
+  };
 }
 
 // ── Default biosphere: the trees-vs-horses check ───────────────────────────

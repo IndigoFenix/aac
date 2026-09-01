@@ -40,10 +40,16 @@
 
 import type { GeoPoint } from "@shared/location-matching";
 import { resolveVenueMenuSettings } from "@shared/venue-menus";
-import { matchCuisineCategory, type RestaurantAppPayload } from "@shared/venue-cuisine";
+import {
+  CUISINE_CATEGORIES,
+  matchCuisineCategory,
+  venueServes,
+  type RestaurantAppPayload,
+} from "@shared/venue-cuisine";
 import {
   resolveBoundVenue,
   resolveStudentVenueBoard,
+  resolveVenueBoardById,
   describeVenueBoardStats,
   type VenueBoardStudent,
 } from "./venue-board-service.js";
@@ -104,7 +110,7 @@ export async function resolveRestaurantOpen(
 
     // ── floor mode ──
     // A venue is bound but no approved menu came back — nobody has photographed
-    // it yet, it is in review, it aged out, or the allergen filter emptied it.
+    // it yet, it is in review, it aged out, or it refined down to nothing.
     // The student is still sitting at the table. Eight words they already know
     // beats a search for somewhere they are not.
     const bound = await resolveBoundVenue(student, now);
@@ -148,21 +154,82 @@ export async function resolveRestaurantOpen(
       return {
         mode: "search",
         canSearch: false,
+        positionKnown: false,
         categories: [],
         places: [],
         food: matchCuisineCategory(input.data)?.key ?? null,
       };
     }
 
+    // ── a NAMED place ──
+    //
+    // `data` may name a VENUE rather than a food: the student pressed
+    // "לה פיצליה" on the places grid (client token `venue:<id>`), or told the
+    // AI they want to go there and the Speaker passed the name. Before this
+    // existed the name fell through the cuisine matcher, matched nothing, and
+    // the app RE-OPENED ON THE FOOD GRID — observed live 2026-09-01: the
+    // student chose a restaurant, the AI said "we'll open it for you", and the
+    // screen reset to "what do you want to eat?".
+    //
+    // A known venue with an approved menu opens that menu as a PREVIEW —
+    // looked at, not bound. Same gates as the at-the-table path (approved
+    // only, staleness window, allergen filter — see resolveVenueBoardById);
+    // no floor board, because "this is too hot" is a sentence for a table
+    // they are not at.
+    //
+    // Checked BEFORE the cuisine matcher, and the name matcher is
+    // exact-match-only, so a plain "פיצה" still reaches the pizza grid rather
+    // than whichever pizzeria happens to contain the word.
+    const requested = await venueBrowseService.resolveNamedVenue(
+      student.id,
+      input.data,
+      input.gps ?? null,
+      settings.browseRadiusM,
+    );
+    let requestedVenueName: string | undefined;
+    if (requested) {
+      const preview = await resolveVenueBoardById(student, requested.id, now);
+      if (preview) {
+        return {
+          mode: "menu",
+          preview: true,
+          venueName: preview.venueName,
+          menuBoard: preview.board,
+        };
+      }
+      // We know the place; there is just no menu a student may see. Do NOT
+      // fall back to the bare grid as if they had never asked — keep their
+      // context: open on that venue's kind of food so the place they named is
+      // on the screen, and carry the name so the Speaker says what happened.
+      requestedVenueName = requested.name;
+    }
+    const requestedVenueId = requested?.id;
+
     // A word the AI passed, turned into a category — or null, which opens the
-    // full grid rather than a guess.
-    const category = matchCuisineCategory(input.data);
+    // full grid rather than a guess. When a menu-less venue was named, its own
+    // cuisine wins: "opened on pizza places, including the one you asked for".
+    const category =
+      (requested ? CUISINE_CATEGORIES.find((c) => venueServes(requested, c)) : null) ??
+      matchCuisineCategory(input.data);
 
     if (!input.gps) {
       // No position: the grid is still a vocabulary board and every press still
       // speaks. Categories are left empty so the client shows all of them —
       // filtering to "nearby" is meaningless when we do not know where we are.
-      return { mode: "search", canSearch: true, categories: [], places: [], food: category?.key ?? null };
+      //
+      // `positionKnown: false` is what stops the empty result being REPORTED as
+      // a fact. Without it this branch and a real search that came back empty
+      // are indistinguishable downstream, and both said "nothing nearby serves
+      // pizza" — a claim about the world made from a lookup that never ran.
+      return {
+        mode: "search",
+        canSearch: true,
+        positionKnown: false,
+        categories: [],
+        places: [],
+        food: category?.key ?? null,
+        ...(requestedVenueName ? { requestedVenueName, requestedVenueId } : {}),
+      };
     }
 
     const result = await venueBrowseService.browse(
@@ -178,9 +245,11 @@ export async function resolveRestaurantOpen(
     return {
       mode: "search",
       canSearch: true,
+      positionKnown: true,
       categories: result.categories,
       places: result.places,
       food: category?.key ?? null,
+      ...(requestedVenueName ? { requestedVenueName, requestedVenueId } : {}),
     };
   } catch (error) {
     console.error("[restaurant-app] open failed:", (error as Error)?.message);
@@ -197,11 +266,23 @@ export async function resolveRestaurantOpen(
  * need them to talk about lunch, and every one of them would be tokens on
  * every subsequent turn.
  *
- * It also never mentions allergies. The filter already removed what it removed;
- * naming it here would put PHI into a model's context to no purpose.
+ * It also never mentions allergies — PHI never reaches a model's context
+ * (§3.3), and since 2026-09-01 no allergen filtering runs on the board at all.
  */
 export function restaurantOpenNote(payload: RestaurantAppPayload): string {
   if (payload.mode === "menu") {
+    // A PREVIEW is a different sentence from a table. The student picked a
+    // place they WANT; nothing narrated may imply they are there or that
+    // anything is arranged.
+    if (payload.preview) {
+      return (
+        `[RESTAURANT] The student chose ${payload.venueName ?? "a restaurant"} and its menu is ` +
+        `now on screen for them to LOOK at. They are NOT there — nothing is booked and nobody ` +
+        `has taken them anywhere. Talk about what they might like to eat there. Do NOT name ` +
+        `specific dishes — you cannot see which ones are on their board, and naming one that ` +
+        `is not there asks a child to press a button that does not exist.`
+      );
+    }
     return (
       `[RESTAURANT] The menu for ${payload.venueName ?? "this restaurant"} is now on screen and ` +
       `the student can order from it. Talk about choosing food. Do NOT name specific dishes — ` +
@@ -234,6 +315,59 @@ export function restaurantOpenNote(payload: RestaurantAppPayload): string {
         `${payload.food ? ` (it opened on ${payload.food})` : ""}. ` +
         `Looking up nearby places is turned OFF for this student, so there are no restaurants ` +
         `on screen. Talk about the FOOD. Do NOT offer to find, name, or suggest anywhere to go.`
+      );
+    }
+
+    // A fetch for the named venue's menu is RUNNING. The student is looking
+    // at a "getting the menu…" screen; the Speaker narrates the wait honestly
+    // — it may take up to a minute, and the result may be nothing.
+    if (payload.fetchingMenu) {
+      return (
+        `[RESTAURANT] The student chose ${payload.fetchingMenu.venueName} and its menu is being ` +
+        `FETCHED right now — the screen says so. This can take up to a minute and may fail. ` +
+        `Tell the user you are getting the menu. Do NOT describe any dishes, and do not promise ` +
+        `it will arrive; you will be told when it does or does not.`
+      );
+    }
+
+    // A fetch for the named venue's menu just FAILED (or the menu is waiting
+    // on review). Say it plainly — the screen shows it too.
+    if (payload.menuFetchFailed) {
+      return (
+        `[RESTAURANT] The menu for ${payload.menuFetchFailed} could not be shown — it was not ` +
+        `found, could not be read, or is waiting for a caretaker's check. Say that plainly and ` +
+        `warmly. Do NOT describe its dishes or offer to try again.`
+      );
+    }
+
+    // The student named a PLACE we know, and it has no menu they may see —
+    // never captured, waiting on review, or stale. Say that plainly. The alternative is the Speaker narrating the
+    // grid as if the student had never asked for anywhere, which reads to the
+    // child as being ignored.
+    if (payload.requestedVenueName) {
+      return (
+        `[RESTAURANT] The student asked about ${payload.requestedVenueName}. That place has no ` +
+        `menu loaded for them yet, so the screen shows nearby food choices instead` +
+        `${payload.food ? ` (opened on ${payload.food})` : ""}. Say plainly that its menu is not ` +
+        `here yet — a companion can add it at the restaurant. Do NOT describe its dishes, and do ` +
+        `not promise to fetch the menu.`
+      );
+    }
+
+    // 🚨 WE NEVER LOOKED. `positionKnown: false` means the device location
+    // setting is off, the reading failed, or nothing has reported a position —
+    // so `places` is empty because no search ran, not because the street is
+    // empty. Observed 2026-09-01: the note below said "Nothing nearby serves
+    // pizza", the Speaker duly told a child there was no pizza place near him,
+    // and the lookup had never happened. Checked before the food branches for
+    // exactly that reason.
+    if (payload.positionKnown === false) {
+      return (
+        `[RESTAURANT] Showing the food grid so the student can say what they feel like eating` +
+        `${payload.food ? ` (it opened on ${payload.food})` : ""}. ` +
+        `We do NOT know where the student is, so no search for nearby places has run. ` +
+        `Talk about the FOOD. If they ask where they could go, say you do not know where they ` +
+        `are right now — do NOT say there is nothing nearby, and do not name a place.`
       );
     }
 

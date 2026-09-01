@@ -96,6 +96,13 @@ export function MenuLane({
           iconTextRatio={iconTextRatio}
           selectionMethod={selectionMethod}
           restSpace={restSpace}
+          // 🚨 The renderer must NOT voice this press. `onSpeak` routes it
+          // through the student-voice TTS every other button in the app uses,
+          // and the renderer's own browser-speechSynthesis path would then say
+          // the same dish a second time in a different voice — which is exactly
+          // what a child ordering lunch heard (reported 2026-09-01). One press,
+          // one voice; the caller owns which.
+          suppressLocalSpeech
           // The SERVER owns what gets said: `spokenText` is the original dish
           // name, never the translated label, because the waiter is the
           // audience. The renderer hands us both; we pass the spoken one on

@@ -139,7 +139,11 @@ describe("isNonReversibleItem", () => {
   });
 
   it("does not sweep up ordinary vocabulary", () => {
-    for (const key of ["walk", "come", "my", "your", "do", "apple"]) {
+    // `go`, not `walk`: walk was withdrawn from the registry (user decision
+    // 2026-08-20) as a synonym of go — Hebrew has one word for both, and go
+    // still renders walk's artwork. A deleted head reads as `undefined` here,
+    // not as a mirroring failure.
+    for (const key of ["go", "come", "my", "your", "do", "apple"]) {
       const item = getVocabularyItem(key);
       expect(item).toBeDefined();
       expect(isNonReversibleItem(item!)).toBe(false);

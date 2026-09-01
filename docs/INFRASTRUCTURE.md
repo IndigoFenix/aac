@@ -713,9 +713,10 @@ Alarms publish to the KMS-encrypted `aws_sns_topic.alerts`. Two pieces are what
 make that reach a human (`terraform/alerting.tf`, `terraform/secrets.tf`):
 
 - an **email subscription** created from `var.alert_email` (both ECS profiles set
-  `security@aivota.ai`; an empty value means deliberately unsubscribed). SNS
+  `alerts@aivota.ai`; an empty value means deliberately unsubscribed). SNS
   sends a one-time confirmation mail after apply — until someone clicks it the
-  stream is silent.
+  stream is silent. Changing the address **replaces** the subscription, so a
+  re-point starts unconfirmed and silent all over again.
 - **CMK grants** for `cloudwatch.amazonaws.com` and `events.amazonaws.com`, plus
   an SNS topic policy granting both services `SNS:Publish`. Without them the
   encrypted topic rejects the publish and alarms fire into the void.

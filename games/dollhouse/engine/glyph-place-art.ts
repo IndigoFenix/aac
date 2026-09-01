@@ -90,6 +90,7 @@ const DEFAULT_PLACE_ART: Readonly<Record<string, string>> = {
   // a library is a building of books.
   library: "building(book)",
   temple: "building(altar)",
+  restaurant: "building(eat)",
   storehouse: "building(box)",
   // ── ROOMS (a floor inside one) ─────────────────────────────────────────
   bedroom: "room(bed)",
@@ -98,7 +99,15 @@ const DEFAULT_PLACE_ART: Readonly<Record<string, string>> = {
   bathroom: "room(toilet)",
   // STORAGE: a room of boxes. The word the storage sense now owns outright.
   storeroom: "room(box)",
-  living: "room(table)",
+  // WHO IS IN IT, not the furniture: a living room is the household's room,
+  // so it wears the same symbol as the dwelling. It was `room(table)` before
+  // the living/dining split, and the table went with the DINING room — this
+  // row kept the old fixture and drew a dining room under the living word.
+  living: "room(family)",
+  // The two EATING places, sharing one icon at their two levels. Neither has
+  // art of its own: the container frame composes `eat`, which carries real
+  // artwork where `food` is a bare 🍽️.
+  dining: "room(eat)",
   forge: "room(anvil)",
   shrine: "room(altar)",
   weaving: "room(loom)",

@@ -61,6 +61,7 @@ import { listSpecies } from "../../creatures/species.js";
 import { PLACE_STUBS, specWordHeads } from "../content/words.js";
 import { placeGroupOf } from "../content/vocab-order.js";
 import { CORE_PEOPLE } from "../../object-properties.js";
+import { clusterIdsOf } from "../content/noun-clusters.js";
 import { FURNITURE_ITEMS, STATION_ACTS } from "../../kernel/town/stations.js";
 import { fixtureWord } from "../../types.js";
 import { headOf } from "../../variations.js";
@@ -154,6 +155,15 @@ export interface BuilderNounEntry {
   properties?: string[];
   /** Present in the current scene (persons/creatures) — passed through. */
   present?: boolean;
+  /**
+   * A SPECIFIC PERSON, not a class of one — the child's own contacts out of
+   * game, a scene's named characters in it. Puts the noun on the [individuals]
+   * chip instead of [person], and leads the row on a board that asks for
+   * somebody. One list, two sources: the in-game builder imitates how the board
+   * is used outside the game, so a character occupies the same slot a real
+   * person would. See `ClusterableNoun.individual` for why it travels as data.
+   */
+  individual?: boolean;
   /**
    * DISPLAY glyph, when the word's PICTURE is not its own symbol. The pressed
    * word stays `symbol` — one word, parseable, exactly what the sentence
@@ -487,17 +497,39 @@ export function placeBuilderNouns(
 // The adapter
 // ---------------------------------------------------------------------------
 
-/** First entry per head wins — the federation's own rule, applied to a list. */
+/**
+ * First entry per head wins — the federation's own rule, applied to a list.
+ *
+ * ⚖️ WINNING IS NOT ERASING. A host's entry OUTRANKS the default library's for
+ * the same head, but it does not replace what it never spoke about: a later
+ * entry for the same head backfills any field the winner left undefined.
+ *
+ * The case that forced it: a host pushing `{ symbol: "chair", label: "chair",
+ * affords: [...] }` said nothing about properties, and the merge dropped the
+ * library's `["furniture"]` with it. A chair that is not furniture clusters
+ * under no chip, and on a board that withholds objects in favour of chips that
+ * is the same as deleting the word — the host asked for its own affordances and
+ * silently lost the chair.
+ */
 function dedupeByHead(nouns: readonly BuilderNounEntry[]): BuilderNounEntry[] {
-  const seen = new Set<string>();
-  const out: BuilderNounEntry[] = [];
+  const byHead = new Map<string, BuilderNounEntry>();
+  const order: string[] = [];
   for (const n of nouns) {
     const h = headOf(n.symbol);
-    if (!h || seen.has(h)) continue;
-    seen.add(h);
-    out.push(n);
+    if (!h) continue;
+    const won = byHead.get(h);
+    if (!won) {
+      byHead.set(h, { ...n });
+      order.push(h);
+      continue;
+    }
+    // Backfill only — every field the winner DID declare stands.
+    const target = won as unknown as Record<string, unknown>;
+    for (const [k, v] of Object.entries(n)) {
+      if (target[k] === undefined && v !== undefined) target[k] = v;
+    }
   }
-  return out;
+  return order.map((h) => byHead.get(h)!);
 }
 
 /** Person-deixis heads that take the CREATURE descriptor axes ("i_me + hungry"). */
@@ -567,6 +599,7 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
     kind: n.kind ?? "unknown",
     affords: n.affords ?? ["want", "get", "give"],
     properties: n.properties ?? [],
+    ...(n.individual ? { individual: true } : {}),
   }));
 
   const tokens = tokenizeSentence(partialGlyph);
@@ -669,6 +702,11 @@ export const GROUP_LABEL_HEAD: Record<string, string> = {
   // is planting" on a category of nouns in three of the four rulesets.
   animals: "animal",
   plants: "plants",
+  // THE SPECIFIC PEOPLE (2026-09-01). Distinct from `creatures`/"person", which
+  // is somebody in GENERAL — this chip is the people a child actually knows,
+  // one list whose members are real contacts outside a game and the characters
+  // standing in for them inside one.
+  individuals: "individuals",
   // The place split (2026-08-25) — each id is already a lang-layer word.
   room: "room",
   building: "building",
@@ -688,20 +726,10 @@ function thingClusters(nouns: BuilderNounEntry[]): Map<string, BuilderNounEntry[
     clusters.set(id, arr);
   };
   for (const n of nouns) {
-    for (const p of n.properties ?? []) push(p, n);
-    // THE LIVING SPLIT (2026-08-27) — the same three questions the place split
-    // answered, asked of bodies: `creatures` is the chip that means SOMEBODY,
-    // and an animal is not somebody. Read off the spec registries
-    // (`isAnimal`/`isPlant`), never a word list, so a new species row files
-    // itself.
-    if (n.kind === "creature") push(isAnimal(n.symbol) ? "animals" : "creatures", n);
-    else if (n.kind === "place") push(placeGroupOf(n.symbol), n);
-    else if (n.kind === "item") {
-      // A plant is a plant whatever else it is: `tree` is also timber, and the
-      // property chip it earns there must not cost it the one a child looks for.
-      if (isPlant(n.symbol)) push("plants", n);
-      else if (!(n.properties ?? []).length) push("things", n);
-    }
+    // The SAME rule the surfacer reads (content/noun-clusters.ts) — the things
+    // tab's sub-chips and the board's chips are one question asked twice, and
+    // when they were two answers they drifted.
+    for (const c of clusterIdsOf(n)) push(c.id, n);
   }
   return clusters;
 }

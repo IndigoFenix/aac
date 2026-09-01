@@ -54,6 +54,7 @@
 
 import { FOOD_DAY_SEC } from "./goods.js";
 import {
+  stackHead,
   stackUnits,
   transferStock,
   type StockEndpoint,
@@ -530,6 +531,178 @@ export function nextBarterWillingAt(
 }
 
 // ---------------------------------------------------------------------------
+// ⚖️ IMPORT DISPLACEMENT — the lane fades when our own ground covers it
+// ---------------------------------------------------------------------------
+//
+// (import-displacement-round.md Stage C — the arc's last beat, "expensive
+// import → local planting → import dies".) The binding model is #47's Layer-3
+// law: LANDED COST = min(local production cost, producer + freight). At this
+// rung there is no money and quantity is the whole story, so the min() reads
+// as a comparison of RATES — when the town's own ground bears at least as much
+// of the take-good per day as the standing agreement hauls in per day, local
+// wins the min() and the import has nothing left to do.
+//
+// 🚨 GLYPH-SPECIFIC SUPPLY, NEVER A WANT. The cheap version — "park the route
+// when our shortage of the take-good is low" — kills a banana agreement on its
+// FIRST due leg: a fruit glyph has no fill row, so the books answer shortage 0
+// for it and every fruit lane reads as unwanted before a seed is in the
+// ground. A SUPPLY reading cannot lie that way. A stand that does not stand
+// bears nothing (`localYieldPerDay` is Σ cap, and Stage A made a sapling
+// orchard's cap 0), so this can never fire before the orchard does.
+//
+// 🚨 THE PAUSE BIT IS THE ONE THAT ALREADY EXISTS. A displaced route rides
+// `BarterTerms.suspended` exactly as a famine-refused one does — same flag,
+// same edge-gated narration, same `resumed` leg when it clears — so NOTHING
+// NEW IS SERIALIZED and every save round-trips byte for byte. What the row
+// deliberately does not carry is the REASON: which rows are currently
+// displaced is the caller's own session-lived state (`RunBartersOpts.
+// displaced`), re-derived after a reload rather than stored, exactly as
+// `TownPark` is. The reason is what gates the fade line, so the displacement
+// EDGE is its own edge and not the shared bit's.
+
+/**
+ * PARK AT PARITY. Coverage = our units/day ÷ the lane's units/day; at 1 the
+ * ground already answers the whole standing order, which is precisely where
+ * min() stops naming the caravan.
+ */
+export const BARTER_DISPLACE_AT = 1;
+/**
+ * RESUME BELOW THREE QUARTERS — the hysteresis band, and why there is one.
+ * BOTH rates move on their own: a stand climbs a growth class, and the quote
+ * is RE-DERIVED every leg off shifting scarcities, so the take can change by a
+ * whole unit between visits (the speakable pair is 1..3 a side — a one-unit
+ * step is a 33%–50% swing in the flow). A bare 1.0 read from both directions
+ * would flip a lane park→resume→park across that wobble and spend one toast
+ * per flip. A quarter of the flow is wider than any single-unit quote step at
+ * this tier's batch sizes, so a parked lane stays parked until the ground has
+ * REALLY lost the argument — an orchard chopped, not an orchard breathing.
+ */
+export const BARTER_DISPLACE_RESUME_AT = 0.75;
+
+/**
+ * IMPORTED UNITS PER DAY — the agreement's own flow, the right-hand side of
+ * the min(). Every degenerate reading answers 0 ("no measurable import"),
+ * which makes displacement IMPOSSIBLE rather than certain: a rate nobody can
+ * read is never grounds for killing a lane.
+ */
+export function importedFlowPerDay(takeUnitsPerVisit: number, visitPeriodDays: number): number {
+  if (!Number.isFinite(takeUnitsPerVisit) || !Number.isFinite(visitPeriodDays)) return 0;
+  if (!(takeUnitsPerVisit > 0) || !(visitPeriodDays > 0)) return 0;
+  return takeUnitsPerVisit / visitPeriodDays;
+}
+
+/**
+ * ⚖️ THE DECISION: does what grows here cover what the caravan brings?
+ *
+ * DUMB BY DESIGN — both rates are the caller's to supply, in the SAME units
+ * (units of the take-good's own glyph head, per day). This function knows
+ * nothing about stands, glyphs, records or towns; it is the min() and the
+ * hysteresis and nothing else, which is why it can be pinned outright.
+ *
+ * `alreadyDisplaced` is the state the band needs: a lane not yet displaced
+ * must reach `BARTER_DISPLACE_AT` to park, and one already displaced holds
+ * until coverage falls under `BARTER_DISPLACE_RESUME_AT`.
+ *
+ * 🚨 GROUND THAT BEARS NOTHING — or a supply reading nobody can read — IS
+ * ALWAYS FALSE, before anything else is asked. The never-before-the-orchard
+ * law, stated in code rather than trusted to arithmetic (a 0-flow lane would
+ * otherwise satisfy 0 ≥ 0), and the same conservatism `importedFlowPerDay`
+ * applies to its own side: an unreadable rate is never evidence that the
+ * caravan has become redundant.
+ */
+export function localSupplyDisplaces(
+  localPerDay: number,
+  takeUnitsPerVisit: number,
+  visitPeriodDays: number,
+  alreadyDisplaced = false,
+): boolean {
+  if (!Number.isFinite(localPerDay) || !(localPerDay > 0)) return false;
+  const flow = importedFlowPerDay(takeUnitsPerVisit, visitPeriodDays);
+  if (!(flow > 0)) return false; // nothing arrives ⇒ nothing to displace
+  const coverage = localPerDay / flow;
+  return coverage >= (alreadyDisplaced ? BARTER_DISPLACE_RESUME_AT : BARTER_DISPLACE_AT);
+}
+
+/**
+ * ⚖️ THE SUPPLY SIDE, HEAD-MATCHED — units/day of ONE take-good out of a
+ * glyph→units/day reading of some ground (`localYieldPerDay`'s shape, which is
+ * the interaction rung's to produce; this rung only projects it).
+ *
+ * 🚨 THE HEAD, NOT THE GOOD KEY. A barter take is a SPOKEN GLYPH ("banana"),
+ * and local bananas displace a banana lane — never an apple one. Matching on
+ * the commodity key instead would let a carrot field kill a banana caravan on
+ * nothing but a shared class ("both are food"), which is exactly the
+ * coincidence this projection refuses. `stackHead` is the ONE extractor, so
+ * "apple.ripe" on the ground answers an "apple" lane and nothing else does.
+ */
+export function localSupplyAtHead(
+  perGlyphPerDay: Readonly<Record<string, number>>,
+  takeGood: string,
+): number {
+  const head = stackHead(takeGood);
+  if (!head) return 0;
+  let units = 0;
+  for (const [glyph, n] of Object.entries(perGlyphPerDay)) {
+    if (n > 0 && stackHead(glyph) === head) units += n;
+  }
+  return units;
+}
+
+/**
+ * HOW MANY QUOTE BATCHES ONE VISIT INTENDS at `quote`, before any stock bound
+ * — `runDueBarters`'s own line, extracted so the flow reader above and the
+ * shipment below can never disagree about how big a visit is. A STANDING
+ * route's intent is "keep trading", so it flexes to at least one batch when
+ * re-derived terms outgrow the ordered units; a one-shot keeps its strict
+ * order. A quote with no give side is not a quote — 0 batches.
+ */
+export function barterWantBatches(
+  a: TransferAgreement,
+  quote: { give: number; take: number },
+): number {
+  if (!(quote.give > 0)) return 0;
+  const ordered = Math.max(0, Math.floor(a.goods[a.barter?.giveGood ?? ""] ?? 0));
+  return a.every !== undefined
+    ? Math.max(1, Math.floor(ordered / quote.give))
+    : Math.floor(ordered / quote.give);
+}
+
+/** UNITS OF THE TAKE-GOOD ONE VISIT BRINGS at `quote` — the numerator of the
+ *  lane's flow. The INTENDED load, not the last one shipped: `BarterTerms.take`
+ *  is history (what a stock-bounded leg happened to manage), and a lane is
+ *  displaced by what it is FOR. */
+export function barterTakePerVisit(
+  a: TransferAgreement,
+  quote: { give: number; take: number },
+): number {
+  return barterWantBatches(a, quote) * Math.max(0, quote.take);
+}
+
+/**
+ * DAYS BETWEEN VISITS — `runDueBarters`'s own `advanceLeg` arithmetic read as
+ * a period: the recurrence the player ordered, or the road, whichever is
+ * longer. A ONE-SHOT has no recurrence and its period is the road alone; where
+ * the caller supplies no road either the period is 0, and `importedFlowPerDay`
+ * reads that as "no measurable import" — so a kernel-only caller (no
+ * `legSecondsOf`) never displaces a one-shot, which is the honest answer.
+ *
+ * `dayS` defaults to `FOOD_DAY_SEC` because that is the day BOTH sides of the
+ * comparison are already denominated in: a standing route's `every` is
+ * FOOD_DAY_SEC and the host ripens a stand on one FOOD_DAY_SEC pulse (which is
+ * what makes `localYieldPerDay`'s cap a per-DAY rate).
+ */
+export function barterVisitPeriodDays(
+  a: TransferAgreement,
+  legSeconds: number | undefined,
+  dayS: number = FOOD_DAY_SEC,
+): number {
+  if (!(dayS > 0)) return 0;
+  const every = a.every !== undefined && Number.isFinite(a.every) ? Math.max(0, a.every) : 0;
+  const leg = legSeconds !== undefined && Number.isFinite(legSeconds) ? Math.max(0, legSeconds) : 0;
+  return Math.max(every, leg) / dayS;
+}
+
+// ---------------------------------------------------------------------------
 // The scheduled executor — shipments both ways, terms re-derived per leg
 // ---------------------------------------------------------------------------
 
@@ -537,7 +710,12 @@ export type BarterLegStatus =
   | "shipped" // goods moved both ways at the re-derived terms
   | "suspended" // the partner refused this shipment (standing: retry next leg)
   | "resumed" // it had been suspended; this leg shipped again
-  | "short"; // OUR side can't cover one quote batch right now
+  | "short" // OUR side can't cover one quote batch right now
+  | "displaced"; // ⚖️ our own ground now covers the take — the lane fades
+
+/** Every named reason a due leg did not ship: the partner's three refusals,
+ *  our own empty yard, and our own ground having outgrown the lane. */
+export type BarterStall = BarterRefusal | "short" | "displaced";
 
 export interface BarterLegReport {
   id: string;
@@ -577,7 +755,23 @@ export interface RunBartersOpts {
    *  skipped by `parked` until its wake fires, instead of being pushed a flat
    *  `BARTER_RETRY_SEC` into the future. False/absent ⇒ `reArmOneShot`, the
    *  shipped day-timer, unchanged. */
-  park?(a: TransferAgreement, why: BarterRefusal | "short"): boolean;
+  park?(a: TransferAgreement, why: BarterStall): boolean;
+  /** ⚖️ IMPORT DISPLACEMENT — UNITS PER DAY OF THIS ROW'S TAKE-GOOD THAT OUR
+   *  OWN GROUND BEARS, head-matched (`localYieldPerDay` summed over the glyphs
+   *  whose head is the take's). The kernel cannot read ground: only the host
+   *  knows which record is this town's field, and the FIELD-RECORD-ONLY ruling
+   *  (Stage B) says it is the only record that may answer. ABSENT ⇒ no
+   *  displacement check runs at all, which is every kernel-only caller and
+   *  every world with nothing sown. */
+  localSupplyPerDay?(a: TransferAgreement): number;
+  /** ⚖️ IS THIS ROW ALREADY PARKED FOR DISPLACEMENT? — the hysteresis band's
+   *  one bit of state, held by the caller because it is SESSION-LIVED and
+   *  never serialized (the `TownPark` precedent: a lost park costs one wasted
+   *  leg, a persisted stale one would silence a live lane). It is also what
+   *  gates the fade line: the report's `newlySuspended` on a `displaced` leg
+   *  is the DISPLACEMENT edge, read off this, not off the shared pause bit.
+   *  Supply it whenever `localSupplyPerDay` is supplied. */
+  displaced?(a: TransferAgreement): boolean;
 }
 
 /**
@@ -635,7 +829,7 @@ export function runDueBarters(
     // clock; one-shots WAIT visibly instead of rotting — PARKED on the
     // condition that stalled them where the host offers a park (§2.5.1),
     // re-armed a flat day out where it doesn't.
-    const retryLeg = (why: BarterRefusal | "short") => {
+    const retryLeg = (why: BarterStall) => {
       if (a.every !== undefined) {
         advanceLeg(a, b.partnerKey);
         return;
@@ -649,6 +843,38 @@ export function runDueBarters(
       }
       reArmOneShot(a, now);
     };
+    // 1b. ⚖️ IMPORT DISPLACEMENT — asked BEFORE willingness, and the ORDER IS
+    //     THE PRECEDENCE. A refusal is a statement about THIS LEG (their
+    //     famine lifts, the caravan goes); displacement is a statement about
+    //     the LANE (we grow it now, and nothing the partner does changes
+    //     that), so when both apply the durable fact is the one the player is
+    //     told. It sits after the re-derive so a displaced row still SHOWS the
+    //     terms its next shipment would run at, and it can never move a
+    //     shipped world: with nothing sown `localSupplyPerDay` is 0 and this
+    //     whole arm is skipped.
+    if (opts.localSupplyPerDay) {
+      const wasDisplaced = opts.displaced?.(a) === true;
+      const perVisit = barterTakePerVisit(a, quote);
+      const periodDays = barterVisitPeriodDays(a, opts.legSecondsOf?.(b.partnerKey));
+      if (localSupplyDisplaces(opts.localSupplyPerDay(a), perVisit, periodDays, wasDisplaced)) {
+        // The ONE pause bit, shared with every other pause (see the section
+        // header) — but the EDGE is the displacement edge, so the fade line
+        // still speaks for a lane that was already paused for some other
+        // reason when the orchard came in.
+        b.suspended = true;
+        out.push({
+          id: a.id,
+          partnerKey: b.partnerKey,
+          status: "displaced",
+          newlySuspended: !wasDisplaced,
+          sent: {},
+          received: {},
+          quote,
+        });
+        retryLeg("displaced");
+        continue;
+      }
+    }
     // 2. Willingness re-checks per shipment — famine suspends, visibly.
     const will = barterWillingness(b.giveGood, b.takeGood, opts.us, themSig);
     if (!will.ok) {
@@ -671,12 +897,10 @@ export function runDueBarters(
     // 3. Whole batches only — the spoken terms are the executed terms. A
     //    STANDING route's intent is "keep trading" — its daily volume flexes
     //    to at least one batch when re-derived terms outgrow the ordered
-    //    units (a one-shot keeps its strict order).
-    const ordered = Math.max(0, Math.floor(a.goods[b.giveGood] ?? 0));
-    const wantBatches =
-      a.every !== undefined
-        ? Math.max(1, Math.floor(ordered / quote.give))
-        : Math.floor(ordered / quote.give);
+    //    units (a one-shot keeps its strict order). ⚖️ ONE OWNER: the same
+    //    `barterWantBatches` the displacement flow reader above measures a
+    //    visit with, so "how big is a visit" cannot be answered two ways.
+    const wantBatches = barterWantBatches(a, quote);
     //    ⚖️ G1: OUR bound is the SPARE, not the shelf. `stackUnits` counted
     //    every unit in the yard as shippable, so a hungry town emptied itself
     //    on a standing route while the SAME famine on the partner's side

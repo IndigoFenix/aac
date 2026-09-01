@@ -120,6 +120,10 @@ export function buildSpeakerPrompt(config: SpeakerPromptConfig): string {
     : `You are the AI helper built into this communication device`;
   const speechModality = useDirectAudio ? "spoken dialogue" : "speak() text";
   const isMuted = muteState === "muted";
+  // Read by BOTH <apps> and <available_surfaces>: the app block's "nothing
+  // fits, say you can't" rule needs the board carve-out only when there ARE
+  // boards to carve out, or it points at a block that was never rendered.
+  const boardsListed = !!(availableBoards && availableBoards.length > 0);
   // Gemini Live native-audio + non-muted: buildSpeakerToolDeclarations
   // strips the tool surface down to ONE tool (open_app; nothing else) to
   // dodge MALFORMED bursts. The prompt must NOT mention tools the model
@@ -361,7 +365,7 @@ ${appRows.join("\n")}
 OPEN ONLY WHEN they asked for that app, or agreed to one you just offered, THIS turn. A topic coming up is not a request.
 NEVER OPEN while they are talking to someone else, or to fill a silence.
 DURING THE WORD FINDER an open is held and you are asked whether this is the thing they were searching for. Repeat the same call to say yes; leave it alone to say no.
-NOTHING FITS? Say you can't, then talk about the thing itself. Never open the nearest-sounding app instead — it takes over their screen and costs them the thread.
+${boardsListed ? `NOT EVERY ASK IS AN APP. A ${T.board} in <available_surfaces> opens by you SAYING so — never refuse one for not being here.\n` : ""}NOTHING FITS? Say you can't, then talk about the thing itself. Never open the nearest-sounding app instead — it takes over their screen and costs them the thread.
 SAY what you are opening as you open it. Never promise an app without calling open_app.
 </apps>`;
   }
@@ -409,12 +413,23 @@ ${sites.map(site => `  - ${site.label}: ${site.url}${site.description ? ` — ${
     prompt += `\n\nYou CANNOT search the internet for pictures. There is no way for you to find, look up, fetch or show an image of anything${albumListed ? " beyond the family photos listed above" : ""}. Never offer to — say plainly that you cannot show them one, then talk about the thing itself instead.`;
   }
 
-  // Mention pre-built boards conversationally — SPEAKER may say "let's
-  // open your snack board" and BOARD MANAGER will pick it up.
-  if (availableBoards && availableBoards.length > 0) {
+  // Mention pre-built boards conversationally — SPEAKER may say "let's open
+  // your snack board" and BOARD MANAGER will pick it up (the student's own
+  // request already invoked it; see speech-board-trigger.ts).
+  //
+  // "You do not load them yourself" used to be the whole mechanism sentence,
+  // and it reads as a LIMIT with no consequence attached. So a board request
+  // fell through to <apps>, whose "NOTHING FITS? Say you can't" rule then
+  // fired — and the Speaker told a child the book he had just asked for out
+  // loud was an APP and was unavailable (prod 2026-08-31, "תירס חם"). The
+  // block now carries the consequence and the two things it must never say.
+  if (boardsListed) {
     prompt += `\n\n<available_surfaces>
-Pre-built boards you may mention by name when one fits ("let's open your snack board"). You do not load them yourself.
-${availableBoards.map(b => `  - "${b.name}"${b.hint ? ` — ${b.hint}` : ""}`).join("\n")}
+Pre-built ${T.board}s this user already has. NOT apps.
+${availableBoards!.map(b => `  - "${b.name}"${b.hint ? ` — ${b.hint}` : ""}`).join("\n")}
+
+You don't load these — SAY you are opening one ("let's open your snack board") and it opens.
+Never call one an app, and never tell the user one is unavailable.
 </available_surfaces>`;
   }
 

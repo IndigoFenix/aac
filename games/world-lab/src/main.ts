@@ -44,6 +44,7 @@ import { bootWilderness, faunaForBiome, wildMixForBiome, WILD_SIDE, type Wildern
 import { createFloraField, floraTreesNear, FLORA_TREE_SPECIES, type FloraField } from "./flora-field";
 import { growthClassPeriodS, makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
 import { naturalSourceOf } from "@shared/world-engine/products";
+import { climateSampleAt, type ClimateSample } from "@shared/world-engine/planet/ecology";
 import type { FieldRect } from "@shared/world-engine/planet/field-paint";
 import { createFarmCrops, type FarmCrops } from "./farm-crops";
 import { createTradeRoads, type TradeRoads, type TownSpliceSpec } from "./trade-roads";
@@ -1102,6 +1103,16 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
     // world-fixed field). Fauna reshuffles per mount — herds move.
     const cell = geo.grid.topo.cellAt ? geo.grid.topo.cellAt(dirArr) : 0;
     const biome = geo.grid.fields.biome ? geo.grid.fields.biome[cell] : 0;
+    // …and THIS CELL'S OWN CLIMATE decides WHICH useful plants stand here
+    // (2026-09-01, the niche join). The biome index only says "growing
+    // country"; the sample is what keeps a temperate chunk from drawing a
+    // banana. Guarded because `climateSampleAt` THROWS on an unclimated
+    // substrate — a chunk mounted before the climate bake passes `undefined`
+    // and gets the legacy seed-only pick, byte-identical.
+    const wildClimate =
+      geo.grid.fields.rain && geo.grid.fields.tempC && geo.grid.fields.height
+        ? climateSampleAt(geo.grid, cell)
+        : undefined;
     embedWild = UNIFIED_GROUND
       ? // SLICE 1: open country is a QuestHost3D wilderness session — minded,
         // talkable, possessable creatures on the same host class as the town
@@ -1128,8 +1139,12 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
             // biome mix must not scatter a SECOND, unrelated population of
             // the same species. Everything the field doesn't render (rocks,
             // fruit plants, animals) still comes from the mix.
-            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0)
+            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0, wildClimate)
               .filter(m => m.species !== FLORA_TREE_SPECIES),
+            // …and the SESSION carries the same sample (suitability-as-yield):
+            // what the scatter picked and what a site founded here would be
+            // worth are one question about one cell, asked once.
+            ...(wildClimate ? { climate: wildClimate } : {}),
             // SETTLEMENT CLEARS (round-2 GL defects): the chunk square can
             // overlap a village — its scatter must not put rocks/plants/
             // sheep through the streets. Same hole list flora uses, in
@@ -1778,6 +1793,14 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     liveAnchor.position.set(-liveCenter.x, 0, -liveCenter.y);
     viz.mesh.add(liveAnchor);
     liveGround = (x, y) => viz.ground(x - liveCenter.x, y - liveCenter.y);
+    // THE SITE'S OWN CLIMATE (2026-09-01 — the niche join, then
+    // suitability-as-yield): a mounted town's orchard sprinkle should raise
+    // what grows on THIS ground, and its FARM should yield what this ground
+    // is worth. `cityClimate` is the ONE expression — the city loader read
+    // the same function for the BOOKS at founding, so the abstract farm and
+    // the visible farm size the same field. Absent (a pre-bake mount, a body
+    // with no geography) ⇒ the legacy charter-only arm.
+    const townClimate = cityClimate(viz.fc) ?? undefined;
     embedTown = bootTownEmbedded(
       viewEl, renderer.domElement,
       // castGroundRay: ONE cursor rule everywhere on the planet — the town
@@ -1798,6 +1821,10 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
       {
         spirit: spirit !== null,
         ...(docSessionScale() ? { scale: docSessionScale() } : {}),
+        // What grows on this site (see the sample above) — the founding
+        // scatter's fruit is filtered to it AND the live farm region's output
+        // cap scales by it; omitted = the legacy arm.
+        ...(townClimate ? { climate: townClimate } : {}),
         // The planet's OTHER cities as boot-known trade partners (P0):
         // the trade board offers more than the one bound caravan line.
         tradePartners: () =>
@@ -2775,6 +2802,33 @@ function cityRoadBearings(fc: FlightCity): readonly number[] | null {
   return approachBearings(incident, townFrameOf(fc), 0);
 }
 
+/**
+ * ⚖️ THE SITE'S OWN GROUND — ONE EXPRESSION, TWO SEATS (2026-09-01,
+ * suitability-as-yield). The founding cell's climate sample decides how well
+ * this town's fields grow their crop, and it has to answer that for BOTH the
+ * abstract books (the loader's `climate` opt → `TownPlayConfig.climate`,
+ * compiled at founding) and the live farm region (the mount's
+ * `bootTownEmbedded` opts.climate → `session.climate`). Two sample
+ * expressions would be two chances to disagree about the same field, so both
+ * callers come here.
+ *
+ * Null when there is nothing to read — a body with no geography, or a planet
+ * mounted before the climate bake. `climateSampleAt` THROWS on an unclimated
+ * substrate, so the field guard is the contract, not caution.
+ *
+ * ⚠️ NEVER `fc.city.cell` AS A FIELD INDEX. A site FOUNDED in a wilderness
+ * session registers a SYNTHETIC cell (FOUNDED_CELL_BASE + seed — deliberately
+ * disjoint from the lattice), so indexing a grid field with it is out of
+ * bounds by construction. The site's DIRECTION is its one real address.
+ */
+function cityClimate(fc: FlightCity): ClimateSample | null {
+  const geo = fc.body.geography;
+  if (!geo?.grid.topo.cellAt) return null;
+  const f = geo.grid.fields;
+  if (!f.rain || !f.tempC || !f.height) return null;
+  return climateSampleAt(geo.grid, geo.grid.topo.cellAt(fc.city.dir));
+}
+
 /** THE SEAM (growth phase B §2.1): the city's incident road POLYLINES → the
  *  growth seeds its street tree forms around — the through road as one span
  *  across the town, a spur per remaining gate, all in town-local metres.
@@ -3124,6 +3178,7 @@ function bootSolarFlight(game: GameSettings): void {
     roadBearings: cityRoadBearings, // the fallback where no route ports
     roadSeeds: cityRoadSeeds,        // the baseline IS the through road
     scale: docSessionScale,          // grow the town to the extent it ports at
+    climate: cityClimate,            // …and feed it off the ground it stands on
   });
   spaceHud = createSpaceHud(viewEl);
   scene.add(flight.group);
@@ -3974,6 +4029,7 @@ function bootSpiritWorld(game: GameSettings): void {
     roadBearings: cityRoadBearings, // the fallback where no route ports
     roadSeeds: cityRoadSeeds,        // the baseline IS the through road
     scale: docSessionScale,          // grow the town to the extent it ports at
+    climate: cityClimate,            // …and feed it off the ground it stands on
   });
   spaceHud = createSpaceHud(viewEl);
   scene.add(flight.group);

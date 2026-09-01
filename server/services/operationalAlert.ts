@@ -14,7 +14,7 @@ import { emailService } from "./emailService";
 
 /** Where operational alerts go when a caller does not name a recipient. */
 export const DEFAULT_OPS_ALERT_RECIPIENT =
-  process.env.OPS_ALERT_EMAIL || "cs@aivota.ai";
+  process.env.OPS_ALERT_EMAIL || "alerts@aivota.ai";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

@@ -50,6 +50,17 @@ interface VenueMenuSettingsCardProps {
   onChange: (next: VenueMenuSettings) => void;
   /** Only read for `birthDate` / `languageLevel`, to show what 'auto' means. */
   student?: any;
+  /**
+   * The student's `deviceLocationEnabled`, live from this page's own state.
+   *
+   * Every setting in the Discovery section below depends on it, and it lives
+   * under Privacy — a different section of a long page — so a clinician can
+   * configure a whole search here that can never run. That is not theoretical:
+   * on 2026-09-01 a student pressed 🍕 three times with browsing on, device
+   * location off, and nothing appeared anywhere, with no indication in either
+   * app that a switch two screens away was the reason.
+   */
+  deviceLocationEnabled?: boolean;
 }
 
 /** A labelled switch row, with an optional line of why-it-matters underneath. */
@@ -86,7 +97,7 @@ function ToggleRow({
   );
 }
 
-export function VenueMenuSettingsCard({ settings, onChange, student }: VenueMenuSettingsCardProps) {
+export function VenueMenuSettingsCard({ settings, onChange, student, deviceLocationEnabled }: VenueMenuSettingsCardProps) {
   const { t } = useLanguage();
 
   /** What 'auto' means for THIS student right now — shown, never saved. */
@@ -144,6 +155,19 @@ export function VenueMenuSettingsCard({ settings, onChange, student }: VenueMenu
             <p className="text-xs font-medium text-muted-foreground">
               {t('venueMenus.settings.sectionDiscovery')}
             </p>
+
+            {/* Nothing below here can work without a position. Shown rather
+                than silently disabled: the settings ARE saveable and correct,
+                they are just inert until the Privacy switch is on, and a
+                clinician setting up for a trip needs to know which one. */}
+            {deviceLocationEnabled === false && (
+              <p
+                className="rounded-md bg-amber-50 dark:bg-amber-950 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+                data-testid="venue-location-off-warning"
+              >
+                {t('venueMenus.settings.deviceLocationOff')}
+              </p>
+            )}
 
             <div className="flex items-center justify-between gap-4 py-1.5">
               <div className="min-w-0">
@@ -299,14 +323,10 @@ export function VenueMenuSettingsCard({ settings, onChange, student }: VenueMenu
               {t('venueMenus.settings.sectionBoard')}
             </p>
 
-            <ToggleRow
-              label={t('venueMenus.settings.readingMode')}
-              description={t('venueMenus.settings.readingModeDesc')}
-              checked={settings.readingModeDefault}
-              onChange={(value) => patch({ readingModeDefault: value })}
-              testId="venue-reading-mode"
-            />
-
+            {/* The reading-mode default toggle was removed with the mode itself
+                (2026-09-01): the "Start ordering" unlock was easy to miss and
+                left every dish button silent until pressed. The stored field
+                remains on saved rows, ignored. */}
             <div className="flex items-center justify-between gap-4 py-1.5">
               <div className="min-w-0">
                 <Label className="text-sm">{t('venueMenus.settings.prices')}</Label>

@@ -11,6 +11,14 @@
 // must be taken and released on the SAME connection, so this checks out a
 // dedicated client rather than using the pool's round-robin `query`. A crashed
 // task releases its locks when the session dies, so a lock can't be stranded.
+//
+// POOL BUDGET — the client is held for the WHOLE of `fn`, and `fn`'s own
+// queries need a second slot. With `max: 3` (db.ts), three locked crons in
+// flight at once leave nothing for their bodies and the pool deadlocks: that
+// took production down on 2026-09-01 when every daily cron's 24h tick landed
+// in the same millisecond. Callers must therefore never run two of these
+// concurrently in one process — maintenanceCrons.ts serialises them through
+// one queue, so at most one slot is ever held here.
 
 import { pool } from "../db";
 

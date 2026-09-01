@@ -285,6 +285,14 @@ export class BoardRepository {
    *
    * See getStudentBoardsMetadata for why the scope filter and the exact
    * studentId match both matter.
+   *
+   * Ordered by name then id because `buildBoardKeys` assigns collision
+   * suffixes (`_2`, `_3`) in INPUT order: without a deterministic sort,
+   * Postgres row order decides which board is `x_2` and which is `x_3`, and it
+   * can differ between two loads of the same session. Latin names collide
+   * rarely enough that this never showed; names in one script that the old
+   * ASCII-only `slug` erased collided EVERY time, so the mapping churned. The
+   * id tiebreaker covers duplicate names (and non-deterministic collations).
    */
   async getAutoSelectableBoards(studentId: string): Promise<Board[]> {
     const rows = await db.select()
@@ -295,7 +303,8 @@ export class BoardRepository {
           eq(boards.scope, "student"),
           eq(boards.studentId, studentId),
         )
-      );
+      )
+      .orderBy(asc(boards.name), asc(boards.id));
     return hydrateRecords("boards", rows, { type: "student", id: studentId });
   }
 
@@ -325,7 +334,7 @@ export class BoardRepository {
       .innerJoin(packageBoards, eq(packageBoards.packageId, packages.id))
       .innerJoin(boards, eq(packageBoards.boardId, boards.id))
       .where(eq(packageAssignments.studentId, studentId))
-      .orderBy(asc(packages.name), asc(packageBoards.sortOrder), asc(boards.name));
+      .orderBy(asc(packages.name), asc(packageBoards.sortOrder), asc(boards.name), asc(boards.id));
 
     // A board can sit in two packages that are both attached — show it once,
     // under the first package alphabetically.

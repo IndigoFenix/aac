@@ -22,8 +22,9 @@
 // server/tests/symbol-game-wilderness.test.ts.
 
 import {
-  growthClassYield, harvestProductsOf, harvestStockOf, killStockOf, naturalSourceOf, orchardPlants,
-  type GrowthSizeClass,
+  growthClassYield, harvestProductsOf, harvestStockOf, killStockOf, naturalSourceOf,
+  nicheSuitabilityOf, usefulPlants,
+  type ClimateSample, type GrowthSizeClass,
 } from "../../products.js";
 import { bioYearsGameDays, type WorldScale } from "../../scale.js";
 
@@ -166,6 +167,96 @@ export interface WildMixEntry {
   count: number;
 }
 
+// ── ⚖️ THE CLIMATE ARM'S TWO CORRECTIONS (2026-09-01) ──────────────────────
+// Both helpers below are reachable ONLY from a pick site that was handed a
+// `ClimateSample`. Neither is exported, and neither sits on a code path a
+// no-climate caller can enter: the legacy arms keep their own expressions
+// verbatim, because the headless bench transcripts byte-hold on them.
+
+/**
+ * A SUITABILITY-WEIGHTED deterministic pick over the bearers.
+ *
+ * ⚖️ A PLANT AT ITS RANGE EDGE IS RARE THERE, NOT EQUALLY LIKELY. The niche
+ * filter asked one question — "does this cell admit it?" — and then handed the
+ * survivors to a uniform modulo, so a vine clinging on at 2 % suitability
+ * stood as often as the crop that peaks here. That is the banana bug's quieter
+ * sibling: the filter moved the ABSURD cases out and left the IMPROBABLE ones
+ * at full odds. The weights are `nicheSuitabilityOf` itself — the very number
+ * the filter thresholded — so "lives here" and "is common here" are one
+ * continuous answer with one owner, never a bound plus a separate abundance
+ * table that can disagree with it.
+ *
+ * DETERMINISTIC per (seed, climate), which is the whole contract a scatter
+ * site has: the fraction is a hash of the seed alone (Knuth's 2654435761 —
+ * the golden-ratio multiplier, so neighbouring seeds walk a well-spread cycle
+ * instead of the modulo's hard march), and the cumulative walk runs the rows
+ * in catalogue order. No rng, no clock; the same cell answers the same species
+ * forever. A ZERO-weight row can never be picked (the walk steps over it), so
+ * the filter and the pick agree even if a caller hands over an unfiltered list.
+ */
+function weightedPickBySeed<T>(
+  rows: readonly T[],
+  weightOf: (row: T) => number,
+  seed: number,
+): T | undefined {
+  if (!rows.length) return undefined;
+  const w = rows.map(weightOf);
+  const total = w.reduce((a, b) => a + b, 0);
+  // Every candidate is already > 0 here (the list came from the same query),
+  // so this only ever catches a weightless caller — answer the LEGACY uniform
+  // pick rather than nothing, since "none of them" is not a true answer when
+  // the rows exist.
+  if (!(total > 0)) return rows[(seed >>> 3) % rows.length];
+  let r = ((((seed >>> 3) * 2654435761) >>> 0) / 4294967296) * total;
+  for (let i = 0; i < rows.length; i++) {
+    r -= w[i]!;
+    if (r < 0) return rows[i];
+  }
+  return rows[rows.length - 1];
+}
+
+/**
+ * THE BIOME SAYS WHAT SHOULD GRAZE THIS KIND OF GROUND; THE CELL SAYS WHETHER
+ * THIS ONE CAN. A biome index is a CLASS of ground — "grazer range" — and the
+ * switch below names its livestock literally at fixed counts. But a class
+ * spans a continent: one steppe index covers a Mediterranean meadow and a
+ * Mongolian winter, and only one of those is cattle country. So the switch's
+ * animals are re-asked the one uniform Layer-1 question — `nicheSuitabilityOf`
+ * against the animal's OWN catalogue row — and dropped where the answer is 0.
+ * A frigid steppe has no cattle; it still has sheep, and it says so without
+ * either fact being written into the switch.
+ *
+ * PASS-THROUGH IS THE DEFAULT, twice over: an entry with no catalogue row and
+ * an entry whose row declares no niche both survive (`nicheSuitabilityOf`
+ * answers 1 with no niche — the band convention that keeps a rock placeable
+ * everywhere). ANIMALS ONLY, deliberately: the fruit line already arrived
+ * pre-filtered from `usefulPlants(climate)`, and oak/rock are the switch's own
+ * STRUCTURAL content — a biome that says "forest" has already decided there
+ * are trees, and re-litigating that here would let one cell's climate empty a
+ * forest the biome field put there.
+ */
+function climateAdmitsEntry(e: WildMixEntry, climate: ClimateSample): boolean {
+  const src = naturalSourceOf(e.species);
+  if (src?.kind !== "animal") return true;
+  return nicheSuitabilityOf(src, climate) > 0;
+}
+
+/** The bearer this site stands, or undefined when nothing grows here. WITH a
+ *  climate: the suitability-weighted pick above. WITHOUT one: the LEGACY
+ *  `(seed >>> 3) % len` modulo over the unfiltered list, expression-for-
+ *  expression as it has always been — the bench law. */
+function pickBearer(
+  bearers: ReturnType<typeof usefulPlants>,
+  seed: number,
+  climate?: ClimateSample,
+): { species: string } | undefined {
+  return climate
+    ? weightedPickBySeed(bearers, (s) => nicheSuitabilityOf(s, climate), seed)
+    : bearers.length
+      ? bearers[(seed >>> 3) % bearers.length]!
+      : undefined;
+}
+
 /**
  * A FOUNDING-AGE town's gatherable surroundings, from its charter biome
  * (plan.ts TownPlan.biome — the site's ground character): farmland country
@@ -199,13 +290,31 @@ export interface WildMixEntry {
 export function homesteadWildMix(
   biome: "farmland" | "mining",
   seed: number,
+  climate?: ClimateSample,
 ): WildMixEntry[] {
   const scaled = (count: number): number => count;
-  const orchard = orchardPlants();
-  const fruit: WildMixEntry[] = orchard.length
-    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: scaled(2) }]
-    : [];
-  return biome === "mining"
+  // ⚖️ PICKED BY SEED, FROM WHAT GROWS HERE (2026-09-01 — the niche join).
+  // The bearers are the GROWER'S query (`usefulPlants` — plants worth
+  // putting in the ground, i.e. carrying a live renewable take), never the
+  // food vocabulary: a sentence board must name a banana everywhere, a
+  // homestead must not stand one everywhere.
+  // WITH a climate sample the list is filtered to what this cell admits, and
+  // an EMPTY answer STANDS: nothing grows here, so the mix carries no fruit
+  // line at all. Never fall back to the unfiltered list on empty — that
+  // fallback IS the banana-on-a-cold-homestead bug, moved one branch in.
+  // WITHOUT one, the legacy contract, byte-identical: a caller with no cell
+  // under it (flat test worlds, charter-only boots, the headless text
+  // harness's founding) still gets a fruit, picked by the seed off the
+  // unfiltered list. `biome` cannot stand in for the sample — it is a
+  // LAND-USE label ("farmland" / "mining", from the charter's
+  // fertility-vs-ore scores), never an ecological one.
+  // ⚖️ AND PICKED BY SUITABILITY, not merely by admission (2026-09-01) — the
+  // climate arm weights the pick by `nicheSuitabilityOf` (weightedPickBySeed);
+  // the no-climate arm keeps the bare modulo. Same determinism either way.
+  const bearers = usefulPlants(climate);
+  const pick = pickBearer(bearers, seed, climate);
+  const fruit: WildMixEntry[] = pick ? [{ species: pick.species, count: scaled(2) }] : [];
+  const mix: WildMixEntry[] = biome === "mining"
     ? [{ species: "oak", count: scaled(8) }, ...fruit, { species: "rock", count: scaled(10) }]
     : [
         { species: "oak", count: scaled(8) },
@@ -214,6 +323,106 @@ export function homesteadWildMix(
         { species: "sheep", count: scaled(2) },
         { species: "cow", count: scaled(1) },
       ];
+  // ⚖️ THE LIVESTOCK IS RE-ASKED (climateAdmitsEntry): "farmland" is a
+  // LAND-USE label off the charter's fertility-vs-ore scores, so it says a
+  // homestead keeps animals — never which animals THIS ground feeds. A frigid
+  // holding keeps its flock and loses its herd. No sample ⇒ nothing to ask,
+  // and the legacy mix returns untouched.
+  return climate ? mix.filter((e) => climateAdmitsEntry(e, climate)) : mix;
+}
+
+/** What a biome grazes — the walking half of a wild cell's population, kept
+ *  beside the scatter mix because a boot reads both off one biome index. */
+export interface WildFauna {
+  horses: number;
+}
+
+/** What the landing/spawn cell's biome grazes (grid.fields.biome: 0 =
+ *  barren/sea/ice, then DEFAULT_BIOSPHERE order — 1 tree, 2 grass,
+ *  3 horse). */
+export function faunaForBiome(biome: number): WildFauna {
+  switch (biome) {
+    case 2: return { horses: 4 };  // steppe / meadow
+    case 3: return { horses: 6 };  // grazer range
+    default: return { horses: 0 }; // barren / forest
+  }
+}
+
+/**
+ * What the landing/spawn cell's biome SCATTERS as gatherable quest content
+ * (step ④ biome selection — the seam `buildWilderness`'s `mix` param was cut
+ * for). Forest is oak-dominant; open grazing country is sparse trees but
+ * wild flocks (animal entries scatter as WALKING product bodies —
+ * milk/shear/hunt); barren ground is stone outcrops only. One plant from the
+ * registry's GROWER'S query (`usefulPlants` — a live renewable take, never
+ * the food vocabulary) joins any GROWING biome, picked deterministically by
+ * the cell seed, so neighbouring cells bear different fruit and a
+ * live-harvest (regrowing) source stands in every walkable wild. Species come
+ * from the registry, never named in the engine.
+ *
+ * 📦 LIVES HERE, NOT IN A GAME (2026-09-01) — the `homesteadWildMix`
+ * precedent in this same file, applied to its sibling. Two games carried
+ * byte-identical copies (`games/world-lab/src/wilderness-boot.ts`,
+ * `games/nature-hike/src/wilderness.ts`) and a third consumer is the
+ * HEADLESS harness, which cannot import from `games/` at all. Duplication is
+ * how they went stale: both copies still called `orchardPlants()`, a name
+ * the registry dropped when the property query was renamed `foodPlants()`,
+ * so the games did not build. The game modules re-export these symbols, so
+ * their own consumers are unchanged.
+ *
+ * 🚫 THE COUNTS ARE NOT TUNED HERE — the same law `homesteadWildMix` states:
+ * they are one half of a supply curve whose other half is the structure
+ * bill, and the world-size design round owns both.
+ *
+ * ⚖️ `climate` follows `homesteadWildMix` exactly, in all three of its parts:
+ * present ⇒ bearers are filtered to what grows at this cell (an EMPTY answer
+ * means NO fruit line, never a fallback to the unfiltered list), the surviving
+ * bearer is picked by SUITABILITY WEIGHT rather than uniformly, and the
+ * switch's ANIMALS are re-asked whether this cell carries them; absent ⇒ the
+ * legacy seed-only pick over the whole list with no filtering of any kind,
+ * byte-identical. Barren stays fruitless and stockless either way — the biome
+ * switch already said nothing grows and named no livestock.
+ */
+export function wildMixForBiome(
+  biome: number,
+  seed: number,
+  climate?: ClimateSample,
+): WildMixEntry[] {
+  const bearers = usefulPlants(climate);
+  const pick = pickBearer(bearers, seed, climate);
+  const fruit: WildMixEntry[] = pick
+    ? [{ species: pick.species, count: biome === 1 ? 2 : 1 }]
+    : [];
+  let mix: WildMixEntry[];
+  switch (biome) {
+    case 1: // forest
+      mix = [{ species: "oak", count: 10 }, ...fruit, { species: "rock", count: 6 }];
+      break;
+    case 2: // steppe / meadow — open country, wild flocks
+      mix = [
+        { species: "oak", count: 3 },
+        ...fruit,
+        { species: "rock", count: 5 },
+        { species: "sheep", count: 2 },
+      ];
+      break;
+    case 3: // grazer range — flocks and wild cattle
+      mix = [
+        { species: "oak", count: 3 },
+        ...fruit,
+        { species: "rock", count: 5 },
+        { species: "sheep", count: 2 },
+        { species: "cow", count: 1 },
+      ];
+      break;
+    default: // barren / sea-edge / ice — nothing grows
+      mix = [{ species: "rock", count: 8 }];
+  }
+  // ⚖️ THE LIVESTOCK IS RE-ASKED (climateAdmitsEntry) — the switch names what
+  // a biome CLASS grazes, this asks whether this cell's version of that class
+  // can. Barren is unaffected (it names no animals), and so is every
+  // no-climate caller: with no sample the switch's answer is returned as-is.
+  return climate ? mix.filter((e) => climateAdmitsEntry(e, climate)) : mix;
 }
 
 export interface WildernessParams {

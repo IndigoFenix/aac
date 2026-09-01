@@ -1,72 +1,42 @@
 // games/nature-hike/src/wilderness.ts
 //
 // THE CHUNK OF GROUND THE HIKE IS PLAYED ON — the per-game half of the
-// wilderness contract, ported from world-lab's wilderness-boot.ts. These are
-// GAME constants, not engine ones: `shared/world-engine` may never import from
-// `games/`, so every consumer (the lab, this game, the text harness) declares
-// its own chunk side and biome tables and hands them to the engine's session.
+// wilderness contract, ported from world-lab's wilderness-boot.ts. What is
+// left here is what is genuinely a GAME constant: this game's chunk side and
+// its scatter RNG, handed to the engine's session at boot.
 //
-// PLANTS ARE NOT HERE. The lab pairs this with a world-fixed flora streaming
-// field (flora-field.ts); this game has no such layer yet, so the biome mix
-// keeps its trees — the scatter IS the vegetation the hiker meets, and there
-// is no second population to double up with (the lab filters the field's
-// species out of the mix for exactly that reason).
-
-import { orchardPlants } from "@shared/world-engine/products";
-import type { WildMixEntry } from "@shared/world-engine/interaction/quest/wilderness";
+// 📦 THE BIOME TABLES ARE NOT GAME CONSTANTS AFTER ALL (2026-09-01). What a
+// cell's biome grazes (`faunaForBiome`) and what it scatters
+// (`wildMixForBiome`) now live ONCE in
+// `@shared/world-engine/interaction/quest/wilderness` — the `homesteadWildMix`
+// precedent in that same file, applied to its two siblings. This game and the
+// lab carried byte-identical copies and the third consumer is the HEADLESS
+// text harness, which cannot import from `games/` at all; the duplication is
+// exactly how the tables went stale (both copies still called a registry
+// export that had been renamed). Re-exported below, so this game's own
+// consumers (quest-boot.ts) are unchanged.
+//
+// PLANTS ARE NOT HERE, AND THIS GAME'S MIX KEEPS ITS TREES. The lab pairs the
+// scatter with a world-fixed flora streaming field (flora-field.ts) and so
+// FILTERS the field's species out of the mix; this game has no such layer, so
+// the scatter IS the vegetation the hiker meets and there is no second
+// population to double up with. That is a fact about which species the CALLER
+// filters (quest-boot.ts), not about where the table lives — unchanged by the
+// move.
 
 /** Side of the wilderness chunk (metres of sim manifold). The anchor sits at
  *  the CENTER (the spawn point) — sim coords run 0..WILD_SIDE. */
 export const WILD_SIDE = 320;
 
-export interface WildFauna {
-  horses: number;
-}
-
-/** What the spawn cell's biome grazes (grid.fields.biome: 0 = barren/sea/
- *  ice, then DEFAULT_BIOSPHERE order — 1 tree, 2 grass, 3 horse). */
-export function faunaForBiome(biome: number): WildFauna {
-  switch (biome) {
-    case 2: return { horses: 4 };  // steppe / meadow
-    case 3: return { horses: 6 };  // grazer range
-    default: return { horses: 0 };
-  }
-}
-
-/** What the spawn cell's biome SCATTERS as gatherable content. Forest is
- *  oak-dominant; open grazing country is sparse trees but wild flocks (animal
- *  entries scatter as WALKING product bodies — milk/shear/hunt); barren ground
- *  is stone outcrops only. One fruit-bearing plant from the registry's orchard
- *  joins any growing biome — picked deterministically by the spawn seed, so a
- *  live-harvest (regrowing) source stands in every walkable wild. Species come
- *  from the products registry, never named in the engine. */
-export function wildMixForBiome(biome: number, seed: number): WildMixEntry[] {
-  const orchard = orchardPlants();
-  const fruit: WildMixEntry[] = orchard.length
-    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: biome === 1 ? 2 : 1 }]
-    : [];
-  switch (biome) {
-    case 1: // forest
-      return [{ species: "oak", count: 10 }, ...fruit, { species: "rock", count: 6 }];
-    case 2: // steppe / meadow — open country, wild flocks
-      return [
-        { species: "oak", count: 3 },
-        ...fruit,
-        { species: "rock", count: 5 },
-        { species: "sheep", count: 2 },
-      ];
-    case 3: // grazer range — flocks and wild cattle
-      return [
-        { species: "oak", count: 3 },
-        ...fruit,
-        { species: "rock", count: 5 },
-        { species: "sheep", count: 2 },
-        { species: "cow", count: 1 },
-      ];
-    default: // barren / sea-edge / ice — nothing grows
-      return [{ species: "rock", count: 8 }];
-  }
-}
+/** The biome tables, from the engine (see the header). `wildMixForBiome` takes
+ *  an optional third `climate` sample — with the spawn cell's own climate the
+ *  fruit it picks is filtered to what grows there; without one it is the
+ *  legacy seed-only pick, byte-identical. */
+export {
+  faunaForBiome,
+  wildMixForBiome,
+  type WildFauna,
+} from "@shared/world-engine/interaction/quest/wilderness";
 
 /** Deterministic scatter RNG (the spawn cell is an address, not a session). */
 export function mulberry(seed: number): () => number {

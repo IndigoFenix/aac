@@ -31,6 +31,7 @@ import { TOWN_YARD_EP } from "@shared/world-engine/kernel/town/construction.js";
 import { refinedGlyphOf } from "@shared/world-engine/products.js";
 import {
   createConstructionDirector,
+  REFINE_BATCH_UNITS,
   type ConstructionDirectorCtx,
 } from "@shared/world-engine/interaction/quest/construction-director.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
@@ -112,10 +113,14 @@ describe("per-scope order books — a household's mill queue is its own", () => 
     });
     const hi = someHouse(play);
 
-    // THE TOWN'S BILL, first — a workshop's ≈198 blocks.
+    // THE TOWN'S BILL, first — a workshop's ≈198 blocks. What POSTS is one
+    // batch of it: REFINE_BATCH_UNITS slices a bill into the delivery cadence
+    // (④) and the remainder re-triggers when this row commits. The size of the
+    // town's row is not what this test is about; that it is the TOWN's row,
+    // and that the family's bill does not hide behind it, is.
     director.ensureRefineOrders(session, { block: 198 });
     expect(play.deltas.refineOrders()).toHaveLength(1);
-    expect(play.deltas.refineOrders()[0]!.count).toBe(198);
+    expect(play.deltas.refineOrders()[0]!.count).toBe(REFINE_BATCH_UNITS);
     expect(play.deltas.refineOrders()[0]!.scope).toBeUndefined(); // the town book writes no key
 
     // BEFORE (the town scope — the shipped path): the 4-block bill reads the
@@ -134,7 +139,7 @@ describe("per-scope order books — a household's mill queue is its own", () => 
     expect(mine.count).toBe(4);
     expect(mine.costs).toEqual({ wood: 8 }); // the 2:1 ratio, on the family's bill alone
     // …and the town's row is untouched: no cross-queue priority, either way.
-    expect(rows.find((r) => r.scope === undefined)!.count).toBe(198);
+    expect(rows.find((r) => r.scope === undefined)!.count).toBe(REFINE_BATCH_UNITS);
   });
 
   it("the household mills at its OWN bench, not at the town's shared carpentry", () => {
@@ -182,17 +187,26 @@ describe("per-scope order books — a household's mill queue is its own", () => 
     const rows = play.deltas.refineOrders();
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.scope).sort()).toEqual([`house:${a}`, `house:${b}`].sort());
-    // A re-ask inside ONE book still tops up rather than duplicating — the
-    // per-head standing-order rule survives the split, it only got a key.
-    director.ensureRefineOrders(session, { block: 6 }, undefined, `house:${a}`);
+    // 🚨 ONE OPEN ROW PER (head, scope) — ②c. A re-ask inside a book that
+    // already has a row open posts NOTHING; the chain is the answer and the
+    // remainder re-triggers when that row commits. The gate used to be
+    // `open >= n`, which topped up — so any shortfall re-posted the remainder
+    // every sweep, and the founding homestead ran FOUR concurrent refine rows
+    // splitting one 120-block bill, piles at the same spot, porters shuttling
+    // the same wood between them forever. The dedup key got a scope in the
+    // split; the top-up is gone on purpose.
+    expect(director.ensureRefineOrders(session, { block: 6 }, undefined, `house:${a}`))
+      .toEqual({ milling: 6, rest: {} });
     expect(play.deltas.refineOrders()).toHaveLength(2);
-    director.ensureRefineOrders(session, { block: 10 }, undefined, `house:${a}`);
-    expect(play.deltas.refineOrders()).toHaveLength(3);
+    // A BIGGER re-ask is no different — an open row is an open row.
+    expect(director.ensureRefineOrders(session, { block: 10 }, undefined, `house:${a}`))
+      .toEqual({ milling: 10, rest: {} }); // `milling` is what THIS caller is owed…
+    expect(play.deltas.refineOrders()).toHaveLength(2);
     expect(
       play.deltas.refineOrders()
         .filter((r) => r.scope === `house:${a}`)
         .reduce((s, r) => s + r.count, 0),
-    ).toBe(10);
+    ).toBe(6); // …not what the book has queued.
   });
 
   it("the town book is BYTE-IDENTICAL to the pre-split one — no key, same row", () => {

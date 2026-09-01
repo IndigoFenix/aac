@@ -21,6 +21,11 @@ export const pool = new Pool({
   ssl: resolveDbSsl(process.env.DATABASE_URL),
   max: 3,
   idleTimeoutMillis: 30000,
+  // A checkout that cannot get a slot FAILS after this long instead of queueing
+  // forever. Without it, the 2026-09-01 outage was silent: the pool deadlocked
+  // (see maintenanceCrons.ts) and every DB-touching request hung with no log
+  // line, no 5xx and a healthy /health. A loud error beats an invisible hang.
+  connectionTimeoutMillis: 10_000,
 });
 
 export const db = drizzle(pool, { schema });

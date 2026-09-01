@@ -123,7 +123,21 @@ describe("ignore_speech — the sink that makes a forced call safe", () => {
     const decl = (buildObserverToolDeclarations()[0]?.functionDeclarations ?? [])
       .find((d) => d.name === "ignore_speech");
     expect(decl?.description).toMatch(/TERMINAL/);
-    expect(decl?.description).toMatch(/Call ONLY when/i);
+
+    // "Closed list" is the whole point: this tool is the model's licence to drop
+    // a child's words, so the description must ENUMERATE when that is allowed
+    // rather than describe it. Match the enumeration, not one phrase of prose —
+    // the wording has been rewritten once already and the phrasing is not what
+    // matters here.
+    const bullets = (decl?.description ?? "").split("\n").filter((l) => /^\s*-\s/.test(l));
+    expect(bullets).toHaveLength(4);
+    expect(decl?.description).toMatch(/in the following cases:/i);
+    // Each case must be identifiable from context the Observer actually has,
+    // so a reason can be checked rather than taken on trust.
+    expect(bullets.join("\n")).toMatch(/BUTTON PRESS/);
+    expect(bullets.join("\n")).toMatch(/\[AI to/);
+    expect(bullets.join("\n")).toMatch(/confidence/i);
+    expect(bullets.join("\n")).toMatch(/already transcribed/i);
   });
 
   it("parses to no routed event — it is terminal, not an observation", () => {

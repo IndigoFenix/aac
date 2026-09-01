@@ -48,6 +48,7 @@ import {
   DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale, type WorldScaleSpec,
 } from "@shared/world-engine/scale";
 import { buildPlanetWorld, type BuiltPlanet } from "@shared/world-engine/planet/planet-game";
+import { climateSampleAt } from "@shared/world-engine/planet/ecology";
 import { createPlanetObject } from "@shared/world-engine/planet/three";
 import type { PlanetSurface } from "@shared/world-engine/planet/surface";
 import * as THREE from "three";
@@ -880,6 +881,21 @@ export function bootPlanetHike(
     // Absent ⇒ the host builds its own voice (standalone play, unchanged).
     ...(voice !== undefined ? { voice } : {}),
   });
+  // WHAT GROWS AT THE SPAWN CELL, not merely what its biome index permits
+  // (2026-09-01 — the niche join): the biome says "growing country", the
+  // cell's own climate sample says WHICH useful plants stand in it, so a hike
+  // on cold ground no longer meets a banana. Guarded because `climateSampleAt`
+  // THROWS on an unclimated substrate — a planet baked without climate fields
+  // hands `undefined` and gets the legacy seed-only pick, byte-identical.
+  //
+  // HOISTED (suitability-as-yield): the scatter's pick and the SESSION's own
+  // sample are one question about one cell, so it is sampled ONCE and handed
+  // to both — never twice, which is how two answers about the same ground get
+  // a chance to differ.
+  const spawnClimate =
+    built.grid.fields.rain && built.grid.fields.tempC && built.grid.fields.height
+      ? climateSampleAt(built.grid, spawn.cell)
+      : undefined;
   host.start(null, null, {
     // The chunk stands on a real planet: the side matches the re-anchor math
     // and the rect is CONTENT extent, never a wall.
@@ -887,8 +903,11 @@ export function bootPlanetHike(
       seed: wildSeed,
       side: WILD_SIDE,
       bounded: false,
-      mix: wildMixForBiome(spawn.biome, wildSeed),
+      mix: wildMixForBiome(spawn.biome, wildSeed, spawnClimate),
     },
+    // The ground this session stands on — what a site founded here is worth,
+    // asked of the same sample the scatter read. Absent ⇒ suitability 1.
+    ...(spawnClimate ? { climate: spawnClimate } : {}),
     // WALKER: no `spirit` flag — so the host's own spec-driven switch resolves
     // avatarMode "creature" and CREATES this player a body (quest-host start).
     scale: sessionScale(settings.scale),

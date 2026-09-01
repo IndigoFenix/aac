@@ -47,7 +47,7 @@
 // it.
 
 import {
-  growthClassYield, naturalSourceOf,
+  foodPlants, growthClassYield, naturalSourceOf,
   type NaturalProduct, type NaturalSource,
 } from "../../products.js";
 import {
@@ -66,6 +66,11 @@ import { stackHead, takeStock, type StockEndpoint } from "../../kernel/town/tran
 // it is booked against, not about towns).
 import { standingLegServiced } from "../../kernel/town/barter.js";
 import { parseScopeId, wildAreaId, type ScopeId } from "../../kernel/town/scope.js";
+// ⚖️ THE ONE GLYPH→GOOD PROJECTION (import-displacement round, Stage B). Ground
+// bears GLYPHS; every caravan-facing signal is keyed by GOOD. `goodKeyOfGlyph`
+// is the single bridge between the two namespaces and `localDailyUnitsForGood`
+// below is the only place this module crosses it.
+import { goodKeyOfGlyph } from "../../kernel/town/goods-kinds.js";
 
 // ── The record ────────────────────────────────────────────────────────────
 
@@ -593,11 +598,16 @@ export function expandWildArea(input: WildUnfoldInput): WildernessFeature[] {
  * `classPeriodS` is the caller's (`growthClassPeriodS(scale, growth)` — the
  * scale lives outside this module, as it does for every other pure
  * calculator here). Returns a NEW record; the input is untouched.
+ *
+ * `regrowPeriodS` is OPTIONAL and only ever ARMS (never re-times) a harvest
+ * clock a climb has just given something to refill — see the lifecycle note at
+ * its seat below. Absent ⇒ byte-identical to the shipped walk.
  */
 export function advanceWildArea(
   rec: WildAreaRecord,
   now: number,
   classPeriodS: (species: string) => number,
+  regrowPeriodS?: (species: string, glyph: string) => number,
 ): WildAreaRecord {
   const stands: WildStand[] = [];
   let moved = false;
@@ -639,13 +649,57 @@ export function advanceWildArea(
       });
       stock[p.glyph] = n;
     }
+    // ⚖️ AND SO IS ITS HARVEST CAP (import-displacement round, Stage A). The
+    // kill half above has always been here; the harvest half was missing,
+    // which is what let a sapling orchard carry a mature orchard's bearing
+    // from the day it was planted. `standHarvestCaps` is the ONE owner (see
+    // its doc for why this books the DIFFERENCE rather than overwriting).
+    const cap = { ...st.cap };
+    const wasBearing = standHarvestCaps(st.species, st.byClass);
+    const nowBearing = standHarvestCaps(st.species, byClass);
+    const glyphs = new Set<string>(Object.keys(wasBearing));
+    for (const g of Object.keys(nowBearing)) glyphs.add(g);
+    const grew: string[] = [];
+    for (const g of glyphs) {
+      const d = (nowBearing[g] ?? 0) - (wasBearing[g] ?? 0);
+      if (d === 0) continue;
+      const lifted = Math.max(0, (cap[g] ?? 0) + d);
+      if (lifted > 0) cap[g] = lifted;
+      else delete cap[g];
+      if (d > 0) grew.push(g);
+    }
+    // 🚨 REGROW-CLOCK LIFECYCLE AT A CAP THAT JUST GREW. What the retire logic
+    // actually does, read precisely (`ripenWildArea`): a glyph at cap 0 is
+    // skipped by `if (cap <= 0) continue` BEFORE the walk touches `regrowAt`,
+    // so a sapling stand's deadlines are NOT dropped — they sit stale in the
+    // past until something gives the glyph a cap, and the first pulse after
+    // that consumes one and retires the rest. The other arm, HEAL, arms a
+    // fresh clock whenever stock is below a POSITIVE cap with none queued. So
+    // the two shipped arms already cover both shapes; this is the BELT — the
+    // climb that lifted the cap arms the refill itself instead of depending on
+    // a reader elsewhere staying exactly as it is.
+    let regrowAt = st.regrowAt;
+    if (grew.length && regrowPeriodS) {
+      const armed: Record<string, number[]> = {};
+      for (const [g, list] of Object.entries(st.regrowAt)) armed[g] = [...list];
+      let any = false;
+      for (const g of grew) {
+        if ((armed[g]?.length ?? 0) > 0) continue; // a pending clock is enough
+        armed[g] = [now + Math.max(1e-3, regrowPeriodS(st.species, g))];
+        any = true;
+      }
+      if (any) regrowAt = armed;
+    }
     climbAt.sort((a, b) => a.cls - b.cls || a.at - b.at);
-    stands.push({ ...st, byClass, stock, climbAt });
+    stands.push({ ...st, byClass, stock, cap, climbAt, regrowAt });
   }
-  // Harvest regrowth is the standing source's own ledger and needs the live
-  // stack to catch up against; an unloaded stand's fruit resumes on expand,
-  // where `dueHarvestRegrowth` sees a real feature again. Recorded, not
-  // silently dropped: the deadlines survive the fold untouched.
+  // Harvest REGROWTH — how fast the fruit comes back — is still the standing
+  // source's own ledger and needs the live stack to catch up against; an
+  // unloaded stand's fruit resumes on expand, where `dueHarvestRegrowth` sees a
+  // real feature again (a farm record gets `ripenWildArea` instead). Recorded,
+  // not silently dropped: the deadlines survive the fold untouched. What this
+  // walk owns of the harvest side is only the CEILING — how much the stand can
+  // bear at all, which is a fact about the plants' classes and nothing else.
   if (!moved) return rec;
   return { ...rec, at: now, stands };
 }
@@ -884,6 +938,51 @@ function harvestYieldOf(src: NaturalSource, p: NaturalProduct, cls: number): num
   return sourceYieldOf(src, p, cls);
 }
 
+/**
+ * ⚖️ WHAT A CLASS MIX BEARS — the ONE derivation of a stand's harvest caps
+ * from its population, written once (import-displacement round, Stage A).
+ * Per harvest product: Σ over classes of `count_c × harvestYieldOf(src, p, c)`
+ * — a plant bears what ITS OWN class bears, because `harvestYieldOf` already
+ * scales by `growth.classes[c].yieldMul`. An 8-year apple sapling (yieldMul 0)
+ * therefore bears NOTHING, and a growth-less crop (one class, mul 1) bears
+ * exactly the catalogue's midpoint it always did.
+ *
+ * ONE OWNER, TWO CALLERS: `sowWildArea` books what a planting adds and
+ * `advanceWildArea` books what a class climb changes, both through this
+ * function. The previous arrangement — sow capping at MATURITY on the spot and
+ * the growth walk re-deriving kill stock only — is exactly how "a sown orchard
+ * bears its full mature yield one pulse after planting" survived a round.
+ *
+ * 🚨 A DELTA AT THE CALL SITES, NEVER AN ABSOLUTE OVERWRITE. A stand's cap is
+ * not always this function's answer and must not be forced to be one:
+ * `farmAreaRecord` mints cap from the caller's area-derived `capUnits` (whose
+ * plant count is CEIL'd, so the mix over-bears by up to one plant), and
+ * `condenseWildArea` sums the per-feature `harvestCap` a scatter ROLLED
+ * (`harvestStockOf` — a roll in [min, max], not a midpoint). Overwriting
+ * either would move a shipped farm and a shipped forest; adding the difference
+ * a planting or a climb actually made moves neither.
+ *
+ * Positive entries only — a 0 cap is not a cap entry (the barren-farm law).
+ */
+export function standHarvestCaps(
+  species: string,
+  byClass: readonly number[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  const src = naturalSourceOf(species);
+  if (!src) return out;
+  for (const p of src.products) {
+    if (p.method !== "harvest") continue;
+    let n = 0;
+    for (let cls = 0; cls < byClass.length; cls++) {
+      const count = byClass[cls] ?? 0;
+      if (count > 0) n += count * harvestYieldOf(src, p, cls);
+    }
+    if (n > 0) out[p.glyph] = n;
+  }
+  return out;
+}
+
 export interface FarmAreaOpts {
   /** Record key (`farmAreaKey(siteKey)` by convention). */
   key: string;
@@ -952,10 +1051,10 @@ export function farmAreaRecord(opts: FarmAreaOpts): WildAreaRecord {
  *
  * What sowing arms: a young plant BEARS NOTHING YET — each sown plant adds
  * one regrow deadline per harvest glyph at `now + regrowPeriodS(glyph)` (its
- * first ripening) and lifts the stand's cap by its bearing; a species with
- * growth classes additionally arms a class climb at `now +
- * classPeriodS(species)`. Stock is NOT touched — production arrives when the
- * clocks fire, never at the act.
+ * first ripening) and lifts the stand's cap by its bearing AT THE CLASS IT IS
+ * SOWN INTO; a species with growth classes additionally arms a class climb at
+ * `now + classPeriodS(species)`. Stock is NOT touched — production arrives
+ * when the clocks fire, never at the act.
  */
 export function sowWildArea(
   rec: WildAreaRecord,
@@ -985,14 +1084,25 @@ export function sowWildArea(
       };
 
   st.byClass[0] = (st.byClass[0] ?? 0) + n;
-  // Bearing rises with the planting: cap grows by what the new plants will
-  // carry AT MATURITY (the draw's scale-down read forward), and each plant
-  // queues its first ripening.
+  // ⚖️ BEARING IS THE SOWN CLASS'S, NOT MATURITY'S (import-displacement round,
+  // Stage A). Cap rises by `standHarvestCaps` over the mix the act actually
+  // put in the ground — n plants at CLASS 0 — through the ONE derivation the
+  // growth walk also books its climbs with. A single-class crop's class 0 IS
+  // its mature class, so a carrot field's cap moves exactly as it always did;
+  // an apple sapling (yieldMul 0) lifts it by NOTHING until it climbs.
+  const sown = new Array<number>(classes).fill(0);
+  sown[0] = n;
+  for (const [g, add] of Object.entries(standHarvestCaps(species, sown))) {
+    st.cap[g] = (st.cap[g] ?? 0) + add;
+  }
+  // 🚨 THE CLOCK IS ARMED BY WHAT THE PLANT WILL EVER BEAR, NOT BY WHAT IT
+  // BEARS TODAY — gating the first ripening on the sown class's bearing (which
+  // is how the cap arm above used to read) would leave a sapling orchard with
+  // no regrow deadline at all, and the pulse would have nothing to fire when
+  // the trees finally matured.
   for (const p of src.products) {
     if (p.method !== "harvest") continue;
-    const bear = harvestYieldOf(src, p, mature);
-    if (bear <= 0) continue;
-    st.cap[p.glyph] = (st.cap[p.glyph] ?? 0) + bear * n;
+    if (harvestYieldOf(src, p, mature) <= 0) continue;
     const list = st.regrowAt[p.glyph] ?? (st.regrowAt[p.glyph] = []);
     const due = now + Math.max(1e-3, regrowPeriodS(p.glyph));
     for (let i = 0; i < n; i++) list.push(due);
@@ -1008,6 +1118,126 @@ export function sowWildArea(
 
   const stands = idx >= 0 ? rec.stands.map((s, i) => (i === idx ? st : s)) : [...rec.stands, st];
   return { ...rec, at: now, stands };
+}
+
+// ── Seed access + the starter stand (resource-access round, Stage 3) ───────
+//
+// ⚖️ SEED AVAILABILITY IS DERIVED, NEVER A LIST (user ruling 2026-09-01, in
+// planning-docs/games/world-engine/resource-access-round.md): "a place may
+// plant a species only once the good has landed there — derivable from flow
+// memory, NEVER a new list". Two ways a place holds seeds, and both are facts
+// it already keeps:
+//
+//   • LAYER 2 — the species already STANDS here (any wild/farm record stand).
+//     Seeds are trivially at hand: you take them off the plants in the field.
+//   • LAYER 3 — a glyph the species BEARS appears in the town's durable
+//     arrival evidence (transfer.ts `FirstArrivalRow`s ∪ the terminal
+//     agreement goods the ledger keeps forever). An apple that landed here
+//     came with pips in it; that IS the Columbian arc's first half.
+//
+// PURE ON PURPOSE, and deliberately NOT ledger-shaped: the core takes two
+// plain string sets, so jest can answer the question without value-importing
+// quest-host (the recorded transform-tax law) and the host stays the only
+// thing that knows where the sets come from.
+
+/** Every species with a STAND in these records — the Layer-2 presence set. */
+export function standingSpeciesOf(records: Iterable<WildAreaRecord>): Set<string> {
+  const out = new Set<string>();
+  for (const rec of records) for (const st of rec.stands) out.add(st.species);
+  return out;
+}
+
+/** The FOOD glyphs `species` bears, per the catalogue's own harvest rows
+ *  (`foodPlants()` — the species↔food-glyph join, read in the inverse
+ *  direction). Empty for anything that is not a food plant. */
+export function seedGlyphsOf(species: string): string[] {
+  return foodPlants().filter((r) => r.species === species).map((r) => r.food);
+}
+
+/** MAY THIS PLACE PLANT `species`? — the derived read, from what the place
+ *  already stands and what has ever landed in it. `arrived` is head-matched
+ *  (a facted variant is still the good). */
+export function seedAccessOf(
+  place: { standing: Iterable<string>; arrived: Iterable<string> },
+  species: string,
+): boolean {
+  for (const s of place.standing) if (s === species) return true;
+  const glyphs = new Set(seedGlyphsOf(species));
+  if (!glyphs.size) return false;
+  for (const g of place.arrived) if (glyphs.has(stackHead(g))) return true;
+  return false;
+}
+
+/**
+ * PLANTS NEEDED for a stand of `species` to bear `units` at maturity —
+ * `farmAreaRecord`'s own derivation (Σ of the harvest products' mature
+ * bearing, then ceil), extracted so the mint and the sow arm size a stand by
+ * ONE rule and can never disagree. 0 for a species that bears nothing.
+ */
+export function plantsForYield(species: string, units: number): number {
+  const src = naturalSourceOf(species);
+  if (!src || !(units > 0)) return 0;
+  const mature = classCountOf(species) - 1;
+  let perPlant = 0;
+  for (const p of src.products) {
+    if (p.method === "harvest") perPlant += harvestYieldOf(src, p, mature);
+  }
+  return perPlant > 0 ? Math.max(1, Math.ceil(units / perPlant)) : 0;
+}
+
+/** A NEWCOMER'S CORNER OF THE FIELD: the share of the founding crop's cap a
+ *  first planting is sized against. A tenth — a trial plot, not a conversion
+ *  of the farm; the arc's whole point is that the crop then spreads (or
+ *  doesn't) on its own yield. */
+export const STARTER_STAND_FRACTION = 0.1;
+
+/**
+ * ⚖️ THE ARC'S SECOND HALF — plant a STARTER STAND of a newly-available
+ * species into a farm record. Pure (a new record where anything moved), and
+ * idempotent BY THE STAND: a record that already grows `species` is returned
+ * untouched, which is the dedupe every caller needs (the arrival edge fires
+ * once, but a reload, a second lane or a second glyph of the same species
+ * must not re-plant).
+ *
+ * SIZING, deterministic and modest:
+ *
+ *   units  = round(foundingStandCap × fraction × suitability)
+ *   plants = plantsForYield(species, units)
+ *
+ * — a tenth of what the field's FOUNDING crop bears (stand 0: `farmAreaRecord`
+ * mints exactly one and the sow arm only ever appends after it, so the base
+ * cannot drift upward as species accumulate), scaled by how well this ground
+ * grows the newcomer. ⚖️ Stage 2's law holds: suitability MULTIPLIES the
+ * planting, never gates it — a marginal crop gets a thin stand, and only
+ * ground that breaches a hard bound (suitability 0 ⇒ 0 units ⇒ 0 plants)
+ * gets none, which is the ground's verdict rather than a veto.
+ *
+ * Nothing bears at the act — `sowWildArea` arms the clocks and the first
+ * ripening brings the harvest in.
+ */
+export function sowStarterStand(
+  rec: WildAreaRecord,
+  species: string,
+  opts: {
+    now: number;
+    /** `sourceSuitabilityAt(species, cell)` — 0..1. */
+    suitability: number;
+    regrowPeriodS: (glyph: string) => number;
+    classPeriodS?: (species: string) => number;
+    /** Default `STARTER_STAND_FRACTION`. */
+    fraction?: number;
+  },
+): WildAreaRecord {
+  if (rec.stands.some((s) => s.species === species)) return rec; // already grown here
+  const base = rec.stands[0];
+  if (!base) return rec;
+  const baseCap = Object.values(base.cap).reduce((a, b) => a + Math.max(0, b), 0);
+  const frac = Number.isFinite(opts.fraction as number) ? opts.fraction! : STARTER_STAND_FRACTION;
+  const suit = Number.isFinite(opts.suitability) ? Math.max(0, opts.suitability) : 0;
+  const units = Math.round(baseCap * frac * suit);
+  const plants = plantsForYield(species, units);
+  if (plants <= 0) return rec;
+  return sowWildArea(rec, species, plants, opts.now, opts.regrowPeriodS, opts.classPeriodS);
 }
 
 /**
@@ -1080,6 +1310,75 @@ export function ripenWildArea(
   });
   if (!moved) return rec;
   return { ...rec, at: now, stands };
+}
+
+/**
+ * ⚖️ WHAT THIS GROUND PRODUCES IN A DAY, by glyph — the LOCAL half of the
+ * landed-cost question (import-displacement round, Stage A).
+ *
+ * THE CONTRACT, from `ripenWildArea` directly above: one due deadline refills
+ * a stand's stock TO CAP, and the host passes ONE FOOD_DAY_SEC as the period —
+ * so a pulse is a day and CAP **IS** the per-day rate. Not stock (that is what
+ * is standing unpicked, a level, not a flow) and not population (that is
+ * plants, not units). Σ of cap across the stands, per glyph.
+ *
+ * ⚠️ CAP, NOT DELIVERY. This is what the ground bears, before anyone walks out
+ * to pick it; a reader that wants what a town actually receives owes the haul
+ * its own terms. And it is HONEST ABOUT MATURITY only because the caps now
+ * follow the class mix (`standHarvestCaps`) — a sapling orchard answers 0
+ * here, which is the whole reason a fade cannot fire the day the seeds land.
+ *
+ * `excludeSpecies` is the DOUBLE-COUNT SEAT: the state books already assert a
+ * town's founding farm crop as a production process of its own, so the caller
+ * that adds this to the books' side must drop the books-asserted species or
+ * the same carrots are counted twice. Empty/absent ⇒ every stand.
+ */
+export function localYieldPerDay(
+  rec: WildAreaRecord,
+  opts?: { excludeSpecies?: readonly string[] },
+): Record<string, number> {
+  const skip = opts?.excludeSpecies?.length ? new Set(opts.excludeSpecies) : null;
+  const out: Record<string, number> = {};
+  for (const st of rec.stands) {
+    if (skip?.has(st.species)) continue;
+    for (const [g, n] of Object.entries(st.cap)) {
+      if (n > 0) out[g] = (out[g] ?? 0) + n;
+    }
+  }
+  return out;
+}
+
+/**
+ * ⚖️ THE SAME READING, IN THE COMMODITY KEYS THE TRADE TIER SPEAKS
+ * (import-displacement round, Stage B) — units/day of ONE good.
+ *
+ * `localYieldPerDay` above answers in GLYPHS because that is what ground
+ * bears; a fill row, a route's cargo list and a shortage are all keyed by GOOD
+ * ("food"). This is that projection and nothing else: Σ of every non-excluded
+ * stand's cap whose glyph `goodKeyOfGlyph` routes to `goodKey`.
+ *
+ * ⚖️ THE CALLER CHOOSES THE GROUND, deliberately — hence an ITERABLE of
+ * records rather than a session-wide sweep. A town's own field is production
+ * the books can be told about; the wild scatter is not (the round's standing
+ * law: the trade graph never touches it), and a reader that swept every record
+ * would have quietly credited every forest berry to the granary.
+ *
+ * No conversion happens here. `cap` is already sized by suitability at the sow
+ * (Stage A), so a caller that multiplied it again would be squaring the one
+ * dial — the whole term is a plain sum.
+ */
+export function localDailyUnitsForGood(
+  records: Iterable<WildAreaRecord>,
+  goodKey: string,
+  opts?: { excludeSpecies?: readonly string[] },
+): number {
+  let units = 0;
+  for (const rec of records) {
+    for (const [g, n] of Object.entries(localYieldPerDay(rec, opts))) {
+      if (goodKeyOfGlyph(g) === goodKey) units += n;
+    }
+  }
+  return units;
 }
 
 // ── ⚖️ F5 — THE SOURCE AS A TRADE ENDPOINT (one-way) ──────────────────────

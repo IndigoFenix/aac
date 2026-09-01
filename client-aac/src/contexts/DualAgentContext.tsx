@@ -319,7 +319,9 @@ interface DualAgentContextType {
   /** Unified word-finder entry — pass a builderContext to launch from the
    *  sentence builder (pre-selects the category), or call with no args to
    *  launch from conversation tier. Same downstream protocol either way. */
-  enterGuessing: (builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
+  /** `seedKey` is a `suggestion:<dim>:<value>` key from a LABELLED Word Finder
+   *  button — where the search should start. Omitted, the server infers it. */
+  enterGuessing: (builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }, seedKey?: string) => void;
   /** Legacy alias — equivalent to enterGuessing(builderContext). */
   enterGuessingFromBuilder: (builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void;
   /** User-initiated word-finder cancel. Single exit path used by every

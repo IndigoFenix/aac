@@ -170,19 +170,23 @@ describe("resolveStudentVenueBoard", () => {
     expect(resolved?.stats.total).toBe(2);
   });
 
-  test("allergies are read for the BUILD, never for the binding", async () => {
+  test("allergies are read NOWHERE on the board path", async () => {
+    // Since 2026-09-01 the serving path does no allergen filtering (Daniel's
+    // decision — the string filter erased whole categories on term
+    // collisions), so the board build reads no PHI at all. The strongest
+    // version of the old "never for the binding" rule: never for anything.
     await resolveBoundVenue(student(), NOW);
-    expect(getStudentAllergies).not.toHaveBeenCalled();
     await resolveStudentVenueBoard(student(), NOW);
-    expect(getStudentAllergies).toHaveBeenCalledWith("student-1");
+    expect(getStudentAllergies).not.toHaveBeenCalled();
   });
 
-  test("a menu filtered down to nothing is null, so the caller falls back", async () => {
+  test("every dish reaches the board, whatever the student's record says", async () => {
     getStudentAllergies.mockResolvedValue(["dairy", "gluten", "coffee"]);
     getMenuById.mockResolvedValue(
       menu({ items: [{ name: "Iced coffee", kind: "drink" }] }),
     );
-    expect(await resolveStudentVenueBoard(student(), NOW)).toBeNull();
+    const resolved = await resolveStudentVenueBoard(student(), NOW);
+    expect(JSON.stringify(resolved?.board)).toContain("Iced coffee");
   });
 
   test("web prices stay suppressed through this path", async () => {
@@ -205,8 +209,7 @@ describe("resolveStudentVenueBoard", () => {
 });
 
 describe("describeVenueBoardStats", () => {
-  test("reports counts and never the allergy that matched", async () => {
-    getStudentAllergies.mockResolvedValue(["peanut"]);
+  test("reports counts only — and no allergen segments since the filter left", async () => {
     getMenuById.mockResolvedValue(
       menu({
         items: [
@@ -218,18 +221,10 @@ describe("describeVenueBoardStats", () => {
     const resolved = await resolveStudentVenueBoard(student(), NOW);
     const line = describeVenueBoardStats(resolved!.stats);
 
-    expect(line).toContain("1 removed by allergen filter");
-    // The stats object carries the matched TERM, which is the child's allergy
-    // restated. A session log is not the place for it.
-    expect(resolved!.stats.removedByAllergy.length).toBe(1);
-    expect(line.toLowerCase()).not.toContain("peanut");
-  });
-
-  test("says how many items it could only read a name from", async () => {
-    getMenuById.mockResolvedValue(
-      menu({ items: [{ name: "Croissant", kind: "food" }] }),
-    );
-    const resolved = await resolveStudentVenueBoard(student(), NOW);
-    expect(describeVenueBoardStats(resolved!.stats)).toContain("kept with name only");
+    expect(line).toContain("2 item(s)");
+    // No allergen filtering runs (2026-09-01 decision), so the line no longer
+    // claims any — a stat that always reads zero implies a check that happens.
+    expect(line).not.toContain("allergen");
+    expect(resolved!.stats.removedByAllergy).toHaveLength(0);
   });
 });

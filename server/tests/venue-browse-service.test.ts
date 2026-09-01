@@ -23,12 +23,13 @@ const listForStudent = jest.fn(async (_id: string) => [] as any[]);
 const getActiveMenu = jest.fn(async (_id: string) => undefined as any);
 const upsert = jest.fn(async (v: any) => ({ id: `v-${v.sourceId}`, ...v }));
 const linkStudent = jest.fn(async (_d: any) => ({}) as any);
+const getById = jest.fn(async (_id: string) => undefined as any);
 const searchNearbyVenues = jest.fn(async (_gps: any, _r: number) => [] as any[]);
 
 jest.unstable_mockModule("../db", () => ({ db: {} }));
 // Mock paths resolve relative to THIS file, not to the module under test.
 jest.unstable_mockModule("../repositories/venueRepository.js", () => ({
-  venueRepository: { findNearby, listForStudent, getActiveMenu, upsert, linkStudent },
+  venueRepository: { findNearby, listForStudent, getActiveMenu, upsert, linkStudent, getById },
 }));
 jest.unstable_mockModule("../services/venue-menus/osm-venue-provider.js", () => ({
   searchNearbyVenues,
@@ -84,6 +85,7 @@ beforeEach(() => {
   getActiveMenu.mockReset().mockResolvedValue(undefined);
   upsert.mockReset().mockImplementation(async (v: any) => ({ id: `v-${v.sourceId}`, ...v }));
   linkStudent.mockReset();
+  getById.mockReset().mockResolvedValue(undefined);
   searchNearbyVenues.mockReset().mockResolvedValue([]);
 });
 
@@ -262,5 +264,64 @@ describe("results", () => {
     await expect(
       venueBrowseService.browse({ studentId: "s1", gps: GPS, settings: settings() }, NOW),
     ).resolves.toEqual({ categories: [], places: [], searched: false });
+  });
+});
+
+describe("resolveNamedVenue — how open_app data finds a venue", () => {
+  // The matcher exists so `open_app("restaurant", "לה פיצליה")` opens La
+  // Pizzalia's menu instead of resetting the app to the food grid (observed
+  // live 2026-09-01). Its one dangerous failure mode is looseness: a venue
+  // named "פיצה רומא" must NOT swallow the word "פיצה", or a student asking
+  // for pizza gets teleported into one specific pizzeria. Exact normalized
+  // equality only.
+
+  test("a venue:<id> token is a direct lookup, no matching", async () => {
+    // Ids are our own UUIDs; the token pattern requires a plausible one
+    // (six-plus id chars) so junk after the prefix cannot trigger a lookup.
+    const id = "3f2e1d0c-venue-uuid";
+    getById.mockResolvedValue({ id, name: "La Pizzalia" });
+    const venue = await venueBrowseService.resolveNamedVenue("s1", `venue:${id}`, GPS, 1500);
+    expect(venue?.id).toBe(id);
+    expect(findNearby).not.toHaveBeenCalled();
+  });
+
+  test("an exact name match against the nearby pool resolves", async () => {
+    findNearby.mockResolvedValue([venueRow("v1", "לה פיצליה", "pizza")]);
+    const venue = await venueBrowseService.resolveNamedVenue("s1", "לה פיצליה", GPS, 1500);
+    expect(venue?.id).toBe("v1");
+  });
+
+  test("normalization bridges punctuation and case, nothing more", async () => {
+    findNearby.mockResolvedValue([venueRow("v1", "Cafe Aroma", "coffee_shop")]);
+    const venue = await venueBrowseService.resolveNamedVenue("s1", "cafe aroma!", GPS, 1500);
+    expect(venue?.id).toBe("v1");
+  });
+
+  test("a CONTAINED name does not match — words belong to the cuisine matcher", async () => {
+    findNearby.mockResolvedValue([venueRow("v1", "פיצה רומא", "pizza")]);
+    const venue = await venueBrowseService.resolveNamedVenue("s1", "פיצה", GPS, 1500);
+    expect(venue).toBeNull();
+  });
+
+  test("the family's own label for a linked venue matches first", async () => {
+    // "המסעדה שלנו" is a name the cached pool has never heard of.
+    listForStudent.mockResolvedValue([{ venueId: "v7", label: "המסעדה שלנו" }]);
+    getById.mockResolvedValue({ id: "v7", name: "Trattoria Roma" });
+    const venue = await venueBrowseService.resolveNamedVenue("s1", "המסעדה שלנו", GPS, 1500);
+    expect(venue?.id).toBe("v7");
+    expect(findNearby).not.toHaveBeenCalled();
+  });
+
+  test("no gps limits matching to the student's own venues", async () => {
+    findNearby.mockResolvedValue([venueRow("v1", "לה פיצליה", "pizza")]);
+    const venue = await venueBrowseService.resolveNamedVenue("s1", "לה פיצליה", null, 1500);
+    expect(venue).toBeNull();
+    expect(findNearby).not.toHaveBeenCalled();
+  });
+
+  test("empty or foodish free text resolves to nothing, quietly", async () => {
+    expect(await venueBrowseService.resolveNamedVenue("s1", "", GPS, 1500)).toBeNull();
+    expect(await venueBrowseService.resolveNamedVenue("s1", "  ", GPS, 1500)).toBeNull();
+    expect(await venueBrowseService.resolveNamedVenue("s1", null, GPS, 1500)).toBeNull();
   });
 });

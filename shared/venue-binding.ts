@@ -215,6 +215,25 @@ export function placeIn(text: string | null | undefined): string | null {
 function branchTextOf(url: URL): string {
   const segments = url.pathname.split("/").filter(Boolean);
   const last = segments.length ? segments[segments.length - 1] : "";
+
+  // Wolt is the ONE aggregator whose city segment is safe to read, because
+  // its position is fixed by the URL scheme itself:
+  // `/{lang}/{country}/{CITY}/restaurant/{branch-slug}`. Without this, a Wolt
+  // page carried NO branch evidence at all — the city sat in the excluded
+  // early segments and the final slug rarely names one — so a Ramat Gan
+  // venue could bind the Petah Tikva branch's menu as an unrefusable "chain"
+  // guess (found live, 2026-09-01, טריולה). Reading a FIXED position is not
+  // the whole-path mistake the note above warns about: the region segment of
+  // an arbitrary aggregator is a guess, Wolt's city segment is a contract.
+  const host = url.hostname.toLowerCase();
+  if (
+    (host === "wolt.com" || host.endsWith(".wolt.com")) &&
+    segments.length >= 4 &&
+    (segments[3] === "restaurant" || segments[3] === "venue")
+  ) {
+    return `${url.hostname} ${segments[2]} ${last}`;
+  }
+
   return `${url.hostname} ${last}`;
 }
 

@@ -13,7 +13,7 @@
 
 import { preloadSileroVad } from "./sileroVad";
 import { getFaceLandmarkerLoader } from "@/hooks/useFaceTracking";
-import { preloadKokoroTts } from "@/services/kokoroTts";
+import { installKokoroDebugHooks } from "@/services/kokoroTts";
 
 export function preloadClientModels(): void {
   preloadSileroVad();
@@ -21,5 +21,10 @@ export function preloadClientModels(): void {
   // Kokoro (local neural voice, ~92 MB) self-gates on the weights being staged
   // — on a build that didn't run `npm run kokoro:model` this is a no-op and the
   // client keeps using speechSynthesis. See services/kokoroTts.ts.
-  preloadKokoroTts();
+  // The Kokoro voice is deliberately NOT preloaded here. Its weights are a
+  // ~94 MB per-device download, gated on the student's `localVoiceEnabled`
+  // setting — home.tsx calls ensureVoiceDownloaded() once the profile says the
+  // student has it on. Only the console hooks go in unconditionally, so
+  // __kokoroStatus() can explain why nothing is speaking.
+  installKokoroDebugHooks();
 }

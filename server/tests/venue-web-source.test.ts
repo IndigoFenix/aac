@@ -15,6 +15,12 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { htmlToText, menuUrlCandidates } from "../services/venue-menus/web-menu-fetcher.js";
+import {
+  discoveryQuery,
+  localityOf,
+  parseSearchResults,
+  woltQuery,
+} from "../services/venue-menus/website-discovery.js";
 import { toVenue, parseSnapshot } from "../services/venue-menus/brightdata-client.js";
 import { toVenue as osmToVenue } from "../services/venue-menus/osm-venue-provider.js";
 import { parseWebExtraction } from "../services/venue-menus/web-menu-extraction.js";
@@ -23,8 +29,10 @@ import type { RefinedMenuItem } from "../services/venue-menus/menu-refinement.js
 
 describe("menuUrlCandidates — what we are willing to fetch", () => {
   it("derives every candidate from the place's OWN site", () => {
-    // §4.2b. There is deliberately no search step: a brand-name search with no
-    // spatial anchor is exactly how a Canadian franchise won an Israeli query.
+    // §4.2b. When the record HAS a site, there is no search step: a brand-name
+    // search is how a Canadian franchise once won an Israeli query. Discovery
+    // (below) runs only for a record with no site at all, and its results
+    // still bind-first.
     const candidates = menuUrlCandidates({ websiteUri: "https://aroma.co.il" });
 
     expect(candidates.length).toBeGreaterThan(1);
@@ -52,6 +60,107 @@ describe("menuUrlCandidates — what we are willing to fetch", () => {
   it("tolerates a stored site with no scheme", () => {
     const candidates = menuUrlCandidates({ websiteUri: "aroma.co.il" });
     expect(candidates[0]).toBe("https://aroma.co.il/menu");
+  });
+});
+
+describe("website discovery — the search step for venues with no site on record", () => {
+  // Most OSM rows carry no `website` tag and the paid Maps dataset is not
+  // configured, so before this existed the web source answered `no_source_url`
+  // for essentially every venue a student asked about (2026-09-01). The
+  // original no-search lesson survives as two properties, both pinned here:
+  // the query is spatially anchored, and (in the fetcher) every discovered
+  // URL still passes checkMenuBinding before a byte is fetched.
+
+  describe("localityOf", () => {
+    it("takes the last lettered segment of a street-first address", () => {
+      expect(localityOf("דיזנגוף 99, תל אביב")).toBe("תל אביב");
+      expect(localityOf("99 Main St, Springfield")).toBe("Springfield");
+    });
+
+    it("steps over a trailing country name — the TLD check owns countries", () => {
+      expect(localityOf("דיזנגוף 99, תל אביב, ישראל")).toBe("תל אביב");
+    });
+
+    it("null address is a weaker query, not a failure", () => {
+      expect(localityOf(null)).toBeNull();
+      expect(localityOf("  ")).toBeNull();
+    });
+  });
+
+  describe("discoveryQuery — the spatial anchor", () => {
+    it("quotes the name and anchors with locality + Hebrew menu word for IL", () => {
+      expect(
+        discoveryQuery({ name: "טריולה", address: "אבא הלל 5, רמת גן", countryCode: "IL" }),
+      ).toBe('"טריולה" רמת גן תפריט');
+    });
+
+    it("the Wolt pass targets the one host the probes showed server-rendering menus", () => {
+      expect(woltQuery({ name: "טריולה" })).toBe('site:wolt.com "טריולה"');
+    });
+
+    it("falls back to 'menu' outside Israel or with no country", () => {
+      expect(discoveryQuery({ name: "Trattoria Roma", address: null, countryCode: null })).toBe(
+        '"Trattoria Roma" menu',
+      );
+    });
+  });
+
+  describe("parseSearchResults", () => {
+    const redirect = (target: string) =>
+      `<a class="result__a" href="//duckduckgo.com/l/?uddg=${encodeURIComponent(target)}&rut=abc">x</a>`;
+
+    it("decodes the redirect form and keeps page order", () => {
+      const html = redirect("https://triola.co.il/") + redirect("https://wolt.com/he/isr/ramat-gan/restaurant/triola");
+      expect(parseSearchResults(html)).toEqual([
+        "https://triola.co.il/",
+        "https://wolt.com/he/isr/ramat-gan/restaurant/triola",
+      ]);
+    });
+
+    it("keeps one URL per host — the second hit on a site is the same site", () => {
+      const html = redirect("https://triola.co.il/menu") + redirect("https://www.triola.co.il/about");
+      expect(parseSearchResults(html)).toHaveLength(1);
+    });
+
+    it("drops binary documents the text pass cannot read", () => {
+      // A PDF is often the REAL menu (the live probe found טריולה's own as a
+      // top result) — but there is no PDF pipeline, so fetching one only buys
+      // an Unlocker call that extracts nothing.
+      const html =
+        redirect("https://triola.co.il/wp-content/uploads/menu.pdf") +
+        redirect("https://triola.co.il/");
+      expect(parseSearchResults(html)).toEqual(["https://triola.co.il/"]);
+    });
+
+    it("drops search engines and JavaScript-walled gardens", () => {
+      const html =
+        redirect("https://www.facebook.com/triola") +
+        redirect("https://www.instagram.com/triola") +
+        redirect("https://duckduckgo.com/settings") +
+        redirect("https://triola.co.il/");
+      expect(parseSearchResults(html)).toEqual(["https://triola.co.il/"]);
+    });
+
+    it("keeps aggregators — an aggregator page is a fine place to READ a menu", () => {
+      // The branch check downstream is what keeps it the right branch's.
+      const html = redirect("https://wolt.com/he/isr/tel-aviv/restaurant/triola");
+      expect(parseSearchResults(html)).toHaveLength(1);
+    });
+
+    it("caps the candidate list — deeper results are not menus", () => {
+      const html = Array.from({ length: 10 }, (_, i) => redirect(`https://site${i}.co.il/`)).join("");
+      expect(parseSearchResults(html)).toHaveLength(5);
+    });
+
+    it("falls back to direct hrefs when the page carries no redirects", () => {
+      const html = `<a href="https://triola.co.il/menu">menu</a><a href="/internal">x</a>`;
+      expect(parseSearchResults(html)).toEqual(["https://triola.co.il/menu"]);
+    });
+
+    it("an unparseable page yields nothing, quietly", () => {
+      expect(parseSearchResults("")).toEqual([]);
+      expect(parseSearchResults("<html>no links</html>")).toEqual([]);
+    });
   });
 });
 
@@ -181,7 +290,7 @@ describe("web prices are not dine-in prices", () => {
   const items: RefinedMenuItem[] = [
     { name: "רול אנטריקוט", price: 48, priceText: "₪48", kind: "food" },
   ];
-  const settings = { categoryPages: false, showPrices: true, readingModeDefault: false };
+  const settings = { categoryPages: false, showPrices: true };
 
   it("suppresses prices from a WEB menu even when showPrices is on", () => {
     // The טומי רול page carried the restaurant's OWN notice that delivery

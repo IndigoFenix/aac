@@ -614,7 +614,7 @@ version constant being bumped. Step 2 was skipped and should be reconciled.
 - **GuardDuty** (when enabled): findings of severity ≥ 4 are routed to the alerts
   SNS topic by an EventBridge rule.
 - **Delivery:** the alerts topic has an email subscription
-  (`var.alert_email`, `security@aivota.ai` in both ECS profiles) and the KMS key
+  (`var.alert_email`, `alerts@aivota.ai` in both ECS profiles) and the KMS key
   policy grants `cloudwatch.amazonaws.com` and `events.amazonaws.com` the
   permission to publish to the encrypted topic. Both were missing — the topic had
   no subscriber and the CMK blocked the publish — so every alarm fired into the

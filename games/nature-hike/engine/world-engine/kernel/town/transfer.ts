@@ -393,9 +393,59 @@ export interface TransferAgreement {
   barter?: BarterTerms;
 }
 
+// ---------------------------------------------------------------------------
+// ⚖️ FIRST-ARRIVAL EVIDENCE (resource-access round, Stage 3 — 2026-09-01)
+// ---------------------------------------------------------------------------
+//
+// THE QUESTION THIS ANSWERS: *has good G ever landed HERE?* — the flow memory
+// the user's seed-availability ruling is derived from ("a place may plant a
+// species only once the good has landed there — derivable from flow memory,
+// NEVER a new list"). Nothing in the game could answer it before: the daily
+// caravan mints a crate per visit bucket and leaves no trace, the state books'
+// `imports`/`exports` are per-year RATES recomputed fresh every derive, and
+// `driftBank` is a scalar that drains to 0 and forgets. The one durable
+// per-good record was `SerializedTransferLedger.agreements`, which keeps
+// terminal barter rows forever — so this joins THAT record family rather than
+// standing up a parallel table.
+//
+// ⚖️ BOUNDED, BY THE EDGE — the state books' own precedent (`StateEconEvent`
+// "trade-open", pushed only on the 0→positive flow edge, planet/state-books.ts).
+// ONE row per good, appended the first time it lands and never again: the
+// OPENING is recorded, the ongoing rate is DERIVED and never accumulated. N
+// landings of one good are one row, so the ledger cannot grow with traffic —
+// its ceiling is the goods vocabulary.
+//
+// DEDUPE IS ON THE GOOD, NOT THE LANE. The evidence question is "has G ever
+// landed here"; `via` is colour on the answer (which lane brought the first
+// one), so a good that arrived by caravan and later by barter still holds
+// exactly one row.
+//
+// A SIBLING ARRAY, NOT AN AGREEMENT ROW: `all()` is the agreement audit view
+// (staging sweeps, the fold's commitment gather, the barter executor) and an
+// arrival is not an agreement — mixing the two shapes would put a row with no
+// endpoints in front of every one of those walks.
+
+/** Which lane landed the first unit — colour on the evidence, never its key. */
+export type ArrivalVia = "caravan" | "barter";
+
+/** ONE first-arrival row: this good has landed here, once, on record. */
+export interface FirstArrivalRow {
+  kind: "first-arrival";
+  /** The good's material HEAD (`stackHead` — "apple.ripe" is an apple). */
+  good: string;
+  /** The lane that brought the FIRST one. */
+  via: ArrivalVia;
+  /** The economy day it landed (the caller's own day counter). */
+  day: number;
+}
+
 export interface SerializedTransferLedger {
   serial: number;
   agreements: TransferAgreement[];
+  /** FIRST-ARRIVAL EVIDENCE, append order. Absent = nothing has ever landed
+   *  (and every pre-Stage-3 save, whose serialized form is unchanged: the
+   *  field is emitted only when non-empty — the `herd` precedent). */
+  arrivals?: FirstArrivalRow[];
 }
 
 export interface PostTransferInput {
@@ -437,6 +487,17 @@ export interface TransferLedger {
   advance(id: string, now: number): void;
   /** The agreement a hauler is executing, if any (one haul per body). */
   executing(executor: string): TransferAgreement | undefined;
+  /**
+   * A unit of `good` LANDED here. Appends the first-arrival row on the
+   * 0→ever EDGE and returns true exactly there; every later landing of the
+   * same good (any lane) returns false and appends nothing. `day` is the
+   * caller's economy day.
+   */
+  noteArrival(good: string, via: ArrivalVia, day: number): boolean;
+  /** Every first-arrival row, append order — the evidence audit view. */
+  arrivals(): readonly FirstArrivalRow[];
+  /** Has this good ever landed here? (head-matched, like every stack read.) */
+  everArrived(good: string): boolean;
   toJSON(): SerializedTransferLedger;
 }
 
@@ -446,6 +507,10 @@ export function createTransferLedger(json?: SerializedTransferLedger): TransferL
     (a) => JSON.parse(JSON.stringify(a)) as TransferAgreement,
   );
   const byId = new Map<string, TransferAgreement>(rows.map((a) => [a.id, a]));
+  const arrivals: FirstArrivalRow[] = (json?.arrivals ?? []).map(
+    (r) => JSON.parse(JSON.stringify(r)) as FirstArrivalRow,
+  );
+  const arrived = new Set<string>(arrivals.map((r) => r.good));
   return {
     post(input) {
       const a: TransferAgreement = {
@@ -511,9 +576,23 @@ export function createTransferLedger(json?: SerializedTransferLedger): TransferL
     },
     executing: (executor) =>
       rows.find((a) => a.status === "moving" && a.executor === executor),
+    noteArrival(good, via, day) {
+      const head = stackHead(good);
+      if (!head || arrived.has(head)) return false; // not an edge: already on record
+      arrived.add(head);
+      arrivals.push({ kind: "first-arrival", good: head, via, day });
+      return true;
+    },
+    arrivals: () => arrivals,
+    everArrived: (good) => arrived.has(stackHead(good)),
     toJSON: () => ({
       serial,
       agreements: rows.map((a) => JSON.parse(JSON.stringify(a)) as TransferAgreement),
+      // Emitted only when something has landed, so every save written before
+      // the evidence existed round-trips byte-identically.
+      ...(arrivals.length
+        ? { arrivals: arrivals.map((r) => ({ ...r })) }
+        : {}),
     }),
   };
 }

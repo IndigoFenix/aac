@@ -197,6 +197,23 @@ export class SpeakerAgent implements ISpeakerAgent {
   private provider: LiveProvider | null = null;
   /** Held `open_app` functionResponses, keyed by live tool-call id. */
   private pendingAppOpenAcks = new Map<string, { name: string; timer: ReturnType<typeof setTimeout> }>();
+  /**
+   * Opens the BACKSTOP answered before the server had a verdict.
+   *
+   * 🚨 Without this the timeout SWALLOWED the note. `resolveAppOpen` returned
+   * early on "already settled", so the whole point of the note — telling the
+   * Speaker what actually appeared — was lost precisely in the case where the
+   * model had already spoken and most needed correcting. Observed 2026-09-01:
+   * three restaurant opens in a row, and the Speaker was never told what was on
+   * screen for any of them.
+   *
+   * An id lands here on timeout and is consumed by the late settle, which
+   * delivers the note the pre-hold way — as a context injection. That is safe
+   * HERE and nowhere else in this flow: the backstop already answered the
+   * functionResponse, so nothing is outstanding and pushing client content
+   * cannot strand generation (which is what an injection mid-hold does).
+   */
+  private timedOutAppOpenAcks = new Set<string>();
   private readonly callbacks: SpeakerCallbacks;
   private readonly providerKey: LLMProviderKey;
   private useDirectAudio = true;
@@ -663,6 +680,9 @@ export class SpeakerAgent implements ISpeakerAgent {
     if (existing) clearTimeout(existing.timer);
     const timer = setTimeout(() => {
       flowNote("SPEAKER", `open_app ack timed out after ${APP_OPEN_ACK_TIMEOUT_MS}ms — answering "ok" so the turn can continue.`);
+      // Remember that this one went out blind, so the verdict still reaches the
+      // model when it arrives (see timedOutAppOpenAcks).
+      this.timedOutAppOpenAcks.add(id);
       this.answerAppOpen(id, SPEAKER_TOOL_ACK);
     }, APP_OPEN_ACK_TIMEOUT_MS);
     this.pendingAppOpenAcks.set(id, { name: call.name || "open_app", timer });
@@ -678,7 +698,19 @@ export class SpeakerAgent implements ISpeakerAgent {
    */
   resolveAppOpen(callId: string | undefined, verdict: { opened: boolean; note?: string }): void {
     if (!callId) return;               // student press / Board Manager open — nothing was held
-    if (!this.pendingAppOpenAcks.has(callId)) return;  // already settled (timeout, or a duplicate settle)
+    if (!this.pendingAppOpenAcks.has(callId)) {
+      // The backstop already answered this one. The ack cannot be taken back,
+      // but the note is still the only thing that tells the model what is on
+      // the screen — so deliver it the way every open delivered it before the
+      // hold existed. `delete` makes this once-only: routeAppOpen's `finally`
+      // settles a second time on every open, and a repeated injection would
+      // read to the model as the app having opened twice.
+      if (this.timedOutAppOpenAcks.delete(callId) && verdict.note) {
+        flowNote("SPEAKER", `open_app verdict arrived after the backstop — sending "${verdict.opened ? "opened" : "refused"}" as context instead.`);
+        this.sendContextInjection(verdict.note);
+      }
+      return;
+    }
     this.answerAppOpen(callId, {
       output: verdict.opened ? "opened" : "refused",
       ...(verdict.note ? { detail: verdict.note } : {}),
@@ -705,6 +737,7 @@ export class SpeakerAgent implements ISpeakerAgent {
   private clearPendingAppOpenAcks(): void {
     for (const { timer } of this.pendingAppOpenAcks.values()) clearTimeout(timer);
     this.pendingAppOpenAcks.clear();
+    this.timedOutAppOpenAcks.clear();
   }
 
   /** A single tool call may produce multiple events (e.g. speak() emits

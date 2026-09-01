@@ -61,7 +61,7 @@ import {
   cleanupOldSessions,
 } from "@/services/aac-local-storage";
 import { registerSymbolPath } from "@/lib/glyph-images";
-import { speak as kokoroSpeak } from "@/services/kokoroTts";
+import { speak as kokoroSpeak, cancel as kokoroCancel } from "@/services/kokoroTts";
 import type {
   AacLocalStorageConfig,
   AacSessionSnapshot,
@@ -760,7 +760,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "audio_interrupt":
           // Gemini was interrupted by user input — stop audio immediately
           audioPlayer.clear();
-          // Also cancel any local browser TTS
+          // Also cancel any local TTS — the Kokoro neural voice as well as
+          // speechSynthesis (kokoro post-dates this handler and was missed).
+          kokoroCancel();
           window.speechSynthesis?.cancel();
           localTtsBufferRef.current = "";
           if (localTtsFlushTimerRef.current) { clearTimeout(localTtsFlushTimerRef.current); localTtsFlushTimerRef.current = null; }
@@ -925,8 +927,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "client_local_tts": {
           // Server requests browser-native speechSynthesis
           if (!audioEnabled) break;
-          const { text: localText, language: localLang, voiceRole: localRole } = msg.data as {
-            text: string; language: string; voiceRole: "ai" | "student";
+          const { text: localText, language: localLang, voiceRole: localRole, complete: localComplete } = msg.data as {
+            text: string; language: string; voiceRole: "ai" | "student"; complete?: boolean;
           };
           // Cave mute: drop AI-voice fallback speech in flight at mute time.
           if (localRole === "ai" && muteStateRef.current === "muted") break;
@@ -934,9 +936,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           localTtsBufferRef.current += (localTtsBufferRef.current ? " " : "") + localText;
           // Clear any pending flush timer
           if (localTtsFlushTimerRef.current) clearTimeout(localTtsFlushTimerRef.current);
-          // Check for sentence-ending punctuation
+          // Check for sentence-ending punctuation. `complete` bypasses the
+          // check: the server marked this a WHOLE utterance (a button press,
+          // an interpret), and a button sentence carries no terminal
+          // punctuation — so without the flag every press sat out the full
+          // 600ms fragment-settling delay before a sound came out, which is a
+          // real part of why the device voice trailed behind the presses.
           const sentenceEnd = /[.!?؟。]\s*$/;
-          if (sentenceEnd.test(localTtsBufferRef.current.trim())) {
+          if (localComplete || sentenceEnd.test(localTtsBufferRef.current.trim())) {
             flushLocalTtsBuffer(localLang, localRole);
           } else {
             // Flush after a short pause (no more fragments arriving)
@@ -1117,7 +1124,25 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             appOpenBackstopRef.current = null;
           }
           setAppOpenPending(null);
-          setActiveApp(msg.data);
+          // An EQUIVALENT open is a no-op, not a remount. The Speaker often
+          // re-calls open_app seconds after the student is already inside the
+          // app (it hears the sentence the press spoke, then opens the app the
+          // sentence names), and replacing activeApp with an identical payload
+          // tears the screen down mid-use — the browse lane reset to its first
+          // view under the student's hands (2026-09-01). Identity is the whole
+          // payload: a DIFFERENT payload for the same app must still land, that
+          // is how the restaurant reopen changes lanes.
+          setActiveApp((prev) => {
+            if (
+              prev &&
+              prev.appId === msg.data?.appId &&
+              JSON.stringify(prev.appData ?? null) === JSON.stringify(msg.data?.appData ?? null) &&
+              (prev.data ?? null) === (msg.data?.data ?? null)
+            ) {
+              return prev;
+            }
+            return msg.data;
+          });
           break;
 
         case "app_close":
@@ -1820,6 +1845,25 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // user hears the wrong sentence for the button they just pressed.
     // Only clears the "utterance" tag; the AI's "avatar" audio is left alone.
     audioPlayer.clearByTag("utterance");
+    // 🚨 The LOCAL rung of the same ladder was never cleared, and in
+    // device-voice mode (`useLocalTts`) it is not a rung, it is THE voice.
+    // Each press's sentence arrives as `client_local_tts`, sits 600ms in the
+    // flush buffer (a bare button sentence carries no terminal punctuation),
+    // and then QUEUES on the promise chain — speechSynthesis and Kokoro alike
+    // finish what they started. Press four buttons and the device recites all
+    // four sentences back to back, trailing the presses: "the local voice
+    // talking continuously with each press" (reported 2026-09-01). Same
+    // supersede rule as the streamed audio above; same shape as the
+    // `audio_interrupt` handler. An AI-voice local fallback mid-utterance is
+    // cut too — deliberately: a press interrupting AI speech is the standing
+    // barge-in contract (interruptAiSpeech is unconditional on the server).
+    localTtsBufferRef.current = "";
+    if (localTtsFlushTimerRef.current) {
+      clearTimeout(localTtsFlushTimerRef.current);
+      localTtsFlushTimerRef.current = null;
+    }
+    kokoroCancel();
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
     wsSend({ type: "button_press", buttons: recentButtons, sentences, board });
   }, [wsSend, audioPlayer]);
 
@@ -1898,9 +1942,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
    * - From CONVERSATION: omit builderContext. The user starts at the
    *   top-level category step.
    */
-  const enterGuessing = useCallback((builderContext?: GuessingBuilderContext) => {
-    console.debug("[guessing] enterGuessing", { from: builderContext ? "builder" : "conversation" });
-    wsSend({ type: "guessing_enter", ...(builderContext ? { builderContext } : {}) });
+  const enterGuessing = useCallback((builderContext?: GuessingBuilderContext, seedKey?: string) => {
+    console.debug("[guessing] enterGuessing", { from: builderContext ? "builder" : "conversation", seedKey });
+    wsSend({
+      type: "guessing_enter",
+      ...(builderContext ? { builderContext } : {}),
+      ...(seedKey ? { seedKey } : {}),
+    });
   }, [wsSend]);
 
   /** Legacy alias — same as enterGuessing(builderContext). Retained because

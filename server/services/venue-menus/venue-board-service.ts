@@ -29,17 +29,17 @@
 //                               told the board exists and what it is called.
 //   `resolveStudentVenueBoard`— the whole board. Used on open.
 //
-// The split is not just cost. `resolveBoundVenue` deliberately does NOT read
-// the student's allergies: the prompt-build path feeds a model, and allergies
-// are PHI that must never reach one (§3.3). Keeping the PHI read inside the
-// build path means there is no route by which an allergy could be prompted
-// into an agent even by mistake.
+// The split is not just cost. Allergies are PHI that must never reach a model
+// (§3.3) — and since 2026-09-01 the board path reads NO allergy data at all
+// (the string-matching allergen filter is out of the serving path; see
+// buildVenueMenuBoard step 2), so there is no route by which an allergy could
+// be prompted into an agent even by mistake.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // NULL IS ALWAYS AN ANSWER, NEVER AN ERROR
 //
-// Every failure here — no venue, no approved menu, a stale menu, a DB outage,
-// an allergen filter that removed everything — returns null, and the caller
+// Every failure here — no venue, no approved menu, a stale menu, a DB outage
+// — returns null, and the caller
 // falls back to the floor board. Someone is standing at a table with a hungry
 // child; an error screen is the one outcome that helps nobody.
 //
@@ -48,7 +48,6 @@
 import type { ParsedBoardData } from "@shared/schema";
 import { resolveVenueMenuSettings } from "@shared/venue-menus";
 import { venueRepository } from "../../repositories/venueRepository.js";
-import { getStudentAllergies } from "./student-allergies.js";
 import {
   buildVenueMenuBoard,
   type VenueMenuBoardResult,
@@ -150,10 +149,9 @@ export async function resolveBoundVenue(
 /**
  * The menu board for the student's current venue, built fresh.
  *
- * Returns null when there is nothing to show — including the case where the
- * menu exists but the allergen filter removed every item on it. That is not a
- * failure to report to the student; it is a menu with nothing on it they can
- * eat, and the floor board says more than an empty grid ever could.
+ * Returns null when there is nothing to show — a menu that refined down to
+ * nothing orderable. That is not a failure to report to the student; the
+ * floor board says more than an empty grid ever could.
  */
 export async function resolveStudentVenueBoard(
   student: VenueBoardStudent,
@@ -161,7 +159,71 @@ export async function resolveStudentVenueBoard(
 ): Promise<ResolvedVenueBoard | null> {
   const bound = await resolveBoundVenue(student, now);
   if (!bound) return null;
+  return buildBoardFor(student, bound, now);
+}
 
+/**
+ * The menu board for ONE NAMED venue — bound or not.
+ *
+ * This is the student-side path to a menu: they pressed "Pizza Roma" on the
+ * places grid (or told the AI they want to go there), and the venue has an
+ * approved menu, so they get to LOOK at it. Nothing here binds: `student_venues`
+ * is untouched, `lastVisitedAt` is untouched, and "where are we" still belongs
+ * to the caretaker's confirmation tap. A preview is information; binding is a
+ * claim about the physical world.
+ *
+ * Every gate the bound path applies, applies here identically — approved menus
+ * only (`getActiveMenu`) and the staleness window. A menu a clinician has not
+ * cleared is exactly as invisible to a want as it is to a visit.
+ */
+export async function resolveVenueBoardById(
+  student: VenueBoardStudent,
+  venueId: string,
+  now: Date = new Date(),
+): Promise<ResolvedVenueBoard | null> {
+  try {
+    const settings = resolveVenueMenuSettings(
+      student.aacSettings?.venueMenus,
+      {
+        birthDate: student.birthDate,
+        languageLevel: student.aacSettings?.languageLevel ?? null,
+      },
+      now,
+    );
+    if (!settings.enabled) return null;
+
+    const venue = await venueRepository.getById(venueId);
+    if (!venue) return null;
+
+    const menu = await venueRepository.getActiveMenu(venueId);
+    if (!menu) return null;
+
+    const ageDays = (now.getTime() - new Date(menu.extractedAt).getTime()) / 86_400_000;
+    if (settings.maxMenuAgeDays > 0 && ageDays > settings.maxMenuAgeDays) return null;
+
+    // The family's own label wins here too, same as resolveBoundVenue: a
+    // student knows "our pizza place", not the chain's registered name.
+    const link = (await venueRepository.listForStudent(student.id)).find(
+      (l) => l.venueId === venueId,
+    );
+
+    return buildBoardFor(
+      student,
+      { venueId: venue.id, venueName: link?.label?.trim() || venue.name, menuId: menu.id },
+      now,
+    );
+  } catch (error) {
+    console.error("[venue-board] by-id lookup failed:", (error as Error)?.message);
+    return null;
+  }
+}
+
+/** The build tail both entry points share: menu rows → junk drop → board. */
+async function buildBoardFor(
+  student: VenueBoardStudent,
+  bound: BoundVenue,
+  now: Date,
+): Promise<ResolvedVenueBoard | null> {
   try {
     const settings = resolveVenueMenuSettings(
       student.aacSettings?.venueMenus,
@@ -175,9 +237,12 @@ export async function resolveStudentVenueBoard(
     const menu = await venueRepository.getMenuById(bound.menuId);
     if (!menu) return null;
 
-    // The PHI read lives here and only here — see the header.
-    const allergies = await getStudentAllergies(student.id);
-
+    // No allergy read and no allergen filtering (Daniel's decision,
+    // 2026-09-01): the string-matching filter was unreliable in both
+    // directions, so the menu shows what the restaurant serves, and allergen
+    // safety is the companion's conversation at the table — later the AI
+    // pass or ask-the-waiter buttons. This also removes the PHI read from
+    // the board path entirely.
     const result = buildVenueMenuBoard({
       venueName: bound.venueName,
       provenance: menu.provenance as "camera" | "web" | "manual",
@@ -185,9 +250,7 @@ export async function resolveStudentVenueBoard(
       settings: {
         categoryPages: settings.categoryPages,
         showPrices: settings.showPrices,
-        readingModeDefault: settings.readingModeDefault,
       },
-      allergies,
     });
 
     if (!result.board) return null;
@@ -201,20 +264,13 @@ export async function resolveStudentVenueBoard(
 /**
  * A one-line summary of a board build, safe to write to a session log.
  *
- * Counts only. `stats.removedByAllergy` carries the TERM that matched, which
- * is the student's allergy restated — logging it would put PHI in a session
- * log to save nobody any time. How MANY items went is the useful part, and
- * `uninspectableCount` is the honest one: it says how many kept items the
- * filter had nothing but a bare dish name to read, so a caretaker can be told
- * "this menu carries no ingredient text" instead of being left to assume a
- * check happened.
+ * Counts only — never item text, which is the user's content. (The allergen
+ * segments left this line when the filter left the serving path, 2026-09-01.)
  */
 export function describeVenueBoardStats(stats: VenueMenuBoardResult["stats"]): string {
   return [
     `${stats.total} item(s)`,
     `${stats.notices} notice(s) dropped`,
-    `${stats.removedByAllergy.length} removed by allergen filter`,
-    `${stats.uninspectableCount} kept with name only`,
     `${stats.unreadableCount} unreadable`,
     `${stats.pageCount} page(s)`,
     stats.pricesSuppressed ? "prices suppressed (web source)" : "prices per settings",

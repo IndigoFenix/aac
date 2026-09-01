@@ -17,7 +17,10 @@
  *     on that good would actually get.
  *   • FREIGHT — the good must survive the leg. Nothing about how badly a town
  *     wants milk makes milk cross a day of road, and a list that promised it
- *     would be a lie the caravan then quietly breaks.
+ *     would be a lie the caravan then quietly breaks. Since the
+ *     import-displacement round that gate is a FLOOR with a slope above it:
+ *     what survives also WEIGHS the row (`freightArrivalFraction`), so the
+ *     hold is dealt by landed cost rather than by raw appetite.
  *
  * WHY A SIBLING OF barter.ts RATHER THAN A SECTION OF IT. `bindPartner`
  * (trade.ts) is the seam that derives a route's two lists, and the module
@@ -129,18 +132,56 @@ export function freightSurvivesLeg(good: string, legM: number, scale: WorldScale
   return deliveredFraction(scale, f, m / perDay) >= FREIGHT_SURVIVAL_MIN;
 }
 
-/** The two sides of one pair's trade, best first. */
+/**
+ * ⚖️ HOW MUCH OF THE LOAD ACTUALLY LANDS, 0..1 — `freightSurvivesLeg`'s
+ * CONTINUOUS twin (import-displacement round, Stage B).
+ *
+ * The boolean above is the FLOOR and stays exactly where it is: below half,
+ * the caravan is hauling air and the pair should be trading something else.
+ * This is the slope ABOVE that floor, and it is the producer+freight half of
+ * the landed-cost law read at this rung's fidelity — quantity is the whole
+ * story, so "what it costs to land" IS "how little of it lands".
+ *
+ * SAME TWO DEGENERATE GUARDS, read the same way as the gate: no road between
+ * them, or a world whose legs take no time, delivers everything. A DURABLE
+ * good is 1 at every distance by freight.ts's own law — the ox never eats the
+ * cargo — so only a selfConsuming or fragile good on a long leg moves.
+ *
+ * 🚨 NOT a second conversion dial: `deliveredFraction` is freight.ts's, whole.
+ */
+export function freightArrivalFraction(good: string, legM: number, scale: WorldScale): number {
+  const m = Math.max(0, legM);
+  if (!(m > 0)) return 1;
+  const perDay = dailyTravelM(scale);
+  if (!(perDay > 0)) return 1;
+  return clamp01(deliveredFraction(scale, freightOf(good), m / perDay));
+}
+
+/** The two sides of one pair's trade, best first (by LANDED weight — see
+ *  `ComplementaryRow.want`). */
 export interface ComplementaryTrade {
-  /** Goods THEY can spare that WE are short of — ranked by our own need. */
+  /** Goods THEY can spare that WE are short of — ranked by our own need, as it
+   *  arrives over this road. */
   imports: string[];
-  /** The mirror: what we can spare that they need — ranked by their need. */
+  /** The mirror: what we can spare that they need, same reading. */
   exports: string[];
 }
 
-/** ⚖️ G3 — ONE ROW of the ranking: the good AND the `want` it was ranked by
- *  (the needing side's own shortage, 0..1, at/above `BARTER_WANT_MIN`). */
+/** ⚖️ G3 — ONE ROW of the ranking: the good AND the weight it was ranked by. */
 export interface ComplementaryRow {
   good: string;
+  /**
+   * ⚖️ THE LANDED WEIGHT, 0..1 — the needing side's own shortage times the
+   * share of a load that survives the leg (`freightArrivalFraction`), NOT the
+   * raw shortage (import-displacement round, Stage B).
+   *
+   * The ADMISSION test is still the raw shortage against `BARTER_WANT_MIN`, so
+   * membership of the list is unchanged; what the road eats is priced into the
+   * BID instead, which is what `importUnitsPerVisit` splits the hold by. A
+   * durable good's fraction is 1, so its weight IS its shortage and every
+   * shipped line is untouched; a staple over a long leg bids lower than its
+   * hunger, because a cart of it arrives smaller than it left.
+   */
   want: number;
 }
 
@@ -186,6 +227,13 @@ export function complementaryTrade(
  * that ignores which shortage is worse. A payload is finite capacity many
  * goods bid for (§0's third pressure), so the bid needs its number; keeping
  * it costs nothing and is the whole of `importUnitsPerVisit`'s weighting.
+ *
+ * ⚖️ AND THE BID IS THE LANDED ONE (import-displacement round, Stage B): the
+ * weight is `want × freightArrivalFraction`, so a good the road half-eats bids
+ * half as hard for the same hold. Order and hold volume both move with it —
+ * intended: that IS cargo re-ranked by landed cost. Membership does not (the
+ * two gates above are untouched), so a durable line ships exactly what it
+ * shipped.
  */
 export function complementaryRanking(
   us: BarterSignals,
@@ -204,7 +252,11 @@ export function complementaryRanking(
       const want = clamp01(need.shortage(good));
       if (want < BARTER_WANT_MIN) return; // nobody on this side wants it
       if (!freightSurvivesLeg(good, legM, scale)) return; // the road eats it
-      rows.push({ good, want, i });
+      // ⚖️ LANDED, NOT WISHED FOR (Stage B). The bid is what the good is worth
+      // ON THE CART — the shortage it would relieve, times the share of the
+      // load that gets there. The gate above stays the floor; this is the
+      // slope, so a hold is dealt by landed cost instead of by raw appetite.
+      rows.push({ good, want: want * freightArrivalFraction(good, legM, scale), i });
     });
     rows.sort((a, b) => b.want - a.want || a.i - b.i);
     return rows.map((r) => ({ good: r.good, want: r.want }));

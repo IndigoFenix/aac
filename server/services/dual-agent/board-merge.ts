@@ -20,6 +20,7 @@ export interface MergeButton {
   sentence?: string;
   speech?: string;
   buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
+  guessingSeed?: string;
   suggestionKey?: string;
   narrowDimension?: string;
   narrowValue?: string;

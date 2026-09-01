@@ -19,7 +19,7 @@
 // break the calling flow (all sends are fire-and-forget / caught).
 //
 // Config (all optional):
-//   PROVIDER_ALERT_EMAIL              recipient (default: cs@aivota.ai)
+//   PROVIDER_ALERT_EMAIL              recipient (default: alerts@aivota.ai)
 //   PROVIDER_ALERT_COOLDOWN_MIN       per-provider depletion cooldown (default 360)
 //   LLM_MONTHLY_CAP_GOOGLE_USD        monthly cap, USD (unset = no threshold alert)
 //   LLM_MONTHLY_CAP_ANTHROPIC_USD     monthly cap, USD
@@ -35,7 +35,7 @@ import { sendOperationalAlert } from "./operationalAlert";
 export type ProviderAccount = "Google" | "Anthropic (Claude)" | "OpenAI";
 const ALL_PROVIDERS: ProviderAccount[] = ["Google", "Anthropic (Claude)", "OpenAI"];
 
-const RECIPIENT = process.env.PROVIDER_ALERT_EMAIL || "cs@aivota.ai";
+const RECIPIENT = process.env.PROVIDER_ALERT_EMAIL || "alerts@aivota.ai";
 
 // Credits are stored 1:1 with USD (cost-helpers' ChargeToCredits is identity),
 // so month-to-date credit sums and the USD caps are directly comparable.

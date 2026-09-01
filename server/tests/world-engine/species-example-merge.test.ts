@@ -76,10 +76,12 @@ describe("species ↔ worked-example merge", () => {
     }
   });
 
-  it("registered the nine examples that had no row at all", () => {
+  it("registered the six examples that had no row at all", () => {
+    // ⚰️ `raptor`, `dimetrodon` and `plesiosaur` were here too, as wordless
+    // body plans. Removed 2026-09-01 (user): one list means an entry nobody
+    // can say does not earn a row, so they went from BOTH lists at once.
     for (const id of [
       "beetle", "jellyfish", "stingray", "centipede", "wasp", "mantis",
-      "raptor", "dimetrodon", "plesiosaur",
     ]) {
       const sp = getSpecies(id);
       expect(sp).toBeDefined();

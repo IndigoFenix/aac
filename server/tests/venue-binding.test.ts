@@ -100,6 +100,41 @@ describe("the טומי רול case — everything agrees and it is still wrong",
     }
   });
 
+  it("reads the CITY from Wolt's fixed path position — the wrong city refuses", () => {
+    // `/he/isr/{CITY}/restaurant/{slug}`. Before this, the city sat in the
+    // excluded early segments and the final slug rarely names one, so a Wolt
+    // page for the WRONG city carried no branch evidence at all and sailed
+    // through as an unrefusable "chain" guess (found live 2026-09-01,
+    // טריולה: a Ramat Gan ask nearly bound the Petah Tikva branch's menu).
+    const result = checkMenuBinding(TOMMY_RG, {
+      // Slug names no city; only the fixed city segment says Givatayim.
+      sourceUrl: "https://wolt.com/he/isr/givatayim/restaurant/tommy-roll",
+      currency: "ILS",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.rejections).toEqual(["branch_mismatch"]);
+  });
+
+  it("and the RIGHT city in that position binds exact", () => {
+    const result = checkMenuBinding(TOMMY_RG, {
+      sourceUrl: "https://wolt.com/he/isr/ramat-gan/restaurant/tommy-roll",
+      currency: "ILS",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.bindingBranchMatch).toBe("exact");
+  });
+
+  it("the fixed-position read is WOLT-scoped — other hosts keep the last-segment rule", () => {
+    // The whole-path mistake the branchTextOf note warns about: an arbitrary
+    // aggregator's region segment is a guess, not a contract.
+    const result = checkMenuBinding(TOMMY_RG, {
+      sourceUrl: "https://someaggregator.co.il/he/isr/givatayim/restaurant/tommy-roll-ramat-gan",
+      currency: "ILS",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.bindingBranchMatch).toBe("exact");
+  });
+
   it("falls back to chain when the source names no branch at all", () => {
     // Not a rejection — chain-level is a real, usable basis. It just never goes
     // live unattended: resolveCacheStatus sends it to a caretaker.

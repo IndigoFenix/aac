@@ -99,6 +99,7 @@ describe("capabilitiesFor", () => {
       selfUpdate: false,
       sessionRecording: false,
       localhostBridge: false,
+      launchOnBoot: false,
     });
   });
 
@@ -108,6 +109,16 @@ describe("capabilitiesFor", () => {
     expect(capabilitiesFor("electron").sessionRecording).toBe(true);
     expect(capabilitiesFor("capacitor").sessionRecording).toBe(false);
     expect(capabilitiesFor("web").sessionRecording).toBe(false);
+  });
+
+  it("grants start-with-the-device only to Electron", () => {
+    // iPadOS has no autostart at any privilege level — an always-on iPad is
+    // Guided Access / MDM single-app mode, set on the device — and a browser
+    // tab plainly has none. A capacitor row that ever reads true would put a
+    // switch in the panel that silently does nothing on the device it names.
+    expect(capabilitiesFor("electron").launchOnBoot).toBe(true);
+    expect(capabilitiesFor("capacitor").launchOnBoot).toBe(false);
+    expect(capabilitiesFor("web").launchOnBoot).toBe(false);
   });
 
   it("returns a fresh object each call so callers cannot mutate the matrix", () => {

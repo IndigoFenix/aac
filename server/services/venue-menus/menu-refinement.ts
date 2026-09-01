@@ -31,9 +31,11 @@
 //   - FACTS fail CLOSED      — a bad index, a repeated index, or a malformed
 //                              imageKey is rejected; the raw item stands as-is.
 //
-// The allergen filter (§3.3) runs AFTER this and stays fail-closed. It reads raw
-// name/description text, never a translation or a `kind` from here — a refinement
-// pass must not be able to widen what a student is shown.
+// (Until 2026-09-01 a string-matching allergen filter ran after this pass. It
+// is out of the serving path by decision — it erased whole categories on term
+// collisions and could not inspect bare names anyway. If allergen handling
+// returns, it arrives HERE as an annotation — this pass reads every dish — or
+// as ask-the-waiter buttons, never as another term list.)
 
 /** An item exactly as extraction produced it. These fields are the FACTS. */
 export interface RawMenuItem {

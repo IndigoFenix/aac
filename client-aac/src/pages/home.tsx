@@ -33,6 +33,7 @@ import { useGestures } from "@/hooks/useGestures";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useSessionRecording } from "@/hooks/useSessionRecording";
+import { useLaunchOnBoot } from "@/hooks/useLaunchOnBoot";
 import { RecordingIndicator } from "@/components/RecordingIndicator";
 import { useCamera } from "@/hooks/useCamera";
 import { useCaretakerGate } from "@/hooks/useCaretakerGate";
@@ -207,6 +208,7 @@ import { useAppInitialization } from "@/contexts/AppInitializationContext";
 import { useQuery } from "@tanstack/react-query";
 import { fetchWithAuth } from "@/lib/queryClient";
 import { pressWireFor } from "@/lib/press-routing";
+import { ensureVoiceDownloaded, setVoiceAllowed } from "@/services/kokoroTts";
 import {
   emptyBoardHistory,
   receiveBoard,
@@ -278,7 +280,10 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   onPressSuggestionReady?: (fn: ((suggestionKey: string) => void) | null) => void;
   onPressNarrowReady?: (fn: ((dimension: string, value: string, sourceText?: string) => void) | null) => void;
   onEnterGuessingFromBuilderReady?: (fn: ((builderContext: { targetSlot: number | null; partialGlyph: string; category: string }) => void) | null) => void;
-  onEnterGuessingReady?: (fn: (() => void) | null) => void;
+  /** `seedKey` — a `suggestion:<dim>:<value>` key from a LABELLED Word Finder
+   *  button, naming where the search starts. Omitted by the quick-action
+   *  toggle, which has no context to offer. */
+  onEnterGuessingReady?: (fn: ((seedKey?: string) => void) | null) => void;
   onExitGuessingReady?: (fn: ((reason?: string) => void) | null) => void;
   onSetBuilderVisibleReady?: (fn: ((open: boolean) => void) | null) => void;
   onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
@@ -408,7 +413,7 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
   }, [enterGuessingFromBuilder, onEnterGuessingFromBuilderReady]);
 
   useEffect(() => {
-    onEnterGuessingReady?.(enterGuessing ? () => enterGuessing() : null);
+    onEnterGuessingReady?.(enterGuessing ? (seedKey?: string) => enterGuessing(undefined, seedKey) : null);
     return () => onEnterGuessingReady?.(null);
   }, [enterGuessing, onEnterGuessingReady]);
 
@@ -783,6 +788,25 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       });
     }
   }, [userProfile]);
+
+  // On-device neural voice: the SETTING is per-student and lives on the server,
+  // but the WEIGHTS are per-device. A clinician flipping the toggle downloads
+  // nothing by itself — each device the student uses has to fetch the ~94 MB
+  // model for itself, once, into its own browser cache. This is where that
+  // happens: the profile says the student has it on, so this device acquires it.
+  //
+  // Safe to re-run on every profile load — after the first success the model is
+  // in memory, and after the first download the bytes are cached, so repeat
+  // calls cost nothing. Never awaited: a slow school connection must not hold
+  // up session start, and the voice simply isn't available until it lands.
+  useEffect(() => {
+    const allowed = !!userProfile?.aacSettings?.localNeuralVoice;
+    // Permission is withdrawn as well as granted: on a shared device the model
+    // may already be in memory from another student, and it must not speak for
+    // a child whose clinician didn't choose it.
+    setVoiceAllowed(allowed);
+    if (allowed) ensureVoiceDownloaded();
+  }, [userProfile?.aacSettings?.localNeuralVoice]);
 
   // Environment camera frame collector (for dual-camera detection)
   const envCollectorRef = useRef<CameraFrameCollector | null>(null);
@@ -1223,7 +1247,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // Conversation-tier enterGuessing (no builder context). Bridged separately
   // from enterGuessingFromBuilder so callers don't have to construct a
   // builderContext.
-  const enterGuessingRef = useRef<(() => void) | null>(null);
+  const enterGuessingRef = useRef<((seedKey?: string) => void) | null>(null);
   // exitGuessing — single client-initiated cancel path used by every
   // word-finder surface (quick-button toggle, sentence-builder toggle,
   // any "back while guessing" press). Replaces the legacy [EXIT GUESSING]
@@ -1273,6 +1297,14 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     studentId: studentId ?? null,
     sessionId: liveSessionId,
   });
+
+  // Start-with-the-device (desktop only). Mirrors the student's `launchOnBoot`
+  // setting into the OS login item. `undefined` — no profile loaded yet — is
+  // deliberately NOT "off": see useLaunchOnBoot.ts for why an offline boot must
+  // not be able to deregister the autostart that got it here.
+  useLaunchOnBoot(
+    userProfile?.aacSettings ? userProfile.aacSettings.launchOnBoot === true : null,
+  );
 
   // Capture a user-camera frame WITHOUT spinning up a transient <video> element.
   // Prefers the single shared user-camera <video> (captureUserFrame); only falls
@@ -2049,8 +2081,13 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     // button (it isn't an utterance) and without firing button_pressed (the
     // press is a meta action, not the user saying anything).
     if ((button as any).buttonType === "wordfinder") {
-      console.debug("[guessing] board word-finder pressed → enterGuessing");
-      enterGuessingRef.current?.();
+      // A labelled entry ("I'm afraid of…") carries WHERE the search starts,
+      // so the first narrowing board is the fear question rather than the
+      // generic "what kind of thing?" menu. Absent, the server falls back to
+      // inferring a category from the AI's last question.
+      const seedKey = (button as any).guessingSeed as string | undefined;
+      console.debug("[guessing] board word-finder pressed → enterGuessing", { seedKey });
+      enterGuessingRef.current?.(seedKey);
       return;
     }
 
@@ -3265,7 +3302,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 handleBoardOptions,
                 handleWorldGameMessage,
                 t,
-                (label, sentence) => { void voiceFnRef.current?.([label], { [label]: sentence }); },
+                // The restaurant lanes' ONE voice. Their boards render with
+                // `suppressLocalSpeech`, so this is the only thing that speaks
+                // a press there — which is the point: they used to be voiced
+                // TWICE, once by the renderer through browser speechSynthesis
+                // and again by the server's student-voice TTS. Same
+                // server-first-with-a-local-fallback shape as every other
+                // press in this file (see the suggestion/narrow handlers).
+                (label, sentence) => {
+                  if (voiceFnRef.current) {
+                    void voiceFnRef.current([label], { [label]: sentence });
+                  } else {
+                    speak(sentence, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+                  }
+                },
                 (appId, appData) => requestAppOpenFnRef.current?.(appId, appData),
                 restaurantBoardRender,
               )}

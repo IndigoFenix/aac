@@ -1146,12 +1146,14 @@ Your responsibilities:
 - Combine multiple operations in a single manageMemory call when possible (e.g., view + delete + add in one call).
 - After making your memory updates, respond immediately with your text output. Do not make additional view calls to verify your changes.
 
-## Interpretation of Unclear User Communication
+## Interpretation of Repeated or Unclear User Communication
 - The user communicates by pressing ${T.button}s on the ${T.board}. They may press ${T.button}s in a way that indicates they are trying to combine concepts.
 - If you see them regularly pressing the same ${T.button}s but their intent in doing so is unclear, they might be trying to express a thought that is not available on the ${T.board}.
 - Come up with multiple possible interpretations of what they might be trying to say, based on the ${T.button}s they are pressing, the context, and their known preferences and interests.
 - Consider that the BUTTON PRESSES might not be literal — the user may focus on the SYMBOLs rather than the speech, or refer to something related to the ${T.button} rather than its face value.
 - If you have any ideas, inject a command to the Interactive Agent to consider the combination when building its response and the next ${T.board}, and to offer ${T.button}s that let the user clarify their intent.
+- A CLEAR message repeated across the session is the opposite problem: it was understood and nothing changed. Name the next question in that thread and the ${T.button}s that would answer it. Reflecting the message back is not a response to the fifth time it is said.
+- Following the user's own subject is never "changing the subject". If you tell the Interactive Agent to keep things calm or simple, still say what it should ASK about the thing they keep raising — a restriction with no next step leaves them repeating themselves.
 
 ## Memory System
 You have access to a memory system for storing and retrieving information about the user.
@@ -1283,6 +1285,51 @@ export function normalizeAacPromptList(
   return arr
     .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter((v) => v.length > 0);
+}
+
+/**
+ * A per-student prompt note carries the DATE IT WAS WRITTEN, as a `[YYYY-MM-DD]`
+ * prefix on the stored string.
+ *
+ * ⚖️ IN THE STRING, NOT BESIDE IT. These lists are `jsonb string[]` that the
+ * model reads, adds to and deletes from BY EXACT TEXT. A parallel date map
+ * would be invisible to the one reader that needs it and would break
+ * delete-by-text; a richer row type would need every reader changed and every
+ * existing row backfilled. A prefix is what the model sees, what it echoes
+ * back, and what it can reason about — and an unprefixed entry is simply an
+ * older note, so nothing had to be migrated.
+ *
+ * Prod 2026-08-30 is why this exists. A note reading "Shachaf was hospitalized
+ * this morning (August 8) … is in the ER" was still being handed to every
+ * agent as present-tense fact TWENTY-TWO DAYS later, next to a caretaker rule
+ * saying "one night in the hospital, then home". Nothing was wrong with either
+ * sentence on the day it was written. The list simply had no way to say when
+ * that was, so "delete a note when it is no longer true" was an instruction no
+ * reader could actually carry out.
+ */
+const PROMPT_NOTE_DATE_RE = /^\[(\d{4}-\d{2}-\d{2})\]\s*/;
+
+/** Today as `YYYY-MM-DD` in LOCAL time — the calendar day a caretaker would
+ *  name, not UTC's (which rolls over mid-evening in Israel). */
+export function promptNoteToday(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** Split a stored note into its recorded date (absent on legacy entries) and
+ *  its text. */
+export function parsePromptNote(entry: string): { date?: string; text: string } {
+  const m = PROMPT_NOTE_DATE_RE.exec(entry);
+  return m ? { date: m[1], text: entry.slice(m[0].length) } : { text: entry };
+}
+
+/** Stamp a note with `date`, leaving an already-stamped note alone — so a
+ *  model that rewrites the list while echoing the prefixes it was shown keeps
+ *  every note's real age instead of resetting them all to today. */
+export function stampPromptNote(entry: string, date: string): string {
+  const trimmed = entry.trim();
+  if (!trimmed) return trimmed;
+  return PROMPT_NOTE_DATE_RE.test(trimmed) ? trimmed : `[${date}] ${trimmed}`;
 }
 
 /**

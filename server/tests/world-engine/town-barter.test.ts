@@ -13,10 +13,17 @@
 //     shipment (shifting scarcities shift the terms), suspends/resumes on
 //     the partner's famine (visible, edge-flagged), moves stock BOTH WAYS
 //     between the live endpoints, and CONSERVES every unit.
+//   • IMPORT DISPLACEMENT (Stage C): the landed-cost min() at quantity
+//     fidelity — a lane parks when this town's own ground bears as much of the
+//     take-good per day as the caravan hauls in, holds through a hysteresis
+//     band, resumes when the orchard is chopped, and can NEVER fire before the
+//     orchard stands (supply-based, glyph-specific, never want-based).
 // No DOM / GL.
 
 import { describe, it, expect } from "@jest/globals";
 import {
+  BARTER_DISPLACE_AT,
+  BARTER_DISPLACE_RESUME_AT,
   BARTER_FAMINE_MAX,
   BARTER_RATIO_CAP,
   BARTER_RETRY_SEC,
@@ -26,11 +33,17 @@ import {
   barterRatio,
   barterSpareFraction,
   barterSpareUnits,
+  barterTakePerVisit,
+  barterVisitPeriodDays,
+  barterWantBatches,
   barterWillingness,
   barterWorth,
   defaultTakeGood,
   geoGoodClass,
   geographyShortageBase,
+  importedFlowPerDay,
+  localSupplyAtHead,
+  localSupplyDisplaces,
   nextShortageBelow,
   runDueBarters,
   stockAbstractPartner,
@@ -42,10 +55,11 @@ import {
   complementaryRanking,
   complementaryTrade,
   exportSpareScale,
+  freightArrivalFraction,
   freightSurvivesLeg,
 } from "@shared/world-engine/kernel/town/complementary.js";
 import { carryReachM, freightOf } from "@shared/world-engine/freight.js";
-import { DOLLHOUSE_SCALE } from "@shared/world-engine/scale.js";
+import { dailyTravelM, DOLLHOUSE_SCALE } from "@shared/world-engine/scale.js";
 import {
   createTransferLedger,
   runDueTransfers,
@@ -545,21 +559,74 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
     expect(Object.keys(names).sort()).toEqual(["exports", "imports"]);
   });
 
-  it("🚨 the `want` carried is the NEEDING side's own shortage, in ranked order", () => {
+  it("🚨 the `want` carried is the needing side's shortage AS LANDED, in ranked order", () => {
     const rank = complementaryRanking(us, them, GOODS, 300, SCALE);
+    // ⚖️ IMPORT-DISPLACEMENT ROUND, STAGE B — the row weight is now
+    // `shortage × freightArrivalFraction`, the continuous producer+freight
+    // half of landed cost. cloth and clothing are DURABLE (the ox never eats
+    // the cargo) so their fraction is exactly 1 and these two numbers are the
+    // pre-Stage-B ones, unchanged, to the bit.
+    expect(freightArrivalFraction("cloth", 300, SCALE)).toBe(1);
+    expect(freightArrivalFraction("clothing", 300, SCALE)).toBe(1);
     expect(rank.imports).toEqual([
       { good: "cloth", want: 0.9 },
       { good: "clothing", want: 0.4 },
     ]);
-    // Descending, and never below the want gate that admitted the row.
-    for (const r of [...rank.imports, ...rank.exports]) {
-      expect(r.want).toBeGreaterThanOrEqual(BARTER_WANT_MIN);
-    }
-    // The mirror reads THEIR shortages, not ours.
+    // The mirror reads THEIR shortages, not ours — and FOOD is selfConsuming,
+    // so a day-fraction of road eats part of the cart and it bids that much
+    // lower. Derived from the freight row, never a literal (0.8 × ~0.918).
+    const landedFood = 0.8 * freightArrivalFraction("food", 300, SCALE);
+    expect(landedFood).toBeLessThan(0.8);
     expect(rank.exports).toEqual([
-      { good: "food", want: 0.8 },
-      { good: "wood", want: 0.3 },
+      { good: "food", want: landedFood },
+      { good: "wood", want: 0.3 }, // rawBulk but DURABLE ⇒ 1
     ]);
+    // Descending, and each row still bounded by the raw shortage that admitted
+    // it — the ADMISSION gate reads the shortage, the BID reads what lands, so
+    // a weight below `BARTER_WANT_MIN` is legal where a shortage below it is
+    // not (nothing here is: the fractions are all near 1).
+    for (const r of rank.imports) expect(r.want).toBeLessThanOrEqual(us.shortage(r.good));
+    for (const r of rank.exports) expect(r.want).toBeLessThanOrEqual(them.shortage(r.good));
+    for (const r of [...rank.imports, ...rank.exports]) expect(r.want).toBeGreaterThan(0);
+  });
+
+  // ⚖️ STAGE B — the freight term in the rank, on its own.
+  it("🚨 THE LANDED BID: a lossy good re-ranks below a durable one it outweighed", () => {
+    // Both wanted the same on paper. `cloth` is durable; `food` is eaten by
+    // its own haulers, and far enough out it lands less than the cloth does.
+    // 0.4 of reach — INSIDE the 0.5 survival floor (a selfConsuming good loses
+    // linearly to its reach, so the floor sits at half of it), which is the
+    // whole point: the re-rank happens on legs the gate still admits.
+    const legM = carryReachM(SCALE, freightOf("food")) * 0.4;
+    expect(freightSurvivesLeg("food", legM, SCALE)).toBe(true); // the FLOOR holds
+    expect(freightArrivalFraction("food", legM, SCALE)).toBeLessThan(1);
+    expect(freightArrivalFraction("cloth", legM, SCALE)).toBe(1);
+    const need = sig({ food: 0.6, cloth: 0.5 });
+    const spare = sig({});
+    // On no road at all, appetite alone ranks them: food first.
+    expect(complementaryTrade(need, spare, ["food", "cloth"], 0, SCALE).imports)
+      .toEqual(["food", "cloth"]);
+    // Over the long leg the cart arrives smaller, and cloth outbids it.
+    expect(0.6 * freightArrivalFraction("food", legM, SCALE)).toBeLessThan(0.5);
+    expect(complementaryTrade(need, spare, ["food", "cloth"], legM, SCALE).imports)
+      .toEqual(["cloth", "food"]);
+  });
+
+  it("🔒 the degenerate legs deliver EVERYTHING — the gate's own two reads", () => {
+    // No road between them, and a world whose legs take no time: fraction 1,
+    // so the weight is the raw shortage and nothing re-ranks. These are
+    // `freightSurvivesLeg`'s `m > 0` and `perDay > 0` guards verbatim (the
+    // reach test is the FLOOR's business, not the slope's — a leg past reach
+    // is refused outright and never reaches a weight at all).
+    expect(freightArrivalFraction("food", 0, SCALE)).toBe(1);
+    expect(freightArrivalFraction("food", -50, SCALE)).toBe(1);
+    expect(freightSurvivesLeg("food", 0, SCALE)).toBe(true);
+    const still = { ...SCALE, dayLengthS: 0 };
+    expect(dailyTravelM(still)).toBe(0);
+    expect(freightArrivalFraction("food", 300, still)).toBe(1);
+    // A ranked row over that leg carries its raw shortage, unweighted.
+    expect(complementaryRanking(sig({ food: 0.6 }), sig({}), ["food"], 0, SCALE).imports)
+      .toEqual([{ good: "food", want: 0.6 }]);
   });
 });
 
@@ -1043,5 +1110,332 @@ describe("runDueBarters — batches are bounded by the SPARE, not the shelf", ()
     expect(partial.scalar("granary")).toBe(0);
     // A good the books bank nothing for is not an error — it is a null leg.
     expect(debitDelivery(partial, BOOKS_ECO, "cloth", 5)).toEqual({ scalar: null, units: 0 });
+  });
+});
+
+// ── 10. IMPORT DISPLACEMENT (Stage C) — the lane fades when the ground wins ──
+//
+// The arc's last beat: "expensive import → local planting → import dies".
+// #47's Layer-3 law is landed cost = min(local production cost, producer +
+// freight); with no money and quantity as the whole story that min() is a
+// comparison of RATES, and these pin it end to end — the bare arithmetic, the
+// head-matched supply projection, the visit readers the flow is built from,
+// and the executor's park/resume edges.
+
+describe("localSupplyDisplaces — the min(), at quantity fidelity", () => {
+  it("🚨 PARKS AT PARITY and not one unit below — coverage 1.0 is the line", () => {
+    // 2 units a visit, every 1 day ⇒ 2 imported units/day.
+    expect(localSupplyDisplaces(2, 2, 1)).toBe(true); // exactly covered
+    expect(localSupplyDisplaces(5, 2, 1)).toBe(true); // more than covered
+    expect(localSupplyDisplaces(1.999, 2, 1)).toBe(false); // a hair short
+    // The PERIOD is half the story: the same ground beats a weekly caravan it
+    // cannot beat a daily one.
+    expect(localSupplyDisplaces(0.5, 2, 7)).toBe(true); // 2/7 ≈ 0.286 a day
+    expect(localSupplyDisplaces(0.25, 2, 7)).toBe(false);
+    expect(BARTER_DISPLACE_AT).toBe(1);
+  });
+
+  it("🚨 HYSTERESIS BOTH WAYS — parking needs parity, resuming needs a real loss", () => {
+    const flow = 4; // 4 units a visit, daily
+    // Coverage 0.8: not enough to park…
+    expect(localSupplyDisplaces(3.2, flow, 1, false)).toBe(false);
+    // …but enough to STAY parked once the lane is displaced.
+    expect(localSupplyDisplaces(3.2, flow, 1, true)).toBe(true);
+    // The resume edge is the band's floor, exclusive: at it we hold, under it
+    // the caravan comes back.
+    expect(localSupplyDisplaces(flow * BARTER_DISPLACE_RESUME_AT, flow, 1, true)).toBe(true);
+    expect(localSupplyDisplaces(flow * BARTER_DISPLACE_RESUME_AT - 1e-9, flow, 1, true)).toBe(false);
+    // The band is a band — the two thresholds are not the same number.
+    expect(BARTER_DISPLACE_RESUME_AT).toBeLessThan(BARTER_DISPLACE_AT);
+    expect(BARTER_DISPLACE_RESUME_AT).toBe(0.75);
+  });
+
+  it("🚨 NEVER BEFORE THE ORCHARD — no local supply is never a displacement", () => {
+    // 0 ≥ 0 is true in arithmetic and false in this law: a lane that brings
+    // nothing measurable, judged by ground that bears nothing, stays.
+    expect(localSupplyDisplaces(0, 0, 1)).toBe(false);
+    expect(localSupplyDisplaces(0, 2, 1)).toBe(false);
+    expect(localSupplyDisplaces(0, 2, 1, true)).toBe(false);
+    expect(localSupplyDisplaces(-5, 2, 1)).toBe(false);
+  });
+
+  it("🔒 DEGENERATE READINGS ARE NEVER GROUNDS — a rate nobody can read kills nothing", () => {
+    expect(importedFlowPerDay(2, 1)).toBe(2);
+    expect(importedFlowPerDay(2, 0)).toBe(0); // no period
+    expect(importedFlowPerDay(0, 1)).toBe(0); // no take
+    expect(importedFlowPerDay(-2, 1)).toBe(0);
+    expect(importedFlowPerDay(2, -1)).toBe(0);
+    expect(importedFlowPerDay(Infinity, 1)).toBe(0);
+    expect(importedFlowPerDay(2, NaN)).toBe(0);
+    const degenerate: Array<[number, number]> =
+      [[2, 0], [0, 1], [-2, 1], [2, -1], [Infinity, 1], [2, NaN]];
+    for (const [take, period] of degenerate) {
+      expect(localSupplyDisplaces(1e6, take, period)).toBe(false);
+      expect(localSupplyDisplaces(1e6, take, period, true)).toBe(false);
+    }
+    // …and the SUPPLY side answers the same way: an unreadable field is not
+    // evidence that the caravan is redundant.
+    expect(localSupplyDisplaces(NaN, 2, 1)).toBe(false);
+    expect(localSupplyDisplaces(Infinity, 2, 1)).toBe(false);
+  });
+});
+
+describe("localSupplyAtHead — the supply side is glyph-specific", () => {
+  it("🚨 a banana field answers a BANANA lane and nothing else", () => {
+    const ground = { banana: 4, apple: 9, carrot: 40 };
+    expect(localSupplyAtHead(ground, "banana")).toBe(4);
+    expect(localSupplyAtHead(ground, "apple")).toBe(9);
+    // 🚨 NO GOOD-KEY COINCIDENCE: carrots, bananas and apples are all "food",
+    // and a carrot field must never kill a banana caravan.
+    expect(localSupplyAtHead({ carrot: 40 }, "banana")).toBe(0);
+    expect(localSupplyAtHead({ carrot: 40 }, "apple")).toBe(0);
+    expect(localSupplyAtHead(ground, "wood")).toBe(0);
+  });
+
+  it("🔒 matches through the ONE extractor — variations of a head are that head", () => {
+    expect(localSupplyAtHead({ "apple.ripe": 3, "apple.green": 2 }, "apple")).toBe(5);
+    expect(localSupplyAtHead({ apple: 3 }, "apple.ripe")).toBe(3);
+    expect(localSupplyAtHead({ "apple.ripe": 3 }, "banana")).toBe(0);
+    // Nothing, no ground, no lane — all 0, none of them an error.
+    expect(localSupplyAtHead({}, "apple")).toBe(0);
+    expect(localSupplyAtHead({ apple: 0, banana: -2 }, "apple")).toBe(0);
+    expect(localSupplyAtHead({ apple: 3 }, "")).toBe(0);
+  });
+});
+
+describe("the visit readers — how big a visit is, and how far apart", () => {
+  const row = (o: { giveN: number; every?: number }) =>
+    createTransferLedger().post(
+      barterInput({
+        give: "wood", take: "banana", giveN: o.giveN, quote: { give: 1, take: 1 },
+        partnerKey: "p", ...(o.every !== undefined ? { every: o.every } : {}), dueAt: 0,
+      }),
+    );
+
+  it("🔒 ONE OWNER with the executor: a STANDING route flexes to a batch, a one-shot does not", () => {
+    // The exact split runDueBarters ships — the flow reader and the shipment
+    // read the same line, so they cannot disagree about a visit's size.
+    expect(barterWantBatches(row({ giveN: 6, every: FOOD_DAY_SEC }), { give: 2, take: 3 })).toBe(3);
+    expect(barterWantBatches(row({ giveN: 1, every: FOOD_DAY_SEC }), { give: 3, take: 1 })).toBe(1); // flexes
+    expect(barterWantBatches(row({ giveN: 1 }), { give: 3, take: 1 })).toBe(0); // strict order
+    expect(barterWantBatches(row({ giveN: 6 }), { give: 2, take: 3 })).toBe(3);
+    expect(barterWantBatches(row({ giveN: 6 }), { give: 0, take: 3 })).toBe(0); // not a quote
+    // The take side is the flow's numerator.
+    expect(barterTakePerVisit(row({ giveN: 6 }), { give: 2, take: 3 })).toBe(9);
+    expect(barterTakePerVisit(row({ giveN: 6 }), { give: 2, take: 0 })).toBe(0);
+  });
+
+  it("🔒 the PERIOD is the recurrence or the road, whichever is longer", () => {
+    const standing = row({ giveN: 4, every: FOOD_DAY_SEC });
+    expect(barterVisitPeriodDays(standing, undefined)).toBe(1); // its own clock
+    expect(barterVisitPeriodDays(standing, FOOD_DAY_SEC * 0.35)).toBe(1); // a near partner
+    expect(barterVisitPeriodDays(standing, FOOD_DAY_SEC * 8)).toBe(8); // no daily caravan from 8 days away
+    const oneShot = row({ giveN: 4 });
+    expect(barterVisitPeriodDays(oneShot, FOOD_DAY_SEC * 2)).toBe(2); // the road alone
+    // 🚨 No recurrence AND no road ⇒ 0 ⇒ no measurable import ⇒ a kernel-only
+    // caller (no `legSecondsOf`) never displaces a one-shot.
+    expect(barterVisitPeriodDays(oneShot, undefined)).toBe(0);
+    expect(localSupplyDisplaces(1e6, 2, barterVisitPeriodDays(oneShot, undefined))).toBe(false);
+    expect(barterVisitPeriodDays(standing, undefined, 0)).toBe(0);
+  });
+});
+
+describe("runDueBarters — the fade: a lane parks when the town's own ground covers it", () => {
+  const resolve = (yard: StockEndpoint, partner: StockEndpoint) => (id: string) =>
+    id === "town:yard" ? yard : id === partner.id ? partner : null;
+  // Terms that quote 1-for-1 and pass willingness: they want our wood (0.5,
+  // over BARTER_WANT_MIN and over their banana need) and neither side is in
+  // famine. worth(wood) = 1+(0+0.5) = worth(banana) = 1+(0.4+0.1).
+  const us = sig({ wood: 0, banana: 0.4 });
+  const them = sig({ wood: 0.5, banana: 0.1 });
+
+  /** The whole fixture: a standing daily banana lane, plus the HOST's own
+   *  session-lived displacement bit wired exactly as quest-host wires it. */
+  function lane(o: { giveN?: number; supply: () => number }) {
+    const led = createTransferLedger();
+    const yard = ep("town:yard", { wood: 200 });
+    const partner = ep(townEndpointId("hamlet-1"), { banana: 200 });
+    const a = led.post(
+      barterInput({
+        give: "wood", take: "banana", giveN: o.giveN ?? 2, quote: { give: 1, take: 1 },
+        partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    const displacedLanes = new Set<string>();
+    const run = (now: number) => {
+      const reports = runDueBarters(led, resolve(yard, partner), now, {
+        us,
+        themOf: () => them,
+        localSupplyPerDay: () => o.supply(),
+        displaced: (r) => displacedLanes.has(r.id),
+      });
+      for (const r of reports) {
+        if (r.status === "displaced") displacedLanes.add(r.id);
+        else displacedLanes.delete(r.id);
+      }
+      return reports[0]!;
+    };
+    // The lane's own imported flow, derived rather than asserted.
+    const quote = barterQuote("wood", "banana", us, them);
+    const flow = importedFlowPerDay(
+      barterTakePerVisit(a, quote),
+      barterVisitPeriodDays(a, undefined),
+    );
+    return { led, yard, partner, a, run, flow, displacedLanes };
+  }
+
+  it("🚨 THE FADE: local supply at parity parks the lane, says so ONCE, and moves nothing", () => {
+    const f = lane({ supply: () => 99 });
+    expect(f.flow).toBeGreaterThan(0);
+    const r1 = f.run(0);
+    expect(r1).toMatchObject({ status: "displaced", newlySuspended: true, sent: {}, received: {} });
+    expect(f.yard.stack.wood).toBe(200); // nothing left, nothing came back
+    expect(f.partner.stack.banana).toBe(200);
+    // It rides the ONE pause bit — no new serialized field anywhere.
+    expect(f.led.get(f.a.id)!.barter!.suspended).toBe(true);
+    expect(Object.keys(f.led.get(f.a.id)!.barter!).sort()).toEqual(
+      ["giveGood", "partnerKey", "quote", "suspended", "take", "takeGood"],
+    );
+    // …and it nags exactly once: the edge is the DISPLACEMENT edge.
+    expect(f.run(FOOD_DAY_SEC)).toMatchObject({ status: "displaced", newlySuspended: false });
+    expect(f.run(FOOD_DAY_SEC * 2)).toMatchObject({ status: "displaced", newlySuspended: false });
+    // The row is alive and scheduled, not dead — the lane can come back.
+    expect(f.led.get(f.a.id)!.status).toBe("pending");
+  });
+
+  it("🚨 AND IT COMES BACK when the orchard is chopped — but only past the band", () => {
+    let supply = 99;
+    const f = lane({ supply: () => supply });
+    expect(f.run(0).status).toBe("displaced");
+    // Most of the orchard gone, still inside the hysteresis band: the lane holds.
+    supply = f.flow * 0.8;
+    expect(f.run(FOOD_DAY_SEC)).toMatchObject({ status: "displaced", newlySuspended: false });
+    expect(f.yard.stack.wood).toBe(200);
+    // Chopped past the resume line — the caravan goes again, and the ledger's
+    // own resume idiom reports it.
+    supply = f.flow * 0.5;
+    const back = f.run(FOOD_DAY_SEC * 2);
+    expect(back.status).toBe("resumed");
+    expect(back.sent.wood).toBeGreaterThan(0);
+    expect(back.received.banana).toBeGreaterThan(0);
+    expect(f.led.get(f.a.id)!.barter!.suspended).toBe(false);
+    expect(f.displacedLanes.size).toBe(0);
+    // Replant: parity again ⇒ it parks again, and the edge fires afresh.
+    supply = 99;
+    expect(f.run(FOOD_DAY_SEC * 3)).toMatchObject({ status: "displaced", newlySuspended: true });
+  });
+
+  it("🚨 NEVER BEFORE THE ORCHARD — a lane whose take nothing local grows never fades", () => {
+    // The naive want-based park dies here: a fruit glyph has no fill row, so
+    // OUR shortage of it can be anything at all and must not matter.
+    for (const ourBanana of [0, 0.4, 1]) {
+      const led = createTransferLedger();
+      const yard = ep("town:yard", { wood: 50 });
+      const partner = ep(townEndpointId("hamlet-1"), { banana: 50 });
+      led.post(
+        barterInput({
+          give: "wood", take: "banana", giveN: 2, quote: { give: 1, take: 1 },
+          partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+        }),
+      );
+      const [r] = runDueBarters(led, resolve(yard, partner), 0, {
+        us: sig({ wood: 0, banana: ourBanana }),
+        themOf: () => sig({ wood: 0.5, banana: 0.1 }),
+        localSupplyPerDay: () => 0, // nothing sown: the ground bears nothing
+        displaced: () => false,
+      });
+      expect(r!.status).toBe("shipped");
+    }
+  });
+
+  it("🚨 HEAD-MATCHED THROUGH THE EXECUTOR — the banana lane fades, the apple lane sails", () => {
+    // ONE field bearing bananas only; two lanes side by side on one ledger.
+    const ground = { banana: 99 };
+    const led = createTransferLedger();
+    const yard = ep("town:yard", { wood: 400 });
+    const partner = ep(townEndpointId("hamlet-1"), { banana: 200, apple: 200 });
+    const bananaLane = led.post(
+      barterInput({
+        give: "wood", take: "banana", giveN: 2, quote: { give: 1, take: 1 },
+        partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    const appleLane = led.post(
+      barterInput({
+        give: "wood", take: "apple", giveN: 2, quote: { give: 1, take: 1 },
+        partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    const reports = runDueBarters(led, resolve(yard, partner), 0, {
+      us: sig({ wood: 0, banana: 0.4, apple: 0.4 }),
+      themOf: () => sig({ wood: 0.5, banana: 0.1, apple: 0.1 }),
+      // The host's own reader, at this seam: the ground, projected onto THIS
+      // row's take-good.
+      localSupplyPerDay: (r) => localSupplyAtHead(ground, r.barter!.takeGood),
+      displaced: () => false,
+    });
+    const byId = new Map(reports.map((r) => [r.id, r]));
+    expect(byId.get(bananaLane.id)!.status).toBe("displaced");
+    expect(byId.get(appleLane.id)!.status).toBe("shipped");
+    expect(partner.stack.banana).toBe(200); // no bananas hauled
+    expect(partner.stack.apple).toBeLessThan(200); // apples still arrive
+  });
+
+  it("🚨 PRECEDENCE: displacement outranks a refusal — the durable fact is the one told", () => {
+    // Their famine on the take-good WOULD suspend this leg ("wont-part"); our
+    // own orchard makes the lane pointless regardless of what they do.
+    const led = createTransferLedger();
+    const yard = ep("town:yard", { wood: 60 });
+    const partner = ep(townEndpointId("p"), { banana: 60 });
+    led.post(
+      barterInput({
+        give: "wood", take: "banana", giveN: 6, quote: { give: 1, take: 1 },
+        partnerKey: "p", every: FOOD_DAY_SEC, dueAt: 0,
+      }),
+    );
+    const opts = {
+      us: sig({ wood: 0, banana: 0.4 }),
+      themOf: () => sig({ wood: 0.5, banana: 0.9 }), // famine on banana
+      displaced: () => false,
+    };
+    // Without the supply seat this is the shipped refusal, unchanged…
+    const [refused] = runDueBarters(led, resolve(yard, partner), 0, opts);
+    expect(refused).toMatchObject({ status: "suspended", reason: "wont-part" });
+    // …and with it, the lane fades instead.
+    const [faded] = runDueBarters(led, resolve(yard, partner), FOOD_DAY_SEC, {
+      ...opts,
+      localSupplyPerDay: () => 99,
+    });
+    expect(faded!.status).toBe("displaced");
+    expect(faded!.newlySuspended).toBe(true); // the pause bit was already set — the EDGE is ours
+  });
+
+  it("🔒 BYTE-IDENTITY: no sown ground ⇒ the executor's every answer is the shipped one", () => {
+    // The whole displacement arm, run three ways over identical worlds: absent,
+    // present-but-barren, and present-but-barren with the hysteresis bit set.
+    const play = (extra: Parameters<typeof runDueBarters>[3]) => {
+      const led = createTransferLedger();
+      const yard = ep("town:yard", { wood: 9 });
+      const partner = ep(townEndpointId("hamlet-1"), { banana: 9 });
+      led.post(
+        barterInput({
+          give: "wood", take: "banana", giveN: 4, quote: { give: 1, take: 1 },
+          partnerKey: "hamlet-1", every: FOOD_DAY_SEC, dueAt: 0,
+        }),
+      );
+      const reports = [0, 1, 2].map(
+        (d) => runDueBarters(led, resolve(yard, partner), FOOD_DAY_SEC * d, extra)[0],
+      );
+      return { reports, yard: yard.stack, partner: partner.stack, json: led.toJSON() };
+    };
+    const base = { us, themOf: () => them };
+    const shipped = play(base);
+    expect(shipped.reports.every((r) => r && r.status === "shipped")).toBe(true);
+    expect(play({ ...base, localSupplyPerDay: () => 0, displaced: () => false })).toEqual(shipped);
+    expect(play({ ...base, localSupplyPerDay: () => 0, displaced: () => true })).toEqual(shipped);
+    // …and a save written by the barren run is byte-identical to the shipped one.
+    expect(JSON.stringify(play({ ...base, localSupplyPerDay: () => 0 }).json)).toBe(
+      JSON.stringify(shipped.json),
+    );
   });
 });

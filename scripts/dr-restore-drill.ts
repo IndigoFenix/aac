@@ -21,7 +21,9 @@
  *      local port that is NOT 5432, so it cannot collide with `npm run db-tunnel`),
  *      connects with the prod master credentials from Secrets Manager (a restored
  *      snapshot carries the same master password) and runs smoke checks:
- *        - drizzle migration head == the repo's newest drizzle/*.sql
+ *        - drizzle migration head == origin/main's newest drizzle/*.sql (what
+ *          production deploys — NOT the working tree, which on `staging` is
+ *          routinely ahead; see scripts/dr-drill-migration-head.ts)
  *        - students / users / chat_sessions / activity_logs / medical_records > 0
  *        - newest activity_logs.created_at sits inside the snapshot window
  *          (that gap is the OBSERVED RPO for the snapshot path)
@@ -42,15 +44,24 @@
  * Prerequisites for --execute: AWS CLI + Session Manager plugin, `AWS_PROFILE`
  * (default `aac`) with rds:RestoreDBInstanceFromDBSnapshot / rds:DeleteDBInstance
  * / ssm:StartSession on the bastion, and a running `aivota-prod-bastion`.
+ * ecr:DescribeImages on `aivota` and a reachable `origin` are optional but
+ * without them the migration-head check falls back to commit times, which run
+ * earlier than the deploy and can fail a good snapshot.
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+import {
+  assessMigrationHead,
+  loadMainJournal,
+  loadWorkingTreeJournal,
+  type DeployRecord,
+  type Journal,
+} from "./dr-drill-migration-head.js";
 
 // ---------------------------------------------------------------------------
 // Constants — mirror scripts/db-tunnel.sh and scripts/migrate-db.ts
@@ -58,6 +69,7 @@ import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-sec
 const REGION = "il-central-1"; // the only Israeli region — do NOT parameterise
 const SOURCE_DB = "aivota-prod-postgres";
 const BASTION_TAG = "aivota-prod-bastion";
+const ECR_REPOSITORY = "aivota"; // terraform/ecs.tf `aws_ecr_repository.main`; deploy.yml tags each image with github.sha
 const DRILL_PREFIX = "aivota-dr-drill-";
 const DRILL_TAG_KEY = "Purpose";
 const DRILL_TAG_VALUE = "dr-drill";
@@ -605,24 +617,54 @@ interface CheckResult {
   detail: string;
 }
 
-/** The newest migration in the repo, from drizzle/meta/_journal.json. */
-function repoMigrationHead(): { tag: string; when: number; hash: string; count: number } {
-  const journal = JSON.parse(fs.readFileSync(path.join(ROOT, "drizzle", "meta", "_journal.json"), "utf8")) as {
-    entries: { idx: number; when: number; tag: string }[];
-  };
-  const entries = [...journal.entries].sort((a, b) => a.idx - b.idx);
-  const head = entries[entries.length - 1];
-  const sql = fs.readFileSync(path.join(ROOT, "drizzle", `${head.tag}.sql`), "utf8");
-  // Same hash drizzle-orm's migrator records (see scripts/migrate.ts).
-  const hash = createHash("sha256").update(sql).digest("hex");
-  return { tag: head.tag, when: head.when, hash, count: entries.length };
+/**
+ * The two yardsticks for the migration-head check: origin/main (what production
+ * deploys) and this checkout. Loaded once; the git read is logged either way.
+ */
+function loadJournals(): { main: Journal | null; workingTree: Journal } {
+  const workingTree = loadWorkingTreeJournal(ROOT);
+  const main = loadMainJournal(ROOT, "origin/main", loadDeployHistory());
+  for (const n of main.notes) log(`  [git  ] ${n}`);
+  const treeHead = workingTree.entries[workingTree.entries.length - 1];
+  const mainHead = main.journal?.entries[main.journal.entries.length - 1];
+  log(`  journal: origin/main head ${mainHead ? `${mainHead.tag} (${main.journal!.entries.length})` : "UNAVAILABLE"} | working tree head ${treeHead.tag} (${workingTree.entries.length})`);
+  return { main: main.journal, workingTree };
 }
 
-async function runSmokeChecks(client: pg.Client, snapshotTime: Date | null): Promise<{ checks: CheckResult[]; rpoText: string }> {
-  const checks: CheckResult[] = [];
-  const head = repoMigrationHead();
+/**
+ * Production deploy history = ECR image pushes (deploy.yml tags every image with
+ * `github.sha`). Read-only and best-effort: without it the head check dates
+ * migrations by commit time, which errs toward failing.
+ */
+function loadDeployHistory(): DeployRecord[] | null {
+  interface Images { imageDetails?: { imageTags?: string[]; imagePushedAt?: string }[] }
+  let r: Images | null = null;
+  try {
+    r = awsRead<Images>(["ecr", "describe-images", "--repository-name", ECR_REPOSITORY], `deploy history from ECR ${ECR_REPOSITORY}`);
+  } catch (err) {
+    log(`  [read ] UNAVAILABLE (deploy history): ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+  }
+  if (!r) return null;
+  const deploys: DeployRecord[] = [];
+  for (const img of r.imageDetails ?? []) {
+    const sha = (img.imageTags ?? []).find((t) => /^[0-9a-f]{40}$/.test(t));
+    if (sha && img.imagePushedAt) deploys.push({ sha, pushedAt: new Date(img.imagePushedAt) });
+  }
+  deploys.sort((a, b) => a.pushedAt.getTime() - b.pushedAt.getTime());
+  const last = deploys[deploys.length - 1];
+  log(`  deploys: ${deploys.length} image(s) in ECR ${ECR_REPOSITORY}${last ? `, newest ${last.sha.slice(0, 8)} pushed ${last.pushedAt.toISOString()}` : ""}`);
+  return deploys;
+}
 
-  // 1. migration head
+async function runSmokeChecks(
+  client: pg.Client,
+  snapshotTime: Date | null,
+  journals: { main: Journal | null; workingTree: Journal },
+): Promise<{ checks: CheckResult[]; rpoText: string; notes: string[] }> {
+  const checks: CheckResult[] = [];
+  const notes: string[] = [];
+
+  // 1. migration head — against origin/main, the schema production actually runs.
   try {
     const r = await client.query<{ hash: string; created_at: string; n: string }>(
       `select hash, created_at, (select count(*) from drizzle.__drizzle_migrations)::text as n
@@ -631,16 +673,15 @@ async function runSmokeChecks(client: pg.Client, snapshotTime: Date | null): Pro
         limit 1`,
     );
     const row = r.rows[0];
-    const dbHash = row?.hash ?? "(none)";
-    const applied = Number(row?.n ?? 0);
-    const ok = dbHash === head.hash;
-    checks.push({
-      name: "migration head",
-      ok,
-      detail: ok
-        ? `${head.tag} (${applied}/${head.count} applied)`
-        : `restored head ${dbHash.slice(0, 12)}… != repo head ${head.tag} ${head.hash.slice(0, 12)}… (${applied}/${head.count} applied) — the snapshot predates the deployed schema, or the repo is ahead of production`,
+    const verdict = assessMigrationHead({
+      dbHash: row?.hash ?? null,
+      applied: Number(row?.n ?? 0),
+      main: journals.main,
+      workingTree: journals.workingTree,
+      snapshotTime,
     });
+    checks.push({ name: "migration head", ok: verdict.ok, detail: verdict.detail });
+    notes.push(...verdict.notes);
   } catch (err) {
     checks.push({ name: "migration head", ok: false, detail: `query failed: ${(err as Error).message}` });
   }
@@ -688,7 +729,7 @@ async function runSmokeChecks(client: pg.Client, snapshotTime: Date | null): Pro
     checks.push({ name: "data freshness", ok: false, detail: `query failed: ${(err as Error).message}` });
   }
 
-  return { checks, rpoText };
+  return { checks, rpoText, notes };
 }
 
 // ---------------------------------------------------------------------------
@@ -860,7 +901,9 @@ async function main(): Promise<void> {
     log(`  [WOULD] read master credentials from Secrets Manager (${SECRET_IDS.join(" | ")}) via @aws-sdk/client-secrets-manager`);
     log(`  [WOULD] connect pg to localhost:${OPTS.localPort} over TLS (rds-ca-bundle.pem, hostname check relaxed — the tunnel presents the RDS cert on localhost)`);
     section("6. Smoke checks (plan)");
-    log(`  [WOULD] migration head == repo head (${repoMigrationHead().tag}, ${repoMigrationHead().count} migrations in drizzle/meta/_journal.json)`);
+    const journals = loadJournals();
+    const mainHead = journals.main?.entries[journals.main.entries.length - 1];
+    log(`  [WOULD] migration head == origin/main head (${mainHead ? mainHead.tag : "unavailable — would fall back to this checkout"}); a working tree that is ahead is a note, not a failure`);
     for (const t of REQUIRED_NONEMPTY_TABLES) log(`  [WOULD] select count(*) from ${t} — must be > 0`);
     log(`  [WOULD] select max(created_at) from activity_logs — must fall inside the snapshot window (that gap IS the observed RPO)`);
   } else {
@@ -885,10 +928,13 @@ async function main(): Promise<void> {
       await client.connect();
       section("6. Smoke checks");
       try {
-        const res = await runSmokeChecks(client, snapshotTime);
+        const journals = loadJournals();
+        const res = await runSmokeChecks(client, snapshotTime, journals);
         checks = res.checks;
         rpoText = res.rpoText;
+        notes.push(...res.notes);
         for (const c of checks) log(`  ${c.ok ? "✅" : "❌"} ${c.name}: ${c.detail}`);
+        for (const n of res.notes) log(`  ℹ️  ${n}`);
       } finally {
         await client.end();
       }

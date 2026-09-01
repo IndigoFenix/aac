@@ -91,6 +91,21 @@ const CLUSTERS: Record<string, Record<string, [string, string]>> = {
     lonely: ["Lonely", "😔"],
     embarrassed: ["Embarrassed", "😳"],
   },
+  // "Afraid of what?" — the fear twin of body_part/pain_scale. `dont_know` is
+  // deliberately ON the board: for this question it is a real answer, and
+  // without it the only way out of the dimension is to abandon it.
+  fear_object: {
+    the_dark: ["The dark", "🌑"],
+    being_alone: ["Being alone", "🧍"],
+    a_noise: ["A noise", "🔊"],
+    a_person: ["A person", "🧑"],
+    a_place: ["A place", "🏠"],
+    a_dream: ["A dream", "💭"],
+    the_doctor: ["The doctor", "🩺"],
+    feeling_sick: ["Feeling sick", "🤢"],
+    something_happening: ["Something that might happen", "⏳"],
+    dont_know: ["I don't know", "🤷"],
+  },
   pain_scale: {
     a_little: ["A little", "🙂"],
     medium: ["Medium", "😣"],

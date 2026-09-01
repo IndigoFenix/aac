@@ -90,7 +90,7 @@ import {
   type SpeakerPromptConfig,
   type BoardManagerPromptConfig,
 } from "./agent-prompts";
-import { composeAacPersona } from "../memory-schema/aac-memory-schema";
+import { composeAacPersona, promptNoteToday } from "../memory-schema/aac-memory-schema";
 import {
   buildEmptyResponseRetryFeedback,
   buildValidatorErrorFeedback,
@@ -256,7 +256,7 @@ import {
 } from "@shared/guessing-mode/state";
 import { seedGuessingFromConversation, parseInterestsList, computeAgeYears } from "./guessing-seeder";
 import type { GuessingModeState } from "@shared/guessing-mode/types";
-import { CATEGORY_DIM_ID } from "@shared/guessing-mode/dimensions";
+import { CATEGORY_DIM_ID, DIMENSION_BY_ID } from "@shared/guessing-mode/dimensions";
 
 /** Builder category → top-level guessing category. The sentence builder's
  *  active tab is what tells the engine which top-level dimension to land
@@ -279,12 +279,14 @@ import {
 } from "./agent-flow-logger";
 import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import { normalizeVenueMenuSettings } from "@shared/venue-menus";
-import type { VenueBoardStudent } from "../venue-menus/venue-board-service";
+import { resolveVenueBoardById, type VenueBoardStudent } from "../venue-menus/venue-board-service";
+import { venueRepository } from "../../repositories/venueRepository";
 import {
   resolveRestaurantOpen,
   restaurantOpenNote,
   RESTAURANT_APP_ID,
 } from "../venue-menus/restaurant-app-open";
+import { webMenuService } from "../venue-menus/web-menu-service";
 import { smartMergeButtons, sameBoard, type MergeButton } from "./board-merge";
 import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER, PARTY_UNKNOWN } from "./speech-party";
 import { userSpeechDrivesBoard, speakerReplyTriggers } from "./speech-board-trigger";
@@ -740,6 +742,7 @@ function buildBoardFromButtons(
     role?: "reply" | "bid";
     buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
     suggestionKey?: string;
+    guessingSeed?: string;
     narrowDimension?: string;
     narrowValue?: string;
     open?: BoardButtonOpen;
@@ -786,6 +789,7 @@ function buildBoardFromButtons(
           color: resolveButtonColorToken({ glyph, buttonType: b.buttonType, role: b.role }),
           ...(b.buttonType ? { buttonType: b.buttonType } : {}),
           ...(b.suggestionKey ? { suggestionKey: b.suggestionKey } : {}),
+          ...(b.guessingSeed ? { guessingSeed: b.guessingSeed } : {}),
           ...(b.narrowDimension ? { narrowDimension: b.narrowDimension } : {}),
           ...(b.narrowValue ? { narrowValue: b.narrowValue } : {}),
           ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
@@ -859,6 +863,32 @@ interface PendingSpeechEntry {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * One-line shape of an `app_open` payload, for the flow log.
+ *
+ * It used to log `appData=yes`, which is true of every payload ever built and
+ * therefore says nothing. That cost a real diagnosis: on 2026-09-01 three
+ * restaurant opens all logged `appData=yes`, and whether the app had come back
+ * with a menu, a floor board, an empty search or the companion's screen had to
+ * be reconstructed from the Speaker's note in a different log file.
+ *
+ * Structural facts only — a mode, a flag, how many of a thing. Never a value:
+ * venue names, dish names and captions are the user's content, not ours.
+ */
+function describeAppData(appData: unknown): string {
+  if (appData === undefined || appData === null) return "appData=none";
+  if (typeof appData !== "object") return "appData=yes";
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(appData as Record<string, unknown>)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) parts.push(`${key}=${value.length}`);
+    else if (typeof value === "boolean" || typeof value === "number") parts.push(`${key}=${value}`);
+    else if (typeof value === "string") parts.push(key === "mode" ? value : `${key}=set`);
+    else parts.push(`${key}=set`);
+  }
+  return parts.length ? `appData{${parts.join(" ")}}` : "appData=yes";
+}
+
 /** Human-readable Speaker context for a call that ended before connecting. */
 function describeCallOutcome(outcome: string): string {
   switch (outcome) {
@@ -896,6 +926,16 @@ export class AgentCoordinator {
    *  startup-resolver call, and the Speaker is silent for all of it. */
   private static readonly APP_OPEN_CUE_DELAY_MS = 250;
   private appOpenCueTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * What the restaurant app is showing right now, as far as this side sent it.
+   * "venue" = a screen about ONE specific place (a menu, a getting-the-menu
+   * wait, a named-place grid). Set only in sendAppOpen, cleared on dismissal
+   * and app_close, so it can never claim a screen the client tore down.
+   * Two consumers: the clobber guard (an AI re-open that resolved to nothing
+   * specific must not replace a venue screen) and the warm-completion pushes
+   * (a finished fetch may only change a screen still about that venue).
+   */
+  private restaurantScreen: { kind: "generic" | "venue"; venueId?: string; at: number } | null = null;
 
   /** The client socket. NOT readonly: adoptSocket rebinds a detached
    *  coordinator to a reconnect's fresh socket in place. */
@@ -1125,6 +1165,11 @@ export class AgentCoordinator {
   // Voice routing (fallback Speaker + student-interpret paths)
   private aiVoice: ResolvedVoice | null = null;
   private studentVoice: ResolvedVoice | null = null;
+  /** `aac_settings.useLocalTts` — the student speaks with the DEVICE's own
+   *  voice instead of streamed server audio. Student voice only: the AI's
+   *  default backend is Gemini Live native audio, which produces its speech
+   *  directly with no TTS step to redirect (see onSpeakerSpeakText). */
+  private useLocalStudentTts = false;
 
   // -------------------------------------------------------------------------
   // Per-session state mirrors
@@ -2210,9 +2255,10 @@ export class AgentCoordinator {
     flowNote("MONITOR", "Session closed — queueing final directive and forcing Monitor.");
     await dualAgentService.addPendingMessage(this.sessionId, {
       role: "user",
-      content: `[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:
+      content: `[SESSION_CLOSED] The AAC session has ended. Today is ${promptNoteToday()}. Perform these final tasks:
 1. Summarize the session — note anything significant that happened.
-2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.`,
+2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.
+3. Review Context_AACAutoPrompt against today's date — every note carries the date it was written. A note about a moment that has passed ("this morning", "is in the ER", "currently") is no longer true: rewrite it as what is true now, or delete it. Notes about the person keep, whatever their age. A caretaker rule in Context_AACPrompt that has gone stale the same way goes in your summary — never delete one yourself.`,
       timestamp: Date.now(),
     });
     // AWAIT the drain to completion (awaitCompletion=true). Previously this
@@ -2847,6 +2893,7 @@ export class AgentCoordinator {
           void this.endSocialPeerSession("user_exit");
           return;
         }
+        if (msg.appId === RESTAURANT_APP_ID) this.restaurantScreen = null;
         this.speaker?.sendContextInjection(`[APP DISMISSED BY USER] ${msg.appId}`);
         this.observer?.sendContextInjection(`[APP DISMISSED BY USER] ${msg.appId}`);
         return;
@@ -3636,6 +3683,7 @@ export class AgentCoordinator {
     }
     const aac = (studentRow as any).aacSettings;
     const gender = (studentRow as any).gender as string | undefined;
+    this.useLocalStudentTts = aac?.useLocalTts === true;
     const elEnabled = aac?.elevenlabsEnabled !== false;
     // Reject keys in the retired pre-"sk_" format here, so both the
     // client-direct gate and the facade see "no key" and use fallbacks
@@ -4853,7 +4901,22 @@ export class AgentCoordinator {
       const interests = parseInterestsList((student?.chatMemory as Record<string, any> | undefined)?.Student_Interests);
       const userAge = computeAgeYears((student as any)?.birthDate);
       this.guessingEngineState = createGuessingState(interests, userAge);
-      if (msg.builderContext) {
+      const seed = typeof msg.seedKey === "string" ? parseSuggestionKey(msg.seedKey.trim()) : null;
+      if (seed && DIMENSION_BY_ID[seed.dimension]) {
+        // A Word Finder button the AI LABELLED for a specific search ("I'm
+        // afraid of…") carries where that search starts. The author of the
+        // button is the same agent the seeder would otherwise be asked to
+        // guess for, so its answer is better than the classifier's AND free:
+        // the LLM call is skipped outright.
+        //
+        // Origin stays "conversation" — it is one, and the dwell-refire guard
+        // keys off origin, so calling it anything else would let a re-press
+        // rebuild the engine and throw away the narrowing already done.
+        this.guessingOrigin = "conversation";
+        this.guessingBuilderContext = null;
+        applyGuessingPress(this.guessingEngineState, seed.dimension, seed.value);
+        flowNote("COORDINATOR", `guessing seeded from the pressed button: ${seed.dimension}=${seed.value} (seeder skipped).`);
+      } else if (msg.builderContext) {
         // Builder origin: the active builder tab maps directly to a
         // top-level category, so we know the right starting point
         // without consulting an LLM. Skip the seeder entirely.
@@ -8967,6 +9030,32 @@ export class AgentCoordinator {
           );
           return;
         }
+        // 🚨 CLOBBER GUARD. The Speaker routinely re-opens the app 1-3s after
+        // a place press — and it passes the venue name ROMANIZED ("Triola"
+        // for "טריולה", observed live 2026-09-01), which matches nothing, so
+        // the resolution comes back as the generic grid. The student's own
+        // press already put a venue-specific screen up (the client sends the
+        // deterministic `venue:<id>` token); letting the AI's romanization
+        // replace it wiped a 12-place results view mid-use. An AI open that
+        // resolved to NOTHING specific keeps its hands off a venue screen.
+        // A student press never lands here (their token always resolves), and
+        // a venue-specific resolution always lands — this drops only the
+        // "I matched nothing" case.
+        const resolvedSpecific = payload.mode === "menu" || !!payload.requestedVenueId;
+        if (
+          triggerSource === "ai" &&
+          !resolvedSpecific &&
+          this.restaurantScreen?.kind === "venue"
+        ) {
+          flowNote("COORDINATOR", `Restaurant open matched nothing specific ("${event.data ?? ""}") — leaving the venue screen in place.`);
+          settle(
+            true,
+            `[APP OPEN] restaurant — already open on the student's chosen place. ` +
+              `"${event.data ?? ""}" matched nothing more specific, so the screen was left alone. ` +
+              `Keep talking about the place they chose.`,
+          );
+          return;
+        }
         this.sendAppOpen({ appId, appData: payload });
         openDetail = restaurantOpenNote(payload);
       } else if (appId === PICTURE_SEARCH_APP_ID) {
@@ -10054,7 +10143,12 @@ ${customDetail}` : ""));
    *  speechSynthesis (`client_local_tts`). Quality is device-dependent, but a
    *  press that produces SOME voice always beats a silent one — the student
    *  said something and the room must hear it. */
-  private sendClientLocalTts(text: string, voiceRole: "ai" | "student", language?: string): void {
+  private sendClientLocalTts(
+    text: string,
+    voiceRole: "ai" | "student",
+    language?: string,
+    opts?: { complete?: boolean },
+  ): void {
     flowOutput("COORDINATOR", "client_local_tts", `[${voiceRole}] "${text}"`);
     this.send({
       type: "client_local_tts",
@@ -10062,16 +10156,52 @@ ${customDetail}` : ""));
         text,
         language: language || this.studentVoice?.language || "en",
         voiceRole,
+        // A WHOLE utterance, not a stream fragment. The client's local-TTS
+        // buffer exists to reassemble fragments, and it decides "this fragment
+        // ended a sentence" by terminal punctuation — which a button sentence
+        // ("אני רוצה פיצה") does not carry, so every press ate the full 600ms
+        // fragment-settling delay before a sound came out. A complete
+        // utterance is flushed immediately.
+        ...(opts?.complete ? { complete: true } : {}),
       },
     });
   }
 
   private async streamStudentTts(text: string, source: string = "?", meta?: { bid?: boolean; addressee?: string }): Promise<void> {
+    // Markup never reaches a voice. Curly braces are the caption highlight
+    // convention (`{pressed word}`), and on 2026-09-01 a template bug put a
+    // pair into a sentence and the device voice read them OUT LOUD — a Hebrew
+    // student heard "אני רוצה ללכת ל… סוגר סוגריים מסולסלות" ("…closing curly
+    // braces"). The template is fixed; this strip is the guarantee that no
+    // future one gets a voice. Display paths keep their own text.
+    text = text.replace(/[{}]/g, "");
     if (!this.studentVoice) {
       // Voice resolution can be missed at init (the cached student wasn't
       // loaded yet when resolveVoices ran). Re-resolve now that the session
       // is warm rather than letting every press of the session stay silent.
       await this.resolveVoices().catch(() => {});
+    }
+    // DEVICE-VOICE MODE. The student is configured to speak on the device
+    // rather than from streamed server audio (free, no network, no provider
+    // latency). This is the SAME rung the ladder already ends on — we just
+    // start there instead of arriving after every provider has failed, so no
+    // new client behaviour is involved. Deliberately before the unresolved
+    // check: device voice needs no voice config at all, so an unresolvable
+    // ElevenLabs/Google voice is irrelevant here.
+    if (this.useLocalStudentTts) {
+      flowNote("COORDINATOR", `Device-voice mode — speaking [${source}] on the client.`);
+      if (source !== "button_press_repeat") {
+        this.publishUtteranceToRoom(text, meta?.bid ?? false, meta?.addressee);
+      }
+      // Cancel streamed audio still arriving from a press made before the
+      // setting changed mid-session, else it plays over the device voice.
+      if (this.studentTtsAbortController) {
+        this.studentTtsAbortController.abort();
+        this.studentTtsAbortController = null;
+        this.send({ type: "audio_clear_tag", tag: "utterance" });
+      }
+      this.sendClientLocalTts(text, "student", undefined, { complete: true });
+      return;
     }
     if (!this.studentVoice) {
       // Still unresolved — a press must never be silent. The client's built-in
@@ -10080,7 +10210,7 @@ ${customDetail}` : ""));
       if (source !== "button_press_repeat") {
         this.publishUtteranceToRoom(text, meta?.bid ?? false, meta?.addressee);
       }
-      this.sendClientLocalTts(text, "student");
+      this.sendClientLocalTts(text, "student", undefined, { complete: true });
       return;
     }
     // Cancel any in-flight TTS from a prior press / interpret AND tell
@@ -10150,7 +10280,7 @@ ${customDetail}` : ""));
       // why). Absolute last resort: the client's built-in speechSynthesis.
       if (count === 0 && !controller.signal.aborted) {
         flowNote("COORDINATOR", `Server TTS produced no audio for [${source}] — using client speechSynthesis.`);
-        this.sendClientLocalTts(text, "student");
+        this.sendClientLocalTts(text, "student", undefined, { complete: true });
       }
     } finally {
       if (this.studentTtsAbortController === controller) {
@@ -10790,7 +10920,120 @@ ${customDetail}` : ""));
       ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent
       : undefined;
     const gps = monitor?.getGps?.() ?? null;
-    return resolveRestaurantOpen({ student: this.venueBoardStudent(), gps, data });
+    const payload = await resolveRestaurantOpen({ student: this.venueBoardStudent(), gps, data });
+    // The student asked about a SPECIFIC venue and it has no usable menu —
+    // try to fetch one in the background so the cache-once design actually
+    // caches once. Fire-and-forget: a Web Unlocker fetch plus an extraction
+    // call takes tens of seconds, and the open (and its held ack) must not
+    // wait on it. warmForVenue carries its own gates — the clinician's
+    // `sources.web` switch, the §3.1a binding check, review policy, and a
+    // per-venue attempt throttle — so this call is safe to make every time.
+    //
+    // The screen is only ever promised what will happen: `fetchingMenu` (the
+    // "getting the menu…" view) is stamped when a fetch WILL run or IS
+    // running, and never when the gates say nothing will — a spinner over a
+    // fetch that was gated off is a promise nobody keeps. Observed 2026-09-01:
+    // without any of this, a place press produced no screen change, no
+    // spinner, and no failure — three invisible outcomes in a row.
+    if (payload.requestedVenueId && payload.requestedVenueName) {
+      const student = this.venueBoardStudent();
+      const gate = student
+        ? await webMenuService.canWarmForVenue(student, payload.requestedVenueId)
+        : "no";
+      if (gate !== "no") {
+        payload.fetchingMenu = {
+          venueId: payload.requestedVenueId,
+          venueName: payload.requestedVenueName,
+        };
+      }
+      if (gate === "yes") void this.warmVenueMenu(payload.requestedVenueId);
+    }
+    return payload;
+  }
+
+  /** Background web-menu warm for one venue, with the Speaker told on arrival. */
+  private async warmVenueMenu(venueId: string): Promise<void> {
+    try {
+      const student = this.venueBoardStudent();
+      if (!student || !this.studentId) return;
+      const row = this.sessionId
+        ? dualAgentService.getSessionCache(this.sessionId)?.monitorAgent.getStudent?.()
+        : undefined;
+      const outcome = await webMenuService.warmForVenue(
+        { ...student, primaryLanguage: row?.primaryLanguage ?? null },
+        venueId,
+        // AKIM §18.5 — the fetch and extraction run on behalf of this student.
+        { studentId: this.studentId, userId: this.userId ?? "", useCase: "venue_menu_web" },
+      );
+      flowNote("COORDINATOR", `Venue menu warm for ${venueId}: ${outcome.kind}${outcome.kind === "skipped" ? ` (${outcome.reason})` : ""}.`);
+
+      // ── Close the loop ON SCREEN. ──
+      // The student has been looking at "getting the menu…" for this venue
+      // for up to a minute; the one unacceptable ending is that nothing
+      // happens. Push the result only while that screen is still up — a
+      // student who moved on (dismissed the app, opened another) is not
+      // yanked back (`restaurantScreen` is cleared on both).
+      const stillWaiting =
+        this.restaurantScreen?.kind === "venue" && this.restaurantScreen.venueId === venueId;
+
+      if (outcome.kind === "ready") {
+        if (stillWaiting) {
+          const board = await resolveVenueBoardById(this.venueBoardStudent()!, venueId);
+          if (board) {
+            this.sendAppOpen({
+              appId: RESTAURANT_APP_ID,
+              appData: {
+                mode: "menu",
+                preview: true,
+                venueName: board.venueName,
+                menuBoard: board.board,
+              } satisfies import("@shared/venue-cuisine").RestaurantAppPayload,
+            });
+          }
+        }
+        // 🚨 speakerRespond, NOT sendContextInjection. An injection informs
+        // and by contract provokes NO reply — which is exactly how the first
+        // fetch completion reached a Speaker that then said nothing while a
+        // child looked at the outcome of their press (2026-09-01 evening,
+        // Daniel: "it didn't say anything"). The wait ending is a turn.
+        this.speakerRespond(
+          `[RESTAURANT] The menu for ${outcome.venueName} just became available` +
+            `${stillWaiting ? " and is now on the student's screen. Tell them, and talk about choosing food" : ". If the user still wants that restaurant, offer to open its menu"}` +
+            ` — do not name dishes.`,
+        );
+        return;
+      }
+
+      // Anything else is a FAILURE as far as the waiting child is concerned —
+      // not found, unreadable, or parked behind review. The screen says so and
+      // the Speaker says so; silence is the one ending that reads as being
+      // ignored. (skipped/menu_exists and skipped/recently_attempted never
+      // showed a fetching screen — `stillWaiting` is false for them because
+      // the gate refused the stamp.)
+      if (stillWaiting) {
+        this.sendAppOpen({
+          appId: RESTAURANT_APP_ID,
+          appData: {
+            mode: "search",
+            canSearch: true,
+            positionKnown: true,
+            categories: [],
+            places: [],
+            food: null,
+            menuFetchFailed: (await venueRepository.getById(venueId))?.name ?? "the restaurant",
+          } satisfies import("@shared/venue-cuisine").RestaurantAppPayload,
+        });
+        // Same rule as the success case above: this ends a wait the child is
+        // watching, so it must be SAID, not filed.
+        this.speakerRespond(
+          outcome.kind === "pending_review"
+            ? `[RESTAURANT] The menu was found but needs a caretaker's check before the student can use it. Say that plainly — it is not available right now, and that is nobody's fault.`
+            : `[RESTAURANT] The menu could not be fetched. Tell the user plainly you could not get it — do not offer to try again, and do not describe dishes.`,
+        );
+      }
+    } catch (err) {
+      flowNote("COORDINATOR", `Venue menu warm failed: ${String(err)}`);
+    }
   }
 
   /**
@@ -12856,6 +13099,9 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
   }
 
   private send(msg: ServerMessage): void {
+    // app_close is sent from several flows (social peer, word-finder, AI
+    // close_app); whatever closed the app, no restaurant screen survives it.
+    if ((msg as { type?: string }).type === "app_close") this.restaurantScreen = null;
     if (this.ws.readyState !== this.ws.OPEN) {
       // 🚨 NOT silent. This used to `return` with no trace, which is how an app
       // open could be "successful" in every log line around it while the message
@@ -12888,9 +13134,22 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     const detail = [
       data.appId,
       data.data ? `data="${data.data}"` : null,
-      data.appData ? "appData=yes" : "appData=none",
+      describeAppData(data.appData),
     ].filter(Boolean).join(" ");
     flowOutput("COORDINATOR", "app_open", detail);
+    // Restaurant screen tracking, at the ONE place every open goes through.
+    // "venue" means the screen is ABOUT a specific place — a menu, a
+    // getting-the-menu wait, or a named-place grid — which is what the
+    // clobber guard in the restaurant branch and the warm-completion pushes
+    // key off. Any other app opening replaces it.
+    if (data.appId === RESTAURANT_APP_ID) {
+      const p = data.appData as import("@shared/venue-cuisine").RestaurantAppPayload | undefined;
+      const venueId = p?.fetchingMenu?.venueId ?? p?.requestedVenueId;
+      const specific = p?.mode === "menu" || !!venueId;
+      this.restaurantScreen = { kind: specific ? "venue" : "generic", venueId, at: Date.now() };
+    } else {
+      this.restaurantScreen = null;
+    }
     this.send({ type: "app_open", data } as ServerMessage);
   }
 

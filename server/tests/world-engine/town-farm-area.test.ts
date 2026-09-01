@@ -29,7 +29,10 @@
 
 import { describe, it, expect } from "@jest/globals";
 import { compileEconomy } from "@shared/world-engine/kernel/modules/economy/index.js";
-import { townPlayEconomy } from "@shared/world-engine/interaction/town/town-play.js";
+import {
+  FARM_CROP_GLYPH, FARM_CROP_SPECIES, townPlayEconomy,
+} from "@shared/world-engine/interaction/town/town-play.js";
+import { sourceSuitabilityAt, type ClimateSample } from "@shared/world-engine/products.js";
 import { createTownWorld } from "@shared/world-engine/kernel/town/town-world.js";
 import { townPlan, type TownField } from "@shared/world-engine/kernel/town/plan.js";
 import {
@@ -141,6 +144,85 @@ describe("townPlayEconomy — the farm's food process reads field_acres", () => 
       });
       const acres = ecoD.traitDemands.find((d) => d.resource === "field_acres")!.value;
       expect(acres / farmAcresPerPerson("ancient", dial)).toBeCloseTo(SURPLUS, 12);
+    }
+  });
+});
+
+// ── SUITABILITY-AS-YIELD (2026-09-01) ───────────────────────────────────────
+// The books' half of the ONE bridge: the farm process's `efficiency` — the
+// yield one acre returns daily — scales by how well THIS GROUND grows the
+// crop, read through `sourceSuitabilityAt(FARM_CROP_SPECIES, climate)`. The
+// live seat (quest-host's farm region cap) multiplies by the identical call on
+// the identical crop row, which is what stops the visible field and the
+// abstract field from valuing the same ground differently.
+describe("the books' yield seat — a site's ground scales yield per acre", () => {
+  const HOSTILE: ClimateSample = { rain: 0.5, tempC: 16, elevation: 0, fertility: 0 };
+  const THIN: ClimateSample = { rain: 0.5, tempC: 16, elevation: 0, fertility: 3 };
+  const effOf = (climate?: ClimateSample): number =>
+    compileEconomy([townPlayEconomy(REAL_SCALE, climate)], { construction: true })
+      .processes.find((p) => p.id === "farm")!.efficiency!;
+
+  it("🚨 NO CLIMATE compiles the SHIPPED efficiency, to the byte", () => {
+    // The bench law: a charter-only town has no cell under it, and every such
+    // path must be byte-identical to the pre-niche world. `TOWN_PLAY_ECONOMY`
+    // (the module-level document) is exactly this reading.
+    expect(effOf(undefined)).toBe(effOf());
+    expect(effOf()).toBe(
+      compileEconomy([townPlayEconomy()], { construction: true })
+        .processes.find((p) => p.id === "farm")!.efficiency!,
+    );
+    // …and it is still the reciprocal of the acreage anchor, unscaled.
+    expect(farmAcresPerPerson("ancient") * effOf()).toBeCloseTo(0.001, 15);
+  });
+
+  it("a climate scales the efficiency by EXACTLY the bridge's factor", () => {
+    // Not "some smaller number": the seat is the bridge, multiplied in once.
+    for (const c of [THIN, HOSTILE]) {
+      expect(effOf(c)).toBeCloseTo(effOf() * sourceSuitabilityAt(FARM_CROP_SPECIES, c), 18);
+    }
+    // Thin soil yields LESS per acre, and barren ground yields nothing —
+    // a multiplier, and at the hard bound a zero.
+    expect(effOf(THIN)).toBeGreaterThan(0);
+    expect(effOf(THIN)).toBeLessThan(effOf());
+    expect(effOf(HOSTILE)).toBe(0);
+  });
+
+  it("🚨 it scales YIELD ONLY — the acreage the town works is untouched", () => {
+    // THE SQUARING TRAP, in the shape it would take here. `field_acres` is
+    // what the POPULATION wants to plough; poor ground does not shrink a
+    // village's appetite or its fields. Put suitability on the demand row too
+    // (or inside `farmAcresPerPerson`) and a marginal site is penalized twice
+    // — exactly how `resource_compression` already enters this identity twice
+    // and cancels.
+    const acres = (climate?: ClimateSample): number =>
+      compileEconomy([townPlayEconomy(REAL_SCALE, climate)], { construction: true })
+        .traitDemands.find((d) => d.resource === "field_acres")!.value;
+    expect(acres(THIN)).toBe(acres());
+    expect(acres(HOSTILE)).toBe(acres());
+    // …and the caloric anchor is a fact about PEOPLE, not about soil.
+    const rations = (climate?: ClimateSample): number =>
+      compileEconomy([townPlayEconomy(REAL_SCALE, climate)], { construction: true })
+        .traitDemands.find((d) => d.resource === "food")!.value;
+    expect(rations(HOSTILE)).toBe(rations());
+  });
+
+  it("the two seats read ONE crop row — the constants have a single owner", () => {
+    // They were `const`s inside quest-host's `stepFarmSource`, invisible from
+    // here; the books and the visible field could have been sized off two
+    // different crops. The glyph is what the region's stock speaks, the
+    // species is the catalogue row whose niche suitability reads.
+    expect(FARM_CROP_SPECIES).toBe("carrot_plant");
+    expect(FARM_CROP_GLYPH).toBe("carrot");
+  });
+
+  it("the dial and the site are INDEPENDENT factors (neither absorbs the other)", () => {
+    for (const dial of [1, 2, 4]) {
+      const scale = resolveWorldScale({ resource_compression: dial });
+      const bare = compileEconomy([townPlayEconomy(scale)], { construction: true })
+        .processes.find((p) => p.id === "farm")!.efficiency!;
+      const sited = compileEconomy([townPlayEconomy(scale, THIN)], { construction: true })
+        .processes.find((p) => p.id === "farm")!.efficiency!;
+      expect(sited / bare).toBeCloseTo(sourceSuitabilityAt(FARM_CROP_SPECIES, THIN), 12);
     }
   });
 });

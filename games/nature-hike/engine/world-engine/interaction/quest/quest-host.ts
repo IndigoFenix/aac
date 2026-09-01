@@ -183,6 +183,7 @@ import {
   takeGoods,
   takeStock,
   townEndpointId,
+  type ArrivalVia,
   type StockEndpoint,
   type TransferAgreement,
   type TransferLedger,
@@ -202,13 +203,14 @@ import {
   condenseTown,
   defaultTakeGood,
   inboundRouteHealth,
+  localSupplyAtHead,
   nextBarterWillingAt,
   nextShortageBelow,
   runDueBarters,
   townRecordSignals,
   type BarterLegReport,
-  type BarterRefusal,
   type BarterSignals,
+  type BarterStall,
   type PartnerGeography,
   type TownFoldCtx,
   type TownRecord,
@@ -292,8 +294,13 @@ import {
   expandWildArea,
   farmAreaKey,
   farmAreaRecord,
+  localDailyUnitsForGood,
+  localYieldPerDay,
   ripenWildArea,
   readWildRecord,
+  seedAccessOf,
+  sowStarterStand,
+  standingSpeciesOf,
   wildAreaCounts,
   wildAreaPopulation,
   wildAreaQuote,
@@ -409,10 +416,11 @@ import {
   DEFAULT_DRESS_PALETTE,
   type DressPalette,
 } from "../../creatures/clothing.js";
-import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, requireSpecies, speciesBodyRadius } from "../../creatures/species.js";
+import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, listSpecies, requireSpecies, speciesBodyRadius, speciesCanSpeak } from "../../creatures/species.js";
 import {
-  drinkGlyphs, growthClassYield, naturalSourceOf, sourceKillExhausted, sourcesForGood, takeUnitsOf,
-  type NaturalSource,
+  drinkGlyphs, foodPlants, growthClassYield, naturalSourceOf, sourceKillExhausted,
+  sourceSuitabilityAt, sourcesForGood, takeUnitsOf,
+  type ClimateSample, type NaturalSource,
 } from "../../products.js";
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { hashSeed, mulberry32 } from "@shared/prng.js";
@@ -765,7 +773,7 @@ import {
 } from "@shared/world-engine/interaction/behavior/spark-attention.js";
 import { glyphLabel, isRtlLocale, languageFor, speakDirections, speakerGender, translateGlyph, type Gender } from "@shared/world-engine/interaction/lang/index.js";
 import { bookUnitsPerStreetUnit, creditDelivery, debitDelivery } from "@shared/world-engine/interaction/town/town-quests.js";
-import { buildTownPlay, foundedHouseRow, TOWN_PLAY_STRUCTURES, type TownFamilyMember, type TownFamilyPet, type TownPlay } from "@shared/world-engine/interaction/town/town-play.js";
+import { buildTownPlay, FARM_CROP_GLYPH, FARM_CROP_SPECIES, foundedHouseRow, TOWN_PLAY_STRUCTURES, type TownFamilyMember, type TownFamilyPet, type TownPlay } from "@shared/world-engine/interaction/town/town-play.js";
 import {
   cohortEndpoint,
   cohortEndpointId,
@@ -1596,6 +1604,15 @@ export interface QuestSession {
    *  town-rung twin of `needParks`, same shape, same restore-is-safe argument
    *  (session-lived, never serialized). See `TownPark`. */
   townParks: Map<string, TownPark>;
+  /** ⚖️ IMPORT DISPLACEMENT (Stage C) — agreement ids whose lane is currently
+   *  parked because THIS TOWN'S OWN GROUND covers the take (barter.ts's
+   *  `localSupplyDisplaces`). The hysteresis band's one bit of state, and the
+   *  fade line's edge gate. SESSION-LIVED AND NEVER SERIALIZED, on `townParks`'
+   *  own argument and the round's first law (access is DERIVED, never stored):
+   *  a reload re-asks the supply question on the lane's next due leg and
+   *  re-parks it at the full `BARTER_DISPLACE_AT` threshold, so the worst a
+   *  lost bit can cost is one shipment. */
+  displacedLanes: Set<string>;
   /** ⏸️ PARTNER-SHELF world version — bumped wherever a TRADE PARTNER's stack
    *  gains units: the stub's boundary mint (`stockAbstractPartner`) and the
    *  barter executor's outbound unload. The town-rung twin of
@@ -1776,6 +1793,18 @@ export interface QuestSession {
    *  document's `game.scale` declared otherwise (town demos declare the
    *  street-clock DOLLHOUSE profile explicitly). */
   scale: WorldScale;
+  /**
+   * ⚖️ THE GROUND THIS SESSION STANDS ON (2026-09-01 — suitability-as-yield):
+   * the site cell's climate/terrain sample, or ABSENT when there is no cell
+   * under the session (a preset town, a flat pad, a charter-only founding).
+   *
+   * ONE TRUTH INSIDE THE HOST, `scale`'s exact shape: the boot lowers it once
+   * and every seat that needs to know what grows here reads THIS field, so a
+   * second sample can never be sampled from a second cell and disagree.
+   * Absent ⇒ `sourceSuitabilityAt` answers 1 and every derived quantity is
+   * byte-identical to the pre-niche world (the bench law).
+   */
+  climate?: ClimateSample;
   /** THE LAWS in force (nations P2, behavior/laws.ts): the world spec's
    *  universal absolute ring (game.culture — parental controls,
    *  unrepealable) plus player-spoken prohibitions ("no + fight").
@@ -2568,6 +2597,17 @@ export interface QuestSessionStartOpts {
    *  scatter's centre clearing. */
   wilderness?: WildernessParams;
   scale?: WorldScale;
+  /** THE SITE CELL'S CLIMATE (2026-09-01 — suitability-as-yield): what the
+   *  ground under this session can grow, sampled ONCE by the boot that
+   *  actually stands on a planet (`climateSampleAt`) and lowered here, exactly
+   *  as `scale` is. Stored onto `session.climate`; the farm's live output cap
+   *  reads it through `sourceSuitabilityAt`. Absent = no cell under this boot
+   *  (a preset town, a flat pad, a test world) ⇒ suitability 1, byte-identical.
+   *
+   *  ⚠️ The BOOKS' twin seat is `TownPlayConfig.climate` — a town session must
+   *  pass the SAME sample to both or the visible farm and the abstract farm
+   *  will disagree about the same ground. */
+  climate?: ClimateSample;
   /** The world's cultural law (`game.culture` — nations P2): its
    *  absolutes found the session's unrepealable law ring. */
   culture?: WorldCultureSpec | null;
@@ -3282,18 +3322,38 @@ function remoteSparkModel(peerId: string): AvatarModel {
  *  one place so the model wrapper and any future attribution logic agree. */
 const WORLD_BODY_ID_RE = /^(npc_|resident_|settler|pet_|fauna:|flora:|cohort|barter_)/;
 
-/** Which animal-person species stands in for a puzzle character's emoji face —
- *  the animal people REPLACE the animal character models. */
-const ANIMAL_SPECIES_BY_ICON: Record<string, string> = {
-  "🐻": "bear_person", "🧸": "bear_person",
-  "🐸": "frog_person",
-  "🐶": "dog_person", "🐕": "dog_person", "🐩": "dog_person", "🦮": "dog_person",
-  "🐰": "rabbit_person", "🐇": "rabbit_person",
-  // Grazing herds (open-country fauna) keep their true quadruped body.
-  "🐴": "ungulate", "🐎": "ungulate",
-};
-function animalSpeciesForIcon(icon: string | undefined): string | null {
-  return icon ? ANIMAL_SPECIES_BY_ICON[icon] ?? null : null;
+/** Emoji faces that mark a puzzle character as a PERSON — something with a
+ *  speaking body rather than an emoji capsule. ⚖️ WHICH species it wears is
+ *  deliberately NOT fixed here: the animal people are derived by the
+ *  `animal_people` creature mod now, so which of them exist is a property of
+ *  the WORLD, not of this file. (Naming `bear_person` here would also throw in
+ *  a world without that mod — `createBakedCreature` calls `requireSpecies`.) */
+const PERSON_ICONS = new Set(["🐻", "🧸", "🐸", "🐶", "🐕", "🐩", "🦮", "🐰", "🐇"]);
+
+/** Faces whose body is a FIXED, non-speaking species: grazing herds
+ *  (open-country fauna) keep their true quadruped body. */
+const FIXED_SPECIES_BY_ICON: Record<string, string> = { "🐴": "ungulate", "🐎": "ungulate" };
+
+/** The cast a world can draw people from: its registered SPEAKING creatures.
+ *  A world with only `human` yields only humans; one that installs
+ *  `animal_people` yields a mix, without either end knowing about the other. */
+function speakingCast(): string[] {
+  const cast = listSpecies()
+    .filter((sp) => sp.kind === "creature" && !sp.stub && !sp.bodiless && speciesCanSpeak(sp.id))
+    .map((sp) => sp.id);
+  return cast.length ? cast : ["human"];
+}
+
+/** The body a puzzle character wears. Stable per character (hashed from its
+ *  id, not random per frame) so a face does not change species as it rebuilds
+ *  across LOD tiers. Null = no creature body; render the emoji capsule. */
+function bodySpeciesForIcon(icon: string | undefined, id: string): string | null {
+  if (!icon) return null;
+  const fixed = FIXED_SPECIES_BY_ICON[icon];
+  if (fixed) return fixed;
+  if (!PERSON_ICONS.has(icon)) return null;
+  const cast = speakingCast();
+  return cast[fnv1a(id) % cast.length]!;
 }
 
 /** NATURAL-SOURCE BODIES (fauna/flora): one lazy factory per SPECIES (ids
@@ -3352,20 +3412,21 @@ export function isCreatedPersonBodyId(id: string): boolean {
   return id.startsWith("npc_settler_") || id.startsWith(`npc_${ATTACHED_AVATAR_CID_PREFIX}`);
 }
 
-/** Puzzle characters (`npc_<nodeId>`): an animal-person CREATURE model when
- *  their emoji face maps to one, else the emoji-capsule fallback. Wild
+/** Puzzle characters (`npc_<nodeId>`): a CREATURE model when their emoji face
+ *  marks them as a person (species drawn from the world's speaking cast) or
+ *  pins a fixed body, else the emoji-capsule fallback. Wild
  *  PRODUCT ANIMALS (`fauna:<species>:…` — step ④) stand their registry
  *  species body, exactly as a town's herds do. */
 function makePuzzleCharacterFactory(npcIcons: Map<string, string>): AvatarModelFactory {
   const emoji = makeNpcModelFactory(npcIcons);
   const animal = createCreatureAvatarFactory({
-    speciesFor: (id) => animalSpeciesForIcon(npcIcons.get(id)) ?? "human",
+    speciesFor: (id) => bodySpeciesForIcon(npcIcons.get(id), id) ?? "human",
     heightM: 1.7,
   });
   const naturalBody = makeNaturalBodyFactory();
   return (id, isLocal) => {
     if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpeciesOf(id))(id, isLocal);
-    return animalSpeciesForIcon(npcIcons.get(id)) ? animal(id, isLocal) : emoji(id, isLocal);
+    return bodySpeciesForIcon(npcIcons.get(id), id) ? animal(id, isLocal) : emoji(id, isLocal);
   };
 }
 
@@ -3733,6 +3794,7 @@ export function makeQuestSession(
     pursuits: new Map(),
     needParks: new Map(),
     townParks: new Map(),
+    displacedLanes: new Set(),
     partnerStockEpoch: 0,
     needGoalPick: new Map(),
     addressOutbid: new Map(),
@@ -24847,6 +24909,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       sess.embedding.layout.spawn = { x: side / 2, y: side / 2 };
     }
     if (opts.scale) sess.scale = opts.scale;
+    // THE GROUND THIS SESSION STANDS ON — lowered exactly like the scale
+    // above, and left ABSENT when the boot had no cell to sample.
+    if (opts.climate) sess.climate = opts.climate;
     // The world's universal absolute ring (game.culture) founds the law
     // book — issuer "world", unrepealable, everywhere.
     if (opts.culture) {
@@ -25218,11 +25283,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!rec || !world) return false;
     const ground = wildAreaGround(session);
     // AN UNLOADED STAND KEPT GROWING while nobody watched — the same class
-    // clock the standing features ride, applied once on the way back in.
+    // clock the standing features ride, applied once on the way back in. The
+    // 4th arg is Stage A's clock belt: a climb that lifted a harvest cap arms
+    // that glyph's refill, on the host's one flat pulse (the same period the
+    // field's ripen walk runs on), so a stand that grew up in the dark comes
+    // back bearing rather than waiting on a HEAL.
     const grown = advanceWildArea(rec, session.taskClock, (species) => {
       const g = naturalSourceOf(species)?.growth;
       return g ? growthClassPeriodS(session.scale, g) : Infinity;
-    });
+    }, () => FOOD_DAY_SEC);
     const w: WildernessContent = (session.wilderness ??= {
       side: ground.area.w,
       seed: rec.seed,
@@ -29016,6 +29085,79 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return streetUnits * bookUnitsPerStreetUnit(t.eco, good);
   }
 
+  /**
+   * ⚖️ IMPORT-DISPLACEMENT (Stage B) — WHAT THIS TOWN'S OWN GROUND MAKES OF A
+   * GOOD, PER DAY, IN BOOK UNITS. `exportOwedBooks`'s mirror: that one takes
+   * off supply which leaves on a cart, this one adds supply nobody had to
+   * import. Together they are the whole of the landed-cost question at this
+   * rung — local production against producer-plus-freight — and the shortage
+   * that falls out of them is what re-ranks the caravan's cargo.
+   *
+   * 🚨 THE FIELD ONLY, AND ONLY WHAT THE BOOKS DO NOT ALREADY ASSERT. Two
+   * exclusions, each a standing law:
+   *   • `FARM_CROP_SPECIES` — the compiled farm process already books the
+   *     founding crop as production of its own (the double-count guard at
+   *     `stepFarmSource`); counting the carrots again would feed the town
+   *     twice off one field.
+   *   • every OTHER area record — the wild scatter stays physics-only and the
+   *     trade graph never touches it (the round's carried-forward law). Hence
+   *     the one-record iterable rather than a sweep of `areaRecords`.
+   * What is left is exactly the SOWN stands: production the books have never
+   * heard of, which is the only thing there is to tell them about.
+   *
+   * ⚖️ ONE CONVERTER, the same one `exportOwedBooks` uses
+   * (`bookUnitsPerStreetUnit`) — street units in, book units out, so the term
+   * that adds supply and the term that subtracts it can never disagree about
+   * what a unit is. 🚨 No suitability factor here: the cap was already sized by
+   * it at the sow (Stage A), and applying it twice would square the dial.
+   *
+   * 0 for every record with no sown stand — every save that shipped.
+   */
+  function localDailyBooks(session: QuestSession, good: string): number {
+    const t = session.town;
+    if (!t) return 0;
+    const rec = session.areaRecords.get(farmAreaKey(t.plan.key));
+    if (!rec) return 0;
+    const units = localDailyUnitsForGood([rec], good, {
+      excludeSpecies: [FARM_CROP_SPECIES],
+    });
+    if (!(units > 0)) return 0;
+    return units * bookUnitsPerStreetUnit(t.eco, good);
+  }
+
+  /**
+   * ⚖️ IMPORT-DISPLACEMENT (Stage C) — `localDailyBooks`'s GLYPH-SIDE TWIN:
+   * units/day this town's own field bears of ONE GLYPH HEAD.
+   *
+   * 🚨 THE HEAD, NOT THE GOOD KEY — and the projection that says so is the
+   * kernel's (`localSupplyAtHead`, barter.ts), not this function's. The books'
+   * term above goes through `goodKeyOfGlyph` because a fill row is keyed by
+   * commodity ("food"); a barter take is a SPOKEN GLYPH, and this half of the
+   * comparison must speak the same. All this seat does is CHOOSE THE GROUND.
+   *
+   * 🚨 NO BOOK CONVERSION. `localDailyBooks` multiplies by
+   * `bookUnitsPerStreetUnit` because its answer enters the aggregate; this
+   * answer is compared against an agreement's TAKE UNITS, which are street
+   * units of the same glyph — both sides already speak the shipment's own
+   * unit, and converting one of them would be the squaring trap in a new
+   * place.
+   *
+   * Same ground as the books' term and for the same two reasons (the
+   * FIELD-RECORD-ONLY ruling and the `FARM_CROP_SPECIES` double-count guard):
+   * the town field record, sown stands only. 0 for every record with no sown
+   * stand — every save that shipped, and therefore no displacement anywhere.
+   */
+  function localFieldSupply(session: QuestSession, takeGood: string): number {
+    const t = session.town;
+    if (!t || !takeGood) return 0;
+    const rec = session.areaRecords.get(farmAreaKey(t.plan.key));
+    if (!rec) return 0;
+    return localSupplyAtHead(
+      localYieldPerDay(rec, { excludeSpecies: [FARM_CROP_SPECIES] }),
+      takeGood,
+    );
+  }
+
   /** A commodity shortage off ARBITRARY town books (the townShortage math,
    *  aimed at a partner's own fills/scalars). NO feed term — a partner's
    *  stockpile is read through their own books, not topped up by ours.
@@ -29368,13 +29510,151 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * twice (rather than having `creditDelivery` hand it back) keeps the join's
    * signature alone; it is a two-field lookup on a compiled registry.
    */
-  function creditImport(session: QuestSession, good: string, units: number) {
+  function creditImport(session: QuestSession, good: string, units: number, via: ArrivalVia) {
     const t = session.town;
     if (!t || !(units > 0)) return;
+    // ⚖️ THE FLOW MEMORY, at the landing (resource-access Stage 3). BOTH
+    // lanes land here — the daily caravan's crate (`stepTradeCargo`) and a
+    // barter shipment's inbound leg (`stepBarters`) — so the evidence has one
+    // seat, and a good the BOOKS do not track (a treat, a fruit: no flow net,
+    // `drift` null two lines down) still leaves its row. Landing is a fact
+    // about the road, not about the ledger that happens to price it.
+    noteGoodArrival(session, good, via);
     const drift = creditDelivery(t.town, t.eco, good, units);
     if (!drift) return;
     const books = bookUnitsPerStreetUnit(t.eco, good) * units;
     t.deltas.driftBank[drift] = (t.deltas.driftBank[drift] ?? 0) + books;
+  }
+
+  /**
+   * ⚖️ FIRST ARRIVAL (resource-access round, Stage 3 — 2026-09-01): the one
+   * durable trace a landing leaves, and the EDGE the cultivation arc fires on.
+   *
+   * EDGE-TRIGGERED, on the state books' own precedent (`StateEconEvent`
+   * "trade-open", pushed only on the 0→positive flow edge): the OPENING of a
+   * lane for a good is recorded ONCE and the rate is left to be re-derived.
+   * The ledger therefore cannot grow with traffic — a hundred caravans of
+   * apples are one row — which is what makes durable flow memory affordable
+   * where per-year rates and a draining `driftBank` are not.
+   *
+   * The row rides `TownDeltas.transfers` (a town session's `session.transfers`
+   * IS `town.deltas.transfers`), so it survives reload in the same envelope
+   * the standing barter agreements already do — no second store.
+   *
+   * 🚨 SILENT BY CONSTRUCTION. A row is not narrated, not toasted, not stocked
+   * and not counted anywhere: the ONLY reader is the derived seed question
+   * below. That is what lets the append run on every world, including the
+   * climate-less ones the headless bench replays.
+   */
+  function noteGoodArrival(session: QuestSession, good: string, via: ArrivalVia) {
+    if (!session.town) return;
+    const day = Math.floor(session.townClock / FOOD_DAY_SEC);
+    if (!session.transfers.noteArrival(good, via, day)) return; // not the edge
+    sowArrivedSpecies(session, good);
+  }
+
+  /**
+   * ⚖️ WHAT HAS EVER LANDED HERE — the town's durable arrival evidence, both
+   * halves of it, and the ONLY input the seed question takes from the economy.
+   *
+   *   • the FIRST-ARRIVAL rows (`transfers.arrivals()`) — the bounded,
+   *     edge-triggered memory every landing writes from this build on;
+   *   • the goods on TERMINAL barter agreements, which the ledger has kept
+   *     forever since ⑤. A completed exchange's `take` side is a shipment
+   *     that arrived here, recorded before the evidence rows existed — reading
+   *     it means an OLD SAVE does not forget its own trade history the day it
+   *     loads into this build. (A STANDING route needs no such recovery: its
+   *     executor lands goods through `creditImport` every leg, so the rows
+   *     above already hold it.)
+   *
+   * NO NEW STORE, and no accumulator: two reads over records the town already
+   * keeps, which is the whole of the user's "derivable from flow memory,
+   * NEVER a new list".
+   */
+  function arrivedGoodsOf(session: QuestSession): Set<string> {
+    const out = new Set<string>();
+    for (const r of session.transfers.arrivals()) out.add(r.good);
+    for (const a of session.transfers.all()) {
+      if (a.status !== "done" || !a.barter) continue;
+      // The row's own `goods` are the GIVE side (they left); `take` is what
+      // came back in the same shipment.
+      for (const g of Object.keys(a.barter.take)) out.add(stackHead(g));
+    }
+    return out;
+  }
+
+  /**
+   * ⚖️ THE COLUMBIAN ARC'S SECOND HALF — the expensive import puts down roots.
+   *
+   * On the first-arrival EDGE alone: if the landed glyph is borne by a food
+   * plant that can live on this ground, and the town has a field with no
+   * stand of it yet, a STARTER STAND goes in (`sowStarterStand` — a tenth of
+   * the founding crop's cap, scaled by suitability; Stage 2's law that
+   * suitability multiplies yield and never gates it holds there too).
+   *
+   * DEMAND IS IMPLICIT AND HONEST: the caravan's cargo is re-derived every
+   * visit from what this town is SHORT of (`complementaryTrade` off the want
+   * ranking) and a barter is a shipment somebody ordered. The import already
+   * IS the demand — so the landing is demand, seeds and an act of planting in
+   * one fact, and there is no second "does the town want this" list to keep.
+   *
+   * 🚨 HARD-GATED ON `session.climate` — CULTIVATION SPREAD IS A PLANET-GROUND
+   * PHENOMENON. A flat pad, a preset town or a charter-only world has no cell
+   * under it, so there is nothing to ask whether the newcomer can grow here;
+   * `sourceSuitabilityAt` would answer its indifferent 1 and plant an orchard
+   * on a dollhouse floor. Such a world keeps EXACTLY today's behaviour — the
+   * bench law — and the gate is the whole of the difference.
+   */
+  function sowArrivedSpecies(session: QuestSession, good: string) {
+    const climate = session.climate;
+    const t = session.town;
+    if (!climate || !t) return; // no ground to grow on: the flat-world arm
+    const key = farmAreaKey(t.plan.key);
+    // `stepFarmSource` runs FIRST in every ledger sweep (its own documented
+    // ordering), so a town that HAS a field always has its record by the time
+    // a landing settles. A town with none is not a failure to retry: the
+    // ACCESS is durable (the evidence row stands forever, so `seedAccessOf`
+    // keeps answering true), and only this one automatic planting is
+    // edge-only — a field founded later is planted by whoever founds it.
+    const rec = session.areaRecords.get(key);
+    if (!rec) return; // no field: seeds with nowhere to go yet
+    const head = stackHead(good);
+    // The DERIVED READ, asked rather than assumed: the host hands the pure
+    // core its two sets (what stands in this session's records, what has ever
+    // landed in this town) and `seedAccessOf` joins them to the catalogue.
+    // True by construction at this edge — but it is one law with one owner,
+    // and the seat where a future planter (an orchard zone, a spoken "plant
+    // apples") asks the same question is exactly this call.
+    const place = {
+      standing: standingSpeciesOf(session.areaRecords.values()),
+      arrived: arrivedGoodsOf(session),
+    };
+    for (const row of foodPlants()) {
+      if (row.food !== head) continue;
+      if (!seedAccessOf(place, row.species)) continue;
+      // Layer 1: can it live here at all? A breached hard bound is the
+      // ground's own verdict — anything above it plants, thinly.
+      const suit = sourceSuitabilityAt(row.species, climate);
+      if (!(suit > 0)) continue;
+      const sown = sowStarterStand(rec, row.species, {
+        now: session.taskClock,
+        suitability: suit,
+        // The farm's own pulse period (the live arm's `regrowDays × day`
+        // convention, flat — the same one `stepFarmSource` ripens on).
+        regrowPeriodS: () => FOOD_DAY_SEC,
+        // A CLASSED crop (an orchard tree) is planted as saplings and climbs
+        // on the host's one growth clock — the same lambda the wilderness
+        // record's own advance walk uses, so a field and a forest age alike.
+        classPeriodS: (sp) => {
+          const g = naturalSourceOf(sp)?.growth;
+          return g ? growthClassPeriodS(session.scale, g) : Infinity;
+        },
+      });
+      if (sown === rec) continue; // already grown here, or too thin to plant
+      session.areaRecords.set(key, sown);
+      presenter.toast(`🌱 ${head} takes root in the fields`, "feedback");
+      return;
+    }
   }
 
   /**
@@ -29679,8 +29959,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * `driftDrainDay`'s exact shape: first sight hauls nothing, and a warp
    * hauls once per crossed edge because the sweeps run per edge.
    */
-  const FARM_CROP_SPECIES = "carrot_plant";
-  const FARM_CROP_GLYPH = "carrot";
+  // (FARM_CROP_SPECIES / FARM_CROP_GLYPH are town-play.ts's — the farm row's
+  // own file owns what the fields grow, so the BOOKS' yield seat and this live
+  // one can never be sized off two different crops.)
   function farmHaulPerDay(session: QuestSession): number {
     const t = session.town;
     if (!t) return 0;
@@ -29698,10 +29979,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Cap from the CULTIVATED ground (Σ patch rects — the bbox is only
       // the render footprint), through the one closed form (scale.ts E-c).
       const areaM2 = t.plan.fields.reduce((s, f) => s + f.w * f.h, 0);
+      // ⚖️ THE LIVE YIELD SEAT (2026-09-01, suitability-as-yield) — how well
+      // THIS GROUND grows the crop, the SAME bridge and the SAME crop row the
+      // books multiply their `efficiency` by (town-play.ts `townPlayEconomy`).
+      // No session climate ⇒ 1 ⇒ byte-identical cap (the bench law).
+      //
+      // 🚨 IT BELONGS AT capUnits AND NOWHERE ELSE. This is where every
+      // conversion-side multiplier already lives by the region builder's own
+      // contract (wild-area.ts FarmAreaOpts.capUnits: "yield per act reads the
+      // conversion dial — which happened upstream, inside the capUnits the
+      // caller derived"), and the dial is the standing warning: it enters the
+      // farm identity twice and cancels, so a factor applied inside
+      // `yieldPerM2Daily` or `farmAcresPerPerson` instead would be squared.
+      const suit = sourceSuitabilityAt(FARM_CROP_SPECIES, session.climate);
       const cap = Math.round(
-        areaM2 * yieldPerM2Daily("ancient", session.scale, satiationDaysOf(FARM_CROP_GLYPH)),
+        areaM2 * yieldPerM2Daily("ancient", session.scale, satiationDaysOf(FARM_CROP_GLYPH)) * suit,
       );
-      if (!(cap > 0)) return;
+      // ⚖️ BARREN IS AN ANSWER, NOT A DEGENERACY. Ground that cannot grow the
+      // crop (suit 0 — a breached hard bound: fertility 0, frozen, bone dry)
+      // still MINTS its region, empty: `farmAreaRecord` derives 0 plants from
+      // a 0 cap and holds no stock, `ripenWildArea` skips a population-0 stand,
+      // and the haul reader below then answers an honest 0 — the market shows
+      // an empty shelf instead of falling back to the catchment formula and
+      // conjuring food out of a field that grew none. A farm on hostile ground
+      // STANDS BARREN; it does not disappear.
+      //
+      // A zero cap on GROWABLE ground is the original degenerate case (no
+      // cultivated area at all) and still returns untouched, so every
+      // climate-less path is byte-for-byte what it was.
+      if (!(cap > 0) && suit > 0) return;
       rec = farmAreaRecord({
         key,
         area: { x: fr.x, y: fr.y, w: fr.w, h: fr.h },
@@ -29714,13 +30020,59 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // E-f — the market's amplitude reads the region, live (the goods
       // layer keeps the catchment formula only where no field region
       // exists; the provider registry is the road-bearings handoff shape).
+      // ⚖️ IMPORT-DISPLACEMENT (Stage B) — THE READER IS GENERAL NOW. It used
+      // to be `goodKey !== "food" → null` over the founding crop's glyph
+      // alone, so a sown banana stand filled to cap and then did nothing at
+      // all: no shelf, no draw, no relief. What the field serves is the
+      // founding crop's haul PLUS every sown stand's own daily bearing
+      // (`localYieldPerDay` — cap IS the per-day rate), each capped by what
+      // actually stands, projected onto the asking good by the one
+      // `goodKeyOfGlyph` bridge. A future fiber crop is answered by the same
+      // three lines; nothing here names a food.
+      //
+      // 🔒 A FARM WITH NO SOWN STAND IS UNTOUCHED: `excludeSpecies` drops the
+      // founding crop, so the loop's map is EMPTY, `answered` is exactly the
+      // old `goodKey === "food"` and `dailyUnits` is exactly the old min().
+      // ⚖️ `answered` is the barren-is-an-answer law generalized: a stand that
+      // bears this good and happens to be picked clean says "0", not "ask the
+      // catchment formula" — only a good NOTHING here grows falls back.
       provideFarmHaul(t.plan.key, (goodKey) => {
-        if (goodKey !== "food") return null;
         const r = session.areaRecords.get(key);
         if (!r) return null;
-        const stock = wildAreaStock(r)[FARM_CROP_GLYPH] ?? 0;
-        return { dailyUnits: Math.min(farmHaulPerDay(session), stock) };
+        const stock = wildAreaStock(r);
+        let answered = goodKey === "food";
+        let dailyUnits = answered
+          ? Math.min(farmHaulPerDay(session), stock[FARM_CROP_GLYPH] ?? 0)
+          : 0;
+        const sown = localYieldPerDay(r, { excludeSpecies: [FARM_CROP_SPECIES] });
+        for (const [g, per] of Object.entries(sown)) {
+          if (goodKeyOfGlyph(g) !== goodKey) continue;
+          answered = true;
+          dailyUnits += Math.min(per, stock[g] ?? 0);
+        }
+        return answered ? { dailyUnits } : null;
       });
+    }
+    // ⚖️ THE FIELD GROWS UP TOO (resource-access Stage 3). A starter stand of
+    // a CLASSED crop — an orchard tree the arrival rule sowed — goes in as
+    // saplings and must climb, exactly as an unloaded forest does, on the same
+    // one growth clock. 🔒 BYTE-IDENTICAL FOR EVERY FARM THAT SHIPPED: the
+    // founding crop is growth-less (`carrot_plant` has a single class), so
+    // `advanceWildArea` finds no growth block and no climb queue and returns
+    // the SAME record object — the line can only bite once a classed stand
+    // exists, and only `session.climate` can put one there.
+    // The 4th arg is Stage A's CLOCK BELT, threaded here (Stage B): a climb
+    // that lifts a harvest cap arms the refill it just made possible, so a
+    // grown orchard starts bearing on its own next pulse instead of waiting
+    // for the HEAL arm to notice. Same flat period the ripen call below and
+    // the sow above hand in — one field, one pulse.
+    const grown = advanceWildArea(rec, session.taskClock, (species) => {
+      const g = naturalSourceOf(species)?.growth;
+      return g ? growthClassPeriodS(session.scale, g) : Infinity;
+    }, () => FOOD_DAY_SEC);
+    if (grown !== rec) {
+      session.areaRecords.set(key, grown);
+      rec = grown;
     }
     // The field pulse, on the record's own clocks.
     const ripe = ripenWildArea(rec, session.taskClock, () => FOOD_DAY_SEC);
@@ -29739,14 +30091,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (day === last) return;
     const days = day - last;
     session.farmHaulDay = day;
+    let cur = rec;
     const want = farmHaulPerDay(session) * days;
-    if (!(want > 0)) return;
-    const drawn = drawWildArea(rec, {
-      glyph: FARM_CROP_GLYPH,
-      units: want,
-      now: session.taskClock,
-    });
-    if (drawn.rec !== rec) session.areaRecords.set(key, drawn.rec);
+    if (want > 0) {
+      cur = drawWildArea(cur, {
+        glyph: FARM_CROP_GLYPH,
+        units: want,
+        now: session.taskClock,
+      }).rec;
+    }
+    // ⚖️ IMPORT-DISPLACEMENT (Stage B) — AND THE SOWN STANDS ARE EATEN TOO.
+    // The haul reader above now serves their bearing to the shelf, so the
+    // region must LOSE it on the same day edge; a flow the books were told
+    // about (`localDailyBooks`) while the fruit stayed on the tree would be a
+    // relief claimed against food nobody picked. The day's share is the
+    // stand's own per-day cap × the days crossed, and `drawWildArea` stops at
+    // what actually stands — the same sink, deliberately unhoused: eaten food
+    // leaves the region and leaves the world.
+    // 🔒 A farm with no sown stand iterates an EMPTY map: the block above IS
+    // the shipped draw, guard included.
+    for (const [g, per] of Object.entries(
+      localYieldPerDay(cur, { excludeSpecies: [FARM_CROP_SPECIES] }),
+    )) {
+      const units = per * days;
+      if (!(units > 0)) continue;
+      cur = drawWildArea(cur, { glyph: g, units, now: session.taskClock }).rec;
+    }
+    if (cur !== rec) session.areaRecords.set(key, cur);
   }
 
   function stepDriftDrain(session: QuestSession) {
@@ -29819,7 +30190,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     for (const good of tr.route.exports) {
       debitExport(session, good, tr.exportDailyUnits() * producerAttendance(session, good));
     }
-    for (const good of tr.route.imports) creditImport(session, good, tr.importUnitsPerVisit(good));
+    for (const good of tr.route.imports) {
+      creditImport(session, good, tr.importUnitsPerVisit(good), "caravan");
+    }
   }
 
   /** Run every due barter shipment (stepTaskPool's sweep): abstract partners
@@ -29872,9 +30245,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         legSecondsOf: (key) => partnerLegSeconds(session, byKey.get(key) ?? null),
         parked: (a) => townParked(session, `agreement|${a.id}`, now),
         park: (a, why) => parkAgreement(session, a, why, byKey.get(a.barter!.partnerKey) ?? null, us, now),
+        // ⚖️ IMPORT DISPLACEMENT (Stage C) — the ground's half of the landed
+        // cost. The kernel owns the decision (`localSupplyDisplaces`); the
+        // host owns only the two things the kernel cannot see: which record is
+        // this town's field, and which lanes it parked last time.
+        localSupplyPerDay: (a) => localFieldSupply(session, a.barter?.takeGood ?? ""),
+        displaced: (a) => session.displacedLanes.has(a.id),
       },
     );
     for (const r of reports) {
+      // ⚖️ The hysteresis bit, written off the REPORT rather than inside the
+      // predicate: every due leg answers displaced-or-not, so any other status
+      // is the lane un-displacing itself.
+      if (r.status === "displaced") session.displacedLanes.add(r.id);
+      else session.displacedLanes.delete(r.id);
       // ⏸️ The executor's outbound leg CREDITED THEIR SHELF (transferStock us →
       // them). The second of the two events that move a partner's stock.
       if (Object.values(r.sent).some((n) => n > 0)) bumpPartnerStockEpoch(session);
@@ -29905,7 +30289,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // town we are not running, and `abstractPartnerStack` can only return
       // what was shipped into it.
       for (const [good, n] of Object.entries(r.received)) {
-        creditImport(session, good, n);
+        creditImport(session, good, n, "barter");
         if (them?.books) debitDelivery(them.books.town, them.books.eco, good, n);
       }
       renderBarterLeg(session, r);
@@ -29933,7 +30317,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function parkAgreement(
     session: QuestSession,
     a: TransferAgreement,
-    why: BarterRefusal | "short",
+    why: BarterStall,
     partner: TradePartner | null,
     us: BarterSignals,
     now: number,
@@ -29954,7 +30338,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // than a closed form — sampling the partner's season forward would answer
     // a question nobody asked. The epoch + backstop carry them, exactly as
     // they carry a real neighbour's refusal.
-    if (atDay && why !== "short" && why !== "we-wont-part") {
+    // ⚖️ Stage C: `displaced` joins them. It is a statement about OUR OWN
+    // GROUND — a stand's climb, a felled orchard — and the partner's closed
+    // form knows nothing about that, so sampling their season forward would
+    // answer a question nobody asked. The stock epochs + backstop carry it.
+    if (atDay && why !== "short" && why !== "we-wont-part" && why !== "displaced") {
       const day =
         why === "wont-part"
           ? nextShortageBelow(atDay, b.takeGood, BARTER_FAMINE_MAX, fromDay)
@@ -29966,9 +30354,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       why:
         why === "short"
           ? "our own yard is short of the give-goods"
-          : why === "we-wont-part"
-            ? `our own famine: we won't part with ${b.giveGood}`
-            : `partner refused: ${why}`,
+          : why === "displaced"
+            ? `${b.takeGood} grows here now — the lane is not needed`
+            : why === "we-wont-part"
+              ? `our own famine: we won't part with ${b.giveGood}`
+              : `partner refused: ${why}`,
       now,
       staleAfterS: BARTER_RETRY_SEC,
       ...(dueAt > now ? { dueAt } : {}),
@@ -30001,6 +30391,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // re-derived terms outgrew the stock) — paused visibly, once per edge.
       if (r.newlySuspended) {
         presenter.toast(`⏸ caravan to ${r.partnerKey} waits — not enough in the yard`, "feedback");
+      }
+      return;
+    }
+    if (r.status === "displaced") {
+      // ⚖️ THE FADE (Stage C) — the arc's last beat, said once. Edge-gated on
+      // the DISPLACEMENT edge (barter.ts sets `newlySuspended` off the lane's
+      // own prior state, not the shared pause bit), so a lane that was already
+      // paused for a famine still gets to announce why it will not be coming
+      // back — and a lane displaced for a hundred days says it once.
+      if (r.newlySuspended) {
+        const head = stackHead(session.transfers.get(r.id)?.barter?.takeGood ?? "");
+        if (head) presenter.toast(`🧺 ${head} grows here now — the caravan rests`, "feedback");
       }
       return;
     }
@@ -30402,7 +30804,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const got = t.town.scalar(fill.got);
     const bank = driftBankOf(session, good);
     const fed = bank > 0 ? Math.min(bank, Math.max(0, need - got)) : 0;
-    return booksShortage(need, got, fed, exportOwedBooks(session, good));
+    // ⚖️ IMPORT-DISPLACEMENT (Stage B) — AND THE TOWN'S OWN GROUND FEEDS IT.
+    // The `fed` seat is where supply the compiled books never metabolized
+    // enters, and a sown orchard is exactly that: a flow, in the same book
+    // units per day, arriving without a caravan. It rides the seat rather than
+    // `got` because `got` is the books' own reading and this is not theirs —
+    // and it is a RATE, not a bank, so `stepDriftDrain` has nothing to spend.
+    // This is the term that makes an import fade: local supply shrinks the
+    // shortage, the shortage is the caravan's whole bid, and the cargo re-ranks
+    // itself away from a good the town now grows.
+    return booksShortage(need, got, fed + localDailyBooks(session, good),
+      exportOwedBooks(session, good));
   }
 
   /**
@@ -30426,7 +30838,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!fill) return 0;
     const need = t.town.scalar(fill.need) + exportOwedBooks(session, good);
     if (need <= 0) return 0;
-    return Math.max(0, (t.town.scalar(fill.got) - need) / need);
+    // ⚖️ Stage B's MIRROR of the shortage twin's local credit: production is
+    // production whichever side of the balance it lands on, so a town whose
+    // orchard covers its own draw reads a real surplus and can grow on it. The
+    // bank is still excluded (a stock, not income) — one term added, in the
+    // same book units, through the same `localDailyBooks`.
+    const got = t.town.scalar(fill.got) + localDailyBooks(session, good);
+    return Math.max(0, (got - need) / need);
   }
 
   /** Souls a household counts (HOUSEHOLD minus a mode-"all" family's

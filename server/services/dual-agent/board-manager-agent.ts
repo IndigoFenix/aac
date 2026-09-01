@@ -64,6 +64,7 @@ import {
 import { parseBoardButtons, parseStructuredBoardButton, parseStructuredButtonsExpanding, glyphStringToJson, serializeInputGlyphs } from "./interactive-agent";
 import { T } from "../memory-schema/canonical-terms";
 import { MORE_OPTIONS_ICON } from "@shared/button-color";
+import { isValidSuggestionKey } from "@shared/guessing-mode/suggestion-registry.js";
 import { flowInput, flowTool, flowNote } from "./agent-flow-logger";
 import {
   buildFusionMap,
@@ -119,6 +120,27 @@ function extractSpecialButtonType(input: unknown): SpecialButtonType | null {
   return raw as SpecialButtonType;
 }
 
+/** The Word Finder seed the AI attached, as a `suggestion:<dim>:<value>` key.
+ *  Anything that isn't a valid key is dropped rather than passed on — a bad
+ *  seed would send the engine somewhere the child never asked to go, which is
+ *  worse than the generic opening menu. Accepts either spelling of the arg. */
+function extractGuessingSeed(input: unknown): string | undefined {
+  const o = (input ?? {}) as { seed?: unknown; guessing_seed?: unknown; guessingSeed?: unknown };
+  const raw = o.seed ?? o.guessing_seed ?? o.guessingSeed;
+  if (typeof raw !== "string") return undefined;
+  const key = raw.trim();
+  return isValidSuggestionKey(key) ? key : undefined;
+}
+
+/** Whether a `button_type: "wordfinder"` entry carries WORDING OF ITS OWN.
+ *  A bare marker keeps the canonical magnifier; a labelled one is the AI
+ *  naming the search in the child's own terms ("I'm afraid of…"), which is
+ *  the whole point of letting it choose. */
+function hasOwnWording(input: unknown): boolean {
+  const label = (input as { label?: unknown } | null)?.label;
+  return typeof label === "string" && label.trim().length > 0;
+}
+
 /** Build the canonical shape for a special button. Server-side fields are
  *  placeholders the client overrides at render time using i18n + fixed
  *  styling; we still set them so logs / merge-dedupe / accessibility have
@@ -147,17 +169,44 @@ function buildSpecialButton(kind: SpecialButtonType): ReturnType<typeof parseBoa
 }
 
 /**
+ * A `button_type: "wordfinder"` entry that carries its own label. Parsed as an
+ * ORDINARY button — so it earns the whole icon pipeline (emoji, imageKey,
+ * generated symbol) exactly like any other — and then stamped back into a meta
+ * button: the fixed `sentence`, the `buttonType` that paints it purple and
+ * routes the press, and the optional search seed.
+ *
+ * `sentence` stays "wordfinder" and never becomes the label: the press is a
+ * mode change, not an utterance, and voicing it would have the device announce
+ * "I'm afraid of…" on the child's behalf without her having finished the
+ * thought. Returns null when the label parses to nothing, so the caller can
+ * fall back to the canonical magnifier rather than emit a blank button.
+ */
+function parseLabelledWordFinder(input: unknown): ReturnType<typeof parseBoardButtons>[number] | null {
+  const parsed = parseStructuredBoardButton(input);
+  if (!parsed) return null;
+  return Object.assign(parsed, {
+    sentence: "wordfinder",
+    buttonType: "wordfinder" as any,
+    guessingSeed: extractGuessingSeed(input),
+  });
+}
+
+/**
  * Parse one structured button object from the AI's tool args.
  *
- *  - When `button_type` is set to a known special kind (wordfinder / more),
- *    short-circuit and emit the canonical fixed shape — the AI's speech /
- *    sentence / label are discarded for these meta buttons.
+ *  - `button_type: "more"`, or a BARE `wordfinder`, short-circuits to the
+ *    canonical fixed shape.
+ *  - A `wordfinder` WITH a label keeps that label and icon (see
+ *    `parseLabelledWordFinder`).
  *  - Otherwise route to `parseStructuredBoardButton` which reads the
  *    structured fields directly (no pipe round-trip, no comma-fragmentation
  *    risk).
  */
 function parseStructuredButton(input: unknown): ReturnType<typeof parseBoardButtons>[number] | null {
   const kind = extractSpecialButtonType(input);
+  if (kind === "wordfinder" && hasOwnWording(input)) {
+    return parseLabelledWordFinder(input) ?? buildSpecialButton(kind);
+  }
   if (kind) return buildSpecialButton(kind);
   return parseStructuredBoardButton(input);
 }
@@ -646,6 +695,9 @@ function parseToolCall(
       const parsed: ReturnType<typeof parseBoardButtons> = Array.isArray(arr)
         ? arr.flatMap(item => {
             const kind = extractSpecialButtonType(item);
+            if (kind === "wordfinder" && hasOwnWording(item)) {
+              return [parseLabelledWordFinder(item) ?? buildSpecialButton(kind)];
+            }
             if (kind) return [buildSpecialButton(kind)];
             // Carry the AI's conversational role + group-chat addressee onto
             // each parsed button.
@@ -670,6 +722,7 @@ function parseToolCall(
         addressee: (b as { addressee?: string }).addressee,
         open: (b as { open?: BoardButtonOpen }).open,
         buttonType: b.buttonType,
+        guessingSeed: (b as { guessingSeed?: string }).guessingSeed,
         narrowDimension: b.narrowDimension,
         narrowValue: b.narrowValue,
       }));

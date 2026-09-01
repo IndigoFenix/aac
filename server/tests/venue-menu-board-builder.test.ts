@@ -50,34 +50,22 @@ describe("buildVenueMenuBoard — what does and does not become a button", () =>
     expect(itemButtons(board!.pages).some((b) => b.label.includes("רוטב שום"))).toBe(true);
   });
 
-  it("makes a filtered item ABSENT rather than disabled", () => {
-    // §3.3: a nonverbal student cannot be asked to interpret a greyed button,
-    // and a visible-but-dead item invites the very press we are preventing.
+  it("shows every dish — allergen filtering is OUT of the serving path", () => {
+    // Daniel's decision, 2026-09-01: the string-matching filter was more
+    // trouble than it was worth — the pipeline suite caught it erasing whole
+    // categories on a term collision (פסטו→פסטות), and it could not inspect
+    // bare names anyway. The menu shows what the restaurant serves; allergen
+    // safety is the companion's conversation at the table, later the AI pass
+    // or ask-the-waiter buttons. Pinned so the filter cannot quietly return.
     const { board, stats } = buildVenueMenuBoard({
       venueName: "T",
-      items: [item({ name: "Almond Croissant" }), item({ name: "Orange Juice", kind: "drink" })],
+      items: [item({ name: "Almond Croissant" }), item({ name: "Peanut Soup" })],
       settings: SETTINGS,
-      allergies: ["nut allergy"],
     });
 
     const buttons = itemButtons(board!.pages);
-    expect(buttons).toHaveLength(1);
-    expect(buttons[0].label).toBe("Orange Juice");
-    expect(stats.removedByAllergy).toHaveLength(1);
-    // No disabled/hidden survivor anywhere on the board.
-    expect(allButtons(board!.pages).some((b) => b.label.includes("Almond"))).toBe(false);
-  });
-
-  it("returns null when nothing orderable survives", () => {
-    // A real outcome, not an error — the caller falls back to the floor board,
-    // and eight words beats an empty grid.
-    const { board } = buildVenueMenuBoard({
-      venueName: "T",
-      items: [item({ name: "Peanut Soup" })],
-      settings: SETTINGS,
-      allergies: ["peanuts"],
-    });
-    expect(board).toBeNull();
+    expect(buttons.map((b) => b.label)).toEqual(["Almond Croissant", "Peanut Soup"]);
+    expect(stats.removedByAllergy).toHaveLength(0);
   });
 
   it("returns null for a menu that was nothing but notices", () => {
@@ -311,17 +299,11 @@ describe("buildVenueMenuBoard — categories", () => {
 });
 
 describe("buildVenueMenuBoard — reading mode", () => {
-  it("opens in reading mode by default", () => {
+  it("never opens in reading mode — the menu is live from the first press", () => {
+    // Daniel, 2026-09-01: the "Start ordering" unlock was small enough to
+    // miss, and until it was pressed every dish button was silent — a board
+    // that looks pressable and is not. Removed; every press speaks.
     const { board } = buildVenueMenuBoard({ venueName: "T", items: MENU, settings: SETTINGS });
-    expect(board!.openInReadingMode).toBe(true);
-  });
-
-  it("omits the flag when the setting is off", () => {
-    const { board } = buildVenueMenuBoard({
-      venueName: "T",
-      items: MENU,
-      settings: { ...SETTINGS, readingModeDefault: false },
-    });
     expect(board!.openInReadingMode).toBeUndefined();
   });
 });

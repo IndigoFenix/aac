@@ -11,6 +11,7 @@ The project uses ES Modules, don't use __dirname
 
 Further docs available in ai-docs. Check the relevant document before working on a project.
 ai-docs/main.md - The Clinician and AAC systems
+ai-docs/db-access.md - Reaching the staging/production databases (SSM tunnel, Secrets Manager, TLS shape, safety rules) — read BEFORE any live-DB work
 
 We are also making games, which are largely separate from the main part of the system, though they are designed to interact with the AI. Before working on a game, check that game's instructions folder.
 

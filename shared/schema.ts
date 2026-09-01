@@ -1435,7 +1435,7 @@ export interface BoardButtonAction {
   appData?: string;
   /**
    * For "open_board" actions: the KEY of a pre-built board to load on press
-   * (the same snake_case key the Board Manager passes to set_board). Distinct
+   * (the same key the Board Manager passes to set_board). Distinct
    * from `toBoardId`, which is a stored board ID used for board-to-board links
    * inside the prebuilt browser: the AAC dynamic path asks the SERVER to load
    * the board by key, so the session state (loaded board, prompt context)
@@ -1695,6 +1695,19 @@ export interface BoardButton {
    * the guessing-mode narrowing state (see shared/guessing-mode).
    */
   suggestionKey?: string;
+  /**
+   * For `buttonType: "wordfinder"` only — where the search should START, as a
+   * `suggestion:<dim>:<value>` key (the same grammar the narrowing buttons
+   * use). Pressed, it is applied to a fresh engine before the first narrowing
+   * board is built, so "I'm afraid of…" opens ON the fear question instead of
+   * the generic "what kind of thing are you looking for?" menu.
+   *
+   * Optional. Without it the button behaves exactly as it always has: the
+   * coordinator falls back to the LLM seeder, which infers a category from the
+   * AI's last question. With it, that call is skipped — the AI that wrote the
+   * button already knew the answer.
+   */
+  guessingSeed?: string;
   /**
    * For `buttonType: "narrow"` only — the AI-proposed narrowing dimension
    * label (e.g. "genre"). Press handler routes this through

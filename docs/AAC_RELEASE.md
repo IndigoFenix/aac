@@ -72,6 +72,37 @@ five minutes, so a fresh publish shows up within that window.
 
 The iPad `.ipa` publishes separately — see [`IPAD_BUILD.md`](./IPAD_BUILD.md).
 
+## Starting with the device
+
+A dedicated AAC machine can bring the board up on its own. The switch is
+per-student, in the clinician panel: **AAC Settings → Device → "Start when the
+device starts"** (`aac_settings.launch_on_boot`).
+
+How it works: the setting is stored per student, but the thing it controls is
+per-DEVICE. The desktop shell mirrors it into the Windows login item every time
+it loads a profile (`client-aac/src/hooks/useLaunchOnBoot.ts` →
+`auto-launch:set` → `app.setLoginItemSettings` in `electron/main.ts`), so a
+machine ends up holding the choice of whoever last used it. On a dedicated
+device — what this is for — that is exactly right.
+
+**Provisioning a device that must come up unattended.** A login item runs at
+Windows **sign-in**, not at power-on, so a machine that stops at the lock screen
+starts the app only once someone signs in. For a device that has to reach the
+board with nobody at the keyboard, also set its Windows account to sign in
+automatically (`netplwiz`, or Sysinternals Autologon). That is a step on the
+device; an app may not do it to a machine, so the settings panel says so rather
+than pretending otherwise.
+
+Two consequences of the per-env identity above: each install registers its OWN
+login item (a staging and a prod build on one machine both autostart, and both
+are separate entries), and the entry names an executable PATH — which is why the
+shell rewrites it on every profile load, so an entry left behind by an install
+at a different location repairs itself.
+
+Not available on iPad: iPadOS has no autostart at any privilege level. An iPad
+that is only ever the AAC app is Guided Access or an MDM single-app-mode
+profile, configured on the iPad.
+
 ## CI
 
 - **Production** — [`release-aac.yml`](../.github/workflows/release-aac.yml).

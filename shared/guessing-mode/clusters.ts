@@ -190,7 +190,18 @@ export const BODY_PART_CLUSTER: ClusterTemplate = {
 
 /**
  * `feeling` — top-level Feelings, and reusable for "how does it feel about it?".
- * `hurt` opens the body_part + pain_scale follow-ups.
+ * `hurt` opens the body_part + pain_scale follow-ups; `afraid`/`anxious` open
+ * the fear_object one.
+ *
+ * ⚖️ NAMING A FEELING IS NOT THE END OF THE SENTENCE. Every branch here exists
+ * because the feeling alone leaves the listener unable to act: "hurt" earns
+ * "where?" and "how much?", and fear earns "of what?" for the same reason. A
+ * child who can only reach the word has said the least useful half of it.
+ *
+ * Prod 2026-08-30 (three sessions, one child, one day): she pressed "I'm still
+ * scared" twenty-six times across ninety minutes and composed "why am I
+ * afraid?" from a `why?` button — while `afraid` was a leaf with nothing after
+ * it. Her mother asked "ממה את מפחדת?" out loud; the board never could.
  */
 export const FEELING_CLUSTER: ClusterTemplate = {
   name: "feeling",
@@ -238,6 +249,33 @@ export const FEELING_CLUSTER: ClusterTemplate = {
       values: ["a_little", "medium", "a_lot"],
       appliesWhenLocal: { dim: "named", valueIn: ["hurt"] },
       subquestionLabel: "how much it hurts",
+    },
+    {
+      local: "fear_object",
+      cluster: "fear_object",
+      type: "categorical",
+      role: "steering",
+      // Above VALENCE's 9, which is the only thing that would otherwise win
+      // here. Valence is the cluster's opening cleaver ("good or bad?") and
+      // ranks highest so it gets asked first — but this dimension does not
+      // exist until `named` is settled, and a named feeling has already
+      // answered it. Ranking under valence means the engine responds to "I'm
+      // scared" by asking whether that is a good feeling: a turn spent, and
+      // nothing learned, which is the exact shape of the failure the branch
+      // was added for. (`where_hurts` sits at 7 and loses that race today —
+      // the same redundancy, left alone here rather than changed unasked.)
+      priority: 10,
+      // Page 1 (MAX_SUGGESTION_VALUES = 6) is the everyday six. The tail —
+      // reached with "More" — carries the causes a child cannot volunteer but
+      // can recognise: a medical one, an anticipatory one, and the honest
+      // "I don't know", which is a real answer to this question and must be
+      // sayable rather than a dead end.
+      values: [
+        "the_dark", "being_alone", "a_noise", "a_person", "a_place", "a_dream",
+        "the_doctor", "feeling_sick", "something_happening", "dont_know",
+      ],
+      appliesWhenLocal: { dim: "named", valueIn: ["afraid", "anxious"] },
+      subquestionLabel: "what the fear is about",
     },
     {
       local: "intensity",

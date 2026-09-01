@@ -16,6 +16,20 @@
 // the ECS `hipaa` profile there are 2–10 identical tasks, and a setInterval
 // fires once PER TASK. The lock makes exactly one of them do the work; the
 // others log a skip and try again next tick.
+//
+// Within ONE task the crons must never overlap. cron-lock.ts holds a pool
+// client for a cron's whole body, and the body's own queries need another;
+// the pool is `max: 3`. On 2026-09-01 every cron's periodic tick fired in the
+// same millisecond — the intervals were all armed in one loop at boot, so at
+// boot+24h the five daily crons AND both hourly ones (24h is a multiple of
+// 1h) came due together. Seven lock clients against three slots: the pool
+// deadlocked, and with no checkout timeout every DB-touching request in the
+// app hung forever, silently, behind a green /health. Two guards now:
+//   • every run goes through ONE serial queue (createSerialQueue), so at
+//     most one lock client is held per task, ever;
+//   • each cron's interval is armed from its OWN first run (armCron), so the
+//     periodic ticks inherit the boot stagger instead of converging.
+// server/tests/maintenance-crons-scheduling.test.ts pins both.
 
 import { withCronLock } from "./cron-lock";
 import { runMinorThresholdCheck, runConsentAuthorityReviewCheck } from "./consent/consentThresholdCron";
@@ -134,9 +148,51 @@ const CRONS: MaintenanceCron[] = [
   },
 ];
 
+/**
+ * One-at-a-time executor. Each call waits for every earlier call to settle
+ * (a rejection does not poison the chain) before its own `fn` starts.
+ */
+export function createSerialQueue(): <T>(fn: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = tail.then(fn, fn);
+    tail = next.catch(() => undefined);
+    return next;
+  };
+}
+
+export interface CronTimers {
+  setTimeout: (fn: () => void, ms: number) => NodeJS.Timeout;
+  setInterval: (fn: () => void, ms: number) => NodeJS.Timeout;
+}
+
+/**
+ * Arm one cron: first run after `initialDelayMs`, then every `intervalMs`
+ * counted FROM that first run — not from boot — so crons armed together stay
+ * as far apart forever as their initial delays put them.
+ */
+export function armCron(
+  cron: Pick<MaintenanceCron, "initialDelayMs" | "intervalMs">,
+  run: (label: string) => void,
+  timers: CronTimers = { setTimeout, setInterval },
+  /** Every handle lands here — the interval only exists after the first run, so
+   *  a returned array would miss it. */
+  sink: NodeJS.Timeout[] = [],
+): NodeJS.Timeout[] {
+  sink.push(
+    timers.setTimeout(() => {
+      run("initial");
+      sink.push(timers.setInterval(() => run("scheduled"), cron.intervalMs ?? ONE_DAY_MS));
+    }, cron.initialDelayMs),
+  );
+  return sink;
+}
+
+const cronQueue = createSerialQueue();
+
 async function runOne(cron: MaintenanceCron, label: string): Promise<void> {
   try {
-    const { ran, result } = await withCronLock(cron.name, cron.run);
+    const { ran, result } = await cronQueue(() => withCronLock(cron.name, cron.run));
     if (!ran) {
       console.log(`[maintenanceCrons] ${cron.name}: ${label} run skipped — another task holds the lock`);
       return;
@@ -162,10 +218,7 @@ export function scheduleMaintenanceCrons(): void {
   armed = true;
 
   for (const cron of CRONS) {
-    timers.push(setTimeout(() => void runOne(cron, "initial"), cron.initialDelayMs));
-    timers.push(
-      setInterval(() => void runOne(cron, "scheduled"), cron.intervalMs ?? ONE_DAY_MS),
-    );
+    armCron(cron, (label) => void runOne(cron, label), undefined, timers);
   }
   console.log(`[maintenanceCrons] armed ${CRONS.length} crons: ${CRONS.map((c) => c.name).join(", ")}`);
 }

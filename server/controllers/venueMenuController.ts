@@ -440,6 +440,9 @@ class VenueMenuController {
           hasAllergies: allergies.length > 0,
           requireReviewWithAllergies: settings.requireReviewWithAllergies,
         }),
+        // Same rule as the background warm: under the "never" policy, doubt
+        // is recorded but does not gate — see resolveCacheStatus.
+        gateDoubt: settings.requireReview !== "never",
         ...(student.primaryLanguage ? { targetLanguage: student.primaryLanguage } : {}),
       });
 

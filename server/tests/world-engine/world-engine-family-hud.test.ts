@@ -83,7 +83,11 @@ describe("family HUD — state → glyph resolution (every icon through the symb
       ["lonely", "lonely"],
       ["dirty", "dirty"],
       ["tidying", "clean"],
-      ["away", "walk"],
+      // `go`, not `walk` — walk left the registry 2026-08-20 as a synonym of
+      // go, which still wears its artwork. The second assertion below is the
+      // one that caught it: an unregistered key here does not throw, it
+      // silently falls back to the entry's emoji and the chip loses its art.
+      ["away", "go"],
     ] as const) {
       const { emoji } = familyStateOf(sig({})); // emoji unused for mapped states
       expect(familyStateGlyph(state, emoji)).toBe(key);

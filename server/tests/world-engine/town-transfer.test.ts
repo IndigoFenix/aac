@@ -535,3 +535,69 @@ describe("player surface — give/bring compile to transfers' shapes", () => {
     expect(goalIntentLine(toMara, syms)!.b).toBe("give + apple + to + mara");
   });
 });
+
+// ── FIRST-ARRIVAL EVIDENCE (resource-access round Stage 3, 2026-09-01) ──────
+// The durable flow memory the user's seed-availability ruling derives from:
+// "a place may plant a species only once the good has landed there —
+// derivable from flow memory, NEVER a new list". It joins the ledger's OWN
+// serialized record family (a sibling array beside `agreements`, which is the
+// one durable per-good record the town already kept forever) and it is
+// EDGE-TRIGGERED on the state books' "trade-open" precedent: the opening is
+// recorded once, the rate is never accumulated. These pins are the bound.
+describe("first-arrival evidence — the edge, and only the edge", () => {
+  it("appends on the first landing and never again — the good is the key, the lane is colour", () => {
+    const led = createTransferLedger();
+    expect(led.everArrived("apple")).toBe(false);
+    expect(led.noteArrival("apple", "caravan", 3)).toBe(true);
+    expect(led.arrivals()).toEqual([{ kind: "first-arrival", good: "apple", via: "caravan", day: 3 }]);
+    expect(led.everArrived("apple")).toBe(true);
+    // The SAME good again — same lane, other lane, later day: no second row.
+    expect(led.noteArrival("apple", "caravan", 4)).toBe(false);
+    expect(led.noteArrival("apple", "barter", 90)).toBe(false);
+    expect(led.arrivals()).toHaveLength(1);
+    // A DIFFERENT good opens its own row, in landing order.
+    expect(led.noteArrival("cookie", "barter", 5)).toBe(true);
+    expect(led.arrivals().map((r) => r.good)).toEqual(["apple", "cookie"]);
+  });
+
+  it("is BOUNDED — N landings of one good are one row (the ledger cannot grow with traffic)", () => {
+    const led = createTransferLedger();
+    for (let day = 0; day < 500; day++) led.noteArrival("banana", day % 2 ? "caravan" : "barter", day);
+    expect(led.arrivals()).toHaveLength(1);
+    expect(led.arrivals()[0]).toEqual({ kind: "first-arrival", good: "banana", via: "barter", day: 0 });
+  });
+
+  it("head-matches like every other stack read — a facted variant is still the good", () => {
+    const led = createTransferLedger();
+    expect(led.noteArrival("wood.wet", "caravan", 1)).toBe(true);
+    expect(led.arrivals()[0]!.good).toBe("wood"); // the HEAD is what is recorded
+    expect(led.everArrived("wood")).toBe(true);
+    expect(led.noteArrival("wood", "barter", 2)).toBe(false);
+  });
+
+  it("round-trips through the ledger's own serialize/restore, and stays deduped after", () => {
+    const led = createTransferLedger();
+    led.noteArrival("apple", "caravan", 3);
+    led.noteArrival("cookie", "barter", 5);
+    const json = JSON.parse(JSON.stringify(led.toJSON())) as ReturnType<typeof led.toJSON>;
+    const back = createTransferLedger(json);
+    expect(back.arrivals()).toEqual(led.arrivals());
+    expect(back.everArrived("apple")).toBe(true);
+    expect(back.noteArrival("apple", "barter", 40)).toBe(false); // the edge stays spent
+    expect(back.toJSON()).toEqual(led.toJSON());
+    // Deep-copied on load: the restored rows are not the JSON's rows.
+    expect(back.arrivals()[0]).not.toBe(json.arrivals![0]);
+  });
+
+  it("a ledger nothing ever landed in emits NO `arrivals` key — every older save is byte-identical", () => {
+    const led = createTransferLedger();
+    expect(led.arrivals()).toEqual([]);
+    expect(Object.keys(led.toJSON())).toEqual(["serial", "agreements"]);
+    expect("arrivals" in led.toJSON()).toBe(false);
+    // …and the agreement views never see an arrival row: they are siblings.
+    led.noteArrival("apple", "caravan", 1);
+    expect(led.all()).toEqual([]);
+    expect(led.active()).toEqual([]);
+    expect(led.due(1e9)).toEqual([]);
+  });
+});

@@ -28,6 +28,42 @@ describe("buildMonitorSystemPrompt — cache-stable Monitor prompt", () => {
     expect(p).toContain("Do NOT view the same path twice");
   });
 
+  // ── the repeated-message rules ────────────────────────────────────────
+  //
+  // Prod 2026-08-30. A child in post-hospitalization anxiety pressed "I'm
+  // still scared" twenty-six times across ninety minutes. The Monitor read the
+  // distress correctly and injected, verbatim: "DO NOT push AAC engagement…",
+  // "Offer ONLY comfort-focused sentence buttons", "respond with validation
+  // and warmth, not engagement questions". All prohibition, no next step — so
+  // the board kept offering her the same four words and nobody, human or
+  // machine, ever asked what she was afraid of.
+  //
+  // The section it should have reached for was gated on intent being UNCLEAR.
+  // Hers was perfectly clear; it was simply unanswered, and that had no rule.
+
+  it("covers a CLEAR message that keeps coming back, not just an unclear one", () => {
+    const p = buildMonitorSystemPrompt(student);
+    expect(p).toContain("Repeated or Unclear User Communication");
+    expect(p).toMatch(/CLEAR message repeated across the session/);
+    // The corrective has to be an ACTION. "Acknowledge it again" is what the
+    // Monitor already produces on its own.
+    expect(p).toMatch(/Name the next question in that thread/);
+  });
+
+  it("tells it that a restriction still owes the agent something to ask", () => {
+    const p = buildMonitorSystemPrompt(student);
+    expect(p).toMatch(/Following the user's own subject is never "changing the subject"/);
+    expect(p).toMatch(/still say what it should ASK/);
+  });
+
+  it("keeps both rules short — the Monitor prompt is cached whole, every turn", () => {
+    const p = buildMonitorSystemPrompt(student);
+    const added = p.split("\n").filter((l) =>
+      l.includes("CLEAR message repeated") || l.includes("Following the user's own subject"));
+    expect(added).toHaveLength(2);
+    for (const line of added) expect(line.length).toBeLessThan(320);
+  });
+
   it("is byte-identical across builds with the same inputs (no clock, no per-call state)", () => {
     const boards = [{ id: "b1", name: "Meals", hint: "mealtime", isGenerated: true }];
     const a = buildMonitorSystemPrompt(student, "muted", boards);

@@ -85,7 +85,7 @@ audit_log_retention_days   = 180
 # alerts and customer replies should be re-pointable independently. For now both
 # land in the same mailbox because there is one person reading mail.
 # Re-point this (not email_reply_to) the moment there is a security rota.
-alert_email = "cs@aivota.ai"
+alert_email = "alerts@aivota.ai"
 
 # =============================================================================
 # Operational access (SSM)

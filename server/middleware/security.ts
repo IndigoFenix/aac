@@ -213,7 +213,16 @@ export function applyCorsPolicy(app: Express): void {
         }
       }
 
-      cb(new Error(`CORS: origin ${origin} not allowed`));
+      // A disallowed origin is a CLIENT error, not a server fault. With no
+      // explicit status the error handlers default to 500, so every internet
+      // scanner that hits the load balancer by its raw IP (whose Origin can
+      // never match the allowlist) counted toward the `aivota-prod-alb-5xx`
+      // CloudWatch alarm — 4.3k scanner requests tripped it on 2026-09-01,
+      // and every 5xx on the service that week was this line. 403 rejects
+      // just as hard while leaving 5xx to mean "we broke".
+      const err = new Error(`CORS: origin ${origin} not allowed`) as Error & { status: number };
+      err.status = 403;
+      cb(err);
     }),
   );
 }

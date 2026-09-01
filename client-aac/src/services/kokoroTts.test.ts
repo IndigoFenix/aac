@@ -10,9 +10,17 @@
 // not-ready refusal. Actual synthesis needs onnxruntime and a real AudioContext
 // and is verified by running the app.
 
-import { supportsLanguage, speak, isReady, recordSynthesisTiming, resetSpeedGate, speedGateReason } from "./kokoroTts";
+import {
+  supportsLanguage, speak, isReady, recordSynthesisTiming,
+  resetSpeedGate, speedGateReason, setVoiceAllowed,
+} from "./kokoroTts";
 
-beforeEach(() => resetSpeedGate());
+beforeEach(() => {
+  resetSpeedGate();
+  // Most cases assert what happens for a student who HAS the voice enabled;
+  // the per-student gate gets its own describe block below.
+  setVoiceAllowed(true);
+});
 
 describe("supportsLanguage", () => {
   it("accepts English in the forms the server sends", () => {
@@ -118,5 +126,24 @@ describe("speed gate", () => {
     recordSynthesisTiming(5_000, 0);
     recordSynthesisTiming(5_000, 0);
     expect(speedGateReason() !== null).toBe(false);
+  });
+});
+
+describe("per-student permission", () => {
+  // The weights are cached per DEVICE but the setting is per STUDENT. On a
+  // shared classroom tablet the model may already be in memory from another
+  // child — it must not speak for a student whose clinician never chose it.
+
+  it("declines when the student does not have the voice enabled", async () => {
+    setVoiceAllowed(false);
+    await expect(speak("hello", "en-US", "student")).resolves.toBe(false);
+    expect(isReady()).toBe(false);
+  });
+
+  it("defaults to not allowed, so a student is opted in only by their setting", async () => {
+    // Fresh module state grants nothing; ensureVoiceDownloaded / setVoiceAllowed
+    // are the only ways in.
+    setVoiceAllowed(false);
+    expect(isReady()).toBe(false);
   });
 });

@@ -148,12 +148,25 @@ describe('Fake LLM provider seam', () => {
 
   describe('uninstall', () => {
     it('clears overrides so a subsequent get returns a real provider', async () => {
-      installFakeLlm();
-      const fake = getStructuredProvider('openai');
-      uninstallFakeLlm();
-      const real = getStructuredProvider('openai');
-      expect(real).not.toBe(fake);
-      expect(real.constructor.name).toContain('OpenAI');
+      // The real provider's constructor calls `new OpenAI({ apiKey })`, which
+      // THROWS on a missing key — so this test needed OPENAI_API_KEY in the
+      // environment to pass, and failed wherever there wasn't one. A dummy key
+      // satisfies the constructor; nothing here ever issues a request, and a
+      // placeholder is safer than depending on a live credential in a suite
+      // whose whole premise is "no real LLM calls".
+      const saved = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = 'sk-test-not-a-real-key';
+      try {
+        installFakeLlm();
+        const fake = getStructuredProvider('openai');
+        uninstallFakeLlm();
+        const real = getStructuredProvider('openai');
+        expect(real).not.toBe(fake);
+        expect(real.constructor.name).toContain('OpenAI');
+      } finally {
+        if (saved === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = saved;
+      }
     });
   });
 });

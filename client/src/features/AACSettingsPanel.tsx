@@ -115,6 +115,7 @@ import {
   AlertTriangle,
   MapPin,
   Lock,
+  Power,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ratioLevel, labelFontSize, labelLines } from '@shared/button-sizing';
@@ -226,6 +227,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [aiVoicePitch, setAiVoicePitch] = useState(0);
   const [studentVoicePitch, setStudentVoicePitch] = useState(0);
   const [useLocalTts, setUseLocalTts] = useState(false);
+  const [localNeuralVoice, setLocalNeuralVoice] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [languageLevel, setLanguageLevel] = useState(DEFAULT_LANGUAGE_LEVEL_INT);
   // startupMode: false = 0 (quick — cached session plan), true = 1 (thorough — regenerate every session)
@@ -252,6 +254,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [shareMonitorNotesWithInstitute, setShareMonitorNotesWithInstitute] = useState(true);
   const [autoAddContacts, setAutoAddContacts] = useState(true);
   const [deviceLocationEnabled, setDeviceLocationEnabled] = useState(false);
+  const [launchOnBoot, setLaunchOnBoot] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
   const [homeActions, setHomeActions] = useState<HomeAction[]>([]);
@@ -566,6 +569,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAiVoicePitch(aac?.aiVoicePitch ?? 0);
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
+      setLocalNeuralVoice(aac?.localNeuralVoice ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
       setThoroughStartup((aac?.startupMode ?? 0) === 1);
@@ -587,6 +591,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
       setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
+      setLaunchOnBoot(aac?.launchOnBoot ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
@@ -625,6 +630,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAiVoicePitch = aac?.aiVoicePitch ?? 0;
       const originalStudentVoicePitch = aac?.studentVoicePitch ?? 0;
       const originalUseLocalTts = aac?.useLocalTts ?? false;
+      const originalLocalNeuralVoice = aac?.localNeuralVoice ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalLanguageLevel = aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT;
       const originalThoroughStartup = (aac?.startupMode ?? 0) === 1;
@@ -646,6 +652,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalShareMonitorNotesWithInstitute = aac?.shareMonitorNotesWithInstitute ?? true;
       const originalAutoAddContacts = aac?.autoAddContacts ?? true;
       const originalDeviceLocationEnabled = aac?.deviceLocationEnabled ?? false;
+      const originalLaunchOnBoot = aac?.launchOnBoot ?? false;
       const originalAppConfig = aac?.appConfig || {};
       const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
       // Normalized on BOTH sides of this comparison (state is seeded from the same
@@ -679,6 +686,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         aiVoicePitch !== originalAiVoicePitch ||
         studentVoicePitch !== originalStudentVoicePitch ||
         useLocalTts !== originalUseLocalTts ||
+        localNeuralVoice !== originalLocalNeuralVoice ||
         iconTextRatio !== originalIconTextRatio ||
         languageLevel !== originalLanguageLevel ||
         thoroughStartup !== originalThoroughStartup ||
@@ -700,6 +708,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         shareMonitorNotesWithInstitute !== originalShareMonitorNotesWithInstitute ||
         autoAddContacts !== originalAutoAddContacts ||
         deviceLocationEnabled !== originalDeviceLocationEnabled ||
+        launchOnBoot !== originalLaunchOnBoot ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
         JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
         JSON.stringify(homeActions) !== JSON.stringify(originalHomeActions) ||
@@ -713,7 +722,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, deviceLocationEnabled, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, localNeuralVoice, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, deviceLocationEnabled, launchOnBoot, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -734,6 +743,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       aiVoicePitch?: number;
       studentVoicePitch?: number;
       useLocalTts?: boolean;
+      localNeuralVoice?: boolean;
       iconTextRatio: number;
       languageLevel: number;
       startupMode: number;
@@ -755,6 +765,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       shareMonitorNotesWithInstitute: boolean;
       autoAddContacts: boolean;
       deviceLocationEnabled: boolean;
+      launchOnBoot: boolean;
       appConfig?: Record<string, any>;
       permittedWebsites?: PermittedWebsite[];
       homeActions?: HomeAction[];
@@ -840,6 +851,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       aiVoicePitch,
       studentVoicePitch,
       useLocalTts,
+      localNeuralVoice,
       iconTextRatio,
       languageLevel,
       startupMode: thoroughStartup ? 1 : 0,
@@ -861,6 +873,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       shareMonitorNotesWithInstitute,
       autoAddContacts,
       deviceLocationEnabled,
+      launchOnBoot,
       appConfig,
       permittedWebsites,
       // Sanitized through the shared chokepoint so half-filled rows (a slot the
@@ -904,6 +917,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAiVoicePitch(aac?.aiVoicePitch ?? 0);
       setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
+      setLocalNeuralVoice(aac?.localNeuralVoice ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
       setThoroughStartup((aac?.startupMode ?? 0) === 1);
@@ -925,6 +939,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
       setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
+      setLaunchOnBoot(aac?.launchOnBoot ?? false);
       setAppConfig(aac?.appConfig || {});
       setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
       setHomeActions(normalizeHomeActions(aac?.homeActions));
@@ -1511,32 +1526,60 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
 
-                {/* Same order as the AI section. Live native audio never speaks
-                    the student's own words, so it doesn't apply here. */}
-                {renderElevenlabsVoicePicker('aacSettings.elevenlabsStudentVoiceId', elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId, studentVoicePitch)}
+                {/* DEVICE VOICE — speak on the device instead of streaming
+                    audio from a provider. Sits at the TOP of this section
+                    because it supersedes everything under it: the device voice
+                    is always available as the last resort anyway, and this
+                    makes it the student's default.
 
-                {renderGeminiVoiceRow(
-                  elevenlabsActive ? 'aacSettings.studentVoiceFallback' : 'aacSettings.studentVoice',
-                  geminiStudentVoice,
-                  effectiveGeminiStudentVoice,
-                  'g:student',
-                  (v) => { setGeminiStudentVoice(v === '_default' ? '' : v); if (v === '_default') setStudentVoicePitch(0); },
-                  studentVoicePitch,
-                )}
-
-                {geminiStudentVoice && renderPitchRow(studentVoicePitch, setStudentVoicePitch)}
-              </div>
-
-              {/* Local Browser TTS — applies to both voices */}
-              <div className="pt-4 border-t space-y-2">
+                    Student voice only, and that's mechanical rather than a
+                    preference: the AI's default backend is Gemini Live native
+                    audio, where the model produces its own speech and there is
+                    no TTS step to redirect. The student's words ALWAYS go
+                    through synthesis, so they always can be. */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-base font-medium">{t('aacSettings.localTtsTitle')}</Label>
+                    <Label className="text-sm font-medium">{t('aacSettings.localTtsTitle')}</Label>
                     <p className="text-sm text-muted-foreground">{t('aacSettings.localTtsDesc')}</p>
                   </div>
                   <Switch checked={useLocalTts} onCheckedChange={setUseLocalTts} />
                 </div>
+
+                {/* What the device voice SOUNDS like — the OS's built-in voice,
+                    or a downloaded neural one. Shown in both modes because the
+                    device voice is reachable either way (as the default when
+                    the switch above is on, as the fallback when it's off). */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">{t('aacSettings.neuralVoiceTitle')}</Label>
+                    <p className="text-sm text-muted-foreground">{t('aacSettings.neuralVoiceDesc')}</p>
+                  </div>
+                  <Switch checked={localNeuralVoice} onCheckedChange={setLocalNeuralVoice} />
+                </div>
+
+                {/* Provider voices are hidden in device-voice mode — nothing
+                    below would be used, and leaving them visible invites a
+                    clinician to tune a voice the student will never hear. */}
+                {!useLocalTts && (
+                  <>
+                    {/* Same order as the AI section. Live native audio never speaks
+                        the student's own words, so it doesn't apply here. */}
+                    {renderElevenlabsVoicePicker('aacSettings.elevenlabsStudentVoiceId', elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId, studentVoicePitch)}
+
+                    {renderGeminiVoiceRow(
+                      elevenlabsActive ? 'aacSettings.studentVoiceFallback' : 'aacSettings.studentVoice',
+                      geminiStudentVoice,
+                      effectiveGeminiStudentVoice,
+                      'g:student',
+                      (v) => { setGeminiStudentVoice(v === '_default' ? '' : v); if (v === '_default') setStudentVoicePitch(0); },
+                      studentVoicePitch,
+                    )}
+
+                    {geminiStudentVoice && renderPitchRow(studentVoicePitch, setStudentVoicePitch)}
+                  </>
+                )}
               </div>
+
             </CardContent>
           </CollapsibleSection>
 
@@ -2779,6 +2822,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     settings={venueMenus}
                     onChange={setVenueMenus}
                     student={student}
+                    // The LIVE value from this page's state, not the saved one,
+                    // so the warning clears the moment the Privacy switch above
+                    // is flipped rather than after a save-and-reload.
+                    deviceLocationEnabled={deviceLocationEnabled}
                   />
                   {student?.id && <MenuReviewCard studentId={student.id} />}
                 </CardContent>
@@ -3327,6 +3374,44 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               under Apps made them hard to find. Renders nothing without the
               packages license. */}
           {student?.id && <AACSettingsPackages studentId={student.id} />}
+
+          {/* Device — how the machine itself behaves, as opposed to what the
+              app does on it. Its own section rather than a corner of Privacy:
+              starting with the device is not a privacy decision, and this is
+              where the next device-level setting will want to live. */}
+          <CollapsibleSection
+            icon={<Power className="w-5 h-5" />}
+            title={t('aacSettings.device')}
+            description={t('aacSettings.deviceDesc')}
+          >
+            <CardContent className="space-y-4">
+              {/* Start with the device. Stored per student, applied per DEVICE:
+                  the desktop app writes it into the OS login item whenever it
+                  loads this student's profile, so the machine holds the choice
+                  of whoever last used it. Desktop only — an always-on iPad is
+                  Guided Access / MDM single-app mode, set on the iPad. */}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.launchOnBoot')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.launchOnBootDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={launchOnBoot}
+                  onCheckedChange={setLaunchOnBoot}
+                  data-testid="switch-launch-on-boot"
+                />
+              </div>
+              {launchOnBoot && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  {t('aacSettings.launchOnBootSignInNotice')}
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleSection>
 
           {/* Privacy */}
           <CollapsibleSection

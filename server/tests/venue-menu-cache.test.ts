@@ -163,6 +163,8 @@ describe("resolveCacheStatus — escalation only ever raises the bar", () => {
 
   it("never returns approved once any reason is present", () => {
     // Exhaustive over the escalating inputs: no combination may approve.
+    // (With the default gate — the review-off exemption below is the ONE
+    // deliberate exception, and it is opt-in per call.)
     const flags = [true, false];
     for (const requireReview of flags) {
       for (const extractionRequiresReview of flags) {
@@ -232,6 +234,105 @@ const BASE = {
   bindingBranchMatch: "exact" as const,
   requireReview: false,
 };
+
+describe("resolveCacheStatus — the review-off exemption (gateDoubt: false)", () => {
+  // ⚖️ The interim works-first call (2026-09-01): under the "never" policy a
+  // menu goes live on the extractor's sanity check alone. The two
+  // binding-doubt rules fire on nearly every honest web menu — a
+  // single-location restaurant fetched from its OWN site has no branch names
+  // anywhere, so its branch match is "unknown" — which made "review: never"
+  // mean "review: always" in practice. The doubt is still RECORDED; it just
+  // stops gating.
+
+  it("an unbound-branch web menu goes live, with the doubt on the record", () => {
+    const result = resolveCacheStatus({
+      requireReview: false,
+      extractionRequiresReview: false,
+      provenance: "web",
+      bindingBasis: "place_website",
+      bindingBranchMatch: "unknown",
+      existingApprovedProvenance: null,
+      gateDoubt: false,
+    });
+    expect(result.status).toBe("approved");
+    expect(result.reasons).toEqual(["unbound_branch"]);
+  });
+
+  it("a chain-level binding goes live too — recorded, not gating", () => {
+    const result = resolveCacheStatus({
+      requireReview: false,
+      extractionRequiresReview: false,
+      provenance: "web",
+      bindingBasis: "chain_fallback",
+      bindingBranchMatch: "chain",
+      existingApprovedProvenance: null,
+      gateDoubt: false,
+    });
+    expect(result.status).toBe("approved");
+    expect(result.reasons).toEqual(["chain_binding"]);
+  });
+
+  it("shaky-row confidence goes live too under review-off — recorded, not gating", () => {
+    // `extractionRequiresReview` fires when ONE row of many is below the
+    // extractor's confidence bar (page-merge: lowConfidenceCount > 0). On
+    // 2026-09-01 that parked a fully-extracted 40-row menu behind a review
+    // nobody was staffing; Daniel's ruling: found and refined means shown.
+    // (A page that was not a menu at all extracts zero items and is a
+    // failure long before this table.)
+    const result = resolveCacheStatus({
+      requireReview: false,
+      extractionRequiresReview: true,
+      provenance: "web",
+      bindingBasis: "place_website",
+      bindingBranchMatch: "unknown",
+      existingApprovedProvenance: null,
+      gateDoubt: false,
+    });
+    expect(result.status).toBe("approved");
+    expect(result.reasons).toContain("extraction_quality");
+  });
+
+  it("under the DEFAULT gate, the extractor's doubt still blocks", () => {
+    const result = resolveCacheStatus({
+      requireReview: false,
+      extractionRequiresReview: true,
+      provenance: "web",
+      bindingBasis: "place_website",
+      bindingBranchMatch: "exact",
+      existingApprovedProvenance: null,
+    });
+    expect(result.status).toBe("pending_review");
+  });
+
+  it("an explicit policy still gates — the exemption is about binding doubt only", () => {
+    const result = resolveCacheStatus({
+      requireReview: true,
+      extractionRequiresReview: false,
+      provenance: "web",
+      bindingBasis: "place_website",
+      bindingBranchMatch: "unknown",
+      existingApprovedProvenance: null,
+      gateDoubt: false,
+    });
+    expect(result.status).toBe("pending_review");
+  });
+
+  it("an approved camera menu is still protected from a silent web replacement", () => {
+    // Different promise than binding doubt: this rule protects a menu a human
+    // already trusted, so review-off does not touch it.
+    const result = resolveCacheStatus({
+      requireReview: false,
+      extractionRequiresReview: false,
+      provenance: "web",
+      bindingBasis: "place_website",
+      bindingBranchMatch: "exact",
+      existingApprovedProvenance: "camera",
+      gateDoubt: false,
+    });
+    expect(result.status).toBe("pending_review");
+    expect(result.reasons).toEqual(["camera_menu_exists"]);
+  });
+});
 
 describe("cacheMenu — refinement is what writing DOES", () => {
   it("refines before it writes", () => {

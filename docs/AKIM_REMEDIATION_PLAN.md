@@ -15,13 +15,17 @@ tracked as work here.
 | RDS server-certificate verification | §4.1 | `server/db-ssl.ts` + `server/tests/db-ssl.test.ts` |
 | CA bundle corrected to AWS **global** (was us-east-2 only, prod is il-central-1) | §4.1 | `rds-ca-bundle.pem` |
 | RDS log retention 30 → 180 days | §5.8 | `terraform/ecs-lean.tfvars` |
-| `alert_email` populated (`cs@aivota.ai`, own variable) | §6.1 | `ecs-lean.tfvars`, `hipaa.tfvars` |
+| `alert_email` populated (`alerts@aivota.ai`, own variable) | §6.1 | `ecs-lean.tfvars`, `hipaa.tfvars` |
 | Stripe + Dropbox added to the disclosed recipient list | §5.3 | `shared/legal/recipients.ts` |
 
-> Both Terraform changes apply automatically on the next merge to `main`
-> (`deploy.yml` runs `terraform apply -auto-approve`). The SNS subscription
-> e-mail goes out on that apply and needs one click to leave
-> `PendingConfirmation`.
+> Both Terraform changes applied on the 2026-08-31 merge, and the SNS
+> subscription was **confirmed the same day** — the alert pipeline
+> (alarm → SNS → `cs@aivota.ai`) is end-to-end live for the first time.
+>
+> **2026-09-01:** re-pointed to `alerts@aivota.ai`, a dedicated recipient rather
+> than an alias on an executive's mailbox. Changing the endpoint replaces the
+> SNS subscription, so the new address must confirm once before the pipeline is
+> live again.
 
 ---
 
@@ -517,7 +521,9 @@ Shipped: `scripts/dr-restore-drill.ts` (`npm run dr:drill`; `--plan` default,
 `aivota-dr-drill-<stamp>` in-region with prod's subnet/SG/parameter group (so
 `rds.force_ssl` applies to the copy), waits, tunnels via the bastion on port
 15433 (5432 is refused — `db-tunnel` owns it), checks migration head against
-`drizzle/meta/_journal.json` and row counts, measures the restore duration
+`origin/main`'s `drizzle/meta/_journal.json` (what production deploys — the
+working tree is routinely ahead on `staging`; `scripts/dr-drill-migration-head.ts`)
+and row counts, measures the restore duration
 (the empirical RTO component) and the snapshot-to-latest-row gap (observed
 RPO), tears down with `--delete-automated-backups`, and writes
 `docs/dr/drills/<date>-restore-drill.md`. Hard refusals: identifiers not
@@ -527,9 +533,14 @@ Runbook: `docs/DISASTER_RECOVERY.md` (RTO/RPO stated as **targets until a
 drill file exists**; cutover is `aivota-prod/database` → ECS force-new-deploy,
 not `app-secrets`). `docs/INFRASTRUCTURE.md` gained a pointer section.
 
-**Owed by the user:** one `--execute` run (creates a `db.t3.micro` for ~an
-hour), then commit the evidence file. Review first: the restore flag set,
-`--delete-automated-backups`, and that the bastion→RDS SG rule is SG-scoped.
+**First `--execute` run: 2026-08-31, by the user.** Mechanically clean end to
+end — restore to `available` in **8.0 minutes** (the first measured RTO
+component), tunnel, row counts, freshness, tagged teardown. One check failed,
+correctly: the 03:05 UTC automated snapshot predates the migrations the user
+applied later that morning (restored head 165/174 vs repo `0173`), so the
+drill refused to certify it. Re-run after the next automated snapshot (or
+against a fresh manual one via `--snapshot`) and commit the passing evidence
+file — a same-day re-run overwrites `docs/dr/drills/2026-08-31-*.md`.
 
 ### Track G — Terraform hardening — ✅ DONE 2026-08-30 (user cleared it; the constraint was COST, not infra)
 User ruling: every Terraform change is fine as long as it adds no billable

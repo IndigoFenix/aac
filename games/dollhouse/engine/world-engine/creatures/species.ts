@@ -30,7 +30,6 @@ import { clampBlueprint } from "./blueprint";
 import { CREATURE_EXAMPLES } from "./examples";
 import { ANIMAL_PEOPLE_BLUEPRINTS } from "./animals-people";
 import { LAB_BLUEPRINTS } from "./lab-blueprints";
-import { orchardPlants } from "../products";
 import type { ItemWords } from "../interaction/lang/core.js";
 
 /** "spark" is the PLAYER, and is deliberately not a body plan — see SPARK_SPECIES_ID. */
@@ -819,14 +818,11 @@ const CATALOGUE: ReadonlyArray<{
   // interleaved — registry order is vocabulary rank, and these are the newest
   // words, not the most-said ones.
   //
-  // SIX ARE ALSO BOARD WORDS (they carry `words`, so the [animals] chip opens
-  // them and `shared/glyph-registry.ts` gives each a picture and eleven
-  // translations). THREE ARE NOT: `raptor`, `dimetrodon` and `plesiosaur` are
-  // body plans the world can build and the lab can show, deliberately without
-  // `words` — a category tab lists its WHOLE category, and three more
-  // near-synonyms of the `dinosaur` a child already has would be three more
-  // buttons to page past for no new thing to say. Same shape as `quadruped` and
-  // `ungulate`: buildable by id, silent on the board.
+  // ALL SIX ARE BOARD WORDS: each carries `words`, so the [animals] chip opens
+  // it and `shared/glyph-registry.ts` gives it a picture and eleven
+  // translations. (Three wordless body plans — raptor, dimetrodon, plesiosaur
+  // — were briefly here too; the user removed them 2026-09-01. ONE list means
+  // an entry nobody can say does not earn a row.)
   {
     id: "beetle",
     kind: "creature",
@@ -887,10 +883,20 @@ const CATALOGUE: ReadonlyArray<{
       pt: { w: "louva-a-deus", g: "m", plw: "louva-a-deus" },
     },
   },
-  // Bodies without words — see the note above.
-  { id: "raptor", kind: "creature" },
-  { id: "dimetrodon", kind: "creature" },
-  { id: "plesiosaur", kind: "creature" },
+  // 🐻🐸🐰 BASES FOR THE ANIMAL PEOPLE. `bear`, `frog` and `rabbit` were board
+  // words with NO species row — the only reason nobody noticed is that each had
+  // a hand-authored `*_person` body standing in for it. Retiring those bodies
+  // (2026-09-01) left the `animal_people` mod with nothing to derive from, so
+  // those three characters would have vanished silently. Stubs, like every
+  // other word whose body is not drawn yet.
+  //
+  // 🚨 NO `words` HERE ON PURPOSE. `content/pools.ts` already defines all three,
+  // and a head may have exactly ONE spec word source — adding them again is the
+  // duplicate the `lexicon-spec-words` no-overlap pin exists to catch. These
+  // rows exist to be DERIVED FROM, not to say anything new.
+  { id: "bear", kind: "creature" },
+  { id: "frog", kind: "creature" },
+  { id: "rabbit", kind: "creature" },
 ];
 
 /** THE JOIN: worked example by SPECIES ID. Built once, and duplicate-checked —
@@ -1003,20 +1009,16 @@ for (const bp of LAB_BLUEPRINTS) {
     : { id, name: id, kind: "creature", blueprint: bp, bodyRadiusM: DEFAULT_BODY_RADIUS_M });
 }
 
-// ── Orchards ────────────────────────────────────────────────────────────────
-
-/** Fruit kinds towns grow in orchards. These names match glyph vocabulary
- *  (they have translations) AND double as the fruit-BODY species ids the
- *  market/ground items use, so `requireSpecies(entry.fruit)` always works. */
-export type OrchardFruit = "apple" | "banana" | "grape";
-
-/** Which plant species yields each orchard fruit kind. DERIVED from the
- *  natural-sources registry (products.ts) — the plant's harvest food product
- *  IS this mapping, so the town layer and the registry can never disagree.
- *  `species` is the plant to plant (kind "plant", bears visible fruit via
- *  its growth), `fruit` is the kind it yields. */
-export const FRUIT_TREES: ReadonlyArray<{ fruit: OrchardFruit; species: string }> =
-  orchardPlants().map((r) => ({ fruit: r.fruit as OrchardFruit, species: r.species }));
+// ⚖️ NO `FRUIT_TREES` / `OrchardFruit` HERE. There was a hand-written
+// `OrchardFruit = "apple" | "banana" | "grape"` union and a `FRUIT_TREES`
+// constant that re-derived products.ts's own answer through an unchecked
+// `as OrchardFruit` cast. It had no runtime consumer at all — only tests —
+// and the cast meant the union could go stale without anything failing to
+// compile, which is exactly what happened when `carrot_plant` joined the
+// catalogue and the engine grew a fruit tree that was neither.
+//
+// Ask the registry that owns the fact instead: `foodPlants()` in products.ts
+// is the property query, and its `species` ids resolve here.
 
 /**
  * RETIRED IDS that must still resolve. A species id is written into stored

@@ -170,10 +170,21 @@ export const DEFAULT_VENUE_MENU_SETTINGS: VenueMenuSettings = {
   studentBrowse: false,
   browseRadiusM: 1500,
   requireVenueConfirmation: true,
-  requireReview: "auto",
+  // ⚖️ "never" AS THE SHIPPED DEFAULT is an interim, deliberate call (Daniel,
+  // 2026-09-01): menus go live once the extractor's own sanity check passes,
+  // because a review queue nobody is staffing yet meant no web menu EVER
+  // reached a student. The cautious machinery is all still here — a clinician
+  // can set "always"/"web_only"/"auto" per student, `extraction_quality` still
+  // gates unconditionally, and the allergen filter at board build never
+  // depended on review. When the review workflow is real, flip this back to
+  // "auto" (whose resolution still refuses to pick "never" for any age).
+  requireReview: "never",
   maxMenuAgeDays: 30,
   showBranchDisclaimer: true,
-  requireReviewWithAllergies: true,
+  // Same interim call as requireReview above. The allergen FILTER still runs
+  // on every board build; what is off by default is only the human-eyes pass
+  // on top of it. The per-student switch remains for clinicians who want it.
+  requireReviewWithAllergies: false,
   readingModeDefault: true,
   showPrices: "auto",
   categoryPages: true,
@@ -335,6 +346,24 @@ export function resolveAutoDefaults(
  * The settings as the rest of the system should see them: normalized, with
  * every `'auto'` resolved against this student.
  */
+/**
+ * 🚨 INTERIM: menu review is OFF for everyone, whatever the saved row says.
+ *
+ * Why a FORCE and not a default: the settings panel saves the WHOLE
+ * `venueMenus` object, so every existing student's row has the old defaults
+ * baked in (`requireReview: "auto"`, `requireReviewWithAllergies: true` —
+ * verified against the live row on 2026-09-01). Changing the code defaults
+ * changed nothing for them, which is why three rounds of "review is off now"
+ * kept producing pending menus. The saved values stay untouched in the DB and
+ * the clinician UI; this pins only the RESOLVED view — flip this constant to
+ * false and every saved choice springs back.
+ *
+ * Daniel's standing ruling (2026-09-01, three times): a menu that was found
+ * and refined is SHOWN. The allergen filter is unaffected — it runs at board
+ * build and never depended on review.
+ */
+export const INTERIM_REVIEW_OFF = true;
+
 export function resolveVenueMenuSettings(
   raw: unknown,
   student: { birthDate?: string | Date | null; languageLevel?: number | null } | null | undefined,
@@ -342,6 +371,15 @@ export function resolveVenueMenuSettings(
 ): ResolvedVenueMenuSettings {
   const settings = normalizeVenueMenuSettings(raw);
   const auto = resolveAutoDefaults(student?.birthDate, student?.languageLevel, now);
+
+  if (INTERIM_REVIEW_OFF) {
+    return {
+      ...settings,
+      requireReview: "never",
+      requireReviewWithAllergies: false,
+      showPrices: settings.showPrices === "auto" ? auto.showPrices : settings.showPrices,
+    };
+  }
 
   return {
     ...settings,

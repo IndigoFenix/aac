@@ -27,9 +27,12 @@ async function withApp(
   app.get("/probe", (_req, res) => {
     res.json({ ok: true });
   });
-  // Express forwards the CORS error here.
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(500).json({ error: err.message });
+  // Express forwards the CORS error here. This mirrors the real entrypoints
+  // (index.ts / app.prod.ts / app.lambda.ts), which all derive the status from
+  // `err.status`. Hardcoding 500 here pinned the harness rather than the policy,
+  // and hid the fact that CORS rejections were being served as 5xx.
+  app.use((err: Error & { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(err.status ?? 500).json({ error: err.message });
   });
 
   const server = http.createServer(app);
@@ -123,7 +126,7 @@ describe("applyCorsPolicy", () => {
         "X-Forwarded-Proto": "https",
         Origin: "https://evil.example.com",
       });
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(403);
       expect(JSON.parse(res.body).error).toMatch(/CORS: origin https:\/\/evil\.example\.com not allowed/);
     });
   });
@@ -196,7 +199,7 @@ describe("applyCorsPolicy", () => {
         "X-Forwarded-Proto": "https",
         Origin: "capacitor://evil.example.com",
       });
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(403);
     });
   });
 
@@ -236,7 +239,7 @@ describe("applyCorsPolicy", () => {
         "X-Forwarded-Proto": "https",
         Origin: "http://127.0.0.1:5173",
       });
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(403);
     });
   });
 });

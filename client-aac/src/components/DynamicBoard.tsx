@@ -888,18 +888,28 @@ export default function DynamicBoard({
 
     // Special META buttons (wordfinder, more) — the AI sets `buttonType` on
     // a regular button in rebuild_board / add_board_button to mark it.
-    // Both render with FIXED appearance pulled from the same i18n keys
-    // and styling the quick-actions row uses, so the board-embedded
-    // variants look identical to their quick-actions twins.
+    //
+    // MORE is fixed: one visual for "show me other things I could say",
+    // identical to its quick-actions twin.
+    //
+    // WORD FINDER is not. A magnifier means "search" to an adult who has met
+    // the metaphor; to a child it is a shape. The AI may name the search in
+    // the words this child is actually reaching for — "something else",
+    // "I'm afraid of…" — and give it a fitting icon, because a labelled
+    // entry is the difference between an affordance she recognises and one
+    // she has to be taught. What does NOT vary is the purple: it is the only
+    // remaining cue that this button opens a search instead of speaking, so
+    // `resolveButtonBackground` pins it ahead of any colour (see
+    // shared/button-color.ts). A bare marker still falls back to the
+    // quick-actions wording and the magnifier.
     if (isWordFinderButton || isMoreButton) {
       const kind = isWordFinderButton ? "wordfinder" : "more";
-      const labelText = kind === "wordfinder"
+      const ownLabel = kind === "wordfinder" ? (button.label ?? "").trim() : "";
+      const labelText = ownLabel || (kind === "wordfinder"
         ? t("quickActions.guess")
-        : t("quickActions.more");
-      // The MORE button wears the SAME reload icon + teal as its quick-actions
-      // twin — one visual for "show me other things I could say", whether the
-      // AI put it on the board or it came from the fixed row.
-      const icon = kind === "wordfinder" ? "🔍" : MORE_OPTIONS_ICON;
+        : t("quickActions.more"));
+      const ownIcon = kind === "wordfinder" ? (button.glyph || (button as any).glyphFallback || "").trim() : "";
+      const icon = kind === "wordfinder" ? (ownIcon || "🔍") : MORE_OPTIONS_ICON;
       // Color normally ships from the server (resolveButtonColorToken →
       // wordfinder/more); resolving through the same shared helper covers any
       // pre-fill / cached board without restating the hexes here.

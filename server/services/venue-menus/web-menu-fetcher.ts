@@ -33,6 +33,7 @@
 import type { Venue } from "@shared/schema";
 import { checkMenuBinding, type BindingResult } from "@shared/venue-binding";
 import { fetchPageHtml, isBrightDataConfigured } from "./brightdata-client.js";
+import { discoverMenuUrls } from "./website-discovery.js";
 import { extractMenuFromText } from "./web-menu-extraction.js";
 import type { RawMenuItem } from "./menu-refinement.js";
 import type { DisclosureContext } from "../processorDisclosure";
@@ -67,10 +68,15 @@ export interface WebMenuFailure {
 /**
  * Candidate menu URLs for a venue, best first.
  *
- * ONLY derived from the place's own `websiteUri` (§4.2b: "resolve the menu URL
- * from the bound place record only"). There is deliberately no search step: a
- * brand-name search with no spatial anchor is precisely how a Canadian
- * franchise won an Israeli query.
+ * Derived from the place's own `websiteUri` (§4.2b: "resolve the menu URL
+ * from the bound place record only"). The original "deliberately no search
+ * step" stance lives on in a narrower form: a search runs ONLY when the place
+ * record has nothing at all (see website-discovery.ts — most OSM rows carry
+ * no website, so without it the web source never fired), its query is
+ * spatially anchored, and every URL it returns goes through the same
+ * binding-check-first loop below. A brand-name search with no spatial anchor
+ * is precisely how a Canadian franchise once won an Israeli query; the check,
+ * not the abstinence, is what prevents that now.
  *
  * Exported for tests — this decides what we are willing to fetch at all.
  */
@@ -162,7 +168,10 @@ export async function fetchWebMenu(
 ): Promise<WebMenuResult | WebMenuFailure> {
   if (!isBrightDataConfigured()) return { ok: false, reason: "not_configured" };
 
-  const candidates = menuUrlCandidates(venue);
+  // The place's own website first; a spatially-anchored search only when the
+  // record carries none. Either way, every candidate binds before it fetches.
+  let candidates = menuUrlCandidates(venue);
+  if (!candidates.length) candidates = await discoverMenuUrls(venue);
   if (!candidates.length) return { ok: false, reason: "no_source_url" };
 
   let lastBindingDetail = "";

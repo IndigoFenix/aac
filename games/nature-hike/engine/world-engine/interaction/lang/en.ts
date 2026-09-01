@@ -136,6 +136,11 @@ const CENTRAL: Record<string, Lexeme> = {
   // `plant` is the VERB (he שותל, es planto): one head, one lexeme, and the
   // builder's [plants] chip must not wear a conjugated verb.
   plants: { w: "plant", plw: "plants" },
+  // THE SPECIFIC PEOPLE this child knows (2026-09-01) — the [individuals]
+  // chip's label. Distinct from `person`, which is somebody in general: this
+  // one names the roster, real contacts out of game and a scene's own
+  // characters in it.
+  individuals: { w: "my people", plw: "my people" },
   creature: { w: "creature" },
   water: { w: "water", mass: true },
   fire: { w: "fire", mass: true },

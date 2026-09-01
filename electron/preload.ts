@@ -27,6 +27,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     get: () => ipcRenderer.invoke("device-id:get"),
     set: (id: string) => ipcRenderer.invoke("device-id:set", id),
   },
+  // Start-with-the-device. The renderer mirrors the student's `launchOnBoot`
+  // AAC setting here on every profile load; the main process owns the OS login
+  // item. `get` reports what the OS actually says, including whether this shell
+  // can register at all (see electron/main.ts).
+  autoLaunch: {
+    get: () => ipcRenderer.invoke("auto-launch:get"),
+    set: (enabled: boolean) => ipcRenderer.invoke("auto-launch:set", enabled),
+  },
   // Eye-tracker gaze sidecar control
   gaze: {
     /** Ensure the sidecar is running for a device (auto-locates the DLL). */

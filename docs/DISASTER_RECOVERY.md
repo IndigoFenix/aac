@@ -73,11 +73,11 @@ still tag-guarded.
 
 ## 3. RTO / RPO
 
-> **Status: target, until a drill file exists.** Until `docs/dr/drills/` contains a
-> dated record, the numbers below are design targets and must be described that
-> way to AKIM. The drill script measures the restore component empirically and
-> writes it into an evidence file; transcribe the measured figure into this table
-> after each drill.
+> **Status: measured** for the snapshot-restore path since the 2026-08-31 drill
+> (see the table below); every other row is still a design target and must be
+> described that way to AKIM. The drill script measures the restore component
+> empirically and writes it into an evidence file; transcribe the measured figure
+> into this table after each drill.
 
 | Scenario | RPO (data loss) | RTO (time to serve) | Basis | Measured? |
 |---|---|---|---|---|
@@ -94,7 +94,8 @@ still tag-guarded.
 
 | Drill date | Snapshot | Restore → available | Observed RPO | Result | Evidence |
 |---|---|---|---|---|---|
-| _(none yet)_ | — | — | — | — | — |
+| 2026-08-31 | `rds:aivota-prod-postgres-2026-08-31-03-05` | **8.0 min** (481 s) | 14.81 h (newest `activity_logs` row → snapshot) | restore + rows + freshness PASS; migration-head FAIL was a check defect (the nine "missing" migrations deployed 06:38Z, after the 03:05Z snapshot), re-assessed PASS — see file | [2026-08-31](dr/drills/2026-08-31-restore-drill.md) |
+| 2026-09-01 | `rds:aivota-prod-postgres-2026-09-01-03-05` | **7.3 min** (438 s) | 9.47 h | same: restore/rows/freshness PASS; migration-head FAIL was the check defect, re-assessed PASS | [2026-09-01](dr/drills/2026-09-01-restore-drill.md) |
 
 Full RTO = **restore duration + decision time + cutover**. The cutover (§5) is a
 secret edit plus an ECS rolling deploy: budget ~5 min for the secret and ~3–5 min
@@ -121,7 +122,19 @@ port **15433** (never 5432 — `npm run db-tunnel` owns that, and a collision wo
 point the checks at production), connects with the master credentials from
 `aivota-prod/database`, and asserts:
 
-- the drizzle migration head equals the newest `drizzle/*.sql` in the repo;
+- the drizzle migration head equals **`origin/main`'s** newest `drizzle/*.sql` —
+  what production deploys — read from git blobs (`scripts/dr-drill-migration-head.ts`).
+  The working tree is deliberately NOT the yardstick: on `staging` it is routinely
+  ahead of prod, and the first two drills failed this check for exactly that
+  reason while the backup was fine. A working tree that is ahead is a note.
+  A snapshot *behind* `origin/main` passes only if every missing migration
+  reached production after the snapshot — dated by the ECR image push that first
+  carried it (`aws ecr describe-images`, images are tagged with the commit SHA),
+  less a 60-min grace for the migrator to run at task boot; a migration deployed
+  before the snapshot and still absent means the deploy never migrated, and
+  fails. Commit dates are only the fallback when ECR is unreachable: `staging`
+  fast-forwards into `main`, so they run days earlier than the deploy (the
+  2026-08-31 drill) and the fallback errs toward failing;
 - `students`, `users`, `chat_sessions`, `activity_logs`, `medical_records` all
   have rows;
 - the newest `activity_logs.created_at` sits inside the snapshot window — the gap
@@ -230,7 +243,8 @@ aws ssm start-session --region il-central-1 --target <bastion-instance-id> \
 ```
 
 Then run the same assertions the drill runs: migration head vs
-`drizzle/meta/_journal.json`, non-zero counts on `students` / `users` /
+`origin/main`'s `drizzle/meta/_journal.json` (NOT your working tree — see §4),
+non-zero counts on `students` / `users` /
 `chat_sessions` / `activity_logs` / `medical_records`, and `max(created_at)` on
 `activity_logs` against the restore point. **Do not skip this**: an unverified
 restore that gets cut over is a second outage.

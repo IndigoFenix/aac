@@ -128,3 +128,39 @@ describe("reload resumes the routes (town-play restore normalization)", () => {
     expect(again.deltas.toJSON()).toEqual(play.deltas.toJSON());
   });
 });
+
+// ── FIRST-ARRIVAL EVIDENCE RIDES THE SAME ENVELOPE (Stage 3, 2026-09-01) ────
+// The flow memory is durable only if it survives the reload the standing
+// agreements survive — same `SerializedTownDeltas`, same round-trip, no
+// second store.
+describe("first-arrival evidence rides SerializedTownDeltas", () => {
+  it("round-trips beside the agreements and stays deduped on the revived ledger", () => {
+    const d = createTownDeltas();
+    d.transfers.post({
+      from: "town:us", to: "town:them", goods: { food: 1 }, issuer: "player",
+      mode: "scheduled", now: 10, every: 240, dueAt: 500,
+    });
+    expect(d.transfers.noteArrival("apple", "barter", 7)).toBe(true);
+    expect(d.transfers.noteArrival("cookie", "caravan", 9)).toBe(true);
+
+    const revived = createTownDeltas(JSON.parse(JSON.stringify(d.toJSON())));
+    expect(revived.toJSON()).toEqual(d.toJSON());
+    expect(revived.transfers.arrivals()).toEqual([
+      { kind: "first-arrival", good: "apple", via: "barter", day: 7 },
+      { kind: "first-arrival", good: "cookie", via: "caravan", day: 9 },
+    ]);
+    // The edge is spent across the reload — a landing after restore is not a
+    // first arrival, which is the whole point of making the memory durable.
+    expect(revived.transfers.everArrived("apple")).toBe(true);
+    expect(revived.transfers.noteArrival("apple", "caravan", 400)).toBe(false);
+    expect(revived.transfers.noteArrival("grape", "caravan", 400)).toBe(true);
+    // …and it did not leak into the agreement audit view.
+    expect(revived.transfers.all()).toHaveLength(1);
+  });
+
+  it("a town nothing ever landed in serializes exactly as it did before the evidence existed", () => {
+    const d = createTownDeltas();
+    expect("arrivals" in d.toJSON().transfers).toBe(false);
+    expect(d.toJSON().transfers).toEqual({ serial: 0, agreements: [] });
+  });
+});

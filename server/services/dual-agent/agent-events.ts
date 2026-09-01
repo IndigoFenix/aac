@@ -588,6 +588,7 @@ export interface BoardButton {
    *  populated. */
   open?: BoardButtonOpen;
   buttonType?: "guess" | "category" | "suggestion" | "narrow" | "wordfinder" | "more";
+  guessingSeed?: string;
   suggestionKey?: string;
   /** For `buttonType: "narrow"` — AI-proposed narrowing dimension label. */
   narrowDimension?: string;

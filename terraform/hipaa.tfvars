@@ -80,7 +80,7 @@ audit_log_retention_days  = 2192  # 6 years: CloudTrail, VPC flow, RDS, WAF log 
 # confirmation email after apply and delivers nothing until it is clicked.
 # Own variable so security alerts can be re-pointed independently of customer
 # replies; same mailbox for now (one person). See ecs-lean.tfvars.
-alert_email = "cs@aivota.ai"
+alert_email = "alerts@aivota.ai"
 
 # =============================================================================
 # Operational access (SSM)

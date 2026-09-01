@@ -180,7 +180,10 @@ describe("roomDisplayGlyph — the icon marks", () => {
     // happens to share with the DINING room, which is a separate concept the
     // default culture folds into it.
     expect(roomKindDisplayGlyph("living")).toBe("room(family)");
-    expect(roomKindDisplayGlyph("dining")).toBe("room(food)");
+    // `eat`, not `food` (user decision 2026-08-31) — a dining room is where you
+    // EAT; where food is KEPT is the storeroom. `eat` also has bundled art,
+    // where `food` is a bare 🍽️.
+    expect(roomKindDisplayGlyph("dining")).toBe("room(eat)");
     expect(roomKindDisplayGlyph("store")).toBe("room(box)");
   });
 

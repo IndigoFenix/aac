@@ -72,4 +72,21 @@ export interface PlatformCapabilities {
    * connection killed by mixed-content rules and should fail fast.
    */
   localhostBridge: boolean;
+
+  /**
+   * Host can register itself to start when the device does, so a dedicated AAC
+   * machine reaches the board without a caretaker driving a desktop first.
+   *
+   * Electron only, and there it means the OS login item — which fires at user
+   * SIGN-IN, not at power-on; an unattended device also needs its Windows
+   * account set to sign in automatically, which is provisioning, not app code.
+   * iPadOS has no equivalent at any privilege level (an always-on iPad is
+   * Guided Access or MDM single-app mode, set on the device), and a browser tab
+   * plainly has none.
+   *
+   * Like selfUpdate, this states what the host CAN do; the bridge being present
+   * and `supported` coming back true is the runtime truth — a dev (unpackaged)
+   * Electron run reports false.
+   */
+  launchOnBoot: boolean;
 }

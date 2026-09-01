@@ -173,6 +173,63 @@ describe('Packages — AAC session wiring (P4)', () => {
     });
   });
 
+  /**
+   * buildBoardKeys assigns collision suffixes (_2, _3) in INPUT order, so the
+   * repository must hand it a deterministic order or the same board answers to
+   * a different key after a session reload — and the Coordinator caches the
+   * loaded key for the session's life. `getAutoSelectableBoards` had no ORDER
+   * BY at all; Latin names collide rarely enough that it never showed.
+   */
+  describe('board order is deterministic', () => {
+    it('returns the students own boards in name order, not insertion order', async () => {
+      const user = await makeUser();
+      const { student } = await makeStudent(user.id);
+
+      // Inserted deliberately reverse-alphabetically.
+      for (const name of ['Zebra', 'Mango', 'Apple']) {
+        await db.insert(boards).values({
+          userId: user.id,
+          studentId: student.id,
+          name,
+          irData: IR,
+          automaticSelection: true,
+        });
+      }
+
+      const available = await boardRepository.getAutoSelectableBoards(student.id);
+      expect(available.map((b) => b.name)).toEqual(['Apple', 'Mango', 'Zebra']);
+    });
+
+    it('keeps collision suffixes STABLE across repeated loads', async () => {
+      const user = await makeUser();
+      const { student } = await makeStudent(user.id);
+
+      // Same name three times: every key collides, so ordering decides which
+      // board is _2 and which is _3. This is the shape a Hebrew device had for
+      // EVERY board before slug() understood non-Latin names.
+      for (let i = 0; i < 3; i++) {
+        await db.insert(boards).values({
+          userId: user.id,
+          studentId: student.id,
+          name: 'סיפור',
+          irData: IR,
+          automaticSelection: true,
+        });
+      }
+
+      const load = async () => {
+        const rows = await boardRepository.getAutoSelectableBoardsWithPackages(student.id);
+        return [...buildBoardKeys(rows.map((b) => ({ id: b.id, name: b.name, packageName: b.packageName }))).entries()];
+      };
+
+      const first = await load();
+      expect(first.map(([, key]) => key)).toEqual(['סיפור', 'סיפור_2', 'סיפור_3']);
+      // The id → key mapping itself must not churn between loads.
+      expect(await load()).toEqual(first);
+      expect(await load()).toEqual(first);
+    });
+  });
+
   describe('reading a package board', () => {
     it('lets the AAC fetch the IR of a package board it did not author', async () => {
       const author = await makeUser();

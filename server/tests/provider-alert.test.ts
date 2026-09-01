@@ -85,7 +85,7 @@ describe("runSpendThresholdCheck", () => {
     expect(res.alerted).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
     const arg = send.mock.calls[0][0] as { to: string; subject: string };
-    expect(arg.to).toBe("cs@aivota.ai");
+    expect(arg.to).toBe("alerts@aivota.ai");
     expect(arg.subject).toContain("Anthropic");
   });
 

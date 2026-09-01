@@ -187,16 +187,28 @@ describe("a piece's word is rendered in the player's language", () => {
   it("lets the LEXICON outrank the host's English label on builder buttons", () => {
     // The host hands the builder an English label for every noun (the glyph key
     // IS an English word). A word that the ruleset can say must be said in it…
-    const surface = builderSurfaceFor("i_me + want", {
+    //
+    // 🔁 RE-AIMED 2026-09-01 — the LAW is unchanged, the place it is observable
+    // moved. This used to read the DEFAULT board's JSON, which only serialises
+    // page-one buttons plus each chip's id and three exemplar KEYS. A desire
+    // board withholds objects in favour of chips, so both nouns are chip
+    // MEMBERS and neither label is on the wire until the chip is opened. Open
+    // it: same claim, asserted where labels are actually emitted.
+    const host = {
       locale: "he",
       nouns: [
         { symbol: "chair", label: "chair", kind: "item", affords: ["want", "get", "give"] },
         { symbol: "mara", label: "Mara", kind: "creature", affords: ["talk"] },
       ],
-    } as never);
-    const words = JSON.stringify(surface);
-    expect(words).toContain("כיסא");
+    };
+    const labelsIn = (group: string): string[] =>
+      (builderSurfaceFor("i_me + want", { ...host, group } as never).buttons as { label?: string }[])
+        .map((b) => b.label ?? "");
+
+    // A host noun keeps the library's properties (it declared none), so the
+    // chair still clusters as furniture — and the ruleset says it in Hebrew.
+    expect(labelsIn("furniture")).toContain("כיסא");
     // …while a NAME has no lexeme and stays itself.
-    expect(words).toContain("Mara");
+    expect(labelsIn("creatures")).toContain("Mara");
   });
 });

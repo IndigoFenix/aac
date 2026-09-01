@@ -294,6 +294,13 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   threshold           = 10
   alarm_description   = "High 5XX error rate"
 
+  # HTTPCode_Target_5XX_Count only publishes a datapoint when a 5xx actually
+  # occurs, so with the default "missing" this alarm never rested in OK — it sat
+  # in INSUFFICIENT_DATA and jumped straight to ALARM, making a healthy service
+  # indistinguishable from a blind one. No 5xx in a period IS not-breaching.
+  # (Same reasoning as the failed-logins alarm below.)
+  treat_missing_data  = "notBreaching"
+
   dimensions = {
     LoadBalancer = aws_lb.main.arn_suffix
     TargetGroup  = aws_lb_target_group.main.arn_suffix

@@ -12,8 +12,11 @@
 //   2. THE `human_cute` RETIREMENT. That row was `human` with girth 0.45 and
 //      nothing else; the `cute` mod replaces it. If the transform stops
 //      landing exactly on 0.45, every shipped world quietly re-proportions.
-//   3. THE AUTHORED-WINS LAW. A generated `dog_person` must never displace the
-//      hand-drawn one. A registry `set` is silent when it clobbers.
+//   3. THE PEOPLE ARE DERIVED. ⚰️ The authored-wins law was here: a generated
+//      `dog_person` must never displace the hand-drawn one. The hand-drawn
+//      four were retired 2026-09-01, so there is no authored row left to lose
+//      to and every animal person is generated. What still matters is that
+//      they exist ONLY while the mod is installed.
 import { describe, it, expect, afterEach } from "@jest/globals";
 import {
   parseCreatureMod,
@@ -151,8 +154,10 @@ describe("animal_people — the derive half", () => {
   const byId = new Map(derived.map((d) => [d.id, d] as const));
 
   it("derives from every non-speaking creature, and from nothing else", () => {
+    // `human` is the WHOLE speaking set of a bare registry now — the animal
+    // people are derived, so nothing else speaks until this mod installs.
     const speaking = listSpecies().filter((s) => s.canSpeak).map((s) => s.id);
-    expect(speaking).toEqual(expect.arrayContaining(["human", "bear_person", "dog_person"]));
+    expect(speaking).toEqual(["human"]);
     for (const d of derived) {
       const base = requireSpecies(d.derivedFrom);
       expect(base.kind).toBe("creature");
@@ -163,11 +168,17 @@ describe("animal_people — the derive half", () => {
     expect(byId.has("cow_person")).toBe(true);
   });
 
-  it("NEVER displaces an authored animal person", () => {
+  it("now GENERATES the four that used to be hand-drawn", () => {
+    // ⚰️ These were authored bodies with a carve-out protecting them. They are
+    // ordinary derivations now, which is the whole point of the mod: an animal
+    // person for EVERY non-speaking creature, not the four somebody drew.
     for (const id of ["dog_person", "bear_person", "frog_person", "rabbit_person"]) {
-      expect(byId.has(id)).toBe(false);
-      expect(requireSpecies(id).blueprint).not.toEqual({});
+      expect(byId.has(id)).toBe(true);
     }
+    // 🚨 A person derived from a STUB base is itself a stub — a word, no body.
+    // Anything that has to BUILD one (the puzzle-character cast) must filter
+    // stubs out, or it asks the mesh builder for a body nobody ever drew.
+    expect(byId.get("dog_person")!.stub).toBeFalsy(); // `dog` has a body
   });
 
   it("grants speech — the one tag that makes it a person", () => {
@@ -292,8 +303,8 @@ describe("installing a world's mods", () => {
     expect(getSpecies("cow_person")).toBeDefined();
     applyWorldCreatureMods([]);
     expect(getSpecies("cow_person")).toBeUndefined();
-    // …and never an authored row.
-    expect(getSpecies("dog_person")).toBeDefined();
+    // …and the animal people go with it: none of them is authored any more.
+    expect(getSpecies("dog_person")).toBeUndefined();
     expect(activeCreatureMods()).toEqual([]);
   });
 

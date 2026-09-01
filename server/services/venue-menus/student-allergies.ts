@@ -1,6 +1,9 @@
 // server/services/venue-menus/student-allergies.ts
 //
-// Reading `medical_records.alerts_allergies` for the allergen filter (§3.3).
+// Reading `medical_records.alerts_allergies` — today only for the review
+// escalation context (needsReview), dormant while INTERIM_REVIEW_OFF holds.
+// The serving-path allergen filter that was this file's first consumer is out
+// by decision (2026-09-01) — see menu-board-builder step 2.
 //
 // A deliberately tiny module with one job. Allergies are PHI and are read here
 // ONLY to decide what a student is shown; they are never logged, never sent to

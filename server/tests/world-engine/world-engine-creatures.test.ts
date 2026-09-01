@@ -17,8 +17,8 @@ import {
   speciesOfKind,
   speciesBlueprint,
   registerSpecies,
-  FRUIT_TREES,
 } from "@shared/world-engine/creatures/species.js";
+import { foodPlants } from "@shared/world-engine/products.js";
 import { buildSkeleton } from "@shared/world-engine/creatures/skeleton.js";
 import { buildCreatureMesh } from "@shared/world-engine/creatures/mesh.js";
 import {
@@ -91,19 +91,30 @@ describe("sheep species", () => {
   });
 });
 
-describe("FRUIT_TREES — orchard plants", () => {
-  it("covers apple, banana and grape", () => {
-    expect(FRUIT_TREES.map((e) => e.fruit).sort()).toEqual(["apple", "banana", "grape"]);
+/** Derived once — the describe below builds one `it` per entry. */
+const FOOD_PLANTS = foodPlants();
+
+describe("foodPlants — the bodies behind the food registry", () => {
+  // Was `FRUIT_TREES`, a hand-kept `["apple","banana","grape"]` union that went
+  // stale the moment `carrot_plant` joined the catalogue — a fruit tree that
+  // was neither. The list is now derived, so this describe asserts the BODY
+  // invariants (which are the real content) and never the membership, which
+  // products.ts owns and natural-products.test.ts pins.
+
+  it("is not empty, and every entry names a distinct food", () => {
+    const foods = FOOD_PLANTS.map((e) => e.food);
+    expect(foods.length).toBeGreaterThan(0);
+    expect(new Set(foods).size).toBe(foods.length);
   });
 
-  it("each fruit kind is also a fruit-body species (the market/ground item)", () => {
-    for (const { fruit } of FRUIT_TREES) {
-      expect(requireSpecies(fruit).kind).toBe("fruit");
+  it("each food is also a fruit-body species (the market/ground item)", () => {
+    for (const { food } of FOOD_PLANTS) {
+      expect(requireSpecies(food).kind).toBe("fruit");
     }
   });
 
-  for (const { fruit, species } of FRUIT_TREES) {
-    it(`${fruit} orchard species "${species}" is a plant bearing visible fruit and builds a mesh`, () => {
+  for (const { food, species } of FOOD_PLANTS) {
+    it(`${food}: source species "${species}" is a plant bearing visible fruit and builds a mesh`, () => {
       expect(requireSpecies(species).kind).toBe("plant");
       const bp = speciesBlueprint(species);
       const skel = buildSkeleton(bp);

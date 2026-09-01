@@ -36,7 +36,7 @@
 //
 // See planning-docs/aac-restaurant-menus.md §4.1, §4.3, §4.6.
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { getCurrentGps, mayReadDeviceLocation } from "@/lib/geolocation";
 import { getHost } from "@/lib/platform";
@@ -112,10 +112,26 @@ export function RestaurantApp({
 }: RestaurantAppProps) {
   const { t } = useLanguage();
 
-  // The server already decided. A missing payload means the app was opened by
-  // some path that did not resolve one, and the companion's screen is the only
-  // honest default — it is the one lane that works with no data at all.
-  const [lane, setLane] = useState<Lane>(payload?.mode ?? "caretaker");
+  // ── A NEW PAYLOAD IS A NEW SCREEN ──────────────────────────────────────
+  //
+  // The server pushes fresh app_open payloads mid-life (the fetching screen,
+  // then the menu when the fetch lands). React RECONCILES those — same
+  // component, same position, no remount — so anything useState-derived from
+  // `payload` froze at its first value. Observed live 2026-09-01 21:30: the
+  // menu payload arrived, the Speaker said "התפריט פתוח", and the screen kept
+  // showing the places grid, because `lane` was initialized once and the
+  // lanes' own internal state was never reset. `payloadSeq` bumps when the
+  // payload object changes; the effect re-derives the lane, and keying the
+  // lanes on it remounts them with fresh state.
+  const seqRef = useRef(0);
+  const payloadSeq = useMemo(() => ++seqRef.current, [payload]);
+
+  // A missing payload means the app was opened by a path that did not resolve
+  // one — the client-side backstop when the server is still starting up. The
+  // default is the STUDENT'S lane: the food grid works with no data at all
+  // (every button still speaks), while the companion's text screen is a page
+  // a child cannot read. The companion link is one deliberate touch away.
+  const [lane, setLane] = useState<Lane>(payload?.mode ?? "search");
 
   const [phase, setPhase] = useState<Phase>("start");
   const [busy, setBusy] = useState<string | null>(null);
@@ -129,6 +145,40 @@ export function RestaurantApp({
    *  on it. A `pending_review` capture deliberately does not set this: the
    *  student must not order from a menu nobody has checked. */
   const [menuReady, setMenuReady] = useState(false);
+
+  /**
+   * A re-open round trip is in flight (request_app_open → resolver → a fresh
+   * app_open payload replaces this whole component). Until that lands, THIS
+   * screen is still the one on display — and without a cue the press that
+   * asked for a menu looks like a press that did nothing. Cleared by unmount
+   * in the normal case; the timer is the net for a reply that never comes, so
+   * the overlay cannot become a lock on a dead screen.
+   */
+  const [reopening, setReopening] = useState(false);
+  const reopenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (reopenTimerRef.current) clearTimeout(reopenTimerRef.current);
+  }, []);
+  // Re-derive the screen from each new payload, and drop the reopen overlay —
+  // the arriving payload IS the answer the overlay was waiting for.
+  useEffect(() => {
+    setLane(payload?.mode ?? "search");
+    setReopening(false);
+    if (reopenTimerRef.current) {
+      clearTimeout(reopenTimerRef.current);
+      reopenTimerRef.current = null;
+    }
+    // payloadSeq is the change signal; payload itself is what it derives from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payloadSeq]);
+
+  const reopen = (data?: string) => {
+    if (!onReopen || reopening) return;
+    setReopening(true);
+    if (reopenTimerRef.current) clearTimeout(reopenTimerRef.current);
+    reopenTimerRef.current = setTimeout(() => setReopening(false), 12_000);
+    onReopen(data);
+  };
 
   /** Translate an `error:CODE` body, falling back to a generic message. */
   const showError = async (response: Response) => {
@@ -247,7 +297,7 @@ export function RestaurantApp({
       // place that decides what a student sees stays the one place: the
       // resolver now finds the bound venue and picks menu mode itself.
       if (candidate.hasMenu && onReopen) {
-        onReopen();
+        reopen();
       }
     } finally {
       setBusy(null);
@@ -333,6 +383,16 @@ export function RestaurantApp({
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col bg-white dark:bg-gray-900 p-4 overflow-y-auto">
+      {/* The re-open cue: full-screen so it reads over whichever lane asked. */}
+      {reopening && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-white/90 dark:bg-gray-900/90">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500" />
+          <p className="text-lg font-medium text-gray-700 dark:text-gray-200">
+            {t("aac.restaurant.openingMenu")}
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold">{t("aac.restaurant.title")}</h2>
         <button
@@ -347,6 +407,7 @@ export function RestaurantApp({
 
       {(lane === "menu" || lane === "floor") && (payload?.menuBoard || payload?.floorBoard) ? (
         <MenuLane
+          key={payloadSeq}
           venueName={payload.venueName}
           menuBoard={payload.menuBoard as ParsedBoardData | undefined}
           floorBoard={payload.floorBoard as ParsedBoardData | undefined}
@@ -360,6 +421,7 @@ export function RestaurantApp({
         />
       ) : lane === "search" ? (
         <FoodBrowseLane
+          key={payloadSeq}
           studentId={studentId}
           initialCategories={payload?.categories}
           initialPlaces={payload?.places}
@@ -368,7 +430,17 @@ export function RestaurantApp({
           // renders in full and still speaks — only the places half is withheld.
           canSearch={payload?.canSearch !== false}
           locationEnabled={locationEnabled}
+          // Whether the SERVER had a position when it resolved this open. It is
+          // what tells an empty `places` apart from a search that never ran —
+          // the lane must not report "nowhere near us has that" on a lookup
+          // nobody performed.
+          positionKnown={payload?.positionKnown}
+          fetchingMenuFor={payload?.fetchingMenu?.venueName}
+          menuFetchFailed={payload?.menuFetchFailed}
           onSpeak={onSpeak}
+          // A place press with a menu re-opens the app on THAT menu — the
+          // resolver receives `venue:<id>` and applies every gate itself.
+          onOpenVenueMenu={(venueId) => reopen(`venue:${venueId}`)}
           onSwitchToCaretaker={() => setLane("caretaker")}
           onDisabled={() => setLane("caretaker")}
           // The four per-student rendering settings. MenuLane has always been
@@ -439,7 +511,7 @@ export function RestaurantApp({
             <button
               type="button"
               className={`${button} bg-green-600 active:bg-green-700`}
-              onClick={() => onReopen()}
+              onClick={() => reopen()}
               data-testid="restaurant-open-menu"
             >
               {t("aac.restaurant.openMenu")}

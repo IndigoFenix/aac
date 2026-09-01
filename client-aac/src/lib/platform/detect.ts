@@ -59,6 +59,7 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
     selfUpdate: true,
     sessionRecording: true,
     localhostBridge: true,
+    launchOnBoot: true,
   },
   capacitor: {
     // No child processes on iPadOS — vendor eye-tracker DLLs are unreachable.
@@ -74,6 +75,10 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
     // simply unreachable, and a camera-only clip is not what this feature is.
     sessionRecording: false,
     localhostBridge: true,
+    // iPadOS has no autostart at any privilege level. The equivalent — an iPad
+    // that is only ever the AAC app — is Guided Access or MDM single-app mode,
+    // configured on the device by whoever provisions it.
+    launchOnBoot: false,
   },
   web: {
     gazeSidecar: false,
@@ -84,6 +89,7 @@ const CAPABILITY_MATRIX: Record<NativeHost, Omit<PlatformCapabilities, "host">> 
     // quota-capped and evictable by the browser.
     sessionRecording: false,
     localhostBridge: false,
+    launchOnBoot: false,
   },
 };
 

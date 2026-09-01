@@ -145,7 +145,12 @@ const STATE_GLYPH: Record<FamilyStateKey, string | undefined> = {
   working: undefined, // 💼
   content: "happy",
   guest: undefined, // 🙋 / ⛺ (founding) — kept per-entry, never state-mapped
-  away: "walk",
+  // `go`, not `walk`: walk was withdrawn from the glyph registry (user
+  // decision 2026-08-20) as a synonym — Hebrew has one word for both, and
+  // `go` still renders walk's artwork. An unregistered key here does not
+  // error, it just falls through to the entry's emoji, so the chip quietly
+  // lost its art rather than breaking.
+  away: "go",
 };
 
 /**

@@ -17,20 +17,25 @@ import { describe, test, expect, jest, beforeAll, beforeEach } from "@jest/globa
 
 const resolveStudentVenueBoard = jest.fn(async (_s: any, _n?: Date) => null as any);
 const resolveBoundVenue = jest.fn(async (_s: any, _n?: Date) => null as any);
+const resolveVenueBoardById = jest.fn(async (_s: any, _v: string, _n?: Date) => null as any);
 const browse = jest.fn(async (_i: any, _n?: Date) => ({
   categories: [] as any[],
   places: [] as any[],
   searched: false,
 }));
+const resolveNamedVenue = jest.fn(
+  async (_sid: string, _t: any, _g: any, _r: number) => null as any,
+);
 
 jest.unstable_mockModule("../db", () => ({ db: {} }));
 jest.unstable_mockModule("../services/venue-menus/venue-board-service.js", () => ({
   resolveStudentVenueBoard,
   resolveBoundVenue,
+  resolveVenueBoardById,
   describeVenueBoardStats: () => "stats",
 }));
 jest.unstable_mockModule("../services/venue-menus/venue-browse-service.js", () => ({
-  venueBrowseService: { browse },
+  venueBrowseService: { browse, resolveNamedVenue },
 }));
 
 let resolveRestaurantOpen: typeof import("../services/venue-menus/restaurant-app-open").resolveRestaurantOpen;
@@ -64,7 +69,9 @@ const MENU = {
 beforeEach(() => {
   resolveStudentVenueBoard.mockReset().mockResolvedValue(null);
   resolveBoundVenue.mockReset().mockResolvedValue(null);
+  resolveVenueBoardById.mockReset().mockResolvedValue(null);
   browse.mockReset().mockResolvedValue({ categories: [], places: [], searched: false });
+  resolveNamedVenue.mockReset().mockResolvedValue(null);
 });
 
 describe("mode resolution", () => {
@@ -222,6 +229,112 @@ describe("the food parameter", () => {
     expect(payload.mode).toBe("search");
     expect(payload.categories).toEqual([]);
     expect(browse).not.toHaveBeenCalled();
+    // 🚨 And it SAYS so. Without this flag "we never looked" and "we looked and
+    // the street is empty" are the same payload, and both told a child there
+    // was nothing near him (2026-09-01).
+    expect(payload.positionKnown).toBe(false);
+  });
+
+  test("a search that ran marks the payload as positioned", async () => {
+    const payload = await resolveRestaurantOpen({ student: student(), gps: GPS }, NOW);
+    expect(payload.positionKnown).toBe(true);
+  });
+
+  test("a NAMED venue with an approved menu opens ITS menu — as a preview", async () => {
+    // 🚨 The reset this replaces (live, 2026-09-01). The student pressed
+    // "לה פיצליה" on the places grid; the Speaker heard the sentence and called
+    // open_app("restaurant", "לה פיצליה"); the name matched no cuisine, so the
+    // app RE-OPENED ON THE FOOD GRID. The AI said "we'll open it for you" and
+    // the screen went back to "what do you want to eat?".
+    resolveNamedVenue.mockResolvedValue({ id: "v9", name: "La Pizzalia", cuisine: "pizza" });
+    resolveVenueBoardById.mockResolvedValue({
+      venueId: "v9",
+      venueName: "La Pizzalia",
+      menuId: "m9",
+      board: { name: "La Pizzalia", pages: [] },
+      stats: {},
+    });
+    const payload = await resolveRestaurantOpen(
+      { student: student(), gps: GPS, data: "לה פיצליה" },
+      NOW,
+    );
+    expect(payload.mode).toBe("menu");
+    expect(payload.preview).toBe(true);
+    expect(payload.venueName).toBe("La Pizzalia");
+    expect(payload.menuBoard).toBeTruthy();
+    // A preview is a WANT — no binding path is involved, and no floor board:
+    // "this is too hot" is a sentence for a table they are not at.
+    expect(payload.floorBoard).toBeUndefined();
+    expect(resolveVenueBoardById).toHaveBeenCalledWith(expect.anything(), "v9", NOW);
+  });
+
+  test("the client's venue:<id> token reaches the same path", async () => {
+    // The places grid sends `venue:<id>` on the reopen so the student's own
+    // press does not depend on the AI hearing the sentence and re-opening.
+    resolveNamedVenue.mockResolvedValue({ id: "v9", name: "La Pizzalia", cuisine: null });
+    resolveVenueBoardById.mockResolvedValue({
+      venueId: "v9",
+      venueName: "La Pizzalia",
+      menuId: "m9",
+      board: { name: "La Pizzalia", pages: [] },
+      stats: {},
+    });
+    const payload = await resolveRestaurantOpen(
+      { student: student(), gps: GPS, data: "venue:v9" },
+      NOW,
+    );
+    expect(payload.mode).toBe("menu");
+    expect(resolveNamedVenue).toHaveBeenCalledWith("s1", "venue:v9", GPS, expect.any(Number));
+  });
+
+  test("a named venue with NO usable menu keeps the ask on screen, not the bare grid", async () => {
+    // We know the place; there is just nothing a student may see (never
+    // captured, in review, stale, or emptied by the allergen filter). The open
+    // lands on that venue's KIND of food — so the place they named is in the
+    // list — and carries the name so the Speaker says what happened.
+    resolveNamedVenue.mockResolvedValue({ id: "v9", name: "La Pizzalia", cuisine: "pizza" });
+    browse.mockResolvedValue({
+      categories: [{ key: "pizza", emoji: "🍕", count: 2 }],
+      places: [
+        { venueId: "v9", name: "La Pizzalia", distanceM: 120, visitedBefore: false, hasMenu: false },
+      ],
+      searched: false,
+    });
+    const payload = await resolveRestaurantOpen(
+      { student: student(), gps: GPS, data: "לה פיצליה" },
+      NOW,
+    );
+    expect(payload.mode).toBe("search");
+    expect(payload.requestedVenueName).toBe("La Pizzalia");
+    // The id rides along so the coordinator can try a background web fetch —
+    // the cache-once trigger (webMenuService.warmForVenue).
+    expect(payload.requestedVenueId).toBe("v9");
+    // The venue's own cuisine chose the page, even though the NAME matched no
+    // cuisine word.
+    expect(payload.food).toBe("pizza");
+    expect(browse).toHaveBeenCalledWith(expect.objectContaining({ category: "pizza" }), NOW);
+  });
+
+  test("a plain food word is NOT hijacked by a venue whose name contains it", async () => {
+    // resolveNamedVenue is exact-match only, so "pizza" returns null here —
+    // pinned from this side so a looser matcher cannot regress the grid.
+    resolveNamedVenue.mockResolvedValue(null);
+    const payload = await resolveRestaurantOpen(
+      { student: student(), gps: GPS, data: "pizza" },
+      NOW,
+    );
+    expect(payload.mode).toBe("search");
+    expect(payload.food).toBe("pizza");
+    expect(payload.requestedVenueName).toBeUndefined();
+    expect(resolveVenueBoardById).not.toHaveBeenCalled();
+  });
+
+  test("browsing off is not positioned either — nothing was looked up", async () => {
+    const payload = await resolveRestaurantOpen(
+      { student: student({ enabled: true, studentBrowse: false }), gps: GPS },
+      NOW,
+    );
+    expect(payload.positionKnown).toBe(false);
   });
 });
 
@@ -304,6 +417,114 @@ describe("what the Speaker is told", () => {
   test("an empty search tells the Speaker not to invent a place", async () => {
     const note = restaurantOpenNote({ mode: "search", food: "pizza", places: [], categories: [] });
     expect(note).toContain("not invent");
+  });
+
+  test("an empty search we never RAN must not be reported as an empty street", async () => {
+    // 2026-09-01, live: the student's deviceLocationEnabled was off, so no
+    // position ever reached the server and no lookup ran. The note said
+    // "Nothing nearby serves pizza" — indistinguishable from a real search that
+    // came back empty — and the Speaker duly told a child there was no pizza
+    // place near him. A screen may say it does not know; it may not assert a
+    // fact about the world that nobody checked.
+    const note = restaurantOpenNote({
+      mode: "search",
+      canSearch: true,
+      positionKnown: false,
+      food: "pizza",
+      places: [],
+      categories: [],
+    });
+    expect(note).toMatch(/do not know where the student is/i);
+    expect(note).toMatch(/no search .* has run/i);
+    // The exact claim that was wrong.
+    expect(note).not.toMatch(/nothing nearby serves/i);
+    expect(note).toMatch(/do NOT say there is nothing nearby/i);
+  });
+
+  test("a search that DID run still reports an empty street plainly", async () => {
+    // The other half of the pair — `positionKnown: true` must not blunt a real
+    // "we looked and there is nothing" into a vague "we don't know".
+    const note = restaurantOpenNote({
+      mode: "search",
+      canSearch: true,
+      positionKnown: true,
+      food: "pizza",
+      places: [],
+      categories: [],
+    });
+    expect(note).toContain("Nothing nearby serves pizza");
+    expect(note).toContain("not invent");
+  });
+
+  test("a menu PREVIEW note says they are NOT there", async () => {
+    // A preview is a want. The Speaker must not narrate a table.
+    const note = restaurantOpenNote({
+      mode: "menu",
+      preview: true,
+      venueName: "La Pizzalia",
+      menuBoard: {},
+    });
+    expect(note).toContain("NOT there");
+    expect(note).toContain("nothing is booked");
+    expect(note).toMatch(/do not name\s+specific dishes/i);
+  });
+
+  test("a fetching screen gets a fetching narration — no promises", async () => {
+    const note = restaurantOpenNote({
+      mode: "search",
+      canSearch: true,
+      requestedVenueName: "La Pizzalia",
+      fetchingMenu: { venueId: "v9", venueName: "La Pizzalia" },
+      categories: [],
+      places: [],
+    });
+    expect(note).toContain("FETCHED right now");
+    expect(note).toMatch(/may fail/i);
+    expect(note).not.toMatch(/no menu loaded/);
+  });
+
+  test("a finished failed fetch is said plainly", async () => {
+    const note = restaurantOpenNote({
+      mode: "search",
+      canSearch: true,
+      menuFetchFailed: "La Pizzalia",
+      categories: [],
+      places: [],
+      food: null,
+    });
+    expect(note).toContain("could not be shown");
+    expect(note).toMatch(/offer to try again/i);
+  });
+
+  test("a named venue with no menu is answered, not narrated over", async () => {
+    const note = restaurantOpenNote({
+      mode: "search",
+      canSearch: true,
+      positionKnown: true,
+      requestedVenueName: "La Pizzalia",
+      food: "pizza",
+      categories: [],
+      places: [],
+    });
+    expect(note).toContain("La Pizzalia");
+    expect(note).toContain("no menu");
+    // It must not fall through to the generic grid narration — that reads to
+    // the child as being ignored.
+    expect(note).not.toContain("Nothing nearby serves");
+  });
+
+  test("browsing off wins over the position — the grid is vocabulary either way", async () => {
+    // Both flags are false here. `canSearch` is the more specific statement
+    // (a clinician turned searching off), so it must be the one reported.
+    const note = restaurantOpenNote({
+      mode: "search",
+      canSearch: false,
+      positionKnown: false,
+      food: "pizza",
+      places: [],
+      categories: [],
+    });
+    expect(note).toContain("turned OFF");
   });
 
   test("a vocabulary-only grid tells the Speaker NOT to offer to find a place", async () => {

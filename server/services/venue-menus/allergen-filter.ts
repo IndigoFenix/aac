@@ -191,14 +191,31 @@ function normalize(text: string): string {
  * any letters behind: "אגוז" catches "אגוזים" and "באגוזים". Trailing letters
  * are allowed freely — that over-matches slightly, in the safe direction.
  */
+/**
+ * Hebrew terms whose trailing letters must NOT grow.
+ *
+ * The free-suffix rule exists for inflection (בוטן → בוטנים), but a few terms
+ * become a DIFFERENT, innocent word one letter later, and the growth then
+ * erases whole menu sections. Found by the pipeline suite on its first run
+ * (2026-09-01): פסטו (pesto — a real pine-nut concern) grew into פסטות
+ * (pastas, the category heading), so a peanut allergy struck every pasta on
+ * every Israeli menu. That is not the safe direction: a menu arbitrarily
+ * gutted teaches a caretaker to distrust the filter, which is the hazard the
+ * eggplant note above already names. Prefixes (בפסטו, הפסטו) stay allowed.
+ */
+const HEBREW_NO_SUFFIX_GROWTH: ReadonlySet<string> = new Set(["פסטו"]);
+
 export function textContainsTerm(text: string, term: string): boolean {
   const haystack = normalize(text);
   const needle = normalize(term);
   if (!haystack || !needle) return false;
 
+  const hebrewTail = HEBREW_NO_SUFFIX_GROWTH.has(needle)
+    ? `(?:$|[^${HEBREW_LETTER}])`
+    : `[${HEBREW_LETTER}]*`;
   const pattern = isHebrew(needle)
     ? new RegExp(
-        `(?:^|[^${HEBREW_LETTER}])[${HEBREW_PREFIXES}]?${escapeRegExp(needle)}[${HEBREW_LETTER}]*`,
+        `(?:^|[^${HEBREW_LETTER}])[${HEBREW_PREFIXES}]?${escapeRegExp(needle)}${hebrewTail}`,
       )
     : new RegExp(`\\b${escapeRegExp(needle)}\\b`);
 

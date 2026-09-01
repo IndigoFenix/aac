@@ -1,15 +1,22 @@
 // IMPORTANT — how to run these tests:
-//   This config uses ts-jest's native-ESM preset (useESM + extensionsToTreatAsEsm).
-//   Jest's ESM support requires Node's `--experimental-vm-modules` flag, which the
-//   `npm test` script sets via NODE_OPTIONS. Running the binary directly
-//   (`npx jest <pattern>`) WITHOUT that flag fails confusingly on the first file
+//   This config uses ts-jest's native-ESM preset (useESM + extensionsToTreatAsEsm),
+//   which requires Node's `--experimental-vm-modules`. The npm scripts supply it by
+//   invoking node directly:
+//       node --experimental-vm-modules node_modules/jest/bin/jest.js
+//   Do NOT reintroduce `cross-env NODE_OPTIONS='...'` — cross-env v8 dropped the
+//   quote-rejoining that made a multi-flag value survive cmd.exe, and the failure
+//   is SILENT (see jest.esm-guard.js for the full incident).
+//
+//   Running the binary directly (`npx jest <pattern>`) drops the flag and now aborts
+//   on the guard below. Previously it failed confusingly instead, on the first file
 //   in any chain that uses `import.meta` (e.g. providers/claude-structured.ts) or
-//   imports a `.tsx` (e.g. shared/social-bot/ProceduralFace.tsx) — surfacing as
-//   "Cannot use 'import.meta' outside a module" or "Unexpected token '<'". These
-//   are NOT broken tests; the transform just isn't applied without ESM mode.
-//   To run a single suite, go through the npm script so the flag is set:
+//   top-level await — surfacing as "Cannot use 'import.meta' outside a module".
+//   To run a single suite, go through the npm script:
 //       npm test -- <pattern>            (e.g. npm test -- social-peer-speaker)
-//   or set it yourself:  NODE_OPTIONS=--experimental-vm-modules npx jest <pattern>
+
+import { assertVmModules } from './jest.esm-guard.js';
+
+assertVmModules();
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 export default {

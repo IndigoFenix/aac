@@ -5,7 +5,7 @@
 // a frustum that crops the face, a grazing animal photographed pointing at the
 // grass, a dog's own back filling the frame behind its face.
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import * as THREE from "three";
 import {
   buildPortraitView,
@@ -15,7 +15,8 @@ import {
 } from "@shared/world-engine/creatures/portrait.js";
 import { buildSkeleton } from "@shared/world-engine/creatures/skeleton.js";
 import { clampBlueprint } from "@shared/world-engine/creatures/blueprint.js";
-import { getSpecies, listSpecies, SPARK_SPECIES_ID } from "@shared/world-engine/creatures/species.js";
+import { getSpecies, listSpecies, speciesCanSpeak, SPARK_SPECIES_ID } from "@shared/world-engine/creatures/species.js";
+import { applyWorldCreatureMods } from "@shared/world-engine/creatures/world-mods.js";
 import { outfitPresetFor } from "@shared/world-engine/creatures/clothing.js";
 
 const skeletonOf = (id: string, outfit?: number) => {
@@ -23,14 +24,27 @@ const skeletonOf = (id: string, outfit?: number) => {
   return buildSkeleton(clampBlueprint(outfit === undefined ? base : { ...base, outfit: outfitPresetFor(outfit) }));
 };
 
-/** Species that stand on two legs (the dollhouse's people and animal-people). */
-const UPRIGHT = ["human", "human_cute", "frog_person", "bear_person", "dog_person", "rabbit_person"];
+// The animal people are DERIVED now (the `animal_people` mod), so this suite
+// installs it to have any: naming `bear_person` outright would pass only in a
+// world that happens to carry the mod. Retracted in afterAll — the registry is
+// global.
+beforeAll(() => { applyWorldCreatureMods(["animal_people"]); });
+afterAll(() => { applyWorldCreatureMods([]); });
+
+/** Species that stand on two legs. DERIVED from `canSpeak`, which is exactly
+ *  what "is one of the people" means — so this covers `human` in a bare world
+ *  and every animal person in a modded one, without naming either. */
+const uprightIds = (): string[] =>
+  listSpecies()
+    .filter((sp) => sp.kind === "creature" && !sp.stub && !sp.bodiless && speciesCanSpeak(sp.id))
+    .map((sp) => sp.id)
+    .concat("human_cute"); // the retired alias must still frame like a human
 /** Species that stand on four (a body shot, not a face). */
 const FOUR_LEGGED = ["quadruped", "cow", "dog", "cat", "horse", "deer", "sheep"];
 
 describe("framePortrait — where the portrait camera stands", () => {
   it("gives an UPRIGHT body a head portrait, framed on its skull", () => {
-    for (const id of UPRIGHT) {
+    for (const id of uprightIds()) {
       const skel = skeletonOf(id);
       const frame = framePortrait(skel);
       expect(frame.framedHead).toBe(true);
@@ -80,7 +94,7 @@ describe("framePortrait — where the portrait camera stands", () => {
   it("stands a head portrait at EYE LEVEL — never chasing a head that points down", () => {
     // An animal-person's skull still pitches; a camera that followed it would
     // bake the floor. (Four-legged bodies get a deliberate downward tilt.)
-    for (const id of UPRIGHT) {
+    for (const id of uprightIds()) {
       const frame = framePortrait(skeletonOf(id));
       expect(Math.abs(frame.eye.y)).toBeLessThan(1e-6);
       expect(frame.eye.length()).toBeCloseTo(1, 6);

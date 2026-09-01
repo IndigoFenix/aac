@@ -68,6 +68,29 @@ describe("textContainsTerm — word matching, in two scripts", () => {
   });
 });
 
+describe("textContainsTerm — bounded suffix growth", () => {
+  // Found by the pipeline suite on its first run (2026-09-01): the Hebrew
+  // free-suffix rule let פסטו (pesto, a genuine pine-nut term) grow into
+  // פסטות — the PASTA category heading — so a peanut allergy erased every
+  // pasta on every Israeli menu. Pesto itself must keep matching in all its
+  // real positions; the pasta words must not.
+
+  it("פסטו does not strike פסטות or פסטה", () => {
+    expect(textContainsTerm("פסטות", "פסטו")).toBe(false);
+    expect(textContainsTerm("פסטה רוזה", "פסטו")).toBe(false);
+  });
+
+  it("פסטו still strikes actual pesto — bare, prefixed, and mid-sentence", () => {
+    expect(textContainsTerm("פסטו", "פסטו")).toBe(true);
+    expect(textContainsTerm("בפסטו", "פסטו")).toBe(true);
+    expect(textContainsTerm("רוטב פסטו ביתי", "פסטו")).toBe(true);
+  });
+
+  it("ordinary inflection still grows — בוטן catches בוטנים", () => {
+    expect(textContainsTerm("עוגת בוטנים", "בוטן")).toBe(true);
+  });
+});
+
 describe("allergyTerms — reading what a clinician typed", () => {
   it("strips the words that describe the allergy rather than the allergen", () => {
     const terms = allergyTerms("Severe allergy to peanuts");

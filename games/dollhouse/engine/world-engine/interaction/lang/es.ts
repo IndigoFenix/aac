@@ -106,6 +106,7 @@ const CENTRAL: Record<string, Lexeme> = {
   street: { w: "calle", g: "f" },
   animal: { w: "animal", g: "m", plw: "animales" },
   plants: { w: "planta", g: "f" },
+  individuals: { w: "mi gente", g: "f" },
   creature: { w: "criatura", g: "f" },
   // Devices (§5) + their toggle states (agree with the device's gender).
   on: { w: "encendido", f: "encendida" },

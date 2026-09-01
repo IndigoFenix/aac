@@ -444,6 +444,70 @@ ipcMain.handle("device-id:set", async (_e, id: unknown) => {
   }
 });
 
+// ── Start when the device does ──
+// Mirrors the student's `launchOnBoot` AAC setting into the OS login item, so a
+// dedicated AAC machine comes up on the board with nobody driving a desktop for
+// the child. The renderer pushes the setting on every profile load (see
+// client-aac/src/hooks/useLaunchOnBoot.ts) — this is a mirror, not a store.
+//
+// WHAT THIS ACTUALLY BUYS, precisely: `openAtLogin` is a per-user
+// `HKCU\...\Run` entry, which Windows runs at SIGN-IN, not at power-on. On a
+// machine that stops at the lock screen the app starts when someone signs in.
+// A device that must reach the board unattended needs the Windows account set
+// to sign in automatically as well, which is a provisioning step on the device
+// and not something an app may do to a machine. `supported` below reports what
+// the shell can do; it does not claim the account is set up.
+//
+// Unpackaged is deliberately unsupported: `process.execPath` in dev is
+// electron.exe, and registering THAT would start a bare Electron at every
+// sign-in on a developer's machine, with no app in it and no obvious way to
+// connect the two.
+interface AutoLaunchState {
+  supported: boolean;
+  enabled: boolean;
+  /** Set when the OS refused the write; null on success or when unsupported. */
+  error: string | null;
+}
+
+function autoLaunchSupported(): boolean {
+  return app.isPackaged && (process.platform === "win32" || process.platform === "darwin");
+}
+
+function readAutoLaunch(): AutoLaunchState {
+  if (!autoLaunchSupported()) return { supported: false, enabled: false, error: null };
+  try {
+    return { supported: true, enabled: app.getLoginItemSettings().openAtLogin === true, error: null };
+  } catch (err) {
+    log.error(`[autolaunch] could not read login item: ${String(err)}`);
+    return { supported: true, enabled: false, error: String(err) };
+  }
+}
+
+ipcMain.handle("auto-launch:get", () => readAutoLaunch());
+
+ipcMain.handle("auto-launch:set", (_e, enabled: unknown) => {
+  const want = enabled === true;
+  if (!autoLaunchSupported()) {
+    return { supported: false, enabled: false, error: null } satisfies AutoLaunchState;
+  }
+  try {
+    // `path` is passed explicitly rather than left to default. The registry
+    // entry is keyed by name, so re-writing it with the CURRENT exe path is
+    // also how a stale entry from a previous install location self-heals —
+    // which is why the renderer re-applies on every profile load instead of
+    // only on change.
+    app.setLoginItemSettings({ openAtLogin: want, path: process.execPath, args: [] });
+    log.info(`[autolaunch] login item ${want ? "registered" : "removed"}`);
+  } catch (err) {
+    // A locked-down machine can refuse the write. Report it rather than
+    // throwing: the client shows the real OS state, and a settings toggle must
+    // never be able to break a session.
+    log.error(`[autolaunch] could not write login item: ${String(err)}`);
+    return { supported: true, enabled: readAutoLaunch().enabled, error: String(err) } satisfies AutoLaunchState;
+  }
+  return readAutoLaunch();
+});
+
 // ── In-app browser allowlist ──
 // The renderer pushes the current permitted-website list when BrowserApp opens
 // and clears it on close. This is the source of truth for the main-process

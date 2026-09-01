@@ -26,7 +26,27 @@ export interface TransformersEnvConfig {
   allowRemote: boolean;
   /** Base URL for local weights; only meaningful when allowLocal is true. */
   localModelPath?: string;
+  /** Host to fetch remote weights from. Defaults to the HuggingFace hub when
+   *  unset — set it to serve models from our own CDN instead. */
+  remoteHost?: string;
+  /** Path appended to `remoteHost`. transformers.js interpolates {model} and
+   *  {revision}; a literal path (no placeholders) pins one specific model. */
+  remotePathTemplate?: string;
+  /** Persist fetched weights in the browser Cache API so a download is a
+   *  once-per-device event rather than once-per-launch. */
+  useBrowserCache?: boolean;
 }
+
+/** Every env key this helper manages, so save/restore can't drift from the
+ *  config shape above. */
+const MANAGED_KEYS = [
+  "allowLocalModels",
+  "allowRemoteModels",
+  "localModelPath",
+  "remoteHost",
+  "remotePathTemplate",
+  "useBrowserCache",
+] as const;
 
 /** Serializes transformers.js loads so no two of them fight over the env
  *  globals. Never leaves the env dirty: the previous values are restored even
@@ -42,20 +62,21 @@ export function withTransformersEnv<T>(
     // No env object (older/mocked builds) — just run; the caller's defaults apply.
     if (!env) return fn();
 
-    const prev = {
-      allowLocalModels: env.allowLocalModels,
-      allowRemoteModels: env.allowRemoteModels,
-      localModelPath: env.localModelPath,
-    };
+    const prev: Record<string, unknown> = {};
+    for (const k of MANAGED_KEYS) prev[k] = env[k];
     try {
       env.allowLocalModels = cfg.allowLocal;
       env.allowRemoteModels = cfg.allowRemote;
       if (cfg.localModelPath !== undefined) env.localModelPath = cfg.localModelPath;
+      if (cfg.remoteHost !== undefined) env.remoteHost = cfg.remoteHost;
+      if (cfg.remotePathTemplate !== undefined) env.remotePathTemplate = cfg.remotePathTemplate;
+      if (cfg.useBrowserCache !== undefined) env.useBrowserCache = cfg.useBrowserCache;
       return await fn();
     } finally {
-      env.allowLocalModels = prev.allowLocalModels;
-      env.allowRemoteModels = prev.allowRemoteModels;
-      env.localModelPath = prev.localModelPath;
+      // Restore EVERY managed key, not just the ones this caller set — a
+      // partial restore would leak e.g. our remoteHost into the next model's
+      // load and send it looking for weights we never published.
+      for (const k of MANAGED_KEYS) env[k] = prev[k];
     }
   });
   // Keep the chain alive regardless of this caller's outcome — one rejected

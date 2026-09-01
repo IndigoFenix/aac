@@ -16,6 +16,8 @@ export type { NativeHost, PlatformCapabilities } from "./types";
 export { getUpdateProvider } from "./update";
 export type { UpdateProvider, UpdateStatus } from "@shared/native-update.js";
 export {
+  applyLaunchOnBoot,
+  getAutoLaunchBridge,
   getBrowserBridge,
   getDeviceIdStore,
   getElectronBridge,
@@ -26,6 +28,7 @@ export {
   purgeStudentRecordings,
 } from "./bridge";
 export type {
+  AutoLaunchBridge, AutoLaunchState,
   DeviceIdStore, GazeBridge, GazeSidecarStatus, InstancesBridge, RecordingBridge,
 } from "./bridge";
 export type { AppInstance, AppInstanceReport } from "@shared/app-instances.js";

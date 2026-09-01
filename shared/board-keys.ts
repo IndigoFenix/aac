@@ -12,6 +12,13 @@
  * `slug()` never emits a `.`, so the dot is unambiguously the qualifier
  * separator. Collisions get a `_2`, `_3`, … suffix in stable input order.
  *
+ * A key is built from the board's OWN name in the author's own script, so a
+ * Hebrew board keys as `תירס_חם` — not transliterated. The key's whole job is
+ * to be the handle the model reaches for after reading the name beside it, and
+ * the model reads the name in that script already. Callers must therefore pass
+ * a DETERMINISTICALLY ORDERED list (see `boardRepository`), or the collision
+ * suffixes churn between session loads and strand the loaded board.
+ *
  * Resolution accepts EITHER form: a bare board slug resolves when exactly one
  * board has it. When several do, the caller gets the qualified alternatives back
  * as validator feedback rather than a dead end.
@@ -21,6 +28,13 @@
 
 /** Cap on a single slug segment. Long enough to stay readable, short enough to keep prompts lean. */
 const MAX_SEGMENT = 40;
+
+/** Truncate by CODE POINT, so a cap never splits a surrogate pair and leaves a
+ *  lone half in a key. */
+function capCodePoints(s: string, max: number): string {
+  const points = Array.from(s);
+  return points.length <= max ? s : points.slice(0, max).join("");
+}
 
 export interface BoardKeyInput {
   id: string;
@@ -44,14 +58,42 @@ export type BoardKeyResolution =
  *
  * Deliberately strips `.` along with everything else, so a package or board
  * named "Mr. Fox" cannot forge a qualifier separator.
+ *
+ * "Alphanumeric" is UNICODE letters and digits, not `[a-z0-9]`. An ASCII-only
+ * class silently erased every non-Latin name: on a Hebrew deployment EVERY
+ * board slugged to `""`, so `buildBoardKeys` handed out `board`, `board_2`,
+ * `board_3` … and the AI could not name the board a child had just asked for
+ * out loud (prod, 2026-08-31: "תירס חם" was listed as `package.board_3`).
+ * `\p{L}\p{N}` keeps Hebrew, Arabic, Cyrillic and CJK names addressable in the
+ * one script the model and the author actually share — the board's own.
+ *
+ * Combining marks are DROPPED rather than turned into separators (NFD first,
+ * so precomposed forms decompose): Hebrew niqqud would otherwise explode one
+ * word into `ת_י_ר_ס`, and Latin accents would truncate "Café" to "caf".
+ * Dropping them also makes a niqqud-ed name and its plain spelling resolve to
+ * the same key, which matters because Hebrew children's books — the boards
+ * this feature exists for — are routinely titled מנוקד.
+ *
+ * The kana voicing marks are the exception: dakuten/handakuten CHANGE the
+ * letter (ボ→ホ) rather than decorating it, so stripping them would key a
+ * Japanese board to a misspelling of its own name. They survive and NFC puts
+ * them back.
+ *
+ * IDEMPOTENT — `slug(slug(x)) === slug(x)`. `resolveBoardKey` re-slugs whatever
+ * the model sends, which is normally a key this function already produced, so
+ * a second pass must be a no-op or every key would fail to resolve.
  */
 export function slug(input: string): string {
   const s = (input ?? "")
+    .normalize("NFD")
+    // U+3099 / U+309A = combining dakuten / handakuten. Written as escapes:
+    // they are invisible combining characters in source.
+    .replace(/\p{M}+/gu, (marks) => marks.replace(/[^\u3099\u309A]/g, ""))
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "");
-  return s.slice(0, MAX_SEGMENT).replace(/_$/, "");
+  return capCodePoints(s, MAX_SEGMENT).replace(/_$/, "").normalize("NFC");
 }
 
 /**

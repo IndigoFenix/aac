@@ -147,8 +147,19 @@ export function resolveButtonColorToken(input: {
   role?: string;
 }): string {
   const { color, glyph, buttonType, role } = input;
-  if (color && color.trim()) return color;
+  // ⚖️ PURPLE IS THE WORD FINDER'S MEANING, not its default — the ONE token
+  // that outranks an explicit `color`. Its label and icon are the AI's to
+  // choose (an entry may read "something else" or "I'm afraid of…"), so the
+  // fill is all that is left to tell a child this press opens a search
+  // instead of speaking a sentence. A model that also paints its buttons
+  // must not be able to spend that signal.
+  //
+  // `more` is deliberately NOT in this position: its appearance is fixed
+  // anyway (reload symbol, fixed caption), so its colour carries no load an
+  // explicit override could destroy — and letting a colour win there is
+  // behaviour that predates this and is pinned by board-more-button.test.ts.
   if (buttonType === "wordfinder") return SPECIAL_BUTTON_COLORS.wordfinder;
+  if (color && color.trim()) return color;
   if (buttonType === "more") return SPECIAL_BUTTON_COLORS.more;
   // Yes/no BEFORE bid: a yes/no button is essentially never a bid, but if one
   // were ever marked as both, the learned colour has to win.

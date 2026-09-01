@@ -250,6 +250,11 @@ function harness(works: TownWork[], boxes: Record<string, { at: { x: number; y: 
     questViewOf: () => null,
     spiritFocusOf: () => null,
     convoNodeId: () => null,
+    // The starved-bill path picks a clerk to voice the refusal:
+    // `addressedFamily ?? gazeCreature() ?? convoNodeId()`. The ctx cast is
+    // `as unknown as`, so omitting this reads as a TypeError at call time
+    // rather than a type error here. Nobody is gazed at in this harness.
+    gazeCreature: () => null,
     // ⚖️ batch 2 L3/L4 — the host's two hand readings, reduced to what this
     // harness models: no jobs, no live needs and no pooled claims, so FREE is
     // exactly the shipped "no queued errand", and the pool is one hand per
@@ -351,11 +356,21 @@ describe("ensureRefineOrders — which raw gets cut first", () => {
     expect(posted(play)).toBeUndefined(); // the quiet arm — nothing to feed it
     expect(auto.milling).toBe(2); // …but the bill IS known
     expect(auto.rest).toEqual({});
-    // The SPOKEN twin: the player's own order may reach past the reserve, so
-    // the row posts and the standing bench still breaks the tie.
+    // 🔁 RE-PINNED again — the assertion moved a second time, the law still
+    // did not. The SPOKEN twin used to reach past the reserve and post the row.
+    // Since 2026-08-15 a spoken bill is sized to supply too ("appetite is not
+    // supply for anybody"), so an empty town clamps it to ZERO — and a clamp to
+    // zero is a REFUSAL, which by engine law is VOCAL rather than a silent
+    // no-op. Nothing posts; the bench SAYS why.
+    //
+    // The tie-break is still observable, and more directly than before: the
+    // refusal names the raw the tie-break chose. A masonry stands, so the
+    // engine went looking for STONE — not wood — and says so.
     const spoken = harness([masonry]);
     spoken.director.ensureRefineOrders(spoken.session, { block: 2 }, undefined, undefined, true);
-    expect(posted(spoken.play)!.produces).toBe(refinedGlyphOf("stone"));
+    expect(posted(spoken.play)).toBeUndefined();
+    expect(spoken.toasts.join("\n")).toMatch(/no stone to cut/);
+    expect(spoken.toasts.join("\n")).not.toMatch(/wood/);
   });
 
   it("NO GATE, the other way: reachable stock still outranks a standing bench", () => {

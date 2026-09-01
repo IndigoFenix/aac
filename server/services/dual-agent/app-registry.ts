@@ -120,14 +120,14 @@ export const APP_REGISTRY: AACAppDefinition[] = [
       "that. Open it only when the RESTAURANT is the point: they are seated somewhere that " +
       "serves food, a menu is in view, someone is talking about ordering or going out to eat, " +
       "or they ask to GO somewhere for a meal. If you are unsure, do not open it. " +
-      "Pass `data` = the food they named, verbatim (\"pizza\", \"ice cream\"), when they named one " +
-      "while asking to go out; omit it otherwise, because the grid IS the ask and guessing " +
+      "Pass `data` = the food OR the specific restaurant they named, verbatim (\"pizza\", " +
+      "\"ice cream\", \"La Pizzalia\") — a named restaurant we know opens on ITS menu when one " +
+      "exists. Omit `data` when they named neither, because the grid IS the ask and guessing " +
       "opens the wrong page. " +
       "You are told afterwards which screen actually appeared — describe only that. In menu " +
-      "mode NEVER name a specific dish: you cannot see which ones are on their board, and some " +
-      "are removed for allergies, so naming one that is not there asks a child to press a " +
-      "button that does not exist. Choosing a place is a WISH, not a booking — nobody has " +
-      "taken them anywhere.",
+      "mode NEVER name a specific dish: you cannot see which ones are on their board, so " +
+      "naming one that is not there asks a child to press a button that does not exist. " +
+      "Choosing a place is a WISH, not a booking — nobody has taken them anywhere.",
     icon: "🍽️",
     queryHint: "the kind of food they named, ONLY when they are asking to go out to eat",
     aiOpenPolicy: {

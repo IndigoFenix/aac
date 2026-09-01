@@ -37,7 +37,9 @@ import {
   structureProgramDisplayGlyph,
 } from "@shared/world-engine/kernel/town/programs.js";
 import { registerPlaceArt } from "@shared/glyph-place-art.js";
-import { BLOCK_GLYPH } from "@shared/world-engine/products.js";
+import {
+  BLOCK_GLYPH, sourceSuitabilityAt, type ClimateSample,
+} from "@shared/world-engine/products.js";
 import {
   clothingFillDays, farmAcresPerPerson, producerSurplusFrac, REAL_HOUSE_BUILD_DAYS,
   REAL_SCALE, REAL_SURPLUS_FRAC, TIER_POP_CAP, serviceRadiusM, type SettlementTier, type WorldScale,
@@ -137,6 +139,21 @@ export interface TownPlayConfig {
    *  `city-towns.ts cityTownConfig`, exactly as `scale` above rides in.
    *  Absent = `"town"`, byte-identical to every config that exists today. */
   tier?: SettlementTier;
+  /** THE SITE'S OWN GROUND (2026-09-01 — suitability-as-yield): the founding
+   *  cell's climate/terrain sample, which scales the farm process's yield per
+   *  acre by `sourceSuitabilityAt(FARM_CROP_SPECIES, …)` — a town on thin soil
+   *  works the same acreage and eats less off it. Plain data, so it rides the
+   *  payload like every other config field.
+   *
+   *  ⚠️ THE SAME SAMPLE MUST REACH THE LIVE SEAT (`QuestSessionStartOpts
+   *  .climate`), or the abstract farm and the visible farm will size the same
+   *  ground differently. Absent = a charter-only town (no planet cell under
+   *  it) ⇒ suitability 1, books byte-identical.
+   *
+   *  ⚠️ Derive it from the site's DIRECTION (`grid.topo.cellAt(dir)`), never
+   *  by indexing a grid field with `city.cell`: a FOUNDED site's cell is
+   *  synthetic (FOUNDED_CELL_BASE + seed) and out of the lattice by design. */
+  climate?: ClimateSample;
 }
 
 export interface TownFamilyMember {
@@ -220,6 +237,25 @@ const FOOD_PER_PERSON_DAILY = 0.001;
  * "modern" (0.5), which would understate a hand-farmed village 24×.
  */
 const FARM_TECH_TIER = "ancient" as const;
+
+/**
+ * ⚖️ WHAT THE TOWN'S FIELDS GROW — ONE OWNER, TWO SEATS (2026-09-01,
+ * suitability-as-yield). The staple crop is a fact about the FARM ROW below
+ * (this file already owns the farm's tier, its σ and its process chain), so it
+ * is declared here and IMPORTED by the live seat rather than re-typed there.
+ *
+ * It was two `const`s inside `quest-host.ts stepFarmSource` — invisible from
+ * the books, which is precisely how the visible farm and the abstract farm
+ * could have been sized off two different crops without anyone noticing. Both
+ * yield seats now read the SAME species through the SAME bridge
+ * (`sourceSuitabilityAt`), so a re-crop moves both together or neither.
+ *
+ * `SPECIES` is a catalogue row (products.ts `carrot_plant` — its niche is what
+ * suitability reads); `GLYPH` is the item it bears (`satiationDaysOf` and the
+ * region's stock speak this).
+ */
+export const FARM_CROP_SPECIES = "carrot_plant";
+export const FARM_CROP_GLYPH = "carrot";
 
 /**
  * The yield one acre of field must return DAILY for the identity to close:
@@ -322,9 +358,29 @@ const CLOTHING_BOX_UNITS = 2;
  * calls this with the session's own scale, so a world that eats faster also
  * wears out faster without a second seat to keep in step.
  */
-export function townPlayEconomy(scale: WorldScale = REAL_SCALE): EconomyDoc {
+export function townPlayEconomy(scale: WorldScale = REAL_SCALE, climate?: ClimateSample): EconomyDoc {
   const wearDays = clothingFillDays(scale);
-  const yieldPerAcreDaily = farmYieldPerAcreDaily(scale);
+  // ⚖️ THE BOOKS' YIELD SEAT (2026-09-01, suitability-as-yield) — the SAME
+  // bridge the live farm cap multiplies by (quest-host `stepFarmSource`), read
+  // off the SAME crop row (`FARM_CROP_SPECIES`). A site's ground quality is a
+  // multiplier on yield PER ACRE and nothing else: the acreage the town works
+  // (`field_acres`, and `plan.ts`'s field geometry derived from it) is what the
+  // POPULATION wants, which poor ground does not shrink — a village on thin
+  // soil ploughs the same land and eats less off it, which is the shortage the
+  // rest of the books already know how to model.
+  //
+  // 🚨 THE SQUARING TRAP, and why this multiplier may live ONLY here and at the
+  // live cap: `resource_compression` is already applied twice and CANCELS
+  // (plan.ts divides the field area by it while `farmAcresPerPerson` divides
+  // the rate by it). Suitability must not repeat that mistake — putting it
+  // inside `yieldPerM2Daily`/`farmAcresPerPerson`/the `field_acres` demand row
+  // would land it on both sides of the same identity, squaring a marginal
+  // site's penalty and (worse) shrinking the fields a hungry town draws.
+  //
+  // No climate ⇒ 1 ⇒ byte-identical books, which is what every charter-only
+  // town (and `TOWN_PLAY_ECONOMY` itself) must stay.
+  const yieldPerAcreDaily =
+    farmYieldPerAcreDaily(scale) * sourceSuitabilityAt(FARM_CROP_SPECIES, climate);
   // σ — the ladder's honest prices (`workFundingUnits`), read off the SAME
   // relative build effort `TOWN_PLAY_STRUCTURES` declares for each of these
   // three works. The tailor has no structure row of its own; it is the
@@ -861,7 +917,14 @@ export function* buildTownPlaySteps(config: TownPlayConfig): Generator<string, T
   // const cannot see a session's scale; this is the first seat that can. A
   // config with no scale (the clock-blind legacy layout) reads the engine
   // default, which is byte-identical to `TOWN_PLAY_ECONOMY`.
-  const compiled = compileEconomy([townPlayEconomy(config.scale ?? REAL_SCALE)], { construction: true });
+  // …AND AT THIS SITE'S GROUND (suitability-as-yield): the same seat lowers
+  // the founding cell's climate into the farm's yield per acre. A config with
+  // no climate (every charter-only town) reads suitability 1, which is again
+  // byte-identical to `TOWN_PLAY_ECONOMY`.
+  const compiled = compileEconomy(
+    [townPlayEconomy(config.scale ?? REAL_SCALE, config.climate)],
+    { construction: true },
+  );
   // E4 numeraire override: config wins over the doc; a medium naming no
   // street good fails at build, named (never a silent barter-forever).
   if (config.numeraire && !compiled.goods.some((g) => g.key === config.numeraire)) {

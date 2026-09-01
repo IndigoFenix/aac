@@ -728,7 +728,7 @@ export type ClientMessage =
   // Three-agent Word Finder — client sends INTENTS, server owns the GuessingModeState.
   // The server runs applyPress / applyCustomFact / rejectCurrentDimension and
   // broadcasts the rendered injection via guessing_mode + the agent fan-out.
-  | { type: "guessing_enter"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string } }
+  | { type: "guessing_enter"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }; seedKey?: string }
   | { type: "guessing_press"; suggestionKey: string }                   // user pressed a `suggestion:<dim>:<value>` button
   | { type: "guessing_reject" }                                          // user pressed "no" / "none of these"
   | { type: "guessing_narrow"; dimension: string; value: string; sourceText?: string }
@@ -791,7 +791,7 @@ export type ServerMessage =
   // server can keep the "student voice finishes before the AI replies" ordering
   // it gets for free on the server-synthesized path.
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student"; id?: string } }
-  | { type: "client_local_tts"; data: { text: string; language: string; voiceRole: "ai" | "student" } }
+  | { type: "client_local_tts"; data: { text: string; language: string; voiceRole: "ai" | "student"; complete?: boolean } }
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
   | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect

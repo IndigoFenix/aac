@@ -267,6 +267,54 @@ export interface RestaurantAppPayload {
    * the outbound venue lookup, which is what the setting actually governs.
    */
   canSearch?: boolean;
+  /**
+   * search mode: did we actually know where the student WAS?
+   *
+   * Distinct from `canSearch`, and the distinction is the whole point. False
+   * means we never looked — the device location setting is off, the reading
+   * failed, or nothing has reported a position yet — so an empty `places` is
+   * "we do not know", not "there is nothing here".
+   *
+   * Conflating the two told a child, out loud and with confidence, that no
+   * pizza place was near them when the search had never run (observed
+   * 2026-09-01). A screen may say it does not know; it may not invent a fact
+   * about the world the student cannot check.
+   */
+  positionKnown?: boolean;
+  /**
+   * menu mode: the student is LOOKING at this venue's menu, not sitting in it.
+   *
+   * Set when the open named a specific place (a places-grid press, or the AI
+   * passing a venue name) and that place has an approved menu. No binding
+   * happened — `student_venues` is untouched and "where are we" still belongs
+   * to the companion's confirmation tap. The Speaker note keys off this so the
+   * AI talks about a place they WANT to go, not a table they are at.
+   */
+  preview?: boolean;
+  /**
+   * search mode: the open named a specific place we KNOW, but it has no menu a
+   * student may see (never captured, in review, stale, or emptied by the
+   * allergen filter). Carried so the Speaker can say that plainly instead of
+   * narrating a grid as if the student had never asked for anywhere.
+   */
+  requestedVenueName?: string;
+  /** search mode: the id behind `requestedVenueName` — what the background
+   *  menu warm needs to try fetching it (see webMenuService.warmForVenue). */
+  requestedVenueId?: string;
+  /**
+   * search mode: the named venue's menu is being FETCHED right now — the
+   * student should see a "getting the menu…" screen, not a grid pretending
+   * nothing was asked. The server pushes a fresh app_open when the fetch
+   * settles: the menu on success, `menuFetchFailed` on anything else.
+   */
+  fetchingMenu?: { venueId: string; venueName: string };
+  /**
+   * search mode: a fetch for this venue's menu just finished WITHOUT a menu
+   * the student can see (not found, unreadable, or waiting on review). Shown
+   * on screen and said aloud — a press that quietly produces nothing is the
+   * one failure an AAC user cannot ask about.
+   */
+  menuFetchFailed?: string;
   /** caretaker mode: why the student lanes were not available. */
   reason?: "no_menu" | "browse_off";
 }

@@ -79,6 +79,18 @@ function cellKey(gps: GeoPoint): string {
   return `${coarse.latitude.toFixed(4)},${coarse.longitude.toFixed(4)}`;
 }
 
+/**
+ * A venue name reduced to what two spellings of it share: lowercase, no
+ * punctuation or quotes, single spaces. "לה-פיצליה" and "לה פיצליה" are the
+ * same restaurant; so are "Cafe Aroma" and "cafe aroma".
+ */
+export function normalizeVenueName(text: string | null | undefined): string {
+  return (text ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
 function pruneCells(now: number): void {
   for (const [key, at] of searchedCells) {
     if (now - at > BROWSE_SEARCH_TTL_MS) searchedCells.delete(key);
@@ -216,6 +228,83 @@ export class VenueBrowseService {
       visitedBefore: visited.has(entry.venue.id),
       hasMenu: !!menus[i],
     }));
+  }
+
+  /**
+   * Resolve whatever `open_app("restaurant", data)` carried into a venue row.
+   *
+   * Two forms, one caller:
+   *   `venue:<id>` — the client's own deterministic token, sent when a student
+   *                  pressed a place button. No guessing: the id came off the
+   *                  button.
+   *   free text    — whatever the Speaker heard; handed to the name matcher.
+   */
+  async resolveNamedVenue(
+    studentId: string,
+    text: string | null | undefined,
+    gps: GeoPoint | null | undefined,
+    radiusM: number,
+  ): Promise<Venue | null> {
+    const raw = (text ?? "").trim();
+    const token = /^venue:([\w-]{6,})$/i.exec(raw)?.[1];
+    if (token) {
+      try {
+        return (await venueRepository.getById(token)) ?? null;
+      } catch (error) {
+        console.error("[venue-browse] id lookup failed:", (error as Error)?.message);
+        return null;
+      }
+    }
+    return this.matchVenueByName(studentId, raw, gps, radiusM);
+  }
+
+  /**
+   * The venue a piece of free text NAMES, if any.
+   *
+   * This is how `open_app("restaurant", "לה פיצליה")` finds La Pizzalia. The
+   * Speaker passes whatever the student pressed or said, and a place button's
+   * label IS the venue's name — so an exact normalized match against the
+   * venues we already know (this student's saved places, plus the cached pool
+   * around them) resolves it without a single outbound call.
+   *
+   * Exact equality ONLY, on a normalized form. Containment is tempting
+   * ("Pizzalia" → "La Pizzalia") and wrong in the direction that matters: a
+   * venue named "פיצה רומא" contains the word "פיצה", so a student asking for
+   * PIZZA would be teleported into one specific pizzeria's menu instead of
+   * getting the pizza grid. The cuisine matcher owns words; this owns names,
+   * and a name is matched whole or not at all.
+   *
+   * Never throws; null means "this text is not a venue we know".
+   */
+  async matchVenueByName(
+    studentId: string,
+    text: string | null | undefined,
+    gps: GeoPoint | null | undefined,
+    radiusM: number,
+  ): Promise<Venue | null> {
+    const wanted = normalizeVenueName(text);
+    if (!wanted) return null;
+    try {
+      // The student's own places first — a family label ("המסעדה שלנו") is a
+      // name the cached pool has never heard of.
+      const links = await venueRepository.listForStudent(studentId);
+      for (const link of links) {
+        if (normalizeVenueName(link.label) === wanted) {
+          const venue = await venueRepository.getById(link.venueId);
+          if (venue) return venue;
+        }
+      }
+      const linked = await Promise.all(links.map((l) => venueRepository.getById(l.venueId)));
+      const byOwnName = linked.find((v) => v && normalizeVenueName(v.name) === wanted);
+      if (byOwnName) return byOwnName;
+
+      if (!gps) return null;
+      const nearby = await venueRepository.findNearby(gps, radiusM);
+      return nearby.map((r) => r.venue).find((v) => normalizeVenueName(v.name) === wanted) ?? null;
+    } catch (error) {
+      console.error("[venue-browse] name match failed:", (error as Error)?.message);
+      return null;
+    }
   }
 
   private shouldSearch(gps: GeoPoint, now: Date): boolean {

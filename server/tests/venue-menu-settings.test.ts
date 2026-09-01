@@ -76,7 +76,15 @@ describe("normalizeVenueMenuSettings", () => {
 
   it("rejects invalid enum values back to the default", () => {
     expect(normalizeVenueMenuSettings({ locationSearch: "gps" }).locationSearch).toBe("precise");
-    expect(normalizeVenueMenuSettings({ requireReview: "sometimes" }).requireReview).toBe("auto");
+    // The shipped default is "never" for now — the interim works-first call
+    // (2026-09-01); see DEFAULT_VENUE_MENU_SETTINGS for the whole rationale.
+    expect(normalizeVenueMenuSettings({ requireReview: "sometimes" }).requireReview).toBe("never");
+  });
+
+  it("ships review OFF by default — the interim works-first call", () => {
+    // Pinned so flipping it back to "auto" (the plan, once the review workflow
+    // is staffed) is a deliberate edit here, not a drive-by.
+    expect(normalizeVenueMenuSettings({}).requireReview).toBe("never");
   });
 
   it("keeps every legal requireReview value, 'auto' included", () => {
@@ -112,20 +120,22 @@ describe("normalizeVenueMenuSettings", () => {
 });
 
 describe("normalizeVenueMenuSettings — requireReviewWithAllergies", () => {
-  it("defaults ON", () => {
-    expect(normalizeVenueMenuSettings({}).requireReviewWithAllergies).toBe(true);
+  it("defaults OFF — same interim call as requireReview", () => {
+    // The allergen FILTER still runs on every board build regardless; what is
+    // off by default is only the human-eyes pass on top of it.
+    expect(normalizeVenueMenuSettings({}).requireReviewWithAllergies).toBe(false);
   });
 
-  it("can be switched off explicitly", () => {
+  it("can be switched on explicitly, and then it outranks the policy", () => {
     expect(
-      normalizeVenueMenuSettings({ requireReviewWithAllergies: false }).requireReviewWithAllergies,
-    ).toBe(false);
-  });
-
-  it("ignores a non-boolean rather than treating it as off", () => {
-    expect(
-      normalizeVenueMenuSettings({ requireReviewWithAllergies: "no" }).requireReviewWithAllergies,
+      normalizeVenueMenuSettings({ requireReviewWithAllergies: true }).requireReviewWithAllergies,
     ).toBe(true);
+  });
+
+  it("ignores a non-boolean rather than treating it as on", () => {
+    expect(
+      normalizeVenueMenuSettings({ requireReviewWithAllergies: "yes" }).requireReviewWithAllergies,
+    ).toBe(false);
   });
 });
 
@@ -232,27 +242,54 @@ describe("resolveAutoDefaults", () => {
   });
 });
 
-describe("resolveVenueMenuSettings", () => {
-  it("resolves 'auto' against the student", () => {
-    const out = resolveVenueMenuSettings({ enabled: true }, { birthDate: dobForAge(15), languageLevel: 4 }, NOW);
-    expect(out.requireReview).toBe("web_only");
-    expect(out.showPrices).toBe(true);
+describe("resolveVenueMenuSettings — under the INTERIM force", () => {
+  // 🚨 THE ROW THAT KEPT WINNING (verified against staging, 2026-09-01): the
+  // settings panel saves the whole object, so existing students carry
+  // requireReview:"auto" + requireReviewWithAllergies:true from the old
+  // defaults. Three rounds of default-flipping changed nothing for them —
+  // only a force at the RESOLVE layer covers a baked row. These pin exactly
+  // that. resolveAutoDefaults keeps its own suite above, untouched, so the
+  // flip back to honoring saved values is protected.
+
+  it("a baked old-defaults row STILL resolves review off — the failing case", () => {
+    const bakedRow = { enabled: true, requireReview: "auto", requireReviewWithAllergies: true };
+    const out = resolveVenueMenuSettings(bakedRow, { birthDate: dobForAge(15), languageLevel: 1 }, NOW);
+    expect(out.requireReview).toBe("never");
+    expect(out.requireReviewWithAllergies).toBe(false);
   });
 
-  it("lets an explicit clinician choice override the age default", () => {
+  it("even an explicit 'always' is pinned off while the interim holds", () => {
+    // Daniel's blanket ruling: right now it just works. Flip
+    // INTERIM_REVIEW_OFF to false and the choice springs back.
     const out = resolveVenueMenuSettings(
-      { enabled: true, requireReview: "never", showPrices: false },
+      { enabled: true, requireReview: "always" },
       { birthDate: dobForAge(15), languageLevel: 4 },
       NOW,
     );
     expect(out.requireReview).toBe("never");
-    expect(out.showPrices).toBe(false);
   });
 
-  it("fails cautious when there is no student record at all", () => {
-    const out = resolveVenueMenuSettings({ enabled: true }, null, NOW);
-    expect(out.requireReview).toBe("always");
-    expect(out.showPrices).toBe(false);
+  it("no student record at all still resolves off", () => {
+    expect(resolveVenueMenuSettings({ enabled: true }, null, NOW).requireReview).toBe("never");
+  });
+
+  it("prices are untouched by the interim — 'auto' still resolves by age", () => {
+    const out = resolveVenueMenuSettings(
+      { enabled: true, showPrices: "auto" },
+      { birthDate: dobForAge(15), languageLevel: 4 },
+      NOW,
+    );
+    expect(out.showPrices).toBe(true);
+  });
+
+  it("everything non-review passes through from the saved row", () => {
+    const out = resolveVenueMenuSettings(
+      { enabled: true, studentBrowse: true, browseRadiusM: 2500 },
+      { birthDate: dobForAge(15), languageLevel: 4 },
+      NOW,
+    );
+    expect(out.studentBrowse).toBe(true);
+    expect(out.browseRadiusM).toBe(2500);
   });
 });
 

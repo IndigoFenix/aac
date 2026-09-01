@@ -111,26 +111,6 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     },
   },
   {
-    id: "dimetrodon",
-    title: "Dimetrodon (sail)",
-    blueprint: {
-      version: 1,
-      spine: { torsoLengthM: 1.4, girth: 0.16, girthPeak: 0.5 },
-      neck: { segments: 2, lengthFrac: 0.25, radiusFrac: 0.5, lift: 0.3 },
-      tail: { segments: 5, lengthFrac: 1.0, radiusFrac: 0.4, droop: 0.4 },
-      head: { sizeFrac: 0.5, beak: 0.4, snoutLengthFrac: 0.8 },
-      posture: { bodyHeight: 0.4 },
-      // Sprawled reptilian legs (lateral socket → elbows-out, feet wide).
-      limbGroups: [
-        // FORE — elbow folds BACK.
-        { placement: "bilateral", count: 1, stationStart: 0.2, stationEnd: 0.2, attachHeight: 0.42, restProtraction: 0, restLevation: 0.05, restFlexion: -0.15, radiusFrac: 0.0616, lengthFrac: 0.44, stance: 0.4, toeCount: 4, toeSpread: 0.7, sizeContrast: 0 },
-        // HIND — knee folds FORWARD.
-        { placement: "bilateral", count: 1, stationStart: 0.82, stationEnd: 0.82, attachHeight: 0.42, restProtraction: 0, restLevation: 0.05, restFlexion: 0.15, radiusFrac: 0.07, lengthFrac: 0.5, stance: 0.4, toeCount: 4, toeSpread: 0.7, sizeContrast: 0 },
-      ],
-      membranes: [{ edge: "dorsal", start: 0.28, end: 0.78, height: 0.7, heightPeak: 0.5, rays: 10 }],
-    },
-  },
-  {
     id: "crocodile",
     title: "Crocodile (long jaw)",
     blueprint: {
@@ -162,25 +142,6 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         { placement: "bilateral", count: 1, stationStart: 0.8, stationEnd: 0.8, attachHeight: 0.45, restLevation: 0.1, restFlexion: 0.15, radiusFrac: 0.08, lengthFrac: 0.42, stance: 0.5, toeCount: 4, toeSpread: 0.6, sizeContrast: 0 },
       ],
       skin: { baseColor: "#4a5d3a", bellyColor: "#c9c2a0", accentColor: "#2e3a24" },
-    },
-  },
-  {
-    id: "raptor",
-    title: "Winged biped (raptor)",
-    blueprint: {
-      version: 1,
-      posture: { bodyPitch: 0.85, bodyHeight: 0.95 },
-      neck: { segments: 2, lengthFrac: 0.3, radiusFrac: 0.5, lift: 0.7 },
-      tail: { segments: 4, lengthFrac: 0.6, radiusFrac: 0.4, droop: 0.4 },
-      // Hard hooked beak with a working lower mandible — no hands and no
-      // free arms (the wings are membrane), so this is the mouth-pickup
-      // creature: the animator grabs with the beak (pose.gape).
-      head: { sizeFrac: 0.5, beak: 0.7, snoutLengthFrac: 0.7, snoutRadiusFrac: 0.33, snoutCurve: 0.35, mouthOpen: 0.8, eyePairs: 1, eyeSizeFrac: 0.2, eyeAngle: 0.5 },
-      // Long hind legs lead; shorter membranous forelimbs lift off (wings).
-      limbGroups: [
-        { placement: "bilateral", count: 1, stationStart: 0.78, stationEnd: 0.84, lengthFrac: 0.85, restLevation: -0.3, restFlexion: 0.5, stance: 0.6, toeCount: 3, footLengthFrac: 0.18, radiusFrac: 0.09 },
-        { placement: "bilateral", count: 1, stationStart: 0.24, stationEnd: 0.24, membrane: 0.95, lengthFrac: 0.6, radiusFrac: 0.07, attachHeight: 0.85, restProtraction: -0.4, restLevation: 0.7, restFlexion: 0.6, footLengthFrac: 0, toeCount: 1 },
-      ],
     },
   },
   // SUPERSEDED AT RUNTIME, on purpose. `animals-people.ts` authors the real
@@ -399,21 +360,6 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
         { placement: "bilateral", count: 1, stationStart: 0.145, stationEnd: 0.145, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.388, radiusFrac: 0.43185, taper: 0.298, membrane: 0, attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: -0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1, toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0, toeCurl: 0.02 },
         // HIND — knee folds FORWARD.
         { placement: "bilateral", count: 1, stationStart: 0.61, stationEnd: 0.61, sizePeak: 1, sizeContrast: 0, lengthFrac: 0.388, radiusFrac: 0.43185, taper: 0.298, membrane: 0, attachHeight: 0.175, restProtraction: -0.47, restLevation: -0.73, restFlexion: 0.15, flexRange: 0.55, legTwist: -0.78, legBalance: 0, footLengthFrac: 0.378, stance: 0.665, ankleRange: 1, toeCount: 4, toeLengthFrac: 0.508, toeSpread: 0.77, toeContrast: 0.035, opposition: 0, toeCurl: 0.02 },
-      ],
-    },
-  },
-  {
-    id: "plesiosaur",
-    title: "Plesiosaur (flippers)",
-    blueprint: {
-      version: 1,
-      neck: { segments: 5, lengthFrac: 1.3, radiusFrac: 0.4, lift: 0.5 },
-      tail: { segments: 4, lengthFrac: 0.8, radiusFrac: 0.4, droop: 0.3 },
-      head: { sizeFrac: 0.45 },
-      posture: { bodyHeight: 0.3 },
-      // Four membranous flipper-legs, sprawled low.
-      limbGroups: [
-        { placement: "bilateral", count: 2, stationStart: 0.25, stationEnd: 0.8, membrane: 0.9, lengthFrac: 0.7, radiusFrac: 0.1, attachHeight: 0.5, restProtraction: 0, restLevation: 0.2, restFlexion: 0, footLengthFrac: 0, toeCount: 1 },
       ],
     },
   },

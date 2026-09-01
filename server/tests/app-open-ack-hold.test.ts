@@ -42,10 +42,13 @@ type Sent = { via: "tool-response" | "as-content"; responses: Array<{ id?: strin
 /** Minimal provider double: records which wire each response went out on. */
 function makeProvider() {
   const sent: Sent[] = [];
+  const injected: string[] = [];
   return {
     sent,
+    injected,
     sendToolResponse: (responses: any[]) => { sent.push({ via: "tool-response", responses }); },
     sendToolResponseAsContent: (responses: any[]) => { sent.push({ via: "as-content", responses }); },
+    sendContextInjection: (text: string) => { injected.push(text); },
     close: () => {},
   };
 }
@@ -210,6 +213,53 @@ describe("the backstop", () => {
     jest.advanceTimersByTime(APP_OPEN_ACK_TIMEOUT_MS);
     agent.resolveAppOpen("call-1", { opened: false, note: "too late" });
     expect(provider.sent).toHaveLength(1);
+  });
+
+  test("but the NOTE still reaches the model, as a context injection", () => {
+    // 🚨 The backstop used to swallow it. `resolveAppOpen` returned early on
+    // "already settled", so the one thing that tells the Speaker what is
+    // actually on screen was dropped — precisely in the case where the model
+    // had already been handed "ok" and most needed correcting. Observed live
+    // 2026-09-01: three restaurant opens, every note lost, the Speaker never
+    // told that the search had found nothing.
+    //
+    // An injection is safe HERE and nowhere else in this flow: the backstop
+    // already answered the functionResponse, so nothing is outstanding and
+    // pushing content cannot strand generation.
+    const { agent, provider, handle } = makeSpeaker();
+    handle([OPEN_APP]);
+    jest.advanceTimersByTime(APP_OPEN_ACK_TIMEOUT_MS);
+    agent.resolveAppOpen("call-1", { opened: false, note: "[APP OPEN BLOCKED] nothing to show" });
+    expect(provider.injected).toEqual(["[APP OPEN BLOCKED] nothing to show"]);
+  });
+
+  test("the recovered note is sent ONCE, however many times the server settles", () => {
+    // routeAppOpen's `finally` settles unconditionally on every open, so a
+    // tagged path plus the fallback both fire. A repeated injection would read
+    // to the model as the app having opened twice.
+    const { agent, provider, handle } = makeSpeaker();
+    handle([OPEN_APP]);
+    jest.advanceTimersByTime(APP_OPEN_ACK_TIMEOUT_MS);
+    agent.resolveAppOpen("call-1", { opened: true, note: "[APP OPEN] restaurant" });
+    agent.resolveAppOpen("call-1", { opened: true, note: "[APP OPEN] restaurant" });
+    expect(provider.injected).toHaveLength(1);
+  });
+
+  test("a settle that BEATS the backstop injects nothing — the ack carried it", () => {
+    const { agent, provider, handle } = makeSpeaker();
+    handle([OPEN_APP]);
+    agent.resolveAppOpen("call-1", { opened: true, note: "[APP OPEN] restaurant" });
+    jest.advanceTimersByTime(APP_OPEN_ACK_TIMEOUT_MS * 4);
+    expect(provider.injected).toHaveLength(0);
+    expect(String(provider.sent[0].responses[0].response.detail)).toContain("restaurant");
+  });
+
+  test("a verdict with no note injects nothing", () => {
+    const { agent, provider, handle } = makeSpeaker();
+    handle([OPEN_APP]);
+    jest.advanceTimersByTime(APP_OPEN_ACK_TIMEOUT_MS);
+    agent.resolveAppOpen("call-1", { opened: true });
+    expect(provider.injected).toHaveLength(0);
   });
 
   test("it covers a REAL routeAppOpen, measured — a backstop that always fires is not a backstop", () => {

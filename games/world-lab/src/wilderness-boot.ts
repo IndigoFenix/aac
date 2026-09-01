@@ -11,14 +11,25 @@
  * This boot carries the WALKER and the FAUNA: the biome's animals as NPC
  * bodies (grazing ungulates on the steppe). The response board stays visible
  * and blank — nothing to press in the wild yet.
+ *
+ * 📦 THE BIOME TABLES ARE NOT HERE ANY MORE (2026-09-01 — the
+ * `homesteadWildMix` precedent in that same engine file, applied to its two
+ * siblings). What a cell's biome grazes (`faunaForBiome`) and what it
+ * scatters (`wildMixForBiome`) now live ONCE in
+ * `@shared/world-engine/interaction/quest/wilderness`: three consumers read
+ * the same answer and one of them is the HEADLESS text harness, which cannot
+ * import from `games/` at all — the duplication is precisely how these tables
+ * went stale (both game copies still called a registry export that had been
+ * renamed). Re-exported below, so this module's own consumers are unchanged.
+ * What stays GAME-side is what is genuinely this game's: the chunk side, the
+ * scatter RNG and the boot itself.
  */
 import * as THREE from "three";
 import type { WorldSpec } from "@shared/world-engine/types";
 import { runWorldHost, type WorldHost } from "@shared/world-engine/world-host";
 import { createWorld3DView, type RenderHost } from "@shared/world-engine/render3d";
 import { createCreatureAvatarFactory } from "@shared/world-engine/creatures/creature-model";
-import { orchardPlants } from "@shared/world-engine/products";
-import type { WildMixEntry } from "@shared/world-engine/interaction/quest/wilderness";
+import type { WildFauna } from "@shared/world-engine/interaction/quest/wilderness";
 
 /** Side of the wilderness chunk (metres of sim manifold). The anchor sits at
  *  the CENTER (the landing point) — sim coords run 0..WILD_SIDE. */
@@ -26,64 +37,19 @@ export const WILD_SIDE = 320;
 
 const PLAYER_ID = "player";
 
-export interface WildFauna {
-  horses: number;
-}
-
-/** What the landing cell's biome grazes (grid.fields.biome: 0 = barren/sea/
- *  ice, then DEFAULT_BIOSPHERE order — 1 tree, 2 grass, 3 horse). */
-export function faunaForBiome(biome: number): WildFauna {
-  switch (biome) {
-    case 2: return { horses: 4 };  // steppe / meadow
-    case 3: return { horses: 6 };  // grazer range
-    default: return { horses: 0 };
-  }
-}
-
-/** What the landing cell's biome SCATTERS as gatherable quest content
- *  (step ④ biome selection — the seam buildWilderness's `mix` param was
- *  cut for). Forest is oak-dominant; open grazing country is sparse trees
- *  but wild flocks (animal entries scatter as WALKING product bodies —
- *  milk/shear/hunt); barren ground is stone outcrops only. One
- *  fruit-bearing plant from the registry's orchard joins any growing
- *  biome — picked deterministically by the landing seed, so neighboring
- *  cells bear different fruit and a live-harvest (regrowing) source
- *  stands in every walkable wild. Species come from the products
- *  registry, never named in the engine. */
-export function wildMixForBiome(biome: number, seed: number): WildMixEntry[] {
-  const orchard = orchardPlants();
-  const fruit: WildMixEntry[] = orchard.length
-    ? [{ species: orchard[(seed >>> 3) % orchard.length]!.species, count: biome === 1 ? 2 : 1 }]
-    : [];
-  switch (biome) {
-    case 1: // forest
-      return [{ species: "oak", count: 10 }, ...fruit, { species: "rock", count: 6 }];
-    case 2: // steppe / meadow — open country, wild flocks
-      return [
-        { species: "oak", count: 3 },
-        ...fruit,
-        { species: "rock", count: 5 },
-        { species: "sheep", count: 2 },
-      ];
-    case 3: // grazer range — flocks and wild cattle
-      return [
-        { species: "oak", count: 3 },
-        ...fruit,
-        { species: "rock", count: 5 },
-        { species: "sheep", count: 2 },
-        { species: "cow", count: 1 },
-      ];
-    default: // barren / sea-edge / ice — nothing grows
-      return [{ species: "rock", count: 8 }];
-  }
-}
-
-/** A FOUNDING-AGE town's gatherable surroundings, from its charter biome —
- *  MOVED TO THE ENGINE (2026-08-12, one definition:
- *  `@shared/world-engine/interaction/quest/wilderness`). Three boots need it
- *  and one of them is the headless text harness, which cannot import from
- *  `games/`. Re-exported here so this module's own consumers are unchanged. */
-export { homesteadWildMix } from "@shared/world-engine/interaction/quest/wilderness";
+/** THE BIOME TABLES + the founding-age mix, ONE definition, in the engine
+ *  (see the file header). `wildMixForBiome` now takes an optional third
+ *  `climate` argument — with a cell's own climate sample the fruit it picks
+ *  is filtered to what actually grows there; without one it is the legacy
+ *  seed-only pick, byte-identical. Re-exported so every consumer of this
+ *  module (main.ts's chunk mount, quest-boot's wilderness opts) is
+ *  unchanged. */
+export {
+  faunaForBiome,
+  homesteadWildMix,
+  wildMixForBiome,
+  type WildFauna,
+} from "@shared/world-engine/interaction/quest/wilderness";
 
 /** The mounted wilderness chunk — structurally the same surface main.ts's
  *  walk↔fly coordinator drives for a town (step / pointer / camera handoff /

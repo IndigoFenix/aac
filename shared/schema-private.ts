@@ -630,6 +630,19 @@ export const aacSettings = pgTable("aac_settings", {
   studentVoiceType: text("student_voice_type"), // Student's voice: 'man', 'woman', 'boy', 'girl'
   customVoiceId: varchar("custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
   customStudentVoiceId: varchar("custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
+  // On-device neural voice (Kokoro). Distinct from `useLocalTts` below, which
+  // chooses local speech over server TTS at all; THIS chooses whether local
+  // speech is neural or the OS's built-in robotic voice.
+  // When on, the AAC DEVICE downloads ~94 MB
+  // of weights once and uses them wherever it would otherwise fall back to the
+  // browser's built-in speechSynthesis — i.e. when every cloud TTS provider has
+  // failed. English only for now (see client-aac/src/services/kokoroTts.ts).
+  //
+  // Per-STUDENT because it is a decision about a child's voice, but the weights
+  // are per-DEVICE: flipping this downloads nothing by itself — each device the
+  // student uses fetches the model on its next session. Off by default so no
+  // one pays for a download they didn't ask for.
+  localNeuralVoice: boolean("local_neural_voice").default(false),
 
   // Speaker backend: when true (default), the AAC Speaker runs as Gemini Live
   // native-audio (model speaks directly). When false, it runs as HTTP completion
@@ -789,6 +802,22 @@ export const aacSettings = pgTable("aac_settings", {
   // Off is a real off: the client never calls navigator.geolocation at all, so
   // no OS permission prompt is raised either.
   deviceLocationEnabled: boolean("device_location_enabled").default(false).notNull(),
+
+  // Whether the DESKTOP app registers itself to start when the device does, so
+  // a dedicated AAC machine comes up on the board without anyone driving a
+  // desktop for the student. Off by default; clinician-only (absent from the
+  // AI-writable column list in aac-settings-memory-schema.ts).
+  //
+  // The setting is per-student but the thing it controls is per-DEVICE: the
+  // Electron shell mirrors this into the OS login item whenever it loads the
+  // profile, so the last student to sign in on a machine is the one whose
+  // choice that machine is left holding. That is the right answer for the
+  // dedicated device this is for, and harmless on a shared one.
+  //
+  // Windows/Electron only. iPadOS has no such thing at any privilege level —
+  // an always-on iPad is Guided Access / MDM single-app mode, configured on
+  // the device — so the iPad and browser shells ignore this.
+  launchOnBoot: boolean("launch_on_boot").default(false).notNull(),
 
   // App configuration — per-app settings stored as JSON (e.g. { youtube: { enabled: true }, spotify: { enabled: true } })
   appConfig: jsonb("app_config").default({}),

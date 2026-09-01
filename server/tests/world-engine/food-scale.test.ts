@@ -227,14 +227,19 @@ describe("the staple catchment — the clock enters spacing through LAND, never 
 });
 
 describe("Stage β4 — the dial's FOUR declaration sites move in lockstep", () => {
-  // The shipped dial is declared at four sites: three games/world-lab/src/
-  // worlds.ts presets (Earthlike System, Home Planet, Nature Hike) and the
-  // Nature Hike game's OWN spec, games/nature-hike/src/game.spec.json — a
-  // file no test imported until β4, which is exactly how it could fork from
-  // the lab preset silently (mutation M3: JSON left at 20, worlds.ts flipped,
-  // the whole suite stayed green). Read both files and compare, so the four
-  // can never fork again without a red.
-  it("worlds.ts declares SHIPPED's dial at all three preset sites, and the hike spec matches", () => {
+  // The shipped dial is declared across two files: the games/world-lab/src/
+  // worlds.ts presets (Earthlike System, Home Planet, Nature Hike, Frontier
+  // Planet) and the Nature Hike game's OWN spec, games/nature-hike/src/
+  // game.spec.json — a file no test imported until β4, which is exactly how it
+  // could fork from the lab preset silently (mutation M3: JSON left at 20,
+  // worlds.ts flipped, the whole suite stayed green). Read both and compare, so
+  // they can never fork again without a red.
+  //
+  // The site COUNT is a floor, not an equality: the law is that every site
+  // carries the same dial, and a new compliant preset must not red this. The
+  // floor is still needed, though — if the field were renamed the regex would
+  // match nothing and the per-value loop would pass over an empty array.
+  it("worlds.ts declares SHIPPED's dial at every preset site, and the hike spec matches", () => {
     const worldsSrc = readFileSync(
       join(process.cwd(), "games", "world-lab", "src", "worlds.ts"), "utf8",
     )
@@ -242,7 +247,7 @@ describe("Stage β4 — the dial's FOUR declaration sites move in lockstep", () 
       .replace(/\/\/.*$/gm, "");        // …and line comments (they discuss dials)
     const declared = [...worldsSrc.matchAll(/resource_compression:\s*([0-9.]+)/g)]
       .map(m => Number(m[1]));
-    expect(declared).toHaveLength(3); // Earthlike, Home Planet, Nature Hike
+    expect(declared.length).toBeGreaterThanOrEqual(3);
     for (const dial of declared) expect(dial).toBe(SHIPPED.resourceCompression);
     const hikeSpec = JSON.parse(readFileSync(
       join(process.cwd(), "games", "nature-hike", "src", "game.spec.json"), "utf8",

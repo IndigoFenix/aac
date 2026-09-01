@@ -75,6 +75,12 @@ export interface ResolveStatusInput {
    * this is the first menu for the venue.
    */
   existingApprovedProvenance?: MenuProvenance | null;
+  /**
+   * May DOUBT (chain_binding / unbound_branch / extraction_quality) block
+   * going live? Default true. False = record it, don't gate on it — set by
+   * callers whose resolved review policy is "never". See the header.
+   */
+  gateDoubt?: boolean;
 }
 
 export interface ResolvedStatus {
@@ -90,40 +96,69 @@ export interface ResolvedStatus {
  * no branch that turns `pending_review` back into `approved`, because each
  * condition is independent evidence and one clean signal does not cancel
  * another's doubt.
+ *
+ * ⚖️ ONE exception, and it is the caller's to make, not this table's:
+ * `gateDoubt: false` records the DOUBT reasons (`chain_binding`,
+ * `unbound_branch`, `extraction_quality`) WITHOUT letting them block. It
+ * exists because under the review-off policy those fired on nearly every
+ * honest web menu and made "review: never" mean "review: always" in practice:
+ * the binding pair fires whenever a single-location restaurant's own site
+ * carries no branch names (2026-09-01, morning), and `extraction_quality`
+ * fires when ONE row of forty is below the extractor's confidence bar
+ * (page-merge: `lowConfidenceCount > 0`) — the same day's evening test parked
+ * a fully-extracted menu behind a review nobody was going to do, which
+ * Daniel's ruling settled: found and refined means shown. The reasons still
+ * land in `reviewReasons`, so the audit trail and the clinician's review card
+ * keep the doubt visible; what changes is only whether it gates.
+ *
+ * NOT exemptable, whatever the caller says: `policy` (an explicit clinician
+ * choice) and `camera_menu_exists` (protects a menu a human already trusted
+ * from silent replacement).
  */
 export function resolveCacheStatus(input: ResolveStatusInput): ResolvedStatus {
   const reasons: CacheReviewReason[] = [];
+  const gating: CacheReviewReason[] = [];
+  const gateDoubt = input.gateDoubt !== false;
+  const push = (reason: CacheReviewReason, gates: boolean) => {
+    reasons.push(reason);
+    if (gates) gating.push(reason);
+  };
 
   // 1. The student's policy (§4.8). Age, language level, caretaker setting.
-  if (input.requireReview) reasons.push("policy");
+  if (input.requireReview) push("policy", true);
 
   // 2. Could we read it? Independent of policy — `web_only` exempts the camera
-  //    from the wrong-restaurant defect, never from a misread price.
-  if (input.extractionRequiresReview) reasons.push("extraction_quality");
+  //    from the wrong-restaurant defect, never from a misread price. Under
+  //    review-off this records rather than gates: the flag means "a row or
+  //    two read shakily", not "this is not a menu" — a page that was not a
+  //    menu at all extracts zero items and never reaches this table.
+  if (input.extractionRequiresReview) push("extraction_quality", gateDoubt);
 
   // 3. The טומי רול defect (§2f, §4.9): right brand, wrong branch. A chain-level
   //    binding is a GUESS about which kitchen this is, and a guess must never
   //    reach a student unattended — the branch that does not serve the dish is
   //    exactly where a nonverbal child gets stuck.
   if (input.bindingBranchMatch === "chain" || input.bindingBasis === "chain_fallback") {
-    reasons.push("chain_binding");
+    push("chain_binding", gateDoubt);
   }
 
   // 4. No branch signal at all is weaker still than a chain match.
   if (input.bindingBranchMatch === "unknown" && input.bindingBasis !== "camera") {
-    reasons.push("unbound_branch");
+    push("unbound_branch", gateDoubt);
   }
 
   // 5. Trust ordering (§4.2a): web for reach, camera for truth. Once a venue has
   //    an approved camera menu, a scraped one is a SUGGESTION — it may well be
   //    newer and fuller, but it may also be the franchise's national menu, and
   //    only a human can say which. Camera over camera is fine: a fresh photo of
-  //    the same table supersedes an older one without ceremony.
+  //    the same table supersedes an older one without ceremony. Not exempt
+  //    under gateBindingDoubt: this rule protects an APPROVED menu from being
+  //    silently replaced, which is a different promise than binding doubt.
   if (input.existingApprovedProvenance === "camera" && input.provenance !== "camera") {
-    reasons.push("camera_menu_exists");
+    push("camera_menu_exists", true);
   }
 
-  return { status: reasons.length ? "pending_review" : "approved", reasons };
+  return { status: gating.length ? "pending_review" : "approved", reasons };
 }
 
 export interface CacheMenuInput {
@@ -143,6 +178,8 @@ export interface CacheMenuInput {
   bindingBranchMatch: MenuBranchMatch;
   requireReview: boolean;
   extractionRequiresReview?: boolean;
+  /** See ResolveStatusInput.gateDoubt. Default true. */
+  gateDoubt?: boolean;
   /** Language to render item names into — normally the student's. */
   targetLanguage?: string;
   /** AKIM §18.5 — who this menu work is for; rides down to the vision /
@@ -217,6 +254,7 @@ export async function cacheMenu(
     bindingBasis: input.bindingBasis,
     bindingBranchMatch: input.bindingBranchMatch,
     existingApprovedProvenance: (existing?.provenance as MenuProvenance | undefined) ?? null,
+    ...(input.gateDoubt !== undefined ? { gateDoubt: input.gateDoubt } : {}),
   });
 
   if (reasons.length) {

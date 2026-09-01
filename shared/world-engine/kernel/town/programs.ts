@@ -255,14 +255,18 @@ export const DEFAULT_ROOM_PROGRAMS: ReadonlyArray<RoomProgramDef> = [
   // there-is-space mechanism), and that split is the low-priority follow-up this
   // row exists to make possible.
   //
-  // `symbol: "food"` — a food room, drawn as `room(food)`. No new artwork: the
-  // container frame composes the category's own icon, exactly as the restaurant
-  // (a food BUILDING) does one level up.
+  // `symbol: "eat"` — drawn as `room(eat)`. No new artwork: the container frame
+  // composes an existing icon, exactly as the restaurant (an eating BUILDING)
+  // does one level up. EAT, not `food` (user decision 2026-08-31): `food` is
+  // the plate-and-utensils emoji 🍽️ with no bundled art, while `eat` carries
+  // real artwork (actions/body/eat) and reads as the ACT the room is for. A
+  // dining room is where you eat, not where food is kept — that is the
+  // storeroom.
   {
     kind: "dining",
     requires: ["table"],
     signature: ["table"],
-    symbol: "food",
+    symbol: "eat",
     words: {
       en: { w: "dining room", plw: "dining rooms" },
       he: { w: "חדר אוכל", g: "m", defw: "חדר האוכל" },
@@ -365,11 +369,12 @@ export const DEFAULT_STRUCTURE_PROGRAMS: ReadonlyArray<StructureProgramDef> = [
   // needs that the town has never modelled. Its room is the `dining` program,
   // which the default culture folds into the living room, so no building derives
   // as a restaurant here yet; the word, the icon and the relation to `eat` are
-  // real from today. `symbol: "food"` draws it as `building(food)` — no new art.
+  // real from today. `symbol: "eat"` draws it as `building(eat)` — no new art,
+  // and the same icon its `dining` room wears (user decision 2026-08-31).
   {
     type: "restaurant",
     rooms: ["dining"],
-    symbol: "food",
+    symbol: "eat",
     words: {
       en: { w: "restaurant" },
       he: { w: "מסעדה", g: "f" },

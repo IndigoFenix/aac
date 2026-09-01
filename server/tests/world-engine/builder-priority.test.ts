@@ -314,7 +314,10 @@ describe("related, not edible — the context relation (round 2)", () => {
   it("a restaurant is a FOOD BUILDING — a place you go, related to eating", () => {
     const restaurant = NOUNS.find((n) => n.symbol === "restaurant")!;
     expect(restaurant.kind).toBe("place");
-    expect(restaurant.glyph).toBe("building(food)"); // composed, no new artwork
+    // `eat`, not `food` (user decision 2026-08-31): the plate-and-utensils 🍽️
+    // has no bundled art and names the STUFF; `eat` carries real artwork and
+    // names the act the building is for. Still composed, still no new art.
+    expect(restaurant.glyph).toBe("building(eat)");
     expect(keys("i_me + go")).toContain("restaurant");
   });
 });

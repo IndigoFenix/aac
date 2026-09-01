@@ -1058,6 +1058,68 @@ describe("cluster instantiation — per-dimension questions survive", () => {
     expect(DIMENSION_BY_ID["feelings.valence"].subquestionLabel).toBe("good or bad feeling");
   });
 
+  // ── the fear branch ────────────────────────────────────────────────────
+  //
+  // `hurt` has earned "where?" and "how much?" since the cluster was written;
+  // `afraid` was a leaf. Prod 2026-08-30: a child pressed "I'm still scared"
+  // twenty-six times in ninety minutes and composed "why am I afraid?" from a
+  // `why?` button, with no dimension behind any of it. These pin the twin.
+
+  it("asks what the fear is ABOUT once 'afraid' is chosen", () => {
+    expect(DIMENSION_BY_ID["feelings.fear_object"].subquestionLabel)
+      .toBe("what the fear is about");
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "feelings");
+    s = applyPress(s, "feelings.named", "afraid");
+    expect(suggestNextDimension(s).def?.id).toBe("feelings.fear_object");
+  });
+
+  it("opens the same branch for 'anxious' — one worry, two words for it", () => {
+    let s = createState();
+    s = applyPress(s, CATEGORY_DIM_ID, "feelings");
+    s = applyPress(s, "feelings.named", "anxious");
+    expect(suggestNextDimension(s).def?.id).toBe("feelings.fear_object");
+  });
+
+  it("stays shut until a feeling is named, and never crosses with 'hurt'", () => {
+    // The gate is the whole point: "afraid of what?" asked of a child who
+    // said "happy" is noise, and it must not displace where_hurts either.
+    const fearOf = (named?: string) => {
+      let s = createState();
+      s = applyPress(s, CATEGORY_DIM_ID, "feelings");
+      if (named) s = applyPress(s, "feelings.named", named);
+      return DIMENSION_BY_ID["feelings.fear_object"].applicableWhen?.(s) ?? true;
+    };
+    expect(fearOf(undefined)).toBe(false);
+    expect(fearOf("happy")).toBe(false);
+    expect(fearOf("hurt")).toBe(false);
+    expect(fearOf("afraid")).toBe(true);
+
+    let hurtState = createState();
+    hurtState = applyPress(hurtState, CATEGORY_DIM_ID, "feelings");
+    hurtState = applyPress(hurtState, "feelings.named", "afraid");
+    expect(DIMENSION_BY_ID["feelings.where_hurts"].applicableWhen?.(hurtState) ?? true).toBe(false);
+  });
+
+  it("offers a way OUT of the question as one of the answers", () => {
+    // "I don't know" is a true answer to "what are you afraid of?", and the
+    // only alternative to it is abandoning the dimension — which reads to a
+    // child as the device refusing the subject it just raised.
+    expect(DIMENSION_BY_ID["feelings.fear_object"].values).toContain("dont_know");
+    expect(getSuggestionEntry("feelings.fear_object", "dont_know")).toBeDefined();
+  });
+
+  it("fits its everyday answers on the first page", () => {
+    // Six visible before "More" — the causes a child meets in a normal week.
+    // The medical and anticipatory ones sit in the tail on purpose: they are
+    // recognisable when offered but wrong to lead with.
+    const values = DIMENSION_BY_ID["feelings.fear_object"].values;
+    expect(values.slice(0, MAX_SUGGESTION_VALUES)).toEqual([
+      "the_dark", "being_alone", "a_noise", "a_person", "a_place", "a_dream",
+    ]);
+    expect(values.slice(MAX_SUGGESTION_VALUES)).toContain("the_doctor");
+  });
+
   it("still lets a context rename the cluster's ENTRY question only", () => {
     expect(DIMENSION_BY_ID["animal.where_found"].subquestionLabel).toBe("where this animal lives");
     // …while the nested follow-ups keep asking their own.

@@ -40,6 +40,7 @@ import {
   type SessionMeta,
 } from "@shared/world-engine/interaction/quest/quest-host";
 import type { WildernessParams, WildMixEntry } from "@shared/world-engine/interaction/quest/wilderness";
+import type { ClimateSample } from "@shared/world-engine/products";
 import { PLAYER_ID } from "@shared/world-engine/solver/space3d";
 import type { RenderHost } from "@shared/world-engine/render3d";
 import {
@@ -672,7 +673,11 @@ export function bootLivingTown(
   return bootQuestGame(container, built.play.bundle.game, setStatus, {
     town: play,
     // The founding scatter reads the charter biome (farmland → orchard +
-    // wild livestock; mining → timber over stone).
+    // wild livestock; mining → timber over stone) — and ONLY the charter
+    // biome: this is the standalone preset-town path, there is no planet and
+    // no cell under this boot, so there is no climate sample to hand the mix
+    // and it stays on the legacy seed-only arm (2026-09-01, the niche join).
+    // The embedded boot below, which DOES stand on real ground, passes one.
     ...(wildOn
       ? {
           wilderness: {
@@ -824,6 +829,15 @@ export function bootTownEmbedded(
     tradePartners?: () => Array<{
       key: string; at: { x: number; y: number }; geo?: PartnerGeography;
     }>;
+    /** THE FOUNDING CELL'S CLIMATE (2026-09-01 — the niche join). The mounted
+     *  town's orchard sprinkle reads it when this boot stands on a REAL
+     *  planet, so a homestead only ever raises fruit that grows on its own
+     *  ground. Absent ⇒ the legacy charter-only arm: the mix picks its fruit
+     *  off the unfiltered list by seed, byte-identical (a preset town, a
+     *  pre-bake mount, a flat test world — none of them has a cell under
+     *  it). The caller derives the sample from the site's DIRECTION, never
+     *  from a registered cell id: a founded site's cell is synthetic. */
+    climate?: ClimateSample;
   },
 ): EmbeddedTown {
   // ── Overlay DOM: ONLY the in-world HUD (toast/win) floats over the flight
@@ -904,11 +918,18 @@ export function bootTownEmbedded(
       ? {
           wilderness: {
             seed: play.config.seed,
-            mix: homesteadWildMix(play.plan.biome, play.config.seed),
+            mix: homesteadWildMix(play.plan.biome, play.config.seed, opts?.climate),
           },
         }
       : {}),
     scale: opts?.scale ?? DOLLHOUSE_SCALE,
+    // THE SAME SAMPLE THE BOOKS GOT (2026-09-01, suitability-as-yield): the
+    // town's live farm cap scales by how well this ground grows the crop, and
+    // the compiled farm process scaled by it at founding (`TownPlayConfig
+    // .climate`, set by the city loader off the SAME cell). Passing one and
+    // not the other is the one way the visible farm and the abstract farm can
+    // disagree. Absent ⇒ suitability 1 on both sides, byte-identical.
+    ...(opts?.climate ? { climate: opts.climate } : {}),
   });
   (window as unknown as Record<string, unknown>).__questEmbed = host;
   setStatus(
@@ -1023,6 +1044,11 @@ export function bootWildernessQuest(
     /** Settlement keep-clear discs in chunk-SIM coords — the scatter must
      *  not put features through a bordering village's streets. */
     clears?: ReadonlyArray<{ x: number; y: number; r: number }>;
+    /** THE LANDING CELL'S CLIMATE (2026-09-01 — suitability-as-yield). The
+     *  chunk's scatter already reads it through `wildMix`; the SESSION carries
+     *  it too, so anything founded here later asks the ground the same
+     *  question the mix did. Absent ⇒ suitability 1, byte-identical. */
+    climate?: ClimateSample;
   },
 ): EmbeddedWildQuest {
   // QUESTLESS SESSION (Shape B): no goal-tree shell at all — `host.start(null)`
@@ -1118,6 +1144,8 @@ export function bootWildernessQuest(
     // avatarMode "creature" and CREATES this player a body — of THIS species.
     ...(opts.avatarSpecies ? { avatarSpecies: opts.avatarSpecies } : {}),
     scale: opts.scale ?? DOLLHOUSE_SCALE,
+    // What this ground grows (see the opts doc) — omitted = the legacy arm.
+    ...(opts.climate ? { climate: opts.climate } : {}),
     // What the old shell's game.meta carried — same seed, same title.
     meta: { seed: opts.seed, title: "Creature Quest Village" },
   });

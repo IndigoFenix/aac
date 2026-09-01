@@ -29,6 +29,7 @@ import {
 } from "@shared/world-engine/kernel/town/host";
 import type { GrowSeed } from "@shared/world-engine/kernel/town/streets";
 import type { WorldScale } from "@shared/world-engine/scale";
+import type { ClimateSample } from "@shared/world-engine/products";
 import type { FlightCity } from "./space-fly";
 
 /** Founding population cap for a VISIT: Malthus regrows the town to its
@@ -103,6 +104,16 @@ export interface CityTownLoaderOpts {
    *  contract as `roadBearings`/`roadSeeds`: a function of the city, not of
    *  time. Absent / null = no record, the shipped path byte-identical. */
   record?: (fc: FlightCity) => TownRecord | null;
+  /** ⚖️ THE SITE'S GROUND (2026-09-01 — suitability-as-yield): this city's
+   *  founding-cell climate sample, which scales the compiled farm process's
+   *  yield per acre (`TownPlayConfig.climate`). Same determinism contract as
+   *  `roadBearings`: a function of the city, never of time.
+   *
+   *  🚨 IT MUST BE THE SAME SAMPLE THE MOUNT PASSES the quest host
+   *  (`bootTownEmbedded` opts.climate) — books and visible field size the same
+   *  ground, so the caller derives BOTH from one expression. Absent / null =
+   *  a charter-only town ⇒ suitability 1, byte-identical books. */
+  climate?: (fc: FlightCity) => ClimateSample | null;
 }
 
 /**
@@ -227,6 +238,14 @@ export function createCityTownLoader(opts: CityTownLoaderOpts = {}): CityTownLoa
     try {
       const config = foundedCfg.get(fc.city.cell)
         ?? cityTownConfig(fc, Date.now(), opts.questCount ?? 0, opts.scale?.());
+      // THE SITE'S GROUND, into the books (suitability-as-yield). Filled in
+      // rather than overwritten: a FOUNDED site's serialized config is the
+      // player's own record and may already carry the sample it was founded
+      // on — the loader must not re-decide that from the current planet read.
+      if (config.climate === undefined) {
+        const climate = opts.climate?.(fc) ?? null;
+        if (climate) config.climate = climate;
+      }
       // ⚖️ B-③ — THE LAZY MATERIALIZATION IS EXPAND: a city with a condensed
       // record delivers its shelf into the town it becomes, conserving.
       const rec = opts.record?.(fc) ?? null;

@@ -58,6 +58,7 @@ import { isMakeable } from "../content/makeable.js";
 import { isAnimal, isPlant } from "../content/properties.js";
 import { relatesToVerb, verbDistance } from "../content/relations.js";
 import { NEED_NOUNS, nounRank, placeGroupOf } from "../content/vocab-order.js";
+import { clusterIdsOf } from "../content/noun-clusters.js";
 import { SELF_NEEDS } from "./intent-compile.js";
 
 // ---------------------------------------------------------------------------
@@ -82,6 +83,10 @@ export type SlotNeed =
 /** A noun the player can name, with the verbs it AFFORDS (host-derived from
  *  behavior data — buildConcepts / family names / speakable places). */
 export interface SurfaceNoun {
+  /** A SPECIFIC person — this child's contact, or a game's character standing
+   *  in for one. See `ClusterableNoun.individual`: carried in as data, never
+   *  looked up, so the board stays deterministic. */
+  individual?: boolean;
   symbol: string;
   label?: string;
   kind: "place" | "item" | "creature" | "unknown";
@@ -636,7 +641,60 @@ const QUOTA: Partial<Record<SlotNeed, number>> = {
  * A client with a shorter column still pages; a chip it cannot draw is one
  * press further away, not gone.
  */
-const MAX_GROUPS = 8;
+// How many NOUN chips a row carries. Not a layout limit and never was — it
+// shipped as 5 (2026-07-28) and was raised to 8 without ceremony. It is a
+// judgement about how many chips a child can scan, and it is the user's dial.
+const MAX_GROUPS = 12;
+
+/**
+ * THE CHIP ROW, IN ORDER — one list, property chips and kind chips together.
+ *
+ * ⚖️ WHO, THEN WHAT IS ASKED FOR, THEN WHAT IS MERELY AROUND (user,
+ * 2026-09-01: "people should be first, then things that are commonly requested
+ * like food and places, then more general things like furniture, animals and
+ * plants"). The bands below are that sentence.
+ *
+ * This used to be TWO orderings stapled together: every property chip in
+ * `OBJECT_PROPERTIES` order, then every kind chip behind all of them. That is
+ * not a judgement about chips, it is an artefact of properties and kinds living
+ * in different files — `people` could not sit next to `food` because one was a
+ * kind and the other a property, a distinction no child can see. A chip is a
+ * chip; they are ranked in one list.
+ *
+ * ⚖️ A KIND CHIP IS NOT A LEFTOVER. Before that, kind ids were in NO list:
+ * `propOrder` looked an id up in OBJECT_PROPERTIES and returned `.length` for
+ * anything absent, so every kind cluster sorted behind every property cluster,
+ * tied, and `slice(0, MAX_GROUPS)` cut them. On a desire board that meant the
+ * `animals` chip, with FIFTY-NINE members, was built and then discarded on
+ * every single board — invisibly, because `isChipped` promised the opposite and
+ * the weight-0 backstop trusted it. Measured on "i_me + want": 62 of 67
+ * creatures reachable by NO route. A child could not say "I want the dog".
+ * An id in no list at all is still the only thing that sorts last, and that is
+ * now a bug in the clustering rather than a chip nobody wanted.
+ *
+ * THIS ORDER ONLY BREAKS TIES. Weight comes first in the sort, so a board that
+ * genuinely wants places (a `go`) still leads with them: what the sentence asks
+ * for outranks what the row prefers. The list decides the boards where the
+ * clusters tie — the pooled ones, which is most of them.
+ */
+const CHIP_ROW_ORDER: readonly string[] = [
+  // WHO. The specific people a child knows lead (`individuals`), then people in
+  // general. A sentence is usually about somebody, and on the boards that most
+  // want a person — a desire, an instruction — nothing outweighs them anyway.
+  "individuals", "creatures",
+  // WHAT IS ASKED FOR BY NAME. The first-page words: "I want food", "I want a
+  // drink". Same five as WANTABLE_PROPERTIES, in the same order.
+  "food", "drink", "toy", "clothing", "book",
+  // WHERE. A place is not a thing you want, but it is a thing you ask for.
+  "room", "building", "outside",
+  // WHAT IS MERELY AROUND — named far more often than wanted. Nobody asks for
+  // "an openable". Kept in the property vocabulary's own relative order.
+  "container", "openable", "appliance", "device", "tableware",
+  "instrument", "material", "structure",
+  // THE WIDE ONES. A whole kingdom behind one word: the chip is how you find a
+  // horse, not how you decide to talk about one. `things` is the widest of all.
+  "furniture", "animals", "plants", "things",
+];
 
 export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSuggestion {
   const capacity = ctx.capacity ?? 16;
@@ -745,25 +803,10 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
    *  which ones the chips will not in fact offer. */
   const clusterSize = new Map<string, number>();
   for (const n of ctx.nouns) {
-    const bump = (id: string) => clusterSize.set(id, (clusterSize.get(id) ?? 0) + 1);
-    for (const p of n.properties ?? []) bump(p);
-    if (n.kind === "creature") bump(isAnimal(n.symbol) ? "animals" : "creatures");
-    else if (n.kind === "place") bump("places");
-    else if (n.kind === "item") {
-      if (isPlant(n.symbol)) bump("plants");
-      else if (!(n.properties ?? []).length) bump("things");
-    }
+    for (const c of clusterIdsOf(n)) clusterSize.set(c.id, (clusterSize.get(c.id) ?? 0) + 1);
   }
-  const isChipped = (n: SurfaceNoun): boolean => {
-    const ids = [...(n.properties ?? [])];
-    if (n.kind === "creature") ids.push(isAnimal(n.symbol) ? "animals" : "creatures");
-    else if (n.kind === "place") ids.push("places");
-    else if (n.kind === "item") {
-      if (isPlant(n.symbol)) ids.push("plants");
-      else if (!(n.properties ?? []).length) ids.push("things");
-    }
-    return ids.some((id) => (clusterSize.get(id) ?? 0) >= 2);
-  };
+  const isChipped = (n: SurfaceNoun): boolean =>
+    clusterIdsOf(n).some((c) => (clusterSize.get(c.id) ?? 0) >= 2);
   /** COMPANY JOINS for an activity verb — "eat + together", "play + with + …".
    *  Lifted out of the generic relation band for exactly the reason the
    *  placement relations were: buried under and/then/because, the one word a
@@ -1116,6 +1159,10 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
         // The library still POOLS for the chips (`poolNouns` below) — the
         // objects are absent from the grid, never from the board.
         poolNouns = (nn) => nn.kind !== "place";
+        // A DESIRE IS USUALLY ABOUT SOMEBODY (user, 2026-09-01) — the specific
+        // people a child knows first, then people in general. That is no longer
+        // this band's business to declare: CHIP_ROW_ORDER puts them at the head
+        // of every row, so a desire gets them by being a board.
         // …EXCEPT anything no chip would carry. A cluster needs two members to
         // become a chip, so a lone oddity (the only book in the world) would
         // otherwise be reachable from this board by no route at all. Withholding
@@ -1352,12 +1399,6 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     pool: boolean | ((n: SurfaceNoun) => boolean) = false,
   ): SurfaceSuggestion {
     const poolAllNouns = pool === true ? () => true : pool === false ? null : pool;
-    // The WHOLE library pooled (the empty board) still ranks its clusters by
-    // size — "what is this world mostly made of" is a fair first question when
-    // nothing has been composed. A FILTERED pool (the desire board) does not:
-    // there the question is what a child wants, and the property vocabulary's
-    // own order answers it better than a count of cupboards.
-    const clusterBySize = pool === true;
     // Rank: weight, then the frequency prior, then lexicon order, then symbol.
     // THE ACTIVE VERB'S OWN ORDER, when it has one (`sleep` wants the bed even
     // though the vocabulary ranks the chair first). Read off the frame, so it
@@ -1431,7 +1472,12 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       // for the noun chips' MAX_GROUPS budget, so [food] and [do] can stand
       // on one board.
       groups: [
-        ...buildGroups(visible, poolAllNouns, clusterBySize, byRank),
+        // ASKING FOR A PERSON needs no special case any more: `individuals`
+        // and `creatures` head CHIP_ROW_ORDER outright, so a desire and an
+        // instruction get the people first because every board does. The flag
+        // this used to carry (`leadKindChips`, plus an open-roles test for
+        // "give") is gone — a rule that fires everywhere is not a condition.
+        ...buildGroups(visible, poolAllNouns, byRank),
         ...buildActionGroups(visible, byRank),
       ],
       typeChips: showTypeChips ? [...TYPE_CHIPS] : [],
@@ -1450,7 +1496,6 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
   function buildGroups(
     chosen: Set<string>,
     poolAllNouns: ((n: SurfaceNoun) => boolean) | null,
-    clusterBySize: boolean,
     byRank: (a: SurfaceButton, b: SurfaceButton) => number,
   ): SurfaceGroup[] {
     const cands = new Map<string, SurfaceButton>();
@@ -1478,22 +1523,10 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       clusters.set(id, c);
     };
     for (const b of cands.values()) {
-      const n = nounBy.get(b.symbol)!;
-      for (const p of n.properties ?? []) push(p, "property", b);
-      // LIVING SPLIT (2026-08-27): people · animals · plants. `creatures` is
-      // the chip that means SOMEBODY, and an animal is not somebody — the same
-      // distinction the addressee and company bands already draw with
-      // `isAnimal`, drawn once more where a child chooses a word.
-      if (n.kind === "creature") push(isAnimal(n.symbol) ? "animals" : "creatures", "kind", b);
-      // PLACES SPLIT (2026-08-25): rooms · buildings · outside. One chip for
-      // twenty-two places is a chip that opens another paging problem.
-      else if (n.kind === "place") push(placeGroupOf(n.symbol), "kind", b);
-      else if (n.kind === "item") {
-        // A plant keeps its property chips too (`tree` is also timber) — the
-        // one a child actually looks for must not be the one it loses.
-        if (isPlant(n.symbol)) push("plants", "kind", b);
-        else if (!(n.properties ?? []).length) push("things", "kind", b);
-      }
+      // The SAME rule `clusterSize` / `isChipped` read (content/noun-clusters.ts).
+      // It was written out separately here once; the copies disagreed, and the
+      // disagreement deleted the animals.
+      for (const c of clusterIdsOf(nounBy.get(b.symbol)!)) push(c.id, c.kind, b);
     }
     const groups: SurfaceGroup[] = [];
     for (const [id, c] of clusters) {
@@ -1507,12 +1540,16 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       // that is supposed to be the CATEGORY entry points — a toilet earns its
       // button there, not a cupboard chip behind it.
       //
-      // Bigger clusters lead only where the WHOLE library pools (the empty
-      // board, where "what is this world made of" is a fair first question);
-      // otherwise the property vocabulary's display order decides (the sort
-      // below): food and toys before the cupboards.
+      // ⚖️ SIZE IS NOT RANK. A pooled cluster is weighed by the board, not by
+      // its own headcount: every one sits at `TIER.opener - 1` and the CHIP ROW
+      // decides the row. The empty board used to rank pooled clusters by member
+      // count instead — "what is this world mostly made of" — and that put
+      // [animals] (59), [furniture] (18) and [plants] (13) at the head of the
+      // very first screen with [individuals] (2) dead last, which is the exact
+      // reverse of what a first screen should offer (user, 2026-09-01). Size
+      // still nudges a cluster that earned its weight from a real member.
       const weight = poolAllNouns
-        ? TIER.opener - 1 + (clusterBySize ? Math.min(2, members.length * 0.1) : 0) + (subTab === id ? 8 : 0)
+        ? TIER.opener - 1 + (subTab === id ? 8 : 0)
         : members[0]!.weight + Math.min(2, members.length * 0.1) + (subTab === id ? 8 : 0);
       // The FACE is picked from the ranked members but ordered by a different
       // question (what represents the cluster) — the expansion order is
@@ -1524,18 +1561,41 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
       ).slice(0, GROUP_EXEMPLARS);
       groups.push({ id, kind: c.kind, role: members[0]!.role, weight, members, exemplars });
     }
-    // Ranked by their best member, then by the PROPERTY VOCABULARY's own display
-    // order (object-properties.ts) — the kind clusters behind the properties,
-    // and the alphabet nowhere (L1). It decides the whole row whenever the
-    // members tie, which is exactly what a pooled library does.
-    const propOrder = (id: string): number => {
-      const i = OBJECT_PROPERTIES.indexOf(id as never);
-      return i < 0 ? OBJECT_PROPERTIES.length : i;
+    // Ranked by their best member, then by the CHIP ROW's own order — one list
+    // for property and kind chips alike (`CHIP_ROW_ORDER`), so people can lead
+    // and furniture can trail without the two being sorted by different rules.
+    // The alphabet decides nothing (L1). An id in no list at all sorts last,
+    // which is a bug in the clustering rather than a chip nobody wanted.
+    //
+    // Every pooled cluster ties on weight — they all sit at `TIER.opener - 1` —
+    // so on those boards this order decides the WHOLE row, which is why sorting
+    // kinds last was equivalent to deleting them.
+    const rowOrder = (id: string): number => {
+      const i = CHIP_ROW_ORDER.indexOf(id);
+      return i >= 0 ? i : CHIP_ROW_ORDER.length;
     };
     groups.sort(
-      (a, b) => b.weight - a.weight || propOrder(a.id) - propOrder(b.id) || (a.id < b.id ? -1 : 1),
+      (a, b) => b.weight - a.weight || rowOrder(a.id) - rowOrder(b.id) || (a.id < b.id ? -1 : 1),
     );
-    return groups.slice(0, MAX_GROUPS);
+    // ⚖️ A CHIP IS NEVER CUT INTO NOWHERE. MAX_GROUPS is a judgement about how
+    // many chips a child can scan — it is not permission to delete words. A
+    // board that withholds an object in favour of a chip has promised it is one
+    // press away, and cutting the only chip that carries it silently breaks
+    // that promise: measured on "i_me + want", the `animals` cluster (59
+    // members) was built and sliced off on every board, so 62 of 67 creatures
+    // were reachable by NO route and a child could not say "I want the dog".
+    //
+    // So the budget is a soft head: past it, a chip survives only if it is the
+    // last route to something. In practice that admits one or two, and only on
+    // a board that pools the whole library.
+    const kept = groups.slice(0, MAX_GROUPS);
+    const carried = new Set(kept.flatMap((g) => g.members.map((m) => m.symbol)));
+    for (const g of groups.slice(MAX_GROUPS)) {
+      if (!g.members.some((m) => !carried.has(m.symbol) && !chosen.has(m.symbol))) continue;
+      kept.push(g);
+      for (const m of g.members) carried.add(m.symbol);
+    }
+    return kept;
   }
 
   /** THE ACTION-CATEGORY CHIPS (the modal desire's breadth): one chip per

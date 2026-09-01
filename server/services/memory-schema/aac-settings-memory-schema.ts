@@ -42,7 +42,7 @@ import { studentService } from "../studentService";
 import { activityLogService } from "../activityLogService";
 import { summarizeChanges, changeDetails } from "../activityChanges";
 import type { AccessCtx } from "../sharing/visibility";
-import { normalizeAacPromptList } from "./aac-memory-schema";
+import { normalizeAacPromptList, promptNoteToday, stampPromptNote } from "./aac-memory-schema";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
 import { coerceSeizureConfig, type SeizureConfig } from "@shared/aac/seizure-config";
 import { coerceSeizureMarkers, kindTakesSide } from "@shared/aac/seizure-markers";
@@ -115,9 +115,17 @@ export function sanitizePromptField(input: string): string {
  * sanitizePromptField, trims, and drops blanks. Caps the list to 50 entries
  * so a runaway writer can't bloat the live system prompt.
  */
-export function sanitizePromptList(input: string | string[] | null | undefined): string[] {
+export function sanitizePromptList(
+  input: string | string[] | null | undefined,
+  /** When given, entries with no `[YYYY-MM-DD]` prefix are stamped with it.
+   *  Already-stamped entries keep their own date, so a model that rewrites the
+   *  list while echoing back the prefixes it was shown does not reset every
+   *  note's age to today. Omit to leave the list exactly as written. */
+  stampDate?: string,
+): string[] {
   return normalizeAacPromptList(input)
     .map((rule) => sanitizePromptField(rule).trim())
+    .map((rule) => (stampDate ? stampPromptNote(rule, stampDate) : rule))
     .filter((rule) => rule.length > 0)
     .slice(0, 50);
 }
@@ -188,11 +196,16 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
   // <persona> block. Without this gate either field is a clinician-controllable
   // prompt-injection slot. Legacy single-string writes are coerced to a
   // 1-element list. See sanitizePromptList / sanitizePromptField.
+  // Stamp undated entries with today's date. Both lists: a caretaker rule can
+  // be just as time-bound as an AI note ("one night in the hospital, then
+  // home"), and the reader can only judge that if it can see when the rule was
+  // written.
+  const today = promptNoteToday();
   if (filtered.chatAgentPrompt !== undefined) {
-    filtered.chatAgentPrompt = sanitizePromptList(filtered.chatAgentPrompt);
+    filtered.chatAgentPrompt = sanitizePromptList(filtered.chatAgentPrompt, today);
   }
   if (filtered.autoAacPrompt !== undefined) {
-    filtered.autoAacPrompt = sanitizePromptList(filtered.autoAacPrompt);
+    filtered.autoAacPrompt = sanitizePromptList(filtered.autoAacPrompt, today);
   }
 
   // seizureDetection is a JSON column holding clinician CONFIG + a machine-written
@@ -427,6 +440,10 @@ export const AAC_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
  * because in AAC mode you can't read their reports mid-session. ADD a note as
  * you learn something new; DELETE a note only when a newer one supersedes it or
  * it is no longer true. Never replace the whole list.
+ *
+ * Each entry is stored with a `[YYYY-MM-DD]` prefix (see `stampPromptNote`) so
+ * "no longer true" is a judgement the reader can actually make — a note about a
+ * moment expires with the day it names, one about the person does not.
  */
 export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
   id: "Context_AACAutoPrompt",
@@ -439,6 +456,10 @@ export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
     "suddenly goes blank, stay calm and alert a caretaker\" rather than naming a diagnosis; leave bare diagnoses, history, medications, and " +
     "test scores in the student's gated records. `add` a new note as you learn something — do NOT rewrite the whole list; `delete` a note " +
     "(by index or exact text) only when a newer one supersedes it or it is no longer true. Update freely — do not ask the user first, just do it. " +
+    "Each note is shown with the DATE IT WAS WRITTEN, as `[YYYY-MM-DD]`. Compare it against today's date: a note about a MOMENT (\"this morning\", " +
+    "\"is in the ER\", \"currently\", \"today\") is only true on its own date — once that day has passed, rewrite it as what is now true or delete it. " +
+    "A note about the PERSON — how they communicate, what they like, what to watch for — has no expiry and is kept however old it is. " +
+    "Do not add the date yourself; it is stamped for you. " +
     "Each note should always be in English, even if the user's primary language is not English.",
   opened: true,
   items: {
@@ -453,12 +474,13 @@ export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
       return normalizeAacPromptList(settings?.autoAacPrompt);
     },
     write: async (ctx, value) => {
-      await writeAACSettings(ctx, { autoAacPrompt: sanitizePromptList(value as any) });
-      return sanitizePromptList(value as any);
+      const next = sanitizePromptList(value as any, promptNoteToday());
+      await writeAACSettings(ctx, { autoAacPrompt: next });
+      return next;
     },
     add: async (ctx, value) => {
       const current = normalizeAacPromptList((await readAACSettings(ctx))?.autoAacPrompt);
-      const note = sanitizePromptField(String(value ?? "")).trim();
+      const note = stampPromptNote(sanitizePromptField(String(value ?? "")).trim(), promptNoteToday());
       if (note) current.push(note);
       await writeAACSettings(ctx, { autoAacPrompt: current });
       return note;

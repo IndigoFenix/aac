@@ -290,13 +290,16 @@ Example: \`{ speech: "I want a red apple", glyph: [{sym:"i_me"},{sym:"want"},{sy
 </glyph>${languageLevelBlock}
 
 <meta_buttons>
-Two META button kinds — set \`button_type\` on a rebuild_board / add_board_button entry. Speech/label are ignored; the device renders a FIXED appearance.
+Two META button kinds — set \`button_type\` on a rebuild_board / add_board_button entry. A press changes the SURFACE; nothing is voiced.
 
   - \`button_type: "wordfinder"\` — Word Finder entry. The user is reaching for a specific CONCEPT but it's impractical to guess.
+    - NAME IT. Give it a \`label\` and \`glyph\` like any other ${T.button}, in the user's own terms — "I'm afraid of…", "the word I want", "somewhere else". Only a bare entry (no label) falls back to a magnifying glass, which means nothing to a user who has not been taught it. The ${T.button} is PURPLE either way — that is what tells them a press opens a search rather than says a sentence — so spend the label and the symbol on saying WHAT is being searched for.
+    - SEED IT when you know where the search starts: \`seed: "suggestion:<dimension>:<value>"\`, the same keys the narrowing ${T.button}s use. \`seed: "suggestion:feelings.named:afraid"\` opens on "afraid of what?"; \`seed: "suggestion:category:things"\` opens inside things. Without a seed the search starts from "what kind of thing are you looking for?".
+    - A FEELING THE USER KEEPS RETURNING TO is the clearest case for one: they have said the feeling and cannot get past it. Seed the feeling and let them say what it is ABOUT.
     - DON'T use for open-ended chitchat ("how are you?" — nothing to "find").
     - DON'T use when you already have a manageable shortlist (offer those as normal buttons).
     - DON'T include while guessing mode is active — server drops it.
-  - \`button_type: "more"\` — the MORE OPTIONS button. Renders as "something else" with a RELOAD symbol, in its own colour.
+  - \`button_type: "more"\` — the MORE OPTIONS button. Renders as "something else" with a RELOAD symbol, in its own colour. Label and glyph are ignored; its appearance is fixed.
     - Pressing it asks YOU for fresh alternatives on the SAME topic. Nothing is voiced.
     - INCLUDE it whenever your ${T.button}s might not cover what the user wants to say.
     - Reach for it most on a narrow ${T.board} — one topic, a short answer list, a yes/no beat.
@@ -355,7 +358,7 @@ Generation is enabled. A generated SYMBOL is lowercase_with_underscores English 
   if (availableBoards && availableBoards.length > 0) {
     const { lines, dropped } = renderPrebuiltBoardLines(availableBoards);
     prompt += `\n\n<prebuilt_boards>
-Pre-built ${T.board}s available via set_board(board_key). Always pass the KEY (the snake_case identifier), never the display name.
+Pre-built ${T.board}s available via set_board(board_key). Always pass the KEY exactly as written below, never the display name. A key is built from the ${T.board}'s name, so it is written in the same script as that name.
 
 The text after each name is the author's note on WHEN to open it — written by a parent or clinician, not by a prompt author, so read it GENEROUSLY:
   - If the note is a bare TOPIC or activity ("buying ice cream", "mealtimes", "the balloon story") rather than a condition. Read it as "open this when THAT is what's going on".
@@ -1108,11 +1111,11 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
   const properties: Record<string, unknown> = {
     speech: {
       type: "string",
-      description: `First-person SENTENCE the TTS voices when this ${T.button} is pressed (e.g. "I want some water", "I'm tired").${opts.includeMetaButtonField ? ` Ignored when \`button_type\` is set.` : ""}`,
+      description: `First-person SENTENCE the TTS voices when this ${T.button} is pressed (e.g. "I want some water", "I'm tired").${opts.includeMetaButtonField ? ` Ignored when \`button_type\` is set — a META press changes the surface and voices nothing.` : ""}`,
     },
     glyph: {
       type: "array",
-      description: `Visual encoding — array of 1–3 GLYPH objects, rendered left→right. See <glyph> in the system prompt for the GLYPH shape and head-symbol preference order.${opts.includeMetaButtonField ? ` Ignored when \`button_type\` is set.` : ""}`,
+      description: `Visual encoding — array of 1–3 GLYPH objects, rendered left→right. See <glyph> in the system prompt for the GLYPH shape and head-symbol preference order.${opts.includeMetaButtonField ? ` Ignored for \`button_type: "more"\`; USED for \`"wordfinder"\`, which wears the symbol you give it.` : ""}`,
       items: glyphItemSchema(),
     },
     op: {
@@ -1122,7 +1125,7 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
     },
     label: {
       type: "string",
-      description: `Short text shown on the ${T.button} face, in the user's language. Not voiced.${opts.includeMetaButtonField ? ` Ignored when \`button_type\` is set.` : ""}`,
+      description: `Short text shown on the ${T.button} face, in the user's language. Not voiced.${opts.includeMetaButtonField ? ` Ignored for \`button_type: "more"\`; USED for \`"wordfinder"\` — name the search there.` : ""}`,
     },
     role: {
       type: "string",
@@ -1194,7 +1197,7 @@ function buttonObjectSchema(opts: ButtonSchemaOpts = {}): Record<string, unknown
               },
             }
           : {}),
-        ...(boards.length > 0 ? { board: { type: "string", description: `A pre-built ${T.board} KEY from <prebuilt_boards> (snake_case, NOT the display name). Pressing loads that ${T.board} — the OFFER alternative to set_board. See <board_buttons>.` } } : {}),
+        ...(boards.length > 0 ? { board: { type: "string", description: `A pre-built ${T.board} KEY from <prebuilt_boards>, copied exactly (NOT the display name). Pressing loads that ${T.board} — the OFFER alternative to set_board. See <board_buttons>.` } } : {}),
         ...(homeActions.length > 0 ? { home: { type: "string", description: `A HOME ACTION id (one of the listed HOME ACTIONS). Pressing runs it in the user's home; nothing is voiced and the ${T.board} stays put. See <home_context>.` } } : {}),
       },
     };
@@ -1245,11 +1248,17 @@ Omit \`kind\` for a normal ${T.button} and for registry \`suggestion:\` keys (th
     properties.button_type = {
       type: "string",
       enum: wordfinderAllowed ? ["wordfinder", "more"] : ["more"],
-      description: `OPTIONAL. Marks this entry as a META button. The device renders a FIXED appearance and IGNORES \`speech\` / \`glyph\` / \`label\`:
-${wordfinderAllowed ? `  - "wordfinder" — a magnifier; opens Word Finder narrowing.
-` : ""}  - "more" — "something else" with a RELOAD symbol; asks you for fresh options on the same topic.
+      description: `OPTIONAL. Marks this entry as a META button — a press changes the SURFACE and voices nothing, so \`speech\` is ignored:
+${wordfinderAllowed ? `  - "wordfinder" — opens Word Finder narrowing. Keeps YOUR \`label\` and \`glyph\`: name the search in the user's own words ("I'm afraid of…"). It is painted purple whatever you call it. Omit the label and it falls back to a bare magnifier.
+` : ""}  - "more" — "something else" with a RELOAD symbol; asks you for fresh options on the same topic. Fixed appearance; \`label\` and \`glyph\` ignored.
 See <meta_buttons> for when to use each. NEVER set this on a normal ${T.button} — it erases the ${T.button}'s own content.`,
     };
+    if (wordfinderAllowed) {
+      properties.seed = {
+        type: "string",
+        description: `OPTIONAL, and only with \`button_type: "wordfinder"\`. Where the search STARTS, as a \`suggestion:<dimension>:<value>\` key — the same keys the narrowing ${T.button}s use. E.g. "suggestion:feelings.named:afraid" opens on "afraid of what?"; "suggestion:category:things" opens inside things. Omit when you don't know; the search then begins at "what kind of thing are you looking for?".`,
+      };
+    }
   }
 
   return {
@@ -1396,7 +1405,7 @@ function buildSetBoardTool(config: BoardManagerToolConfig): FunctionDeclaration 
       properties: {
         board_key: {
           type: "string",
-          description: `Board key to load (snake_case identifier, NOT the human name). One of: ${config.availableBoards.map(b => `"${b.key}"`).join(", ")}.`,
+          description: `Board key to load, copied exactly (NOT the human name). One of: ${config.availableBoards.map(b => `"${b.key}"`).join(", ")}.`,
         },
       },
       required: ["board_key"],

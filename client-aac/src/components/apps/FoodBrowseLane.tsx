@@ -10,6 +10,23 @@
 //   - every press SPEAKS. That is the point of the lane. Finding a pizzeria is
 //     useful, but saying "I want pizza" is the thing an AAC device is for.
 //
+// 🚨 ONE PRESS, ONE VOICE. The lane passes `suppressLocalSpeech` and voices
+// every utterance itself through `onSpeak`, which is the student-voice TTS path
+// every other button in this client uses. Without it the renderer ALSO spoke
+// the press through browser speechSynthesis — and it speaks `spokenText ||
+// label`, which on this board was the raw registry key. So a Hebrew child
+// pressing 🍦 heard a Hebrew voice attempt "ice_cream" and then, a beat later,
+// the real sentence in the real voice (reported 2026-09-01: "it reads it both
+// locally AND with the server voice"). Hence `spokenText` below, and hence the
+// back button — which is navigation, not an utterance — saying nothing at all.
+//
+// ⚠️ `spokenText` is also what the renderer puts in `data-speech`, which is what
+// the AUDIO SCAN reads. Without it, pressing the ear button (or the automatic
+// scan firing on a hunting gaze) read the twelve raw keys aloud in sequence —
+// "pizza, burger, ice_cream, falafel, noodles…" — to a student whose board was
+// otherwise entirely in Hebrew. Same reported session. A registry key is a
+// lookup token; it must never reach a speaker.
+//
 // ─────────────────────────────────────────────────────────────────────────────
 // WHY THIS RENDERS WITH `DynamicBoard` (the same argument MenuLane makes)
 //
@@ -52,9 +69,19 @@
 // child is entitled to say, and gating it on a GPS fix or on a search
 // permission would be a vocabulary board that switches itself off indoors.
 //
+// ─────────────────────────────────────────────────────────────────────────────
+// "NOWHERE NEAR US HAS THAT" IS A CLAIM ABOUT THE WORLD
+//
+// It may only be shown after a search actually ran. Not knowing where we are —
+// the student's `deviceLocationEnabled` is off, the reading failed, or it has
+// not landed yet — is a different sentence, and the lane says that one instead.
+// The two were conflated, so a child who pressed 🍕 with location off was told,
+// on screen and then out loud by the Speaker, that no pizza place was near him.
+// Nobody had looked.
+//
 // See planning-docs/aac-restaurant-menus.md §4.1.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { getCurrentGps, mayReadDeviceLocation } from "@/lib/geolocation";
 import { getHost } from "@/lib/platform";
@@ -100,9 +127,35 @@ interface FoodBrowseLaneProps {
    * and nothing else — the grid still renders in full and still speaks.
    */
   locationEnabled?: boolean;
+  /**
+   * Did the SERVER know where the student was when it resolved the open?
+   *
+   * Only meaningful alongside `initialFood`, where the lane opens straight on
+   * the places view: it says whether an empty `initialPlaces` means "we looked
+   * and found nothing" or "no search ran". The lane's own presses answer this
+   * for themselves — see `located`.
+   */
+  positionKnown?: boolean;
+  /**
+   * The server is FETCHING this venue's menu right now. The lane shows a
+   * "getting the menu…" pane; the server pushes a fresh payload when the fetch
+   * settles (the menu, or `menuFetchFailed`), so this screen always resolves.
+   * The local backstop below is the net for a push that never comes.
+   */
+  fetchingMenuFor?: string;
+  /** A fetch for this venue's menu just finished with nothing to show. */
+  menuFetchFailed?: string;
   /** Voice a press the way a board button is voiced — student's voice, and the
    *  AI is told. `label` is what was pressed; `sentence` is what is said. */
   onSpeak?: (label: string, sentence: string) => void;
+  /**
+   * Open THIS venue's menu, by re-opening the app through the server with a
+   * `venue:<id>` token. Only called for a place that already HAS an approved
+   * menu. The press still speaks the want first — the sentence is the point of
+   * the lane — and the resolver still applies every gate (approval, staleness,
+   * allergen filter) before anything reaches the screen. Nothing binds.
+   */
+  onOpenVenueMenu?: (venueId: string) => void;
   /** Hand the device to the companion. Deliberately not dwellable — see below. */
   onSwitchToCaretaker: () => void;
   /** Reported once, so the parent can fall back to the caretaker lane when a
@@ -150,7 +203,11 @@ export function FoodBrowseLane({
   initialFood,
   canSearch = true,
   locationEnabled = false,
+  positionKnown,
+  fetchingMenuFor,
+  menuFetchFailed,
   onSpeak,
+  onOpenVenueMenu,
   onSwitchToCaretaker,
   onDisabled,
   language,
@@ -178,6 +235,29 @@ export function FoodBrowseLane({
   const [chosenFood, setChosenFood] = useState<string | null>(initialFood ?? null);
   const [places, setPlaces] = useState<BrowsePlace[]>(initialPlaces ?? []);
   const [busy, setBusy] = useState(false);
+  /**
+   * Did the search behind the CURRENT places view actually run?
+   *
+   * `null` — nothing has been asked yet. `false` — we do not know where we
+   * are, so an empty list means nothing. `true` — a real search happened and
+   * an empty list is a fact about the street.
+   *
+   * Seeded from the server's own answer, because with `initialFood` the lane
+   * opens on the places view without ever running a search of its own.
+   */
+  const [located, setLocated] = useState<boolean | null>(
+    initialFood ? positionKnown ?? null : null,
+  );
+  /**
+   * The in-flight position read.
+   *
+   * A GPS fix can take seconds and a child can press well inside that window.
+   * The press used to read the `gps` STATE, find it still null, and return
+   * without searching or saying so — and nothing re-ran it when the fix landed,
+   * so the whole visit stayed unsearchable. Awaiting the promise makes an early
+   * press slow rather than silently empty.
+   */
+  const gpsPendingRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
 
   const post = useCallback(
     async (body: Record<string, unknown>) => {
@@ -205,7 +285,9 @@ export function FoodBrowseLane({
     if (!canSearch) return;
     if (!mayReadDeviceLocation({ enabled: locationEnabled, host: getHost() })) return;
     let cancelled = false;
-    void currentPosition().then((position) => {
+    const pending = currentPosition();
+    gpsPendingRef.current = pending;
+    void pending.then((position) => {
       if (!cancelled) setGps(position);
     });
     return () => {
@@ -227,11 +309,22 @@ export function FoodBrowseLane({
 
     setChosenFood(key);
     setPlaces([]);
+    setLocated(null);
 
-    if (!studentId || !gps) return;
+    if (!studentId) return;
     setBusy(true);
     try {
-      const data = await post({ studentId, ...gps, category: key });
+      // The fix may still be in flight — see gpsPendingRef. `gps` first so a
+      // second press costs nothing.
+      const position = gps ?? (await gpsPendingRef.current) ?? null;
+      if (position && !gps) setGps(position);
+      if (!position) {
+        // We never looked, and the screen must not pretend otherwise.
+        setLocated(false);
+        return;
+      }
+      setLocated(true);
+      const data = await post({ studentId, ...position, category: key });
       setPlaces(data?.places ?? []);
     } finally {
       setBusy(false);
@@ -242,6 +335,17 @@ export function FoodBrowseLane({
     // A venue name is a proper noun and is spoken as written — the same rule
     // the menu board follows for dish names.
     onSpeak?.(place.name, t("aac.restaurant.wantToGo", { place: place.name }));
+    // ALWAYS to the server, deterministic (`venue:<id>` rides the reopen) —
+    // never via the AI hearing the sentence: the Speaker romanizes Hebrew
+    // venue names in its tool call ("Triola" for "טריולה", observed live
+    // 2026-09-01), which matches nothing and reset the app to the food grid.
+    // The server decides what the press gets: the cached menu, a
+    // "getting the menu…" screen while it fetches one, or a plain "couldn't"
+    // — every one of them a visible change. This used to be gated on
+    // `place.hasMenu`, and since nothing HAD a menu yet, a place press
+    // produced no screen change, no spinner, and no failure: three invisible
+    // outcomes in a row, which to the student is a dead button.
+    onOpenVenueMenu?.(place.venueId);
   };
 
   const showAll = available === null;
@@ -270,6 +374,12 @@ export function FoodBrowseLane({
         // what makes the renderer show `aac.glyph.<key>` rather than the raw
         // key, so a Hebrew student sees Hebrew and not "ice_cream".
         localizeFromGlyph: true,
+        // What this button SAYS, in the student's language. `label` is the raw
+        // key — that is what `localizeFromGlyph` needs — and the press path
+        // falls back to the label when there is no `spokenText`, so without
+        // this line the voice said "ice_cream". A registry key is a lookup
+        // token, never a word anybody says.
+        spokenText: t(`aac.glyph.${category.key}`),
         ...(emoji ? { glyphFallback: emoji, iconRef: emoji } : {}),
         action: { type: "speak" as const, text: category.key },
       } as BoardButton;
@@ -327,6 +437,10 @@ export function FoodBrowseLane({
       label: t("aac.restaurant.backToFood"),
       glyph: "food",
       ...(backItem?.emoji ? { glyphFallback: backItem.emoji, iconRef: backItem.emoji } : {}),
+      // Navigation, not an utterance — the handler below intercepts it and it
+      // is never passed to `onSpeak`. Nothing voices it either, because the
+      // board runs with `suppressLocalSpeech`; before that the renderer read
+      // the LABEL aloud, so going back announced "Something else" to the room.
       action: { type: "speak" as const, text: "" },
     } as BoardButton);
 
@@ -339,30 +453,86 @@ export function FoodBrowseLane({
 
   const showingPlaces = !!chosenFood && canSearch;
 
+  // The net under the fetching screen: the server GUARANTEES a completion
+  // push (menu or failure), but a dropped socket must not leave a child
+  // staring at a spinner forever. After 90s — comfortably past the fetch's
+  // own worst case — the pane flips to the failure text on its own.
+  const [fetchTimedOut, setFetchTimedOut] = useState(false);
+  useEffect(() => {
+    if (!fetchingMenuFor) return;
+    setFetchTimedOut(false);
+    const timer = setTimeout(() => setFetchTimedOut(true), 90_000);
+    return () => clearTimeout(timer);
+  }, [fetchingMenuFor]);
+
+  // ── The "getting the menu…" pane. A whole-lane state, not a banner: the
+  //    student asked for ONE thing and this is its answer in progress. ──
+  if (fetchingMenuFor && !fetchTimedOut) {
+    return (
+      <div className="flex flex-col h-full min-h-0 items-center justify-center gap-4">
+        <div className="h-14 w-14 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500" />
+        <p className="text-xl font-medium text-center text-gray-700 dark:text-gray-200">
+          {t("aac.restaurant.fetchingMenu", { place: fetchingMenuFor })}
+        </p>
+      </div>
+    );
+  }
+
+  const failedPlace = fetchTimedOut ? fetchingMenuFor : menuFetchFailed;
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <h2 className="text-xl font-semibold mb-2 text-center">
         {showingPlaces ? t(`aac.glyph.${chosenFood}`) : t("aac.restaurant.whatToEat")}
       </h2>
 
-      {showingPlaces && busy && (
-        <p className="text-center text-sm mb-1">{t("aac.restaurant.searching")}</p>
+      {/* The fetch ended with nothing to show. Said, not silent — a press
+          whose outcome is invisible reads as a dead button, and the Speaker
+          is saying the same sentence out loud. */}
+      {failedPlace && (
+        <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-center text-base text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          {t("aac.restaurant.menuUnavailable", { place: failedPlace })}
+        </p>
       )}
+
+      {/* A REAL loading state, not a caption. While the places search runs the
+          board below would be one lonely back button — which is what a student
+          saw and read as "it found nothing" (2026-09-01). The board is withheld
+          until there is an answer to show. */}
+      {showingPlaces && busy && (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500" />
+          <p className="text-lg font-medium text-gray-700 dark:text-gray-200">
+            {t("aac.restaurant.searching")}
+          </p>
+        </div>
+      )}
+      {/* Two different sentences, and the difference is the point — see the
+          header. `located === false` means no search ran; only a search that
+          ran may report an empty street. */}
       {showingPlaces && !busy && places.length === 0 && (
         <p className="text-center text-sm text-gray-500 mb-1">
-          {t("aac.restaurant.nothingNearby")}
+          {located === false
+            ? t("aac.restaurant.dontKnowWhere")
+            : t("aac.restaurant.nothingNearby")}
         </p>
       )}
 
       {/* One renderer for both grids. `min-h-0` matters: without it the flex
-          child refuses to shrink and the board renders off the bottom. */}
-      <div className="flex-1 min-h-0">
+          child refuses to shrink and the board renders off the bottom.
+          Hidden while the places search runs — the loading view above holds
+          the space instead. */}
+      <div className={busy && showingPlaces ? "hidden" : "flex-1 min-h-0"}>
         <DynamicBoard
           board={showingPlaces ? placesBoard : foodBoard}
           language={language}
           iconTextRatio={iconTextRatio}
           selectionMethod={selectionMethod}
           restSpace={restSpace}
+          // 🚨 This lane owns its own voice — see the header. `onSpeak` routes
+          // every utterance through the student-voice TTS; letting the renderer
+          // speak as well produced two voices per press.
+          suppressLocalSpeech
           onButtonClick={(button: BoardButton) => {
             if (button.id === "food_back") {
               setChosenFood(null);
