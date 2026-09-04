@@ -88,11 +88,26 @@ export interface ClientConfig {
    */
   pcmContinuous?: boolean;
   /**
+   * DEVICE-VOICE MODE (`aac_settings.useLocalTts`): the student speaks with
+   * THIS device's voice rather than streamed provider audio.
+   *
+   * What it changes here is WHEN. A press is voiced the instant it is tapped —
+   * locally, off the words the client already has — and the `button_press` /
+   * `glyph_press` that follows carries `spokenLocally` so the server logs and
+   * routes it without voicing it a second time. Without this the device voice
+   * still worked, but only after a full round trip, which is the opposite of
+   * the "free, instant, works with no connection" the setting promises.
+   */
+  deviceVoice?: boolean;
+  /**
    * Per-student seizure detection (resolved DSP thresholds + seed baseline).
    * Absent / enabled:false → the client skips the motion detector. The shape is
    * shared (server resolves the clinician's sensitivity choices into thresholds).
    */
   seizure?: import("@shared/aac/seizure-config").ClientSeizureConfig;
+  /** Accumulated head-neutral profile + reliability, seeded from the server so
+   *  attention detection opens tuned. See shared/aac/head-attention.ts. */
+  headNeutral?: { profile: import("@shared/aac/head-attention").HeadNeutralProfile; trust: number };
   /**
    * SLP MODE is on for the USER who opened this session (`users.slp_mode`) —
    * a speech-language pathologist is running a therapy session WITH the
@@ -282,6 +297,16 @@ export interface IdentifiedFace {
   relationship?: string;
   confidence: number;
   boundingBox?: { x: number; y: number; w: number; h: number };
+  /**
+   * Presence-ledger standing for this identity (server-populated, optional
+   * while the ledger rolls out). It is the difference between "the matcher
+   * scored a face at 41 %" and "a human said this is her" — the debug panel
+   * shows it because a raw confidence number never made that distinction
+   * visible to anyone watching a session go wrong.
+   */
+  presenceStatus?: "assumed" | "hypothesized" | "corroborated" | "confirmed" | "retracted";
+  /** Client track this match was made against (`${sourceKey}#${n}`). */
+  trackId?: string;
 }
 
 /** Server-side voice match result delivered via the `voices_identified` WS message. */
@@ -571,7 +596,10 @@ export interface UseDualAgentReturn {
    * natural language via the `interpret` tool — the relay does NOT TTS the
    * raw glyph string. See the [GLYPH PRESS] flow in live-relay.ts.
    */
-  playGlyph?: (glyphString: string) => void;
+  /** Play a composed sentence-builder glyph. Returns true when the device
+   *  rendered the sentence itself (no interpret() is coming), so the caller can
+   *  close the builder immediately. See shared/aac/builder-speech. */
+  playGlyph?: (glyphString: string) => boolean;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
   cancelRecording: () => void;
@@ -644,11 +672,20 @@ export interface UseDualAgentReturn {
   sendAudioClip?: (payload: { clipId: string; data: string; mimeType?: string }) => void;
   /** Report a wrong face/voice match so the server penalizes the offending embedding. */
   sendIdentityCorrection?: (entityType: "student" | "user" | "contact", entityId: string, reason?: string) => void;
+  /** Persist this session's machine-learned baselines (seizure motion energy,
+   *  head neutral) so the next session opens tuned. See
+   *  shared/aac/learned-baselines.ts. */
+  sendLearnedBaselines?: (data: import("@shared/aac/learned-baselines").LearnedBaselineObservation) => void;
   /** Capture a fresh frame now and send it as the first frame_grid — used the
    *  moment the session is ready so the startup scene uses a current snapshot. */
   sendFreshStartupFrame?: () => Promise<void>;
   /** Synchronous ref: true from first queued audio chunk until echo tail ends. Use for mic gating. */
   isBusyRef?: { readonly current: boolean };
+  /** Deadline (epoch ms) until which the DEVICE'S OWN local voice
+   *  (`client_local_tts` via speechSynthesis / Kokoro) is audible. That audio
+   *  never touches the shared audio player, so `isBusyRef` cannot see it — this
+   *  is how the mic gate does. See lib/app-speech-gate.ts. */
+  localTtsUntilRef?: { readonly current: number };
 
   // Focus frame
   /** True while a focus frame is being captured/sent (briefly shows glasses overlay) */

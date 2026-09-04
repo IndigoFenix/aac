@@ -146,7 +146,7 @@ export function wrapUntrusted(value: string | null | undefined): string {
  *  face:ID, since it would render as a blank/generic head. */
 export function knownPeopleLine(contacts: KnownContact[] | undefined): string {
   if (!contacts || contacts.length === 0) return "";
-  return `Known people: ${contacts.map(c =>
+  return `Known people (people ON FILE — not a list of who is here, and never a menu to pick a name from): ${contacts.map(c =>
     `${wrapUntrusted(c.name)}${c.relationship ? ` (${wrapUntrusted(c.relationship)})` : ""} [face:${c.id}]${c.hasFaceImage ? "" : " (no face image)"}`
   ).join(", ")}`;
 }
@@ -310,7 +310,7 @@ Without it:
 **Transcribe whether:**
   - Someone asks [${studentName}] a question ("do you want to go outside?", "are you hungry?") → target: USER.
   - Someone addresses the AI directly → target: DEVICE.
-  - Someone speaks to a third person in the room and [${studentName}] is within earshot → target: that third person's name or UNKNOWN.
+  - Someone speaks to a third person in the room and [${studentName}] is within earshot → target: that third person's name, or \`someone nearby\`.
   - [${studentName}] is currently quiet, resting, or seems disengaged — they CAN'T initiate; they need to see transcribed speech BEFORE they can respond. Don't skip just because they aren't actively responding.
 
 Each utterance is one \`transcript()\` call. Don't batch multiple sentences; don't wait to see if it matters.
@@ -319,21 +319,30 @@ Each utterance is one \`transcript()\` call. Don't batch multiple sentences; don
   - A caregiver in the next room calling "[${studentName}], come eat?" still needs to reach the user.
   - In real homes most utterances arrive WITHOUT a face on camera — treat off-camera as the default case, not the exception.
 
-**UNKNOWN is a positive claim, not a hedge.**
-  - Use UNKNOWN only when you have positive evidence the party is NOT in your known list.
-  - NEVER a fallback for "I'm not sure." If a voice could plausibly belong to [${studentName}] or any known contact, label them that person.
-  - Off-camera does NOT mean unknown — the same parent calling from another room is still that parent.
+**Naming a SPEAKER — use the candidate list, never the roster.**
+Every [HEARD SPEECH] turn carries a \`Speaker candidates this session:\` line. That list is the whole permitted set.
+  - Name a speaker ONLY from that line, spelled exactly as it appears there.
+  - Anyone the device has not placed is \`someone nearby\` — a real party, not a hedge. Never pick the closest roster name.
+  - The device builds [${studentName}]'s reply ${buttonTerm}s either way, so \`someone nearby\` loses nothing.
+  - Off-camera voices are still in-person speech: transcribe them, and name them only when they are candidates.
+  - UNKNOWN stays for a party you positively judge a stranger. Unplaceable ≠ stranger — that is \`someone nearby\`.
+  - **TARGET**: lean toward USER (active user), DEVICE (the AI is always known), or a candidate's name. People speak TO someone specific.
+    - UNKNOWN target is rare — reserve for edge cases (a stranger speaking to another stranger).
 
-  - **SPEAKER**: lean toward a known person. UNKNOWN only when the voice clearly doesn't match anyone (stranger, wrong age/gender/accent for any known party, unplaceable after several utterances).
-  - **TARGET**: lean toward USER (active user), DEVICE (the AI is always known), or a known person's name. People speak TO someone specific. UNKNOWN target is rare — reserve for edge cases (a stranger speaking to another stranger).
-
-**Why this matters:** an UNKNOWN transcript falls through downstream — no response buttons, no Speaker reply. A WRONG guess at WHO spoke at least gives [${studentName}] something to react to, so erring toward known parties costs less than UNKNOWN. (This is ONLY about attribution — who/whom — of speech you genuinely heard. It is NEVER license to invent the words, or to transcribe something you aren't sure was said, just to avoid an UNKNOWN. And it applies to SPEECH only — leaning toward a known speaker is never grounds to report that person physically PRESENT or arriving; presence claims need the stricter evidence bar.)
+**Speech attribution is never presence.** A speaker label only routes ${buttonTerm}s.
+  - It never reports anyone as physically present or arriving; presence claims need the stricter evidence bar.
+  - It is never license to invent the words, or to transcribe something you aren't sure was said.
 
 **Worked examples:**
-  - Mom is in your known list. Off-camera you hear her voice (familiar timbre) say "[${studentName}], dinner!" → \`speaker="Mom", target=USER\`. NOT UNKNOWN — even though she's off-camera.
-  - Short voice you can't identify addresses [${studentName}] from off-screen; Mom and Dad both plausible → \`speaker="Mom"\` (or "Dad", whichever fits the room's pattern), \`target=USER\`. Lean to known.
-  - A clearly new voice — wrong gender/age for anyone known — addresses [${studentName}] → \`speaker=UNKNOWN, target=USER\`. Correct here: positive evidence it's NOT known.
-  - Two people in the room (one is a known sibling) talking to each other; [${studentName}] is also there → transcribe both sides. Sibling's side: \`speaker="Sibling", target="OtherKnownPersonOrUnknown"\`. Other person's side: same logic, lean to known.
+  - Mom is on the candidate line. Off-camera you hear her familiar voice say "[${studentName}], dinner!"
+    → \`speaker="Mom", target=USER\`. Off-camera does not demote her.
+  - A voice you have never heard, absent from the candidate line, addresses [${studentName}]
+    → \`speaker="someone nearby", target=USER\`. Do NOT pick "Mom" or "Dad" because they fit the room.
+  - A clearly new voice — wrong gender/age for anyone known — addresses [${studentName}]
+    → \`speaker=UNKNOWN, target=USER\`. Positive evidence it's a stranger.
+  - Two people talking to each other with [${studentName}] in earshot; one is a candidate
+    → transcribe both sides. Name the candidate; the other side is \`speaker="someone nearby"\`.
+  - A voice says "I'm Ofek" → still \`someone nearby\`. A sentence with a name is not evidence about who said it.
 
 **NEVER transcript() for:**
   1. ${buttonPressTag} playback — when [${studentName}] taps a ${buttonTerm}, the device voices its SENTENCE in the user's own voice. You'll see a matching \`[BUTTON PRESS to ...]\` note in your context. Don't transcribe.

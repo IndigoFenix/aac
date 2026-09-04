@@ -247,7 +247,16 @@ const CATALOGUE: ReadonlyArray<{
       pt: { w: "grama", g: "f", mass: true },
     },
   },
-  { id: "bush", kind: "plant" },
+  {
+    id: "bush",
+    kind: "plant",
+    words: {
+      en: { w: "bush" },
+      he: { w: "שיח", g: "m" },
+      es: { w: "arbusto", g: "m" },
+      pt: { w: "arbusto", g: "m" },
+    },
+  },
   {
     id: "mushroom",
     kind: "plant",
@@ -272,7 +281,25 @@ const CATALOGUE: ReadonlyArray<{
   { id: "strawberry", kind: "fruit" },
   { id: "pumpkin", kind: "fruit" },
   { id: "pineapple", kind: "fruit" },
-  { id: "carrot", kind: "fruit" },
+  {
+    // ⚠️ WORDS HERE, NOT IN THE FOOD POOL. `carrot` is the harvest product of
+    // the shipped `carrot_plant`, and with no spec word the container board
+    // rendered the raw English "carrot" in he/es/pt (invisible to all three
+    // validators: no `t()` call, no builder head, and locale files that agree
+    // with each other about a key none of them has). Its three siblings
+    // (apple/banana/grape) carry their words on `content/pools.ts` food rows —
+    // but ADDING a row there shifts a seeded draw and made a generated quest
+    // uncertifiable ("q1_giver still needs q1_item"), so the lexeme lives on
+    // the species row instead, the same way `grass`, `mushroom` and `bush` do.
+    id: "carrot",
+    kind: "fruit",
+    words: {
+      en: { w: "carrot" },
+      he: { w: "גזר", g: "m" },
+      es: { w: "zanahoria", g: "f" },
+      pt: { w: "cenoura", g: "f" },
+    },
+  },
   { id: "beet", kind: "fruit" },
   // ── AAC ANIMAL VOCABULARY (2026-08-27) ────────────────────────────────────
   //
@@ -897,6 +924,45 @@ const CATALOGUE: ReadonlyArray<{
   { id: "bear", kind: "creature" },
   { id: "frog", kind: "creature" },
   { id: "rabbit", kind: "creature" },
+
+  // ── THE TWO DINOSAURS A CHILD ACTUALLY NAMES (2026-09-03) ─────────────────
+  //
+  // `dinosaur` was already a word; these are the two SPECIFIC ones every
+  // picture book teaches. Appended, like all late vocabulary — registry order
+  // is rank, and the general word outranks the particular ones.
+  //
+  // 🚨 ID ≠ WORD, ON PURPOSE. The id is the clade the body plan belongs to
+  // (`tyrannosaur`, `sauropod`) because examples.ts authors bodies under it and
+  // the two files are id-joined; the WORD is what a five-year-old says. So:
+  //   • `tyrannosaur` speaks "T. rex" — nobody points at the picture and says
+  //     "tyrannosaur", and "Tyrannosaurus rex" is four syllables of Latin.
+  //   • `sauropod` speaks "brontosaurus" — "sauropod" is a taxonomist's word
+  //     for the whole long-necked family, and the child's word for that shape
+  //     is brontosaurus. (Palaeontology's on-again-off-again quarrel over
+  //     whether Brontosaurus is a valid genus is not the AAC's problem: the
+  //     board must give the child the word they will be UNDERSTOOD saying.)
+  // Child-recognizable beats taxonomic in every locale below for the same
+  // reason — see the same call in `shared/glyph-registry.ts`.
+  {
+    id: "tyrannosaur",
+    kind: "creature",
+    words: {
+      en: { w: "T. rex" },
+      he: { w: "טי-רקס", g: "m" },
+      es: { w: "tiranosaurio", g: "m" },
+      pt: { w: "tiranossauro", g: "m" },
+    },
+  },
+  {
+    id: "sauropod",
+    kind: "creature",
+    words: {
+      en: { w: "brontosaurus" },
+      he: { w: "ברונטוזאורוס", g: "m" },
+      es: { w: "brontosaurio", g: "m" },
+      pt: { w: "brontossauro", g: "m" },
+    },
+  },
 ];
 
 /** THE JOIN: worked example by SPECIES ID. Built once, and duplicate-checked —

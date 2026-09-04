@@ -139,6 +139,23 @@ describe("withRefinableCredit — chain-aware affordability", () => {
     const credited = withRefinableCredit({ "block.material_wood": 3, wood: 2 });
     expect(costsMet({ costs: { block: 4 } }, credited)).toBe(true);
   });
+
+  // ⚖️ THE DIAL REACHES THE BOARD (2026-09-02). The credit used to divide by
+  // the RAW catalogue ratio while the mill and `infeasibleBillHeads` divided
+  // by `effectiveInPerOut`, so a `resource_compression: 7.5` world hid build
+  // buttons the refusal gate would have allowed — off by exactly 2×.
+  it("divides by the MILL's effective ratio, not the catalogue's", () => {
+    const stock = { wood: 14, stone: 6 };
+    // Dial 1 — effectiveInPerOut(2, 1) === 2, the shipped arithmetic.
+    expect(withRefinableCredit(stock, 1)[BLOCK_GLYPH]).toBe(10);
+    // Dial 7.5 — effectiveInPerOut(2, 7.5) === 1: what the bench charges.
+    expect(withRefinableCredit(stock, 7.5)[BLOCK_GLYPH]).toBe(20);
+  });
+
+  it("DEFAULTS to dial 1 and is byte-identical there", () => {
+    const stock = { wood: 5, "wood.wet": 1, stone: 2 };
+    expect(withRefinableCredit(stock)).toEqual(withRefinableCredit(stock, 1));
+  });
 });
 
 describe("spendCostsChain — the twin's implicit mill", () => {
@@ -153,6 +170,25 @@ describe("spendCostsChain — the twin's implicit mill", () => {
     const stock: Record<string, number> = { wood: 3 };
     expect(spendCostsChain({ costs: { block: 6 } }, stock)).toBe(false);
     expect(stock.wood).toBe(3);
+  });
+
+  // 🚨 CREDIT AND SPEND ARE ONE ARITHMETIC. The check admits the bill at the
+  // dial's ratio, so the implicit mill must PAY at it too — otherwise the
+  // function returns true having under-paid, and a block exists for free.
+  it("mills at the dial's ratio on both halves — no free block", () => {
+    const stock: Record<string, number> = { wood: 14, stone: 6 };
+    expect(spendCostsChain({ costs: { block: 20 } }, stock, 7.5)).toBe(true);
+    expect(stock.wood ?? 0).toBe(0);
+    expect(stock.stone ?? 0).toBe(0); // 20 raws bought exactly 20 blocks
+  });
+
+  it("DEFAULTS to dial 1 and is byte-identical there", () => {
+    const a: Record<string, number> = { "block.material_wood": 2, wood: 5 };
+    const b: Record<string, number> = { "block.material_wood": 2, wood: 5 };
+    expect(spendCostsChain({ costs: { block: 4 } }, a)).toBe(
+      spendCostsChain({ costs: { block: 4 } }, b, 1),
+    );
+    expect(a).toEqual(b);
   });
 });
 

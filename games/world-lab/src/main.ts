@@ -43,10 +43,12 @@ import { bootLivingTown, bootStructure, bootTownEmbedded, bootWildernessQuest, t
 import { bootWilderness, faunaForBiome, wildMixForBiome, WILD_SIDE, type WildernessGround } from "./wilderness-boot";
 import { createFloraField, floraTreesNear, FLORA_TREE_SPECIES, type FloraField } from "./flora-field";
 import { growthClassPeriodS, makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
+import type { WildThinInstance } from "@shared/world-engine/interaction/quest/wild-area";
 import { naturalSourceOf } from "@shared/world-engine/products";
-import { climateSampleAt, type ClimateSample } from "@shared/world-engine/planet/ecology";
+import { climateSampleAt, ecoAbundanceAt, type ClimateSample } from "@shared/world-engine/planet/ecology";
 import type { FieldRect } from "@shared/world-engine/planet/field-paint";
 import { createFarmCrops, type FarmCrops } from "./farm-crops";
+import { createFloraDepletion, type FloraDepletion, type SessionRect } from "./flora-depletion";
 import { createTradeRoads, type TradeRoads, type TownSpliceSpec } from "./trade-roads";
 import { createRiverRibbons, type RiverRibbons } from "./river-ribbons";
 import {
@@ -70,7 +72,7 @@ import {
   type FelledMarksPayload, type FoundedSitePayload, type WorldSave, type WorldSaveRecord,
 } from "./world-saves";
 import { bankOwnedHerd } from "@shared/world-engine/interaction/quest/herd";
-import type { PlanetCity } from "@shared/world-engine/planet/cities";
+import { charterBoxAt, charterReachCells, type PlanetCity } from "@shared/world-engine/planet/cities";
 import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
 import { mountBoardIsland } from "./board-island";
 import { createCityTownLoader, type CityTownLoader, type CityTownEntry } from "./city-towns";
@@ -516,6 +518,11 @@ let liveGround: ((x: number, y: number) => number) | null = null;
 /** The mounted town's live crop layer (bridge R1b) — record-driven, ~1 Hz. */
 let farmCrops: FarmCrops | null = null;
 let farmCropsAcc = 0;
+/** ⚖️ #49 Stage 3 — the countryside's depletion thinning, off the SAME quote
+ *  beat as the crops. Null until a town is mounted (the records are the
+ *  session's), and its answer is a set of flora instance keys that joins the
+ *  field's one per-instance mask in `syncFloraTwins`. */
+let floraDepletion: FloraDepletion | null = null;
 
 /** The mounted live town's stage — its streamer's `loadedLots()` is THE
  *  single variable driving the static↔live handoff (below). */
@@ -562,6 +569,11 @@ let wildPoint: SurfacePoint<CelestialBody> | null = null;
  *  One field per low body; recreated when the low body changes. */
 let flora: FloraField | null = null;
 let floraBodyId: string | null = null;
+/** The BODY the live field stands on — kept beside its id because the near-stand
+ *  suppression (② below) needs the body itself and, unlike the wilderness twin
+ *  gate, has no `wildPoint` to read it off: the frontier premise mounts its town
+ *  through the approach loader and never stands a wilderness session at all. */
+let floraBody: CelestialBody | null = null;
 let floraAcc = 0;
 const FLORA_ALT_M = 3_000; // stream flora when this low over a baked body
 const _wildPos = new THREE.Vector3();
@@ -629,15 +641,92 @@ function liveFoundedSiteCell(): number | null {
   return key ? foundedPlanetSites.get(key)?.cell ?? null : null;
 }
 
+/**
+ * ⚖️ THE PLAYER'S SITE MEASURES ITS OWN GROUND (③, user ruling 2026-09-02:
+ * *"what is the charter doing? Determining how much a site has, or how much
+ * the site will try to create? If it's the former, it needs to be
+ * location-aware."*).
+ *
+ * The charter is a MEASUREMENT — `planet/cities.ts charterBoxAt`, the same
+ * box-sum every wild and AI-founded city on the planet reads. This path was
+ * the one that bypassed it: the beacon carried a literal
+ * `{ farmland: 60, ore_access: 0, timberland: 0 }` and `siteTownConfig`'s own
+ * default `{ farmland: 60, ore_access: 0 }`, so a homestead founded in the
+ * deep forest declared ZERO timberland and its town's land-use label read
+ * `"farmland"` on every site ever founded.
+ *
+ * …AND IT RE-MEASURES AS THE SITE GROWS (same ruling: *"Also make the
+ * player's charter update as the site grows."*): the reach comes from
+ * `charterReachCells(site.buildings)`, one more cell per doubling of the
+ * settlement's structures. `buildings` is already serialized on
+ * `SerializedFoundedSite`, so NOTHING NEW IS STORED — the charter is
+ * re-derived from (cell, buildings) on load and reproduces exactly.
+ *
+ * ⚠️ THE ADDRESS IS THE DIRECTION, never `cell`: a founded site's registered
+ * cell is synthetic (`FOUNDED_CELL_BASE + seed`) and indexing a grid field
+ * with it is out of bounds by construction. Same rule as `cityClimate` /
+ * `cityBiome` / `cityEcology`.
+ *
+ * Null before the geography bake — the beacon then keeps the literal below
+ * and the next re-cut measures for real.
+ */
+function measuredSiteCharter(
+  bodyId: string,
+  dir: readonly [number, number, number],
+  buildings: number,
+): PlanetCity["charter"] | null {
+  const geo = flight?.world.bodies.find((b) => b.id === bodyId)?.geography;
+  if (!geo?.grid.topo.cellAt) return null;
+  return charterBoxAt(geo.grid, geo.grid.topo.cellAt(dir), charterReachCells(buildings));
+}
+
+/**
+ * The site's charter AS OF NOW, with the standing beacon updated in place.
+ *
+ * 🚨 CALLED ONLY AT RE-CUT EVENTS — a founding, a save restore, the snapshot
+ * taken when the wilderness chunk lets go (`snapshotLiveFoundedSite`), a
+ * cluster merge. NEVER per tick and never per frame: this session has twice
+ * shipped a defect where something derived from live state moved under the
+ * player (feature rects re-planning streets mid-harvest; a camera framed on a
+ * live catchment), and a charter feeds founding decisions and `state-books.ts`
+ * potential. The hysteresis is structural: the reach is an INTEGER over a
+ * monotone counter, so it steps at 1 / 3 / 7 / 15 / 31 buildings and can
+ * never drift or reverse.
+ *
+ * The beacon is MUTATED rather than re-added — re-registering would rebuild a
+ * town the player may be standing in. The town itself picks the new charter
+ * up at its next mount, which is when `siteTownConfig` is cut anyway.
+ */
+function refreshSiteCharter(
+  rec: { cell: number; bodyId: string; dir: [number, number, number] },
+  site: { buildings: number } | null | undefined,
+): PlanetCity["charter"] | null {
+  const ch = measuredSiteCharter(rec.bodyId, rec.dir, site?.buildings ?? 0);
+  if (!ch) return null;
+  const fc = flight?.cities().find((c) => c.city.cell === rec.cell);
+  if (fc) {
+    fc.city.charter.farmland = ch.farmland;
+    fc.city.charter.ore_access = ch.ore_access;
+    fc.city.charter.timberland = ch.timberland;
+  }
+  return ch;
+}
+
 /** The beacon row a founded site stands as — ONE literal for the live
- *  registration and the save restore (persistence P1). */
-function foundedPlanetCity(cell: number, name: string, dir: [number, number, number]): PlanetCity {
+ *  registration and the save restore (persistence P1). `charter` is the
+ *  site's own measurement (see `measuredSiteCharter`); the fallback below is
+ *  reached only before the geography bake, when there is no ground to
+ *  measure yet. */
+function foundedPlanetCity(
+  cell: number, name: string, dir: [number, number, number],
+  charter?: PlanetCity["charter"] | null,
+): PlanetCity {
   return {
     cell,
     name,
     dir,
     density: 0, // no wild crowd founded this — the player did
-    charter: { farmland: 60, ore_access: 0, timberland: 0 },
+    charter: charter ?? { farmland: 60, ore_access: 0, timberland: 0 },
     startPop: 0, // zero-building growth: settlers raise everything (①b)
   };
 }
@@ -655,13 +744,21 @@ function registerFoundedPlanetSite(site: {
   if (r < 1e-6) return;
   const dir: [number, number, number] = [local.x / r, local.y / r, local.z / r];
   const cell = FOUNDED_CELL_BASE + site.seed;
-  flight.addCities(body.id, [foundedPlanetCity(cell, site.key, dir)]);
+  // ③ THE GROUND IS MEASURED AT THE FOUNDING — a founding has no buildings,
+  // so this is the founding reach (radius 3), the same box every AI city on
+  // the planet was chartered from.
+  const charter = measuredSiteCharter(body.id, dir, 0);
+  flight.addCities(body.id, [foundedPlanetCity(cell, site.key, dir, charter)]);
   const live = wildQuestSession()?.foundedSite;
   foundedPlanetSites.set(site.key, {
     cell, bodyId: body.id, dir, surfaceR: r,
     ...(live && live.key === site.key ? { record: live } : {}),
   });
-  if (live && live.key === site.key) cityTowns.registerFounded(cell, siteTownConfig(live, { scale: docSessionScale() }));
+  if (live && live.key === site.key) {
+    cityTowns.registerFounded(cell, siteTownConfig(live, {
+      scale: docSessionScale(), ...(charter ? { charter } : {}),
+    }));
+  }
   traceWalk(`founded site registered on planet: ${site.key} (cell ${cell})`);
   // THE FOUNDING CADENCE (growth phase C §3.3): a new homestead is the only
   // thing that can complete a cluster, so the check rides the founding.
@@ -723,26 +820,44 @@ function stepFoundingPremise(): void {
     const cell = FOUNDED_CELL_BASE + site.seed;
     rec = { cell, bodyId: body.id, dir, surfaceR, record: site };
     foundedPlanetSites.set(PREMISE_KEY, rec);
-    flight.addCities(body.id, [foundedPlanetCity(cell, PREMISE_KEY, dir)]);
+    // ③ The frontier homestead measures the forest cell it was seeded on —
+    // this is THE site the founding premise is about, and it is the one whose
+    // charter used to read `{ 60, 0, 0 }` while standing in timber.
+    const charter = measuredSiteCharter(body.id, dir, site.buildings);
+    flight.addCities(body.id, [foundedPlanetCity(cell, PREMISE_KEY, dir, charter)]);
     cityTowns.registerFounded(
       cell,
-      siteTownConfig(site, { scale: docSessionScale(), startPop: want.startPop }),
+      siteTownConfig(site, {
+        scale: docSessionScale(), startPop: want.startPop,
+        ...(charter ? { charter } : {}),
+      }),
     );
     traceWalk(
-      `founding premise seeded: ${PREMISE_KEY} (cell ${cell}, biome ${biome?.[site0.cell] ?? "?"})`,
+      `founding premise seeded: ${PREMISE_KEY} (cell ${cell}, biome ${biome?.[site0.cell] ?? "?"}` +
+      `, charter ${charter ? `farm ${Math.round(charter.farmland)} ore ${Math.round(charter.ore_access)} timber ${Math.round(charter.timberland)}` : "unmeasured"})`,
     );
   } else {
     // A RESTORED premise: the save's own registration ran with startPop 0
     // (every restored site does) and its beacon may have raced the bake
     // (addCities no-ops pre-geography). Re-register with the founding
     // population and re-add the beacon now that the ground exists.
+    // ③ RE-MEASURED ON RESTORE, not restored: the charter is derived from
+    // (cell, `record.buildings`), both of which the save already carries, so
+    // a reloaded homestead reproduces its charter exactly — including the
+    // wider reach it earned by building.
+    const charter = measuredSiteCharter(rec.bodyId, rec.dir, rec.record?.buildings ?? 0);
     if (!flight.cities().some((fc) => fc.city.cell === rec!.cell)) {
-      flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, PREMISE_KEY, rec.dir)]);
+      flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, PREMISE_KEY, rec.dir, charter)]);
+    } else {
+      refreshSiteCharter(rec, rec.record);
     }
     if (rec.record) {
       cityTowns.registerFounded(
         rec.cell,
-        siteTownConfig(rec.record, { scale: docSessionScale(), startPop: want.startPop }),
+        siteTownConfig(rec.record, {
+          scale: docSessionScale(), startPop: want.startPop,
+          ...(charter ? { charter } : {}),
+        }),
       );
     }
   }
@@ -754,10 +869,73 @@ function stepFoundingPremise(): void {
       .set(fc.city.dir[0], fc.city.dir[1], fc.city.dir[2])
       .normalize()
       .applyQuaternion(fc.body.orientation);
-    spirit.drone.setGround(_pendDir, CITY_FOCUS_ALT * 1.5);
+    // The drone still parks over the site: it is the FROM-POSE the town
+    // orbit blends out of, and `focusTown` reads its heading for the entry
+    // azimuth. Altitude is now the town-approach shell rather than
+    // `CITY_FOCUS_ALT * 1.5` — a park ABOVE `CITY_FOCUS_ALT` is precisely
+    // what kept the ladder's own gaze-driven town gate from ever arming.
+    spirit.drone.setGround(_pendDir, CITY_FOCUS_ALT * 0.5);
     cityTowns.approach(fc);
+    // ⚖️ THE FOUNDING BOOTS AT DISTRICT RANGE (user ruling 2026-09-02: "the
+    // player should be, by default, at a range where it's possible to watch
+    // the people doing things and talk to them without gliding around. This
+    // is what district-range was supposed to be for.").
+    //
+    // WHY A CALL AND NOT `opts.start`: the premise waits on the geography
+    // bake, so the site does not exist when the ladder is constructed —
+    // `opts.start` has already run by the time we get here. `focusTown`
+    // frames the site BY REF, so the per-focus camera law holds (the orbit
+    // and every camera signal key off the focus body, not a bare point).
+    //
+    // The radius is DERIVED from the site's own extent inside the ladder
+    // (`districtRadiusFor` — 33% of the site radius, held to 30–160 m); no
+    // metre value is painted here.
+    //
+    // …AND THE CEILING BOUNDS THE ZOOM TO THE SITE. Without this the ladder
+    // keeps the boot default `ceiling: "flight"`, whose climb clamp is the
+    // planet's own `maxAlt` — which is why the homestead could be zoomed
+    // straight back out to planet scope. At a town ceiling the clamp is
+    // `CITY_FOCUS_ALT * 1.6`, i.e. the settlement's approach shell. It is a
+    // CONTROL limit, not a wall: `setCeiling("flight")` re-opens the sky, and
+    // the ladder's own step-out gesture is ceiling-gated the same way.
+    spirit.ladder.setCeiling("town");
+    spirit.ladder.focusTown(fc, { district: true });
+    // ⚖️ …AND THE ORBIT IS FIXED THERE (user ruling 2026-09-03: "in early town
+    // builder mode, the camera should be fixed to orbiting at a close
+    // distance, and hovering over objects should select them without shifting
+    // into ground mode").
+    //
+    // The district orbit was a RUNG, not a camera: a 0.6 s hover on any
+    // terrain — a tree included — dropped the player into the ground glide,
+    // and a close tree filling the bottom strip pushed them straight back out
+    // of it. `setBuilderHold` pins those downward changes off (the turntable
+    // and the deliberate step-out stay), and `builderHoldArmed` below turns
+    // the ladder's cleared town-rung pointer into a FORWARDED one, so the
+    // hover the player already makes reaches the host's selection instead.
+    //
+    // ARMED HERE AND ONLY HERE: this is the founding premise's own boot seat,
+    // so no other world (a city visit, nature-hike, a walker session, the flat
+    // quest-boot) can inherit it — they never run this function.
+    builderHoldArmed = true;
   }
 }
+
+/** ⚖️ EARLY TOWN BUILDER MODE IS ON (the founding premise seeded THIS
+ *  session's homestead) — see the ruling at `stepFoundingPremise`.
+ *
+ *  LIFECYCLE (the honest one, stated rather than implied): it is armed once,
+ *  by the founding seat, and nothing clears it — the homestead premise IS the
+ *  session it boots, and there is no "premise ends" event anywhere in this
+ *  file to hang a release on. It therefore survives the whole builder session
+ *  by construction, which is the ruling's floor. What it does NOT survive is
+ *  the player gaining legs: `stepSpirit` re-asserts the ladder's hold every
+ *  frame as `builderHoldArmed && !riding`, because a claimed body walks under
+ *  its own power and must not be watched from a pinned orbit — releasing
+ *  hands the normal ladder back (gaze down to the ground rung, whose own
+ *  `if (body)` pin then follows the ride), and dropping the ride re-arms.
+ *  Every non-founding boot leaves this false, so their ladders never see the
+ *  hold at all. */
+let builderHoldArmed = false;
 
 /** SESSION COORDS of every OTHER site standing on this body — the standing
  *  circulation a new founding's access lane may reach (growth phase C §3.2,
@@ -840,7 +1018,13 @@ async function applyWorldSave(): Promise<void> {
         if (!p || typeof p.cell !== "number" || typeof p.bodyId !== "string") continue;
         if (foundedPlanetSites.has((p.site as SerializedFoundedSite).key)) continue;
         try {
-          const record = createFoundedSite(p.site as SerializedFoundedSite);
+          // ⚖️ #49 — THE SAME ABSENCE GAP the felled marks age by, spent on
+          // the site's folded area records: a neighbouring stand drawn down
+          // before the tab closed comes back drawn down, with exactly the
+          // regrowth the closed week bought it and not a second more. Spent
+          // ONCE, here — everything downstream carries the records forward
+          // unshifted (see `createFoundedSite`'s `restS`).
+          const record = createFoundedSite(p.site as SerializedFoundedSite, { restS: gapS });
           foundedPlanetSites.set(record.key, {
             cell: p.cell, bodyId: p.bodyId, dir: p.dir, surfaceR: p.surfaceR, record,
           });
@@ -866,9 +1050,15 @@ async function applyWorldSave(): Promise<void> {
   // are boot chrome; the records are the truth.
   if (flight && cityTowns) {
     for (const [key, rec] of foundedPlanetSites) {
-      flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, key, rec.dir)]);
+      // ③ The charter is DERIVED ON LOAD, never stored: (cell, buildings) →
+      // `charterBoxAt`, so a restored site and a freshly founded one on the
+      // same ground with the same structures always answer identically.
+      const charter = measuredSiteCharter(rec.bodyId, rec.dir, rec.record?.buildings ?? 0);
+      flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, key, rec.dir, charter)]);
       if (rec.record) {
-        cityTowns.registerFounded(rec.cell, siteTownConfig(rec.record, { scale: docSessionScale() }));
+        cityTowns.registerFounded(rec.cell, siteTownConfig(rec.record, {
+          scale: docSessionScale(), ...(charter ? { charter } : {}),
+        }));
       }
     }
   }
@@ -940,7 +1130,14 @@ function maybeFoundTownOverCluster(bodyId: string): void {
       ...m.rec.record!,
       at: siteOffsetM(head.rec.dir, m.rec.dir, radius),
     } as FoundedSite)));
-    cityTowns.registerFounded(head.rec.cell, siteTownConfig(merged, { scale: docSessionScale() }));
+    // ③ A MERGE IS A GROWTH EVENT: the town that stands over the cluster
+    // carries every member's structures, so it measures its ground at the
+    // reach that many buildings earn (`charterReachCells`) — one re-cut, at
+    // the moment the settlement's identity actually changed.
+    const mergedCharter = refreshSiteCharter(head.rec, merged);
+    cityTowns.registerFounded(head.rec.cell, siteTownConfig(merged, {
+      scale: docSessionScale(), ...(mergedCharter ? { charter: mergedCharter } : {}),
+    }));
     // The absorbed sites UNREGISTER into the town (snapshotLive's precedent:
     // a ground-owned thing acquires a new parent identity and its
     // construction record travels — it is already inside `merged`).
@@ -979,7 +1176,17 @@ function snapshotLiveFoundedSite(): void {
   // world dies two lines down in disposeWilderness, and the session-side
   // retire (records + scatter entries) is the half the law needs.
   if (session) bankOwnedHerd(session, live);
-  cityTowns?.registerFounded(rec.cell, siteTownConfig(live, { scale: docSessionScale() }));
+  // ③ THE RE-MEASURE EVENT (user, 2026-09-02: *"make the player's charter
+  // update as the site grows"*). This is the moment a site stops being live —
+  // the player has left the ground and the town is being re-cut from what
+  // they built — so it is the one place a charter may change without moving
+  // anything under them. `charterReachCells(live.buildings)` steps at 1 / 3 /
+  // 7 / 15 structures, so most snapshots re-measure the SAME box and the
+  // number simply does not move.
+  const charter = refreshSiteCharter(rec, live);
+  cityTowns?.registerFounded(rec.cell, siteTownConfig(live, {
+    scale: docSessionScale(), ...(charter ? { charter } : {}),
+  }));
   // The record travels with the config — the site's own overlay is what a
   // later cluster merges (§3.3), and this is the moment it stops being live.
   foundedPlanetSites.set(live.key, { ...rec, record: live });
@@ -1113,6 +1320,10 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
       geo.grid.fields.rain && geo.grid.fields.tempC && geo.grid.fields.height
         ? climateSampleAt(geo.grid, cell)
         : undefined;
+    // HOW MUCH of each species stands on this cell (0..1 per biosphere key).
+    // Undefined on a substrate with no baked ecology ⇒ the scatter keeps its
+    // absolute per-biome counts, byte-identical.
+    const wildEco = ecoAbundanceAt(geo.grid, cell) ?? undefined;
     embedWild = UNIFIED_GROUND
       ? // SLICE 1: open country is a QuestHost3D wilderness session — minded,
         // talkable, possessable creatures on the same host class as the town
@@ -1139,7 +1350,11 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
             // biome mix must not scatter a SECOND, unrelated population of
             // the same species. Everything the field doesn't render (rocks,
             // fruit plants, animals) still comes from the mix.
-            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0, wildClimate)
+            // …and the cell's PER-SPECIES ABUNDANCE (2026-09-02) turns the
+            // mix into DENSITIES, resolved against the chunk's own side —
+            // the same law the flora field stands its trees by, so the two
+            // authorities cannot describe two different countrysides.
+            wildMix: wildMixForBiome(biome, (cell * 2654435761) >>> 0, wildClimate, wildEco)
               .filter(m => m.species !== FLORA_TREE_SPECIES),
             // …and the SESSION carries the same sample (suitability-as-yield):
             // what the scatter picked and what a site founded here would be
@@ -1801,6 +2016,12 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     // the visible farm size the same field. Absent (a pre-bake mount, a body
     // with no geography) ⇒ the legacy charter-only arm.
     const townClimate = cityClimate(viz.fc) ?? undefined;
+    // …and the cell's ECOLOGICAL biome (④ — `cityBiome`, never `plan.biome`).
+    const townBiome = cityBiome(viz.fc);
+    // …and HOW MUCH of that ecology stands here (2026-09-02): the scatter
+    // reads a density off this, so the countryside inside the town rect is
+    // the same thickness as the streamed forest outside its hole.
+    const townEco = cityEcology(viz.fc) ?? undefined;
     embedTown = bootTownEmbedded(
       viewEl, renderer.domElement,
       // castGroundRay: ONE cursor rule everywhere on the planet — the town
@@ -1825,6 +2046,12 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
         // scatter's fruit is filtered to it AND the live farm region's output
         // cap scales by it; omitted = the legacy arm.
         ...(townClimate ? { climate: townClimate } : {}),
+        // …and WHAT KIND OF GROUND this is (④): the cell's ecological biome
+        // index, so the countryside a founding wakes up in is the countryside
+        // it was founded on. Omitted (no geography / no baked biome field) ⇒
+        // the legacy charter-only arm, byte-identical.
+        ...(townBiome !== null ? { biome: townBiome } : {}),
+        ...(townEco ? { eco: townEco } : {}),
         // The planet's OTHER cities as boot-known trade partners (P0):
         // the trade board offers more than the one bound caravan line.
         tradePartners: () =>
@@ -1846,6 +2073,13 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
     // show its sown/ripe state. Anchor frame = the static plan's own.
     farmCrops = createFarmCrops(viz.mesh, play.plan, viz.ground);
     farmCropsAcc = 1; // first update on the next streamed frame
+    // ⚖️ #49 Stage 3 — and the COUNTRYSIDE's own records thin the scenery on
+    // the same beat. Born with the mount because the session frame the tile
+    // rects are measured in is born with it.
+    floraDepletion = createFloraDepletion({
+      species: FLORA_TREE_SPECIES,
+      instancesIn: floraInstancesInSessionRect,
+    });
     // SEAL INTERIORS AT MOUNT (view-distance-lod-tiers.md, Phase 1). A fresh
     // host's renderer defaults interiorReveal=true, and the mount's first
     // host-steps run inside streamGround BEFORE the ladder's per-frame clamp
@@ -1888,8 +2122,14 @@ function disposeEmbeddedTown(): void {
   if (groundedIn === "town") handWalkerToWild();
   farmCrops?.dispose(); // the record leaves with the session; the paint stays
   farmCrops = null;
+  // The records leave with the session, so the thinning does too — the
+  // countryside goes back to its undepleted scatter, which is the honest
+  // picture for ground nobody's books are quoting any more.
+  floraDepletion?.reset();
+  floraDepletion = null;
   liveViz?.view.setLiveLots(null); // full static plan back
   liveStage = null;
+  disposeNearStandBorder(); // ③ — the border belongs to the mounted town
   embedTown?.dispose();
   embedTown = null;
   if (liveAnchor) { liveAnchor.parent?.remove(liveAnchor); liveAnchor = null; }
@@ -2150,6 +2390,123 @@ function twinRng(instKey: string): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+// ── ⚖️ THE NEAR STAND: RELEVANCE vs VISIBILITY (user ruling 2026-09-02) ─────
+//
+//   "generally speaking, only the near stand should be relevant. The only
+//    exception is for rendering purposes at levels of detail where more distant
+//    objects SHOULD be visible; we shouldn't stop *rendering* trees that should
+//    be on-camera just because they're not technically part of the site or its
+//    sources, but they shouldn't be selectable. (This means that viewing
+//    distance is relevant to whether or not a region needs to be expanded.) A
+//    border around the focused area might help."
+//
+// The SIM owns relevance: a town session materializes its scatter only inside
+// `host.nearStand()` (quest-host), a radius derived from what the site has
+// BUILT — deterministic in the seed, blind to the camera. THIS FILE owns
+// visibility, and everything below is render-only:
+//
+//  ① the flora field keeps DRAWING the country beyond the boundary, streamed by
+//    VIEWING DISTANCE (`ensure`'s LOAD_R/UNLOAD_R + its tier bands). That is
+//    the ruling's "region expanded for rendering", and it materializes nothing:
+//    a tile is instanced meshes, never an entity, so pulling the camera back
+//    expands the picture and never the sim. 🚨 That separation is the whole
+//    safety of it — in multiplayer every peer picks its own tiers over the same
+//    replicated bodies (the LOD-per-camera law), and a peer whose tiles decided
+//    what EXISTS would be playing a different world;
+//  ② inside the boundary the field STANDS DOWN (`setTwinHidden`) — the same
+//    per-instance suppression the wilderness twins already use, for the same
+//    reason: the session has stood its own trees there and two authorities must
+//    not stack two forests on one hectare. Both authorities scatter through
+//    `ecology.ts standDensityPerHa`, so the hand-off is invisible in DENSITY
+//    terms — crossing the border changes what is SELECTABLE, never what the
+//    forest looks like;
+//  ③ and the border itself is drawn (`syncNearStandBorder`), off the SAME
+//    `host.nearStand()` radius — never a second number that can drift from the
+//    one the sim actually bounds its sources by.
+
+// ── ⚖️ THE TOWN SESSION FRAME ⇄ WORLD, ONE OWNER ───────────────────────────
+// `liveAnchor`'s LOCAL coords ARE town-sim coords (see its own declaration:
+// the anchor is offset so the stage ORIGIN sits on the city anchor). Every
+// reader that has to cross between the mounted session's metres and the
+// planet's world space goes through these two — the near-stand disc, its
+// border, and #49's depletion thinning. A second transform written out at a
+// call site is how the border and the thinning would come to disagree about
+// where a forest is.
+const _nsWorld = new THREE.Vector3();
+const _sessWorld = new THREE.Vector3();
+/** Session (x, y) → world. Null when no town is mounted. */
+function townSessionToWorld(x: number, y: number, out: THREE.Vector3): THREE.Vector3 | null {
+  if (!liveAnchor) return null;
+  liveAnchor.updateWorldMatrix(true, false);
+  return liveAnchor.localToWorld(out.set(x, 0, y));
+}
+/** World → session (x, y). Null when no town is mounted. */
+function townWorldToSession(world: THREE.Vector3): { x: number; y: number } | null {
+  if (!liveAnchor) return null;
+  liveAnchor.updateWorldMatrix(true, false);
+  const p = liveAnchor.worldToLocal(_sessWorld.copy(world));
+  return { x: p.x, y: p.z };
+}
+
+/** The mounted town's relevance disc in WORLD space — the sim's own answer
+ *  (`QuestHost3D.nearStand`), lifted through the town anchor. Null when no town
+ *  is mounted or the session bounds no stand. */
+function townNearStand(): { world: THREE.Vector3; radiusM: number } | null {
+  if (!embedTown || !liveAnchor) return null;
+  const ns = embedTown.host.nearStand?.();
+  if (!ns || !(ns.radiusM > 0)) return null;
+  const world = townSessionToWorld(ns.at.x, ns.at.y, _nsWorld);
+  if (!world) return null;
+  return { world: world.clone(), radiusM: ns.radiusM };
+}
+
+/**
+ * ⚖️ #49 STAGE 3 — the scenery instances standing on a record's ground.
+ *
+ * The record's rect is in SESSION metres; the flora field's instances are
+ * world-fixed. `floraTreesNear` is the field's OWN enumerator (the same one
+ * the twins and the near-stand suppression address instances through, so the
+ * keys line up 1:1 by construction) and it takes a world point and a radius —
+ * so the rect goes out as its bounding DISC and comes back filtered to the
+ * true rect in session coordinates.
+ *
+ * Called once per record per mount (`flora-depletion.ts` caches the
+ * partition): the flora scatter is world-fixed and a record's rect never
+ * moves, so re-walking it every beat would be pure waste.
+ */
+const _fdWorld = new THREE.Vector3();
+function floraInstancesInSessionRect(rect: SessionRect): WildThinInstance[] | null {
+  // 🚨 NULL, NOT EMPTY, while the field or the anchor is missing — a town
+  // mounts at altitude and its records exist before the flora field does, and
+  // an empty answer cached at that moment would freeze the whole countryside
+  // at "no scenery" for the visit (see `instancesIn`'s own doc).
+  if (!flora || !floraBody || !liveAnchor) return null;
+  const centre = townSessionToWorld(rect.x + rect.w / 2, rect.y + rect.h / 2, _fdWorld);
+  if (!centre) return null;
+  const out: WildThinInstance[] = [];
+  const r = Math.hypot(rect.w, rect.h) / 2;
+  for (const t of floraTreesNear(floraBody, centre, r)) {
+    const p = townWorldToSession(t.world);
+    if (!p) return null;
+    if (p.x < rect.x || p.x >= rect.x + rect.w) continue;
+    if (p.y < rect.y || p.y >= rect.y + rect.h) continue;
+    out.push({ key: t.key, x: p.x, y: p.y });
+  }
+  return out;
+}
+
+/** ② — the field instances the MOUNTED TOWN's own stand replaces. Keyed the
+ *  same way the wilderness twins are (`floraTreesNear` gives the field's own
+ *  instance addresses), so one hidden set carries both suppressions and neither
+ *  authority can un-hide the other's trees. */
+function townStandHidden(): Set<string> {
+  const out = new Set<string>();
+  const ns = townNearStand();
+  if (!ns || !flora || !floraBody) return out;
+  for (const t of floraTreesNear(floraBody, ns.world, ns.radiusM)) out.add(t.key);
+  return out;
+}
+
 function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world: THREE.Vector3; r: number }>): void {
   const q = embedWild?.quest;
   if (!q || !wildAnchor || !flora || !wildPoint || floraBodyId !== wildPoint.body.id) {
@@ -2157,8 +2514,16 @@ function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world
     // the felled MARKS are the field's memory, not the session's — the
     // stumps stay stumps (R2; this branch is exactly where the old
     // per-mount set used to forget them).
+    // …and the MOUNTED TOWN's own near stand still stands down the field
+    // inside its boundary (② above) — that suppression belongs to the TOWN
+    // session, which is very much alive on this branch (the frontier premise
+    // mounts its town through the approach loader and never stands a
+    // wilderness session at all, which is exactly the case this branch is).
     wildTwins.clear();
-    flora?.setTwinHidden(aliveFelledMarks());
+    const hidden = aliveFelledMarks();
+    for (const k of townStandHidden()) hidden.add(k);
+    for (const k of depletedHidden()) hidden.add(k); // ④ the logged countryside
+    flora?.setTwinHidden(hidden);
     return;
   }
   const sess = q.session;
@@ -2212,7 +2577,92 @@ function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world
   }
   const hidden = aliveFelledMarks(); // expired marks purge — those trees return
   for (const k of wildTwins.keys()) hidden.add(k);
+  for (const k of townStandHidden()) hidden.add(k); // ② the town's own stand
+  for (const k of depletedHidden()) hidden.add(k);  // ④ the logged countryside
   flora.setTwinHidden(hidden);
+}
+
+/**
+ * ④ — the instances a NEIGHBOURING STAND's record has thinned away (#49
+ * Stage 3). A pure read of the cached answer `floraDepletion` computed on the
+ * quote beat; this join is the only place the four reasons a flora instance
+ * may not draw meet, and they are a UNION because they are independent facts,
+ * not a precedence:
+ *
+ *   ① a wilderness twin stands there   ② the town's near stand owns that ground
+ *   ③ the tree was felled (a stump)    ④ the books say that wood is gone
+ *
+ * ⑤ has never been in this set at all — a settlement HOLE is enforced by the
+ * streamer itself (`ensure`'s `excludes`), because a street is a reason not to
+ * BUILD the tile, not a reason to hide one tree.
+ *
+ * 🔒 ① AND ④ CANNOT MEET, structurally — the reason this join needs no
+ * precedence rule. Twins stand within `WILD_TWIN_R` (80 m) of the player and
+ * only where a WILDERNESS session is mounted (which the homestead premise
+ * never stands at all); 80 m is inside tile (0, 0), the site's own ground,
+ * which `neighborTileOffsets` never mints because the near stand holds it as
+ * REAL features. So no instance can be both a live twin and a thinned tile
+ * instance even if the two systems ever run together, and neither has to know
+ * about the other. ② is the same argument from the other side: the near-stand
+ * disc is capped strictly inside half a tile (the round's no-double-count
+ * invariant), so it can never reach a minted rect either.
+ */
+function depletedHidden(): ReadonlySet<string> {
+  return floraDepletion?.hidden() ?? EMPTY_KEYS;
+}
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
+
+// ── ③ THE BORDER AROUND THE FOCUSED AREA ───────────────────────────────────
+// *"A border around the focused area might help."* — where relevance ends, so
+// the distinction is VISIBLE rather than something a player discovers by
+// clicking a tree that will not answer. Deliberately modest: a thin ring laid
+// on the real ground, no fill, no label. Render-only, parented to the town
+// anchor, and sized from the SIM's own `nearStand()` radius — one owner.
+const NEAR_STAND_RING_SEGMENTS = 96;
+/** Ground clearance so the loop reads over the terrain rather than z-fighting it. */
+const NEAR_STAND_RING_LIFT = 0.35;
+let nearStandRing: THREE.Line | null = null;
+/** The radius the ring was last built at — the ladder steps at building
+ *  events, so this rebuilds a handful of times in a whole session. */
+let nearStandRingR = -1;
+
+function disposeNearStandBorder(): void {
+  if (!nearStandRing) return;
+  nearStandRing.geometry.dispose();
+  (nearStandRing.material as THREE.Material).dispose();
+  nearStandRing.removeFromParent();
+  nearStandRing = null;
+  nearStandRingR = -1;
+}
+
+function syncNearStandBorder(): void {
+  if (!embedTown || !liveAnchor || !liveGround) {
+    disposeNearStandBorder();
+    return;
+  }
+  const ns = embedTown.host.nearStand?.();
+  if (!ns || !(ns.radiusM > 0)) {
+    disposeNearStandBorder();
+    return;
+  }
+  if (nearStandRing && Math.abs(ns.radiusM - nearStandRingR) < 0.01) return;
+  disposeNearStandBorder();
+  // Sampled on the town's own ground datum (liveGround — what the buildings
+  // conform to), so the loop follows the hillside instead of cutting it.
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= NEAR_STAND_RING_SEGMENTS; i++) {
+    const a = (i / NEAR_STAND_RING_SEGMENTS) * Math.PI * 2;
+    const x = ns.at.x + Math.cos(a) * ns.radiusM;
+    const z = ns.at.y + Math.sin(a) * ns.radiusM;
+    pts.push(new THREE.Vector3(x, liveGround(x, z) + NEAR_STAND_RING_LIFT, z));
+  }
+  const geom = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color: 0xd8c89a, transparent: true, opacity: 0.42 });
+  nearStandRing = new THREE.Line(geom, mat);
+  nearStandRing.name = "near-stand-border";
+  nearStandRing.frustumCulled = false;
+  liveAnchor.add(nearStandRing);
+  nearStandRingR = ns.radiusM;
 }
 
 /** Drive the world-fixed flora streamer: tiles load around the ground point
@@ -2234,8 +2684,13 @@ function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
     // starts clean (the new field is born with an empty hidden set)…
     wildTwins.clear();
     wildTwinFelled.clear();
+    // …and so are the depletion partitions: those instance keys were measured
+    // against the OLD body's scatter, in a session frame that means nothing on
+    // this one. Re-measured on the next quote beat.
+    floraDepletion?.reset();
     flora = createFloraField(renderer, body);
     floraBodyId = body.id;
+    floraBody = body;
     // …then the SAVED ledger seeds this body's stumps (persistence P1):
     // remaining seconds re-arm on the live clock, once per body per load.
     const pend = savedFelled.get(body.id);
@@ -2259,26 +2714,52 @@ function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
 
 /** Every settlement footprint known on `body`, as world-space keep-clear
  *  discs: each built static town at its OWN plan radius (the mounted live
- *  town is among them), plus the wild session's founded site. ONE list,
- *  THREE consumers — the flora field's live holes, the twin gate, and the
- *  wild chunk's scatter clears — so no tree system can put a tree inside
- *  another system's streets. (Keying a single hardcoded 600 m hole on the
- *  MOUNTED town was the round-1 trees-inside-the-city defect: no hole until
- *  the live mount, none ever for a big city whose streets outgrew 600 m.) */
+ *  town is among them). ONE list, THREE consumers — the flora field's live
+ *  holes, the twin gate, and the wild chunk's scatter clears — so no tree
+ *  system can put a tree inside another system's streets. (Keying a single
+ *  hardcoded 600 m hole on the MOUNTED town was the round-1
+ *  trees-inside-the-city defect: no hole until the live mount, none ever for
+ *  a big city whose streets outgrew 600 m.)
+ *
+ *  ⚖️ AN ESTABLISHED CITY'S HOLE IS A LOGICAL OUTCOME (user ruling
+ *  2026-09-02). These are the planet's OWN cities — generations old, their
+ *  land cleared by generations of acts — and the trees in question are
+ *  world-fixed streamed SCENERY that nothing in the sim owns: no unit is
+ *  destroyed by declining to draw one. That is what the ruling calls a
+ *  logical outcome, and it is why this list survives.
+ *
+ *  🚫 THE PLAYER'S OWN FOUNDED SITE IS NOT (removed 2026-09-02). A
+ *  `liveFoundedSiteCell()` entry used to open a hardcoded 300 m hole here the
+ *  instant the site registered — a radius unrelated to anything the settlers
+ *  had built — and all three consumers obeyed it: the field stopped DRAWING
+ *  the trees, the twin gate stopped standing them as gatherable entities, and
+ *  the chunk scatter stopped laying features there. That is *"the town clears
+ *  the surrounding area when generated"*, the exact sentence the ruling
+ *  retires: arrival is not an event in the world. A founded site's
+ *  countryside now keeps its trees until somebody FELLS one — which the
+ *  felling prerequisite does, lot by lot, as the settlers build. */
 function settlementHoles(body: CelestialBody): Array<{ world: THREE.Vector3; r: number }> {
   const holes: Array<{ world: THREE.Vector3; r: number }> = [];
+  // Every cell the PLAYER founded, from the site REGISTRY.
+  // 🚨 NOT `liveFoundedSiteCell()`, which is what this exemption used to ask.
+  // That one reads `wildQuestSession()?.foundedSite?.key` and so is non-null
+  // ONLY while a WILDERNESS session owns the ground — but the `frontier-planet`
+  // premise pre-registers its site and mounts the age-0 town straight through
+  // the approach loader, never standing a wild session at all. So the ONE
+  // settlement this exemption exists to protect was the one it missed, and the
+  // player's own homestead got a 250 m hole: measured 2026-09-02 as a treeless
+  // ring from ~85 m (the town scatter's edge) out to ~296 m (this radius, plus
+  // the flora field's tile margin). Ask the registry, not the session.
+  const founded = new Set<number>();
+  for (const rec of foundedPlanetSites.values()) founded.add(rec.cell);
   for (const viz of cityViz.values()) {
     if (viz.fc.body.id !== body.id) continue;
+    if (founded.has(viz.fc.city.cell)) continue;
     const planR = cityTowns?.entry(viz.fc.city.cell)?.play?.plan.radius ?? 0;
     holes.push({
       world: viz.mesh.getWorldPosition(new THREE.Vector3()),
       r: Math.max(250, planR * 1.25),
     });
-  }
-  const liveSiteCell = liveFoundedSiteCell();
-  if (liveSiteCell !== null && flight) {
-    const fc = flight.cities().find(c => c.body.id === body.id && c.city.cell === liveSiteCell);
-    if (fc) holes.push({ world: fc.worldPos, r: 300 });
   }
   return holes;
 }
@@ -2829,6 +3310,51 @@ function cityClimate(fc: FlightCity): ClimateSample | null {
   return climateSampleAt(geo.grid, geo.grid.topo.cellAt(fc.city.dir));
 }
 
+/**
+ * ⚖️ THE SITE'S ECOLOGICAL BIOME (user ruling 2026-09-02, ④). The cell's own
+ * `fields.biome` index — 0 barren, then DEFAULT_BIOSPHERE order (1 forest,
+ * 2 steppe/meadow, 3 grazer range) — the SAME field the free-flight wild chunk
+ * reads before it scatters (`wildMixForBiome`).
+ *
+ * 🚨 IT IS NOT `plan.biome`. That is a LAND-USE label off the charter's
+ * fertility-vs-ore scores (wilderness.ts says so outright), and a founded
+ * site's charter is HARDCODED `{ farmland: 60, ore_access: 0 }`
+ * (`founding.ts siteTownConfig`) — so `plan.biome` was permanently
+ * `"farmland"` and a town founded in the middle of a forest scattered the
+ * livestock arm. The land the settlers arrived on and the land they woke up
+ * on were different ecologies, which is the ruling's own complaint in
+ * miniature.
+ *
+ * Read through the city's DIRECTION, never `fc.city.cell` — see the ⚠️ on
+ * `cityClimate` above: a founded site registers a SYNTHETIC cell id.
+ * Null when the body has no geography or the biome field was never baked.
+ */
+function cityBiome(fc: FlightCity): number | null {
+  const geo = fc.body.geography;
+  if (!geo?.grid.topo.cellAt) return null;
+  const b = geo.grid.fields.biome;
+  if (!b) return null;
+  return b[geo.grid.topo.cellAt(fc.city.dir)] ?? null;
+}
+
+/**
+ * ⚖️ THE SITE'S PER-SPECIES ABUNDANCE (2026-09-02) — `cityBiome`'s continuous
+ * twin, and what the mounted town's scatter actually measures its countryside
+ * with. The biome index says WHICH ecology; this says HOW MUCH of it, so a
+ * town on the thin edge of a wood does not wake up in the same forest a town
+ * at its heart does.
+ *
+ * Same address rule as its two siblings above: read through the city's
+ * DIRECTION, never `fc.city.cell`. Null on a substrate with no baked
+ * per-species ecology (an old cached bake, a body with no geography) — the
+ * scatter then keeps its absolute counts, byte-identical.
+ */
+function cityEcology(fc: FlightCity): Record<string, number> | null {
+  const geo = fc.body.geography;
+  if (!geo?.grid.topo.cellAt) return null;
+  return ecoAbundanceAt(geo.grid, geo.grid.topo.cellAt(fc.city.dir));
+}
+
 /** THE SEAM (growth phase B §2.1): the city's incident road POLYLINES → the
  *  growth seeds its street tree forms around — the through road as one span
  *  across the town, a spur per remaining gate, all in town-local metres.
@@ -3108,7 +3634,7 @@ function clearWorld(): void {
     delete (window as unknown as Record<string, unknown>).__conurbations;
     scene.remove(flight.group); flight.dispose(); flight = null; cityTowns = null;
     geoBaker?.dispose(); geoBaker = null;
-    flora?.dispose(); flora = null; floraBodyId = null;
+    flora?.dispose(); flora = null; floraBodyId = null; floraBody = null;
     for (const net of roadNets.values()) net?.dispose();
     roadNets.clear();
     for (const net of riverNets.values()) net?.dispose();
@@ -3421,6 +3947,33 @@ function streamGround(
       ? `founding ${cityLabel(near.entry)} — ${townEntry.note}`
       : null,
   );
+  // ⚖️ A BEACON IS AN ORBITAL AFFORDANCE, AND IT IS CULLED AT CLOSE RANGE FOR
+  // EVERY SETTLEMENT (user law 2026-09-02: "the bright ball should always be
+  // removed at close range"). It stands in for a town nobody can resolve yet;
+  // once the camera is inside the reveal handoff the real ground IS the
+  // render, and a 150 m-floored HDR sphere (space-fly `refreshCities` clamps
+  // apparent size UP at short range) sits on top of it as a glowing ball.
+  //
+  // ⚠️ THIS PASS IS UNCONDITIONAL, AND THAT IS THE WHOLE FIX. The cull used to
+  // live at the BOTTOM of the town-viz loop below, behind two `continue`s —
+  // `cell === liveSiteCell` and `entry.state !== "ready"`. A freshly founded
+  // homestead fails BOTH (the wilderness session owns its ground, so it never
+  // becomes a ready cityTowns entry), so `setCityMarkerVisible` was never
+  // called for it at all and its beacon kept its creation-time visibility
+  // FOREVER, at every range — the founding premise's own beacon, re-added
+  // after the geography bake (stepFoundingPremise), was the one settlement on
+  // the planet that could never turn its light off.
+  //
+  // Distance-only, and on the EXISTING handoff constant (`TOWN_REVEAL_M`) —
+  // no second radius: "is the real thing being drawn instead" is one question
+  // and the reveal ladder already answers it. Not `dbgHideCityBeacons`, which
+  // stays a debug affordance (it force-hides ALL beacons at ANY range).
+  for (const fc of flight.cities()) {
+    flight.setCityMarkerVisible(
+      fc.city.cell,
+      anchorPos.distanceTo(fc.worldPos) > TOWN_REVEAL_M,
+    );
+  }
   if (cityTowns) {
     for (const fc of flight.cities()) {
       if (fc.city.cell === liveSiteCell) continue; // the wild session owns it
@@ -3448,10 +4001,8 @@ function streamGround(
         // (R1a) — the paint outlives any live mount, like the roads'.
         paintTownFields(fc.body, g, e.play.plan);
       }
-      flight.setCityMarkerVisible(
-        fc.city.cell,
-        anchorPos.distanceTo(fc.worldPos) > TOWN_REVEAL_M,
-      );
+      // (Marker visibility is NOT decided here any more — the unconditional
+      //  beacon cull above owns it for every settlement, ready or not.)
     }
   }
   const nearDist3 = near ? anchorPos.distanceTo(near.entry.worldPos) : Infinity;
@@ -3482,9 +4033,13 @@ function streamGround(
     // a READ through the typed quote API; rebuilds only when the summary
     // moves.
     farmCropsAcc += dt;
-    if (farmCrops && farmCropsAcc >= 1) {
+    if (farmCropsAcc >= 1) {
       farmCropsAcc = 0;
-      farmCrops.update(embedTown.host.areaQuotes());
+      // ONE quote read feeds BOTH record renderers (the crops' own field and
+      // #49's countryside thinning) — the same 1 Hz beat, one deep copy.
+      const quotes = embedTown.host.areaQuotes();
+      farmCrops?.update(quotes);
+      floraDepletion?.update(quotes);
     }
     const walking = groundedIn === "town" || spiritTownDriven;
     const townDistM = anchorPos.distanceTo(liveViz.fc.worldPos);
@@ -3580,6 +4135,7 @@ function streamGround(
     }
   }
   driveFlora(dt, anchorPos);
+  syncNearStandBorder(); // ③ — where relevance ends, drawn (no-op without a town)
   driveRoadNets(dt, anchorPos);
   return { near, townEntry, inRegion };
 }
@@ -3772,6 +4328,14 @@ function stepSpirit(dt: number, now: number): void {
   // #44 E — the founding premise seeds (and aims) once the home planet's
   // geography lands; a no-op every frame after.
   stepFoundingPremise();
+  // ⚖️ EARLY TOWN BUILDER MODE: the district orbit is FIXED (the ruling at
+  // stepFoundingPremise) while the founding premise owns this session AND the
+  // player has no legs. Re-asserted per frame rather than latched at the seat:
+  // it is idempotent, it re-arms the moment a ride is dropped, and the "yields
+  // to legs" half only exists as a per-frame answer (`riding` is polled, never
+  // pushed — the same reason the ground rung polls `drivenBody`). Left alone
+  // (false) on every other boot, whose ladders never call this at all.
+  s.ladder.setBuilderHold(builderHoldArmed && !riding);
 
   // A town-rung initial_focus resolves once the home world's cities exist
   // (the geology bake founds them): park the drone over the focus town and
@@ -3821,10 +4385,19 @@ function stepSpirit(dt: number, now: number): void {
   // GROUND rung: the glide is a live interlocutor — forward the pointer to
   // the live town host so dwell-to-talk / containers work mid-glide (the
   // flat quest-boot path does the same; the STRUCTURE rung forwards from
-  // inside the ladder; town/flight keep the host pointer clear so an orbit
-  // dwell never doubles as an interaction).
+  // inside the ladder).
+  //
+  // ⚖️ AND THE TOWN RUNG UNDER THE BUILDER HOLD. The old law here read "town/
+  // flight keep the host pointer clear so an orbit dwell never doubles as an
+  // interaction" — that is exactly what the founding homestead could not
+  // live with (user ruling 2026-09-03), because the ONLY thing an orbit dwell
+  // did there was drop the player through the rung. Under the hold the ladder
+  // has pinned that descent off, so the law inverts: THE ORBIT DWELL *IS* THE
+  // INTERACTION — selection replaces descent, and the pointer must reach the
+  // host for the hover to select anything at all. Off the hold, unchanged.
+  const townHold = s.ladder.level === "town" && s.ladder.builderHold;
   if (embedTown) {
-    if (s.ladder.level === "ground" && pointer) {
+    if ((s.ladder.level === "ground" || townHold) && pointer) {
       embedTown.host.setPointer(pointer.clientX, pointer.clientY);
     } else if (s.ladder.level !== "structure") {
       embedTown.host.clearPointer();
@@ -3837,6 +4410,12 @@ function stepSpirit(dt: number, now: number): void {
     // re-asserts the opt-out per frame while attached, and hands the cursor
     // BACK at the structure rung (the dollhouse town-view exception).
     if (s.ladder.level === "ground") embedTown.host.setExternalCursor(true);
+    // …and the held town rung hands it back the same way the dollhouse does:
+    // the ladder draws NO spark there (`provider.spark(null)` in stepTown), so
+    // a host still opted out from a previous glide would leave the screen with
+    // no cursor whatsoever. Idempotent, re-asserted per frame — the opt-out is
+    // renderer state that a streaming remount can silently resurrect.
+    else if (townHold) embedTown.host.setExternalCursor(false);
     // INTERIORS follow whether a REAL BODY is in the house — never the rung
     // alone. A formless spirit drifting down the street is not an occupant,
     // and letting its parked stand-in avatar count as one stripped the walls
@@ -3850,6 +4429,14 @@ function stepSpirit(dt: number, now: number): void {
   // pointer forwarded so dwell-to-talk / containers / harvest hovers work
   // mid-glide, external-cursor asserted so the planet's spark stays the ONE
   // cursor. There is no wild structure rung — every other rung clears.
+  //
+  // THE BUILDER HOLD DOES *NOT* REACH HERE, deliberately: exactly ONE host may
+  // be fed a pointer at a time, or two engines each compute a hover and each
+  // draw their own spark (the defect the external-cursor law above exists to
+  // prevent). The hold's orbit frames the FOUNDED TOWN — that town's host is
+  // the focus body's engine, so it is the one that gets the pointer, and the
+  // open country around it keeps its pointer clear until the player glides
+  // out onto it.
   if (embedWild?.quest) {
     if (s.ladder.level === "ground" && pointer) {
       embedWild.host.setPointer(pointer.clientX, pointer.clientY);
@@ -4425,13 +5012,24 @@ function stepPlanetSpirit(dt: number, now: number): void {
   // i.e. no cursor at all. A driven walker draws its own, as it does
   // standalone (games/nature-hike). The ladder makes the same call from its
   // side (setHostDrivesView); this site must not fight it.
+  //
+  // …AND ON THE TOWN RUNG UNDER THE BUILDER HOLD — the same inverted law
+  // stepSpirit's town gate now carries: with the hold on, the ladder has
+  // pinned the orbit's downward rung changes off, so the orbit dwell IS the
+  // interaction and the pointer must reach a host for the hover to select
+  // anything. This scope has one host, so it is the one. (No boot arms the
+  // hold on THIS path today — the founding premise is stepSpirit's — but the
+  // gate states the law, not its caller, and a silently different law here is
+  // exactly how the pointer gates drifted apart before.)
   if (embedWild?.quest) {
-    if (s.ladder.level === "ground" && pointer) {
+    const townHold = s.ladder.level === "town" && s.ladder.builderHold;
+    if ((s.ladder.level === "ground" || townHold) && pointer) {
       embedWild.host.setPointer(pointer.clientX, pointer.clientY);
     } else {
       embedWild.host.clearPointer();
     }
     if (s.ladder.level === "ground" && !hostDrivesView) embedWild.quest.setExternalCursor(true);
+    else if (townHold) embedWild.quest.setExternalCursor(false);
   }
   // FOLLOW-LEADER FEED (creature avatarMode — quest-host.ts): the attached
   // avatar's leader is session.spiritPos, fed through the host's own public

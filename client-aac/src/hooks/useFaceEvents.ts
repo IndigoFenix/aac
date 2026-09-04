@@ -11,6 +11,16 @@ import type {
   FaceEventType,
 } from "@/lib/faceTrackingTypes";
 import { DEFAULT_FACE_TRACKING_CONFIG } from "@/lib/faceTrackingTypes";
+import type { HeadAttentionTracker } from "@shared/aac/head-attention";
+import { createHeadAttentionTracker } from "@shared/aac/head-attention";
+import type { HeadNeutralProfile, SessionNeutralObservation } from "@shared/aac/head-attention";
+import type { HeadGestureDetector } from "@shared/aac/head-gestures";
+import { createHeadGestureDetector } from "@shared/aac/head-gestures";
+import type { FaceBaselineAccumulator, FaceBaselineProfile, SessionFaceObservation } from "@shared/aac/face-baseline";
+import { createFaceBaselineAccumulator } from "@shared/aac/face-baseline";
+import type { FaceReadTracker, FaceSample } from "@shared/aac/face-read";
+import { createFaceReadTracker } from "@shared/aac/face-read";
+import { gazeVector } from "@shared/aac/face-features";
 import type { IdentificationResult } from "@/hooks/usePersonIdentification";
 
 // =============================================================================
@@ -22,11 +32,32 @@ export interface UseFaceEventsOptions {
   currentIdentification: IdentificationResult | null;
   enabled?: boolean;
   config?: Partial<FaceTrackingConfig>;
+  /** Accumulated head-neutral profile for this student, seeded from the server
+   *  (clientConfig.headNeutral). Trackers start from it instead of re-warming;
+   *  how far it is trusted depends on its own reliability, not on being
+   *  present. See shared/aac/head-attention.ts. */
+  headNeutral?: HeadNeutralProfile | null;
+  /** Accumulated facial-channel baseline for this student, seeded from the
+   *  server (clientConfig.faceBaseline). Without one the decoder still works —
+   *  it learns within the session and reports only unmistakable intensities
+   *  meanwhile — but with one it can score against weeks of evidence from the
+   *  first frame. See shared/aac/face-baseline.ts. */
+  faceBaseline?: FaceBaselineProfile | null;
 }
 
 export interface UseFaceEventsReturn {
   trackedFaces: TrackedFace[];
   updateCount: number;
+  /** What this session observed about the PRIMARY face's habitual head pose,
+   *  for the cross-session write-back. Null until enough settled samples have
+   *  accrued. "Primary" = the largest tracked face, which on the AAC's
+   *  user-facing camera is the student; the server stores it against the
+   *  session's student either way. */
+  getNeutralObservation: () => SessionNeutralObservation | null;
+  /** This session's facial-channel histograms for the PRIMARY face, for the
+   *  cross-session write-back. Same "primary = largest face" rule as
+   *  getNeutralObservation, for the same reason. */
+  getFaceObservation: () => SessionFaceObservation | null;
 }
 
 // =============================================================================
@@ -51,6 +82,9 @@ function deriveEvents(
   blendshapes: Map<string, number>,
   thresholds: FaceTrackingConfig["thresholds"],
   headPose?: { yaw: number; pitch: number } | null,
+  /** The PREVIOUS tick's blendshapes for this face, so a blink can be an edge
+   *  rather than a level. Absent on a face's first tick. */
+  prev?: Map<string, number> | null,
 ): FaceEvent[] {
   const now = Date.now();
   const events: FaceEvent[] = [];
@@ -58,36 +92,38 @@ function deriveEvents(
   const blinkL = blendshapes.get("eyeBlinkLeft") ?? 0;
   const blinkR = blendshapes.get("eyeBlinkRight") ?? 0;
 
-  // Blinks
-  if (blinkL > thresholds.blink && blinkR > thresholds.blink) {
+  // Blinks, on the RISING EDGE only. A blink is an event; eyes CLOSED is a
+  // state, and the level test this replaces emitted one every tick the eyes
+  // were shut — so a student resting with their eyes closed for ten seconds
+  // billed the Observer for "blink both x30". Eye closure as a state is
+  // reported by the decoder's engagement channel instead (face-read.ts).
+  // Without a previous frame nothing fires: a face's first tick cannot be an
+  // edge, and guessing costs a phantom blink on every re-acquisition.
+  const wasL = (prev?.get("eyeBlinkLeft") ?? 1) > thresholds.blink;
+  const wasR = (prev?.get("eyeBlinkRight") ?? 1) > thresholds.blink;
+  const isL = blinkL > thresholds.blink;
+  const isR = blinkR > thresholds.blink;
+  if (isL && isR && !(wasL && wasR)) {
     events.push({ type: "blink_both", timestamp: now, confidence: Math.min(blinkL, blinkR) });
-  } else {
-    if (blinkL > thresholds.blink) {
-      events.push({ type: "blink_left", timestamp: now, confidence: blinkL });
-    }
-    if (blinkR > thresholds.blink) {
-      events.push({ type: "blink_right", timestamp: now, confidence: blinkR });
-    }
+  } else if (!(isL && isR)) {
+    if (isL && !wasL) events.push({ type: "blink_left", timestamp: now, confidence: blinkL });
+    if (isR && !wasR) events.push({ type: "blink_right", timestamp: now, confidence: blinkR });
   }
 
-  // Gaze direction
-  const lookLeft = blendshapes.get("eyeLookOutLeft") ?? 0;
-  const lookRight = blendshapes.get("eyeLookOutRight") ?? 0;
-  const lookUp = blendshapes.get("eyeLookUpLeft") ?? blendshapes.get("eyeLookUpRight") ?? 0;
-  const lookDown = blendshapes.get("eyeLookDownLeft") ?? blendshapes.get("eyeLookDownRight") ?? 0;
-
-  const gazeScores = [
-    { type: "gaze_left" as FaceEventType, score: lookLeft },
-    { type: "gaze_right" as FaceEventType, score: lookRight },
-    { type: "gaze_up" as FaceEventType, score: lookUp },
-    { type: "gaze_down" as FaceEventType, score: lookDown },
-  ];
-
-  const maxGaze = gazeScores.reduce((a, b) => (b.score > a.score ? b : a));
-  if (maxGaze.score > thresholds.gaze) {
-    events.push({ type: maxGaze.type, timestamp: now, confidence: maxGaze.score });
-  } else {
-    events.push({ type: "gaze_center", timestamp: now, confidence: 1 - maxGaze.score });
+  // Gaze direction, from the CONJUGATE vector (shared/aac/face-features.ts).
+  // Two faults are fixed here. The scores were single-eye — `eyeLookOutLeft`
+  // alone for "left", and `eyeLookUpLeft ?? eyeLookUpRight`, where `??` only
+  // falls through on undefined, so vertical gaze was always the left eye (D6).
+  // And there was an `else` branch pushing `gaze_center` on EVERY tick, which
+  // is why a 10-second window summarised as "gaze center x20" with the one
+  // informative event buried in it (D5). Centre is the default; it does not
+  // need saying.
+  const gaze = gazeVector(blendshapes);
+  if (gaze.magnitude > thresholds.gaze) {
+    const type: FaceEventType = Math.abs(gaze.x) >= Math.abs(gaze.y)
+      ? (gaze.x > 0 ? "gaze_right" : "gaze_left")
+      : (gaze.y > 0 ? "gaze_down" : "gaze_up");
+    events.push({ type, timestamp: now, confidence: Math.min(1, gaze.magnitude) });
   }
 
   // Smile
@@ -137,23 +173,13 @@ function deriveEvents(
     events.push({ type: "brow_furrow", timestamp: now, confidence: browFurrow });
   }
 
-  // Head turn direction (from landmark-based head pose)
-  if (headPose) {
-    const ht = thresholds.headTurn;
-    const absYaw = Math.abs(headPose.yaw);
-    const absPitch = Math.abs(headPose.pitch);
-
-    // Pick the dominant axis if both exceed threshold
-    if (absYaw > ht || absPitch > ht) {
-      if (absYaw >= absPitch) {
-        const type: FaceEventType = headPose.yaw > 0 ? "head_turn_right" : "head_turn_left";
-        events.push({ type, timestamp: now, confidence: Math.min(1, absYaw / 0.4) });
-      } else {
-        const type: FaceEventType = headPose.pitch > 0 ? "head_turn_down" : "head_turn_up";
-        events.push({ type, timestamp: now, confidence: Math.min(1, absPitch / 0.4) });
-      }
-    }
-  }
+  // NOTE: head-turn events used to be emitted here, one per tick, off a single
+  // absolute 0.15 threshold with no hysteresis and no dwell. On real sessions
+  // that produced 45% "turned left" / 21% "shaking head" / 4% "facing camera",
+  // with left and right inside the same window — threshold chatter, billed to
+  // the Observer every turn. Head orientation is now a debounced STATE handled
+  // by shared/aac/head-attention.ts and carried on TrackedFace.attention.
+  // See planning-docs/aac-face-expression-decoder.md §2.5.
 
   return events;
 }
@@ -167,91 +193,12 @@ function getRefireCategory(type: FaceEventType): "blink" | "gaze" | "expression"
   return "expression";
 }
 
-// Detect head nod/shake from nose tip position history
-function detectHeadGestures(
-  history: Array<{ x: number; y: number; ts: number }>,
-  faceWidth: number,
-  faceHeight: number,
-): { nod: boolean; shake: boolean; nodConf: number; shakeConf: number } {
-  const result = { nod: false, shake: false, nodConf: 0, shakeConf: 0 };
-  if (history.length < 3) return result;
-
-  const minNodAmplitude = faceHeight * 0.06;
-  const minShakeAmplitude = faceWidth * 0.06;
-
-  // Count direction reversals on each axis
-  let yReversals = 0;
-  let xReversals = 0;
-  let yMaxAmplitude = 0;
-  let xMaxAmplitude = 0;
-
-  let prevYDir = 0; // -1 = down, +1 = up, 0 = undetermined
-  let prevXDir = 0;
-  let yAnchor = history[0].y;
-  let xAnchor = history[0].x;
-
-  for (let i = 1; i < history.length; i++) {
-    const dy = history[i].y - history[i - 1].y;
-    const dx = history[i].x - history[i - 1].x;
-
-    // Y-axis (nod) - track direction changes with minimum amplitude
-    if (Math.abs(dy) > 0.001) {
-      const yDir = dy > 0 ? 1 : -1;
-      if (prevYDir !== 0 && yDir !== prevYDir) {
-        const amplitude = Math.abs(history[i].y - yAnchor);
-        if (amplitude >= minNodAmplitude) {
-          yReversals++;
-          yMaxAmplitude = Math.max(yMaxAmplitude, amplitude);
-          yAnchor = history[i].y;
-        }
-      }
-      if (prevYDir !== yDir && prevYDir === 0) {
-        yAnchor = history[i - 1].y;
-      }
-      prevYDir = yDir;
-    }
-
-    // X-axis (shake) - track direction changes with minimum amplitude
-    if (Math.abs(dx) > 0.001) {
-      const xDir = dx > 0 ? 1 : -1;
-      if (prevXDir !== 0 && xDir !== prevXDir) {
-        const amplitude = Math.abs(history[i].x - xAnchor);
-        if (amplitude >= minShakeAmplitude) {
-          xReversals++;
-          xMaxAmplitude = Math.max(xMaxAmplitude, amplitude);
-          xAnchor = history[i].x;
-        }
-      }
-      if (prevXDir !== xDir && prevXDir === 0) {
-        xAnchor = history[i - 1].x;
-      }
-      prevXDir = xDir;
-    }
-  }
-
-  // 2+ reversals = gesture detected (one full oscillation cycle)
-  if (yReversals >= 2) {
-    result.nod = true;
-    result.nodConf = Math.min(1, yMaxAmplitude / (faceHeight * 0.15));
-  }
-  if (xReversals >= 2) {
-    result.shake = true;
-    result.shakeConf = Math.min(1, xMaxAmplitude / (faceWidth * 0.15));
-  }
-
-  // If both detected, pick the dominant one
-  if (result.nod && result.shake) {
-    if (yReversals > xReversals || (yReversals === xReversals && yMaxAmplitude > xMaxAmplitude)) {
-      result.shake = false;
-      result.shakeConf = 0;
-    } else {
-      result.nod = false;
-      result.nodConf = 0;
-    }
-  }
-
-  return result;
-}
+// Nod/shake detection moved to shared/aac/head-gestures.ts (2026-09-02). The
+// detector that lived here asked for 2 reversals at 6% of the face box in a 2s
+// window — about 7 samples at the tracker's cadence — and reported "shaking
+// head" on 21% of prod scene rows for two different students. The replacement
+// gates on PERIODICITY and on samples-per-half-cycle, which is the Nyquist
+// condition the old thresholds could not express.
 
 // Determine dominant expression from a set of events (ignoring blinks/gaze)
 function getDominantExpression(events: FaceEvent[]): FaceEventType | null {
@@ -274,7 +221,7 @@ function getDominantExpression(events: FaceEvent[]): FaceEventType | null {
 // =============================================================================
 
 export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsReturn {
-  const { faces, currentIdentification, enabled = true, config: configOverrides } = options;
+  const { faces, currentIdentification, enabled = true, config: configOverrides, headNeutral, faceBaseline } = options;
 
   // Memoize config to avoid creating new object references every render
   // (which would cause the useEffect to fire infinitely)
@@ -289,6 +236,15 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
       ...DEFAULT_FACE_TRACKING_CONFIG.refireIntervals,
       ...configOverrides?.refireIntervals,
     },
+    // Merged like the blocks above so the defaults always back the override.
+    attention: {
+      ...DEFAULT_FACE_TRACKING_CONFIG.attention,
+      ...configOverrides?.attention,
+    },
+    faceRead: {
+      ...DEFAULT_FACE_TRACKING_CONFIG.faceRead,
+      ...configOverrides?.faceRead,
+    },
   }), [configOverrides]);
 
   const [trackedFaces, setTrackedFaces] = useState<TrackedFace[]>([]);
@@ -297,7 +253,75 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
   // Stable refs for mutable state
   const trackedRef = useRef<TrackedFace[]>([]);
   const lastFireRef = useRef<Map<string, Map<FaceEventType, number>>>(new Map());
-  const noseTipHistoryRef = useRef<Map<string, Array<{ x: number; y: number; ts: number }>>>(new Map());
+  const gestureRef = useRef<Map<string, HeadGestureDetector>>(new Map());
+
+  const gestureFor = useCallback((key: string): HeadGestureDetector => {
+    let d = gestureRef.current.get(key);
+    if (!d) { d = createHeadGestureDetector(); gestureRef.current.set(key, d); }
+    return d;
+  }, []);
+  // One attention tracker per face — hysteresis and dwell are per-face memory,
+  // and so is the running neutral (how THIS person habitually sits relative to
+  // the camera). Keyed the same way as the other per-face maps above.
+  const attentionRef = useRef<Map<string, HeadAttentionTracker>>(new Map());
+
+  const attentionFor = useCallback((key: string): HeadAttentionTracker => {
+    let t = attentionRef.current.get(key);
+    if (!t) {
+      t = createHeadAttentionTracker(config.attention, headNeutral ?? null);
+      attentionRef.current.set(key, t);
+    }
+    return t;
+  }, [config.attention, headNeutral]);
+
+  // ---- expression decoding (shared/aac/face-read.ts) ----------------------
+  //
+  // The read tracker is per FACE (hysteresis and dwell are per-face memory).
+  // The BASELINE is not: exactly one accumulator is the student's — seeded from
+  // their stored profile and written back at session end — and it is fed by
+  // whichever tracked face is largest in frame, re-decided every tick. Any
+  // other face in view gets a throwaway session-local accumulator, so a
+  // visitor is never scored against the student's distribution and never
+  // contributes to it.
+  const readRef = useRef<Map<string, FaceReadTracker>>(new Map());
+  const studentBaselineRef = useRef<FaceBaselineAccumulator | null>(null);
+  const visitorBaselineRef = useRef<Map<string, FaceBaselineAccumulator>>(new Map());
+
+  const studentBaseline = useCallback((): FaceBaselineAccumulator => {
+    if (!studentBaselineRef.current) {
+      studentBaselineRef.current = createFaceBaselineAccumulator(faceBaseline ?? null);
+    }
+    return studentBaselineRef.current;
+  }, [faceBaseline]);
+
+  // A seed arriving mid-session (the profile lands after tracking starts) must
+  // replace the accumulator, not be ignored — otherwise a student with weeks of
+  // stored baseline spends the session re-learning it.
+  //
+  // ⚠️ But ONLY while there is nothing to lose. `aacSettings` gets a fresh
+  // object identity on every profile refetch, so this effect fires far more
+  // often than the seed actually changes; replacing a warm accumulator would
+  // silently discard the session's evidence and, on a long session, the
+  // write-back with it. Once the session has enough samples to be worth
+  // sending home, the seed has missed its window.
+  useEffect(() => {
+    const cur = studentBaselineRef.current;
+    if (cur && cur.sessionObservation() !== null) return;
+    studentBaselineRef.current = createFaceBaselineAccumulator(faceBaseline ?? null);
+  }, [faceBaseline]);
+
+  const readFor = useCallback((key: string): FaceReadTracker => {
+    let t = readRef.current.get(key);
+    if (!t) { t = createFaceReadTracker(config.faceRead); readRef.current.set(key, t); }
+    return t;
+  }, [config.faceRead]);
+
+  const baselineFor = useCallback((key: string, isPrimary: boolean): FaceBaselineAccumulator => {
+    if (isPrimary) return studentBaseline();
+    let a = visitorBaselineRef.current.get(key);
+    if (!a) { a = createFaceBaselineAccumulator(null); visitorBaselineRef.current.set(key, a); }
+    return a;
+  }, [studentBaseline]);
 
   // Process incoming raw faces
   useEffect(() => {
@@ -311,6 +335,34 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
 
     const now = Date.now();
     const existing = trackedRef.current;
+
+    // Primary = largest face in frame. On the AAC's user-facing camera that is
+    // the student, and it is what the server stores the write-back against.
+    let primaryIncoming = -1;
+    let primaryArea = 0;
+    for (let fi = 0; fi < faces.length; fi++) {
+      const bb = faces[fi].boundingBox;
+      const area = bb ? bb.width * bb.height : 0;
+      if (area > primaryArea) { primaryArea = area; primaryIncoming = fi; }
+    }
+
+    const decode = (
+      key: string,
+      incoming: RawTrackedFace,
+      incomingIdx: number,
+      attention: TrackedFace["attention"],
+    ) => {
+      const sample: FaceSample = {
+        present: true,
+        blendshapes: incoming.blendshapes,
+        landmarks: incoming.landmarks,
+        boundingBox: incoming.boundingBox,
+        headPose: incoming.headPose,
+        aspect: incoming.aspect,
+        attentionAway: attention?.state === "away" && !attention.calibrating,
+      };
+      return readFor(key).update(sample, baselineFor(key, incomingIdx === primaryIncoming), now);
+    };
 
     // Match incoming faces to existing tracked faces by bounding box proximity
     const matched = new Map<number, number>(); // existing index -> incoming index
@@ -360,7 +412,8 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
 
       if (incomingIdx !== undefined) {
         const incoming = faces[incomingIdx];
-        const newEvents = deriveEvents(incoming.blendshapes, config.thresholds, incoming.headPose);
+        const newEvents = deriveEvents(
+          incoming.blendshapes, config.thresholds, incoming.headPose, face.currentBlendshapes);
 
         // Deduplicate events with re-fire intervals
         const faceKey = face.personId || `face_${face.faceIndex}`;
@@ -381,32 +434,20 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
           }
         }
 
-        // Head gesture detection from nose tip history
-        if (incoming.noseTip) {
-          if (!noseTipHistoryRef.current.has(faceKey)) {
-            noseTipHistoryRef.current.set(faceKey, []);
-          }
-          const history = noseTipHistoryRef.current.get(faceKey)!;
-          history.push({ x: incoming.noseTip.x, y: incoming.noseTip.y, ts: now });
-
-          // Prune entries older than 2s
-          const gestureWindow = 2000;
-          while (history.length > 0 && now - history[0].ts > gestureWindow) {
-            history.shift();
-          }
-
-          // Detect gestures if we have a bounding box for amplitude reference
-          if (incoming.boundingBox && history.length >= 3) {
-            const gestures = detectHeadGestures(history, incoming.boundingBox.width, incoming.boundingBox.height);
-
-            if (gestures.nod) {
-              accepted.push({ type: "head_nod", timestamp: now, confidence: gestures.nodConf });
-              // Clear history after detection to prevent re-triggering
-              history.length = 0;
-            } else if (gestures.shake) {
-              accepted.push({ type: "head_shake", timestamp: now, confidence: gestures.shakeConf });
-              history.length = 0;
-            }
+        // Head gesture detection (shared/aac/head-gestures.ts owns the window,
+        // the periodicity gates and the refractory period).
+        if (incoming.noseTip && incoming.boundingBox) {
+          const g = gestureFor(faceKey).update(
+            { x: incoming.noseTip.x, y: incoming.noseTip.y, ts: now },
+            incoming.boundingBox.width,
+            incoming.boundingBox.height,
+          );
+          if (g) {
+            accepted.push({
+              type: g.gesture === "nod" ? "head_nod" : "head_shake",
+              timestamp: now,
+              confidence: g.confidence,
+            });
           }
         }
 
@@ -416,6 +457,8 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
           .filter((e) => e.timestamp >= windowStart)
           .concat(accepted);
 
+        const attention = attentionFor(faceKey).update(incoming.headPose, now);
+
         newTracked.push({
           ...face,
           faceIndex: incoming.faceIndex,
@@ -423,6 +466,8 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
           currentBlendshapes: incoming.blendshapes,
           currentExpression: getDominantExpression(newEvents),
           headPose: incoming.headPose,
+          attention,
+          read: decode(faceKey, incoming, incomingIdx, attention),
           events: keptEvents,
           missedTicks: 0,
         });
@@ -430,12 +475,31 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
         // Face not found this tick - increment missed
         const newMissed = face.missedTicks + 1;
         if (newMissed < config.facePersistenceTicks) {
+          // Tick attention with no pose: it HOLDS the committed state (an absent
+          // reading is not evidence of attention) while heldMs keeps advancing.
+          const key = face.personId || `face_${face.faceIndex}`;
+          // The read is CARRIED, not re-derived: the persistence window exists
+          // to ride out a dropout of a tick or two, and re-reading a face that
+          // is not there would only produce "unreadable" for 900 ms every time
+          // the tracker blinks. Its dwell state holds untouched.
           newTracked.push({
             ...face,
+            attention: attentionFor(key).update(null, now),
             missedTicks: newMissed,
           });
+        } else {
+          // Dropped for good — discard its tracker so a later face reusing the
+          // index doesn't inherit a stranger's neutral.
+          const goneKey = face.personId || `face_${face.faceIndex}`;
+          attentionRef.current.delete(goneKey);
+          gestureRef.current.delete(goneKey);
+          readRef.current.delete(goneKey);
+          // The STUDENT accumulator deliberately survives: it holds this
+          // session's evidence for the write-back, and a student who turns away
+          // for a second must not restart their baseline. Only the throwaway
+          // visitor accumulators go.
+          visitorBaselineRef.current.delete(goneKey);
         }
-        // else: face dropped
       }
     }
 
@@ -446,13 +510,18 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
       const incoming = faces[fi];
       const newEvents = deriveEvents(incoming.blendshapes, config.thresholds, incoming.headPose);
 
-      // Initialize nose tip tracking for new faces
-      if (incoming.noseTip) {
-        const newFaceKey = `face_${incoming.faceIndex}`;
-        noseTipHistoryRef.current.set(newFaceKey, [
+      // Seed the gesture detector for a newly seen face. It needs several
+      // samples before it will judge anything, so the first one cannot fire.
+      if (incoming.noseTip && incoming.boundingBox) {
+        gestureFor(`face_${incoming.faceIndex}`).update(
           { x: incoming.noseTip.x, y: incoming.noseTip.y, ts: now },
-        ]);
+          incoming.boundingBox.width,
+          incoming.boundingBox.height,
+        );
       }
+
+      const newKey = `face_${incoming.faceIndex}`;
+      const attention = attentionFor(newKey).update(incoming.headPose, now);
 
       newTracked.push({
         faceIndex: incoming.faceIndex,
@@ -462,6 +531,8 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
         currentBlendshapes: incoming.blendshapes,
         currentExpression: getDominantExpression(newEvents),
         headPose: incoming.headPose,
+        attention,
+        read: decode(newKey, incoming, fi, attention),
         events: newEvents,
         missedTicks: 0,
       });
@@ -489,9 +560,28 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
     trackedRef.current = newTracked;
     setTrackedFaces([...newTracked]);
     setUpdateCount((c) => c + 1);
-  }, [faces, currentIdentification, enabled, config.thresholds, config.eventWindowMs, config.facePersistenceTicks, config.refireIntervals]);
+  }, [faces, currentIdentification, enabled, config.thresholds, config.eventWindowMs, config.facePersistenceTicks, config.refireIntervals, attentionFor, gestureFor, readFor, baselineFor]);
 
-  return { trackedFaces, updateCount };
+  // Largest tracked face = the student on the user-facing camera. Recomputed at
+  // read time so it follows whoever is actually in front of the device.
+  const getNeutralObservation = useCallback((): SessionNeutralObservation | null => {
+    let bestKey: string | null = null;
+    let bestArea = 0;
+    for (const f of trackedRef.current) {
+      const bb = f.boundingBox;
+      const area = bb ? bb.width * bb.height : 0;
+      if (area > bestArea) { bestArea = area; bestKey = f.personId || `face_${f.faceIndex}`; }
+    }
+    if (!bestKey) return null;
+    return attentionRef.current.get(bestKey)?.sessionObservation() ?? null;
+  }, []);
+
+  const getFaceObservation = useCallback(
+    (): SessionFaceObservation | null => studentBaselineRef.current?.sessionObservation() ?? null,
+    [],
+  );
+
+  return { trackedFaces, updateCount, getNeutralObservation, getFaceObservation };
 }
 
 export default useFaceEvents;

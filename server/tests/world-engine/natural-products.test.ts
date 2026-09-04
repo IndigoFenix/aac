@@ -5,25 +5,29 @@
 // it (FOOD_KINDS, SITE_MATERIAL_GLYPHS, foodPlants), so the abstract
 // economy and the visible collection can never disagree.
 
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect, beforeAll } from "@jest/globals";
 import {
   band,
   buildingMaterialGlyphs,
   drinkGlyphs,
   effectiveInPerOut,
   foodGlyphs,
+  glyphTakeableFrom,
   growthClassYield,
   harvestProductsOf,
   harvestStockOf,
-  killStockOf,
+  bodyStockOf,
   naturalSourceOf,
   naturalSources,
   nicheSuitabilityOf,
   foodPlants,
   productFeedsGood,
+  registerNaturalSource,
   rollYield,
+  sourceDepletes,
   sourceIsConsumable,
-  sourceKillExhausted,
+  sourceIsCuttable,
+  sourceSpent,
   sourceSuitabilityAt,
   sourcesForGood,
   takeUnitsOf,
@@ -67,7 +71,11 @@ describe("natural-sources registry — internal coherence", () => {
     }
   });
 
-  it("the model's canonical examples hold: wool/milk/fruit are live takes, wood/meat/stone are kills", () => {
+  it("the model's canonical examples hold, across ALL THREE methods", () => {
+    // ⚖️ THREE, not two, since 2026-09-02 (user ruling). `harvest` takes what
+    // a source BEARS; `kill` is all-or-nothing and needs the killing act;
+    // `deplete` takes from the object itself, diminishing it, and ends it when
+    // it is exhausted — the outcrop, and moss-like growers after it.
     const methodOf = (species: string, glyph: string) =>
       naturalSourceOf(species)!.products.find((p) => p.glyph === glyph)!.method;
     expect(methodOf("sheep", "wool")).toBe("harvest");
@@ -75,10 +83,13 @@ describe("natural-sources registry — internal coherence", () => {
     expect(methodOf("apple_tree", "apple")).toBe("harvest");
     expect(methodOf("oak", "wood")).toBe("kill");
     expect(methodOf("sheep", "meat")).toBe("kill");
-    expect(methodOf("rock", "stone")).toBe("kill");
+    // 🚨 STONE MOVED. It was `kill`, and that is exactly what made every tree
+    // behave like an outcrop — quarried a unit at a time until it silently
+    // vanished. The shrink-as-you-take path is this method's and no other's.
+    expect(methodOf("rock", "stone")).toBe("deplete");
   });
 
-  it("consumability = carrying any kill product", () => {
+  it("consumability = carrying any product made of the source's own substance", () => {
     expect(sourceIsConsumable(naturalSourceOf("oak")!)).toBe(true);
     expect(sourceIsConsumable(naturalSourceOf("rock")!)).toBe(true);
     // Pure-harvest sources persist when picked clean.
@@ -94,7 +105,7 @@ describe("acquisition rolls", () => {
     expect(rollYield(p, () => 0.999999)).toBe(p.yield.max);
   });
 
-  it("killStockOf rolls only the kill products (the legacy wilderness stacks)", () => {
+  it("bodyStockOf rolls only the kill products (the legacy wilderness stacks)", () => {
     // The roll spans the DECLARED bounds, read off the catalogue rather than
     // spelled out: the yields were rescaled in phase 6 (a house is 120 blocks,
     // so a 24 m oak had to be worth more than two units of timber), and what
@@ -102,14 +113,14 @@ describe("acquisition rolls", () => {
     // at any bounds. `() => 0.99` is the top of the range, not a literal count.
     const bounds = (species: string, glyph: string): { min: number; max: number } =>
       naturalSourceOf(species)!.products.find((p) => p.glyph === glyph)!.yield;
-    expect(killStockOf("oak", () => 0)).toEqual({ wood: bounds("oak", "wood").min });
-    expect(killStockOf("oak", () => 0.99)).toEqual({ wood: bounds("oak", "wood").max });
-    expect(killStockOf("rock", () => 0)).toEqual({ stone: bounds("rock", "stone").min });
-    expect(killStockOf("rock", () => 0.99)).toEqual({ stone: bounds("rock", "stone").max });
+    expect(bodyStockOf("oak", () => 0)).toEqual({ wood: bounds("oak", "wood").min });
+    expect(bodyStockOf("oak", () => 0.99)).toEqual({ wood: bounds("oak", "wood").max });
+    expect(bodyStockOf("rock", () => 0)).toEqual({ stone: bounds("rock", "stone").min });
+    expect(bodyStockOf("rock", () => 0.99)).toEqual({ stone: bounds("rock", "stone").max });
     // A pure-harvest source releases nothing on a kill — there is no kill.
-    expect(killStockOf("grape_vine", () => 0.5)).toEqual({});
+    expect(bodyStockOf("grape_vine", () => 0.5)).toEqual({});
     // Harvest products stay out of the kill stock even on mixed sources.
-    expect(Object.keys(killStockOf("sheep", () => 0.5))).toEqual(["meat"]);
+    expect(Object.keys(bodyStockOf("sheep", () => 0.5))).toEqual(["meat"]);
   });
 
   it("harvestStockOf rolls only the harvest products (the standing bearing)", () => {
@@ -140,21 +151,21 @@ describe("acquisition rolls", () => {
     expect(takeUnitsOf(oak, "stone", has(["axe", "pick"]))).toBe(1);
   });
 
-  it("sourceKillExhausted — the felling test reads KILL glyphs only", () => {
+  it("sourceSpent — the felling test reads KILL glyphs only", () => {
     const oak = naturalSourceOf("oak")!;
     const appleTree = naturalSourceOf("apple_tree")!;
     const banana = naturalSourceOf("banana_plant")!;
     // Wood remaining keeps the tree standing; wood gone fells it.
-    expect(sourceKillExhausted(oak, { wood: 2 })).toBe(false);
-    expect(sourceKillExhausted(oak, { wood: 0 })).toBe(true);
-    expect(sourceKillExhausted(oak, {})).toBe(true);
-    expect(sourceKillExhausted(oak, undefined)).toBe(true);
+    expect(sourceSpent(oak, { wood: 2 })).toBe(false);
+    expect(sourceSpent(oak, { wood: 0 })).toBe(true);
+    expect(sourceSpent(oak, {})).toBe(true);
+    expect(sourceSpent(oak, undefined)).toBe(true);
     // Hanging fruit does NOT keep a wood-emptied tree standing — the last
     // wood taken IS the felling; the fruit dies with it.
-    expect(sourceKillExhausted(appleTree, { apple: 3, wood: 0 })).toBe(true);
-    expect(sourceKillExhausted(appleTree, { apple: 0, wood: 1 })).toBe(false);
+    expect(sourceSpent(appleTree, { apple: 3, wood: 0 })).toBe(true);
+    expect(sourceSpent(appleTree, { apple: 0, wood: 1 })).toBe(false);
     // A pure-harvest source is never felled, even picked clean.
-    expect(sourceKillExhausted(banana, {})).toBe(false);
+    expect(sourceSpent(banana, {})).toBe(false);
   });
 });
 
@@ -644,9 +655,9 @@ describe("the conversion dial — multiplier ① (yields × dial)", () => {
     expect(rollYield(p, rollMax, 2)).toBe(40); // max×2
   });
 
-  it("killStockOf/harvestStockOf thread the SAME dial to rollYield", () => {
-    expect(killStockOf("oak", () => 0, 2)).toEqual({ wood: 24 });
-    expect(killStockOf("oak", () => 0, 1)).toEqual({ wood: 12 });
+  it("bodyStockOf/harvestStockOf thread the SAME dial to rollYield", () => {
+    expect(bodyStockOf("oak", () => 0, 2)).toEqual({ wood: 24 });
+    expect(bodyStockOf("oak", () => 0, 1)).toEqual({ wood: 12 });
     expect(harvestStockOf("apple_tree", () => 0, 3)).toEqual({ apple: 3 }); // min 1 × 3
   });
 });
@@ -699,5 +710,141 @@ describe("S&D S3 H2 — the growth clock (wood-bearing species only)", () => {
     const p = naturalSourceOf("oak")!.products[0]!;
     expect(growthClassYield(p, 1, 2)).toBe(32);
     expect(growthClassYield(p, 1, 2)).toBe(growthClassYield(p, 1, 2)); // pure
+  });
+});
+
+// ── ⚖️ THE FELL-FIRST GATE — WHOM IT BINDS, AND WHY IT NEEDS A REMEDY ───────
+//
+// User ruling 2026-09-02: a kill product comes off a body only once that body
+// is down. The gate has exactly ONE key — `downed` — and `downed` is a state
+// only a wilderness FEATURE can reach, through the one cut. Bind anything else
+// with it and the result is a refusal whose remedy does not exist.
+//
+// 🚨 WHICH IS WHAT HAPPENED TO A SHEEP. `wildSourceOf` covers features AND
+// product animals, so the session reader answered "cut it down first" for a
+// living sheep's meat; `cutWildFeature` is features-only, so there was no cut
+// button, no cut act, and no way for the player to ever reach it — while the
+// automated draw, which cuts what it cannot take and whose cut on a creature is
+// a silent no-op, went on drawing meat off the living animal. Two paths, two
+// answers, one unreachable good. The gate is now stated for downable bodies
+// only, at the ONE predicate both paths read.
+
+describe("the fell-first gate binds DOWNABLE bodies only", () => {
+  it("a standing tree keeps its timber; a felled one gives it up", () => {
+    const oak = naturalSourceOf("oak")!;
+    expect(glyphTakeableFrom(oak, "wood", false)).toBe(false);
+    expect(glyphTakeableFrom(oak, "wood", true)).toBe(true);
+    // Its BEARING is never gated, standing or down.
+    const apple = naturalSourceOf("apple_tree")!;
+    expect(glyphTakeableFrom(apple, "apple", false)).toBe(true);
+    expect(glyphTakeableFrom(apple, "apple", true)).toBe(true);
+  });
+
+  it("🚨 a LIVING ANIMAL's own substance stays takeable — nothing can down it", () => {
+    // THE REGRESSION THIS BLOCK EXISTS FOR. Meat was obtainable before the
+    // fell-first gate landed (the take drained the stock and the body went with
+    // the last unit, which is the kill distributed over acts) and it is
+    // obtainable again. `sourceSpent` still retires the body at zero, so
+    // nothing about the ENDING changed — only who may reach the first unit.
+    for (const species of ["sheep", "cow"]) {
+      const src = naturalSourceOf(species)!;
+      expect(src.kind).toBe("animal");
+      expect(glyphTakeableFrom(src, "meat", false)).toBe(true);
+    }
+    // …and the live takes it always had are untouched.
+    expect(glyphTakeableFrom(naturalSourceOf("sheep")!, "wool", false)).toBe(true);
+    expect(glyphTakeableFrom(naturalSourceOf("cow")!, "milk", false)).toBe(true);
+  });
+
+  it("an ANIMAL is not CUTTABLE either — the two halves of the law agree", () => {
+    // *"'fight the sheep' must never mean 'uproot the sheep'"*. If the gate
+    // exempts a creature but the cut still claimed it, the board would offer a
+    // button for an act the wilderness cannot perform on a body at all.
+    expect(sourceIsCuttable("sheep", undefined)).toBe(false);
+    expect(sourceIsCuttable("cow", undefined)).toBe(false);
+  });
+
+  it("a depleting outcrop is never gated — taking IS how stone is got", () => {
+    expect(glyphTakeableFrom(naturalSourceOf("rock")!, "stone", false)).toBe(true);
+    expect(sourceIsCuttable("rock", undefined)).toBe(false); // its ending is the wearing away
+  });
+
+  it("⚖️ NO REFUSAL WITHOUT A REMEDY — everything the gate holds back can be CUT", () => {
+    // The invariant the sheep broke, walked over the whole catalogue so a new
+    // row cannot re-open it in either direction: if a standing source refuses a
+    // glyph, the act that unrefuses it must exist for that source.
+    for (const src of naturalSources()) {
+      for (const p of src.products) {
+        if (glyphTakeableFrom(src, p.glyph, false)) continue;
+        expect(sourceIsCuttable(src.species, undefined)).toBe(true);
+        expect(glyphTakeableFrom(src, p.glyph, true)).toBe(true);
+      }
+    }
+  });
+
+  it("a glyph the source does not yield is nobody's business here", () => {
+    expect(glyphTakeableFrom(naturalSourceOf("oak")!, "milk", false)).toBe(true);
+    expect(glyphTakeableFrom(undefined, "wood", false)).toBe(true);
+  });
+});
+
+// ── ⚖️ A MIXED SOURCE — BEARS, DEPLETES *AND* YIELDS ONLY WHEN FELLED ───────
+//
+// 🚨 THIS DESCRIBE MUST STAY LAST IN THE FILE. It REGISTERS a source into the
+// module-level catalogue and there is no unregister; every describe above walks
+// `naturalSources()` and would see it. Jest runs describes in declaration
+// order, so a `beforeAll` here lands after all of them.
+//
+// The row this file's own header promises: *"one source may perfectly well bear
+// fruit, deplete a fibre and yield timber only when felled, and `kind` could not
+// describe that thing at all."* `sourceIsCuttable` read `!sourceDepletes` and so
+// answered FALSE for exactly that source — leaving its kill glyph gated behind a
+// cut it could never receive, which is the same dead end the sheep was in.
+
+describe("a source that bears, depletes AND yields a body product", () => {
+  const MIXED = "test_mixed_shrub";
+  const PURE_DEPLETE = "test_moss_patch";
+
+  beforeAll(() => {
+    registerNaturalSource({
+      species: MIXED,
+      kind: "plant",
+      feature: { icon: "🌿", radiusM: 0.6 },
+      products: [
+        { glyph: "test_berry", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 2 },
+        { glyph: "test_fibre", use: "raw", method: "deplete", yield: { min: 2, max: 4 } },
+        { glyph: "test_timber", use: "building", method: "kill", yield: { min: 4, max: 6 } },
+      ],
+    });
+    // A moss patch — the `deplete` method with NO body product behind it, which
+    // is the outcrop's side of the line and must stay there.
+    registerNaturalSource({
+      species: PURE_DEPLETE,
+      kind: "plant",
+      feature: { icon: "🌱", radiusM: 0.4 },
+      products: [{ glyph: "test_moss", use: "raw", method: "deplete", yield: { min: 1, max: 3 } }],
+    });
+  });
+
+  it("is CUTTABLE — having substance to give up outranks also wearing away", () => {
+    const src = naturalSourceOf(MIXED)!;
+    expect(sourceDepletes(src)).toBe(true); // it really does deplete
+    expect(src.products.some((p) => p.method === "kill")).toBe(true);
+    expect(sourceIsCuttable(MIXED, undefined)).toBe(true);
+  });
+
+  it("gates its TIMBER until it is down, and nothing else, ever", () => {
+    const src = naturalSourceOf(MIXED)!;
+    expect(glyphTakeableFrom(src, "test_timber", false)).toBe(false);
+    expect(glyphTakeableFrom(src, "test_timber", true)).toBe(true);
+    // The fibre comes off the standing shrub unit by unit — that is what
+    // `deplete` means — and the berry is a live take. Neither waits on a cut.
+    expect(glyphTakeableFrom(src, "test_fibre", false)).toBe(true);
+    expect(glyphTakeableFrom(src, "test_berry", false)).toBe(true);
+  });
+
+  it("a PURE-deplete source keeps the outcrop's ending", () => {
+    expect(sourceIsCuttable(PURE_DEPLETE, undefined)).toBe(false);
+    expect(glyphTakeableFrom(naturalSourceOf(PURE_DEPLETE)!, "test_moss", false)).toBe(true);
   });
 });

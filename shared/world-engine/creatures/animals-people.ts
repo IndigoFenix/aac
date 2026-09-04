@@ -21,6 +21,29 @@
 // it is now the `cute` creature mod (mod-library.ts), a world-level renderer
 // option that lands any species on that same chunkier build. `getSpecies
 // ("human_cute")" still resolves — to `human` — so stored documents load.
+// 🚶 RE-PROPORTIONED 2026-09-03 to a real 70 kg, 1.72 m adult. Four numbers
+// moved and nothing else:
+//   • spine.girth 0.2 → 0.2167 — the chest that lands 70 kg on a 0.6 m trunk
+//     (the shipped body read 56 kg, which is a small teenager);
+//   • limbGroups[0] (THE LEGS — group 0 is the station-0.88 pair; group 1 at
+//     station 0 is the ARMS) lengthFrac 1.852 → 1.7 and radiusFrac 0.52 → 0.6;
+//   • posture.bodyHeight 0.785 → 0.85.
+// The last three together STRAIGHTEN THE STANDING KNEE, 145° → 164°, which is
+// what the ledger was really complaining about: ema 4.88 → 2.40 and σ 2.42 →
+// 1.17. Real is ~172°, and the pose solver's contact clamp will not give the
+// last 8° — raising bodyHeight past 0.85 makes the knee WORSE, not better,
+// because the foot re-plants and the sole stops counting as flat.
+//
+// ⚠️ σ 1.17 IS THE HONEST RESIDUAL, AND IT IS THE BIPED SHARE. Two legs carry
+// what the Campione line was fitted on four carrying, and Campione et al.
+// (2014) needed a SEPARATE equation for bipeds for exactly this reason. This
+// body's thigh is r/line 0.97 against the QUADRUPED line and is a real human
+// thigh (~15.5 cm across); it is the denominator that is wrong, not the leg.
+// Fixing it properly means a biped branch in physio.ts, which is a bigger
+// decision than a re-proportioning round should make on its own.
+//
+// The face, the hands and every head dial are UNTOUCHED — those were tuned by
+// eye and this round has no opinion about them.
 export const ANIMAL_PEOPLE_BLUEPRINTS: Array<Record<string, unknown>> =
 [{
   "name": "human",
@@ -28,7 +51,7 @@ export const ANIMAL_PEOPLE_BLUEPRINTS: Array<Record<string, unknown>> =
   "spine": {
     "torsoSegments": 6,
     "torsoLengthM": 0.6,
-    "girth": 0.2,
+    "girth": 0.2167,
     "girthPeak": 0.51,
     "frontTaper": 0.02,
     "rearTaper": 0.255,
@@ -108,8 +131,8 @@ export const ANIMAL_PEOPLE_BLUEPRINTS: Array<Record<string, unknown>> =
       "stationEnd": 0.88,
       "sizePeak": 1,
       "sizeContrast": 0.12,
-      "lengthFrac": 1.852,
-      "radiusFrac": 0.52,
+      "lengthFrac": 1.7,
+      "radiusFrac": 0.6,
       "taper": 0.45,
       "membrane": 0,
       "attachHeight": 0.3,
@@ -168,6 +191,6 @@ export const ANIMAL_PEOPLE_BLUEPRINTS: Array<Record<string, unknown>> =
   },
   "posture": {
     "bodyPitch": 1.362872800004023,
-    "bodyHeight": 0.785
+    "bodyHeight": 0.85
   }
 }];

@@ -189,6 +189,7 @@ import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { useSignLanguagePhrase } from "@/hooks/useSignLanguagePhrase";
 import { isValidSignLanguageCode, isValidLanguageCode } from "@/i18n";
 import { serializeGestureContext, describeFaceForScene, describeHandForScene } from "@/lib/gestureContextSerializer";
+import { readHeadNeutralForSeed, readFaceBaselineForSeed, type LearnedBaselineObservation } from "@shared/aac/learned-baselines";
 import { EyeTrackingDwellProvider, useEyeTrackingDwell, type SelectionMethod } from "@/contexts/EyeTrackingDwellContext";
 import type { RestSpace } from "@shared/button-shape";
 import DwellOverlay from "@/components/DwellOverlay";
@@ -239,7 +240,7 @@ interface HomeProps {
 function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGamePressReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onPressSuggestionReady, onPressNarrowReady, onEnterGuessingFromBuilderReady, onEnterGuessingReady, onExitGuessingReady, onSetBuilderVisibleReady, onContextButtonsChange, onInitializedChange, onSessionIdChange, onBinaryChoiceChange, onAlarmChange, onSeizureConfigChange, onAutoAudioScanChange, onRestartSessionReady, onPausedChange, onActiveAppChange, onEnabledAppsChange, onAvailableCustomAppsChange, onPermittedWebsitesChange, onLaunchAppReady, onRequestAppOpenReady, onRequestBoardOpenReady, onRequestHomeActionReady, onNoteAppSpeechReady, onAppOpenPendingChange, onSendConstructionStateReady, onConstructionSuggestionsChange, onConstructionMemoryChipsChange, onSocialFaceChange, onProcessingChange, onVoicingStudentChange }: {
   onModeChange: (state: 'unmuted' | 'muted') => void;
   onVoiceReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
-  onPlayGlyphReady?: (fn: ((glyphString: string) => void) | null) => void;
+  onPlayGlyphReady?: (fn: ((glyphString: string) => boolean) | null) => void;
   onGamePressReady?: (fn: ((text: string, glyph?: string, voice?: boolean) => void) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
@@ -329,13 +330,14 @@ function DualAgentBridge({ onModeChange, onVoiceReady, onPlayGlyphReady, onGameP
     return () => onVoiceReady(null);
   }, [voiceButtons, onVoiceReady]);
 
-  // playGlyph: hand the sentence-builder's composed glyph to the AI for
-  // interpretation. Optional on the context (older sessions may not have
-  // it); we silently skip wiring if undefined.
+  // playGlyph: play the sentence-builder's composed glyph — rendered by the
+  // glyph language when it can be, handed to the AI to interpret when it
+  // can't. Optional on the context (older sessions may not have it); we
+  // silently skip wiring if undefined.
   useEffect(() => {
     if (!onPlayGlyphReady) return;
     if (playGlyph) {
-      onPlayGlyphReady((glyphString: string) => playGlyph(glyphString));
+      onPlayGlyphReady((glyphString: string) => playGlyph(glyphString));   // → rendered locally?
     } else {
       onPlayGlyphReady(null);
     }
@@ -1238,7 +1240,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   const [testAlarm, setTestAlarm] = useState<{ level: "alert" | "emergency"; reason: string } | null>(null);
   const cancelAlarmRef = useRef<(() => void) | null>(null);
   const voiceFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
-  const playGlyphFnRef = useRef<((glyphString: string) => void) | null>(null);
+  const playGlyphFnRef = useRef<((glyphString: string) => boolean) | null>(null);
   const sendGamePressFnRef = useRef<((text: string, glyph?: string, voice?: boolean) => void) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const pressSuggestionRef = useRef<((suggestionKey: string) => void) | null>(null);
@@ -1543,11 +1545,29 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     language: currentLanguage,
   });
 
-  // Face event accumulation (derives semantic events from blendshapes)
-  const { trackedFaces } = useFaceEvents({
+  // Face event accumulation (derives semantic events from blendshapes).
+  // `headNeutral` seeds the attention trackers with the student's accumulated
+  // habitual head pose so a session opens already tuned rather than re-warming
+  // — absent (a new student, or settings not loaded yet) simply means the old
+  // warm-up path. See shared/aac/learned-baselines.ts.
+  const storedHeadNeutral = useMemo(
+    () => readHeadNeutralForSeed(userProfile?.aacSettings)?.profile ?? null,
+    [userProfile?.aacSettings],
+  );
+  // `faceBaseline` does the same for the EXPRESSION decoder: every threshold is
+  // measured against this student's own channel distribution rather than a
+  // global constant. Absent means the decoder learns within the session and
+  // reports only unmistakable intensities meanwhile — never a global threshold.
+  const storedFaceBaseline = useMemo(
+    () => readFaceBaselineForSeed(userProfile?.aacSettings)?.profile ?? null,
+    [userProfile?.aacSettings],
+  );
+  const { trackedFaces, getNeutralObservation, getFaceObservation } = useFaceEvents({
     faces: rawFaces,
     currentIdentification,
     enabled: faceTrackingEnabled,
+    headNeutral: storedHeadNeutral,
+    faceBaseline: storedFaceBaseline,
   });
 
   // Hand gesture tracking via MediaPipe GestureRecognizer
@@ -1653,6 +1673,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     watchActive: seizureWatchActive,
     baselineSamples: seizureBaselineSamples,
     subjectPresent: seizureSubjectPresent,
+    getLearnedBaseline: getSeizureBaseline,
   } = useSeizureWatch({
     faces: rawFaces,
     hands: rawHands,
@@ -1679,6 +1700,20 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
     if (!id) return;
     setPresentPersonIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }, [currentIdentification]);
+
+  // Everything this session learned about the student's habitual baselines, for
+  // the cross-session write-back. Read on demand (the live session pushes it on
+  // a timer and at teardown), so it costs nothing when nobody asks.
+  const getLearnedBaselines = useCallback((): LearnedBaselineObservation | null => {
+    const headNeutral = getNeutralObservation() ?? undefined;
+    const motion = getSeizureBaseline?.();
+    const seizure = motion && motion.samples > 0
+      ? { regionEnergy: motion.regionEnergy, samples: motion.samples, regionSamples: motion.regionSamples }
+      : undefined;
+    const face = getFaceObservation() ?? undefined;
+    if (!headNeutral && !seizure && !face) return null;
+    return { headNeutral, seizure, face };
+  }, [getNeutralObservation, getSeizureBaseline, getFaceObservation]);
 
   // Get serialized gesture/expression context for dual-agent AI
   const getGestureContext = useCallback(() => {
@@ -2241,8 +2276,15 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
       // parsed:false or timeout → fall through to the LLM interpret path.
     }
     if (playGlyphFnRef.current) {
-      playGlyphFnRef.current(glyphString);
-      // interpretAwaiting stays true — the builder closes when the
+      const renderedLocally = playGlyphFnRef.current(glyphString);
+      if (renderedLocally) {
+        // The device rendered the sentence itself — there is no interpretation
+        // to wait for, and the voice is already starting. Anything else here
+        // would leave a spinner on a button whose work is done.
+        setInterpretAwaiting(false);
+        setShowConstructionBoard(false);
+      }
+      // Otherwise interpretAwaiting stays true — the builder closes when the
       // interpreted sentence starts being voiced (see the effect above).
     } else {
       console.warn("[home] playGlyph unavailable, falling back to direct TTS");
@@ -3136,6 +3178,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                   void handleBuilderPlay(glyphString, spokenFallback);
                 }}
                 awaitingInterpret={interpretAwaiting}
+                studentGender={userProfile?.gender}
                 onMirror={setBuilderMirror}
                 remoteRef={builderRemoteRef}
                 onClose={() => { setInterpretAwaiting(false); setShowConstructionBoard(false); }}
@@ -3659,6 +3702,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           studentId={studentId}
           classroomId={classroomId}
           language={currentLanguage}
+          studentGender={userProfile?.gender}
           locationEnabled={userProfile?.aacSettings?.deviceLocationEnabled ?? false}
           pitchByTag={{
             ...(userProfile?.aacSettings?.aiVoicePitch ? { avatar: userProfile.aacSettings.aiVoicePitch } : {}),
@@ -3679,6 +3723,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
           transcribeSpeech={transcribeSpeech}
           sttReady={sttReady}
           getSceneSnapshot={getSceneSnapshot}
+          getLearnedBaselines={getLearnedBaselines}
           seizureActive={!!seizureInfo}
           getLipActivity={getLipActivity}
           debugMode={debugMode}

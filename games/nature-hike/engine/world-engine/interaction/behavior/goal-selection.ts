@@ -591,6 +591,12 @@ function compileSteps(goal: PursuitGoal, self: CreatureId, r: WorldResolver): Go
       // own order rows, worked by the buildwork machinery. Like `build` and
       // `craft`, never a compiled body errand.
       return null;
+    case "clearFeature":
+      // ⚖️ REMOVING A STANDING FEATURE — the same shape as the unmaking verbs
+      // one rung out into the wild: the host resolves the spoken word against
+      // the standing wilderness and works the clearing through the machinery
+      // that already fells trees for a staked lot. Never a body errand.
+      return null;
     case "area":
       return null; // a spatial charter (③) — the host writes it; never a body errand
     case "transfer":

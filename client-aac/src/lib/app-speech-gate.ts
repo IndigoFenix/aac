@@ -1,10 +1,12 @@
 // THE MIC HOLD FOR AUDIO THIS DEVICE IS MAKING.
 //
-// Two sources are invisible to the AAC's own audio player and therefore to the
-// echo gate that covers our TTS: an embedded app's voice, and a remote party's
-// audio on a call. Both come out of the same speaker and both get heard by the
-// microphone. Each keeps its OWN deadline (see `deviceAudioBusy`) — one going
-// quiet must never release a hold the other still needs.
+// Three sources are invisible to the AAC's own audio player and therefore to
+// the echo gate that covers our TTS: an embedded app's voice, a remote party's
+// audio on a call, and the device's OWN local voice (speechSynthesis / the
+// Kokoro neural voice, which play through their own audio paths). All three
+// come out of the same speaker and all three get heard by the microphone. Each
+// keeps its OWN deadline (see `deviceAudioBusy`) — one going quiet must never
+// release a hold another still needs.
 //
 // ---- the original case: AN EMBEDDED APP'S OWN VOICE ----
 //
@@ -60,6 +62,15 @@ export interface DeviceAudioState {
   appSpeechUntil: number;
   /** Deadline for a remote party's call audio (0 = none). */
   remoteCallAudioUntil: number;
+  /**
+   * Deadline for the device's own LOCAL voice — `client_local_tts`, spoken by
+   * speechSynthesis or the Kokoro neural voice (0 = none).
+   *
+   * Required, not optional: a new source of device audio that a call site can
+   * forget to pass is a source that leaks, and this one leaked for exactly
+   * that reason (see the device-voice note above `foreignDeviceAudio`).
+   */
+  localTtsUntil: number;
 }
 
 /**
@@ -72,5 +83,40 @@ export interface DeviceAudioState {
  * if the deadlines are ever merged into one.
  */
 export function deviceAudioBusy(now: number, s: DeviceAudioState): boolean {
-  return s.aiTtsBusy || now < s.appSpeechUntil || now < s.remoteCallAudioUntil;
+  return s.aiTtsBusy
+    || now < s.appSpeechUntil
+    || now < s.remoteCallAudioUntil
+    || now < s.localTtsUntil;
+}
+
+/**
+ * Device audio the LIVE MODEL DID NOT PRODUCE.
+ *
+ * The raw PCM stream treats our own player's audio as harmless — it is the
+ * model's own output coming back, and the model's echo handling knows it made
+ * it. That reasoning does NOT extend to sound the model never produced: an
+ * embedded app's voice, and (since device-voice mode) our own local TTS. To
+ * the model that audio is simply a person in the room talking, so it must be
+ * DROPPED from the stream, not merely counted like the echo of our own player.
+ *
+ * ---- the device-voice case ----
+ *
+ * `aac_settings.useLocalTts` makes every student press speak through
+ * speechSynthesis / Kokoro instead of streamed server audio. That rung of the
+ * TTS ladder used to be reached only after every cloud provider had failed, so
+ * its audio hit the mic rarely enough to pass for noise; device-voice mode put
+ * it on EVERY press. The AAC then heard the student's own sentence come back
+ * through its microphone, attributed it to a person in the room, and answered
+ * it — the AAC talking with its own echo.
+ *
+ * A remote party's call audio is deliberately NOT here: it is a person, whose
+ * words the conversation room already delivers by their proper route, and the
+ * `deviceAudioBusy` hold is what keeps the mic from delivering them a second
+ * time.
+ */
+export function foreignDeviceAudio(
+  now: number,
+  s: Pick<DeviceAudioState, "appSpeechUntil" | "localTtsUntil">,
+): boolean {
+  return now < s.appSpeechUntil || now < s.localTtsUntil;
 }

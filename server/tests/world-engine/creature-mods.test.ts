@@ -37,7 +37,7 @@ import {
   type Species,
 } from "@shared/world-engine/creatures/species.js";
 import { parseGameSettings } from "@shared/world-engine/kernel/manifest.js";
-import type { Blueprint } from "@shared/world-engine/creatures/blueprint.js";
+import { LIMB_GROUP_RANGES, type Blueprint } from "@shared/world-engine/creatures/blueprint.js";
 
 const cute = getCreatureMod("cute")!;
 const animalPeople = getCreatureMod("animal_people")!;
@@ -93,11 +93,24 @@ describe("the mod document gate", () => {
 });
 
 describe("cute — the appearance half", () => {
-  it("lands `human` exactly on the retired human_cute build", () => {
-    // THE PIN. human_cute was human + girth 0.45 and nothing else; if this
-    // drifts, every world that declares `cute` re-proportions its people.
-    expect(bp("human").spine.girth).toBeCloseTo(0.2, 6);
+  it("lands `human` on the retired human_cute build — now via the ceiling", () => {
+    // THE PIN, AND IT IS UNCHANGED: human_cute was human + girth 0.45 and
+    // nothing else, so `cute` applied to `human` must produce girth 0.45. If
+    // that drifts, every world that declares `cute` re-proportions its people.
     expect(cuteOf("human").spine.girth).toBeCloseTo(0.45, 6);
+
+    // ⚖️ HOW IT GETS THERE MOVED, AND THAT IS WORTH SAYING. The human shipped
+    // girth 0.2, and the mod's `{ scale: 2.25, max: 0.45 }` was chosen so 2.25
+    // LANDS EXACTLY on 0.45 rather than clipping to it. The re-proportioning
+    // round re-authored the human to a real 70 kg body on a 0.6 m torso and its
+    // girth became 0.2167, so 2.25× now overshoots to 0.4876 and the `max`
+    // clamp is what produces the pinned 0.45. The outcome this pin protects is
+    // identical; the exactness the SCALE once had is not, and a future round
+    // that moves the human's girth again will not change the cute human at all
+    // as long as it stays above 0.2 — which is the ceiling doing its job.
+    expect(bp("human").spine.girth).toBeGreaterThan(0.2);
+    expect(bp("human").spine.girth).toBeLessThan(0.25);
+    expect(bp("human").spine.girth * 2.25).toBeGreaterThan(0.45);
   });
 
   it("rounds the skull and enlarges the EYES, never the head itself", () => {
@@ -111,7 +124,22 @@ describe("cute — the appearance half", () => {
     expect(after.head.eyeSizeFrac).toBeGreaterThan(before.head.eyeSizeFrac);
     // Shorter, thicker limbs — the other half of the chunky read.
     expect(after.limbGroups[0]!.lengthFrac).toBeLessThan(before.limbGroups[0]!.lengthFrac);
-    expect(after.limbGroups[0]!.radiusFrac).toBeGreaterThan(before.limbGroups[0]!.radiusFrac);
+    // 🚨 `>=`, NOT `>`, AND THE CLAMP IS WHY. The re-proportioning authored the
+    // human's arms at radiusFrac 0.6, which IS `LIMB_GROUP_RANGES.radiusFrac`'s
+    // maximum, so the mod's ×1.2 has nowhere to go and the clamp returns 0.6.
+    // That is the engine's ceiling holding, not the rule going missing — the
+    // same shape as the girth ceiling in the pin above, and the same reason
+    // (a body already at the top of the range rides it).
+    expect(before.limbGroups[0]!.radiusFrac).toBe(LIMB_GROUP_RANGES.radiusFrac.max);
+    expect(after.limbGroups[0]!.radiusFrac)
+      .toBeGreaterThanOrEqual(before.limbGroups[0]!.radiusFrac);
+    // …and on a body that is NOT at the ceiling the thickening is still real,
+    // so the rule itself is still under test rather than excused by a clamp.
+    const slim = bp("dog");
+    const slimCute = cuteOf("dog");
+    expect(slim.limbGroups[0]!.radiusFrac).toBeLessThan(LIMB_GROUP_RANGES.radiusFrac.max);
+    expect(slimCute.limbGroups[0]!.radiusFrac)
+      .toBeGreaterThan(slim.limbGroups[0]!.radiusFrac);
   });
 
   it("is PROPORTIONAL, so a slighter species stays slighter", () => {

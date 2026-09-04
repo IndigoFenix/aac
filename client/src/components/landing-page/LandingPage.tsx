@@ -356,6 +356,19 @@ export default function LandingPage() {
               lang={lang.code}
               dir={lang.direction}
               aria-current={lang.code === language ? "page" : undefined}
+              // Record the choice before the browser follows the link. These are
+              // real navigations, so the new page load re-resolves the language
+              // from the URL — and English is the one locale whose URL cannot say
+              // which language it is: /en 301s to / (landing-static.ts, and the
+              // CloudFront function), by design, so English is served at "/".
+              // A bare "/" is indistinguishable from "no locale specified", so
+              // without this the reload fell back to the STORED language and the
+              // sync effect below bounced /  ->  /es, making the English link the
+              // only one in this nav that did nothing. setLanguage writes
+              // localStorage synchronously, so the value is already correct by
+              // the time the navigation happens. Harmless for the other locales,
+              // whose path says the language anyway.
+              onClick={() => setLanguage(lang.code)}
             >
               {lang.nativeName}
             </a>

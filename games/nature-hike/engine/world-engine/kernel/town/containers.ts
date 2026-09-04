@@ -60,6 +60,31 @@ export const PORTABLE_CONTAINERS: Readonly<Record<string, ContainerDef>> = {
   satchel: { capacity: 5, relation: "in", hold: "wear" },
 };
 
+/**
+ * UNITS ONE BODY CAN MOVE IN ONE TRIP — the biggest portable container there
+ * is (a basket today), or the one whole thing a bagless body carries in its
+ * hands when the world declares no portable container at all.
+ *
+ * ⚖️ WHY A POSTER NEEDS THIS (#50 ①). A haul is posted long before anybody
+ * claims it, so the poster cannot ask a body what IT can hold
+ * (`stackRoom`/`carryCapacityOf`, which are net-of-contents and per-body).
+ * What it can honestly ask is the CEILING: no single trip will ever move more
+ * than the largest bag in the world holds, because `haulBagLeg` fetches at
+ * most one bag and `giveUnitsToBody` refuses the rest. A 24-wood agreement
+ * against an 8-unit basket was three serial trips behind one 20 s retry gate
+ * — and completed announcing "bring 24 wood — delivered" over 8 delivered
+ * units. Sizing the row to this number makes N porters work in parallel and
+ * every delivery toast true.
+ *
+ * DERIVED, never a literal: the capacity lives on the container definitions
+ * and nowhere else, so adding a cart moves this number with it.
+ */
+export function haulTripUnits(): number {
+  let best = 1; // no bag at all ⇒ one whole thing in the hands (scope-shape.ts)
+  for (const def of Object.values(PORTABLE_CONTAINERS)) best = Math.max(best, def.capacity);
+  return best;
+}
+
 /** Portable containers a body WEARS — they leave the hands free, so a body may
  *  hold something else at the same time. (`carry` mode occupies a hand.) */
 export function isWornContainer(glyph: string): boolean {

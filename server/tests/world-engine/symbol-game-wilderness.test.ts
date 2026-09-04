@@ -19,9 +19,16 @@ import {
   wildFeatureEmbodied,
   wildFeatureRadius,
   wildFeatureSizeRank,
+  wildLocalCast,
+  wildLocalIcon,
   wildMixForBiome,
   type WildernessFeature,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
+import {
+  getSpecies,
+  listSpecies,
+  speciesCanSpeak,
+} from "@shared/world-engine/creatures/species.js";
 import {
   naturalSourceOf,
   nicheSuitabilityOf,
@@ -235,6 +242,87 @@ describe("buildWilderness", () => {
         expect(f.growAt).toBeUndefined();
       }
     });
+  });
+});
+
+// ── THE WANDERING LOCALS ARE FAUNA (2026-09-02) ────────────────────────────
+// The bug this pins: the scatter used to pick one of four hand-written EMOJI
+// faces and let the host map the FACE to a body. When the four animal people
+// became a creature MOD, that map's species stopped existing in most worlds and
+// every local fell through to the world's speaking cast — a frontier homestead
+// spawning wild HUMANS. The direction is flipped for good: the SPECIES is
+// chosen, the face is derived from it.
+describe("wildLocalCast — a wilderness local is FAUNA, never a person", () => {
+  it("never offers a SPEAKING species (the wild-humans bug)", () => {
+    const cast = wildLocalCast();
+    expect(cast.length).toBeGreaterThan(0);
+    expect(cast).not.toContain("human");
+    for (const id of cast) expect(speciesCanSpeak(id)).toBe(false);
+    // The complement is the PERSON cast, and the two must not overlap: every
+    // speaking creature the world has is somebody, not wildlife.
+    const speaking = listSpecies().filter((sp) => speciesCanSpeak(sp.id)).map((sp) => sp.id);
+    expect(cast.filter((id) => speaking.includes(id))).toEqual([]);
+  });
+
+  it("never offers a body nothing can build (🚨 a stub THROWS at materialisation)", () => {
+    for (const id of wildLocalCast()) {
+      const sp = getSpecies(id)!;
+      expect(sp.kind).toBe("creature");
+      expect(sp.stub).toBeFalsy();
+      expect(sp.bodiless).toBeFalsy();
+    }
+    // The retired four-face cast: `bear`, `frog` and `rabbit` are stub rows
+    // (the bases `animal_people` derives from) and have no body to stand.
+    for (const id of ["bear", "frog", "rabbit"]) {
+      expect(wildLocalCast()).not.toContain(id);
+    }
+  });
+
+  it("is derived from the registry, not listed — and stays in registry order", () => {
+    const ids = listSpecies().map((sp) => sp.id);
+    const cast = wildLocalCast();
+    expect(cast).toEqual(ids.filter((id) => cast.includes(id)));
+  });
+});
+
+describe("buildWilderness locals — the species decides, the face follows", () => {
+  it("gives every local a real fauna body and derives its icon from it", () => {
+    const w = buildWilderness({ seed: 4, trees: 0, rocks: 0, creatures: 6 });
+    const cast = wildLocalCast();
+    expect(w.creatures).toHaveLength(6);
+    for (const c of w.creatures) {
+      expect(cast).toContain(c.bodySpecies);
+      expect(c.icon).toBe(wildLocalIcon(c.bodySpecies!));
+    }
+  });
+
+  it("keeps the scatter seed-deterministic", () => {
+    const a = buildWilderness({ seed: 21, creatures: 5 });
+    const b = buildWilderness({ seed: 21, creatures: 5 });
+    expect(a.creatures).toEqual(b.creatures);
+    expect(a.creatures.map((c) => c.bodySpecies)).not.toEqual(
+      buildWilderness({ seed: 22, creatures: 5 }).creatures.map((c) => c.bodySpecies),
+    );
+  });
+
+  it("takes the cast from the CALLER when one is supplied (the biome seam)", () => {
+    const w = buildWilderness({ seed: 9, creatures: 4, locals: ["deer", "sheep"] });
+    for (const c of w.creatures) expect(["deer", "sheep"]).toContain(c.bodySpecies);
+  });
+
+  it("leaves PRODUCT ANIMALS exactly as they were (species set, face empty)", () => {
+    const w = buildWilderness({
+      seed: 6,
+      creatures: 0,
+      mix: [{ species: "sheep", count: 2 }],
+    });
+    expect(w.creatures.map((c) => c.id)).toEqual(["wild_sheep_0", "wild_sheep_1"]);
+    for (const c of w.creatures) {
+      expect(c.species).toBe("sheep");
+      expect(c.icon).toBe("");
+      expect(c.bodySpecies).toBeUndefined();
+      expect(wildAnimalBodyId(c)).toBe(`fauna:sheep:${c.id}`);
+    }
   });
 });
 

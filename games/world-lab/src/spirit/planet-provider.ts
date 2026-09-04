@@ -18,6 +18,7 @@ import type { GazeSpark } from "@shared/world-engine/render3d";
 import type { CelestialBody } from "@shared/world-engine/space/body";
 import { createSurfaceChart } from "@shared/world-engine/space/surface-chart";
 import type { DroneCamera } from "@shared/world-engine/spirit/drone-camera";
+import { districtRadiusFor } from "@shared/world-engine/spirit/ladder";
 import type {
   SpiritChartFrame, SpiritCursorHost, SpiritFocusTarget, SpiritFrameProvider,
   SpiritGroundSession, SpiritNearTown, SpiritPostFrame, SpiritStructureHost,
@@ -232,7 +233,9 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
       if (kind === "district") {
         return {
           kind, x: local.x, z: local.z,
-          radius: THREE.MathUtils.clamp(townR() * 0.33, 30, 160),
+          // ONE DEFINITION of the district frame (ladder.ts) — a gaze-picked
+          // district and a booted one must orbit at the same derived radius.
+          radius: districtRadiusFor(townR()),
         };
       }
       const plan = deps.townPlan(fc);

@@ -20,7 +20,8 @@
  * into en/es/he/pt (and core.ts's part-of-speech table) FIRST.
  */
 
-import { noStock, phrase, type LeveledGlyphs } from "./dialogue-gen.js";
+import { causalPhrase, noStock, phrase, type LeveledGlyphs } from "./dialogue-gen.js";
+import type { NaturalSourceKind } from "@shared/world-engine/products.js";
 
 /** "The place is not good." — the general host refusal: the order was
  *  understood and is not refused out of unwillingness, there is simply nothing
@@ -60,3 +61,52 @@ export function nothingHere(thing: string): LeveledGlyphs {
 /** The accepted order — the reserved "ok" (response-semantics ①a §1: "okay" is
  *  ONLY ever the confirmation of an accepted order, never a generic ack). */
 export const ORDER_OK: LeveledGlyphs = { a: "ok", b: "ok", c: "ok" };
+
+/**
+ * WHAT TO CALL A NATURAL SOURCE OUT LOUD — its KIND, never its species. Null =
+ * there is no word, and the caller must fall back to a line that names nothing
+ * rather than invent one.
+ *
+ * 🚨 A SPECIES ID IS NOT A SPOKEN WORD (CLAUDE.md's silent-lexicon trap). `oak`
+ * and `grape_vine` have a lexeme in no ruleset on earth, so naming the species
+ * would put an English word on a Hebrew board while looking perfect in English.
+ * `plants` and `animal` are lexicalized in all four shipped rulesets, and a
+ * kind is the right altitude anyway: the fact being reported is "something is
+ * growing there", not which species. Minerals have no lexeme of any kind,
+ * which is why null is a real answer.
+ *
+ * ONE OWNER — the builder's blocked-lot line and the take refusal both read it,
+ * so the two can never name the same standing thing two different ways.
+ */
+export function sourceKindWord(kind: NaturalSourceKind | undefined): string | null {
+  if (kind === "plant") return "plants";
+  if (kind === "animal") return "animal";
+  return null;
+}
+
+/**
+ * ⚖️ THE FELL-FIRST REFUSAL, SPOKEN (user ruling 2026-09-02: *"harvesting kill
+ * products without killing the plant should not be possible"*). A hand reaching
+ * into a LIVING tree for its timber is turned away, and this is what it is
+ * turned away WITH — the line a child hits constantly, which was shipped as the
+ * bare English toast `"cut it down first"` and so bypassed the lexicon entirely.
+ *
+ * The take-side twin of `placement-lines.ts clearFirstLine`, and deliberately
+ * the same two-clause shape: the EFFECT is the take that cannot happen, the
+ * CAUSE names the standing thing —
+ * "i_me + take.not + {thing} + because + {blocker} + here"
+ * ("I can't take the wood because there's a plant here"). The remedy is the
+ * `cut` button on the very board this refuses from, so the line reports the
+ * state and the board offers the act; neither has to carry both.
+ *
+ * ⚠️ Both symbols are the CALLER'S to resolve — the stack's own glyph, and
+ * `sourceKindWord`'s answer for the blocker. Every head here is one all four
+ * shipped rulesets already render.
+ */
+export function cutFirstLine(thing: string, blocker: string): LeveledGlyphs {
+  return causalPhrase(
+    { subject: "i_me", verb: "take.not", object: thing },
+    "because",
+    { subject: blocker, verb: "here", key: "here" },
+  );
+}

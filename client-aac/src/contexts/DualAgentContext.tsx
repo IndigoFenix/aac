@@ -12,7 +12,7 @@ import { useActivityMonitor } from "@/hooks/useActivityMonitor";
 import { useVoiceEngagementSignal } from "@/hooks/useVoiceEngagementSignal";
 import { useBoardAudio } from "@/contexts/BoardAudioContext";
 import { dataFlowForState, type DataFlowConfig } from "@/lib/sleepSystemLogic";
-import { appSpeechHoldUntil, deviceAudioBusy } from "@/lib/app-speech-gate";
+import { appSpeechHoldUntil, deviceAudioBusy, foreignDeviceAudio } from "@/lib/app-speech-gate";
 import { sustainedVocalization, DEFAULT_VOCAL_CUE, type AudioEnergySample } from "@shared/aac/audio-cue";
 import type { EngagementSignalKind } from "@/lib/cameraAttentivenessTypes";
 import type { BufferedFrame } from "@/lib/frameRingBuffer";
@@ -49,7 +49,7 @@ const SILERO_GATE_THRESHOLD = 0.35;
 const SILERO_PROB_STALE_MS = 500;
 
 /** Current VAD gate state, surfaced to the debug panel. */
-export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous" | "app-speech";
+export type PcmGateState = "open" | "vad-blocked" | "off" | "continuous" | "app-speech" | "device-tts";
 
 /** Read a Blob as base64 (no data-URL prefix). Returns "" on failure. */
 function blobToBase64(blob: Blob): Promise<string> {
@@ -142,7 +142,9 @@ interface DualAgentContextType {
    *  as a real utterance WITHOUT waking any agent — the game executes it. */
   sendGamePress?: (text: string, glyph?: string, voice?: boolean) => void;
   /** Send a sentence-builder glyph to the AI for interpretation via the `interpret` tool. */
-  playGlyph?: (glyphString: string) => void;
+  /** Play a composed sentence-builder glyph. True = the device rendered the
+   *  sentence itself and no interpretation is coming. */
+  playGlyph?: (glyphString: string) => boolean;
   startVoiceRecording: () => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
   cancelVoiceRecording: () => void;
@@ -174,6 +176,11 @@ interface DualAgentContextType {
   identifiedFaces: IdentifiedFace[];
   /** Report that a face match was wrong so the server penalizes the bad embedding. */
   correctIdentity: (entityType: "student" | "user" | "contact", entityId: string, reason?: string) => void;
+  /** Persist this session's learned baselines (motion energy, head neutral) for
+   *  the next session. See shared/aac/learned-baselines.ts. */
+  sendLearnedBaselines: (data: import("@shared/aac/learned-baselines").LearnedBaselineObservation) => void;
+  /** Head-neutral profile seeded by the server, for the face trackers. */
+  headNeutral?: { profile: import("@shared/aac/head-attention").HeadNeutralProfile; trust: number };
 
   // Active app
   activeApp: ActiveAppData | null;
@@ -402,6 +409,9 @@ interface DualAgentProviderProps {
   // so the server can stamp chat_sessions.classroom_id.
   classroomId?: string | null;
   language?: string;
+  /** The student's gender ("male"/"female"), for grammatical agreement in a
+   *  sentence the DEVICE renders itself. See shared/aac/builder-speech. */
+  studentGender?: string;
   /** Per-student `deviceLocationEnabled` (aac_settings). Off by default; when
    *  off the live session never asks the device where it is. */
   locationEnabled?: boolean;
@@ -416,6 +426,10 @@ interface DualAgentProviderProps {
   /** Cost-saving (Phase 2): structured scene snapshot (people + hand gestures)
    *  used by the live session to decide frame-vs-scene_state text. */
   getSceneSnapshot?: () => import("@shared/aac/scene-state").SceneSnapshot | null;
+  /** Machine-learned baselines observed this session (seizure motion energy,
+   *  head neutral), read periodically and at teardown for the cross-session
+   *  write-back. See shared/aac/learned-baselines.ts. */
+  getLearnedBaselines?: () => import("@shared/aac/learned-baselines").LearnedBaselineObservation | null;
   /** Seizure: true while the client detector has a surfaceable event. Its rising
    *  edge PROACTIVELY pushes a frame to the server (a seizure is continuous
    *  motion, so the activity monitor's motion-settle may never fire on its own). */
@@ -463,6 +477,7 @@ function DualAgentProviderInner({
   studentId,
   classroomId,
   language = "en",
+  studentGender: studentGenderProp,
   locationEnabled = false,
   captureFrame: captureFrameProp,
   captureEnvFrame: captureEnvFrameProp,
@@ -472,6 +487,7 @@ function DualAgentProviderInner({
   sttReady,
   getGestureContext,
   getSceneSnapshot,
+  getLearnedBaselines,
   seizureActive,
   getLipActivity,
   onBoardPatch: onBoardPatchProp,
@@ -640,6 +656,7 @@ function DualAgentProviderInner({
     studentId,
     classroomId,
     language,
+    studentGender: studentGenderProp,
     locationEnabled,
     onBoardUpdate: handleBoardUpdate,
     onInputGlyphs: handleInputGlyphs,
@@ -665,6 +682,7 @@ function DualAgentProviderInner({
     captureHighResFrame,
     getGestureContext,
     getSceneSnapshot,
+    getLearnedBaselines,
     getVocalCue,
   });
 
@@ -714,7 +732,6 @@ function DualAgentProviderInner({
       { speaking, ms },
     );
   }, []);
-  const appSpeechActive = useCallback(() => Date.now() < appSpeechUntilRef.current, []);
   // A REMOTE party's call audio plays through this same speaker and is likewise
   // invisible to our audio player. Without this hold the AAC's own recogniser
   // hears the clinician through the room and hands their words to the Observer
@@ -725,6 +742,14 @@ function DualAgentProviderInner({
   // Its own deadline, NOT shared with app speech: either source going quiet must
   // not release a hold the other still needs.
   const remoteCallAudioUntilRef = useRef(0);
+  // The device's OWN local voice — `client_local_tts` spoken by speechSynthesis
+  // or the Kokoro neural voice. It plays through neither our audio player nor
+  // an iframe, so nothing above sees it, and device-voice mode
+  // (`aac_settings.useLocalTts`) routes EVERY student press through it: the
+  // sentence the child just pressed comes back through the mic as somebody
+  // talking. The deadline is owned by useLiveSession, which is where the
+  // utterance actually starts and ends; this side only reads it.
+  const localTtsUntilRef = liveAgent.localTtsUntilRef;
   const noteRemoteCallAudio = useCallback((speaking: boolean, ms?: number) => {
     // Same deadline arithmetic as app speech — the maths is source-agnostic
     // (extend on start, cut to the room-echo tail on stop, never strand shut).
@@ -745,10 +770,22 @@ function DualAgentProviderInner({
           aiTtsBusy: !!aiTtsBusyRef?.current,
           appSpeechUntil: appSpeechUntilRef.current,
           remoteCallAudioUntil: remoteCallAudioUntilRef.current,
+          localTtsUntil: localTtsUntilRef?.current ?? 0,
         });
       },
     }),
-    [aiTtsBusyRef],
+    [aiTtsBusyRef, localTtsUntilRef],
+  );
+  /** Sound this device made that the LIVE MODEL did not produce — an embedded
+   *  app's voice or our own local TTS. Unlike the echo of our own player, the
+   *  model has no way to know it made none of it, so this audio is dropped from
+   *  the stream rather than counted. */
+  const foreignAudioActive = useCallback(
+    () => foreignDeviceAudio(Date.now(), {
+      appSpeechUntil: appSpeechUntilRef.current,
+      localTtsUntil: localTtsUntilRef?.current ?? 0,
+    }),
+    [localTtsUntilRef],
   );
   // Server-resolved: when true, transcribe speech on-device and send text in
   // place of streaming raw audio (cost saving, Phase 1).
@@ -804,10 +841,12 @@ function DualAgentProviderInner({
     // app's voice) — that audio is not a person, and would poison voice
     // galleries / produce echo transcripts.
     if (!audioClip || deviceAudioBusyRef.current) return;
-    // This path fires on the SETTLE after speech ended, by which time an app's
-    // utterance hold may already have lapsed — so judge the clip by WHEN it was
-    // captured, not by whether the app is still speaking now.
-    if (meta?.speechStartMs != null && meta.speechStartMs < appSpeechUntilRef.current) return;
+    // This path fires on the SETTLE after speech ended, by which time the
+    // utterance's hold — an app's, or our own local voice's — may already have
+    // lapsed, so judge the clip by WHEN it was captured, not by whether the
+    // device is still speaking now.
+    const heldUntil = Math.max(appSpeechUntilRef.current, localTtsUntilRef?.current ?? 0);
+    if (meta?.speechStartMs != null && meta.speechStartMs < heldUntil) return;
 
     // Voice embedding (wavlm) runs OFF the main thread and is INDEPENDENT of
     // transcription. Fire it in parallel and tag the result with `clipId` so the
@@ -871,7 +910,7 @@ function DualAgentProviderInner({
       // Not in STT mode — voice ID only (ambient [VOICES HEARD]), no clip sync.
       runVoiceId();
     }
-  }, [deviceAudioBusyRef, rememberAudioClip]);
+  }, [deviceAudioBusyRef, localTtsUntilRef, rememberAudioClip]);
 
   // Streaming STT (Web-Speech-like). The PCM is streamed during speech by
   // useActivityMonitor; these just forward start/chunk to the server.
@@ -883,7 +922,7 @@ function DualAgentProviderInner({
   // don't resurrect it server-side as a transcript attributed to the student).
   const suppressedSttStreamsRef = useRef<Set<string>>(new Set());
   const handleSttStreamStart = useCallback((streamId: string) => {
-    if (appSpeechActive()) {
+    if (foreignAudioActive()) {
       const suppressed = suppressedSttStreamsRef.current;
       suppressed.add(streamId);
       // The set only ever holds live episodes; keep it from growing if an end
@@ -892,13 +931,13 @@ function DualAgentProviderInner({
       return;
     }
     sendSttStreamStartRef.current?.(streamId, languageRef.current);
-  }, [appSpeechActive]);
+  }, [foreignAudioActive]);
   const handleSttStreamChunk = useCallback((streamId: string, data: string) => {
-    // Mid-episode app speech: hold the rest back rather than letting the game's
-    // words tail onto a person's sentence.
-    if (suppressedSttStreamsRef.current.has(streamId) || appSpeechActive()) return;
+    // Mid-episode device speech: hold the rest back rather than letting the
+    // game's — or our own voice's — words tail onto a person's sentence.
+    if (suppressedSttStreamsRef.current.has(streamId) || foreignAudioActive()) return;
     sendSttStreamChunkRef.current?.(streamId, data);
-  }, [appSpeechActive]);
+  }, [foreignAudioActive]);
 
   // Speech ended (streaming mode): compute the speaker evidence from the clip
   // and finalize the stream. acoustic + lip ride WITH stt_stream_end so they
@@ -1049,12 +1088,14 @@ function DualAgentProviderInner({
     if (liveAgent.paused) return;
     const now = Date.now();
 
-    // An embedded app is speaking through the device's own speaker. Unlike our
-    // TTS (which Gemini's echo handling knows about), this audio arrives as if
-    // a person in the room said it — so it is DROPPED, not merely counted.
-    if (appSpeechActive()) {
+    // Something on this device is speaking that the model did not say: an
+    // embedded app, or our own local voice (device-voice mode / the TTS
+    // ladder's last rung). Unlike the streamed TTS the model produced — which
+    // its echo handling knows about — this audio arrives as if a person in the
+    // room said it, so it is DROPPED, not merely counted.
+    if (foreignAudioActive()) {
       pcmGatedCountRef.current++;
-      gateStateRef.current = "app-speech";
+      gateStateRef.current = now < appSpeechUntilRef.current ? "app-speech" : "device-tts";
       vadGateOpenRef.current = false;
       return;
     }
@@ -1194,7 +1235,7 @@ function DualAgentProviderInner({
     }
     buffered.length = 0;
     gateStateRef.current = "open";
-  }, [aiTtsBusyRef, appSpeechActive, liveAgent.paused]);
+  }, [aiTtsBusyRef, foreignAudioActive, liveAgent.paused]);
 
   // Cancel any pending paced PCM sends on unmount.
   useEffect(() => {
@@ -1708,6 +1749,8 @@ function ProviderShell({
     identifiedFaces: agent.identifiedFaces,
     correctIdentity: (entityType, entityId, reason) =>
       agent.sendIdentityCorrection?.(entityType, entityId, reason),
+    sendLearnedBaselines: (data) => agent.sendLearnedBaselines?.(data),
+    headNeutral: agent.clientConfig?.headNeutral,
 
     activeApp: agent.activeApp,
     dismissApp: agent.dismissApp,

@@ -500,7 +500,7 @@ export const pt = {
     speakMessage: "Ler em voz alta",
     copyMessage: "Copiar",
     copied: "Copiado!",
-    copyWatermark: "Criado por Aivota",
+    copyWatermark: "Criado por Aivota Ltd",
 
     sendMessage: "Enviar mensagem",
     suggestions: {
@@ -2621,6 +2621,10 @@ export const pt = {
     aiLearningDesc: "O que a IA pode registrar por conta própria durante as sessões.",
     autoAddContacts: "Aprender novos contatos",
     autoAddContactsDesc: "Permite que a IA adicione à lista de contatos as pessoas que encontra durante as sessões. Os novos contatos ficam marcados para revisão até você confirmá-los. Quando desativado, só é possível adicionar contatos pela página de Contatos.",
+    presenceLedger: "Registro de presença",
+    presenceLedgerDesc: "Nomear apenas as pessoas cuja presença o sistema verificou. Palpites do reconhecimento facial ou da fala são mostrados à IA como não verificados e nunca são ditos em voz alta, escritos nas notas nem usados para aprender rostos.",
+    debugMode: "Modo de depuração do AAC",
+    debugModeDesc: "Armazena o rastro completo da sessão (prompts, transcrições, chamadas de ferramentas) deste aluno para que os desenvolvedores possam diagnosticar problemas. Ative apenas durante uma investigação; o rastro contém dados pessoais.",
     sessionRecordingTitle: "Gravação de sessões",
     sessionRecordingDesc: "Grava as sessões neste dispositivo em vídeo, para criar material promocional. Os ficheiros permanecem no dispositivo e nunca são carregados.",
     sessionRecordingConsentNotice: "Isto grava o aluno com a câmara. Certifique-se de que tem o consentimento escrito da família antes de ativar, e de que todas as pessoas que aparecem sabem que estão a ser gravadas.",
@@ -3391,13 +3395,13 @@ export const pt = {
       subtitle: "Junte-se como parceiro de design. Vamos discutir como podemos devolver tempo aos seus clínicos.",
     },
     footer: {
-      text: "2026 Aivota | O sistema de registros inteligente | Compatível com HIPAA e FERPA",
+      text: "2026 Aivota Ltd | O sistema de registros inteligente | Compatível com HIPAA e FERPA",
       terms: "Termos de serviço",
       privacy: "Política de privacidade",
       cookies: "Política de cookies",
       accessibility: "Acessibilidade",
       aiPolicy: "Política de IA",
-      rights: `© ${new Date().getFullYear()} Aivota. Todos os direitos reservados.`,
+      rights: `© ${new Date().getFullYear()} Aivota Ltd. Todos os direitos reservados.`,
     },
     crm: {
       header: "Fale conosco",
@@ -4441,7 +4445,7 @@ export const pt = {
       dataItem3: "Os registros de conversas com a IA são mantidos para aprimoramento do serviço e acompanhamento clínico, sujeitos à nossa política de retenção de dados.",
       dataItem4: "Não utilizamos suas conversas privadas para treinar modelos globais de IA sem consentimento explícito e separado.",
       introHeading: "Introdução",
-      introText: "A Aivota integra tecnologias de inteligência artificial (IA) à plataforma CliniAACian para apoiar a comunicação aumentativa e alternativa (CAA) para usuários não verbais. Esta política explica como usamos a IA, quais salvaguardas estão em vigor e quais são seus direitos em relação à tomada de decisões assistida por IA.",
+      introText: "A Aivota Ltd integra tecnologias de inteligência artificial (IA) à plataforma CliniAACian para apoiar a comunicação aumentativa e alternativa (CAA) para usuários não verbais. Esta política explica como usamos a IA, quais salvaguardas estão em vigor e quais são seus direitos em relação à tomada de decisões assistida por IA.",
       lastUpdated: "Última atualização: 15 de março de 2026",
       limitationsHeading: "Limitações e Segurança",
       limitationsIntro: "É importante compreender as seguintes limitações dos nossos sistemas de IA:",
@@ -4512,7 +4516,7 @@ export const pt = {
       dpoEmailLabel: "E-mail do DPO:",
       essentialBody: "Para manter sua sessão e garantir a operação segura da interface CAA.",
       essentialLabel: "Essenciais:",
-      firstPartyBody: "Definidos diretamente pela Aivota para gerenciar sua conta e segurança.",
+      firstPartyBody: "Definidos diretamente pela Aivota Ltd para gerenciar sua conta e segurança.",
       firstPartyLabel: "Cookies Primários:",
       gpcBody: "Respeitamos os sinais de GPC do seu navegador como uma solicitação válida de exclusão para cookies não essenciais.",
       howWeUseHeading: "Como Usamos os Cookies",
@@ -4549,7 +4553,7 @@ export const pt = {
       retentionYearsOne: "{years} ano",
       retentionYearsOther: "{years} anos",
       section1ControllerAddress: "localizada em 4 Bental, Kfar Yona, Israel, é a controladora de dados.",
-      section1ControllerName: "Aivota Ltd. (Em Formação)",
+      section1ControllerName: "Aivota Ltd.",
       section1DpoBody: "Em conformidade com a Emenda 13, como processamos dados sensíveis de saúde em grande escala, nomeamos um DPO. Você pode entrar em contato com nosso DPO em",
       section1DpoLabel: "Encarregado de Proteção de Dados (DPO):",
       section1Heading: "Identidade do Controlador e do DPO",
@@ -4606,7 +4610,7 @@ export const pt = {
     terms: {
       lastUpdated: "Última atualização: 15 de março de 2026",
       section1Clause1BodyPost: " projetados para auxiliar pessoas com dificuldades de comunicação.",
-      section1Clause1BodyPre: "A Aivota oferece um moderador de comunicação orientado por Inteligência Artificial e um ",
+      section1Clause1BodyPre: "A Aivota Ltd oferece um moderador de comunicação orientado por Inteligência Artificial e um ",
       section1Clause1BodyTerm: "Conjunto de Símbolos Proprietário",
       section1Clause1Label: "1.1. Apenas uma Ferramenta Assistiva:",
       section1Clause2BodyPost: ", e que seus resultados não constituem aconselhamento médico, diagnóstico ou tratamento. Destina-se exclusivamente como um auxílio funcional de comunicação.",
@@ -4617,7 +4621,7 @@ export const pt = {
       section1Clause3Label: "1.3. Limitações da IA:",
       section1Heading: "Natureza do Serviço e Isenção de Responsabilidade Médica",
       section2Clause1BodyPost: " (a \"PI\").",
-      section2Clause1BodyPre: "A Aivota (e/ou seu fundador, Opher Suhami, até a conclusão de sua constituição formal) detém todos os direitos, títulos e interesses sobre o software, os modelos de IA e o ",
+      section2Clause1BodyPre: "A Aivota Ltd detém todos os direitos, títulos e interesses sobre o software, os modelos de IA e o ",
       section2Clause1BodyTerm: "Conjunto de Símbolos Proprietário",
       section2Clause1Label: "2.1. Titularidade:",
       section2Clause2Body: "Concedemos a você uma licença pessoal, não exclusiva, intransferível e revogável para utilizar a PI exclusivamente para fins de comunicação pessoal por meio da plataforma Aivota.",
@@ -4630,9 +4634,9 @@ export const pt = {
       section2Item1Term: "Conjunto de Símbolos Proprietário",
       section2Item2: "Utilizar a PI para treinar, desenvolver ou aprimorar quaisquer modelos de IA ou sistemas de CAA de terceiros.",
       section2Item3: "Realizar engenharia reversa ou \"raspagem\" (scrape) do código ou conteúdo da plataforma.",
-      section3Clause1Body: "O serviço é fornecido \"no estado em que se encontra\" (\"As-Is\"). Na medida permitida por lei, a Aivota exime-se de todas as garantias, expressas ou implícitas.",
+      section3Clause1Body: "O serviço é fornecido \"no estado em que se encontra\" (\"As-Is\"). Na medida permitida por lei, a Aivota Ltd exime-se de todas as garantias, expressas ou implícitas.",
       section3Clause1Label: "3.1. Fornecimento \"no Estado em que se Encontra\":",
-      section3Clause2BodyMid: " e os padrões comerciais dos EUA, a responsabilidade total da Aivota por qualquer reclamação será limitada ao valor efetivamente pago por você pelo serviço durante os ",
+      section3Clause2BodyMid: " e os padrões comerciais dos EUA, a responsabilidade total da Aivota Ltd por qualquer reclamação será limitada ao valor efetivamente pago por você pelo serviço durante os ",
       section3Clause2BodyPost: " que antecederem a reclamação.",
       section3Clause2BodyPre: "De acordo com ",
       section3Clause2BodyTerm1: "Israeli Standard Contracts Law (2026)",
@@ -4654,7 +4658,7 @@ export const pt = {
       section5Clause1BodyPre: "Qualquer uma das partes pode rescindir este contrato a qualquer momento mediante ",
       section5Clause1BodyTerm: "30 dias",
       section5Clause1Label: "5.1. Direito Mútuo:",
-      section5Clause2Body: "A Aivota reserva-se o direito de suspender o acesso imediatamente caso detecte raspagem não autorizada ou furto de PI relacionado ao Conjunto de Símbolos Proprietário.",
+      section5Clause2Body: "A Aivota Ltd reserva-se o direito de suspender o acesso imediatamente caso detecte raspagem não autorizada ou furto de PI relacionado ao Conjunto de Símbolos Proprietário.",
       section5Clause2Label: "5.2. Violação Imediata:",
       section5Heading: "Rescisão",
       section6Clause1BodyMid: ". Nos termos da ",
@@ -4705,5 +4709,132 @@ export const pt = {
     uploadCount: "Enviar {count}",
     uploadFailed: "Falha no envio",
     uploadSummary: "Adicionadas {added}, ignoradas {skipped}, falharam {failed}.",
+  },
+  featuresPage: {
+    apps: {
+      access: "All of it is built for the same access methods as the board, so nothing on the device needs a hand.", // TODO-i18n
+      aware: "The AI helper knows what is on screen: it can open an app when the conversation calls for one, talk with the AAC user about what is happening inside it, and hand the board back when they are done.", // TODO-i18n
+      body: "The device is more than a conversation. A clinician-curated apps page — calls, media, creative tools, a restricted browser and a set of games built for gaze — extends it beyond communication, and each AAC user gets only what their team assigned.", // TODO-i18n
+      curated: "Everything on the page is permitted per AAC user, down to which channels, playlists and sites are reachable.", // TODO-i18n
+      imageAlt: "The curated apps page on the AAC user's device", // TODO-i18n
+      title: "Apps and games the AI plays along with", // TODO-i18n
+    },
+    clinician: {
+      analysis: {
+        body: "Deep Analysis periodically re-reads the whole picture for one AAC user — sessions, notes, incidents, progress data — and surfaces the patterns a busy team never had time to look for.", // TODO-i18n
+        draft: "The report arrives drafted rather than blank, so the clinician's time goes to judgement instead of transcription.", // TODO-i18n
+        imageAlt: "A Deep Analysis report drafted from a term of sessions, open for review", // TODO-i18n
+        loop: "It reads what the device produced across the whole period, then drafts the clinical report in the same pass for a clinician to review and sign.", // TODO-i18n
+        patterns: "Correlations across time: what tends to precede a good session, which contexts a skill actually appears in, what stopped working and when.", // TODO-i18n
+        title: "A second pass over everything on record", // TODO-i18n
+        video: "Video analysis, on the same premium tier, turns uploaded footage into a timeline of relevant events and attention targets.", // TODO-i18n
+      },
+      boards: {
+        body: "Describe the board you want and the AI drafts it; refine it by dragging. Multi-page boards, composed glyphs and per-button behavior stay editable by hand whenever you want that control.", // TODO-i18n
+        glyphs: "Words are built as glyphs: a main symbol plus modifiers for colour, quantity, negation, tense and possession, so a board can say far more than its icons literally contain.", // TODO-i18n
+        imageAlt: "The board builder with a drafted board being rearranged by hand", // TODO-i18n
+        loop: "Attach a context hint and the board loads itself on the device when that context arrives — music class, a meal, a visitor — without anyone pressing anything.", // TODO-i18n
+        packages: "Boards travel as packages between members of an organization — and reach a public catalogue only after human attestation and review.", // TODO-i18n
+        symbols: "Symbols resolve from the canonical library, from the AAC user's own photos, or from AI-generated art held to a single house style.", // TODO-i18n
+        title: "Author a board by describing it", // TODO-i18n
+      },
+      chat: {
+        body: "Nearly every operation — creating an AAC user, editing a goal, authoring a board, scheduling an event, changing device settings — can be done by talking to the assistant, with the panels updating live in the same turn. The panels and the assistant are two views of the same data, under the same permissions.", // TODO-i18n
+        gated: "A small set of high-security operations stays deliberately behind explicit UI. The assistant can prepare them; a person completes them.", // TODO-i18n
+        imageAlt: "The portal assistant editing a goal with the panel updating alongside it", // TODO-i18n
+        library: "A curated reference library grounds its answers: conditions, clinical practice and approved medications, maintained centrally rather than recalled from a general-purpose model.", // TODO-i18n
+        loop: "Ask for a change here and it reaches the device on the AAC user's next session. There is no separate publish step to forget.", // TODO-i18n
+        personas: "Specialized personas — clinical advisor, speech-language pathologist, occupational therapist, pediatric physical therapist, behavioral analyst, teacher — tune the assistant's expertise to the question being asked.", // TODO-i18n
+        title: "Talk to the portal instead of filling it in", // TODO-i18n
+      },
+      program: {
+        body: "Annual goals, measurable objectives, baselines, Goal Attainment Scaling with aggregate T-scores, ICF functional profiles, data collection with trend visualization, related services, meetings and transition planning — assembled as an IEP.", // TODO-i18n
+        evidence: "Progress data accumulates from real sessions instead of end-of-term recall, and charts its own trend as it goes.", // TODO-i18n
+        imageAlt: "An AAC user's program showing objectives and a progress trend chart", // TODO-i18n
+        loop: "The objectives written here are injected into the live session's context, so the AI helper is working toward this term's goals rather than improvising its own.", // TODO-i18n
+        reports: "Medical, functional, educational and progress reports carry a draft, review and finalize workflow, version history and print-ready output.", // TODO-i18n
+        title: "Programs that reach into the session", // TODO-i18n
+      },
+      subtitle: "Four places where what a clinician does in the portal changes what the AAC user meets on the device.", // TODO-i18n
+      tagline: "The clinician portal", // TODO-i18n
+      title: "Where the work gets set up", // TODO-i18n
+    },
+    cta: {
+      button: "Book a demo", // TODO-i18n
+      subtitle: "The quickest way to judge whether the loop holds up is to watch a session, and then look at what landed in the record.", // TODO-i18n
+      title: "See it on a real caseload", // TODO-i18n
+    },
+    hero: {
+      cta: "Book a demo", // TODO-i18n
+      imageAlt: "The clinician portal and the AAC user's board side by side", // TODO-i18n
+      subtitle: "Aivota is one clinical record with two front doors — a portal where the team plans, authors and reviews, and a device the AAC user speaks through. This page follows the places where the two meet.", // TODO-i18n
+      tagline: "One record, two apps", // TODO-i18n
+      title: "Planned in the portal. Live on the board.", // TODO-i18n
+    },
+    imagePlaceholder: "Image", // TODO-i18n
+    loop: {
+      evidence: {
+        body: "Session notes, new vocabulary, tracked skills and progress data land back in the record — which is where the next plan starts.", // TODO-i18n
+        title: "The evidence returns", // TODO-i18n
+      },
+      plan: {
+        body: "Goals, boards, programs, calendar and permitted apps are all authored in the portal — mostly by talking to the assistant.", // TODO-i18n
+        title: "The team plans", // TODO-i18n
+      },
+      session: {
+        body: "The device carries that plan into the moment: the board rebuilds around what is happening, and the AI helper works toward the objectives the team set.", // TODO-i18n
+        title: "The session runs", // TODO-i18n
+      },
+      subtitle: "Most AAC is authored in one tool and used in another, and the two never speak to each other. Here a single record drives both — so the work a clinician does lands on the device, and what happens on the device comes back as evidence.", // TODO-i18n
+      title: "One loop, not two products", // TODO-i18n
+    },
+    meta: {
+      description: "Boards authored in the clinician portal appear on the AAC user's device when their context fires. Goals written into a program steer the live session. Everything the AAC user says comes back as evidence.", // TODO-i18n
+      title: "Features — the portal and the device as one system", // TODO-i18n
+    },
+    nav: {
+      home: "Home", // TODO-i18n
+    },
+    student: {
+      board: {
+        body: "Conventional AAC offers a fixed grid somebody authored in advance. Here the board regenerates on each conversational beat — from what the camera sees, who is in the room, what was just said, what is on the calendar, and what this AAC user has said before.", // TODO-i18n
+        builder: "When the right word is not offered, a parts-of-speech sentence builder — laid out for eye gaze, no scrolling, stable target positions — composes it symbol by symbol.", // TODO-i18n
+        imageAlt: "The AAC user's board rebuilt around what is happening in the room", // TODO-i18n
+        loop: "Calendar events and context-hinted boards from the portal arrive on their own, so the board knows it is music class before anyone mentions it.", // TODO-i18n
+        title: "A board that rebuilds around the moment", // TODO-i18n
+        voice: "Every press speaks in the AAC user's own chosen voice, distinct from the AI's, with an on-device fallback so a press is never silent.", // TODO-i18n
+      },
+      helper: {
+        body: "The helper has a professional personality: warm, patient, and plainly a working relationship. It remembers what this AAC user needs, what they are working on and what they have told it before, and it uses that to help them say things and make progress. It does not court attachment or offer itself as a companion for its own sake.", // TODO-i18n
+        boundary: "The agents that see and hear the AAC user never hold clinical data, and the agent that reads the record cannot speak — situational awareness without exposing a diagnosis to whoever is in the room.", // TODO-i18n
+        imageAlt: "An AAC user in a live session with the AI helper alongside the board", // TODO-i18n
+        loop: "What it remembers is the clinical picture the team maintains, handed to it by a supervising agent at the start of a session — not a private history the device invented.", // TODO-i18n
+        modes: "It reads the room: engaging the AAC user directly when they are alone with it, and stepping back to manage the board in silence when they are talking to a person.", // TODO-i18n
+        title: "An AI helper, not an AI friend", // TODO-i18n
+      },
+      social: {
+        adjustable: "Turn the difficulty down for an AAC user who needs an easy win, or up to rehearse the hard parts — interruption, disagreement, repairing a misunderstanding.", // TODO-i18n
+        body: "The Social Trainer generates an AI peer — its own face, voice, personality and memory — to practice conversation somewhere nothing is at stake. It is a training instrument rather than a playmate: the clinician chooses the focus skills and sets a challenge ceiling, and the peer plays to that level.", // TODO-i18n
+        debrief: "Afterwards the AI debriefs warmly with the AAC user about how it went, so reflecting on the attempt is part of the practice.", // TODO-i18n
+        imageAlt: "The Social Trainer peer mid-conversation, with the clinician's difficulty controls", // TODO-i18n
+        loop: "Nineteen tracked social skills feed back into the record, so the challenge can be raised deliberately as the AAC user improves instead of by guesswork.", // TODO-i18n
+        safe: "The peer is generated rather than real, so an attempt that goes badly costs nothing and can simply be run again.", // TODO-i18n
+        title: "Social skills, at a difficulty you set", // TODO-i18n
+      },
+      subtitle: "The same record, met from the other side — as a board that moves, a helper that knows what they are working on, and two ways to reach a word nobody put there.", // TODO-i18n
+      tagline: "The AAC user's device", // TODO-i18n
+      title: "Where it is actually used", // TODO-i18n
+      wordfinder: {
+        body: "When a concept is on no board and cannot be built, the Word Finder narrows in on it through a guided game of twenty questions. The AI asks the questions, but a deterministic engine on the device constrains the search, so it cannot wander off or talk itself into an answer.", // TODO-i18n
+        deterministic: "The model supplies the questions; the search space stays under the device's control. The AAC user is not at the mercy of an improvisation.", // TODO-i18n
+        evidence: "What an AAC user tried to say and could not is often the most useful thing a session produces.", // TODO-i18n
+        imageAlt: "The Word Finder narrowing toward a word through a guided question", // TODO-i18n
+        loop: "A concept found this way is remembered and offered proactively in later sessions — and the vocabulary an AAC user reached for becomes something the team can see.", // TODO-i18n
+        remembered: "A word found once stops being hard: it surfaces on the board by itself the next time the context matches.", // TODO-i18n
+        title: "Reaching a word that is on no board", // TODO-i18n
+      },
+    },
+    loopLabel: "The loop", // TODO-i18n
+    skipToContent: "Skip to content", // TODO-i18n
   },
 };

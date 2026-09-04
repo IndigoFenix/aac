@@ -8,12 +8,21 @@
 //      out a row 2.6× the foot's width, all sprouting from one point: a blob
 //      on a stump rather than a foot split five ways.
 //
-//   ⚖️ DIGIT LENGTH IS TIED TO THE LIMB, not only to the foot. `toeLengthFrac`
-//      measures a digit against the FOOT and so says nothing about how THICK
-//      the limb is; a human toe fraction carried onto a bear-thick leg (what
-//      `bipedalize` does) came out shorter than the ball it grows from. A
-//      digit now also clears its own ball. It is a FLOOR: an authored long
-//      hoof or claw wins, so the bodies posed in the lab are untouched.
+//   ⚖️ A THICK LIMB DEMANDS A WIDE PAD, NOT LONG TOES — the FOOT-FUNCTION
+//      round. There used to be a floor here: a digit had to clear the ball it
+//      grew from, because a buried toe is a bump. True, and in the wrong
+//      place — the ball is a function of LIMB GIRTH, so on any thick-legged
+//      body the floor was always the binding term, `toeLengthFrac` did
+//      nothing at all, and the elephant wore 40 cm toes on a 25 cm foot. The
+//      floor moved to `padFrac` (the fat fill of the heel and ankle, which is
+//      what actually keeps a fat leg from ending in a tassel), and the digit
+//      length is now exactly what was authored, at every girth.
+//
+//   ⚖️ THE TOES ARE A CONDITIONAL EXTENSION OF THE FOOT. Below
+//      `TOE_ALIGN_START` a digit lies flat and hinges at the ball; above it
+//      the digits swing into line with the foot column and the body stands on
+//      their TIPS (unguligrade), which is where a keratin cap comes from —
+//      derived from `stance`, never authored.
 //
 // Pure geometry — no GL, no DOM, like the sibling creature suites.
 
@@ -291,54 +300,166 @@ describe("a toe is not wrung round its own axis", () => {
   });
 });
 
-describe("digit length is tied to the limb", () => {
-  it("grows the digits when the LIMB thickens, with the foot held fixed", () => {
-    // Same foot fraction, same leg length, same digit count — only girth
-    // changes. Before the floor these two feet had IDENTICAL digits.
+describe("digit length is the dial, and the PAD is the floor", () => {
+  it("a THICK limb no longer forces LONG toes — the floor migrated", () => {
+    // 🚨 THE PIN THAT FLIPPED, AND THE REASON THE ROUND HAPPENED. This used to
+    // assert the opposite — that thickening the limb GREW the digits (×1.5 at
+    // 5× the girth), because a digit had to clear the ball it grows from.
+    // What that actually bought was a dial nobody could use: on any thick leg
+    // the floor was the binding term, so `toeLengthFrac` moved nothing, and
+    // the user's report was exactly that — it "doesn't seem to do anything".
+    //
+    // Same foot fraction, same leg length, same digit count, 5× the girth: the
+    // digits must now come out the SAME LENGTH, because a toe is a fraction of
+    // the FOOT and the foot did not change. What answers the girth instead is
+    // `padFrac`, pinned two tests down.
     const thin = digitsOf(buildSkeleton(testBody({ radiusFrac: 0.1 })).bones, "limb0L");
     const thick = digitsOf(buildSkeleton(testBody({ radiusFrac: 0.5 })).bones, "limb0L");
-    expect(boneLen(thick[1]!)).toBeGreaterThan(boneLen(thin[1]!) * 1.5);
+    expect(boneLen(thick[1]!)).toBeCloseTo(boneLen(thin[1]!), 6);
   });
 
-  it("never leaves a digit buried in the ball it grows from", () => {
-    // The pathology: a thick limb wearing a thin limb's toe fraction. Every
-    // digit must run clear of the ball's radius, whatever the fractions say.
+  it("draws EXACTLY the authored length, at every girth and every fraction", () => {
+    // The dial is live and it is not approximate: a digit is a rigid segment
+    // of `toeLengthFrac × footLength × mult`, however far it has to pitch down
+    // to reach the ground. (The centre digit of an odd row has mult 1, and
+    // `toeCurl` is 0 on this body, so this is exact rather than bounded.)
     for (const radiusFrac of [0.1, 0.25, 0.4, 0.6]) {
       for (const toeLengthFrac of [0.2, 0.5, 0.9]) {
-        const bp = testBody({ radiusFrac, toeLengthFrac });
-        const ballR = ballRadius(bp, 0);
+        const bp = testBody({ radiusFrac, toeLengthFrac, toeCount: 3, toeContrast: 0 });
+        const want = toeLengthFrac * footLength(bp, 0);
         for (const d of digitsOf(buildSkeleton(bp).bones, "limb0L")) {
-          expect(boneLen(d)).toBeGreaterThan(ballR);
+          expect(boneLen(d)).toBeCloseTo(want, 6);
         }
       }
     }
   });
 
-  it("is a FLOOR — a long authored hoof or claw is left alone", () => {
-    // One long digit on a slender leg: the foot-derived length wins, so the
-    // floor must not be visible in the result at all. Grounded digits shorten
-    // with curl; curl is 0 here, so this is exact.
-    const bp = testBody({ toeCount: 1, toeLengthFrac: 1, radiusFrac: 0.05, taper: 0.3 });
-    const d = digitsOf(buildSkeleton(bp).bones, "limb0L")[0]!;
-    expect(boneLen(d)).toBeCloseTo(footLength(bp, 0), 4);
+  it("is MONOTONIC in the dial on the very body the floor used to swallow", () => {
+    // The elephant is the case that convicted the floor: a 25 cm foot wearing
+    // 35 cm toes. Sweeping the dial on a limb that thick must move the art.
+    const seen: number[] = [];
+    const dials = [0.2, 0.4, 0.6, 0.8];
+    for (const toeLengthFrac of dials) {
+      const bp = testBody({ radiusFrac: 0.6, taper: 0.9, toeCount: 4, toeLengthFrac });
+      seen.push(Math.max(...digitsOf(buildSkeleton(bp).bones, "limb0L").map(boneLen)));
+    }
+    // Not merely increasing — PROPORTIONAL. Under the floor these four were
+    // one number (0.36 m, every time, on a 0.25 m foot).
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i]! / seen[0]!).toBeCloseTo(dials[i]! / dials[0]!, 6);
+    }
   });
 
-  it("leaves the hand-tuned bodies on their authored toe length", () => {
-    // 📕 The floor is calibrated so that nothing anyone posed in the lab
-    // moves. If a body here starts failing, DIGIT_MIN_ASPECT was raised past
-    // what the tuned bodies clear — retune the constant, not the body.
-    for (const id of ["human", "dog", "cat", "deer", "quadruped", "ungulate"]) {
+  it("keeps every hand-tuned body's digits AT their authored length", () => {
+    // The registry, end to end. Under the floor, four of these six were being
+    // stretched (human ×0.99 of the bound, deer ×0.85, quadruped ×0.79,
+    // ungulate ×0.44) and the two thickest were visible art: the cow's hoof
+    // was drawn at ×3.0 of what its row said and the elephant's toes at ×2.5.
+    // Now the drawn length IS the authored length on all of them, and the
+    // giant-toe report resolves by derivation rather than by anyone retuning a
+    // row. (`toeCurl` shortens the run, so this is an upper bound plus a floor
+    // at the curl these bodies carry — never the ×2.5 blow-up.)
+    for (const id of ["human", "dog", "cat", "deer", "quadruped", "ungulate", "cow", "elephant"]) {
       const bp = clampBlueprint(requireSpecies(id).blueprint);
       const lm = resolveLimbs(bp).limbs[0]!;
       const authored = lm.toeLengthFrac * footLength(bp, 0);
-      const ballR = ballRadius(bp, 0);
-      const n = Math.max(1, Math.round(lm.toeCount));
-      expect(authored).toBeGreaterThan(ballR + (ballR / n) * 1.5);
+      const built = digitsOf(buildSkeleton(bp).bones, "limb0L").map(boneLen);
+      expect(built.length).toBeGreaterThan(0);
+      const longest = Math.max(...built);
+      expect(longest).toBeLessThanOrEqual(authored * 1.001);
+      // `toeContrast` shrinks the outer digits and `toeCurl` shortens the run,
+      // so the longest is bounded below by both — never by a floor.
+      expect(longest).toBeGreaterThan(authored * (1 - 0.45 * lm.toeCurl) * (1 - lm.toeContrast) * 0.99);
     }
   });
 
   it("keeps an opposed thumb shorter than the fingers beside it", () => {
     const ds = digitsOf(buildSkeleton(testBody({ toeCount: 4, opposition: 0.8 })).bones, "limb0L");
     expect(boneLen(ds[3]!)).toBeLessThan(boneLen(ds[2]!));
+  });
+});
+
+/**
+ * ⚖️ A DIGIT'S BASE AND ITS TIP ARE ON THE SAME SIDE OF THE FOOT.
+ *
+ * 🚨 THE DEFECT THIS PINS HAS BEEN "FIXED" MORE THAN ONCE AND KEPT COMING BACK,
+ * because every previous attempt looked in `addDigits` — and the skeleton was
+ * never the problem. The skeleton lays the roots across the foot in index
+ * order along `cross(worldUp, footDir)`. mesh.ts cuts each digit's BASE RING
+ * out of the sole's end polygon at a slot tiling `[-rx, +rx]` along the sole
+ * loft's parallel-transported `end.side`. Those are two independent readings of
+ * "across the foot", and nothing forced them to agree on a SIGN.
+ *
+ * They did not agree. The loft frame starts at `cross(worldUp, dir)` of the
+ * FEMUR, which for a mammal hanging within a few degrees of vertical is
+ * ill-conditioned — its direction is set by the femur's tiny tilt azimuth — and
+ * parallel transport then carries that arbitrary roll faithfully to the foot.
+ * Measured against the skeleton's own row axis it was off by a mean of 115° and
+ * by a full 180° at worst, past 90° on 24 of 36 digit rows in the registry. Past
+ * 90° means every toe's base ring is cut on the far side of the sole from the
+ * tip its bone runs to: the row crosses itself.
+ *
+ * So this pin is deliberately taken on the BUILT MESH, not on the bones — the
+ * bones were always right. If it fails, the two derivations have drifted apart
+ * again; the fix is `limbStartFrame` / `slotRow` in mesh.ts, not `addDigits`.
+ */
+describe("digits do not cross the foot", () => {
+  const SEC = /^limb:(limb\d+[LR])(d\d+)?$/;
+
+  /** Base-ring and tip-ring centroids of every digit of every toed limb copy. */
+  const digitRows = (bp: Blueprint): Map<string, Array<{ base: number[]; tip: number[] }>> => {
+    const built = buildCreatureMesh(buildSkeleton(bp), bp, { debugTags: true });
+    const pos = built.mesh.geometry.getAttribute("position");
+    const verts = new Map<string, number[][]>();
+    for (let i = 0; i < pos.count; i++) {
+      const m = SEC.exec(built.sections[i] ?? "");
+      if (!m || !m[2]) continue;
+      const arr = verts.get(`${m[1]}|${m[2]}`) ?? [];
+      arr.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
+      verts.set(`${m[1]}|${m[2]}`, arr);
+    }
+    const mean = (pts: number[][]): number[] => [0, 1, 2].map(
+      (a) => pts.reduce((s, p) => s + p[a]!, 0) / pts.length);
+    const rows = new Map<string, Array<{ base: number[]; tip: number[] }>>();
+    for (const [key, pts] of [...verts].sort()) {
+      const [chain, d] = key.split("|");
+      // `loftChain` emits ring0 (the base, cut from the sole) then ring1 (the tip).
+      if (pts.length < SIDES * 2) continue;
+      const row = rows.get(chain!) ?? [];
+      row[Number(/d(\d+)/.exec(d!)![1])] = {
+        base: mean(pts.slice(0, SIDES)), tip: mean(pts.slice(-SIDES)),
+      };
+      rows.set(chain!, row);
+    }
+    return rows;
+  };
+
+  it("orders every toe's BASE the same way it orders its TIP — both sides, across the registry", () => {
+    let checkedRows = 0;
+    for (const id of ["human", "dog", "cat", "horse", "cow", "elephant",
+      "deer", "quadruped", "sauropod", "crocodile", "ungulate"]) {
+      const bp = clampBlueprint(requireSpecies(id).blueprint);
+      for (const [chain, row] of digitRows(bp)) {
+        const digits = row.filter(Boolean);
+        if (digits.length < 2) continue;
+        checkedRows++;
+        // The row's own across-the-foot axis, taken from the BASES as built.
+        const axis = [0, 1, 2].map((a) => digits[digits.length - 1]!.base[a]! - digits[0]!.base[a]!);
+        const alen = Math.hypot(...axis) || 1;
+        const u = (p: number[]): number =>
+          (p[0]! * axis[0]! + p[1]! * axis[1]! + p[2]! * axis[2]!) / alen;
+        for (let i = 0; i < digits.length; i++) {
+          for (let j = i + 1; j < digits.length; j++) {
+            const dBase = u(digits[j]!.base) - u(digits[i]!.base);
+            const dTip = u(digits[j]!.tip) - u(digits[i]!.tip);
+            // A CROSSING is exactly a sign disagreement: toe j is right of toe i
+            // at the base but left of it at the tip (or the reverse).
+            expect(`${id}/${chain}/${i}-${j}: ${Math.sign(dBase)}`)
+              .toBe(`${id}/${chain}/${i}-${j}: ${Math.sign(dTip)}`);
+          }
+        }
+      }
+    }
+    expect(checkedRows).toBeGreaterThan(20); // the sweep actually swept
   });
 });

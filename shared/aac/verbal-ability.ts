@@ -63,13 +63,20 @@ export function utteranceExceedsVerbalAbility(
  *    limited-verbal and there is no positive evidence (fresh voice match) that
  *    they spoke. Keep the tentative attribution visible, but as ambient
  *    context — never a user turn the Speaker answers as the student's words.
+ *  - "unplaced_speaker" — the transcript named a roster person OTHER than the
+ *    student who the presence ledger has not placed in the room (and no fresh
+ *    voice match backs them). The words are real and the routing is unchanged;
+ *    only the name is withheld. See planning-docs/aac-presence-ledger.md §6.
  *  - null — no demotion (full user-turn standing).
  *
  * Students with unspecified or `fluent` ability keep the status quo: speech
  * may genuinely be their main channel and voice enrollment can't be assumed,
  * so absence of evidence must not silence them.
  */
-export type TranscriptDemotion = "impossible_speech" | "unverified_student_speech";
+export type TranscriptDemotion =
+  | "impossible_speech"
+  | "unverified_student_speech"
+  | "unplaced_speaker";
 
 export function assessStudentTranscript(opts: {
   text: string;

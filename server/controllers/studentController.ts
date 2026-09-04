@@ -30,6 +30,7 @@ export class StudentController {
       const students = studentsWithLinks.map(({ student, link }) => ({
         ...student,
         age: studentService.calculateAge(student.birthDate),
+        debugMode: (student as any).aacSettings?.debugMode === true,
         role: link?.role ?? null,
         linkId: link?.id ?? null,
       }));
@@ -62,6 +63,7 @@ export class StudentController {
           student: {
             ...student,
             age: studentService.calculateAge(student.birthDate),
+            debugMode: (student as any).aacSettings?.debugMode === true,
           },
         });
       } else {
@@ -163,6 +165,7 @@ export class StudentController {
         student: {
           ...student,
           age: studentService.calculateAge(student.birthDate),
+          debugMode: (student as any).aacSettings?.debugMode === true,
         },
       });
 
@@ -210,6 +213,7 @@ export class StudentController {
           student: {
             ...updatedStudent,
             age: studentService.calculateAge(updatedStudent.birthDate),
+            debugMode: (updatedStudent as any).aacSettings?.debugMode === true,
           },
         });
 

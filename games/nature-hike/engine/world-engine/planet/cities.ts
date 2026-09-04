@@ -202,16 +202,65 @@ export function settlementNameOf(seedBase: number, key: number): string {
   return cityName(mulberry32((seedBase ^ Math.imul(key, 0x9e3779b1)) >>> 0));
 }
 
-/** The charter box a founding reads: radius-3 sums around the site. */
-function charterBox(grid: SubstrateGrid, cell: number) {
+/** The reach a FOUNDING measures its ground at, in lattice cells. */
+export const FOUNDING_CHARTER_R = 3;
+
+/**
+ * THE CHARTER BOX — the ONE measurement of what a site's ground HAS
+ * (user ruling 2026-09-02: *"what is the charter doing? Determining how much
+ * a site has, or how much the site will try to create? If it's the former, it
+ * needs to be location-aware."* It is the former).
+ *
+ * 📦 EXPORTED (2026-09-02) rather than copied. Every wild/AI settlement has
+ * always measured its cell here; the PLAYER's founding was the one path that
+ * did not — `games/world-lab/src/main.ts` handed its beacon a literal
+ * `{ farmland: 60, ore_access: 0, timberland: 0 }`, so a homestead founded in
+ * a forest declared ZERO timberland forever. That call site now reaches this
+ * function instead of growing a second box-sum, because two answers to "how
+ * much wood is around this cell" is precisely the drift this round exists to
+ * close.
+ */
+export function charterBoxAt(
+  grid: SubstrateGrid, cell: number, r: number = FOUNDING_CHARTER_R,
+): PlanetCity["charter"] {
+  const radius = Math.max(1, Math.floor(r));
   const box = (field: string): number => {
     const arr = grid.fields[field];
     if (!arr) return 0;
     let sum = 0;
-    grid.topo.disk(cell, 3, c => { sum += arr[c]; });
+    grid.topo.disk(cell, radius, c => { sum += arr[c]; });
     return sum;
   };
   return { farmland: box("fertility"), ore_access: box("ore"), timberland: box("plant") };
+}
+
+/**
+ * ⚖️ HOW FAR A SETTLEMENT MEASURES, given how much of it stands (user, 2026-09-02:
+ * *"Also make the player's charter update as the site grows."*).
+ *
+ * 🚧 A NAMED STOPGAP. The honest source for a settlement's reach is the
+ * walk-budget family (`scale.ts` `serviceRadiusM` / `forageRadiusM` — "a
+ * district is a need cycle's walk across"), and wiring it here DOES NOT WORK:
+ * those answer in TENS of kilometres while a tier-0 lattice cell is hundreds
+ * (planet-game.ts says so outright — "a tier-0 cell IS the capital lattice,
+ * 417 km wide on a real planet"). `forageRadiusM(REAL_SCALE)` ÷ that pitch is
+ * 0.1 cells, so a derived radius would round to ZERO and every settlement on
+ * the planet would charter a single cell. The two live at incompatible scales
+ * and the join is a real design decision, not a wiring change — reported,
+ * not smuggled in.
+ *
+ * So: ONE MORE CELL OF REACH PER DOUBLING of the settlement's structures,
+ * never less than a founding's. Discrete by construction — the answer is an
+ * integer over a monotone counter, so it steps at 1, 3, 7, 15, 31 buildings
+ * and NEVER drifts. That matters because a charter feeds founding decisions
+ * and `state-books.ts` potential (`site.charter[axis] × perAxis`): a number
+ * those read must be a thing that HAPPENED, not a value that jitters.
+ * Capped at 8 — the `PLANET_FOUNDING_FIELDS` radius ceiling, so a charter can
+ * never out-reach a scan.
+ */
+export function charterReachCells(buildings: number): number {
+  const n = Math.max(0, Math.floor(buildings));
+  return Math.min(8, FOUNDING_CHARTER_R + Math.floor(Math.log2(1 + n)));
 }
 
 /** What the founding helper reads off a substrate — a CellGrid satisfies it.
@@ -254,7 +303,7 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
   const taken = new Set<string>();
   for (const site of opts.sites) {
     if (cities.length >= maxCities) break;
-    const charter = charterBox(opts.grid, site.cell);
+    const charter = charterBoxAt(opts.grid, site.cell);
     if (charter.farmland < minFarmland) continue;
 
     const key = cellKey(site.cell);

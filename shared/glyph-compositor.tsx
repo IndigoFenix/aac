@@ -120,6 +120,22 @@ export interface GlyphCompositorProps {
    * blank spot. Default false.
    */
   showEmptyHostSlot?: boolean;
+  /**
+   * Where a glyph sits inside a box wider than itself. Default "center" — a
+   * button's art belongs in the middle of the button. The sentence builder
+   * passes "start": a sentence being written grows from its first word, so a
+   * strip that re-centres on every added slot has all of them jump sideways
+   * and the reading line never holds still. Reading direction aware — the
+   * start is the RIGHT edge in RTL.
+   */
+  align?: "center" | "start";
+  /**
+   * Animate a slot's arrival. The builder passes the index of the slot that
+   * was just added so it pops in; every other slot renders still. Nothing
+   * else animates — a rebuild that re-keys slots must not make the whole
+   * sentence jump.
+   */
+  enteringSlot?: number | null;
 }
 
 export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement {
@@ -138,6 +154,8 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     renderAnimatedSymbol,
     fillSlot = false,
     showEmptyHostSlot = false,
+    align = "center",
+    enteringSlot = null,
   } = props;
 
   const word: ParsedGlyph = typeof glyph === "string" ? parseGlyph(glyph) : glyph;
@@ -199,12 +217,15 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
     <div style={wrapperStyle}>
     <svg
       viewBox={`0 0 ${layout.viewBoxWidth} ${layout.viewBoxHeight}`}
-      preserveAspectRatio="xMidYMid meet"
+      preserveAspectRatio={align === "start" ? (rtl ? "xMaxYMid meet" : "xMinYMid meet") : "xMidYMid meet"}
       style={svgStyle}
       role="img"
       aria-label={ariaLabel ?? fallbackLabel}
     >
       <defs>
+        {enteringSlot != null && (
+          <style>{`@keyframes glyph-slot-enter { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }`}</style>
+        )}
         <filter id="glyph-glow" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="3" result="blur" />
           <feMerge>
@@ -243,6 +264,7 @@ export function GlyphCompositor(props: GlyphCompositorProps): React.ReactElement
             renderAnimatedSymbol={renderAnimatedSymbol}
             fillBoost={fillBoost}
             showEmptyHostSlot={showEmptyHostSlot}
+            entering={enteringSlot === slotLayout.index}
           />
         );
       })}
@@ -288,10 +310,12 @@ interface SlotGroupProps {
   fillBoost?: boolean;
   /** Show empty-payload host art (construction affordance) — see GlyphCompositor. */
   showEmptyHostSlot?: boolean;
+  /** This slot was just added — pop it in. See GlyphCompositor.enteringSlot. */
+  entering?: boolean;
 }
 
 function SlotGroup(props: SlotGroupProps): React.ReactElement {
-  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol, fillBoost, showEmptyHostSlot } = props;
+  const { slot, layout, rtl, resolveImage, isActive, onPress, onImageError, renderAnimatedSymbol, fillBoost, showEmptyHostSlot, entering } = props;
   // Resolve the slot's vocabulary item. For a snake_case/canonical key
   // that's a direct registry lookup. For a raw-emoji key, fall back to
   // the reverse-emoji map so non-exposed items with bundled artwork
@@ -448,10 +472,21 @@ function SlotGroup(props: SlotGroupProps): React.ReactElement {
   }
   const textEmojiTransform = textEmojiParts.length ? textEmojiParts.join(" ") : undefined;
 
+  // The arrival pop: scale up from the slot's own centre. `transformBox` makes
+  // the percentage origin the slot's box rather than the whole SVG, which is
+  // what lets one slot grow in place while its neighbours hold still.
+  const enterStyle: React.CSSProperties | undefined = entering
+    ? {
+        transformBox: "fill-box",
+        transformOrigin: "center",
+        animation: "glyph-slot-enter 220ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both",
+      }
+    : undefined;
+
   return (
     <g
       onClick={onPress}
-      style={onPress ? { cursor: "pointer" } : undefined}
+      style={{ ...(onPress ? { cursor: "pointer" } : {}), ...enterStyle }}
     >
       {/* Slot hit target (transparent rect for click). */}
       <rect

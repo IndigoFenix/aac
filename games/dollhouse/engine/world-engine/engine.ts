@@ -1850,8 +1850,16 @@ const fixtureGridCache = new WeakMap<ObjectSpec[], Map<number, ObjectSpec[]>>();
  *  while furniture was the only solid thing there was: a fixture collides
  *  unless its kind is one bodies must be able to stand on. Keeping the
  *  fallback is what makes `solid` additive — every existing spec, town and
- *  test keeps the collision it already had. */
-function objectIsSolid(f: ObjectSpec): boolean {
+ *  test keeps the collision it already had.
+ *
+ *  ⚖️ EXPORTED, because the STAND-POINT repair must read the same answer
+ *  (2026-09-02). `stand-points.ts` asked `spec.fixture && !PASSTHROUGH`
+ *  instead — an INLINE COPY of the fallback arm with the `solid` clause
+ *  missing — so a modeled tree or boulder (solid, no fixture) was invisible
+ *  to the nudge-off repair even though locomotion collided with it: a body
+ *  sent to a point inside one walked into it and ground there with no
+ *  diagnosis. One predicate, both readers. */
+export function objectIsSolid(f: ObjectSpec): boolean {
   if (f.solid !== undefined) return f.solid;
   return !!f.fixture && !PASSTHROUGH_FIXTURES.has(f.fixture);
 }

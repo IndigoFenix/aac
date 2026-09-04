@@ -5,6 +5,22 @@
 // EVENT TYPES
 // =============================================================================
 
+import type { AttentionReading, HeadAttentionConfig } from "@shared/aac/head-attention";
+import { DEFAULT_HEAD_ATTENTION_CONFIG } from "@shared/aac/head-attention";
+import type { FaceLandmarkSet } from "@shared/aac/face-features";
+import type { FaceRead, FaceReadConfig } from "@shared/aac/face-read";
+import { DEFAULT_FACE_READ_CONFIG } from "@shared/aac/face-read";
+
+/**
+ * ⚠️ `head_turn_*` are RETIRED as emitted events (2026-09-02). They fired once
+ * per tick off a single 0.15 threshold with no hysteresis and no dwell, which
+ * measured out as 45% "turned left" / 21% "shaking head" / 4% "facing camera"
+ * on real sessions — noise, billed to the Observer on every turn. Head
+ * orientation is now a debounced STATE on TrackedFace.attention (see
+ * shared/aac/head-attention.ts). The variants stay in the union only so old
+ * buffered events and the debug panel's colour map still type-check; nothing
+ * emits them. Do not add new emitters.
+ */
 export type FaceEventType =
   | 'blink_left'
   | 'blink_right'
@@ -57,6 +73,14 @@ export interface TrackedFace {
   currentBlendshapes: Map<string, number>; // blendshape name -> score
   currentExpression: FaceEventType | null; // dominant current expression
   headPose: { yaw: number; pitch: number; roll: number } | null; // head orientation, ~-1..1
+  /** Debounced head-orientation STATE (hysteresis + dwell, measured against a
+   *  running per-face neutral). Replaces the old head_turn_* event stream. */
+  attention: AttentionReading | null;
+  /** The decoded face read — action units scored against THIS person's own
+   *  baseline, engagement, hedged affect, and a quality scalar that lets
+   *  "unreadable" be said instead of "neutral". See shared/aac/face-read.ts.
+   *  Null before the first readable frame. */
+  read: FaceRead | null;
   events: FaceEvent[];        // rolling buffer of recent events
   missedTicks: number;        // consecutive ticks face was not detected
 }
@@ -71,6 +95,15 @@ export interface RawTrackedFace {
   blendshapes: Map<string, number>;
   noseTip: { x: number; y: number } | null; // landmark #4, normalized [0,1]
   headPose: { yaw: number; pitch: number; roll: number } | null; // from landmark asymmetry, ~-1 to 1
+  /** The ~30-point landmark SUBSET the geometry decoder reads (D7). All 478
+   *  used to be discarded inside the detection loop, which made every geometric
+   *  feature — eye/mouth aspect, lip-corner elevation, brow-to-lid gap,
+   *  asymmetry — permanently unavailable. Null when the tracker returned no
+   *  landmarks. See shared/aac/face-features.ts. */
+  landmarks: FaceLandmarkSet | null;
+  /** Frame width / height. Landmark x/y are normalized to the IMAGE, not to a
+   *  square, so every distance must scale x by this before it means anything. */
+  aspect: number;
 }
 
 // =============================================================================
@@ -88,8 +121,18 @@ export interface FaceTrackingConfig {
     surprise: number;
     browRaise: number;
     browFurrow: number;
+    /** @deprecated Absolute head-turn threshold of the retired event path. The
+     *  attention state machine uses `attention` below instead — enter/exit
+     *  thresholds measured against a running neutral. Kept so existing config
+     *  overrides don't break. */
     headTurn: number;
   };
+
+  /** Head-orientation debouncing. See shared/aac/head-attention.ts. */
+  attention: HeadAttentionConfig;
+
+  /** Expression decoding. See shared/aac/face-read.ts. */
+  faceRead: FaceReadConfig;
 
   // Minimum re-fire intervals per event category (ms)
   refireIntervals: {
@@ -117,8 +160,10 @@ export const DEFAULT_FACE_TRACKING_CONFIG: FaceTrackingConfig = {
     surprise: 0.5,
     browRaise: 0.4,
     browFurrow: 0.4,
-    headTurn: 0.15,
+    headTurn: 0.15, // deprecated, unused — see FaceTrackingConfig.thresholds
   },
+  attention: DEFAULT_HEAD_ATTENTION_CONFIG,
+  faceRead: DEFAULT_FACE_READ_CONFIG,
   refireIntervals: {
     blink: 300,
     gaze: 500,

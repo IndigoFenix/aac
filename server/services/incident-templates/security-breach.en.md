@@ -36,6 +36,6 @@ We are sorry for the inconvenience and concern this causes. If you have question
 Sincerely,
 {signer_name}
 {signer_title}
-Aivota / CliniAACian Ltd.
+Aivota Ltd.
 
 Reference: incident #{incident_ref}

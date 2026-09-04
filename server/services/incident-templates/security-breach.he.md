@@ -36,6 +36,6 @@ SUBJECT: הודעה על אירוע אבטחה — חשבון Aivota ב-{institu
 בכבוד רב,
 {signer_name}
 {signer_title}
-Aivota / CliniAACian Ltd.
+Aivota Ltd.
 
 מספר אסמכתא: אירוע #{incident_ref}

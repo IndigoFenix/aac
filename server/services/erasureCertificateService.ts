@@ -141,7 +141,7 @@ export function renderErasureCertificate(
         cert.instituteId ? `Institute:              ${cert.instituteId}` : null,
         cert.s3KeysQueued !== null ? `Stored files removed:   ${cert.s3KeysQueued}` : null,
         "",
-        "Aivota confirms that the personal and health information held for the",
+        "Aivota Ltd confirms that the personal and health information held for the",
         "record identified above has been permanently deleted from its production",
         "systems, including the associated database records and stored files.",
         "",
@@ -153,7 +153,7 @@ export function renderErasureCertificate(
           ? "As at the date of this certificate, that period has not yet elapsed."
           : "That period has elapsed; no copy remains.",
         "",
-        "This certificate is generated from Aivota's audit records and reflects",
+        "This certificate is generated from Aivota Ltd's audit records and reflects",
         "the events logged at the time of erasure.",
       ]
         .filter((l) => l !== null)
@@ -172,7 +172,7 @@ export function renderErasureCertificate(
       cert.instituteId ? `מוסד:               ${cert.instituteId}` : null,
       cert.s3KeysQueued !== null ? `קבצים שנמחקו:       ${cert.s3KeysQueued}` : null,
       "",
-      "אביוטה מאשרת כי המידע האישי והרפואי שהוחזק עבור הרשומה שלעיל נמחק",
+      "אביוטה בע״מ מאשרת כי המידע האישי והרפואי שהוחזק עבור הרשומה שלעיל נמחק",
       "לצמיתות ממערכות הייצור שלה, לרבות רשומות מסד הנתונים והקבצים המשויכים.",
       "",
       "עותקים שיוריים",
@@ -183,7 +183,7 @@ export function renderErasureCertificate(
         ? "נכון למועד אישור זה, התקופה האמורה טרם חלפה."
         : "התקופה האמורה חלפה; לא נותר כל עותק.",
       "",
-      "אישור זה מופק מרישומי הביקורת של אביוטה ומשקף את האירועים שתועדו",
+      "אישור זה מופק מרישומי הביקורת של אביוטה בע״מ ומשקף את האירועים שתועדו",
       "בעת ביצוע המחיקה.",
     ]
       .filter((l) => l !== null)

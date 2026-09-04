@@ -37,7 +37,7 @@ SUBJECT: הודעת אבטחה חשובה לגבי המידע של {student_name
 בכבוד רב,
 {signer_name}
 {signer_title}
-Aivota / CliniAACian Ltd.
+Aivota Ltd.
 {signer_postal_address}
 
 מספר אסמכתא: אירוע #{incident_ref}

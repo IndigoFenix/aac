@@ -140,10 +140,36 @@ export interface ClientConfig {
    */
   pcmContinuous?: boolean;
   /**
+   * DEVICE-VOICE MODE (`aac_settings.useLocalTts`): the student's words are
+   * spoken by the DEVICE — speechSynthesis, or the downloaded Kokoro neural
+   * voice — instead of streamed audio from a provider.
+   *
+   * The client needs to know because the setting promises INSTANT: with this
+   * true it voices a press the moment the button is tapped and tells the
+   * server the press is `spokenLocally`, instead of waiting out a round trip
+   * for a `client_local_tts` that only asks it to say the words it already
+   * had. The server holds the same value in `useLocalStudentTts`; both read
+   * the one setting, and the server still decides what IT does with a press.
+   */
+  deviceVoice?: boolean;
+  /**
    * Per-student seizure detection (resolved thresholds + seed baseline). Absent
    * when the student has the feature off. See ClientSeizureConfig.
    */
   seizure?: ClientSeizureConfig;
+  /** Accumulated head-neutral profile for this student plus its reliability
+   *  (0..1). The client seeds its attention trackers from this so a session
+   *  opens already tuned instead of re-warming; below NEUTRAL_TRUST_MIN it is
+   *  a hint only. Absent = never learned. See shared/aac/head-attention.ts. */
+  headNeutral?: { profile: import("@shared/aac/head-attention").HeadNeutralProfile; trust: number };
+  /** Accumulated facial-channel baseline for this student plus its reliability
+   *  (0..1). Every expression threshold on the client is measured against this
+   *  distribution rather than a global constant, which is the whole point: this
+   *  population's resting face is not the population mean the blendshape model
+   *  was regressed on. Absent = never learned, and the client then reports only
+   *  unmistakable intensities until it has learned enough within the session.
+   *  See shared/aac/face-baseline.ts. */
+  faceBaseline?: { profile: import("@shared/aac/face-baseline").FaceBaselineProfile; trust: number };
   /**
    * Automated audio scan (eyegaze). When true, the client starts the board's
    * spoken readout on its own once the student has hunted across the board for
@@ -176,7 +202,7 @@ export interface ClientConfig {
  * Future per-student overrides layer on top of this.
  */
 export function buildDefaultClientConfig(
-  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous" | "seizure" | "autoAudioScan" | "autoAudioScanDelayMs" | "slpMode">,
+  overrides?: Pick<ClientConfig, "awakeDataSaver" | "sttActive" | "sceneStateActive" | "pcmContinuous" | "deviceVoice" | "seizure" | "headNeutral" | "faceBaseline" | "autoAudioScan" | "autoAudioScanDelayMs" | "slpMode">,
 ): ClientConfig {
   return {
     activityMonitor: {
@@ -222,6 +248,10 @@ export function buildDefaultClientConfig(
     // Off by default — raw PCM stays VAD-gated ("adaptive"). The Observer flips
     // it on via set_audio_attention("live").
     pcmContinuous: overrides?.pcmContinuous ?? false,
+    // Device-voice mode, straight from `aac_settings.useLocalTts`. Off by
+    // default: a session that never resolved the student's settings must not
+    // start voicing presses on the device that the server is also voicing.
+    deviceVoice: overrides?.deviceVoice ?? false,
     // Per-student seizure detection — resolved + seeded by the coordinator.
     // Omitted entirely when the student has the feature off.
     ...(overrides?.seizure ? { seizure: overrides.seizure } : {}),

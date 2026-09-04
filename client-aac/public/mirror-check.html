@@ -1,0 +1,551 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mirror / sidedness check</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; padding: 16px; background: #111; color: #eee; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: #999; }
+  .wrap { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  video { width: 420px; border: 2px solid #444; border-radius: 6px; background: #000; }
+  .note { font-size: 12px; color: #f5a; margin-top: 6px; max-width: 420px; }
+  table { border-collapse: collapse; min-width: 380px; }
+  td { padding: 4px 10px; border-bottom: 1px solid #2a2a2a; }
+  td.k { color: #999; white-space: nowrap; }
+  td.v { font-family: ui-monospace, monospace; text-align: right; }
+  .big { font-size: 15px; font-weight: 600; }
+  .ok { color: #6d6; } .bad { color: #f66; } .dim { color: #666; }
+  ol { max-width: 460px; line-height: 1.6; }
+  li b { color: #fff; }
+  #verdict { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: #1c1c1c;
+             border-left: 3px solid #555; max-width: 460px; font-size: 13px; }
+</style>
+
+<h1>Camera mirror / sidedness check</h1>
+<p class="sub">Answers three independent questions: is the SOURCE stream mirrored, do
+blendshapes use the subject's sides, and does the app's yaw formula sign correctly.</p>
+
+<div class="wrap">
+  <div>
+    <video id="v" autoplay muted playsinline></video>
+    <div class="note">This preview is deliberately NOT CSS-mirrored — it shows exactly the
+      pixels the face tracker reads.</div>
+  </div>
+
+  <div>
+    <table>
+      <tr><td class="k">status</td><td class="v" id="status">loading…</td></tr>
+      <tr><td class="k">hand seen (MediaPipe handedness)</td><td class="v big" id="hand">—</td></tr>
+      <tr><td class="k">hand x (0=image left)</td><td class="v" id="handx">—</td></tr>
+      <tr><td class="k">eyeBlinkLeft</td><td class="v" id="bl">—</td></tr>
+      <tr><td class="k">eyeBlinkRight</td><td class="v" id="br">—</td></tr>
+      <tr><td class="k">mouthSmileLeft / Right</td><td class="v" id="smile">—</td></tr>
+      <tr><td class="k">yaw — app formula (lms 4/234/454)</td><td class="v big" id="yawapp">—</td></tr>
+      <tr><td class="k">yaw — transformation matrix</td><td class="v big" id="yawmat">—</td></tr>
+      <tr><td class="k">pitch — app formula</td><td class="v" id="pitchapp">—</td></tr>
+      <tr><td class="k">face centre x (0..1)</td><td class="v" id="cx">—</td></tr>
+      <tr><td class="k">nose x − face centre x</td><td class="v" id="parallax">—</td></tr>
+    </table>
+
+    <div id="verdict">Follow the steps on the left; the readings update live.</div>
+
+    <h2 style="font-size:14px;margin:20px 0 2px">2 · Flip-invariance (estimator bias)</h2>
+    <p class="sub" style="margin-bottom:8px">Same frame, run twice: as-is and horizontally
+      flipped. An unbiased estimator gives <code>yaw(flipped) = −yaw(original)</code>, so the
+      <b>residual</b> below should sit at 0. Your own asymmetry cancels — a mirrored face is
+      still a valid face — so anything left is the MODEL.</p>
+    <table>
+      <tr><td class="k">samples</td><td class="v" id="n">0</td></tr>
+      <tr><td class="k">yaw A (as-is)</td><td class="v" id="yA">—</td></tr>
+      <tr><td class="k">yaw B (flipped)</td><td class="v" id="yB">—</td></tr>
+      <tr><td class="k">residual A+B (want 0)</td><td class="v big" id="res">—</td></tr>
+      <tr><td class="k">head rate</td><td class="v" id="rate">—</td></tr>
+      <tr><td class="k">estimated A→B lag τ</td><td class="v big" id="lag">—</td></tr>
+      <tr><td class="k">mean residual — near frontal (&lt;5°)</td><td class="v" id="b0">—</td></tr>
+      <tr><td class="k">mean residual — mid turn (5–20°)</td><td class="v" id="b1">—</td></tr>
+      <tr><td class="k">mean residual — big turn (&gt;20°)</td><td class="v" id="b2">—</td></tr>
+      <tr><td class="k">blendshape swap error (smile L/R)</td><td class="v" id="swap">—</td></tr>
+      <tr><td class="k">— asym, MATRIX yaw (Euler)</td><td class="v big" id="asymM">—</td></tr>
+      <tr><td class="k">— asym, LANDMARK yaw (no Euler)</td><td class="v big" id="asymA">—</td></tr>
+      <tr><td class="k">residual-vs-pitch slope (leak)</td><td class="v" id="leak">—</td></tr>
+      <tr><td class="k">face offset from centre</td><td class="v" id="off">—</td></tr>
+      <tr><td class="k">— residual vs OFF-CENTREDNESS</td><td class="v big" id="asymC">—</td></tr>
+    </table>
+
+    <h2 style="font-size:14px;margin:20px 0 2px">3 · Does it change the LABEL?</h2>
+    <p class="sub" style="margin-bottom:8px">What actually reaches the Observer is a word, not
+      a number. The mirrored frame must produce the mirrored label; anything else is an error
+      the AI would see. Shown at the app's current threshold and at a less twitchy one.</p>
+    <table>
+      <tr><td class="k">label now (as-is)</td><td class="v big" id="labA">—</td></tr>
+      <tr><td class="k">label now (flipped)</td><td class="v big" id="labB">—</td></tr>
+      <tr><td class="k">mismatch @ 0.15 <span class="dim">(app today)</span></td><td class="v" id="t15">—</td></tr>
+      <tr><td class="k">mismatch @ 0.30</td><td class="v" id="t30">—</td></tr>
+    </table>
+    <p class="note" style="color:#8ad"><b>mismatch%</b> = flipped frame gave the wrong label.
+      <b>flips%</b> = label changed between consecutive frames while your head was SETTLED —
+      that is the "too sensitive" number, and it should be near 0.
+      <b>centre%</b> = share of settled frames called "centre"; prod [SCENE] lines suggest
+      this is very low in real sessions.<br>
+      If mismatch is near 0 at both thresholds, the model asymmetry never reaches the AI and
+      you can stop worrying about it. If flips% is high at 0.15 and much lower at 0.30, the
+      problem is threshold sensitivity, not bias.</p>
+    <p class="note" style="color:#fd8">The two <b>asym</b> rows are the discriminator for the
+      +1–2° you are seeing. Both are <code>mean(residual)/mean(|yaw|)</code>, so both read as a
+      <b>% gain difference between your two sides</b> and are directly comparable despite one
+      being degrees and the other a ratio.<br>
+      <b>Both non-zero and similar</b> → a real asymmetry in MediaPipe's landmarks.<br>
+      <b>Matrix non-zero, landmark ≈0</b> → the Euler extraction is leaking pitch; the model is
+      fine and only <code>yawDegFromMatrix</code> needs correcting. The <b>leak</b> row confirms
+      it: pitch is the one component a mirror does not flip, so a non-zero slope there is the
+      leak's signature.</p>
+    <p class="note" style="color:#8ad">The three bins take <b>settled frames only</b>
+      (head rate under 12°/s), so a timing skew cannot contribute to them — hold each pose
+      briefly rather than sweeping continuously. <b>Bins flat and ≈0</b> → estimator is clean,
+      the asymmetry is you. <b>Flat but ≠0</b> → offset bias. <b>Growing with turn size</b> →
+      gain bias, i.e. one side really does read bigger.</p>
+    <p class="note" style="color:#8ad">Separately, <b>τ</b> is fitted from the moving frames:
+      residual should equal τ·(yaw rate) if one pass trails the other, so the slope IS the lag
+      in milliseconds. Near 0 means the two passes are aligned. Move your head to populate it.</p>
+    <button id="reset" style="margin-top:6px;padding:5px 12px">reset stats</button>
+  </div>
+
+  <div>
+    <ol>
+      <li>Raise <b>only your RIGHT hand</b>, palm to camera.<br>
+        → "hand seen" should read <b>Right</b>. If it says Left, the <b>source stream is
+        mirrored</b> and every sided signal in the app is flipped.</li>
+      <li>Wink your <b>LEFT eye</b> only.<br>
+        → <b>eyeBlinkLeft</b> should be the larger number. If eyeBlinkRight spikes instead,
+        blendshape sides are image-relative, not subject-relative.</li>
+      <li>Turn your head to <b>your own RIGHT</b> (~30°), keep eyes on the screen.<br>
+        → both yaw readings should go <b>positive</b>. The app's convention is
+        <code>+yaw = turned to the subject's right</code>.</li>
+      <li>Sit <b>off to one side</b> of the camera, facing it straight on.<br>
+        → watch <b>yaw — app formula</b>. If it drifts away from 0 while you are genuinely
+        facing the camera, that is the nose-parallax bias, not a real head turn.</li>
+    </ol>
+  </div>
+</div>
+
+<script type="module">
+import { FilesetResolver, FaceLandmarker, GestureRecognizer }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs";
+
+const $ = (id) => document.getElementById(id);
+const f2 = (n) => (n >= 0 ? "+" : "") + n.toFixed(3);
+
+const status = $("status");
+status.textContent = "requesting camera…";
+
+const stream = await navigator.mediaDevices.getUserMedia({
+  video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+});
+const video = $("v");
+video.srcObject = stream;
+await video.play();
+
+status.textContent = "loading models…";
+
+// Local wasm + models first (same assets the app ships), CDN as fallback.
+const LOCAL = { wasm: "/mediapipe/wasm", face: "/models/mediapipe/face_landmarker.task",
+                hand: "/models/mediapipe/gesture_recognizer.task" };
+const CDN = { wasm: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm",
+              face: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+              hand: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task" };
+
+let faceLm, faceFlip, handLm;
+for (const src of [LOCAL, CDN]) {
+  try {
+    const fs = await FilesetResolver.forVisionTasks(src.wasm);
+    const faceOpts = {
+      baseOptions: { modelAssetPath: src.face, delegate: "GPU" },
+      runningMode: "VIDEO", numFaces: 1,
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: true,   // OFF in the app today — L0 of the plan
+    };
+    faceLm = await FaceLandmarker.createFromOptions(fs, faceOpts);
+    // SECOND instance for the flipped copy — one landmarker in VIDEO mode needs
+    // strictly increasing timestamps, so the two passes cannot share it.
+    faceFlip = await FaceLandmarker.createFromOptions(fs, faceOpts);
+    handLm = await GestureRecognizer.createFromOptions(fs, {
+      baseOptions: { modelAssetPath: src.hand, delegate: "GPU" },
+      runningMode: "VIDEO", numHands: 2,
+    });
+    status.textContent = src === LOCAL ? "running (local assets)" : "running (CDN assets)";
+    break;
+  } catch (e) {
+    console.warn("asset source failed", e);
+  }
+}
+if (!faceLm) { status.textContent = "FAILED to load models — see console"; throw new Error("no assets"); }
+
+// ---- flip-invariance machinery ----------------------------------------
+// BOTH passes must see the SAME PIXELS. Reading the <video> twice does not
+// achieve that: it keeps decoding between the two detect calls (each costs
+// ~10-20ms), so the second pass often lands on a NEWER frame and the skew shows
+// up as a residual proportional to head speed. So capture ONCE into origCv, and
+// derive flipCv FROM origCv rather than from the video.
+const origCv = document.createElement("canvas");
+const origCx = origCv.getContext("2d");
+const flipCv = document.createElement("canvas");
+const flipCx = flipCv.getContext("2d");
+
+/** Yaw in degrees from a MediaPipe 4x4 facial transformation matrix. Only the
+ *  SIGN convention is uncertain; it cancels in the residual either way.
+ *  ⚠️ But a MIXED extraction does not cancel: under a horizontal flip yaw and
+ *  roll change sign while PITCH does not, so any pitch leaking into this value
+ *  produces a residual all by itself, with no model bias involved. That is why
+ *  the landmark-asymmetry estimator below is measured in parallel — it has no
+ *  Euler decomposition to leak. */
+function yawDegFromMatrix(m) {
+  return Math.atan2(-m[8], Math.hypot(m[9], m[10])) * 180 / Math.PI;
+}
+
+/** Pitch from the same decomposition — the mirror-INVARIANT component. */
+function pitchDegFromMatrix(m) {
+  return Math.atan2(m[9], m[10]) * 180 / Math.PI;
+}
+
+/** The APP's yaw (useFaceTracking.ts): a pure 2-D landmark ratio, ~-1..1.
+ *  Definitionally odd under a mirror, so its residual isolates the model's
+ *  LANDMARK asymmetry with no pose parameterisation in the way. */
+function yawAsymmetry(lms) {
+  const nose = lms[4], rFace = lms[234], lFace = lms[454];
+  if (!nose || !rFace || !lFace) return null;
+  const dLeft = Math.abs(nose.x - lFace.x), dRight = Math.abs(nose.x - rFace.x);
+  const sum = dLeft + dRight;
+  return sum > 0 ? (dLeft - dRight) / sum : null;
+}
+
+/**
+ * Least-squares fit of  residual = a + k·|yaw|  over settled frames.
+ *
+ * Why a regression and not mean(residual)/mean(|yaw|): that ratio-of-means is
+ * unstable here, because the stillness gate keeps mostly NEAR-FRONTAL frames, so
+ * the denominator is dominated by values near zero while the numerator still
+ * carries noise — the estimate swings instead of converging. It also cannot tell
+ * an offset from a gain, which is the whole question.
+ *
+ * The algebra: a per-side gain difference gives yawA = g_R·θ on a right turn and
+ * yawA = −g_L·θ on a left turn, and in BOTH cases residual = (g_R − g_L)·|θ|.
+ * So the residual scales with |yaw| with the same sign either way, and:
+ *   k = g_R − g_L  → the gain asymmetry, dimensionless, comparable across
+ *                    estimators even though one is degrees and one is a ratio
+ *   a              → a constant offset, in that estimator's own units
+ * `se` is the standard error of k — without it there is no way to tell a
+ * converged 12% from a noisy one.
+ */
+function fitGain(acc) {
+  const { n, sx, sy, sxy, sxx, syy } = acc;
+  if (n < 30) return null;
+  const den = n * sxx - sx * sx;
+  if (Math.abs(den) < 1e-12) return null;         // no spread in |yaw| yet
+  const k = (n * sxy - sx * sy) / den;
+  const a = (sy - k * sx) / n;
+  // residual sum of squares → standard error of the slope
+  const ssTot = syy - (sy * sy) / n;
+  const ssRes = Math.max(0, ssTot - k * (sxy - (sx * sy) / n));
+  const se = n > 2 ? Math.sqrt((ssRes / (n - 2)) / (sxx - (sx * sx) / n)) : NaN;
+  const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+  return { k, a, se, r2, n };
+}
+
+/** The APP's pitch (useFaceTracking.ts). Unchanged by a horizontal flip. */
+function pitchAsymmetry(lms) {
+  const nose = lms[4], top = lms[10], bottom = lms[152];
+  if (!nose || !top || !bottom) return null;
+  const dUp = Math.abs(nose.y - top.y), dDown = Math.abs(nose.y - bottom.y);
+  const sum = dUp + dDown;
+  return sum > 0 ? (dUp - dDown) / sum : null;
+}
+
+/** EXACTLY the app's head-turn decision (useFaceEvents.ts deriveEvents): the
+ *  dominant axis wins once either exceeds the threshold. This is the label that
+ *  actually reaches the Observer, so it is the thing worth measuring. */
+function appLabel(yaw, pitch, ht) {
+  const ay = Math.abs(yaw), ap = Math.abs(pitch);
+  if (ay <= ht && ap <= ht) return "centre";
+  if (ay >= ap) return yaw > 0 ? "right" : "left";
+  return pitch > 0 ? "down" : "up";
+}
+
+/** A mirrored frame must produce the mirrored label. Anything else is a
+ *  classification-level error, regardless of how small the underlying
+ *  numerical bias is. */
+const mirrorLabel = (l) => (l === "left" ? "right" : l === "right" ? "left" : l);
+
+function accumulate(acc, absYaw, residual) {
+  acc.n++; acc.sx += absYaw; acc.sy += residual;
+  acc.sxy += absYaw * residual; acc.sxx += absYaw * absYaw; acc.syy += residual * residual;
+}
+
+const newAcc = () => ({ n: 0, sx: 0, sy: 0, sxy: 0, sxx: 0, syy: 0 });
+
+// Bins by |yaw|: near-frontal, mid turn, big turn. A residual that is flat
+// across bins is an offset; one that grows with the bin is a gain asymmetry.
+const BINS = [
+  { label: "b0", max: 5, sum: 0, n: 0 },
+  { label: "b1", max: 20, sum: 0, n: 0 },
+  { label: "b2", max: Infinity, sum: 0, n: 0 },
+];
+let nSamples = 0, swapSum = 0, swapN = 0, nMoving = 0;
+// Lag estimator. If pass B trails pass A by τ seconds then
+//   yawB(t) = −yawA(t−τ) ≈ −(yawA − τ·ẏ)   ⇒   residual = yawA + yawB = τ·ẏ
+// so the least-squares slope of residual against the yaw RATE is τ itself, in
+// seconds. That both quantifies any remaining skew and separates it from a gain
+// bias, which scales with yaw VALUE rather than yaw rate.
+let lagNum = 0, lagDen = 0;
+// Settled-frame regression accumulators, one per estimator.
+const ACC = {
+  mat: newAcc(),   // matrix yaw (has an Euler decomposition — can leak pitch)
+  app: newAcc(),   // landmark ratio (no Euler math; carries nose parallax instead)
+  // Residual against how far the face sits from the frame centre. The flip test
+  // mirrors about the IMAGE centre, so anything that is not symmetric about the
+  // optical axis — lens decentring, the model's own position-dependent error, a
+  // parallax term that is not perfectly odd in position — survives cancellation
+  // and grows with off-centredness. Slope is "° of spurious asymmetry per unit
+  // of offset", where 0.5 is the frame edge.
+  ctr: newAcc(),
+};
+// Does the residual track PITCH? If the matrix extraction is leaking pitch, this
+// slope is non-zero while the landmark estimator stays clean.
+let pitNum = 0, pitDen = 0;
+
+// ---- classification-level measurement ---------------------------------
+// Two thresholds side by side: the app's current 0.15, and a less twitchy 0.30.
+// For each we count (a) how often the flipped frame FAILS to produce the
+// mirrored label — a real error the Observer would see — and (b) how often the
+// label changes between consecutive frames while the head is SETTLED, which is
+// the "too sensitive" question stated as a number.
+const THRESHOLDS = [
+  { ht: 0.15, key: "t15", n: 0, bad: 0, flips: 0, settled: 0, centre: 0, prev: null },
+  { ht: 0.30, key: "t30", n: 0, bad: 0, flips: 0, settled: 0, centre: 0, prev: null },
+];
+// Head speed (deg/s) below which a frame counts as "settled". Lag contributes
+// ~0 when nothing is moving, so the binned bias numbers are taken from these
+// frames only and are lag-immune by construction.
+const STILL_DEG_S = 12;
+let prevYawA = null, prevT = null;
+
+$("reset").onclick = () => {
+  for (const b of BINS) { b.sum = 0; b.n = 0; }
+  nSamples = 0; swapSum = 0; swapN = 0; nMoving = 0;
+  lagNum = 0; lagDen = 0; prevYawA = null; prevT = null;
+  ACC.mat = newAcc(); ACC.app = newAcc(); ACC.ctr = newAcc();
+  pitNum = 0; pitDen = 0;
+  for (const t of THRESHOLDS) { t.n = 0; t.bad = 0; t.flips = 0; t.settled = 0; t.centre = 0; t.prev = null; }
+};
+
+let last = 0;
+function frame() {
+  const now = performance.now();
+  if (now <= last) { requestAnimationFrame(frame); return; }
+  last = now;
+
+  // Snapshot the frame ONCE; every detector below reads this copy, never the
+  // live <video>, so all passes are guaranteed to agree on the pixels.
+  if (video.videoWidth && origCv.width !== video.videoWidth) {
+    origCv.width = flipCv.width = video.videoWidth;
+    origCv.height = flipCv.height = video.videoHeight;
+  }
+  if (!video.videoWidth) { requestAnimationFrame(frame); return; }
+  origCx.drawImage(video, 0, 0);
+
+  // ---- face ----
+  const fr = faceLm.detectForVideo(origCv, now);
+  const lms = fr.faceLandmarks?.[0];
+  const bs = fr.faceBlendshapes?.[0]?.categories;
+
+  if (bs) {
+    const get = (n) => bs.find((c) => c.categoryName === n)?.score ?? 0;
+    const bl = get("eyeBlinkLeft"), br = get("eyeBlinkRight");
+    $("bl").innerHTML = `<span class="${bl > br + 0.2 ? "ok" : "dim"}">${bl.toFixed(3)}</span>`;
+    $("br").innerHTML = `<span class="${br > bl + 0.2 ? "ok" : "dim"}">${br.toFixed(3)}</span>`;
+    $("smile").textContent = `${get("mouthSmileLeft").toFixed(3)} / ${get("mouthSmileRight").toFixed(3)}`;
+  }
+
+  if (lms) {
+    const nose = lms[4], rFace = lms[234], lFace = lms[454], top = lms[10], bottom = lms[152];
+    // EXACTLY the app's formula (useFaceTracking.ts)
+    const dLeft = Math.abs(nose.x - lFace.x), dRight = Math.abs(nose.x - rFace.x);
+    const dUp = Math.abs(nose.y - top.y), dDown = Math.abs(nose.y - bottom.y);
+    const yawApp = (dLeft - dRight) / (dLeft + dRight);
+    const pitchApp = (dUp - dDown) / (dUp + dDown);
+    $("yawapp").innerHTML = `<span class="${Math.abs(yawApp) > 0.15 ? "bad" : "ok"}">${f2(yawApp)}</span>`;
+    $("pitchapp").innerHTML = `<span class="${Math.abs(pitchApp) > 0.15 ? "bad" : "ok"}">${f2(pitchApp)}</span>`;
+
+    // face centre vs nose — the off-centre parallax test
+    let minX = 1, maxX = 0;
+    for (const p of lms) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; }
+    const cx = (minX + maxX) / 2;
+    $("cx").textContent = cx.toFixed(3);
+    $("parallax").textContent = f2(nose.x - cx);
+  }
+
+  // Proper head pose from the 4x4 (what L0 proposes switching to).
+  const m = fr.facialTransformationMatrixes?.[0]?.data;
+  if (m) {
+    // Try the row-major reading; sign is what the turn test confirms.
+    const yawMat = Math.atan2(-m[8], Math.hypot(m[9], m[10])) * 180 / Math.PI;
+    $("yawmat").textContent = `${f2(yawMat)}°`;
+  } else {
+    $("yawmat").textContent = "(not produced)";
+  }
+
+  // ---- flip-invariance: SAME captured frame, mirrored, second landmarker ----
+  {
+    // Mirror the SNAPSHOT (not the video) so both passes share pixels exactly.
+    flipCx.save();
+    flipCx.translate(flipCv.width, 0);
+    flipCx.scale(-1, 1);
+    flipCx.drawImage(origCv, 0, 0);
+    flipCx.restore();
+
+    const fb = faceFlip.detectForVideo(flipCv, now);
+    const mA = fr.facialTransformationMatrixes?.[0]?.data;
+    const mB = fb.facialTransformationMatrixes?.[0]?.data;
+
+    if (mA && mB) {
+      const yA = yawDegFromMatrix(mA), yB = yawDegFromMatrix(mB);
+      const residual = yA + yB;          // 0 for an unbiased estimator
+      $("yA").textContent = `${f2(yA)}°`;
+      $("yB").textContent = `${f2(yB)}°`;
+      $("res").innerHTML =
+        `<span class="${Math.abs(residual) > 2 ? "bad" : "ok"}">${f2(residual)}°</span>`;
+
+      // Yaw rate, for both the lag fit and the stillness gate.
+      let rate = 0;
+      if (prevYawA !== null && prevT !== null && now > prevT) {
+        rate = (yA - prevYawA) / ((now - prevT) / 1000);   // deg/s, signed
+      }
+      prevYawA = yA; prevT = now;
+      $("rate").textContent = `${rate.toFixed(0)} °/s`;
+
+      // Lag fit: slope of residual vs yaw rate = τ in seconds.
+      if (Math.abs(rate) > 1) { lagNum += residual * rate; lagDen += rate * rate; }
+      $("lag").textContent = lagDen > 0
+        ? `${(1000 * lagNum / lagDen).toFixed(1)} ms`
+        : "— (move your head)";
+
+      // Bias bins: SETTLED frames only, so lag cannot contribute.
+      nSamples++;
+      const settled = Math.abs(rate) < STILL_DEG_S;
+
+      // ---- does the LABEL survive the mirror, and does it sit still? ----
+      const lmA = fr.faceLandmarks?.[0], lmB = fb.faceLandmarks?.[0];
+      if (lmA && lmB) {
+        const yaA = yawAsymmetry(lmA), yaB = yawAsymmetry(lmB);
+        const piA = pitchAsymmetry(lmA), piB = pitchAsymmetry(lmB);
+        if (yaA !== null && yaB !== null && piA !== null && piB !== null) {
+          for (const t of THRESHOLDS) {
+            const labA = appLabel(yaA, piA, t.ht);
+            const labB = appLabel(yaB, piB, t.ht);
+            t.n++;
+            if (labB !== mirrorLabel(labA)) t.bad++;
+            if (settled) {
+              t.settled++;
+              if (labA === "centre") t.centre++;
+              if (t.prev !== null && labA !== t.prev) t.flips++;
+              t.prev = labA;
+            }
+            if (t.ht === 0.15) {
+              $("labA").textContent = labA;
+              $("labB").innerHTML = labB === mirrorLabel(labA)
+                ? `<span class="ok">${labB}</span>`
+                : `<span class="bad">${labB} (expected ${mirrorLabel(labA)})</span>`;
+            }
+          }
+          for (const t of THRESHOLDS) {
+            const badPct = t.n ? (100 * t.bad / t.n).toFixed(1) : "—";
+            const flipRate = t.settled ? (t.flips / t.settled * 100).toFixed(1) : "—";
+            const ctrPct = t.settled ? (100 * t.centre / t.settled).toFixed(0) : "—";
+            $(t.key).innerHTML =
+              `<span class="${t.bad / Math.max(1, t.n) > 0.02 ? "bad" : "ok"}">${badPct}%</span>` +
+              ` <span class="dim">· flips ${flipRate}% of still frames · centre ${ctrPct}% · n=${t.n}</span>`;
+          }
+        }
+      }
+      if (settled) {
+        const mag = (Math.abs(yA) + Math.abs(yB)) / 2;
+        const bin = BINS.find((b) => mag < b.max);
+        bin.sum += residual; bin.n++;
+
+        accumulate(ACC.mat, mag, residual);
+
+        // Landmark estimator on the SAME pair of frames — no Euler math, so a
+        // pitch leak cannot reach it.
+        const lA = fr.faceLandmarks?.[0], lB = fb.faceLandmarks?.[0];
+        if (lA && lB) {
+          const aA = yawAsymmetry(lA), aB = yawAsymmetry(lB);
+          if (aA !== null && aB !== null) {
+            accumulate(ACC.app, (Math.abs(aA) + Math.abs(aB)) / 2, aA + aB);
+          }
+        }
+
+        // Residual vs off-centredness (the variable that turned out to dominate).
+        if (lA) {
+          let mnX = 1, mxX = 0;
+          for (const p of lA) { if (p.x < mnX) mnX = p.x; if (p.x > mxX) mxX = p.x; }
+          const offset = Math.abs((mnX + mxX) / 2 - 0.5);
+          $("off").textContent = offset.toFixed(3);
+          accumulate(ACC.ctr, offset, residual);
+        }
+
+        // Pitch-leak fit: does the residual track PITCH? Pitch is the component
+        // that does NOT change sign under a mirror, so if it is leaking into the
+        // yaw extraction it shows up here as a non-zero slope.
+        const pitch = pitchDegFromMatrix(mA);
+        if (Math.abs(pitch) > 1) { pitNum += residual * pitch; pitDen += pitch * pitch; }
+      } else {
+        nMoving++;
+      }
+      for (const b of BINS) {
+        $(b.label).textContent = b.n ? `${f2(b.sum / b.n)}°  (n=${b.n})` : "—";
+      }
+      $("n").textContent = `${nSamples}  (${nMoving} moving, excluded)`;
+
+      // Gain k with its standard error. A number without an error bar cannot
+      // distinguish a converged 12% from a noisy one, which is what made the
+      // previous ratio-of-means readout look like it was drifting.
+      const show = (el, acc, unit) => {
+        const f = fitGain(acc);
+        if (!f) { $(el).innerHTML = `<span class="dim">— (n=${acc.n}, need 30+ & some turn)</span>`; return; }
+        const sig = Math.abs(f.k) > 2 * f.se;            // 2σ from zero
+        $(el).innerHTML =
+          `<span class="${sig ? "bad" : "ok"}">${(f.k * 100).toFixed(1)}% ± ${(f.se * 100).toFixed(1)}</span>` +
+          ` <span class="dim">offset ${f.a.toFixed(2)}${unit} · R²=${f.r2.toFixed(2)} · n=${f.n}</span>`;
+      };
+      show("asymM", ACC.mat, "°");
+      show("asymA", ACC.app, "");
+      show("asymC", ACC.ctr, "°");
+      $("leak").textContent = pitDen > 0 ? (pitNum / pitDen).toFixed(3) : "— (nod slightly)";
+    }
+
+    // Sided BLENDSHAPES should swap under the flip: smileLeft(A) ≈ smileRight(B).
+    const cA = fr.faceBlendshapes?.[0]?.categories, cB = fb.faceBlendshapes?.[0]?.categories;
+    if (cA && cB) {
+      const g = (cs, n) => cs.find((c) => c.categoryName === n)?.score ?? 0;
+      const err = (Math.abs(g(cA, "mouthSmileLeft") - g(cB, "mouthSmileRight"))
+                 + Math.abs(g(cA, "mouthSmileRight") - g(cB, "mouthSmileLeft"))) / 2;
+      swapSum += err; swapN++;
+      $("swap").innerHTML =
+        `<span class="${swapSum / swapN > 0.05 ? "bad" : "ok"}">${(swapSum / swapN).toFixed(4)}</span>`;
+    }
+  }
+
+  // ---- hands ----
+  const hr = handLm.recognizeForVideo(video, now);
+  if (hr.handedness?.length) {
+    const labels = hr.handedness.map((h) => h[0].categoryName);
+    $("hand").textContent = labels.join(" + ");
+    const xs = hr.landmarks.map((set) => set[0].x.toFixed(2));
+    $("handx").textContent = xs.join(" , ");
+  } else {
+    $("hand").textContent = "—";
+    $("handx").textContent = "—";
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

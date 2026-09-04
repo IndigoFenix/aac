@@ -194,6 +194,15 @@ export interface TranscribedEvent extends BaseEvent {
    *  route as ambient context only — never a Speaker user turn, board
    *  rebuild, or caption. See shared/aac/verbal-ability.ts. */
   attributionDemotion?: import("@shared/aac/verbal-ability").TranscriptDemotion;
+  /** Set by the Coordinator's presence attribution gate (never by the
+   *  Observer): the speaker name the Observer wrote before it was replaced
+   *  with "someone nearby" — the ledger had not placed that roster person in
+   *  the room and no fresh voice match backed them. Routing is UNCHANGED;
+   *  only the name is withheld. See planning-docs/aac-presence-ledger.md §6. */
+  guessedSpeaker?: string;
+  /** Same, for `target` — the person the speech was aimed at. `targetIsUser`
+   *  and `direction` are deliberately left alone so reply buttons still build. */
+  guessedTarget?: string;
 }
 
 /** Same enum as the existing update_context tool's `type` field. */
@@ -231,6 +240,15 @@ export interface ContextUpdateEvent extends BaseEvent {
    *  referent of the user's in-progress sentence-builder selection.
    *  Board Manager consults this when emitting suggestions. */
   relevance?: "builder-candidate";
+  /** Set by the Coordinator's presence gate (never by the Observer): the name
+   *  the Observer originally wrote in `key`, before it was replaced with
+   *  "someone nearby" because the presence ledger had not corroborated that
+   *  person. Kept for the debug feed, the flow log and the ledger's audit
+   *  ring — never rendered into an agent prompt. */
+  guessedName?: string;
+  /** Ledger status of the person behind `guessedName` at the moment of the
+   *  demotion. Present only alongside `guessedName`. */
+  presenceStatus?: import("@shared/aac/presence-ledger").PresenceStatus | "absent";
 }
 
 /** Session-profile transitions. Observer is the only agent that emits these

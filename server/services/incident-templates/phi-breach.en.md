@@ -37,7 +37,7 @@ If you have questions, please contact our Data Protection Officer:
 Sincerely,
 {signer_name}
 {signer_title}
-Aivota / CliniAACian Ltd.
+Aivota Ltd.
 {signer_postal_address}
 
 Reference: incident #{incident_ref}

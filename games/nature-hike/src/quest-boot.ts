@@ -992,7 +992,7 @@ export function bootPlanetHike(
     const p = place();
     if (!p || !host) return;
     const id = `horse_${horseSeq++}`;
-    host.session.npcIcons.set(id, "🐴"); // → ungulate body (ANIMAL_SPECIES_BY_ICON)
+    host.session.npcIcons.set(id, "🐴"); // → ungulate body (quest-host FIXED_SPECIES_BY_ICON)
     host.world?.addNpc({
       id,
       x: p.x,

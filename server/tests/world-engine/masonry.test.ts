@@ -315,6 +315,73 @@ describe("refineSpotOf — the material says where it is worked", () => {
   });
 });
 
+// ── #50 ③ — THE WORKSPOT IS GROUND, NEVER THE BOX ──────────────────────────
+//
+// User report D, 2026-09-03, verbatim: *"a lot of 'taking items out of the
+// box, walking around the box, and then putting them back in'… they need to
+// take the wood to the work location and don't recognize that it's already
+// there. (Assuming that the box is the work location, which it really
+// shouldn't be.)"*
+//
+// The benchless fallback answered `containerAnchor(crate)` — the crate's own
+// CENTRE. A crate is a solid collider, so THREE things landed inside it: the
+// mill's labor spot, the `orderpile:<ord>` anchor every staging haul aims at,
+// and the heap's own drawing. A body sent to a point inside a box halts flush
+// against its face and paths around it, forever.
+describe("#50 ③ refineSpotOf — a container's centre is never the work location", () => {
+  const CRATE = { x: 12, y: -7 };
+  /** A world with ONE solid crate standing at the yard anchor — the shape the
+   *  planner actually reads (`objectIsSolid`: a `chest` fixture, no
+   *  `solid:false`), and nothing else, so what the spot avoids is unambiguous. */
+  const crateWorld = () => ({
+    state: {
+      avatars: {},
+      objects: { [TOWN_YARD_EP]: { id: TOWN_YARD_EP, x: CRATE.x, y: CRATE.y, floor: 0 } },
+      spec: {
+        objects: [{ id: TOWN_YARD_EP, x: CRATE.x, y: CRATE.y, radius: 0.7, fixture: "chest", facing: 0 }],
+      },
+    },
+    npcRadiusOf: () => 0.4,
+    npcErrandActive: () => false,
+    removeObject: () => {},
+    setDragZones: () => {},
+  });
+
+  const yardOnly = () =>
+    harness([workRow("workshop", -40, -40)], { [TOWN_YARD_EP]: { at: CRATE, stack: { stone: 6 } } });
+
+  it("answers a STANDABLE point BESIDE the crate, not its centre", () => {
+    const h = yardOnly();
+    h.director.setWorld(crateWorld() as never);
+    const spot = h.director.refineSpotOf(h.session, "masonry")!;
+    // ① NOT THE COLLIDER'S CENTRE — the whole defect, in one line.
+    expect(spot).not.toEqual(CRATE);
+    // ② AND GENUINELY STANDABLE: outside the crate's Chebyshev keep-out
+    //    (radius + body radius), which is the box `fixturesWalkable` enforces.
+    const keepOut = 0.7 + 0.4;
+    expect(Math.max(Math.abs(spot.x - CRATE.x), Math.abs(spot.y - CRATE.y))).toBeGreaterThan(keepOut);
+    // ③ …and still AT the crate, not across the lot: inside the co-located
+    //    radius (#50 ②), which is what makes the staging a ledger move rather
+    //    than a walk. The workspot decides WHERE the labor happens; it must
+    //    not invent a commute.
+    expect(Math.hypot(spot.x - CRATE.x, spot.y - CRATE.y)).toBeLessThanOrEqual(4);
+  });
+
+  it("a DOORSTEP answer is untouched — it was already open ground", () => {
+    const masonry = workRow("masonry", 60, 60);
+    const h = harness([masonry, workRow("workshop", -40, -40)]);
+    h.director.setWorld(crateWorld() as never);
+    expect(h.director.refineSpotOf(h.session, "masonry")).toEqual(workDoorstep(h.play.stage.center, masonry));
+  });
+
+  it("with NO world booted the raw anchor still answers — a headless fixture is unchanged", () => {
+    // The nudge needs a world to probe; without one there is nothing to be
+    // inside of, and the pre-#50 answer stands (the suite above pins it).
+    const h = yardOnly();
+    expect(h.director.refineSpotOf(h.session, "masonry")).toEqual(CRATE);
+  });
+});
+
 describe("ensureRefineOrders — which raw gets cut first", () => {
   /** The one refine order the chain posted, or undefined. */
   const posted = (play: ReturnType<typeof harness>["play"]) => play.deltas.refineOrders()[0];

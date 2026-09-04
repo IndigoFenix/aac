@@ -142,7 +142,9 @@ export async function composeFrameGrid(
     try {
       const bitmap = await createImageBitmap(frame.blob);
 
-      // Draw flipped horizontally (cameras produce mirrored images)
+      // Flip into the SUBJECT's anatomical frame so image-left is their left and
+      // the L/R labels below are true. The source is UNMIRRORED — see the header
+      // note in prepareFrameForAI.ts before changing this.
       ctx.save();
       ctx.translate(x + cfg.subFrameWidth, y);
       ctx.scale(-1, 1);

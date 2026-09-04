@@ -36,6 +36,8 @@ interface MenuItem {
   priceText?: string;
   category?: string;
   kind: 'food' | 'drink' | 'condiment' | 'notice' | 'unknown';
+  /** Board glyph syntax (pizza.olive). Rows before 2026-09-02 carry `imageKey`. */
+  icon?: string;
   imageKey?: string;
   translatedName?: string;
 }

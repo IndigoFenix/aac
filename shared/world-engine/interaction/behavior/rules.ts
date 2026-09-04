@@ -247,6 +247,20 @@ export type GoalSpec =
   // the same ItemRef for the same reason: the piece is named by KIND and the
   // host finds a standing one. Host-routed like the room verbs.
   | { kind: "breakPiece"; item: ItemRef }
+  // ⚖️ REMOVE A STANDING NATURAL FEATURE (user ruling 2026-09-02) — "cut the
+  // tree", "break the plants", "fight the bush". FELLING'S SIBLING: a source
+  // with a kill product ends by being TAKEN (the last wood taken is the
+  // felling), so it is never removed; one with no kill product can never end
+  // that way, and this is the act that ends it. What it was BEARING survives
+  // the act — the berries fall where the bush stood — and no new good is
+  // invented to make the books balance.
+  //
+  // `feature` is the SPOKEN WORD, resolved by the host against the standing
+  // wilderness exactly as `demolish` resolves `room` against the focused
+  // building's plan: a goal never carries world ids, and WHICH plant was meant
+  // is the host's scope question, not the parser's. Host-routed like the room
+  // verbs — a clearing is world work, never a body errand.
+  | { kind: "clearFeature"; feature: string }
   // WORK A CONSTRUCTION SITE (pipeline ⑥): stand at the staged site and
   // BUILD — labor banks only while builders are present, and more of them
   // build faster (capped). `site` = "f:<ord>" (a founded building) or

@@ -1126,6 +1126,12 @@ const easeInOut = (t: number): number => t * t * (3 - 2 * t);
 /** Clearance between a hovered object's top and the spark resting over it. */
 const SPARK_HOVER_GAP = 0.35;
 
+/** Where the spark rests over a hovered BODY — the humanoid head snap, and
+ *  therefore also the CEILING for a rooted body too tall to mark at its top
+ *  (see `updateSpark`). One number, so the mark on a tree and the mark on a
+ *  person standing beside it can never drift apart. */
+const SPARK_REACH_Y = BUBBLE.headY + 0.15;
+
 const _topBox = new THREE.Box3();
 const _topPart = new THREE.Box3();
 const _topInv = new THREE.Matrix4();
@@ -3481,11 +3487,24 @@ export class World3DRenderer {
       // `fauna:<species>:…` product animals) hover at THEIR height from the
       // registry — the humanoid head constant put the spark inside a 4.6 m
       // oak's trunk. Everyone else keeps the head snap.
+      //
+      // ⚖️ …BUT NEVER ABOVE REACH (user report 2026-09-03: the spark on an oak
+      // sat 24 m up, in the canopy, while the thing the child was selecting was
+      // the trunk in front of them). `SPARK_REACH_Y` is exactly the humanoid
+      // snap below it — ONE number, not a second constant beside it: the spark
+      // marking a tree rests where the spark marking a PERSON standing in that
+      // spot would rest, which is the honest reading of "the part of this you
+      // could put a hand on". Shorter bodies are unaffected by construction —
+      // the whole animal side of the registry (cow 1.3 m, sheep 0.95 m) and
+      // every carrot patch sit under the cap, so this is byte-identical for
+      // them and for every non-source avatar; the fruit trees (3.4 m) and the
+      // oak (23.8 m) are the two things it moves, which is the two things it
+      // was written for.
       const m = /^(?:flora|fauna):([^:]+):/.exec(av.id);
       const bodyH = m ? naturalSourceOf(m[1]!)?.bodyHeightM : undefined;
       this.placeCursor(
         av.x,
-        (bodyH !== undefined ? bodyH + 0.2 : BUBBLE.headY + 0.15) +
+        (bodyH !== undefined ? Math.min(bodyH + 0.2, SPARK_REACH_Y) : SPARK_REACH_Y) +
           av.floor * FLOOR_HEIGHT + standHeightAt(state, av.x, av.y),
         av.y,
         true, // hovering a creature

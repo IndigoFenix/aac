@@ -885,6 +885,10 @@ export default function UnifiedDebugPanel({
                         // An embedded app is speaking through the speaker — the
                         // mic is held shut for the utterance (app-speech-gate).
                         : gs === 'app-speech' ? 'APP AUDIO'
+                        // The device's OWN local voice (device-voice mode / the
+                        // TTS ladder's last rung) — held shut for the same
+                        // reason: the model did not produce that audio.
+                        : gs === 'device-tts' ? 'DEVICE VOICE'
                         : 'OFF';
                       return (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
@@ -1076,12 +1080,44 @@ export default function UnifiedDebugPanel({
                       : conf >= 40
                       ? "bg-yellow-200 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
                       : "bg-orange-200 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+                    // Presence-ledger standing. Colour-coded by how much the
+                    // system is entitled to ACT on the name: green = a human or
+                    // sustained biometrics said so, amber = one weak signal
+                    // nobody may use yet, red = struck this session.
+                    const statusColor =
+                      face.presenceStatus === "confirmed" || face.presenceStatus === "assumed"
+                        ? "bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200"
+                        : face.presenceStatus === "corroborated"
+                        ? "bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                        : face.presenceStatus === "retracted"
+                        ? "bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200"
+                        : "bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+                    // Just the `#n` tail: the source key prefix is the camera,
+                    // which the row already implies, and the number is what you
+                    // watch to see a track break.
+                    const trackSuffix = face.trackId ? face.trackId.slice(face.trackId.indexOf("#")) : null;
                     return (
                       <div
                         key={face.faceIndex}
                         className="flex items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800 rounded"
                       >
                         <span className="text-[11px] font-medium truncate flex-1">{face.name}</span>
+                        {face.presenceStatus && (
+                          <span
+                            className={`text-[9px] px-1 py-0.5 rounded font-medium ${statusColor}`}
+                            title="Presence ledger status"
+                          >
+                            {face.presenceStatus}
+                          </span>
+                        )}
+                        {trackSuffix && (
+                          <span
+                            className="text-[9px] px-1 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 font-mono"
+                            title={`Face track ${face.trackId}`}
+                          >
+                            {trackSuffix}
+                          </span>
+                        )}
                         {face.relationship && (
                           <span className="text-[9px] text-gray-500 dark:text-gray-400 truncate">{face.relationship}</span>
                         )}

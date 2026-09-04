@@ -73,6 +73,26 @@ export function zoneRefusalLine(thing: string, category: string): LeveledGlyphs 
   );
 }
 
+/** ⚖️ THE FELLING PREREQUISITE, SPOKEN (user ruling 2026-09-02: *"if a tree
+ *  is in the way of a construction, making felling that tree a required task
+ *  that is assigned automatically as a prerequisite"*).
+ *
+ *  This is NOT a refusal and must not be built out of one: the order stands,
+ *  the work is staked, and what the builder is saying is WHY NOTHING IS
+ *  HAPPENING YET. So it borrows `zoneRefusalLine`'s shape — the cause clause
+ *  NAMES THE BLOCKING NOUN — with the presence fact as its cause:
+ *  "i_me + put.not + {thing} + because + {blocker} + here" ("I can't put the
+ *  house yet because there's a tree here"). Both symbols are the caller's to
+ *  resolve (the structure's glyph, the standing source's word), exactly as
+ *  the zoning line takes its category. */
+export function clearFirstLine(thing: string, blocker: string): LeveledGlyphs {
+  return causalPhrase(
+    { subject: "i_me", verb: "put.not", object: thing },
+    "because",
+    { subject: blocker, verb: "here", key: "here" },
+  );
+}
+
 /** One dispatcher for the gate's verdict → the line to speak (the caller
  *  resolves the thing's spoken symbol). Null = accepted (speak
  *  PLACEMENT_OK and run the errand). */

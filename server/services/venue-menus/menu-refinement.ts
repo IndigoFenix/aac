@@ -29,7 +29,7 @@
 //                              Losing a real menu item because a model omitted it
 //                              is worse than showing an unclassified one.
 //   - FACTS fail CLOSED      — a bad index, a repeated index, or a malformed
-//                              imageKey is rejected; the raw item stands as-is.
+//                              icon is rejected; the raw item stands as-is.
 //
 // (Until 2026-09-01 a string-matching allergen filter ran after this pass. It
 // is out of the serving path by decision — it erased whole categories on term
@@ -70,7 +70,15 @@ export interface MenuRefinementEntry {
   /** False to drop the row (a notice, a section header, a duplicate). */
   keep?: boolean;
   kind?: MenuItemKind;
-  /** Auto-icon pipeline key. English, snake_case, unambiguous, no proper nouns. */
+  /**
+   * Dish icon in the REGULAR BOARD's glyph syntax (shared/glyph-compositor.ts):
+   * a snake_case head, `.modifier` parts for toppings/flavors (pizza.olive),
+   * `+` to join paired concepts (burger+french_fries), emoji allowed as any
+   * part. Rendered by the same pipeline that draws Board Manager buttons, so
+   * unknown keys flow into auto-symbol generation instead of dying as 🍽️.
+   */
+  icon?: string;
+  /** LEGACY single auto-icon key. Superseded by `icon`; still accepted. */
   imageKey?: string;
   /** The name rendered into the student's language. The original survives. */
   translatedName?: string;
@@ -83,6 +91,9 @@ export interface MenuRefinementEntry {
 /** A raw item plus whatever annotations survived validation. */
 export interface RefinedMenuItem extends RawMenuItem {
   kind: MenuItemKind;
+  /** Glyph-syntax icon (see MenuRefinementEntry.icon). */
+  icon?: string;
+  /** LEGACY single key — stored rows predating `icon` carry this instead. */
   imageKey?: string;
   translatedName?: string;
 }
@@ -94,6 +105,7 @@ export interface RefinementRejection {
     | "index_not_an_integer"
     | "duplicate_index"
     | "bad_image_key"
+    | "bad_icon"
     | "bad_duplicate_target"
     | "self_duplicate"
     | "malformed_entry";
@@ -119,6 +131,47 @@ const IMAGE_KEY_RE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
 /** Generous, but a key this long is a sentence, not a concept. */
 const MAX_IMAGE_KEY_LENGTH = 48;
+
+/** A whole icon longer than this is describing the dish, not depicting it. */
+const MAX_ICON_LENGTH = 64;
+/** More slots than a board button can legibly draw. */
+const MAX_ICON_SLOTS = 3;
+/** Head + this many `.modifier` badges — the compositor's practical ceiling. */
+const MAX_ICON_MODIFIERS = 2;
+
+/**
+ * Anything a single emoji (with optional variation selectors / ZWJ pieces)
+ * looks like. Deliberately loose — a false positive here just means a slot
+ * the client compositor renders as text, never an injection surface, because
+ * the STRICT branch below already refused `(`, `#`, `:` and friends.
+ */
+const EMOJI_PART_RE = /^\p{Extended_Pictographic}[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}0-9]*$/u;
+
+/**
+ * Validate a glyph-syntax icon WITHOUT the compositor's tolerance. parseGlyph
+ * exists to salvage whatever a live model typed; this is the opposite job —
+ * an annotation either uses the documented subset or is refused. The subset:
+ * slots joined by `+`, modifiers attached by `.`, each part a snake_case key
+ * or an emoji. No payloads `()`, no tone tags `#`, no `symbol:`/`face:` refs
+ * (a menu model must never mint references into a student's symbol store),
+ * no brackets, no whitespace.
+ */
+export function isValidMenuIcon(icon: string): boolean {
+  if (!icon || icon.length > MAX_ICON_LENGTH) return false;
+  if (/[()[\]#:\s]/.test(icon)) return false;
+  const slots = icon.split("+");
+  if (slots.length > MAX_ICON_SLOTS) return false;
+  for (const slot of slots) {
+    const parts = slot.split(".");
+    if (parts.length > 1 + MAX_ICON_MODIFIERS) return false;
+    for (const part of parts) {
+      if (!part) return false;
+      if (part.length > MAX_IMAGE_KEY_LENGTH) return false;
+      if (!IMAGE_KEY_RE.test(part) && !EMOJI_PART_RE.test(part)) return false;
+    }
+  }
+  return true;
+}
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
@@ -173,6 +226,16 @@ export function applyMenuRefinement(
 
     if (typeof candidate.kind === "string" && (MENU_ITEM_KINDS as readonly string[]).includes(candidate.kind)) {
       entry.kind = candidate.kind as MenuItemKind;
+    }
+
+    if (candidate.icon !== undefined) {
+      const icon = candidate.icon;
+      if (typeof icon === "string" && isValidMenuIcon(icon)) {
+        entry.icon = icon;
+      } else {
+        // Reject the ANNOTATION, not the item — the row is still real.
+        rejected.push({ index, reason: "bad_icon", detail: String(icon) });
+      }
     }
 
     if (candidate.imageKey !== undefined) {
@@ -237,7 +300,9 @@ export function applyMenuRefinement(
       ...source,
       ...(entry.category ? { category: entry.category } : {}),
       kind: entry.kind ?? "unknown",
-      ...(entry.imageKey ? { imageKey: entry.imageKey } : {}),
+      // A legacy single imageKey IS a valid one-slot glyph, so it folds into
+      // `icon` here rather than surviving as a second field to check forever.
+      ...(entry.icon || entry.imageKey ? { icon: entry.icon ?? entry.imageKey } : {}),
       ...(entry.translatedName ? { translatedName: entry.translatedName } : {}),
     });
   }

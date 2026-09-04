@@ -60,12 +60,62 @@ concurrency:
 jobs:
   build:
     name: Build unsigned .ipa
-    runs-on: macos-14
+    # Must stay identical to release-aac-ios.yml, runner and Xcode pin both:
+    # this workflow is the iOS smoke test, and a smoke test on a different
+    # toolchain than the release build proves nothing about the release build.
+    runs-on: macos-15
     timeout-minutes: 60
+
+    env:
+      XCODE_VERSION: '26'
+      MIN_IOS_SDK: '26.0'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Sideloaded builds never face App Store Connect, so the SDK floor is not
+      # a hard requirement here — it is asserted anyway so that this cheap
+      # workflow is what catches a toolchain drift, before the signed one does.
+      - name: Pin Xcode and verify the iOS SDK
+        run: |
+          echo "Xcode versions on this runner image:"
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "  (none found)"
+
+          # `|| true`: this step runs under `bash -eo pipefail`, where an `ls`
+          # that matches nothing would abort before the legible error below.
+          CANDIDATES=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null || true)
+          # Version sort, so 26.10 beats 26.2. BSD sort has taken -V for years
+          # but the fallback keeps a missing flag from reading as a missing Xcode.
+          SORT_FLAGS='-Vr'
+          printf '1.0\n' | sort -Vr >/dev/null 2>&1 || SORT_FLAGS='-r'
+          DEV=""
+          if [ -n "$CANDIDATES" ]; then
+            DEV="$(printf '%s\n' "$CANDIDATES" | sort $SORT_FLAGS | head -1)/Contents/Developer"
+          fi
+          if [ -z "$CANDIDATES" ] || [ ! -d "$DEV" ]; then
+            echo "::error::No Xcode ${XCODE_VERSION}.x on this runner image. Pick one from the list above and set XCODE_VERSION at the top of this workflow AND of release-aac-ios.yml — the two must match."
+            exit 1
+          fi
+          sudo xcode-select -s "$DEV"
+          xcodebuild -version
+
+          SDK=$(xcodebuild -version -sdk iphoneos SDKVersion)
+          echo "iOS SDK: $SDK (required minimum $MIN_IOS_SDK)"
+          awk -v have="$SDK" -v want="$MIN_IOS_SDK" 'BEGIN {
+            split(have, h, "."); split(want, w, ".");
+            for (i = 1; i <= 3; i++) {
+              if (h[i] + 0 > w[i] + 0) exit 0;
+              if (h[i] + 0 < w[i] + 0) exit 1;
+            }
+            exit 0
+          }' || {
+            echo "::error::iOS SDK $SDK is below App Store Connect's minimum of $MIN_IOS_SDK. This build would sideload fine, but the signed workflow's upload would be rejected — fix the pin here before releasing."
+            exit 1
+          }
+
+          echo "XCODE_SELECTED=$(xcodebuild -version | head -1 | awk '{print $2}')" >> "$GITHUB_ENV"
+          echo "IOS_SDK=$SDK" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -207,6 +257,7 @@ jobs:
             echo ""
             echo "- Version: $(node -p "require('./package.json').version") (build $GITHUB_RUN_NUMBER)"
             echo "- Backend: ${{ inputs.backend_url }}"
+            echo "- Toolchain: Xcode ${XCODE_SELECTED:-unknown}, iOS SDK ${IOS_SDK:-unknown}"
             echo "- Published to download feed: ${{ inputs.publish }}"
             echo ""
             if [ "${{ inputs.publish }}" = "true" ]; then

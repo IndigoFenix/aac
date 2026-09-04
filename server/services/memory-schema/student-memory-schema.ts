@@ -26,6 +26,8 @@ import {
   type DBOperationContext,
 } from "../chat/memory-types";
 import type { AccessCtx } from "../sharing/visibility";
+import { promptNoteToday, stampPromptNote } from "./aac-memory-schema";
+import { assertPresenceSafe } from "./presence-context";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -80,28 +82,65 @@ async function getStudentMemoryField(
   return memory[fieldId];
 }
 
+// ── Presence + dating (planning-docs/aac-presence-ledger.md §6.1, §9.5) ─────
+//
+// These two fields are the most permanent thing the AAC writes: they are
+// injected into EVERY future session's <memory> block, so a sentence like
+// "her sister was here today" compounds forever — and on 2026-09-03 exactly
+// that sentence was written about a person who was never in the room.
+//
+// Two guards, both keyed to the live session's ledger:
+//  * the write is REFUSED when it claims an unverified person was present,
+//    with a message that names the token so the Monitor can rephrase;
+//  * the entry is stamped with the date it was written, so "was here" can be
+//    read next month as a fact about a DAY rather than a standing truth.
+//
+// Both are no-ops when the session has no presence provider (the feature is
+// off for this student), which is every session today.
+
+/** The value being written, dated. Only STRING entries are stamped: a
+ *  Student_People entry is `{ Name, Relationship }`, and a relationship does
+ *  not expire — the date exists for notes about a MOMENT, which are always
+ *  free text. An entry that already carries `[YYYY-MM-DD]` is left alone
+ *  (stampPromptNote's own rule), so re-adding never double-stamps. */
+function stampStudentEntry(value: any): any {
+  if (typeof value !== "string") return value;
+  return stampPromptNote(value, promptNoteToday());
+}
+
+/** Fields whose entries are dated and presence-checked. Interests and
+ *  preferences make no presence claims and are left untouched. */
+const DATED_STUDENT_FIELDS = new Set(["Student_Notes", "Student_People"]);
+
 // ── Write-back no-ops ──────────────────────────────────────────────────────
 // Individual mutations do NOT write to the DB. The in-memory processor handles
 // all mutations synchronously (no race conditions), and onUpdateMemoryValues
 // in sessionService persists the final state as a single atomic write.
 // This eliminates race conditions when parallel tool calls modify the same fields.
 
-/** No-op: returns value immediately. Persistence handled by onUpdateMemoryValues. */
+/** Returns value immediately. Persistence handled by onUpdateMemoryValues.
+ *  A `write` REPLACES existing entries, so it is presence-checked but NOT
+ *  restamped — restamping would redate every note the AI merely rewrote. */
 async function setStudentMemoryField(
-  _ctx: DBOperationContext,
-  _fieldId: string,
+  ctx: DBOperationContext,
+  fieldId: string,
   value: any
 ): Promise<any> {
+  if (DATED_STUDENT_FIELDS.has(fieldId)) {
+    assertPresenceSafe(value, ctx.all.sessionId, `this ${fieldId} entry`);
+  }
   return value;
 }
 
-/** No-op: returns value immediately. Persistence handled by onUpdateMemoryValues. */
+/** Returns value immediately. Persistence handled by onUpdateMemoryValues. */
 async function addToStudentMemoryArray(
-  _ctx: DBOperationContext,
-  _fieldId: string,
+  ctx: DBOperationContext,
+  fieldId: string,
   value: any
 ): Promise<any> {
-  return value;
+  if (!DATED_STUDENT_FIELDS.has(fieldId)) return value;
+  assertPresenceSafe(value, ctx.all.sessionId, `this ${fieldId} entry`);
+  return stampStudentEntry(value);
 }
 
 /** No-op: persistence handled by onUpdateMemoryValues. */

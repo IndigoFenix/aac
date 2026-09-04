@@ -194,6 +194,16 @@ function navButton(
   } as BoardButton;
 }
 
+/**
+ * An item's icon, whichever generation of row it comes from: `icon` is the
+ * glyph-syntax field, `imageKey` the single-key field stored rows carried
+ * before it. A bare key is itself a valid one-slot glyph, so both feed the
+ * same button field.
+ */
+function itemIcon(item: RefinedMenuItem): string | undefined {
+  return item.icon ?? item.imageKey ?? undefined;
+}
+
 function itemButton(
   item: RefinedMenuItem,
   index: number,
@@ -201,16 +211,20 @@ function itemButton(
 ): PlacedButton {
   const spoken = spokenName(item);
   const emoji = KIND_EMOJI[item.kind] ?? KIND_EMOJI.unknown;
+  const icon = itemIcon(item);
 
   return {
     id: `venue_item_${index}`,
     row: 0,
     col: 0,
     label: `${displayName(item)}${priceSuffix(item, showPrices)}`,
-    // Art from the auto-icon pipeline. `imageKey` is English, generic, and
-    // never a proper noun (enforced in menu-refinement.ts), so a branded dish
-    // maps to its generic food art rather than to the brand.
-    ...(item.imageKey ? { imageKey: item.imageKey } : {}),
+    // Art in the REGULAR BOARD's glyph syntax — the same renderer, symbol
+    // store and generation pipeline that draw Board Manager buttons. A
+    // composed icon (pizza.olive) badges its topping exactly as a composed
+    // sentence does; the kind emoji shows until every part has art. The icon
+    // is English, generic, and never a proper noun (enforced in
+    // menu-refinement.ts), so a branded dish maps to its generic food art.
+    ...(icon ? { glyph: icon } : {}),
     iconRef: emoji,
     glyphFallback: emoji,
     // NOT localizeFromGlyph: a dish name is data, not a registry word. Routing
@@ -386,6 +400,14 @@ export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardR
       const categoryPageId = `venue_cat_${slot}`;
       const label = category || "Other";
 
+      // The category wears the HEAD of its first item's icon — the pizza tab
+      // shows a pizza. Head only: `pizza.olive` names one variant, and a tab
+      // must depict the group. Six identical 📋 tabs are indistinguishable to
+      // exactly the student the pictures exist for; 📋 stays as the fallback
+      // while (or in case) the head's art is still generating.
+      const firstIcon = items.map(itemIcon).find(Boolean);
+      const headIcon = firstIcon?.split("+")[0]?.split(".")[0];
+
       // Counts included: an empty category is a dead end, and a student who
       // opens one learns the board lies.
       categoryButtons.push({
@@ -395,6 +417,7 @@ export function buildVenueMenuBoard(input: VenueMenuBoardInput): VenueMenuBoardR
         row: 0,
         col: 0,
         label: `${label} (${items.length})`,
+        ...(headIcon ? { glyph: headIcon } : {}),
         iconRef: "📋",
         glyphFallback: "📋",
         readingModeSafe: true,

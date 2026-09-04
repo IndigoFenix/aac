@@ -1,0 +1,444 @@
+/* Features page — layered on landing-page.css.
+   The `.landing` root supplies the design tokens (--lp-*), typography and the
+   shared container/section/button primitives; everything here is the
+   features-only furniture: the loop track, the feature row, the crossover
+   callout and the image placeholders.
+
+   Logical properties throughout (inline-start/end, margin-inline) so the RTL
+   locales mirror without a second rule. */
+
+.features-page {
+  --fp-loop-accent: var(--lp-accent);
+  --fp-hairline: #E2E8F0;
+  /* Shared by the loop track's gutters and by the return path's arithmetic. */
+  --fp-loop-gap: 2.5rem;
+}
+
+/* Keyboard users land on the header first; this lets them jump the nav. */
+.fp-skip-link {
+  position: absolute;
+  inset-inline-start: -9999px;
+  top: 0;
+  z-index: 1100;
+  padding: 0.75rem 1.25rem;
+  background: var(--lp-primary);
+  color: #fff;
+  border-radius: 0 0 var(--lp-radius) var(--lp-radius);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fp-skip-link:focus {
+  inset-inline-start: 1rem;
+}
+
+.fp-nav-link {
+  color: var(--lp-primary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  padding: 0.4rem 0.5rem;
+}
+
+.fp-nav-link:hover,
+.fp-nav-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* Hero — the shared .landing-hero, minus the 72vh floor. This page's job is to
+   get the reader into the loop diagram, not to fill the fold. */
+.features-page .fp-hero {
+  min-height: 0;
+}
+
+/* ============================================================
+   The loop track
+   ============================================================
+   Three steps with an arrow between each, and a return path running back under
+   the row — the point of the section is that the cycle closes. */
+
+/* The diagram wraps the row so the return path can be positioned against it
+   rather than against a card. */
+.fp-loop-diagram {
+  position: relative;
+  padding-bottom: 3.25rem;
+}
+
+.fp-loop-track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--fp-loop-gap);
+}
+
+.fp-loop-step {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--fp-hairline);
+  border-radius: var(--lp-radius-lg);
+  padding: 2.25rem 1.75rem;
+  text-align: center;
+}
+
+.fp-loop-step h3 {
+  color: var(--lp-primary);
+  font-size: 1.2rem;
+  margin-bottom: 0.6rem;
+}
+
+.fp-loop-step p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--lp-text-muted);
+}
+
+.fp-loop-step-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lp-accent-light);
+  color: var(--fp-loop-accent);
+  border-radius: 50%;
+}
+
+/* The connector sits in the gutter between two cards. */
+.fp-loop-arrow {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: -1.85rem;
+  transform: translateY(-50%);
+  color: var(--lp-primary);
+  opacity: 0.45;
+  display: flex;
+}
+
+/* RTL: the icon is a right-pointing arrow, so the whole connector flips. */
+[dir="rtl"] .fp-loop-arrow {
+  transform: translateY(-50%) scaleX(-1);
+}
+
+/* The return path — evidence running back under the row to become the next
+   plan. Three borders of a rounded box, spanning the centre of the last card
+   to the centre of the first; the ::before is the arrowhead rising into it.
+   No SVG needed.
+
+   The inset is the centre of an outer column. For three equal columns and two
+   gutters, that column is (100% - 2g)/3 wide, so its mid-point sits at
+   100%/6 - g/3 from the track edge — which is what keeps the line's ends
+   under the card icons instead of a few pixels inside them. */
+.fp-loop-return {
+  position: absolute;
+  inset-inline: calc(100% / 6 - var(--fp-loop-gap) / 3);
+  bottom: 0;
+  height: 2.35rem;
+  border: 2px solid rgba(26, 43, 76, 0.18);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+}
+
+/* Arrowhead at the start of the row, pointing up into the first step. */
+.fp-loop-return::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  inset-inline-start: -5px;
+  border-inline: 6px solid transparent;
+  border-bottom: 8px solid rgba(26, 43, 76, 0.28);
+}
+
+/* ============================================================
+   Feature rows
+   ============================================================ */
+
+.fp-band .landing-section-header {
+  margin-bottom: 3.5rem;
+}
+
+.fp-feature {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3.5rem;
+  align-items: center;
+  padding: 3.5rem 0;
+}
+
+.fp-feature + .fp-feature {
+  border-top: 1px solid var(--fp-hairline);
+}
+
+/* Alternate which side the picture sits on. Ordering the children rather than
+   swapping the columns keeps the DOM in reading order for screen readers. */
+.fp-feature-flip .fp-feature-text {
+  order: 2;
+}
+
+.fp-feature-flip .fp-feature-media {
+  order: 1;
+}
+
+.fp-feature h3 {
+  color: var(--lp-primary);
+  font-size: clamp(1.5rem, 2.4vw, 1.9rem);
+  margin-bottom: 1rem;
+}
+
+.fp-feature-lede {
+  font-size: 1.05rem;
+  color: var(--lp-text-muted);
+  margin-bottom: 1.75rem;
+}
+
+/* The crossover callout. Its whole job is to be visibly a different kind of
+   sentence from the body copy — this is where the two sides of the platform
+   touch, so it gets the accent colour and a rule of its own. */
+.fp-loop-note {
+  background: var(--lp-accent-light);
+  border-inline-start: 4px solid var(--fp-loop-accent);
+  border-radius: 4px;
+  padding: 1.15rem 1.35rem;
+  margin-bottom: 1.75rem;
+}
+
+.fp-loop-note-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* #1B4332 on #D8F3DC is ~9.6:1 — the accent itself (#2D6A4F) is 5.6:1 and
+     also passes, but the darker tone reads better at this size and weight. */
+  color: #1B4332;
+  margin-bottom: 0.45rem;
+}
+
+.fp-loop-note p {
+  margin: 0;
+  font-size: 0.98rem;
+  color: var(--lp-text);
+}
+
+/* Proof points. Not bullets — a short rule in the accent colour, so a list of
+   three doesn't read as a feature checklist. */
+.fp-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.1rem;
+}
+
+.fp-points li {
+  position: relative;
+  padding-inline-start: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--lp-text-muted);
+  line-height: 1.6;
+}
+
+.fp-points li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.62em;
+  width: 0.75rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--fp-loop-accent);
+}
+
+/* ============================================================
+   Apps and games — one wide card, points across rather than down
+   ============================================================ */
+
+.fp-apps {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 3.5rem;
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--fp-hairline);
+  border-radius: var(--lp-radius-lg);
+  padding: 3rem;
+}
+
+.fp-apps h2 {
+  font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+}
+
+.fp-points-row {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+/* ============================================================
+   Image slots
+   ============================================================
+   A slot with no file yet draws a dashed frame captioned with the alt text of
+   the picture that belongs in it, so the placeholder says what it is waiting
+   for. Swap in a real <img> and the frame styling still applies. */
+
+.fp-shot {
+  border-radius: var(--lp-radius-lg);
+  overflow: hidden;
+  border: 1px solid rgba(26, 43, 76, 0.08);
+  box-shadow: var(--lp-shadow);
+  background: #fff;
+}
+
+.fp-shot img {
+  width: 100%;
+  display: block;
+}
+
+.fp-shot-empty {
+  /* 16:10 keeps every empty slot the same shape, so the page's rhythm doesn't
+     change when the real screenshots land. */
+  aspect-ratio: 16 / 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2rem 1.75rem;
+  text-align: center;
+  border: 2px dashed rgba(26, 43, 76, 0.18);
+  box-shadow: none;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(26, 43, 76, 0.025) 0 10px,
+      transparent 10px 20px
+    ),
+    var(--lp-bg-alt);
+  color: var(--lp-text-muted);
+}
+
+.fp-shot-badge {
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.65rem;
+  border-radius: 50px;
+  background: rgba(26, 43, 76, 0.08);
+  color: var(--lp-primary);
+}
+
+.fp-shot-caption {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  max-width: 32ch;
+}
+
+/* ============================================================
+   Closing CTA
+   ============================================================ */
+
+.fp-cta .landing-container {
+  text-align: center;
+}
+
+.fp-cta p {
+  max-width: 620px;
+  margin: 1rem auto 2.5rem;
+  color: var(--lp-text-muted);
+  font-size: 1.05rem;
+}
+
+/* ============================================================
+   Footer
+   ============================================================ */
+
+.fp-footer-links {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.fp-footer-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fp-footer-links a:hover,
+.fp-footer-links a:focus-visible {
+  text-decoration: underline;
+}
+
+.fp-footer-rights {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+
+@media (max-width: 1024px) {
+  .fp-loop-track {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+  }
+
+  /* Stacked, the connectors turn to point down the column, and the return path
+     has nothing to run back across — so it goes. */
+  .fp-loop-arrow,
+  [dir="rtl"] .fp-loop-arrow {
+    inset-inline-end: auto;
+    inset-inline-start: 50%;
+    top: auto;
+    bottom: -2.1rem;
+    transform: translateX(-50%) rotate(90deg);
+  }
+
+  [dir="rtl"] .fp-loop-arrow {
+    transform: translateX(50%) rotate(90deg);
+  }
+
+  .fp-loop-diagram {
+    padding-bottom: 0;
+  }
+
+  .fp-loop-return {
+    display: none;
+  }
+
+  .fp-feature,
+  .fp-apps {
+    grid-template-columns: 1fr;
+    gap: 2.25rem;
+  }
+
+  /* Stacked, the picture always follows its text — an alternating order only
+     reads as alternating when the two sit side by side. */
+  .fp-feature-flip .fp-feature-text,
+  .fp-feature-flip .fp-feature-media {
+    order: 0;
+  }
+
+  .fp-apps {
+    padding: 2.25rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .fp-feature {
+    padding: 2.5rem 0;
+  }
+
+  .fp-apps {
+    padding: 1.75rem;
+  }
+}

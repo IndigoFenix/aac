@@ -47,7 +47,7 @@
 // it.
 
 import {
-  foodPlants, growthClassYield, naturalSourceOf,
+  foodPlants, growthClassYield, isBodyProduct, naturalSourceOf,
   type NaturalProduct, type NaturalSource,
 } from "../../products.js";
 import {
@@ -235,7 +235,7 @@ function killFloorOf(species: string, cls: number): number {
   const mul = src?.growth ? src.growth.classes[cls]?.yieldMul ?? 1 : 1;
   let n = 0;
   for (const p of src?.products ?? []) {
-    if (p.method === "kill") n += Math.round(p.yield.min * mul);
+    if (isBodyProduct(p)) n += Math.round(p.yield.min * mul);
   }
   return n;
 }
@@ -244,7 +244,7 @@ function killFloorOf(species: string, cls: number): number {
 function killLeft(species: string, stock: Readonly<Record<string, number>>): number {
   const src = naturalSourceOf(species);
   let n = 0;
-  for (const p of src?.products ?? []) if (p.method === "kill") n += stock[p.glyph] ?? 0;
+  for (const p of src?.products ?? []) if (isBodyProduct(p)) n += stock[p.glyph] ?? 0;
   return n;
 }
 
@@ -419,6 +419,26 @@ export interface WildUnfoldInput {
    *  ground keeps its trees. Deterministic caller-supplied cost field;
    *  absent ⇒ the shipped Euclidean law, byte-identical. */
   reach?: WildReachCost;
+  /**
+   * ⚖️ OCCUPIED GROUND (user ruling 2026-09-02: *"trees won't grow if a
+   * building is already there"*), on the FOLDED path.
+   *
+   * A folded stand carries COUNTS BY CLASS and no positions at all, so the
+   * standing rule — a feature under a footprint does not climb — has nothing
+   * to hold onto here: `advanceWildArea` cannot say which of its saplings is
+   * the one inside the smithy. The folded half of the rule is therefore this
+   * one, at the moment positions come back: a re-laid source never lands on
+   * ground a settlement has built or staked. Without it a stand that folded
+   * while a town sat on it matures offscreen and deals full-grown trees into
+   * the buildings on unfold — the same defect the standing rule prevents,
+   * arriving by the one door the standing rule cannot watch.
+   *
+   * Deterministic and caller-supplied (the `reach` precedent), and it is a
+   * REJECTION like the keep-clear disc beside it — the sampler's bounded 12
+   * tries still apply, so a wholly-covered area places anyway rather than
+   * spinning. ABSENT ⇒ byte-identical to the shipped unfold.
+   */
+  blocked?(x: number, y: number): boolean;
 }
 
 /** How hard the gradient bites: at full weight, the harvested edge of the
@@ -449,9 +469,20 @@ export interface WildReachCost {
  * the spot is to get to — cost ≥ `ref` shields fully, so the trees that
  * survive a logging era are the ones on the hard ground. Absent ⇒
  * byte-identical to the shipped Euclidean law.
+ *
+ * ⚠️ THIS FUNCTION IS THE **SHAPE** AND ONLY THE SHAPE (#49 Stage 3, the
+ * first external consumer this law has ever had). `w` is normalized by
+ * `maxDraw`, so ONE unit taken and a clear-felling answer the SAME field:
+ * that is exactly right for `expandWildArea`, which re-lays a KNOWN
+ * population and only asks WHERE each source goes, and exactly wrong for a
+ * scenery renderer, which must also ask HOW MANY are left. The amount half
+ * lives directly below (`wildThinField`) and is built literally on this
+ * call — it re-derives no gradient of its own, which is what keeps the
+ * "a second gradient story must never exist" clause true now that the law
+ * has two readers.
  */
 export function wildKeepChance(
-  rec: Pick<WildAreaRecord, "area" | "draw">,
+  rec: { area: WildAreaRecord["area"]; draw: readonly number[] },
   x: number,
   y: number,
   reach?: WildReachCost,
@@ -474,6 +505,270 @@ export function wildKeepChance(
   return Math.max(0.05, 1 - bite);
 }
 
+// ── ⚖️ THE AMOUNT HALF OF THE ONE GRADIENT (#49 Stage 3) ──────────────────
+//
+// THE DEFECT THIS CLOSES, in one sentence: a neighbouring stand can now be
+// logged flat through `drawWildArea` without a single tree leaving the
+// rendered countryside, so the same wood is BOTH in the site's yard and on
+// the horizon — the double count the record tier exists to prevent, moved
+// from the books to the eye.
+//
+// The renderer's question is not the unfold's. `expandWildArea` re-lays a
+// population it already knows and asks only WHERE; a scenery renderer draws
+// a fixed, world-fixed scatter it does not own and must ask HOW MANY of
+// those instances are still there — an ABSOLUTE survival probability, not a
+// relative density profile. Both answers come out of ONE gradient here:
+//
+//     keep(x, y)  =  clamp01( fraction × wildKeepChance(x, y) / mean )
+//
+// — the shipped shape, scaled so its MEAN over the record's own ground is
+// the share of the stand still standing. Nothing re-derives a sector, a
+// depth or a bite; delete `wildKeepChance` and this block stops compiling,
+// which is the property the one-gradient clause actually needs.
+
+/**
+ * HOW MANY DENSITY BUCKETS the render quantizes to (12.5% grain).
+ *
+ * ⚖️ THE RENDERED STATE IS A PURE FUNCTION OF THE BUCKET, never of the raw
+ * fraction — `keepAt` reads `step / WILD_THIN_STEPS`, so two record states in
+ * the same bucket produce a BYTE-EQUAL survivor set and a renderer that
+ * rebuilds on `stamp` change cannot miss a change it should have drawn nor
+ * churn on one it should not. Eight is the coarsest grain at which felling a
+ * few trees out of a 4 ha tile is still eventually visible, and it is also
+ * the `WILD_DRAW_SECTORS` grain, so the two halves of the stamp read alike.
+ */
+export const WILD_THIN_STEPS = 8;
+
+/** The record shape the thinning reads. Deliberately structural: a renderer
+ *  holds a `WildAreaQuote` (possibly off a wire), never a live record, and
+ *  both satisfy this. */
+export interface WildThinnable {
+  area: WildAreaRecord["area"];
+  draw: readonly number[];
+  stands: ReadonlyArray<{
+    species: string;
+    byClass: readonly number[];
+    stock: Readonly<Record<string, number>>;
+  }>;
+}
+
+/** One scenery instance, in the RECORD's own frame — the renderer's stable
+ *  address for it (`face:tx:ty:i` for the flora field) and where it stands. */
+export interface WildThinInstance {
+  key: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * WHAT ONE UNTOUCHED MATURE SOURCE OF `species` HOLDS, across every product it
+ * carries — the yardstick that turns a count of drawn trees into units.
+ *
+ * 🚨 MATURE, and the midpoint, because that is what the record's own arithmetic
+ * says a standing source holds: `advanceWildArea` re-derives a stand's stock as
+ * `count × growthClassYield(p, classes[cls].yieldMul)`, and the scatter that
+ * seeded it laid MATURE features. So a fresh stand of N sources reads N × this
+ * (± the per-feature roll, which averages out over a tile's worth of trees and
+ * is clamped away at the top end), and the fraction below reads 1.
+ *
+ * 0 for an unknown species, which the fraction reads as "nothing to measure".
+ */
+export function wildSourceFullStock(species: string): number {
+  const src = naturalSourceOf(species);
+  if (!src) return 0;
+  const growth = src.growth;
+  const mul = growth ? growth.classes[growth.classes.length - 1]?.yieldMul ?? 1 : 1;
+  let n = 0;
+  for (const p of src.products) n += growthClassYield(p, mul);
+  return n;
+}
+
+/** Units of `species` the record holds right now — its stand's whole stock,
+ *  every glyph. */
+export function wildStandStockOf(rec: WildThinnable, species: string): number {
+  let n = 0;
+  for (const st of rec.stands) {
+    if (st.species !== species) continue;
+    for (const v of Object.values(st.stock)) if (v > 0) n += v;
+  }
+  return n;
+}
+
+/**
+ * ⚖️ THE STANDING FRACTION — how much of `species` is still there, measured
+ * against WHAT THE SCENERY DRAWS.
+ *
+ * 🚨 WHY THE RENDERER'S OWN COUNT IS THE DENOMINATOR, and not a remembered
+ * mint population. A record keeps counts, state and directions and never a
+ * history (the header's law), so it cannot say how big it once was; and it
+ * does not need to, because the two authorities were built to agree: the
+ * streamed field and the wilderness scatter both resolve
+ * `ecology.ts standDensityPerHa` over the same ground, which is the whole
+ * reason #49's tile is 200 m. So "the field draws N oaks on this rect" and
+ * "the record says this rect holds U units of oak" are two readings of one
+ * forest, and their ratio is the honest share still standing. A denominator
+ * that came from a new persisted field would be a third authority to keep in
+ * step, and the first save written before it existed would read as clear-cut.
+ *
+ * ⚠️ CLAMPED AT 1, in the `killFloorOf` spirit: rolled yields, water the field
+ * skips and a rect that overhangs the coast can all put the record ABOVE the
+ * scenery, and over-reporting depletion is the one direction that lies to the
+ * player. Nothing to measure (no such stand, no scenery, an unknown species)
+ * ⇒ 1: the feature is invisible unless there is a record AND trees to thin.
+ *
+ * ⚠️ RECORDED, NOT DONE — the fraction is per SPECIES while the gradient is
+ * per RECORD. `draw` is one histogram for the whole area (it always has been:
+ * a harvester walks to the stand, not to a species), so a tile whose oaks were
+ * felled from the south thins its banana palms from the south too, at the
+ * palms' OWN fraction. Fixing that needs a per-species histogram, i.e. a
+ * record schema change, and it buys nothing until a tile's species are drawn
+ * from genuinely different sides.
+ */
+export function wildThinFraction(
+  rec: WildThinnable,
+  species: string,
+  sceneryCount: number,
+): number {
+  if (!(sceneryCount > 0)) return 1;
+  const per = wildSourceFullStock(species);
+  if (!(per > 0)) return 1;
+  if (!rec.stands.some((s) => s.species === species)) return 1;
+  const full = per * sceneryCount;
+  return Math.max(0, Math.min(1, wildStandStockOf(rec, species) / full));
+}
+
+/** How finely the mean below is sampled — 8×8 midpoints over the rect. A
+ *  fixed deterministic quadrature (never a sample of the instances, which
+ *  would make the normalizer depend on where the trees happen to be). */
+const WILD_KEEP_MEAN_GRID = 8;
+
+/**
+ * THE MEAN OF `wildKeepChance` OVER THE RECORD'S OWN GROUND — the normalizer
+ * that turns the shape into an amount. Deterministic midpoint quadrature; no
+ * closed form, because the `reach` shield and the 0.05 floor are caller data
+ * and a floor is not integrable in general.
+ *
+ * Exactly 1 for an undrawn record (the shape is flat there), so an untouched
+ * stand normalizes by nothing and `keepAt` is its fraction, uniformly.
+ */
+export function wildKeepMean(rec: WildThinnable, reach?: WildReachCost): number {
+  const n = WILD_KEEP_MEAN_GRID;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const x = rec.area.x + ((i + 0.5) / n) * rec.area.w;
+      const y = rec.area.y + ((j + 0.5) / n) * rec.area.h;
+      sum += wildKeepChance(rec, x, y, reach);
+    }
+  }
+  return sum / (n * n);
+}
+
+/**
+ * ⚖️ THE ROLL — a scenery instance's own stable draw in [0, 1).
+ *
+ * 🚨 NEVER `Math.random`, and never a per-pass counter: the survivor set must
+ * be a pure function of (record state, instance identity), so the same stand
+ * thins to the same trees on every pass, in every session, and — the reason
+ * the property is load-bearing rather than tidy — on every PEER. And because
+ * the draw is fixed per instance, keep is MONOTONE in the fraction: a stand
+ * that regrows returns exactly the trees it lost, in reverse order, instead of
+ * re-rolling a different wood.
+ *
+ * FNV-1a → mulberry32, the flora field's own `twinRng` convention, so the
+ * roll is stable across a reload and independent of the record's seed.
+ */
+export function wildThinRoll(instanceKey: string): number {
+  return mulberry(hashSeed(instanceKey))();
+}
+
+/** A record's thinning state for ONE species. Cheap to build (no per-instance
+ *  work) — the renderer builds it every quote beat and only walks its
+ *  instances when `stamp` moves. */
+export interface WildThinField {
+  species: string;
+  /** Scenery instances of `species` standing on this record's ground. */
+  sceneryCount: number;
+  /** The raw standing share (diagnostics only — never rendered). */
+  fraction: number;
+  /** `fraction` quantized: 0 … `WILD_THIN_STEPS`. */
+  step: number;
+  /** What is actually rendered: `step / WILD_THIN_STEPS`. */
+  quantized: number;
+  /** EVERYTHING the survivor set depends on. Equal stamps ⇒ equal sets. */
+  stamp: string;
+  /** The per-position keep probability — the shipped shape, scaled to the
+   *  amount. 1 everywhere when there is nothing to thin. */
+  keepAt(x: number, y: number): number;
+}
+
+/**
+ * ⚖️ THE DEPLETION-THINNING FIELD — the one call a scenery renderer makes.
+ *
+ * `sceneryCount` is how many instances of `species` the renderer draws on this
+ * record's ground; it is the denominator of the fraction AND the reason this
+ * takes a count rather than the instances themselves (a renderer partitions
+ * its scatter by rect once and then asks this every beat).
+ *
+ * The bucket, not the raw fraction, is what `keepAt` reads — see
+ * `WILD_THIN_STEPS`.
+ */
+export function wildThinField(
+  rec: WildThinnable,
+  species: string,
+  sceneryCount: number,
+  reach?: WildReachCost,
+): WildThinField {
+  const fraction = wildThinFraction(rec, species, sceneryCount);
+  const step = Math.max(0, Math.min(WILD_THIN_STEPS, Math.round(fraction * WILD_THIN_STEPS)));
+  const quantized = step / WILD_THIN_STEPS;
+  const mean = quantized >= 1 ? 1 : Math.max(1e-6, wildKeepMean(rec, reach));
+  // THE STAMP: the amount bucket, then the SHAPE — each sector's weight
+  // relative to the heaviest, at the same grain. A histogram that merely grows
+  // (the same side kept cutting) leaves the shape alone and moves the bucket;
+  // a histogram that TURNS moves the shape without necessarily moving the
+  // bucket, and both must repaint.
+  const maxDraw = rec.draw.reduce((a, b) => Math.max(a, b), 0);
+  const shape = maxDraw > 0
+    ? rec.draw.map((d) => Math.round((Math.max(0, d) / maxDraw) * WILD_THIN_STEPS)).join(",")
+    : "-";
+  return {
+    species,
+    sceneryCount,
+    fraction,
+    step,
+    quantized,
+    stamp: `${species}:${step}/${WILD_THIN_STEPS}:${shape}`,
+    keepAt(x, y) {
+      if (quantized >= 1) return 1;
+      return Math.max(0, Math.min(1, (quantized * wildKeepChance(rec, x, y, reach)) / mean));
+    },
+  };
+}
+
+/**
+ * WHICH INSTANCES THE FIELD HAS THINNED AWAY — the keys a renderer must not
+ * draw. `instances` must be exactly the ones counted into `field.sceneryCount`
+ * (same partition, same beat), or the fraction and the roll would be measuring
+ * two different woods.
+ *
+ * Undrawn ground answers an EMPTY set without touching a single instance, so a
+ * session with no records — a dollhouse, a static city, any ground nobody has
+ * founded on — pays nothing and changes nothing.
+ */
+export function wildThinHidden(
+  field: WildThinField,
+  instances: Iterable<WildThinInstance>,
+  into?: Set<string>,
+): Set<string> {
+  const out = into ?? new Set<string>();
+  if (field.quantized >= 1) return out;
+  for (const inst of instances) {
+    if (wildThinRoll(inst.key) >= field.keepAt(inst.x, inst.y)) out.add(inst.key);
+  }
+  return out;
+}
+
 /**
  * ⚖️ UNFOLD — the record deals its sources back out, THINNER TOWARD THE
  * HARVESTERS (the user's clause). Conserves every unit: the features returned
@@ -494,6 +789,13 @@ export function expandWildArea(input: WildUnfoldInput): WildernessFeature[] {
   const keepChance = (x: number, y: number): number =>
     wildKeepChance(rec, x, y, input.reach);
 
+  /** Ground this unfold may not deal a source ONTO: the caller's keep-clear
+   *  disc and its built-ground test. Read only by the post-filter nudge
+   *  below — never inside the gradient's draw loop. */
+  const excludedAt = (x: number, y: number): boolean =>
+    (!!clearAt && clearR > 0 && Math.hypot(x - clearAt.x, y - clearAt.y) < clearR) ||
+    (input.blocked?.(x, y) ?? false);
+
   for (const st of rec.stands) {
     const pop = st.byClass.reduce((a, b) => a + b, 0);
     if (pop <= 0) continue;
@@ -512,7 +814,7 @@ export function expandWildArea(input: WildUnfoldInput): WildernessFeature[] {
     const classWeight = classes.map((c) => (growth ? growth.classes[c]?.yieldMul ?? 0 : 1));
     const killGlyphs = new Set(
       (naturalSourceOf(st.species)?.products ?? [])
-        .filter((p) => p.method === "kill")
+        .filter(isBodyProduct)
         .map((p) => p.glyph),
     );
     const share: Record<string, number[]> = {};
@@ -535,13 +837,45 @@ export function expandWildArea(input: WildUnfoldInput): WildernessFeature[] {
       // Rejection-sample the position against the gradient; a stubborn
       // candidate lands anyway after a bounded number of tries (the scatter's
       // own 12, so a dense forest never spins).
+      //
+      // ⚖️ THE GRADIENT ALONE DRAWS FROM THIS STREAM (user ruling 2026-09-02,
+      // the `buildWilderness` half of the same fix). The keep-clear disc and
+      // the built-ground test used to `continue` INSIDE this loop, so a
+      // rejected candidate burned a whole try and shifted every LATER source's
+      // draws — an exclusion silently re-laid the entire stand instead of
+      // punching a hole in it. They are a POST-FILTER now, below: the stand's
+      // layout is a function of the record and the gradient, full stop.
       let x = 0;
       let y = 0;
       for (let tries = 0; tries < 12; tries++) {
         x = rec.area.x + rng() * rec.area.w;
         y = rec.area.y + rng() * rec.area.h;
-        if (clearAt && Math.hypot(x - clearAt.x, y - clearAt.y) < clearR) continue;
         if (rng() <= keepChance(x, y)) break;
+      }
+      // 🚨 A DISPLACED SOURCE IS NEVER DROPPED. Its stock is already dealt
+      // (`share`/`capShare` above), so removing it would destroy those units —
+      // the unfold's conservation guarantee is that the features it returns
+      // hold exactly `wildAreaStock(rec)`. Excluded ground therefore NUDGES
+      // the source off it, drawing from a SIDE STREAM keyed to
+      // (seed, species, index): consuming it cannot move any other source, so
+      // an exclusion still only ever changes the sources it actually excludes.
+      if (excludedAt(x, y)) {
+        const nudge = mulberry(
+          ((rec.seed >>> 0) ^ hashSeed(st.species) ^ Math.imul(i + 1, 0x9e3779b1)) >>> 0,
+        );
+        let fallback: { x: number; y: number } | null = null;
+        for (let tries = 0; tries < 12; tries++) {
+          const nx = rec.area.x + nudge() * rec.area.w;
+          const ny = rec.area.y + nudge() * rec.area.h;
+          const u = nudge();
+          if (excludedAt(nx, ny)) continue;
+          fallback = { x: nx, y: ny };
+          if (u <= keepChance(nx, ny)) break;
+        }
+        if (fallback) {
+          x = fallback.x;
+          y = fallback.y;
+        }
       }
       const stock: Record<string, number> = {};
       for (const [g, list] of Object.entries(share)) {
@@ -642,7 +976,7 @@ export function advanceWildArea(
     // `dueGrowthAdvance` replaces a grown feature's kill stock the same way).
     const stock = { ...st.stock };
     for (const p of naturalSourceOf(st.species)?.products ?? []) {
-      if (p.method !== "kill") continue;
+      if (!isBodyProduct(p)) continue;
       let n = 0;
       byClass.forEach((count, cls) => {
         n += count * growthClassYield(p, growth.classes[cls]!.yieldMul);
@@ -768,14 +1102,14 @@ function largestBearingClass(st: WildStand, src: NaturalSource, p: NaturalProduc
  * so timber quietly subtracted without dropping the tree grows straight back
  * at the next class climb: the same wood in the buyer's yard AND back in the
  * forest. Felling is what keeps the two readings honest, and it is also what
- * the loaded path does (`sourceKillExhausted`: "the last wood taken IS the
+ * the loaded path does (`sourceSpent`: "the last wood taken IS the
  * felling").
  */
 function fellSource(st: WildStand, src: NaturalSource, cls: number): Record<string, number> {
   st.byClass[cls] = Math.max(0, (st.byClass[cls] ?? 0) - 1);
   const out: Record<string, number> = {};
   for (const p of src.products) {
-    if (p.method !== "kill") continue;
+    if (!isBodyProduct(p)) continue;
     for (const [g, n] of Object.entries(takeStock(st.stock, p.glyph, sourceYieldOf(src, p, cls)))) {
       out[g] = (out[g] ?? 0) + n;
     }
@@ -854,7 +1188,7 @@ export function drawWildArea(rec: WildAreaRecord, input: WildDrawInput): WildDra
     if (!src || !product) return st;
     const before = drawn;
     const next = cloneStand(st);
-    if (product.method === "kill") {
+    if (isBodyProduct(product)) {
       while (left > 0) {
         const cls = largestBearingClass(next, src, product);
         if (cls < 0) break;
@@ -1390,6 +1724,40 @@ export function wildAreaCenter(rec: WildAreaRecord): { x: number; y: number } {
 }
 
 /**
+ * ⚖️ #44 — THE REGION POINT: the record's own ground, clamped toward whoever is
+ * drawing on it. The rect edge nearest the caller's gate; an origin INSIDE the
+ * rect (the home area wraps the town) degenerates to the gate itself; no origin
+ * at all falls back to the rect's own centre.
+ *
+ * ⚖️ #49 — THE ONE DERIVATION BEHIND TWO NAMED ACCESSORS, and the split is the
+ * neighbouring-stands round's delicate seam:
+ *
+ *   · the DIRECTOR's `regionShelfPoint` reads this straight — it RANKS sources
+ *     and prices legs, and a ring-2 tile really is twice as far as a ring-1
+ *     tile in the same direction. Measuring to a clamped point would make every
+ *     record beyond the manifold the same distance away and collapse the
+ *     ordering `sourcesByLeg` exists to provide;
+ *   · the HOST's `wildShelfPointOf` clamps this answer AGAIN, into the walkable
+ *     manifold — that is where feet actually go, where the cut goods render,
+ *     and where a haul must be able to path to. The unwalked remainder is
+ *     carried by the priced leg delay (space-time-compression §6: a model
+ *     substitution may drop detail, never conservation).
+ *
+ * Two answers, ONE geometry: the clamp lives here and the manifold lives in the
+ * host, so neither can drift into a second notion of where a forest is.
+ */
+export function wildRectPointToward(
+  rec: WildAreaRecord,
+  from?: { x: number; y: number } | null,
+): { x: number; y: number } {
+  const o = from ?? wildAreaCenter(rec);
+  return {
+    x: Math.min(Math.max(o.x, rec.area.x), rec.area.x + rec.area.w),
+    y: Math.min(Math.max(o.y, rec.area.y), rec.area.y + rec.area.h),
+  };
+}
+
+/**
  * A SOURCE, READ AS A PARTNER — everything the trade tier asks a condensed
  * partner (`TownRecord`'s own list: what it has, where it is, how long the
  * road is), off the wild record instead of a town's. Deliberately the same
@@ -1603,6 +1971,61 @@ export function readWildRecord(x: unknown): WildAreaRecord | null {
   return { key: r.key, area: { x: ax, y: ay, w: aw, h: ah }, seed, at, stands, draw };
 }
 
+// ── ⚖️ #49 STAGE 2 — AT REST AND AWAKE ────────────────────────────────────
+//
+// The two NAMED DIRECTIONS over the one shift above. They exist because a
+// record's every deadline is ABSOLUTE in a session clock that dies at the end
+// of the session (`taskClock` inits 0 every boot — record-persistence.md §1's
+// "clock problem"), so a durable store may only ever hold the RELATIVE form:
+// `deadline − clockNow`, the fingerprint's own at-rest idiom.
+//
+//   rest(rec, now)  — leaving a session: every stamp becomes "seconds from
+//                     the moment the books were closed".
+//   wake(rec, now)  — entering one: the fresh clock re-adds. A session is born
+//                     at `taskClock === 0`, so the at-rest form IS the awake
+//                     form at birth and `wake(rec, 0)` returns the SAME object.
+//
+// 🚨 AND THE REST INTERVAL IS A WAKE ARGUMENT, NOT A THIRD FUNCTION. Time that
+// passed while the world was closed is spent by waking at `now − restS`: a
+// deadline moves exactly `restS` closer, a deadline already passed comes back
+// due, and `restS === 0` is byte-identical to the save. There is no second
+// notion of "advance the folded world" — the absence gap is the clock the
+// record wakes into (ruling ② of the persistence round), and this is the ONE
+// shift both halves go through.
+export const restWildRecord = (rec: WildAreaRecord, now: number): WildAreaRecord =>
+  shiftWildAreaClock(rec, -now);
+export const wakeWildRecord = (rec: WildAreaRecord, now: number): WildAreaRecord =>
+  shiftWildAreaClock(rec, now);
+
+/**
+ * WAKE a whole durable INDEX into a session's live map — every kind, no
+ * per-key casing (the scope-agnostic index law: `areaRecords` holds forests,
+ * fields and neighbouring tiles alike, and the save path may not know the
+ * difference).
+ *
+ * `by` is the ONE shift for the whole table: `sessionNow − storeAt`, where
+ * `storeAt` is the clock the rows were quoted in — plus, when a save has been
+ * sitting closed, the rest interval already folded into that anchor. Zero
+ * returns the SAME objects, which is what makes a no-gap reload byte-identical.
+ *
+ * Every record goes through `readWildRecord` — the codec's own read arm — so a
+ * save written by another build, hand-edited, or corrupted cannot install a
+ * shape the engine will later trip over: an unreadable row is DROPPED (the
+ * geo-bake discipline, "every failure is a miss"), never half-installed.
+ */
+export function wakeAreaRecords(
+  rows: ReadonlyMap<string, WildAreaRecord> | null | undefined,
+  by: number,
+): Map<string, WildAreaRecord> {
+  const out = new Map<string, WildAreaRecord>();
+  for (const [key, raw] of rows ?? []) {
+    const rec = readWildRecord(raw);
+    if (!rec) continue;
+    out.set(key, wakeWildRecord(rec, by));
+  }
+  return out;
+}
+
 function condenseWildAreaPayload(id: ScopeId, ctx: WildFoldCtx): WildAreaRecord | FoldRefusal {
   const ref = parseScopeId(id);
   if (ref.kind !== "wild" || ref.form !== "area") {
@@ -1653,9 +2076,11 @@ export const WILD_AREA_CODEC: FoldCodec<WildAreaRecord, WildFoldCtx> = {
   services: standingLegServiced,
   // ⚖️ PERSISTENCE ARMS (P0): rest/wake are the one clock shift in both
   // directions; read is the one plain-data gate both the handover and the
-  // save go through.
-  rest: (payload, now) => shiftWildAreaClock(payload, -now),
-  wake: (payload, now) => shiftWildAreaClock(payload, now),
+  // save go through. (#49 Stage 2: the arms are the NAMED functions above, so
+  // the session's own save path and the generic codec dispatch cannot drift —
+  // until then these two lambdas had no caller anywhere in the engine.)
+  rest: restWildRecord,
+  wake: wakeWildRecord,
   read: readWildRecord,
 };
 

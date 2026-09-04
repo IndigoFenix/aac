@@ -44,6 +44,12 @@ import type { SlotZoning, ZoneCharter } from "./zoning";
 // Type-only likewise (population.ts is the ④ runtime; the cohort rows just
 // live in the same serialized store).
 import type { CohortRow } from "./population";
+// ⚖️ #49 Stage 2 — TYPE-ONLY, AND THAT IS LOAD-BEARING. The folded area
+// records ride this store the way `partnerStock` already does (see the field),
+// but their CLOCKS are the session's business: this module deep-copies the
+// rows and never shifts one, so nothing here needs `wild-area.ts` at runtime
+// and the kernel keeps its one-direction import rule intact.
+import type { WildAreaRecord } from "../../interaction/quest/wild-area.js";
 // Runtime import (one direction — transfer.ts never imports construction):
 // the standing-route ledger SERIALIZES WITH THE DELTAS so reload keeps
 // trade routes exactly as it keeps founded buildings (P0, nations arc).
@@ -627,6 +633,28 @@ export interface FoundedBuilding {
    *  written before this field). NEVER a cross-scope priority: a household's
    *  book is its own list, and the two contend for MATERIAL, not for turns. */
   spoken?: boolean;
+  /**
+   * ⚖️ WILDERNESS STILL STANDING ON THIS LOT — the felling PREREQUISITE
+   * (user ruling 2026-09-02, verbatim: *"if a tree is in the way of a
+   * construction, making felling that tree a required task that is assigned
+   * automatically as a prerequisite"*).
+   *
+   * The ids of the wilderness features whose footprint overlaps this lot,
+   * stamped at order time and RE-DERIVED every sweep (a tree somebody else
+   * felled retires itself; so does one that dropped below the obstruction
+   * threshold). While the list is non-empty the row STAKES the work and
+   * WAITS — it never refuses, and nothing is ever deleted out from under the
+   * world: the felling runs through the ordinary material path, so the wood
+   * lands on the town's shelf and feeds this very bill.
+   *
+   * The demolition model, one rung out (`PendingDemolition`'s own law:
+   * *"Ordering a demolition stakes the work, it never fells the room on the
+   * spot"*) — a lot is cleared by somebody doing the clearing.
+   *
+   * ABSENT = nothing in the way (every row founded on open ground, and every
+   * save written before this field).
+   */
+  clearing?: string[];
 }
 
 /** A founding candidate — a FoundedBuilding minus the ordinal/clock fields
@@ -634,7 +662,7 @@ export interface FoundedBuilding {
 export type FoundingCandidate = Omit<
   FoundedBuilding,
   | "ord" | "startedDay" | "buildDays" | "completed" | "costs" | "pile" | "laborStartDay"
-  | "material" | "spoken"
+  | "material" | "spoken" | "clearing"
 >;
 
 /** A standing MAKE-ORDER (pipeline ③), one per house. The job carries a
@@ -836,6 +864,60 @@ export interface SerializedTownDeltas {
    *  goods exactly, the wild codec's own "live stack, not the initial
    *  roll" law. Absent = none (every pre-B-⑥ save). */
   herd?: Record<string, HerdRow>;
+  /**
+   * ⚖️ THE FOLDED AREA RECORDS (#49 Stage 2) — the rows AND the clock they
+   * are quoted in, together, in ONE field.
+   *
+   * The scope-agnostic index `session.areaRecords` holds — forests (`home`),
+   * the town's own field (`farm-<key>`), the neighbouring stands
+   * (`tile-<i>-<j>`), and whatever kinds later rounds mint — with NO per-key
+   * casing anywhere on this path. It sits here, beside `partnerStock`, for one
+   * reason above all others: the boundary SHELF a draw lands on already
+   * serializes with the deltas, so a record that did not would leave the two
+   * halves of one conservation law travelling through different doors. Cut
+   * timber waiting at the road survived a reload while the stand it came out
+   * of did not.
+   *
+   * 🚨 `at` IS NOT DECORATION AND MAY NEVER BE SEPARATED FROM `records`. Every
+   * deadline in a record (`at`, class climbs, harvest regrowth) is ABSOLUTE in
+   * a session's `taskClock`, and that clock dies at the end of the session —
+   * restoring an absolute deadline into a fresh clock is either an instant
+   * refill or a permanent stall. `at` is the clock the rows are absolute in,
+   * so `deadline − at` is the honest REMAINING time and a reader wakes the
+   * whole table with ONE shift (`wakeAreaRecords(rows, now − at)`,
+   * `shiftWildAreaClock` underneath). They are nested rather than siblings
+   * precisely so nobody can read one without the other.
+   *
+   * ⏳ …WHICH ALSO MAKES THE REST INTERVAL A SCALAR. Time that passed while
+   * the world was CLOSED is spent by advancing `at` (`createFoundedSite`'s
+   * `restS`): every deadline lands `restS` closer to due without a single
+   * record being touched, and `restS === 0` leaves the save byte-identical.
+   *
+   * Absent = none, and it is EMITTED ONLY WHEN NON-EMPTY (the `herd`
+   * precedent), so every save written before this field existed round-trips
+   * byte-identically.
+   */
+  areaRecords?: { at: number; records: Record<string, WildAreaRecord> };
+}
+
+/**
+ * ⚖️ THE LIVE AREA-RECORD STORE (#49 Stage 2) — the durable half of
+ * `session.areaRecords`, and the clock its rows are quoted in.
+ *
+ * `rows` are the session's own record objects, stored VERBATIM (records are
+ * treated as immutable values everywhere — every wild-area function returns a
+ * new one — so there is nothing to copy and nothing to alias wrongly), and
+ * `at` is the session `taskClock` they are absolute in. The clock's own writer
+ * keeps `at` current, so a mid-play save reads a store that is already true;
+ * the alternative — rebasing each row at every write — quietly FROZE any
+ * deadline that was armed once and not written again, which is a whole
+ * regrowth period lost per save.
+ */
+export interface AreaRecordStore {
+  /** The session clock `rows` are ABSOLUTE in. */
+  at: number;
+  /** Area key → the folded record, exactly as the session holds it. */
+  rows: Map<string, WildAreaRecord>;
 }
 
 /** One species' converted herd: head count + their pooled live produce. */
@@ -1003,6 +1085,12 @@ export interface TownDeltas {
   /** ⚖️ THE DOMESTIC HERD (B-⑥): species → {n, stock}, mutated in place
    *  (the `stock` pattern); serializes with the deltas. */
   readonly herd: Record<string, HerdRow>;
+  /** ⚖️ THE FOLDED AREA RECORDS (#49 Stage 2) — the live rows the session
+   *  mirrors into, plus the clock they are quoted in (`AreaRecordStore`); the
+   *  `stock`/`craftJobs` mutate-in-place pattern. Nothing in THIS module ever
+   *  shifts a clock: the rows go out and come back exactly as handed over, and
+   *  waking them is the session's business. */
+  readonly areaRecords: AreaRecordStore;
   toJSON(): SerializedTownDeltas;
 }
 
@@ -1133,6 +1221,18 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
   );
   const driftBank: Record<string, number> = { ...(json?.driftBank ?? {}) };
   const herd: Record<string, HerdRow> = mergeHerd({}, json?.herd);
+  // #49 — deep copies IN, exactly like `partnerStock` above: the store owns
+  // its rows and a caller's JSON is never aliased. NO clock work — the rows
+  // keep the clock they were quoted in and a session wakes them out of it.
+  const areaRecords: AreaRecordStore = {
+    at: json?.areaRecords?.at ?? 0,
+    rows: new Map<string, WildAreaRecord>(
+      Object.entries(json?.areaRecords?.records ?? {}).map(([k, r]) => [
+        k,
+        JSON.parse(JSON.stringify(r)) as WildAreaRecord,
+      ]),
+    ),
+  };
   const store: TownDeltas = {
     version: json?.version ?? 0,
     get: (key) => buildings.get(key),
@@ -1263,6 +1363,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     craftQueue,
     driftBank,
     herd,
+    areaRecords,
     toJSON: () => ({
       version: store.version,
       buildings: Object.fromEntries(
@@ -1297,6 +1398,23 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       // Absent-tolerant on read; emitted only when someone lives here, so
       // every pre-B-⑥ save's serialized form stays byte-identical.
       ...(Object.keys(herd).length ? { herd: mergeHerd({}, herd) } : {}),
+      // #49 — the same law, one field later: EMITTED ONLY WHEN NON-EMPTY, so a
+      // town that never folded an area serializes exactly the object it always
+      // did (the byte-hold pin). Deep copies out, and the quote clock rides
+      // WITH them — nothing here shifts one.
+      ...(areaRecords.rows.size
+        ? {
+            areaRecords: {
+              at: areaRecords.at,
+              records: Object.fromEntries(
+                [...areaRecords.rows.entries()].map(([k, r]) => [
+                  k,
+                  JSON.parse(JSON.stringify(r)) as WildAreaRecord,
+                ]),
+              ),
+            },
+          }
+        : {}),
     }),
   };
   return store;
@@ -1488,7 +1606,7 @@ export const MIN_ROOM_COSTS: Readonly<Record<string, number>> = blockCosts(
   partitionBill({ u0: 0, u1: 1, v0: 0, v1: 1 }),
 );
 
-interface Rect {
+export interface Rect {
   x: number;
   y: number;
   w: number;
@@ -2400,6 +2518,103 @@ export function groundObstacles(deltas: Pick<TownDeltas, "founded">): Rect[] {
   return deltas.founded()
     .filter(b => b.slot < 0)
     .map(b => ({ x: b.dx, y: b.dy, w: b.w, h: b.h }));
+}
+
+// ── ⚖️ FOOTPRINT ∩ WILDERNESS (user ruling 2026-09-02) ─────────────────────
+// A lot is a RECT and a standing natural source is a DISC. Every question the
+// two rulings ask — "is a tree in the way of this build?" and "is a building
+// standing over this seedling?" — is the SAME overlap test asked from the two
+// ends, so it is written ONCE here and read both ways. A second, subtly
+// different occupancy notion is exactly how the two rules would drift into
+// disagreeing about whether the ground is free.
+
+/** A standing wilderness feature as GROUND sees it: a disc, world coords. */
+export interface GroundFeature {
+  id: string;
+  x: number;
+  y: number;
+  /** Footprint radius, metres (wilderness.ts `wildFeatureRadius`). */
+  r: number;
+}
+
+/** Disc ∩ rect (rect grown by `pad`) — the closest-point clamp, so a trunk
+ *  that merely grazes the wall line counts exactly as a trunk inside it. */
+export function discOverlapsRect(
+  rect: Rect,
+  x: number,
+  y: number,
+  r: number,
+  pad = 0,
+): boolean {
+  const x0 = rect.x - pad;
+  const y0 = rect.y - pad;
+  const x1 = rect.x + rect.w + pad;
+  const y1 = rect.y + rect.h + pad;
+  const cx = Math.min(Math.max(x, x0), x1);
+  const cy = Math.min(Math.max(y, y0), y1);
+  const dx = x - cx;
+  const dy = y - cy;
+  return dx * dx + dy * dy <= r * r;
+}
+
+/** THE BUILD SIDE: which of these standing features stand on this lot. The
+ *  caller has ALREADY filtered by the obstruction threshold
+ *  (`sourceBlocksBuilding`) — a seedling is not passed in, because "below the
+ *  floor is not there" is a property of the FEATURE, not of the geometry.
+ *  Ids come back in the order given (deterministic). */
+export function featuresOnFootprint(
+  rect: Rect,
+  features: readonly GroundFeature[],
+  pad = 0,
+): string[] {
+  const out: string[] = [];
+  for (const f of features) {
+    if (discOverlapsRect(rect, f.x, f.y, f.r, pad)) out.push(f.id);
+  }
+  return out;
+}
+
+/** THE GROWTH SIDE: is this spot under anything a settlement has built or
+ *  staked? (⚖️ *"trees won't grow if a building is already there"* — the
+ *  suppression rule, whose whole geometry is this one call.) */
+export function rectsCoverDisc(
+  rects: readonly Rect[],
+  x: number,
+  y: number,
+  r: number,
+  pad = 0,
+): boolean {
+  return rects.some((rect) => discOverlapsRect(rect, x, y, r, pad));
+}
+
+/**
+ * EVERY FOOTPRINT A SETTLEMENT OCCUPIES, in WORLD coords: the plan's standing
+ * houses and works, plus every founded row — INCLUDING the ones still rising.
+ * A staked plot is occupied ground the moment it is staked; that is the whole
+ * point of staking it, and it is what stops a sapling maturing inside a
+ * half-built wall while the builders are still carrying blocks.
+ *
+ * `local` rects are settlement-local (`plan.houses` / `plan.works` carry
+ * `dx/dy`, as founded rows do); `center` is the world point they hang off. A
+ * townless founded site passes its own centre and no local rects.
+ */
+export function settlementFootprints(
+  center: { x: number; y: number },
+  local: readonly Rect[],
+  deltas: Pick<TownDeltas, "founded"> | null | undefined,
+): Rect[] {
+  const out: Rect[] = local.map((r) => ({
+    x: center.x + r.x, y: center.y + r.y, w: r.w, h: r.h,
+  }));
+  for (const b of deltas?.founded() ?? []) {
+    out.push({ x: center.x + b.dx, y: center.y + b.dy, w: b.w, h: b.h });
+  }
+  return out;
+}
+
+/** Is this founded row still waiting on somebody to clear its lot? */
+export function clearingPending(b: { clearing?: readonly string[] }): boolean {
+  return (b.clearing?.length ?? 0) > 0;
 }
 
 /**

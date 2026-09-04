@@ -24,10 +24,45 @@
  *  processed (see `refinesTo`). */
 export type ProductUse = "food" | "drink" | "building" | "raw";
 
-/** How the product comes off its source. `harvest` = live and renewable —
- *  the plant/creature survives and regrows it. `kill` = destructive — the
- *  take consumes the source itself. */
-export type AcquisitionMethod = "harvest" | "kill";
+/**
+ * HOW THE PRODUCT COMES OFF ITS SOURCE — three ways, not two (user ruling
+ * 2026-09-02).
+ *
+ *   • `harvest` — a LIVE take off what the source BEARS. The body is
+ *     untouched and regrows it (apple, wool, milk). Take it forever.
+ *   • `kill`    — the product IS the body, and there is no way to have any of
+ *     it without ending the body (wood, meat). ALL-OR-NOTHING: no unit exists
+ *     until the killing act, and then they all do. *"Harvesting kill products
+ *     without killing the plant/animal should not be possible — that's the
+ *     definition of a kill product."*
+ *   • `deplete` — taken from the OBJECT ITSELF, unit by unit, diminishing it:
+ *     it survives while any remains and dies the moment it is exhausted
+ *     (stone off an outcrop; a moss patch stripped bare). *"It is a different
+ *     kind of product."*
+ *
+ * ⚖️ WHY `deplete`, AND WHY IT IS NOT A FACT ABOUT MINERALS. The word names
+ * the ONE thing that separates this method from the other two: the take
+ * diminishes the source. `harvest` and `kill` both already name what the
+ * TAKER does, and a third verb of that shape (`extract`, `quarry`, `strip`)
+ * would say nothing the first two don't — worse, `quarry` and `mine` would
+ * smuggle "mineral" into a method that must also carry a moss patch and, one
+ * day, a whole folded region's aggregate stand. The discriminator is on the
+ * PRODUCT, never on `NaturalSource.kind`: one source may perfectly well bear
+ * fruit, deplete a fibre and yield timber only when felled, and `kind` could
+ * not describe that thing at all.
+ *
+ * ⚖️ ORTHOGONAL TO REGROWTH. Rock declares no `growth`; a moss patch would
+ * declare one, and would then re-seed after exhaustion through the growth
+ * clock exactly as a felled oak does. Depleting and regrowing are two
+ * different questions and neither implies the other.
+ *
+ * ⚖️ HIGHER SCOPE STAYS OPEN. `wild-area.ts`'s folded region records already
+ * diminish an aggregate count without materialising anything, which is this
+ * method one rung up. Nothing here is per-feature, per-body or per-object —
+ * the method is a property of the PRODUCT ROW — so a region record can adopt
+ * it without a second vocabulary.
+ */
+export type AcquisitionMethod = "harvest" | "kill" | "deplete";
 
 export interface NaturalProduct {
   /** The stack glyph one take mints ("wood", "wool", "apple", "milk"). */
@@ -455,7 +490,12 @@ const CATALOGUE: NaturalSource[] = [
         // what differs is WHERE, and therefore which building a town has to
         // raise before stone is worth quarrying at scale.
         refinesTo: { into: "block", inPerOut: 2, at: "masonry" },
-        method: "kill",
+        // ⛏️ THE ONE `deplete` ROW TODAY (user ruling 2026-09-02). An outcrop
+        // is not a body that dies at a stroke: you take stone off it, it gets
+        // smaller, and the last stone is the end of it. That is the behaviour
+        // this file's shrink curve was written for, and — until the method
+        // existed — the behaviour every tree wrongly inherited.
+        method: "deplete",
         // The oak's rescaling (phase 6), applied to the outcrop — a boulder is
         // worth quarrying repeatedly, and the shrink curve (wilderness.ts
         // wildFeatureRadius, which measures against THIS max) now has enough
@@ -589,15 +629,19 @@ export function rollYield(p: NaturalProduct, roll: () => number, conversionDial 
   return min + Math.floor(roll() * (max - min + 1));
 }
 
-/** The stack a DESTRUCTIVE take of this source releases — every kill product
- *  rolled once, in product order (deterministic `roll()` call count). What a
- *  felled tree or quarried rock holds. Empty for pure-harvest sources.
- *  `conversionDial` — see `rollYield`; default 1, byte-identical. */
-export function killStockOf(species: string, roll: () => number, conversionDial = 1): Record<string, number> {
+/** THE SOURCE'S OWN SUBSTANCE, rolled — every `kill` and `deplete` product
+ *  once each, in product order (deterministic `roll()` call count). The timber
+ *  a tree is made of and will give up when felled; the stone an outcrop is and
+ *  gives up a piece at a time. Empty for pure-harvest sources.
+ *  `conversionDial` — see `rollYield`; default 1, byte-identical.
+ *
+ *  (Was `killStockOf`. The name had to move with the taxonomy: it rolls the
+ *  outcrop's stone, and stone stopped being a kill product.) */
+export function bodyStockOf(species: string, roll: () => number, conversionDial = 1): Record<string, number> {
   const src = BY_SPECIES.get(species);
   const stock: Record<string, number> = {};
   for (const p of src?.products ?? []) {
-    if (p.method !== "kill") continue;
+    if (!isBodyProduct(p)) continue;
     stock[p.glyph] = (stock[p.glyph] ?? 0) + rollYield(p, roll, conversionDial);
   }
   return stock;
@@ -645,23 +689,109 @@ export function effectiveInPerOut(inPerOut: number, conversionDial = 1): number 
   return Math.max(1, Math.round(inPerOut / conversionDial));
 }
 
-/** Is the source CONSUMED when its yield is taken — i.e. does it carry any
- *  kill product? An emptied consumable feature is felled/quarried out. */
-export function sourceIsConsumable(src: NaturalSource): boolean {
-  return src.products.some((p) => p.method === "kill");
+/**
+ * ⚖️ IS THIS PRODUCT THE SOURCE'S OWN SUBSTANCE — as against what it BEARS?
+ * `kill` and `deplete` both are (the wood is the tree, the stone is the
+ * outcrop); `harvest` alone is not (the apple is not the apple tree).
+ *
+ * THE ONE PLACE THE TWO-VS-THREE SPLIT IS WRITTEN DOWN. Everything that used
+ * to test `p.method === "kill"` meant *this* — "the material half of a source,
+ * as against its bearing" — and every one of those sites would have silently
+ * dropped the outcrop's stone the day `deplete` landed. Asking it by name is
+ * what makes a fourth method, or a moss patch, a one-line change.
+ */
+export function isBodyProduct(p: NaturalProduct): boolean {
+  return p.method === "kill" || p.method === "deplete";
 }
 
-/** THE FELLING TEST: consumable, and every kill glyph at zero in the live
- *  stock. The last wood taken IS the felling — even while fruit still hangs
- *  (a felled tree bears nothing; its harvest stock dies with it). Never
- *  true for pure-harvest sources, which persist picked clean. */
-export function sourceKillExhausted(
+/** Is the source CONSUMED by taking its yield — does it carry any product made
+ *  of its own substance? Such a source has an ENDING; a pure-harvest one has
+ *  none and persists picked clean. (Widened from "has a kill product" when
+ *  `deplete` landed: an outcrop is consumed too, just gradually.) */
+export function sourceIsConsumable(src: NaturalSource): boolean {
+  return src.products.some(isBodyProduct);
+}
+
+/**
+ * ⚖️ HOW DOES THIS SOURCE END — ALL AT ONCE, OR UNIT BY UNIT? (user ruling
+ * 2026-09-02.) True when any of its substance is `deplete`: it survives being
+ * taken from, shrinking as it goes, and dies exactly when it is exhausted.
+ *
+ * 🚨 THIS IS WHY A TREE IS NOT AN OUTCROP. A `kill` product cannot be
+ * withdrawn a unit at a time — *"harvesting kill products without killing the
+ * plant/animal should not be possible (that's the definition of a kill
+ * product)"* — so the "take one, it shrinks, eventually it's gone" path was
+ * only ever right for THIS method. Applied to an oak it produced a tree that
+ * thinned away over many hauls and vanished with no act anywhere, which is
+ * exactly why *"I've never seen a tree disappear"*.
+ *
+ * ⚠️ ASKED OF THE PRODUCTS, NOT OF `kind`. A moss patch is no mineral and must
+ * be able to say this; one source may bear fruit AND deplete a fibre AND yield
+ * timber only when felled, and `kind` could not describe that thing at all.
+ */
+export function sourceDepletes(src: NaturalSource): boolean {
+  return src.products.some((p) => p.method === "deplete");
+}
+
+/**
+ * ⚖️ MAY AN ORDINARY TAKE MOVE THIS GLYPH OFF THIS SOURCE RIGHT NOW?
+ *
+ *   • `harvest` — always. Picking fruit off a standing tree, or off a fallen
+ *     one, is picking fruit.
+ *   • `deplete` — always. Taking IS how this product is got.
+ *   • `kill`    — only once the source is DOWN. Standing, those glyphs are
+ *     what it IS and no hand can withdraw one; cut, it is a heap of its own
+ *     substance and every unit is there to be carried off.
+ *
+ * 🚨 …AND THE FELL-FIRST ARM IS ABOUT DOWNABLE BODIES, WHICH AN ANIMAL IS NOT.
+ * `downed` is a fact a wilderness FEATURE can arrive at, through the one cut
+ * (*"'fight the sheep' must never mean 'uproot the sheep'"* — there is no act
+ * anywhere that sets it on a creature), so gating a sheep's meat on it made
+ * meat UNREACHABLE FOREVER on the player's side while the automated draw —
+ * which cuts what it cannot take, and cutting a creature is a no-op — went on
+ * taking it. A refusal whose remedy does not exist is not a law, it is a dead
+ * end, so an ANIMAL's substance stays takeable exactly as it was before the
+ * cut act landed: emptying its kill stock IS the kill, and `sourceSpent`
+ * retires the body on the last unit.
+ *
+ * ONE PREDICATE, FOUR READERS — the container board (what may be offered), the
+ * take path (what may be moved), the automated draw (what it must cut first)
+ * and the drawn size (what may shrink) — so those four can never end up with
+ * four different notions of "you can get wood out of this", and the exemption
+ * is said HERE rather than at one reader for exactly that reason.
+ */
+export function glyphTakeableFrom(
+  src: NaturalSource | undefined,
+  glyph: string,
+  downed = false,
+): boolean {
+  const p = src?.products.find((q) => q.glyph === glyph);
+  if (!p) return true; // not this source's product — nothing here to say no
+  if (p.method !== "kill") return true;
+  return src!.kind === "animal" || downed;
+}
+
+/**
+ * THE SPENT TEST: the source is consumable and every glyph of its own
+ * substance stands at zero. A quarried-out outcrop; a felled trunk whose
+ * timber has all been carried away. Either way there is nothing left of it but
+ * the ground it stood on, and it retires through the ONE teardown
+ * (`retireWildSource`) — re-seeding where the species declares a growth
+ * ladder, which is the third way a source can end, not a special case.
+ *
+ * ⚠️ NOT A FELLING TEST ANY MORE, and the rename says so. It was
+ * `sourceKillExhausted` and it meant *"the last wood taken IS the felling"* —
+ * the model `sourceDepletes` retires. A STANDING body can never reach this
+ * state now, because nothing can take the first unit off it; what reaches it
+ * is a deposit worn to nothing, or a source the CUT already killed.
+ */
+export function sourceSpent(
   src: NaturalSource,
   stock: Record<string, number> | undefined,
 ): boolean {
   return (
     sourceIsConsumable(src) &&
-    !src.products.some((p) => p.method === "kill" && (stock?.[p.glyph] ?? 0) > 0)
+    !src.products.some((p) => isBodyProduct(p) && (stock?.[p.glyph] ?? 0) > 0)
   );
 }
 
@@ -669,18 +799,167 @@ export function harvestProductsOf(species: string): NaturalProduct[] {
   return (BY_SPECIES.get(species)?.products ?? []).filter((p) => p.method === "harvest");
 }
 
-/** UNITS ONE TAKE ACT MOVES for this source's glyph: 1 bare-handed, the
- *  product's declared tool multiplier when `hasTool` answers yes for its
- *  tool glyph ("more effective with an axe or pick, but can be done by
- *  hand"). 1 for glyphs the source doesn't yield. */
+// ── ⚖️ THE OBSTRUCTION THRESHOLD (user ruling 2026-09-02) ──────────────────
+// *"there is a minimum growth level below which they are ignored"* — the
+// second half of the felling-prerequisite ruling, and the half that makes the
+// first half terminate. A build whose lot carries a standing tree stakes the
+// felling as required work; felling a growth-bearing tree RE-SEEDS it at the
+// identical (x, y) (S3 H2, unchanged and untouched), so without a floor the
+// prerequisite would never complete — the sapling would stand on the lot
+// forever. With one, a re-seeded sapling is simply not in anybody's way, and
+// the whole exception disappears instead of being written down.
+//
+// 🚫 THE FLOOR IS NOT A PAINTED NUMBER. It is read off the species' OWN
+// growth ladder: the first class whose `yieldMul` is above zero. Products'
+// own words for class 0 are *"a felled sapling has no wood to give"* — a
+// class with nothing in it is nothing to fell, nothing to haul, and nothing
+// to be in anyone's way, all three from one fact. Oak (sapling 0 / young
+// .25 / mature 1) floors at `young`; apple_tree (sapling 0 / mature 1) floors
+// at `mature`; a species that declares no ladder has no sub-threshold state
+// to be in and always counts (which is how stone keeps blocking a lot without
+// a special case, exactly as it keeps being finite without one).
+
+/** Index of the lowest growth class that BEARS anything (`yieldMul > 0`).
+ *  A ladder of nothing but empty classes floors at its last one — a source
+ *  can always reach the top of its own ladder. */
+export function obstructingGrowthClass(growth: {
+  classes: readonly GrowthSizeClass[];
+}): number {
+  const i = growth.classes.findIndex((c) => c.yieldMul > 0);
+  return i >= 0 ? i : Math.max(0, growth.classes.length - 1);
+}
+
+/** The growth class a feature STANDS AT. `sizeClass` UNSET means MATURE —
+ *  wilderness.ts's own scatter default ("a freshly-laid feature stands
+ *  MATURE… nothing reads it as anything but mature when unset"), read here
+ *  so no caller has to re-derive it. 0 for a source with no ladder. */
+export function standingGrowthClass(species: string, sizeClass?: number): number {
+  const g = BY_SPECIES.get(species)?.growth;
+  if (!g) return 0;
+  return sizeClass ?? g.classes.length - 1;
+}
+
+/**
+ * ⚖️ IS THIS STANDING SOURCE SUBSTANTIAL — big enough to be a THING in the
+ * world rather than a seedling in the grass? The ONE answer, asked by
+ * construction ("is it on my lot?"), by the spawner ("is it solid?") and by
+ * the growth clock ("may it climb here?"), so those three can never end up
+ * with three subtly different notions of "there is a tree there".
+ *
+ * TRUE for anything with no growth ladder (a rock is always a rock) and for
+ * an unknown species (a standing thing we cannot reason about is still a
+ * standing thing). FALSE only for a declared ladder standing below its own
+ * bearing floor.
+ */
+export function sourceIsSubstantial(species: string, sizeClass?: number): boolean {
+  const g = BY_SPECIES.get(species)?.growth;
+  if (!g) return true;
+  return (sizeClass ?? g.classes.length - 1) >= obstructingGrowthClass(g);
+}
+
+/**
+ * ⚖️ THE CUT — ONE ACT, TWO OUTCOMES (user ruling 2026-09-02, verbatim):
+ *
+ *   *"Cutting IS removal, and also a harvesting method for kill products. It
+ *    applies to trees, which should produce wood when cut, as well as any
+ *    other plants that have kill products. If there are no kill products, it
+ *    simply removes them. It's the same action for both."*
+ *
+ * 🚨 THIS PREDICATE REPLACES A PARTITION THAT SHOULD NEVER HAVE EXISTED.
+ * `sourceIsRemovable` was written as felling's exact complement — substantial
+ * AND NOT consumable — so `cut` bound to a bush and REFUSED an oak, which is
+ * precisely the distinction the ruling denies. The yield is a consequence of
+ * the plant's products, never a gate on the verb: a source with kill products
+ * gives them up (the oak's wood, lying where the oak stood), a source with
+ * none is simply gone, and the child pressed the same button either way.
+ *
+ * WHAT IT IS NOT DEFINED FOR:
+ *   • a SEEDLING — below the bearing floor it is not in anybody's way, the
+ *     same reason it does not block a lot and does not collide;
+ *   • an ANIMAL — the ruling names plants and the cut's own docblock names the
+ *     reason: *"'fight the sheep' must never mean 'uproot the sheep'"*. The
+ *     wilderness keeps creatures in a different list from the things rooted in
+ *     its ground, so no body could ever reach the act; saying so here keeps
+ *     every OTHER reader of this predicate (the board's cut button, the spoken
+ *     resolver's ranking) from advertising work that cannot be done;
+ *   • a PURE-DEPLETING SOURCE — an outcrop already has an ending, worn away
+ *     stone by stone until it is spent, and giving it a second one would put
+ *     two answers to "how does this thing stop being here?" back in the engine.
+ *     ⚠️ Read off the PRODUCT METHOD, never off `kind` (a moss patch is no
+ *     mineral, and it must land on the same side of this line as the rock).
+ *
+ * ⚖️ PURE-deplete, AND THE WORD IS LOAD-BEARING. The methods are properties of
+ * PRODUCTS, and this module's own header says one source "may perfectly well
+ * bear fruit, deplete a fibre and yield timber only when felled" — so a plain
+ * `!sourceDepletes` made that source structurally uncuttable and its timber
+ * unreachable forever (the fell-first gate has no other key). A source with
+ * SUBSTANCE TO GIVE UP is cuttable whatever else it also sheds; only a source
+ * whose ONLY body product wears away unit by unit keeps the outcrop's ending.
+ */
+export function sourceIsCuttable(species: string, sizeClass?: number): boolean {
+  const src = BY_SPECIES.get(species);
+  if (!src) return false; // nothing known ⇒ nothing to cut
+  if (src.kind === "animal") return false;
+  if (sourceDepletes(src) && !src.products.some((p) => p.method === "kill")) return false;
+  return sourceIsSubstantial(species, sizeClass);
+}
+
+/**
+ * ⚖️ DOES IT STAND IN A BUILDER'S WAY? — substantial, full stop.
+ *
+ * This used to carry a second clause (*"and fellable"*), and the whole of that
+ * clause was a TERMINATION argument rather than an occupancy one: a build waits
+ * on work, and work on a source with no kill product was work nobody could
+ * finish, so a berry bush on a lot was ruled scenery the walls go up around
+ * rather than an unfinishable prerequisite.
+ *
+ * THE CUT retires that compromise (user ruling 2026-09-02). Every substantial
+ * plant is now finishable — `sourceIsCuttable` names the act, and the clearing
+ * sweep works it the same way whatever the plant yields — so the exception has
+ * nothing left to stand on and the honest answer is the geometric one: a
+ * substantial thing standing on the lot is in the way, whatever it yields. The
+ * floor still terminates the growth case, unchanged.
+ */
+export function sourceBlocksBuilding(species: string, sizeClass?: number): boolean {
+  const src = BY_SPECIES.get(species);
+  if (!src) return false; // nothing known to clear ⇒ nothing to stake
+  return sourceIsSubstantial(species, sizeClass);
+}
+
+/**
+ * UNITS ONE TAKE ACT MOVES for this source's glyph: 1 bare-handed, the
+ * product's declared tool multiplier when `hasTool` answers yes for its tool
+ * glyph ("more effective with an axe or pick, but can be done by hand"). 1 for
+ * glyphs the source doesn't yield.
+ *
+ * ⚖️ A DOWNED SOURCE IS CHEAPER TO COLLECT FROM (user ruling 2026-09-02: a
+ * felled tree's wood *"should be treated as less costly to collect than wood
+ * that is still in a tree"*) — and it is said HERE, in the throughput dial
+ * that already exists, rather than as a new mechanism beside it.
+ *
+ * THE LAW, PLAINLY: DOWNING GRANTS THE SPECIES' OWN BULK MULTIPLIER TO EVERY
+ * HAND, AND IT COMPOSES WITH THE TOOL BONUS. The felled trunk has already had
+ * the axe's work done to it, so bare hands move what an axe moved on the
+ * standing trunk (×2 on oak); an axe still bucks the log into carryable
+ * lengths faster, so an axe on a downed oak moves the multiplier SQUARED —
+ * ×4, four units an act at the shipped oak row. That is a real number and it is
+ * said out loud here rather than hidden behind a "no new number" claim: the
+ * FACTOR is not new (it is the product row's own declared multiplier, spec
+ * data exactly as the tool is), the PRODUCT of the two is. A source that
+ * declares no tool is unaffected either way, so a bush's berries do not come
+ * off a fallen bush any faster.
+ */
 export function takeUnitsOf(
   src: NaturalSource | undefined,
   glyph: string,
   hasTool: (toolGlyph: string) => boolean,
+  opts?: { downed?: boolean },
 ): number {
   const p = src?.products.find((q) => q.glyph === glyph);
   if (!p?.tool) return 1;
-  return hasTool(p.tool.glyph) ? Math.max(1, Math.floor(p.tool.multiplier)) : 1;
+  const mul = Math.max(1, Math.floor(p.tool.multiplier));
+  const tool = hasTool(p.tool.glyph) ? mul : 1;
+  return opts?.downed ? mul * tool : tool;
 }
 
 const uniqueGlyphs = (ps: NaturalProduct[]): string[] => [...new Set(ps.map((p) => p.glyph))];
@@ -735,9 +1014,20 @@ export function buildingChainGlyphs(): string[] {
  *  (floor of raw units / inPerOut, credited under the refined head). The
  *  affordability boards read this so "build bedroom" stays offered when
  *  the yard holds wood but no blocks yet — the refine chain fills the
- *  bill; hiding the button would refuse work the town can do. */
+ *  bill; hiding the button would refuse work the town can do.
+ *
+ *  ⚖️ DIVIDES BY THE MILL'S OWN RATIO (`effectiveInPerOut`), not the raw
+ *  catalogue one — `conversionDial`, default 1, byte-identical there. This
+ *  credit used to sit at the dial-1 anchor as a deliberate "preview shows
+ *  more than the bench charges is the safe direction" residual; that
+ *  reasoning inverted the moment the dial went ABOVE 1, because a bigger
+ *  dial makes `effectiveInPerOut` SMALLER — the bench charges LESS than the
+ *  anchor assumed, so the anchored credit UNDER-counted and hid buttons for
+ *  builds the town could actually perform. One ratio for board, mill and
+ *  refusal gate is the only arrangement in which they cannot disagree. */
 export function withRefinableCredit(
   stock: Readonly<Record<string, number>>,
+  conversionDial = 1,
 ): Record<string, number> {
   const out: Record<string, number> = { ...stock };
   const byHead = new Map<string, number>();
@@ -749,7 +1039,9 @@ export function withRefinableCredit(
   for (const p of CATALOGUE.flatMap((s) => s.products)) {
     if (!p.refinesTo || seen.has(p.glyph)) continue;
     seen.add(p.glyph);
-    const credit = Math.floor((byHead.get(p.glyph) ?? 0) / p.refinesTo.inPerOut);
+    const credit = Math.floor(
+      (byHead.get(p.glyph) ?? 0) / effectiveInPerOut(p.refinesTo.inPerOut, conversionDial),
+    );
     if (credit > 0) out[p.refinesTo.into] = (out[p.refinesTo.into] ?? 0) + credit;
   }
   return out;

@@ -92,6 +92,69 @@ describe("the durable form — foundedSiteToJSON / createFoundedSite (persistenc
   });
 });
 
+// ── 🔴 #50 ⑦ — ONE YARD LEDGER ─────────────────────────────────────────────
+//
+// `FoundedSite.stock` and `site.deltas.stock` used to be two different maps,
+// and only the FIRST was registered as the site crate's stack — so every
+// writer reaching for "this settlement's yard" through the
+// `session.town?.deltas ?? session.foundedSite?.deltas` idiom (the cancelled
+// plot's banked hoard; the mill's null-destination fallback) credited a ledger
+// no haul, no audit and no renderer could see. They are ONE OBJECT now.
+describe("#50 ⑦ the site's yard IS the overlay's yard", () => {
+  it("`foundSite` aliases the two — a write through either is visible in both", () => {
+    const site = foundSite({ seed: 3, at: { x: 0, y: 0 } });
+    expect(site.stock).toBe(site.deltas.stock);
+    // THE DISEASE, at its own seam: a director banking through `deltas.stock`
+    // (cancelWork / commitRefineOrder's fallback) now lands in the crate.
+    site.deltas.stock["block"] = 12;
+    expect(site.stock).toEqual({ block: 12 });
+    // …and the crate's own path is the same map, so nothing has two accounts.
+    depositSiteStock(site, { wood: 4 });
+    expect(site.deltas.stock).toEqual({ block: 12, wood: 4 });
+  });
+
+  it("a restored site aliases too — and an old save's SPLIT ledgers are summed, once", () => {
+    const site = foundSite({ seed: 3, at: { x: 1, y: 2 } });
+    // A PRE-ALIAS save: units on both sides, which is exactly what the bug
+    // produced (the crate held wood, the invisible ledger held milled blocks).
+    const legacy = { ...foundedSiteToJSON(site), stock: { wood: 6 } };
+    legacy.deltas = { ...legacy.deltas, stock: { block: 3 } };
+    const back = createFoundedSite(legacy);
+    expect(back.stock).toBe(back.deltas.stock);
+    expect(back.stock).toEqual({ block: 3, wood: 6 }); // conserved: 9 units in, 9 out
+    // IDEMPOTENT from here: the writer puts the units on ONE key, so a second
+    // round trip cannot double them (the trap an alias + two emitted maps sets).
+    const once = foundedSiteToJSON(back);
+    expect(once.stock).toEqual({ block: 3, wood: 6 });
+    expect(once.deltas.stock).toEqual({});
+    expect(foundedSiteToJSON(createFoundedSite(once))).toEqual(once);
+  });
+
+  it("BYTE-IDENTICAL round trip for an ordinary save", () => {
+    const site = foundSite({ seed: 9, at: { x: 3, y: 3 }, day: 2 });
+    depositSiteStock(site, { wood: 5, stone: 1 });
+    noteSiteBuilding(site);
+    const json = foundedSiteToJSON(site);
+    expect(JSON.stringify(foundedSiteToJSON(createFoundedSite(json)))).toBe(JSON.stringify(json));
+  });
+
+  it("the town-play seam counts the yard ONCE (no doubling through the alias)", () => {
+    const site = foundSite({ seed: 5, at: { x: 0, y: 0 } });
+    depositSiteStock(site, { wood: 10 });
+    site.deltas.stock["block"] = 2; // the formerly-invisible half, same map
+    expect(siteTownConfig(site).deltas!.stock).toEqual({ wood: 10, block: 2 });
+  });
+
+  it("abandonment still spills the WHOLE yard, whichever door wrote it", () => {
+    const site = foundSite({ seed: 6, at: { x: 0, y: 0 } });
+    depositSiteStock(site, { wood: 2 });
+    site.deltas.stock["block"] = 1;
+    expect(abandonSite(site)).toEqual({ wood: 2, block: 1 });
+    expect(site.stock).toEqual({});
+    expect(site.deltas.stock).toEqual({});
+  });
+});
+
 describe("depositSiteStock", () => {
   it("moves ONLY building materials out of the source stacks", () => {
     const site = foundSite({ seed: 1, at: { x: 0, y: 0 } });

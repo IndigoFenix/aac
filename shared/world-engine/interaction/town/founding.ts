@@ -79,7 +79,17 @@ export interface FoundedSite {
   foundedDay: number;
   /** Building materials deposited at the site — glyph → count. The host
    *  aliases this object as the stock container's stack map, so the ordinary
-   *  container put/take path IS the site's deposit/draw path. */
+   *  container put/take path IS the site's deposit/draw path.
+   *
+   *  🚨 ONE LEDGER (#50 ⑦, 2026-09-03). This IS `deltas.stock` — the very same
+   *  object, aliased at construction (`foundSite` / `createFoundedSite`). It
+   *  used to be a SECOND map, and only this one was registered as the crate's
+   *  stack: every writer that reached for the settlement's yard through the
+   *  `session.town?.deltas ?? session.foundedSite?.deltas` idiom (`cancelWork`
+   *  banking a cancelled plot's hoard, `commitRefineOrder`'s null-destination
+   *  fallback) credited `deltas.stock` on a founded site and the units landed
+   *  in a ledger no haul, no audit and no renderer could see. The two are now
+   *  one object, so there is no side to pick. */
   stock: Record<string, number>;
   /** The construction overlay the existing system (annex/placement) accrues
    *  into. Fresh (empty) at founding; serialized into the town config. */
@@ -123,15 +133,26 @@ export interface SerializedFoundedSite {
 }
 
 /** Copy a live site OUT — deep copies everywhere (the payload must never
- *  alias the live record; the stock alias in particular must not leak). */
+ *  alias the live record; the stock alias in particular must not leak).
+ *
+ *  🚨 THE UNITS ARE WRITTEN EXACTLY ONCE (#50 ⑦). `site.stock` and
+ *  `deltas.stock` are the same object now, and `createFoundedSite` SUMS the
+ *  two serialized fields on the way back in (so an old save's split ledgers
+ *  are repaired rather than half-dropped). Emitting the same units under both
+ *  keys would therefore DOUBLE them on the next load — so the durable form
+ *  keeps its historical owner, `SerializedFoundedSite.stock`, and the deltas
+ *  ride out with an empty yard. A record built by hand with two genuinely
+ *  separate maps (a pre-alias fixture) is left exactly as it was: both halves
+ *  serialize, and the read sums them once. */
 export function foundedSiteToJSON(site: FoundedSite): SerializedFoundedSite {
+  const deltas = site.deltas.toJSON();
   const out: SerializedFoundedSite = {
     key: site.key,
     seed: site.seed,
     at: { ...site.at },
     foundedDay: site.foundedDay,
     stock: { ...site.stock },
-    deltas: site.deltas.toJSON(),
+    deltas: site.stock === site.deltas.stock ? { ...deltas, stock: {} } : deltas,
     buildings: site.buildings,
     residents: [...site.residents],
   };
@@ -146,14 +167,53 @@ export function foundedSiteToJSON(site: FoundedSite): SerializedFoundedSite {
 /** Restore a site from its durable form — deep copies IN (the store owns
  *  its state; the caller's JSON is never aliased), deltas through
  *  `createTownDeltas(json)` so every ledger rides its own restore. */
-export function createFoundedSite(json: SerializedFoundedSite): FoundedSite {
+export function createFoundedSite(
+  json: SerializedFoundedSite,
+  opts?: {
+    /**
+     * ⚖️ #49 STAGE 2 — THE REST INTERVAL, in seconds: how long this save sat
+     * closed. It is spent HERE, at the one door a save comes back through,
+     * and on the one thing in the record that measures time — the folded area
+     * records' clocks, moved exactly `restS` closer to due (a deadline that
+     * passed while the world was shut comes back DUE, which is how a stump
+     * you left last week is a sapling today).
+     *
+     * ⏳ AND IT IS A SCALAR, not a walk. The records are absolute in the clock
+     * their store names (`AreaRecordStore.at`), so advancing that ONE number
+     * advances every deadline in the table at once. No record is touched, so
+     * nothing can be half-aged.
+     *
+     * 🚨 SPENT ONCE, AT THE DISK DOOR. Everything downstream of this call —
+     * `siteTownConfig`, `createTownDeltas`, the session's own wake at birth —
+     * carries the anchor forward unchanged, so the gap can never be applied
+     * twice. It is the exact counterpart of the felled-mark aging the
+     * world-lab does beside this call, on the same `savedAt` gap.
+     *
+     * Absent / 0 ⇒ the restored site is BYTE-IDENTICAL to the saved one,
+     * which is what every non-save caller of this function is.
+     */
+    restS?: number;
+  },
+): FoundedSite {
+  const deltas = createTownDeltas(json.deltas);
+  deltas.areaRecords.at += opts?.restS ?? 0;
+  // 🚨 ONE LEDGER, SUMMED ONCE (#50 ⑦). The site's yard IS the overlay's yard
+  // from here on. A save written after the alias carries its units on
+  // `json.stock` and an empty `deltas.stock`, so this sum is a no-op; a save
+  // written BEFORE it may carry units on either side (the invisible-ledger
+  // bug put them on `deltas.stock`), and summing is the repair — conserving,
+  // and idempotent from the first round-trip on because the writer above
+  // empties one side again.
+  for (const [g, n] of Object.entries(json.stock)) {
+    if (n) deltas.stock[g] = (deltas.stock[g] ?? 0) + n;
+  }
   const site: FoundedSite = {
     key: json.key,
     seed: json.seed,
     at: { ...json.at },
     foundedDay: json.foundedDay,
-    stock: { ...json.stock },
-    deltas: createTownDeltas(json.deltas),
+    stock: deltas.stock,
+    deltas,
     buildings: json.buildings,
     residents: [...json.residents],
   };
@@ -217,7 +277,9 @@ export function foundSite(opts: FoundSiteOpts): FoundedSite {
     seed: opts.seed,
     at,
     foundedDay: Math.max(0, Math.floor(opts.day ?? 0)),
-    stock: {},
+    // 🚨 THE ALIAS (#50 ⑦) — the site's yard IS the overlay's yard, one object
+    // from the moment the site exists. See `FoundedSite.stock`.
+    stock: deltas.stock,
     deltas,
     buildings: 0,
     residents: [],
@@ -505,7 +567,13 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
   const buildings = { ...json.buildings };
   const seeds = [...(json.seeds ?? [])];
   const stock: Record<string, number> = { ...(json.stock ?? {}) };
-  for (const [g, n] of Object.entries(head.stock)) stock[g] = (stock[g] ?? 0) + n;
+  // ⚖️ ONE LEDGER, COUNTED ONCE (#50 ⑦): `head.stock` IS `head.deltas.stock`
+  // for any site built through `foundSite`/`createFoundedSite`, so summing
+  // both would double the eldest's yard. A hand-built record with two
+  // genuinely separate maps still folds both halves, exactly as it always did.
+  if (head.stock !== head.deltas.stock) {
+    for (const [g, n] of Object.entries(head.stock)) stock[g] = (stock[g] ?? 0) + n;
+  }
   const herd = mergeHerd(mergeHerd({}, json.herd), head.herd);
   let nextOrd = Math.max(json.ordSeq ?? 0, orders.reduce((m, o) => Math.max(m, o.ord + 1), 0));
   let nextSeedOrd = seeds.reduce((m, s) => Math.max(m, s.ord + 1), 0);
@@ -527,9 +595,12 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
     const oy = site.at.y - head.at.y;
     const sj = site.deltas.toJSON();
 
-    // Stock — the conservation half.
+    // Stock — the conservation half. (#50 ⑦ — the aliased yard counts once;
+    // see the head's own fold above.)
     for (const [g, n] of Object.entries(sj.stock ?? {})) stock[g] = (stock[g] ?? 0) + n;
-    for (const [g, n] of Object.entries(site.stock)) stock[g] = (stock[g] ?? 0) + n;
+    if (site.stock !== site.deltas.stock) {
+      for (const [g, n] of Object.entries(site.stock)) stock[g] = (stock[g] ?? 0) + n;
+    }
 
     // The herd — the counts half, summed exactly as the stock is (B-⑥).
     // 🚨 mergeSites returns a WHITELIST literal, so a field not summed
@@ -582,17 +653,28 @@ export function mergeSites(cluster: readonly FoundedSite[]): FoundedSite {
     for (const r of site.residents) if (!residents.includes(r)) residents.push(r);
   }
 
+  const deltas = createTownDeltas({
+    ...json, orders, buildings, seeds, stock, ordSeq: nextOrd,
+    // The herd rides the overlay too (B-⑥) — omitted when nobody owns one.
+    ...(Object.keys(herd).length ? { herd } : {}),
+  });
   return {
     key: head.key,
     seed: head.seed,
     at: { x: head.at.x, y: head.at.y },
     foundedDay: head.foundedDay,
-    stock: {},                       // folded into the overlay's yard above
-    deltas: createTownDeltas({
-      ...json, orders, buildings, seeds, stock, ordSeq: nextOrd,
-      // The herd rides the overlay too (B-⑥) — omitted when nobody owns one.
-      ...(Object.keys(herd).length ? { herd } : {}),
-    }),
+    // 🚨 THE MERGE DOOR ALIASES TOO (#50 ⑦). Every yard the cluster held was
+    // folded into the overlay's stock above, and this used to hand back `{}`
+    // beside it — the LAST producer of a split record, and the merged record
+    // is not a throwaway: world-lab stores it as the cluster's live planet
+    // site (`foundedPlanetSites.set(head.key, { …, record: merged })`), which
+    // is what a later save serializes and what a live host would register the
+    // crate off. A `{}` there is the invisible-yard bug re-created at the one
+    // door that had escaped the alias. Same object, so nothing is counted
+    // twice: `siteTownConfig`'s and `mergeSites`' own identity guards skip the
+    // now-redundant fold, and `foundedSiteToJSON` writes the units once.
+    stock: deltas.stock,
+    deltas,
     buildings: buildingsCount,
     residents,
   };
@@ -620,8 +702,12 @@ export function siteTownConfig(
   // (①b) — the same stack map "build" costs draw from, riding the deltas.
   const deltas = site.deltas.toJSON();
   const stock = { ...(deltas.stock ?? {}) };
-  for (const [glyph, n] of Object.entries(site.stock)) {
-    stock[glyph] = (stock[glyph] ?? 0) + n;
+  // #50 ⑦ — the aliased yard is already in `deltas.stock`; only a hand-built
+  // record with two separate maps has a second half to fold in.
+  if (site.stock !== site.deltas.stock) {
+    for (const [glyph, n] of Object.entries(site.stock)) {
+      stock[glyph] = (stock[glyph] ?? 0) + n;
+    }
   }
   deltas.stock = stock;
   // The site's herd becomes the town's domestic-herd count (B-⑥) — the

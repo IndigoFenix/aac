@@ -44,9 +44,10 @@ const REFINEMENT_SCHEMA: JSONSchema = {
             enum: ["food", "drink", "condiment", "notice", "unknown"],
             description: "notice = a message to customers, not something to order.",
           },
-          imageKey: {
+          icon: {
             type: "string",
-            description: "English snake_case concept for icon art, e.g. iced_coffee.",
+            description:
+              "Icon: snake_case English concept; '.' attaches a topping/flavor, '+' joins paired foods; emoji allowed as a part. e.g. iced_coffee, pizza.olive, burger+french_fries.",
           },
           translatedName: { type: "string", description: "The dish name in the TARGET language." },
           duplicateOf: { type: "number", description: "Row number this repeats." },
@@ -67,14 +68,17 @@ for a child who cannot speak.
 <rules>
 - Label every row. Never rename, reprice, or merge one.
 - keep=false for anything not orderable: notices, headings, opening hours.
-- imageKey: English, snake_case, generic. A brand becomes its food.
+- icon: English, snake_case, generic. A brand becomes its food. Attach a
+  defining topping/flavor with "." and join paired foods with "+".
 - duplicateOf: only for the SAME dish at the SAME price.
 </rules>
 
 <examples>
 "לקוחות יקרים!" (a message about delivery) -> keep false, kind notice
-"רוטב שום" ₪1                              -> keep true, kind condiment, imageKey garlic_sauce
-"Ice Aroma" (blended coffee)               -> keep true, kind drink, imageKey iced_coffee
+"רוטב שום" ₪1                              -> keep true, kind condiment, icon garlic_sauce
+"Ice Aroma" (blended coffee)               -> keep true, kind drink, icon iced_coffee
+"פיצה זיתים"                               -> keep true, kind food, icon pizza.olive
+"המבורגר + צ'יפס"                          -> keep true, kind food, icon burger+french_fries
 second "Greek Chickpea Salad" at ₪40       -> duplicateOf the first row
 </examples>
 `.trim();

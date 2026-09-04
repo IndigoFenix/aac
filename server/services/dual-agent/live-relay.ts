@@ -688,7 +688,7 @@ export type ClientMessage =
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
-  | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any }
+  | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any; spokenLocally?: boolean }  // `spokenLocally` = DEVICE-VOICE MODE: the client already voiced this press with the device's own voice at the moment of the tap (that is what the setting promises), so the server logs and routes it but must NOT synthesize it again.
   | { type: "game_press"; text: string; glyph?: string; voice?: boolean }  // press on an ENGINE-generated world-engine game board — a REAL student utterance (voiced in the student's voice, logged, published to the group chat) that must NOT wake any agent into a model turn. `text` = the localized spoken sentence, `glyph` = the composed glyph string (informational), `voice` = client wants server student-voice TTS (absent → server falls back to the resolved gameOptions.studentVoice setting). See AgentCoordinator.handleGamePress.
   | { type: "tts_done"; id: string; ok?: boolean }  // client-side TTS (client_tts) finished playing — releases the server's wait so the AI's reply doesn't land on top of the student's own voice
   | { type: "recordings_purged"; studentId: string; clipIds: string[] }  // ack for `purge_recordings`: the local session-recording clips this device actually deleted. An EMPTY list is a real answer (nothing of that student's here, or a host that cannot record at all) and is still logged — the audit trail needs "the device answered", not just "clips went".
@@ -704,7 +704,8 @@ export type ClientMessage =
   | { type: "mic_state"; active: boolean; reason?: string }  // mic activated/deactivated — logged to chat history for diagnostics, never injected into any live agent
   | { type: "speech_method"; method: "silero" | "webSpeechApi" | "energy" | "none" }  // which speech-boundary detector is driving the client (Silero neural VAD vs fallbacks) — diagnostics only, like mic_state
   /** observedAge/observedSex/observedSexConfidence: coarse attributes from the client's ageGenderNet, feeding the server-side ATTRIBUTE VETO — the 128-d embedding cannot separate a child from her grandmother, but "child vs senior" is a call the attribute net gets right. All optional; absent = no opinion, never a veto. */
-  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number; observedAge?: number; observedSex?: "male" | "female"; observedSexConfidence?: number }> }
+  /** trackId/trackAgeMs/framesInTrack/meanDescriptor/facesInFrame: the client face tracker (planning-docs/aac-presence-ledger.md §7). `trackId` associates detections across frames so ONE track holds ONE person and a lookalike cannot take a face on a single lucky frame; `meanDescriptor` is the running mean of the track's recent above-quality descriptors (OMITTED when only one sample backs it — match on `descriptor` then); `facesInFrame` is the RAW pre-cap face count for that camera frame and can exceed the ≤3 entries actually sent. All optional — a client without the tracker sends none of them and the server falls back to per-camera indices. */
+  | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number }; cameraRole?: "user" | "environment" | "unknown"; cameraLabel?: string; quality?: number; observedAge?: number; observedSex?: "male" | "female"; observedSexConfidence?: number; trackId?: string; trackAgeMs?: number; framesInTrack?: number; meanDescriptor?: number[]; facesInFrame?: number }> }
   | { type: "voice_descriptors"; data: Array<{ embedding: number[]; quality?: number }>; clipId?: string }  // speaker embeddings computed from heard speech, for server-side voice matching. `clipId` ties this to a speech_audio clip so the server syncs voice + STT before attributing.
   | { type: "speech_text"; text: string; confidence?: number; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number } }  // cost-saving (Phase 1, Whisper path — plumbing kept): on-device transcript of a VAD speech segment. Server injects as [HEARD SPEECH].
   | { type: "speech_audio"; data: string; mimeType?: string; language?: string; clipId?: string; voiceDescriptor?: { embedding: number[]; quality?: number }; lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }>; acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null } }  // cost-saving (Phase 1, ACTIVE path): base64 WAV of a VAD speech segment — server transcribes via Google STT and injects as [HEARD SPEECH]. `lipActivity` = per-face mouth activity over the utterance for audio-visual speaker attribution. `acoustic` = cheap pitch + formant-dispersion fingerprint (fast-tier voice read + age/gender hint, sent before the slow embedding). Replaces raw audio when sttActive.
@@ -713,6 +714,7 @@ export type ClientMessage =
   | { type: "stt_stream_chunk"; streamId: string; data: string }                   // base64 LINEAR16 16kHz PCM chunk
   | { type: "stt_stream_end"; streamId: string; acoustic?: { pitchHz: number | null; voiced: number; formantDispersion?: number | null }; lipActivity?: Array<{ bbox: { x: number; y: number; w: number; h: number }; mouthActivity: number; visible: boolean }> }  // half-close → finalize transcript → [HEARD SPEECH]. Carries the acoustic + lip evidence (computed from the clip at speech-end) so the fast-read inputs arrive WITH the transcript (the parallel voice embedding still comes via voice_descriptors[streamId]).
   | { type: "scene_state"; scene: SceneSnapshot }  // cost-saving (Phase 2): structured scene snapshot (people w/ bbox + movement, hands, motion) sent in place of a JPEG frame while the scene is stable. Server renders [SCENE] with real identities (bbox IoU vs matched faces) and injects as non-turn context to the Observer.
+  | { type: "learned_baselines"; data: import("@shared/aac/learned-baselines").LearnedBaselineObservation }  // machine-learned per-student baselines observed this session (seizure motion energy, head neutral). Server merges count-weighted into aac_settings.learned_baselines and seeds them back on the next session. Never clinician- or AI-editable. See shared/aac/learned-baselines.ts.
   | { type: "correct_identity"; entityType: "student" | "user" | "contact"; entityId: string; reason?: string }  // a recent face/voice match was wrong — penalize the embedding(s) that mis-fired
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
@@ -723,7 +725,7 @@ export type ClientMessage =
   | { type: "context_injection"; text: string }           // inject context without triggering a response
   | { type: "client_sleep_state_change"; state: "hibernation" | "waking" | "awake" | "resting" | "asleep"; source: "ai" | "system" | "user" }   // engagement state machine transition (server logs for RTM service-time)
   | { type: "construction_state"; data: ConstructionStateWire }  // sentence construction board state changed — relay formats as context injection
-  | { type: "glyph_press"; glyph: string }                        // student played a glyph from the sentence builder — AI must call interpret() to voice it
+  | { type: "glyph_press"; glyph: string; sentence?: string; spokenLocally?: boolean }  // student played a glyph from the sentence builder. `sentence` = the client already rendered it with the glyph language (shared/aac/builder-speech) — a parsable sentence needs no interpret() at all, so the server voices THAT and routes the turn; absent, the AI must call interpret() as before. `spokenLocally` = device-voice mode already said it out loud.
   | { type: "guessing_state"; text: string; suggestionKeys: string[]; origin?: "conversation" | "builder"; builderContext?: { targetSlot: number | null; partialGlyph: string; category: string }; customFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }>; rejectedFacts?: Array<{ dimension: string; value: string; sourceText?: string; addedAt: number }> } // LEGACY guessing-mode narrowing (client-owned state) — kept for the legacy single-agent live-relay path. The three-agent path uses the intent messages below.
   // Three-agent Word Finder — client sends INTENTS, server owns the GuessingModeState.
   // The server runs applyPress / applyCustomFact / rejectCurrentDimension and
@@ -988,6 +990,18 @@ export interface IdentifiedFaceWire {
    *  identification: no sighting bump fires, and the AI is told to verify
    *  before using either name. */
   ambiguousWith?: string;
+  /** The client face-track this detection belongs to, or the server's
+   *  per-camera stand-in when the client sent none. ONE track holds ONE
+   *  person: a challenger must beat the incumbent by the ambiguity margin on
+   *  three consecutive batches before the track changes hands, so a single
+   *  face can never render as two people. */
+  trackId?: string;
+  /** The presence ledger's grade for the matched person at the moment of this
+   *  batch — "assumed" | "hypothesized" | "corroborated" | "confirmed" |
+   *  "retracted" | "absent". The debug panel shows it next to the name so the
+   *  clinician can see the difference between a guess and a verified person.
+   *  Undefined when the ledger isn't tracking this entity. */
+  presenceStatus?: import("@shared/aac/presence-ledger").PresenceStatus | "absent";
 }
 
 /** Public wire format for an identified voice (server → client). Mirrors

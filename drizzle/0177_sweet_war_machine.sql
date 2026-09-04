@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "debug_mode" boolean DEFAULT false NOT NULL;

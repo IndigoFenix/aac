@@ -40,7 +40,7 @@ If you have questions, please contact:
 Sincerely,
 {signer_name}
 {signer_title}
-Aivota / CliniAACian Ltd.
+Aivota Ltd.
 
 Reference: incident #{incident_ref}
 Vendor reference: {vendor_incident_ref}

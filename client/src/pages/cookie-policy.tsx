@@ -26,7 +26,7 @@ export default function CookiePolicy() {
                 <div>
                   <h3 className="font-semibold text-lg mb-3">1. {t('legal.cookie.whatAreCookiesHeading')}</h3>
                   <p>
-                    {t('legal.cookie.whatAreCookiesBodyPre')}<strong>Aivota</strong>{t('legal.cookie.whatAreCookiesBodyPost')}
+                    {t('legal.cookie.whatAreCookiesBodyPre')}<strong>Aivota Ltd</strong>{t('legal.cookie.whatAreCookiesBodyPost')}
                   </p>
                 </div>
 

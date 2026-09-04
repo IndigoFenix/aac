@@ -19,8 +19,17 @@
 //
 // ISSUER-AGNOSTIC by design (§4): `issuer` is a creature id exactly like a
 // Rule's `author` — the player is one creature among many. Nothing in the
-// pool special-cases a player-issued task; creature-issued orders route
-// through the same rows later.
+// pool special-cases a player-issued task by its ISSUER; creature-issued
+// orders route through the same rows later.
+//
+// ⚖️ AMENDED BY RULING (#50 ④, 2026-09-03): *"Player orders should take high
+// priority and creatures should only idle if either their need for rest is
+// high or there is nothing to do."* A SPOKEN row — one somebody actually
+// asked for, marked `spoken` by the poster that knows (see the field) — is
+// offered to claimants before an ambient one. That is still not an issuer
+// test: a creature that speaks an order will mark its tasks the same way, and
+// the town's own civic sweeps stay ambient even though they post under the
+// player's id. What ranks is whether ANYBODY asked, not who.
 
 import type { CreatureId } from "@shared/world-engine/interaction/behavior/creatures.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
@@ -58,6 +67,24 @@ export interface PooledTask {
    *  the dollhouse opened with an errand blamed on a player who said
    *  nothing). Absent = a real order; authority answers as ever. */
   need?: string;
+  /**
+   * ⚖️ #50 ④ — A PLAYER ASKED FOR THIS (user ruling 2026-09-03: *"Player
+   * orders should take high priority…"*). Set by the posters that KNOW a
+   * player spoke the order this task serves: a spoken sentence's own pooled
+   * goal, and the hauls staging a `spoken` construction row (the same key
+   * surplus control S1 put on the order, threaded through — never invented
+   * here). `open()` offers these rows first.
+   *
+   * ⚠️ WHY NOT `issuer`, AND WHY NOT `need`. `issuer` names a creature and
+   * the player is one of them — but EVERY civic sweep also posts as
+   * `LOCAL_PLAYER_CID` (it is the authoring spirit of the town's own books),
+   * so it cannot separate "you asked" from "the town needs". `need` is the
+   * why-chain's cosmetic answer and is dropped by the reload re-post. This
+   * key says exactly one thing and is carried by every arm that knows it.
+   *
+   * Absent = ambient/civic, which is every pre-#50 row and every save.
+   */
+  spoken?: boolean;
   /**
    * ⚖️ WHAT DOING THIS IS WORTH, in hand-seconds (economy arc batch 2, L1).
    *
@@ -97,9 +124,12 @@ export interface TaskPool {
     valueS?: number;
     /** See {@link PooledTask.need} — omitted stays omitted. */
     need?: string;
+    /** See {@link PooledTask.spoken} — omitted/false stays omitted. */
+    spoken?: boolean;
   }): PooledTask;
   get(id: string): PooledTask | undefined;
-  /** Open tasks in CREATION ORDER (the deterministic processing order). */
+  /** Open tasks in claim order: SPOKEN rows first, then creation order
+   *  within each group (see the implementation's law note). */
   open(): PooledTask[];
   /** Claimed (filled, still executing) tasks in creation order. */
   claimed(): PooledTask[];
@@ -139,13 +169,44 @@ export function createTaskPool(json?: SerializedTaskPool): TaskPool {
         ...(input.sourceGlyph !== undefined ? { sourceGlyph: input.sourceGlyph } : {}),
         ...(input.valueS !== undefined ? { valueS: input.valueS } : {}),
         ...(input.need !== undefined ? { need: input.need } : {}),
+        // Absent stays absent — an ambient row serializes byte-identically to
+        // every pre-#50 save.
+        ...(input.spoken === true ? { spoken: true } : {}),
       };
       tasks.push(task);
       byId.set(task.id, task);
       return task;
     },
     get: (id) => byId.get(id),
-    open: () => tasks.filter((t) => t.status === "open"),
+    /**
+     * ⚖️ #50 ④ — PLAYER ORDERS FIRST, THEN AGE (user ruling 2026-09-03:
+     * *"Player orders should take high priority and creatures should only idle
+     * if either their need for rest is high or there is nothing to do."*).
+     *
+     * The claim sweep walks this list and fills each task from the bodies that
+     * are free, one task per body — so the ORDER of this list is the order
+     * hands are handed out, and creation order alone meant a player's spoken
+     * errand queued behind whatever ambient stocking row the town happened to
+     * post first. A stable PARTITION is the whole change: spoken rows keep
+     * their relative age, ambient rows keep theirs, and nothing else about the
+     * pool moves.
+     *
+     * BYTE-IDENTICAL WHEN NOTHING IS SPOKEN (and when everything is): with no
+     * `spoken` row the partition is a copy of the filter, which is the shipped
+     * creation order verbatim — so every determinism and replay pin written
+     * before this still holds for an ambient town.
+     *
+     * ⚠️ PRIORITY IS ABOUT HANDS, NOT GOODS. Nothing here touches the
+     * reservation ledger: a spoken task claims a BODY sooner, it does not
+     * jump any queue for materials (construction-director's own "the two books
+     * meet at the RAWS" law).
+     */
+    open: () => {
+      const rows = tasks.filter((t) => t.status === "open");
+      const spoken = rows.filter((t) => t.spoken === true);
+      if (!spoken.length || spoken.length === rows.length) return rows;
+      return [...spoken, ...rows.filter((t) => t.spoken !== true)];
+    },
     claimed: () => tasks.filter((t) => t.status === "claimed"),
     claimedBy: (cid) => tasks.find((t) => t.status === "claimed" && t.claimedBy === cid),
     claim(id, by) {

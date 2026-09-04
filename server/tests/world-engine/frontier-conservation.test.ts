@@ -63,7 +63,7 @@ import { join } from "node:path";
 import { bootTextQuest, type TextQuestRun } from "@shared/world-engine/headless/text-quest.js";
 import { itemObjectSpec } from "@shared/world-engine/interaction/content/item-prop.js";
 import { carryObject, placeInContainer } from "@shared/world-engine/engine.js";
-import { setLooseProp, setContainerStock } from "@shared/world-engine/kernel/town/containers.js";
+import { setLooseProp, setContainerStock, haulTripUnits } from "@shared/world-engine/kernel/town/containers.js";
 import {
   BFURN_EP,
   createConstructionDirector,
@@ -108,8 +108,13 @@ describe("frontier — item conservation across a construction haul arc", () => 
   // ONE boot for the whole file: it is the expensive part (~11 s), every test
   // below measures its OWN delta, and sharing keeps the arc test downstream of
   // the ops that precede it exactly as a live session would be.
+  /** Every banner the host has pushed — read by the #50 ① delivery-truth pin
+   *  below, which measures what the REAL arc above actually announced. */
+  const toasts: string[] = [];
+
   beforeAll(() => {
     run = bootTextQuest({ world: doc, seed: SEED, dt: DT });
+    run.addPresenterTap({ toast: (t) => toasts.push(t) });
     run.advance(20); // let the streamer stand the residents up
     const id = Object.keys(run.state.avatars).find((k) => k.startsWith("resident_"));
     if (!id) throw new Error("no resident body was streamed in — fixture broken, not a finding");
@@ -426,6 +431,31 @@ describe("frontier — item conservation across a construction haul arc", () => 
       // returns for the tests downstream.
       book.removeOrder(row.ord);
       yard.stock["block"] = (yard.stock["block"] ?? 0) + plainBlocks;
+    }
+  }, 600_000);
+
+  // ── #50 ① THE DELIVERY TOAST TELLS THE TRUTH ─────────────────────────────
+
+  it("#50 ① every '— delivered' the LIVE arc spoke is a load a body could carry", () => {
+    // The measured lie: a 24-wood agreement completed announcing "bring 24
+    // wood — delivered" over the 8 units a basket actually holds. Two changes
+    // make that impossible and this reads BOTH of them off the real run above:
+    // no staging row is posted bigger than one carrier-load, and a delivery
+    // that falls short says the smaller true number ("delivered K of N")
+    // rather than echoing the promise.
+    const delivered = toasts.filter((t) => t.includes("— delivered"));
+    expect(delivered.length).toBeGreaterThan(0); // the arc really did deliver
+    const cap = haulTripUnits();
+    for (const line of delivered) {
+      const short = /— delivered (\d+) of (\d+)$/.exec(line);
+      if (short) {
+        // A short delivery states BOTH numbers, and the landed one is smaller.
+        expect(Number(short[1])).toBeLessThan(Number(short[2]));
+        continue;
+      }
+      // A full delivery echoes the promise — which is now always a trip.
+      const n = /bring (\d+) /.exec(line);
+      if (n) expect(Number(n[1])).toBeLessThanOrEqual(cap);
     }
   }, 600_000);
 
@@ -807,10 +837,16 @@ describe("② the unobserved twin credits the map every reader reads", () => {
     // the cascade leaves NO 🔁 lines (was 2). The movement assertions above
     // are the pin's real content; the voice belongs to far-apart releases.
     expect(h.toasts.filter((t) => t.startsWith("🔁")).length).toBe(0);
-    // 🚨 ONE-WAY DOOR: a staged recipient leaves the arbitration pool, so
-    // nothing it received can ever be released back out of it.
+    // 🚨 ONE-WAY DOOR: what a recipient received can never be released back
+    // out of it. `mid` leaves the arbitration pool by STAGING; `small` leaves
+    // it by being FED — #50 ⑤ holds a gathered batch out of labor while a
+    // sibling of the same (head, scope) book is milling (one bench, one
+    // queue), and a pile with no shortfall is neither a recipient (no gap to
+    // close) nor ever a donor (only a STARVED pile reaches the release path).
+    // The units stay put either way, which is the whole invariant.
     expect(mid.laborStartDay).not.toBeUndefined();
-    expect(small.laborStartDay).not.toBeUndefined();
+    expect(small.laborStartDay).toBeUndefined();
+    expect(stagingMissing(small)).toEqual({});
     expect((big.pile["wood"] ?? 0) + 34 + 50).toBe(120);
   });
 
@@ -897,5 +933,324 @@ describe("② the unobserved twin credits the map every reader reads", () => {
     expect(mills[0]!.count).toBeGreaterThan(0);
     expect(mills[0]!.count).toBeLessThan(400);
     expect(h.toasts.some((t) => /can't mill the block/.test(t))).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #50 ①②⑤ — THE OBSERVED STAGING ARM: what a porter is actually asked to do
+//
+// User rulings, 2026-09-03: *"Player orders should take high priority and
+// creatures should only idle if either their need for rest is high or there
+// is nothing to do."* / *"a lot of taking items out of the box, walking
+// around the box, and then putting them back in… they need to take the wood
+// to the work location and don't recognize that it's already there."*
+//
+// Three defects meeting at one seat, `postPileHauls`:
+//   ① ONE ROW, HOWEVER BIG. A 24-wood draw became ONE agreement — and a body
+//      carries a basketful (`haulTripUnits`) per trip, so it delivered 8,
+//      completed announcing "bring 24 wood — delivered", and left the rest to
+//      re-post behind the 20 s `pileRetryAt` gate: three SERIAL trips, one
+//      porter, everybody else idle.
+//   ② A HAUL FROM A PLACE TO ITSELF. Source crate and pile on one spot ⇒ the
+//      porter walks around the box and puts the units back down in it.
+//   ⑤ AN EMPTY POOL DURING THE MILL. One open row per (head, scope) meant
+//      that while a batch milled (144 s) nobody could gather the next one.
+//
+// The harness is the twin harness above with a WATCHER standing at the site,
+// which is the whole difference between the twin arm and this one.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("#50 the observed staging arm — capacity, co-location, gather-ahead", () => {
+  const CONFIG = { seed: 5, days: 30, questCount: 0, key: "smalltown", startPop: 20 };
+  const YARD_AT = { x: 0, y: 0 };
+  /** The mill spot, a body-width off the crate — what `refineSpotOf` answers
+   *  since #50 ③, and inside `CO_LOCATED_PILE_M` of it. */
+  const MILL_AT = { x: 1.4, y: 0 };
+  /** …and a mill across town, for the arm that must still walk. */
+  const FAR_AT = { x: 60, y: 0 };
+
+  function obsHarness(opts: { relation?: "in" | "on"; wood?: number } = {}) {
+    const play = buildTownPlay(CONFIG);
+    const toasts: string[] = [];
+    const pooled: Array<{ goods: Record<string, number>; glyph: string; spoken: boolean }> = [];
+    const yardStock: Record<string, number> = { wood: opts.wood ?? 24 };
+    const containerRecords = new Map<string, ContainerRecord>([
+      [
+        TOWN_YARD_EP,
+        { mount: "standing", relation: opts.relation ?? "in", owner: null, stock: yardStock } as ContainerRecord,
+      ],
+    ]);
+    const session = {
+      town: play,
+      townClock: 0,
+      taskClock: 0,
+      scale: REAL_SCALE,
+      containerRecords,
+      wornBagIndex: new Map<string, string>(),
+      marketStore: new Map<string, unknown>(),
+      produceBox: new Map<string, unknown>(),
+      houseShown: new Set<number>(),
+      transfers: play.deltas.transfers,
+      reservations: play.deltas.reservations,
+      taskPool: createTaskPool(),
+      buildTaskOrds: new Map<string, number>(),
+      npcTasks: new Map<string, unknown[]>(),
+      needPoseShow: new Map<string, unknown>(),
+      party: new Set<string>(),
+      escorting: new Set<string>(),
+      creatures: null,
+      addressedFamily: null,
+      // ⇐ SOMEBODY IS WATCHING: the spirit stands at the yard, so every rect
+      // in this fixture is observed and the sweep takes the WALKED arm.
+      spiritPos: { x: 0, y: 0 },
+    } as unknown as QuestSession;
+    const ctx = {
+      presenter: { toast: (m: string) => { toasts.push(m); } },
+      familyOf: () => null,
+      avatarIdOf: (cid: string) => cid,
+      buildingUnits: () => 0,
+      npcChatBubble: () => {},
+      gazeCreature: () => null,
+      spawnLooseProp: () => null,
+      removeLooseProp: () => {},
+      postPooledTask: (
+        _s: QuestSession,
+        goal: { goods?: Record<string, number> },
+        _i: string,
+        _f: unknown,
+        glyph: string,
+        _v?: number,
+        _n?: string,
+        spoken?: boolean,
+      ) => {
+        pooled.push({ goods: { ...(goal.goods ?? {}) }, glyph, spoken: spoken === true });
+      },
+      containerAnchor: (_s: QuestSession, id: string) => (id === TOWN_YARD_EP ? YARD_AT : null),
+      houseContainerKeys: () => [],
+      playerWorldPos: () => ({ x: 0, y: 0 }),
+      playerFocusArea: () => null,
+      townShortage: () => 0,
+      invalidateTownJobs: () => {},
+      questViewOf: () => null,
+      spiritFocusOf: () => null,
+      convoNodeId: () => null,
+      issueTransferHaul: () => {},
+      handIsFree: () => true,
+      townHandPool: () => ({ total: 4, free: 4 }),
+      bumpStockEpoch: () => {},
+      cutForDraw: () => {},
+      depleteWildSource: () => {},
+      drawSourceShelf: () => {},
+      bodyCarryOf: () => ({ inHand: null, worn: null }),
+      takeUnitsFromBody: () => 0,
+      enqueueNpcErrand: () => {},
+      stockEndpointOf: (_s: QuestSession, id: string): StockEndpoint | null => {
+        if (id.startsWith("orderpile:")) {
+          const ord = Number(id.slice("orderpile:".length));
+          const row = play.deltas.orders().find((o) => o.ord === ord);
+          if (!row || row.kind !== "refine") return null;
+          return { id, kind: "site", at: row.at, stack: row.pile, owner: null };
+        }
+        const stock = containerRecords.get(id)?.stock;
+        return stock ? { id, kind: "yard", at: YARD_AT, stack: stock, owner: null } : null;
+      },
+    } as unknown as ConstructionDirectorCtx;
+    const director = createConstructionDirector(ctx);
+    director.setWorld({
+      state: { avatars: {}, objects: {}, spec: { objects: [] } },
+      npcRadiusOf: () => 0.4,
+      npcErrandActive: () => false,
+      removeObject: () => {},
+      setDragZones: () => {},
+    } as never);
+    return { play, session, director, toasts, pooled, yardStock };
+  }
+
+  type ObsRun = ReturnType<typeof obsHarness>;
+
+  /** A mill row wanting `wood` raws, standing at `at`.
+   *
+   *  SPOKEN by default, and deliberately: an AUTOMATED bill draws the commons
+   *  SPARE only (surplus control S1 — `commonsReserveOf` holds a raw par back),
+   *  so an ambient fixture's row count would be a statement about the reserve
+   *  dial rather than about the carrier. A spoken bill may draw the shelf to
+   *  zero, which makes the load arithmetic below exactly the thing under test.
+   *  The ambient case has its own pin at the end of ①. */
+  const mill = (h: ObsRun, wood: number, at: { x: number; y: number }, spoken = true) =>
+    h.play.deltas.postRefineOrder({
+      produces: "block.material_wood",
+      count: Math.ceil(wood / 2),
+      costs: { wood },
+      pile: {},
+      at,
+      startedDay: 0,
+      buildDays: 0.6,
+      ...(spoken ? { spoken: true } : {}),
+    });
+
+  /** One sweep, far enough past the last that the 20 s haul gate has reopened. */
+  const obsSweep = (h: ObsRun, dt = 25) => {
+    h.session.taskClock += dt;
+    h.director.stepFoundedConstruction(h.session, dt);
+  };
+
+  /** Live haul rows, with their posted loads. */
+  const hauls = (h: ObsRun) =>
+    h.session.transfers
+      .all()
+      .filter((a) => a.status === "pending" || a.status === "moving")
+      .map((a) => ({ from: a.from, to: a.to, goods: a.goods, glyph: a.sourceGlyph }));
+
+  // ── ① CAPACITY-SIZED HAULS ───────────────────────────────────────────────
+
+  it("① a >capacity bill posts ONE ROW PER CARRIER-LOAD, in a single sweep", () => {
+    const h = obsHarness({ wood: 24 });
+    mill(h, 24, FAR_AT);
+
+    obsSweep(h);
+
+    const rows = hauls(h);
+    // 24 wood at 8 a trip: three rows, POSTED TOGETHER — so three porters can
+    // claim three trips instead of one porter walking three times behind a
+    // 20 s gate. The old code posted exactly one row of 24.
+    expect(rows.length).toBe(3);
+    expect(rows.every((r) => r.goods["wood"] === 8)).toBe(true);
+    expect(rows.reduce((s, r) => s + (r.goods["wood"] ?? 0), 0)).toBe(24);
+    // …and there is a pooled task per trip, each promising its own load.
+    expect(h.pooled.map((p) => p.glyph)).toEqual(["bring 8 wood", "bring 8 wood", "bring 8 wood"]);
+    // 🚨 EVERY PROMISE IS ONE A BODY CAN KEEP — the lying "delivered" toast is
+    // impossible now because no row asks for more than a trip can carry.
+    expect(rows.every((r) => r.glyph === "bring 8 wood")).toBe(true);
+    // ④ …and a SPOKEN bill's hauls carry the priority flag into the pool.
+    expect(h.pooled.every((p) => p.spoken)).toBe(true);
+  });
+
+  it("④ an AMBIENT bill's hauls are NOT spoken — the town's own errands stay ambient", () => {
+    const h = obsHarness({ wood: 40 });
+    mill(h, 8, FAR_AT, false);
+
+    obsSweep(h);
+
+    expect(h.pooled.length).toBeGreaterThan(0);
+    expect(h.pooled.every((p) => p.spoken)).toBe(false);
+  });
+
+  it("① a bill UNDER one carrier-load is the single row it always was", () => {
+    const h = obsHarness({ wood: 5 });
+    mill(h, 5, FAR_AT);
+
+    obsSweep(h);
+
+    const rows = hauls(h);
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.goods).toEqual({ wood: 5 });
+    expect(rows[0]!.glyph).toBe("bring 5 wood");
+  });
+
+  it("① the reservation is SLICED with the row — the draw's total is unchanged", () => {
+    const h = obsHarness({ wood: 24 });
+    mill(h, 24, FAR_AT);
+
+    obsSweep(h);
+
+    // Three agreements, three holders, 24 units spoken for in total: the
+    // shelf is no more (and no less) committed than under one big row.
+    const rows = h.session.reservations.toJSON().rows.filter((r) => r.endpoint === TOWN_YARD_EP);
+    expect(rows.length).toBe(3);
+    expect(rows.reduce((s, r) => s + r.qty, 0)).toBe(24);
+    expect(new Set(rows.map((r) => r.holder)).size).toBe(3);
+  });
+
+  // ── ② THE CO-LOCATED STAGING SKIP ────────────────────────────────────────
+
+  it("② source AND pile on one spot ⇒ NO errand, and the units still conserve", () => {
+    const h = obsHarness({ wood: 24 });
+    const r = mill(h, 24, MILL_AT); // the workspot beside the crate (#50 ③)
+
+    obsSweep(h);
+
+    // 🚨 NOBODY WALKS. This is the reported disease: the porter stood beside
+    // the crate, took, walked AROUND it, and set the units back down in it.
+    expect(hauls(h)).toEqual([]);
+    expect(h.pooled).toEqual([]);
+    // …and the ledger moved instead: conservation is exact, both sides.
+    expect(r.pile).toEqual({ wood: 24 });
+    expect(h.yardStock["wood"] ?? 0).toBe(0);
+    expect(stagingMissing(r)).toEqual({});
+    // A move that goes nowhere is SILENT — the director must not narrate a
+    // walk nobody walked (the release path's own co-located law).
+    expect(h.toasts.some((t) => /bring|carry/.test(t))).toBe(false);
+  });
+
+  it("② a mill ACROSS TOWN still walks — co-location is a fact, not a shortcut", () => {
+    const h = obsHarness({ wood: 8 });
+    mill(h, 8, FAR_AT);
+
+    obsSweep(h);
+
+    expect(hauls(h).length).toBe(1);
+    expect(h.pooled.length).toBe(1);
+  });
+
+  it("② a container that SHOWS its contents keeps the walked path (prop bookkeeping)", () => {
+    // A surface renders its stack as visible props, and the load/unload seam
+    // owns that bookkeeping — ledger arithmetic here would leave a phantom on
+    // the table. Both crates in the reported disease are lidded.
+    const h = obsHarness({ relation: "on", wood: 8 });
+    mill(h, 8, MILL_AT);
+
+    obsSweep(h);
+
+    expect(hauls(h).length).toBe(1);
+  });
+
+  // ── ⑤ GATHER-AHEAD ───────────────────────────────────────────────────────
+
+  it("⑤ while one batch MILLS, the next may open and gather — bounded at 1+1", () => {
+    const h = obsHarness({ wood: 400 });
+    // A staked house whose bill the chain must cover: the starved path posts
+    // the mill, and may re-post while the first one is busy.
+    h.play.deltas.foundBuilding(
+      { type: "house", slot: 3, dx: 10, dy: -20, w: 9, h: 8, door: "south" },
+      0,
+      50,
+      { [BLOCK_GLYPH]: 400 },
+    );
+    obsSweep(h);
+    const first = h.play.deltas.refineOrders();
+    expect(first.length).toBe(1);
+    // Put the first row in LABOR (materials in, mill running).
+    first[0]!.pile = { ...first[0]!.costs };
+    obsSweep(h);
+    expect(first[0]!.laborStartDay).not.toBeUndefined();
+
+    // …and NOW the chain may open the next batch, which gathers while the
+    // first mills. Before #50 the pool was empty for the whole 144 s window.
+    obsSweep(h);
+    const rows = h.play.deltas.refineOrders();
+    expect(rows.length).toBe(2);
+    expect(rows.filter((r) => r.laborStartDay === undefined).length).toBe(1);
+
+    // 🚨 BOUNDED: with one gathering and one milling, nothing more is posted,
+    // however many sweeps run. That is #43 ②c's anti-runaway intent, kept.
+    for (let i = 0; i < 4; i++) obsSweep(h);
+    expect(h.play.deltas.refineOrders().length).toBe(2);
+  });
+
+  it("⑤ NEVER TWO MILLS: a gathered batch HOLDS while its sibling labors", () => {
+    const h = obsHarness({ wood: 200 });
+    const a = mill(h, 8, FAR_AT);
+    const b = mill(h, 8, FAR_AT);
+    a.pile = { wood: 8 };
+    b.pile = { wood: 8 };
+
+    obsSweep(h);
+    expect(a.laborStartDay).not.toBeUndefined();
+    expect(b.laborStartDay).toBeUndefined(); // fed, holding — one bench, one queue
+
+    // …and it stays held for as long as the bench is busy.
+    obsSweep(h);
+    expect(b.laborStartDay).toBeUndefined();
+    expect(b.pile).toEqual({ wood: 8 }); // its raws are its own; nothing is lost
   });
 });

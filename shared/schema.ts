@@ -2575,8 +2575,10 @@ export const venueMenus = pgTable("venue_menus", {
   language: text("language").default("en").notNull(),
   currency: text("currency"),
   // Refined items: [{ name, description?, price?, priceText?, category?, kind,
-  // imageKey?, translatedName? }] — post-applyMenuRefinement (§4.2a), so the
-  // factual fields here are always the raw extraction's.
+  // icon?, translatedName? }] — post-applyMenuRefinement (§4.2a), so the
+  // factual fields here are always the raw extraction's. `icon` is board glyph
+  // syntax (pizza.olive); rows from before 2026-09-02 carry a single-key
+  // `imageKey` instead, which the board builder reads as a one-slot glyph.
   items: jsonb("items").default([]).notNull(),
   provenance: text("provenance").notNull(), // 'camera' | 'web' | 'manual'
   sourceUrl: text("source_url"),

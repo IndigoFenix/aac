@@ -145,7 +145,7 @@ export class EmailService {
             <td>
               ${safeIgnore}
               <p style="color: #a1a1aa; font-size: 11px; margin: 10px 0 0 0;">
-                &copy; ${new Date().getFullYear()} Aivota. All rights reserved.
+                &copy; ${new Date().getFullYear()} Aivota Ltd. All rights reserved.
               </p>
             </td>
           </tr>
@@ -542,7 +542,7 @@ The Aivota Team
                 Best regards,<br>The Aivota Team
               </p>
               <p style="color: #a1a1aa; font-size: 11px; margin: 10px 0 0 0;">
-                &copy; ${new Date().getFullYear()} Aivota. All rights reserved.
+                &copy; ${new Date().getFullYear()} Aivota Ltd. All rights reserved.
               </p>
             </td>
           </tr>
@@ -665,7 +665,7 @@ Aivota - AAC Tools for Healthcare & Education
           <tr>
             <td>
               <p style="color: #a1a1aa; font-size: 11px; margin: 0;">
-                &copy; ${new Date().getFullYear()} Aivota. All rights reserved.
+                &copy; ${new Date().getFullYear()} Aivota Ltd. All rights reserved.
               </p>
             </td>
           </tr>

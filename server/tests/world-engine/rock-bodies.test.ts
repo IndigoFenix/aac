@@ -18,9 +18,9 @@ import { buildObjectModel, hasObjectModel } from "@shared/world-engine/object-mo
 import { createWorldState, fixturesWalkable } from "@shared/world-engine/engine.js";
 import type { ObjectSpec, WorldSpec, WorldState } from "@shared/world-engine/types.js";
 import {
-  killStockOf,
+  bodyStockOf,
   naturalSourceOf,
-  sourceKillExhausted,
+  sourceSpent,
   takeUnitsOf,
 } from "@shared/world-engine/products.js";
 import {
@@ -39,7 +39,7 @@ const identityOf = (species: string): { iconRef: string; glyph: string | undefin
   const src = naturalSourceOf(species);
   return {
     iconRef: src?.feature?.icon ?? "🌳",
-    glyph: Object.keys(killStockOf(species, () => 0))[0],
+    glyph: Object.keys(bodyStockOf(species, () => 0))[0],
   };
 };
 
@@ -165,14 +165,14 @@ describe("the boulder", () => {
 
 describe("the quarry, end to end", () => {
   // A headless replay of the host's take loop: takeFromContainer draws units
-  // (tool-multiplied) out of containerStock, fellIfConsumed resizes what is
+  // (tool-multiplied) out of containerStock, depleteWildSource resizes what is
   // left and removes the outcrop once the kill stock is gone.
   const quarry = (stock: Record<string, number>, tools: string[]) => {
     const has = (t: string) => tools.includes(t);
     const radii: number[] = [wildFeatureRadius("rock", stock)];
     let acts = 0;
     const pocket: Record<string, number> = {};
-    while (!sourceKillExhausted(ROCK, stock)) {
+    while (!sourceSpent(ROCK, stock)) {
       const units = takeUnitsOf(ROCK, "stone", has);
       for (let i = 0; i < units && (stock.stone ?? 0) > 0; i++) {
         stock.stone!--;

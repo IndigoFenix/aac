@@ -166,6 +166,12 @@ import { decideGuessingEnter } from "./guessing-enter-policy";
 import { transcribeSegments, createStreamingSession, type SttStreamSession } from "../voice/google-stt-service";
 import { fuseSpeakerLikelihood, renderSpeakerLikelihood, type LipFace, type IdentifiedFaceLite, type VoiceCandidate, type SpeakerLikelihood } from "@shared/aac/speaker-fusion";
 import { renderSceneForObserver, type SceneSnapshot, type IdentifiedForScene } from "@shared/aac/scene-state";
+import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
+import {
+  readSeizureBaselineForSeed, readHeadNeutralForSeed, readFaceBaselineForSeed, hasObservation,
+  coerceLearnedBaselines, mergeLearnedBaselines,
+  type LearnedBaselineObservation,
+} from "@shared/aac/learned-baselines";
 import { matchPitch, describeVoiceCharacter } from "@shared/aac/voice-pitch";
 
 /** Rough speech duration (seconds) of a 16-bit PCM WAV, for STT billing. Reads
@@ -287,8 +293,34 @@ import {
   RESTAURANT_APP_ID,
 } from "../venue-menus/restaurant-app-open";
 import { webMenuService } from "../venue-menus/web-menu-service";
+import { speechEstimateMs } from "@shared/world-engine/npc-voice";
 import { smartMergeButtons, sameBoard, type MergeButton } from "./board-merge";
-import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER, PARTY_UNKNOWN } from "./speech-party";
+import { isDeviceTarget, isUserTarget, PARTY_DEVICE, PARTY_USER, PARTY_UNKNOWN, PARTY_NEARBY } from "./speech-party";
+import {
+  PresenceLedger,
+  renderPerson,
+  renderPresenceLists,
+  faceEvidenceStrength,
+  entityKey as presenceEntityKey,
+  PRESENCE_LEDGER_DEFAULTS,
+  type PresenceEntityType,
+  type PresenceLists,
+  type PresenceStatus,
+} from "@shared/aac/presence-ledger";
+import { TrackIdentityResolver } from "@shared/aac/face-track-identity";
+import {
+  setPresenceListsProvider,
+  clearPresenceListsProvider,
+  presenceProviderCount,
+} from "../memory-schema/presence-context";
+import {
+  renderPeoplePresent,
+  decideContextDemotion,
+  decideSpeakerDemotion,
+  speakerCandidatesLine,
+  detectSelfDeclaredNames,
+  type PresentFace,
+} from "./presence-gate";
 import { userSpeechDrivesBoard, speakerReplyTriggers } from "./speech-board-trigger";
 import { assessStudentTranscript, isVerbalAbility, type VerbalAbility } from "@shared/aac/verbal-ability";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
@@ -666,7 +698,9 @@ function buildClientSeizureConfig(aacSettings: any): ClientSeizureConfig | undef
   return {
     enabled: true,
     thresholds: resolveThresholds(config),
-    baseline: raw?.baseline ?? null,
+    // Prefers aac_settings.learned_baselines, falling back to the legacy
+    // seizureDetection.baseline so existing rows keep working.
+    baseline: readSeizureBaselineForSeed(aacSettings),
     // Per-student motor markers — the DSP evaluates these client-side each
     // window, so they ship with the config rather than being adjudicated here.
     markers: resolveMarkers(config),
@@ -916,6 +950,18 @@ function describeCallOutcome(outcome: string): string {
  */
 const detachedCoordinators = new Map<string, AgentCoordinator>();
 
+/**
+ * Who currently owns each presence-provider key.
+ *
+ * `memory-schema/presence-context.ts` keys providers by session id and has no
+ * notion of ownership, so a coordinator that was DISPLACED (a full
+ * re-initialize while its finalization was still deferred) would, when its
+ * deferred pass finally settles, delete the key its own successor had already
+ * claimed — silently turning the feature off mid-session for the live student.
+ * A clear only lands when this map still names the clearer.
+ */
+const presenceProviderOwners = new Map<string, AgentCoordinator>();
+
 export class AgentCoordinator {
   // -------------------------------------------------------------------------
   // Connection lifecycle
@@ -925,6 +971,13 @@ export class AgentCoordinator {
    *  a cue that flashes on and off is noise; the ones that matter await a
    *  startup-resolver call, and the Speaker is silent for all of it. */
   private static readonly APP_OPEN_CUE_DELAY_MS = 250;
+  /**
+   * Ceiling on the floor-hold for an utterance the DEVICE voiced (device-voice
+   * mode). The client owns that audio, so the server only estimates its length
+   * — and an estimate is exactly the kind of number that must not be able to
+   * stall a session, so it is capped rather than trusted.
+   */
+  private static readonly LOCAL_UTTERANCE_MAX_HOLD_MS = 6_000;
   private appOpenCueTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * What the restaurant app is showing right now, as far as this side sent it.
@@ -1590,6 +1643,47 @@ export class AgentCoordinator {
   private static readonly VOICE_SAMPLE_QUALITY_MIN = 0.35;
 
   // -------------------------------------------------------------------------
+  // Presence ledger (planning-docs/aac-presence-ledger.md).
+  //
+  // WHO is in the room, as a typed claim owned by code. Every channel — face,
+  // voice, the Observer's own naming, a human correction — contributes
+  // EVIDENCE; only the ledger derives a status, and only `renderPerson` puts a
+  // name into a prompt. RECORDING always runs, flag or no flag: the snapshot on
+  // the session row is the forensic trail the September incident had no
+  // equivalent of. Only the RENDERING and the GATES key off
+  // `presenceLedgerEnabled` (aac_settings.presence_ledger, per student).
+  // -------------------------------------------------------------------------
+  private readonly presence = new PresenceLedger();
+  /** One track holds one person; a challenger needs three consecutive winning
+   *  batches past the ambiguity margin to take a track. */
+  private readonly tracks = new TrackIdentityResolver();
+  /** aac_settings.presence_ledger — gates rendering + the promotion gates. */
+  private presenceLedgerEnabled = false;
+  /** The session id this coordinator's presence provider is registered under,
+   *  or null. Tracked separately from `sessionId` because the registry is
+   *  PROCESS-GLOBAL: if a resume hands us a different id and we register the
+   *  new one without clearing the old, the closed session's ledger stays alive
+   *  for the life of the process and can authorize another session's writes. */
+  private presenceProviderKey: string | null = null;
+  /** The roster the ledger was loaded with; also the synchronous lookup table
+   *  for the gates (which run inside onObserverEvent and cannot await a DB
+   *  read before mutating the event). Empty until the load resolves. */
+  private presenceRoster: KnownPerson[] = [];
+  private presenceRosterLoaded = false;
+  /** The in-flight roster load, memoized so concurrent callers await the SAME
+   *  promise. Cleared on failure so a transient DB blip can be retried. */
+  private presenceRosterPromise: Promise<void> | null = null;
+  /** RAW pre-cap face count per camera role from the last batch that reported
+   *  one. The number of people `[PEOPLE PRESENT]` lists can never exceed it. */
+  private facesInFrameByCamera: Record<string, number> = {};
+  /** The rider that makes a retraction UNLEARNABLE downstream. One constant,
+   *  two emitters: the Observer's `misidentified` flush and the client's
+   *  "Not them" tap — a human correction must reach the Monitor exactly as an
+   *  Observer correction does, which it did not before. */
+  private static readonly RETRACTION_RIDER =
+    "[RETRACTION — earlier reports of this person were a misidentification. Treat them as NOT present; do not record their presence, and strike any note or summary line that claims it.]";
+
+  // -------------------------------------------------------------------------
   // Startup mode (CONTEXTUAL / MENU). Resolved from context at init; consumed
   // once on the first frame's scene description (see flushContextUpdates).
   // -------------------------------------------------------------------------
@@ -2139,6 +2233,17 @@ export class AgentCoordinator {
         })
         .finally(() => {
           unsubBudgetOnSettle?.();
+          // The LAST thing that happens in the close routine, and deliberately
+          // not one line earlier: the final Monitor pass — which is the one
+          // that writes Student_Notes, Student_People and context_notes — must
+          // still be able to read the verified list while it runs. (The close
+          // summary reads the DB snapshot instead, so it does not need this.)
+          // In the `.finally` rather than after the await inside the pass so
+          // that a THROWN pass, an early return (`allowNotes=false`, no
+          // session id) and the deferred-grace branch all release the key: the
+          // registry is process-global and a leak outlives the process's
+          // sessions.
+          this.clearPresenceProvider();
         });
     };
     // Defer finalization by a grace window so a quick reconnect rescues the
@@ -2273,6 +2378,20 @@ export class AgentCoordinator {
     // deep-analysis search. AWAITED and ordered AFTER the drain so it reads
     // the freshly-persisted log instead of racing it.
     const sessionId = this.sessionId;
+    // Freeze the ledger onto the session row BEFORE the summary runs. The
+    // September incident had no per-frame record of any kind: the flow log is
+    // file-only in production, CloudWatch carries none of it, and
+    // session_debug_logs needed a client debugMode this device stopped
+    // sending — so "what did the matcher claim, and what did the Observer do
+    // with it" could not be answered at all. One row answers it now. Bounded
+    // (≤40 evidence entries per person), no embeddings, no PHI beyond names
+    // already in student_contacts. Written whatever the flag says.
+    try {
+      const { setChatSessionPresenceLedger } = await import("../sessionService");
+      await setChatSessionPresenceLedger(sessionId, this.presence.snapshot());
+    } catch (err) {
+      console.warn("[AgentCoordinator] presence ledger snapshot failed:", (err as Error).message);
+    }
     try {
       const { generateSessionSummary } = await import("../sessionSummary");
       await generateSessionSummary(sessionId);
@@ -2704,10 +2823,31 @@ export class AgentCoordinator {
         if (this.paused) return;
         this.observer?.sendContextInjection(`[SCENE] ${this.renderScene(msg.scene)}`);
         return;
+      case "learned_baselines":
+        // Machine-learned baselines observed this session (seizure motion
+        // energy, head neutral). Merged count-weighted into
+        // aac_settings.learned_baselines so the NEXT session opens tuned. This
+        // is the write-back half that never existed — the seizure detector has
+        // been re-learning from cold every session because of its absence.
+        if (!this.studentId) return;
+        if (!hasObservation(msg.data)) return;
+        this.persistLearnedBaselines(msg.data).catch(err => {
+          runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+            logLiveSession("COORDINATOR:NOTE", `learned_baselines persist failed: ${err?.message || err}`);
+          });
+        });
+        return;
       case "correct_identity":
         // A recent face/voice match was wrong — penalize the embedding(s) that
         // mis-fired so the same confusion stops recurring.
         if (!this.studentId) return;
+        // A HUMAN said "not them" — the strongest signal in the system, and
+        // until now the only correction that never reached the Monitor: the
+        // biometrics were penalized and the live list was pruned, but no
+        // [RETRACTION] line was ever written, so the permanent notes kept the
+        // presence a person had explicitly denied. Both halves now fire, and
+        // both fire regardless of the presence flag.
+        this.recordHumanIdentityCorrection(msg.entityType, msg.entityId, msg.reason);
         this.correctMisidentification(msg.entityType, msg.entityId, msg.reason).catch(err => {
           runInSessionContext(this.sessionId || "?", this.debugMode, () => {
             logLiveSession("IDENTITY_CORRECTION_ERROR", (err as Error).message);
@@ -2782,14 +2922,61 @@ export class AgentCoordinator {
         // Light the "interpreting" indicator so the SENTENCE BUILDER's Play
         // button shows it's working until the interpreted sentence is voiced
         // (cleared in routeInterpretIntent, or by the backstop timer).
-        this.markInterpretBusy();
-        this.emitClientEvent({
-          type: "sentence_composed",
-          source: "client",
-          timestamp: Date.now(),
-          glyphs: msg.glyph.split("+").map(s => s.trim()).filter(Boolean),
-          sentence: msg.glyph,
-        });
+        {
+          const composed: SentenceComposedEvent = {
+            type: "sentence_composed",
+            source: "client",
+            timestamp: Date.now(),
+            glyphs: msg.glyph.split("+").map(s => s.trim()).filter(Boolean),
+            sentence: msg.glyph,
+          };
+          // THE PARSED FAST PATH. The client rendered the composed glyph with
+          // the glyph language itself (shared/aac/builder-speech decides when
+          // that is safe: the locale has a ruleset, every word has a lexeme,
+          // the parse is a real frame). There is nothing for a model to
+          // interpret — the sentence IS the words the child assembled — so it
+          // is voiced and routed right here. No interpret() call, no
+          // "interpreting" spinner, and in device-voice mode the client has
+          // already said it out loud before this message even arrived.
+          const rendered = msg.sentence?.trim();
+          if (rendered) {
+            this.lastUserInputType = "none";   // no interpret() is coming
+            this.noteEngagementActivity();
+            // A composed sentence claims the floor — commit any open press
+            // chain first, so buttons pressed before it are answered in the
+            // order they happened (emitClientEvent does the same).
+            if (!this.pressChainCommitting) this.flushPressChain("superseded by parsed sentence");
+            // Recorded and triggered as a PRESS carrying the spoken sentence,
+            // NOT as `sentence_composed` carrying the raw glyph. A composed
+            // event is the Board Manager's cue to call interpret() — on the
+            // first run of this path it did exactly that for every parsed
+            // press, got rejected ("lastInput=none"), and the rejection was
+            // pushed into the Speaker as a confused [INTERPRET REJECTED]
+            // note. The sentence here is already voiced; to every agent it is
+            // what a button press is.
+            const pressed: ButtonPressedEvent = {
+              type: "button_pressed",
+              source: "client",
+              timestamp: composed.timestamp,
+              label: rendered,
+              sentence: rendered,
+              glyph: msg.glyph,
+              target: "DEVICE",
+            };
+            this.recordEvent(pressed);
+            flowNote("COORDINATOR", `Sentence builder played a PARSED sentence — no interpret(): "${rendered}"`);
+            this.send({ type: "utterance", text: rendered, confidence: "high", noAudioClear: false });
+            void this.deliverStudentSentence(rendered, {
+              ttsSource: "builder_parsed",
+              boardEvent: pressed,
+              speakerNote: `[BUILDER] (the device voiced the user's composed sentence) ${rendered}`,
+              alreadyVoiced: msg.spokenLocally === true && this.useLocalStudentTts,
+            });
+            return;
+          }
+          this.markInterpretBusy();
+          this.emitClientEvent(composed);
+        }
         return;
       case "construction_state":
         this.handleConstructionState(msg.data);
@@ -3084,6 +3271,13 @@ export class AgentCoordinator {
     this.sessionId = state.sessionId;
     this.studentId = state.studentId;
     this.userId = state.userId;
+    // The DB session id is now resolved and stable. If this coordinator was
+    // already publishing a ledger under a DIFFERENT id (a re-initialize that
+    // did not resume), that key goes now — the registry is process-global and
+    // a stale key would keep a dead session's verified list authorizing
+    // durable writes. Registration under the new key happens once the flag is
+    // read below; this call is a no-op when nothing was published.
+    this.syncPresenceProvider();
     // SLP MODE rides on the LOGGED-IN USER, not the student, so it comes from
     // the authenticated identity (freshly loaded from the DB by the WS upgrade
     // auth) rather than from anything student-scoped. Resolved before the
@@ -3285,6 +3479,22 @@ export class AgentCoordinator {
     // economy Observer + short-memory + tired Speaker, and <10% board-only (no
     // Speaker, no greeting). ≤0% all-stop is enforced on the first sleep→wake.
     this.fullAttentionMode = !!((studentRowAac as any)?.fullAttentionMode);
+    // Presence ledger, per student (default off; §10 rollout). The ledger
+    // RECORDS either way — the snapshot on the session row is observability,
+    // not a feature — so this flag governs only the rendering and the
+    // promotion gates. Kick the roster load now so the lookalike pairs are
+    // computed before the first face batch rather than during it.
+    this.presenceLedgerEnabled = (studentRowAac as any)?.presenceLedger === true;
+    // Server-side debug switch (aac_settings.debug_mode): a clinician can turn on
+    // session_debug_logs for one student without depending on the client build.
+    if ((studentRowAac as any)?.debugMode === true) this.debugMode = true;
+    void this.loadPresenceRoster();
+    // Publish the ledger to the Monitor side. A registered provider IS the
+    // feature flag over there (`memory-schema/presence-context.ts`): the
+    // rolling summary, the durable-write validator and contact provenance all
+    // look it up by this exact session id, and every one of them is a no-op
+    // when there is none. Nothing else needs calling.
+    this.syncPresenceProvider();
     // budgetTier + observerPolicy were resolved earlier (before prompt build).
     this.budgetWindows = windowsForTier(this.budgetTier);
     {
@@ -3591,9 +3801,23 @@ export class AgentCoordinator {
         sceneStateActive: this.capable("sceneState"),
         // Continuous (ungated) raw PCM only when audio attention starts at "live".
         pcmContinuous: this.audioAttention === "live",
+        // DEVICE-VOICE MODE. Read from the same joined settings row the voice
+        // resolution reads (`useLocalStudentTts`), so the client can voice a
+        // press ITSELF the moment it is tapped instead of waiting out a round
+        // trip for the `client_local_tts` that would only tell it to say the
+        // words it already had. "Instant" is what this setting promises.
+        deviceVoice: (studentRow?.aacSettings as any)?.useLocalTts === true,
         // Per-student seizure detection: resolved thresholds + seed baseline, or
         // undefined when the student has the feature off.
         seizure: buildClientSeizureConfig(studentRow?.aacSettings),
+        // Accumulated head-neutral profile + how much it is worth trusting.
+        // The client seeds its attention trackers from this so a session opens
+        // already tuned rather than re-warming. Absent = never learned.
+        headNeutral: readHeadNeutralForSeed(studentRow?.aacSettings) ?? undefined,
+        // Accumulated facial-channel baseline. Same contract as headNeutral:
+        // seeds the decoder so expression is scored against THIS child's own
+        // distribution from the first frame instead of a global constant.
+        faceBaseline: readFaceBaselineForSeed(studentRow?.aacSettings) ?? undefined,
         // Automated audio scan (eyegaze students only) — {} when off.
         ...buildClientAutoScanConfig(studentRow?.aacSettings),
         // SLP MODE (per logged-in USER, not the student): suppresses the
@@ -3929,6 +4153,10 @@ export class AgentCoordinator {
   private async handleButtonPress(msg: Extract<ClientMessage, { type: "button_press" }>): Promise<void> {
     const label = msg.buttons[0] || "";
     const sentence = msg.sentences?.[label] || label;
+    // Device-voice mode: the client voiced this press at the tap. Honoured
+    // ONLY when the server agrees the student is in that mode — a flag alone
+    // must not be able to silence a student whose voice comes from a provider.
+    const alreadyVoiced = msg.spokenLocally === true && this.useLocalStudentTts;
     // Per-student press pacing (chain hold + barge-in). Resolved once per
     // press and consulted at both decision points below.
     const pacing = this.pressPacing();
@@ -4020,7 +4248,7 @@ export class AgentCoordinator {
       if (sentence) {
         flowOutput("COORDINATOR", "ws_send_utterance", sentence);
         this.send({ type: "utterance", text: sentence, confidence: "high", noAudioClear: false });
-        try { await this.streamStudentTts(sentence, "button_press_repeat"); } catch { /* logged inside */ }
+        try { await this.streamStudentTts(sentence, "button_press_repeat", { alreadyVoiced }); } catch { /* logged inside */ }
       }
       this.scheduleRepeatBurstFlush();
       return;
@@ -4105,7 +4333,13 @@ export class AgentCoordinator {
     //    plays the audio out a beat later, but at this point the audio
     //    chunks have arrived in order ahead of Speaker's reply.
     if (sentence) {
-      try { await this.streamStudentTts(sentence, "button_press", { bid: pressRole === "bid", addressee: this.pressedButtonAddressee(label) }); } catch { /* logged inside */ }
+      try {
+        await this.streamStudentTts(sentence, "button_press", {
+          bid: pressRole === "bid",
+          addressee: this.pressedButtonAddressee(label),
+          alreadyVoiced,
+        });
+      } catch { /* logged inside */ }
     }
 
     // 3. Route the event so Observer / Speaker / Board Manager all see it —
@@ -5497,6 +5731,14 @@ export class AgentCoordinator {
     // caption, or the board in its directed form.
     if (event.type === "transcribed") this.applyAttributionTrustGate(event);
 
+    // Presence gates — same doctrine, same position in the pipeline: the event
+    // is rewritten BEFORE recordEvent, so `recentEvents` (which the Board
+    // Manager reads), the Speaker injection, the conversation log, the caption
+    // and the session snapshot all see the demoted form. A hedge addressed to
+    // one model never survives that model's output; a mutated event does.
+    if (event.type === "context_update") this.applyPresenceContextGate(event);
+    if (event.type === "transcribed") this.applyPresenceAttributionGate(event);
+
     this.recordEvent(event);
     this.logEvent("OBSERVER", event);
 
@@ -5608,6 +5850,174 @@ export class AgentCoordinator {
         },
       });
     }
+  }
+
+  /**
+   * Presence gate for Observer context updates.
+   *
+   * Two jobs, and only one of them is gated. ALWAYS: record what the Observer
+   * claimed as `observer_visual` evidence (weak — a naming is one channel, and
+   * it was primed by the very face line it is "confirming", so it can never
+   * corroborate a weak face match on its own), or `observer_retraction`
+   * against on `misidentified`.
+   *
+   * Then, with the flag on: if the ledger has not got that person to
+   * `corroborated`, the NAME comes off the event. The Observer still sees the
+   * name (it is the verifier — `flushContextUpdates` renders its own copy);
+   * the Speaker, the Board Manager and the conversation log get "someone
+   * nearby", because those are the paths that say it aloud, build a
+   * `היי X` button, and write it into permanent notes.
+   *
+   * A key that names nobody on file ("a woman", "the therapist") is left
+   * completely alone: it is an observation, not an identification.
+   */
+  private applyPresenceContextGate(event: ContextUpdateEvent): void {
+    void this.loadPresenceRoster();
+    const person = this.presenceResolve(event.key);
+
+    if (person) {
+      const base = {
+        entityType: person.type as PresenceEntityType,
+        entityId: person.id,
+        name: person.name,
+        ...(person.relationship ? { relationship: person.relationship } : {}),
+      };
+      if (event.updateType === "misidentified") {
+        this.presence.addEvidence(base, {
+          channel: "observer_retraction",
+          polarity: "against",
+          strength: "strong",
+          detail: { updateType: event.updateType },
+        });
+      } else if (
+        event.updateType === "new_person" ||
+        event.updateType === "person_identified" ||
+        event.updateType === "set_person_as_user" ||
+        event.updateType === "voice_identified"
+      ) {
+        this.presence.addEvidence(base, {
+          channel: "observer_visual",
+          polarity: "for",
+          strength: "weak",
+          detail: { updateType: event.updateType },
+        });
+      }
+    }
+
+    const decision = decideContextDemotion({
+      enabled: this.presenceLedgerEnabled,
+      updateType: event.updateType,
+      key: event.key,
+      resolved: person ? { entityType: person.type as PresenceEntityType, entityId: person.id } : null,
+      status: person ? this.presenceStatusOf(person) : "absent",
+    });
+    if (!decision.demote) return;
+
+    event.guessedName = decision.guessedName;
+    event.presenceStatus = decision.presenceStatus;
+    event.key = decision.key;
+    flowNote(
+      "COORDINATOR",
+      `PRESENCE: context_update ${event.updateType} key "${decision.guessedName}" → "${decision.key}" ` +
+      `(ledger: ${decision.presenceStatus}).`,
+    );
+  }
+
+  /**
+   * Attribution candidate gate (§6): a speaker label is ROUTING, never
+   * evidence.
+   *
+   * A transcript naming a roster person the ledger has not placed in the room
+   * loses the name and keeps everything else. `targetIsUser` and `direction`
+   * are untouched on purpose: `routeTranscribedInner` builds reply buttons off
+   * the TARGET flag, and USER-targeted speech reaches the Speaker as context
+   * whether the speaker is named or UNKNOWN — so nothing downstream is lost
+   * except the guess. (The prompt's old justification for guessing, that an
+   * UNKNOWN transcript "falls through with no response buttons", was simply
+   * not true of this code.)
+   *
+   * The audit evidence below is recorded whatever the flag says, and carries
+   * weight 0 in the derivation. A speaker label is not an observation, and a
+   * sentence containing a name is not evidence that its speaker is that
+   * person — but the Monitor still has to be able to say "someone said they
+   * are X" at session end.
+   */
+  private applyPresenceAttributionGate(event: TranscribedEvent): void {
+    void this.loadPresenceRoster();
+
+    const speakerPerson = this.presenceResolve(event.speaker);
+    const targetPerson = this.presenceResolve(event.target);
+
+    // --- audit ring (flag-independent, weight 0) ---------------------------
+    if (speakerPerson && speakerPerson.type !== "student") {
+      this.presence.addEvidence(
+        {
+          entityType: speakerPerson.type as PresenceEntityType,
+          entityId: speakerPerson.id,
+          name: speakerPerson.name,
+          ...(speakerPerson.relationship ? { relationship: speakerPerson.relationship } : {}),
+        },
+        {
+          channel: "speech_attribution",
+          polarity: "for",
+          strength: "weak",
+          detail: { text: event.text.slice(0, 80) },
+        },
+      );
+    }
+    for (const declared of detectSelfDeclaredNames(event.text, this.presenceRoster.map(p => p.name))) {
+      const p = this.presenceResolve(declared);
+      if (!p) continue;
+      this.presence.addEvidence(
+        {
+          entityType: p.type as PresenceEntityType,
+          entityId: p.id,
+          name: p.name,
+          ...(p.relationship ? { relationship: p.relationship } : {}),
+        },
+        {
+          channel: "self_declaration",
+          polarity: "for",
+          strength: "weak",
+          detail: { text: event.text.slice(0, 80) },
+        },
+      );
+    }
+
+    // --- the gate ----------------------------------------------------------
+    const decision = decideSpeakerDemotion({
+      enabled: this.presenceLedgerEnabled,
+      speaker: {
+        label: event.speaker,
+        resolved: speakerPerson ? { entityType: speakerPerson.type as PresenceEntityType, entityId: speakerPerson.id } : null,
+        status: speakerPerson ? this.presenceStatusOf(speakerPerson) : "absent",
+        hasFreshVoice: speakerPerson ? this.hasFreshVoiceFor(speakerPerson.type, speakerPerson.id) : false,
+      },
+      target: {
+        label: event.target,
+        resolved: targetPerson ? { entityType: targetPerson.type as PresenceEntityType, entityId: targetPerson.id } : null,
+        status: targetPerson ? this.presenceStatusOf(targetPerson) : "absent",
+        hasFreshVoice: targetPerson ? this.hasFreshVoiceFor(targetPerson.type, targetPerson.id) : false,
+      },
+    });
+    if (!decision.demoteSpeaker && !decision.demoteTarget) return;
+
+    if (decision.demoteSpeaker) {
+      event.attributionDemotion = "unplaced_speaker";
+      event.guessedSpeaker = decision.guessedSpeaker;
+      event.speaker = decision.party;
+    }
+    if (decision.demoteTarget) {
+      event.guessedTarget = decision.guessedTarget;
+      event.target = decision.party;
+    }
+    flowNote(
+      "COORDINATOR",
+      `PRESENCE: attribution ${decision.demoteSpeaker ? `speaker "${decision.guessedSpeaker}" → "${decision.party}"` : ""}` +
+      `${decision.demoteSpeaker && decision.demoteTarget ? ", " : ""}` +
+      `${decision.demoteTarget ? `target "${decision.guessedTarget}" → "${decision.party}"` : ""}` +
+      ` — routing unchanged (targetIsUser=${event.targetIsUser ?? "unset"}).`,
+    );
   }
 
   /** Fresh enrolled-voice match for the student themself — the positive
@@ -6216,7 +6626,14 @@ export class AgentCoordinator {
     // then a compact energy status so it sees its running drain (incl. the
     // Speaker's spend, which it never observes directly) on every transcript.
     const energyNote = this.buildTranscriptEnergyNote();
-    const turn = [baseTurn, extraContext, energyNote].filter(Boolean).join("\n");
+    // The candidate list, once per turn. The old prompt rule ("lean toward a
+    // known person; UNKNOWN only with positive evidence; a wrong guess costs
+    // less than UNKNOWN") asked the model to guess and it obliged. A list the
+    // DEVICE builds — the student, the device itself, whoever the ledger has
+    // actually placed, and "someone nearby" for everyone else — leaves nothing
+    // to judge.
+    const candidates = this.buildSpeakerCandidatesLine();
+    const turn = [baseTurn, extraContext, candidates, energyNote].filter(Boolean).join("\n");
 
     // NO wake here: the Observer runs unchanged across awake ↔ resting (since
     // 2026-06-03 — the "lightweight resting Observer" this path used to wake
@@ -6257,7 +6674,14 @@ export class AgentCoordinator {
       ? `[HEARD NEAR ${event.speaker} — speaker unverified${clarity}] "${event.text}"`
       : event.attributionDemotion === "impossible_speech"
         ? `[HEARD NEARBY — speaker unknown${clarity}] "${event.text}"`
-        : `[${event.speaker} to ${targetLabel}${clarity}] "${event.text}"`;
+        // "unplaced_speaker" (presence gate): a REAL person said this to the
+        // student — it keeps the full `X to Y` turn shape, and the reply
+        // buttons below still build, because the demotion took only the name.
+        // `event.speaker` is already PARTY_NEARBY; spelled out here so the
+        // three demotions sit together and none reads as an accident.
+        : event.attributionDemotion === "unplaced_speaker"
+          ? `[${PARTY_NEARBY} to ${targetLabel}${clarity}] "${event.text}"`
+          : `[${event.speaker} to ${targetLabel}${clarity}] "${event.text}"`;
 
     // Conversation activity — transcripts directed at USER or DEVICE
     // (i.e. someone speaking with the user or the AI) reset the rest
@@ -6423,20 +6847,29 @@ export class AgentCoordinator {
     // in the conversation log, which is what the Monitor and the session
     // summarizer read — without the rider the false presence stays quietly
     // on the record (notes, summary) even after the Observer corrected it.
-    const lines = batch.map(e => {
-      const base = `[CONTEXT] ${e.updateType}: ${e.key} — ${e.description}${e.relevance ? ` (relevance: ${e.relevance})` : ""}`;
-      return e.updateType === "misidentified"
-        ? `${base} [RETRACTION — earlier reports of this person were a misidentification. Treat them as NOT present; do not record their presence, and strike any note or summary line that claims it.]`
-        : base;
-    });
-    const joined = lines.join("\n");
-    this.observer?.sendContextInjection(joined);
-    this.speaker?.sendContextInjection(joined);
+    // ONE batch, THREE renderings. Until now every consumer got the same
+    // string, so a name the Observer guessed reached the Speaker's mouth and
+    // the Monitor's permanent notes identically. Each audience now gets what
+    // it is entitled to: the Observer keeps the name (it is the verifier and
+    // needs something to check), the Speaker gets "someone nearby" (it says
+    // things out loud), and the log gets "someone (unverified guess: X)" — the
+    // guess survives for the Monitor, marked as a guess. Verified people
+    // render as their name in all three.
+    const render = (e: ContextUpdateEvent, audience: "observer" | "speaker" | "log"): string => {
+      const key = this.renderContextKey(e, audience);
+      const base = `[CONTEXT] ${e.updateType}: ${key} — ${e.description}${e.relevance ? ` (relevance: ${e.relevance})` : ""}`;
+      return e.updateType === "misidentified" ? `${base} ${AgentCoordinator.RETRACTION_RIDER}` : base;
+    };
+    const observerJoined = batch.map(e => render(e, "observer")).join("\n");
+    const speakerJoined = batch.map(e => render(e, "speaker")).join("\n");
+    const logJoined = batch.map(e => render(e, "log")).join("\n");
+    this.observer?.sendContextInjection(observerJoined);
+    this.speaker?.sendContextInjection(speakerJoined);
     // Observer's observations are session memory — persist them to the
     // conversation log so Monitor incorporates them into Notes/Interests/
     // People updates and the admin log shows the perceived context, not
     // just the spoken turns.
-    this.appendToConversationLog("system", joined);
+    this.appendToConversationLog("system", logJoined);
 
     // While the startup greeting is still armed, record that context arrived,
     // note any set_person_as_user confirmation, and (re)arm the settle timer —
@@ -8467,36 +8900,85 @@ export class AgentCoordinator {
     // "interpreting" indicator (the client also closes the builder the
     // moment the first utterance-audio chunk plays).
     this.clearInterpretBusy();
-    void this.streamStudentTts(event.sentence, "interpret_intent");
+    void this.deliverStudentSentence(event.sentence, {
+      ttsSource: "interpret_intent",
+      boardEvent: event,
+      speakerNote: `[INTERPRET] (you voiced for the user) ${event.sentence}`,
+    });
+  }
+
+  /**
+   * THE STUDENT SAID A COMPOSED SENTENCE — voice it, record it, hand it round.
+   *
+   * Shared by the two ways a sentence-builder Play can resolve, because
+   * everything after "we have the words" is identical and drifted apart is
+   * exactly how one of them loses the conversation log or the room:
+   *   - the model interpreted the glyph (`interpret()`), and
+   *   - the glyph language rendered it here, with no model at all
+   *     (shared/aac/builder-speech — the fast path a parsable sentence takes).
+   */
+  private async deliverStudentSentence(
+    sentence: string,
+    opts: {
+      ttsSource: string;
+      boardEvent: AgentEvent;
+      speakerNote: string;
+      /** Device-voice mode already said it on the client — don't synthesize. */
+      alreadyVoiced?: boolean;
+    },
+  ): Promise<void> {
+    // 1. THE VOICE FIRST, and never behind anything. The words are settled;
+    //    nothing below changes them, and a student whose sentence waits on a
+    //    profile transition has been made to wait for the AI's convenience.
     // Inject OWN_SPEECH (tagged as student-voice) so Observer doesn't
     // transcribe the device speakers as a fresh user statement.
-    this.observer?.sendContextInjection(`[OWN_SPEECH] (student voice) ${event.sentence}`);
-    this.appendToConversationLog("user", `[${T.tagPress}] "${event.sentence}"`);
+    this.observer?.sendContextInjection(`[OWN_SPEECH] (student voice) ${sentence}`);
+    this.appendToConversationLog("user", `[${T.tagPress}] "${sentence}"`);
+    // AND WAIT FOR IT — the same await handleButtonPress makes, for the same
+    // reason. Handed the turn at once, the Speaker answered "I like frogs"
+    // with "Frogs are cool!" 1.4 s after the press, on top of the device
+    // still saying "frogs". The hold is the stream's own end for a provider
+    // voice, and the spoken-length estimate when the device voiced it.
+    try {
+      await this.streamStudentTts(sentence, opts.ttsSource, { alreadyVoiced: opts.alreadyVoiced });
+    } catch { /* logged inside */ }
 
-    if (this.socialPeer) {
-      // SOCIAL TRAINER: the composed SENTENCE is the user's contribution to
-      // the conversation — drive the peer's turn through the SAME bid path a
-      // normal board press uses (proper turn timing + deferred follow-up
-      // board). Routing it via speaker.sendUserTurn directly would bypass the
-      // bid/reply buffering in handleSocialTrainerPress and desync the turn.
-      this.handleSocialTrainerPress({
-        type: "button_pressed",
-        source: "client",
-        timestamp: Date.now(),
-        label: event.sentence,
-        sentence: event.sentence,
-        target: "DEVICE",
-        role: "bid",
-      });
+    // 2. Then the conversation. Speaker and Board Manager both need an awake
+    //    session — a composed sentence delivered to a resting Speaker is
+    //    answered by nobody until the Observer happens to notice.
+    const fanOut = () => {
+      if (this.socialPeer) {
+        // SOCIAL TRAINER: the composed SENTENCE is the user's contribution to
+        // the conversation — drive the peer's turn through the SAME bid path a
+        // normal board press uses (proper turn timing + deferred follow-up
+        // board). Routing it via speaker.sendUserTurn directly would bypass the
+        // bid/reply buffering in handleSocialTrainerPress and desync the turn.
+        this.handleSocialTrainerPress({
+          type: "button_pressed",
+          source: "client",
+          timestamp: Date.now(),
+          label: sentence,
+          sentence,
+          target: "DEVICE",
+          role: "bid",
+        });
+        return;
+      }
+
+      // Echo back to Speaker.
+      this.speaker?.sendContextInjection(opts.speakerNote);
+      // Re-deliver as a [BUTTON PRESS] so Speaker can respond on a later turn.
+      this.speakerRespond(`[${T.tagPress}] "${sentence}"`);
+      // Trigger Board Manager rebuild for the follow-up surface.
+      this.invokeBoardManager([opts.boardEvent]);
+    };
+
+    if (this.sessionProfile === "resting") {
+      flowNote("COORDINATOR", `Composed sentence arrived while resting; waking before routing.`);
+      void this.transitionToProfile("awake").then(fanOut);
       return;
     }
-
-    // Echo back to Speaker.
-    this.speaker?.sendContextInjection(`[INTERPRET] (you voiced for the user) ${event.sentence}`);
-    // Re-deliver as a [BUTTON PRESS] so Speaker can respond on a later turn.
-    this.speakerRespond(`[${T.tagPress}] "${event.sentence}"`);
-    // Trigger Board Manager rebuild for the follow-up surface.
-    this.invokeBoardManager([event]);
+    fanOut();
   }
 
   /** Build + send a session_snapshot carrying the apps lists so the client's
@@ -10167,7 +10649,24 @@ ${customDetail}` : ""));
     });
   }
 
-  private async streamStudentTts(text: string, source: string = "?", meta?: { bid?: boolean; addressee?: string }): Promise<void> {
+  private async streamStudentTts(
+    text: string,
+    source: string = "?",
+    meta?: {
+      bid?: boolean;
+      addressee?: string;
+      /**
+       * THE DEVICE ALREADY SAID IT. Device-voice mode voices a press on the
+       * client at the moment of the tap — that is the whole point of the
+       * setting — so there is nothing left to synthesize. Everything else a
+       * spoken utterance does still happens: it is published to the room and
+       * the caller's `await` still holds the AI's reply back for roughly as
+       * long as the child's own voice is talking, because a reply that lands
+       * over the sentence is exactly what that await exists to prevent.
+       */
+      alreadyVoiced?: boolean;
+    },
+  ): Promise<void> {
     // Markup never reaches a voice. Curly braces are the caption highlight
     // convention (`{pressed word}`), and on 2026-09-01 a template bug put a
     // pair into a sentence and the device voice read them OUT LOUD — a Hebrew
@@ -10175,6 +10674,19 @@ ${customDetail}` : ""));
     // braces"). The template is fixed; this strip is the guarantee that no
     // future one gets a voice. Display paths keep their own text.
     text = text.replace(/[{}]/g, "");
+    // Voiced on the device already (device-voice mode). Publish it to the room
+    // and hold the floor for its spoken length; synthesize nothing.
+    if (meta?.alreadyVoiced) {
+      flowNote("COORDINATOR", `Device voice — [${source}] was spoken on the client; no synthesis.`);
+      if (source !== "button_press_repeat") {
+        this.publishUtteranceToRoom(text, meta?.bid ?? false, meta?.addressee);
+      }
+      await new Promise<void>(resolve => setTimeout(
+        resolve,
+        Math.min(speechEstimateMs(text), AgentCoordinator.LOCAL_UTTERANCE_MAX_HOLD_MS),
+      ));
+      return;
+    }
     if (!this.studentVoice) {
       // Voice resolution can be missed at init (the cached student wasn't
       // loaded yet when resolveVoices ran). Re-resolve now that the session
@@ -12511,6 +13023,294 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
   // to this student's known people.
   // -------------------------------------------------------------------------
 
+  // -------------------------------------------------------------------------
+  // Presence ledger plumbing (planning-docs/aac-presence-ledger.md §3–§6)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Load the known-people roster into the ledger and mark the student.
+   *
+   * The galleries go in because the ledger needs them for ONE thing: the
+   * pairwise lookalike computation. A pair under 0.50 (the measured
+   * student↔sister distance was 0.4527) is locked, and from then on no number
+   * of face batches and no amount of Observer agreement can take either of
+   * them past `hypothesized` — only a voice match or a human can. Being on the
+   * roster is not itself evidence of being in the room, so no entries are
+   * created here.
+   *
+   * Returns the IN-FLIGHT promise on a concurrent call rather than a resolved
+   * one. `recognizeFaces` awaits this to close the cold window, and a
+   * "already started, so you're fine" fast path would have handed it a promise
+   * that resolves before the roster exists — which is the bug, not the fix.
+   */
+  private loadPresenceRoster(): Promise<void> {
+    if (!this.studentId) return Promise.resolve();
+    if (this.presenceRosterPromise) return this.presenceRosterPromise;
+    this.presenceRosterPromise = this.doLoadPresenceRoster();
+    return this.presenceRosterPromise;
+  }
+
+  private async doLoadPresenceRoster(): Promise<void> {
+    try {
+      const people = await getKnownPeopleForStudent(this.studentId!);
+      this.presenceRoster = people;
+      this.presenceRosterLoaded = true;
+      this.presence.setRoster(
+        people.map(p => ({
+          entityType: p.type as PresenceEntityType,
+          entityId: p.id,
+          name: p.name,
+          ...(p.relationship ? { relationship: p.relationship } : {}),
+          faceSamples: [
+            ...(p.faceEmbedding?.length ? [p.faceEmbedding] : []),
+            ...((p.faceGallery ?? []).map(g => g.embedding).filter(e => !!e?.length)),
+          ],
+        })),
+      );
+      this.presence.setStudent(this.studentId!);
+      flowNote(
+        "COORDINATOR",
+        `PRESENCE: roster loaded — ${people.length} known people, lookalikes of the student: ${
+          this.studentLookalikeKeys().map(k => this.presenceNameOfKey(k)).join(", ") || "none"
+        } (ledger ${this.presenceLedgerEnabled ? "ON" : "recording only"}).`,
+      );
+    } catch (err) {
+      // Drop the memoized promise so a later batch retries. A session that
+      // lost its roster to one transient DB blip must not spend the rest of
+      // its life unable to lock a lookalike pair.
+      this.presenceRosterPromise = null;
+      this.presenceRosterLoaded = false;
+      logLiveSession("PRESENCE", `roster load failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * The name in a `[CONTEXT]` line's key position, per audience.
+   *
+   * Flag off → the raw key, byte for byte as today. Flag on → the boundary
+   * formatter, which is the one step an LLM cannot launder because it runs on
+   * the LLM's own output. `misidentified` is exempt: a retraction has to NAME
+   * the person plainly or the Monitor cannot strike the right note.
+   */
+  private renderContextKey(e: ContextUpdateEvent, audience: "observer" | "speaker" | "log"): string {
+    if (!this.presenceLedgerEnabled) return e.key;
+    if (e.updateType === "misidentified") return e.key;
+    const name = e.guessedName ?? e.key;
+    const person = this.presenceResolve(name);
+    if (!person) return e.key;
+    const entry = this.presence.get(person.type as PresenceEntityType, person.id);
+    if (!entry) return e.key;
+    return renderPerson(entry, audience, {
+      now: Date.now(),
+      presenceTtlMs: PRESENCE_LEDGER_DEFAULTS.presenceTtlMs,
+    });
+  }
+
+  /**
+   * The client's "Not them" tap, given the standing an Observer retraction has.
+   *
+   * Appends `human_confirm(against)` — the one channel that outranks a
+   * lookalike lock in either direction — and emits the SAME `[RETRACTION …]`
+   * line the Observer's `misidentified` flush emits, to the agents and to the
+   * conversation log. Without the line the Monitor never learned a human had
+   * corrected the system, and wrote the false presence into permanent notes
+   * anyway. Flag-independent: a human correction is never gated.
+   */
+  private recordHumanIdentityCorrection(
+    entityType: "student" | "user" | "contact",
+    entityId: string,
+    reason?: string,
+  ): void {
+    void this.loadPresenceRoster();
+    const person = this.presenceRoster.find(p => p.type === entityType && p.id === entityId);
+    const name = person?.name ?? this.currentIdentifiedFaces.find(f => f.entityId === entityId)?.name ?? entityId;
+    this.presence.addEvidence(
+      {
+        entityType: entityType as PresenceEntityType,
+        entityId,
+        name,
+        ...(person?.relationship ? { relationship: person.relationship } : {}),
+      },
+      {
+        channel: "human_confirm",
+        polarity: "against",
+        strength: "strong",
+        detail: { source: "client_correct_identity", ...(reason ? { reason } : {}) },
+      },
+    );
+    const description = reason?.trim() || "a person at the device corrected this identification";
+    const line = `[CONTEXT] misidentified: ${name} — ${description} ${AgentCoordinator.RETRACTION_RIDER}`;
+    this.observer?.sendContextInjection(line);
+    this.speaker?.sendContextInjection(line);
+    this.appendToConversationLog("system", line);
+    flowNote("COORDINATOR", `PRESENCE: human correction — ${entityType}:${entityId} (${name}) retracted.`);
+  }
+
+  /**
+   * Rung 5 of the permanence ladder: may we grow this person's gallery?
+   *
+   * Gallery growth is the SELF-REINFORCING write — a wrong sample makes the
+   * next wrong match easier — so it needs `confirmed`, which for a lookalike
+   * pair means a human or a clear voice, never the Observer alone (the
+   * Observer was shown the very face line it is confirming). Flag off keeps
+   * today's behaviour: Observer confirmation is enough.
+   */
+  private presenceSeedingAllowed(target: KnownPerson, tag: string, name: string): boolean {
+    if (!this.presenceLedgerEnabled) return true;
+    if (this.presence.isAtLeast(target.type as PresenceEntityType, target.id, "confirmed")) return true;
+    logLiveSession(
+      tag,
+      `"${name}" → ${target.type}:${target.id} NOT seeded — presence ledger says ` +
+      `${this.presence.statusOf(target.type as PresenceEntityType, target.id)}, gallery growth needs "confirmed".`,
+    );
+    return false;
+  }
+
+  /** Entity keys the roster says sit inside the lookalike distance of the
+   *  student. Empty until the roster loads. */
+  private studentLookalikeKeys(): string[] {
+    if (!this.studentId) return [];
+    return this.presence.get("student", this.studentId)?.lookalikeOf ?? [];
+  }
+
+  private presenceNameOfKey(key: string): string {
+    const [type, id] = key.split(/:(.+)/);
+    return this.presenceRoster.find(p => p.type === type && p.id === id)?.name ?? key;
+  }
+
+  /** Synchronous name → roster person. The gates run inside `onObserverEvent`,
+   *  which must mutate the event BEFORE `recordEvent` — there is no room to
+   *  await a DB read, so they resolve against the cached roster. */
+  private presenceResolve(name: string | undefined): KnownPerson | null {
+    if (!name || !this.presenceRoster.length) return null;
+    return this.resolvePersonByName(this.presenceRoster, name);
+  }
+
+  private presenceStatusOf(p: KnownPerson): PresenceStatus | "absent" {
+    return this.presence.statusOf(p.type as PresenceEntityType, p.id);
+  }
+
+  /** A fresh enrolled-voice match for this specific person — the exception the
+   *  attribution gate honours (a parent calling from the next room is heard,
+   *  not seen, and must keep their name). */
+  private hasFreshVoiceFor(entityType: string, entityId: string): boolean {
+    if (Date.now() - this.currentIdentifiedVoicesAt > AgentCoordinator.IDENTIFIED_VOICES_TTL_MS) return false;
+    return this.currentIdentifiedVoices.some(
+      v => v.matched && v.entityType === entityType && v.entityId === entityId,
+    );
+  }
+
+  /** Non-student people the Observer is allowed to name as a speaker: the
+   *  ledger has them at `corroborated` or better, or a fresh enrolled voice
+   *  match places them. */
+  private presenceSpeakerCandidates(): Array<{ name: string; relationship?: string }> {
+    const out: Array<{ name: string; relationship?: string }> = [];
+    for (const e of this.presence.current()) {
+      if (e.entityType === "student") continue;
+      if (!this.presence.isAtLeast(e.entityType, e.entityId, "corroborated")) continue;
+      out.push({ name: e.name, ...(e.relationship ? { relationship: e.relationship } : {}) });
+    }
+    if (Date.now() - this.currentIdentifiedVoicesAt <= AgentCoordinator.IDENTIFIED_VOICES_TTL_MS) {
+      for (const v of this.currentIdentifiedVoices) {
+        if (!v.matched || !v.name || v.entityType === "student") continue;
+        if (out.some(o => o.name === v.name)) continue;
+        out.push({ name: v.name, ...(v.relationship ? { relationship: v.relationship } : {}) });
+      }
+    }
+    return out;
+  }
+
+  /** The line appended to every `[HEARD SPEECH]` turn. The prompt used to say
+   *  "lean toward a known person; UNKNOWN only with positive evidence", so the
+   *  Observer guessed. A code-built candidate list removes the judgement call. */
+  private buildSpeakerCandidatesLine(): string {
+    return speakerCandidatesLine({
+      studentName: this.currentStudentName || "the student",
+      verbalAbility: isVerbalAbility(this.currentVerbalAbility) ? this.currentVerbalAbility : null,
+      named: this.presenceSpeakerCandidates(),
+      deviceLabel: PARTY_DEVICE,
+    });
+  }
+
+  /** The §6.1 verified / unverified / retracted lists. Public so the
+   *  Monitor-side owner can inject them into the rolling summary, the close
+   *  summary and `manageMemory` — this class deliberately does not call any of
+   *  those itself. */
+  public presenceLists(): PresenceLists {
+    return this.presence.lists();
+  }
+
+  /**
+   * Publish (or withdraw) this session's ledger to the memory-schema registry.
+   *
+   * The registry keys on the RESOLVED DB session id, and a registered provider
+   * IS the feature flag for the Monitor side — so this must be called both
+   * when the flag is read and whenever the session id changes, and the OLD key
+   * must go first. `presence-context.ts` treats "no provider" as "behave
+   * exactly as before", so a failure here degrades to today's behaviour rather
+   * than breaking a memory write.
+   */
+  private syncPresenceProvider(): void {
+    const want = this.presenceLedgerEnabled ? (this.sessionId || null) : null;
+    if (this.presenceProviderKey === want) return;
+    this.clearPresenceProvider();
+    if (!want) return;
+    try {
+      setPresenceListsProvider(want, () => this.presenceLists());
+      presenceProviderOwners.set(want, this);
+      this.presenceProviderKey = want;
+      flowNote(
+        "COORDINATOR",
+        `PRESENCE: provider registered ${want} (${presenceProviderCount()} live in this process)`,
+      );
+    } catch (err) {
+      console.warn("[AgentCoordinator] presence provider register failed:", (err as Error).message);
+    }
+  }
+
+  /** Withdrawal, for the close and teardown paths. Idempotent, and a no-op
+   *  when a successor coordinator has already claimed this session's key. */
+  private clearPresenceProvider(): void {
+    if (!this.presenceProviderKey) return;
+    const key = this.presenceProviderKey;
+    this.presenceProviderKey = null;
+    if (presenceProviderOwners.get(key) !== this) {
+      flowNote("COORDINATOR", `PRESENCE: provider ${key} now owned by a successor — not clearing.`);
+      return;
+    }
+    presenceProviderOwners.delete(key);
+    try {
+      clearPresenceListsProvider(key);
+      flowNote(
+        "COORDINATOR",
+        `PRESENCE: provider cleared ${key} (${presenceProviderCount()} still live in this process)`,
+      );
+    } catch (err) {
+      console.warn("[AgentCoordinator] presence provider clear failed:", (err as Error).message);
+    }
+  }
+
+  /** The same lists as the `[PRESENCE — system verified]` block. */
+  public presenceContext(): string {
+    return renderPresenceLists(this.presence.lists());
+  }
+
+  /** One compact ledger line per face batch. The September incident had NO
+   *  per-frame record at all — the flow log is file-only in production and
+   *  `session_debug_logs` needed a `debugMode` this device stopped sending —
+   *  so "what did the matcher claim and what did the ledger do with it" was
+   *  unanswerable. It is answerable now. */
+  private notePresenceBatch(rows: Array<{ name: string; entityType?: string; entityId?: string; trackId?: string }>): void {
+    if (!rows.length) return;
+    const parts = rows.map(r => {
+      const status = r.entityType && r.entityId
+        ? this.presence.statusOf(r.entityType as PresenceEntityType, r.entityId)
+        : "absent";
+      return `${r.name} ${status}${r.trackId ? ` ${r.trackId}` : ""}`;
+    });
+    flowNote("COORDINATOR", `PRESENCE: ${parts.join(" | ")}`);
+  }
+
   /**
    * Match each incoming face descriptor against the user's known people
    * (self + linked users + contacts). Populates `currentIdentifiedFaces`,
@@ -12530,9 +13330,37 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       observedAge?: number;
       observedSex?: "male" | "female";
       observedSexConfidence?: number;
+      /** Client face tracker (§7). `trackId` associates this detection with the
+       *  same face across frames; `meanDescriptor` is the running mean of the
+       *  track's recent above-quality descriptors and is ABSENT when a single
+       *  sample backs it; `facesInFrame` is the raw pre-cap count for the
+       *  camera frame (can exceed the ≤3 entries actually sent). */
+      trackId?: string;
+      trackAgeMs?: number;
+      framesInTrack?: number;
+      meanDescriptor?: number[];
+      facesInFrame?: number;
     }>,
   ): Promise<void> {
     if (!this.studentId) return;
+    // AWAITED, unlike every other loadPresenceRoster() call site, and this is
+    // the cold-window fix: the lookalike pairs must exist before the FIRST
+    // batch is graded, or that batch's evidence lands unlocked and a sibling
+    // can reach `corroborated` on the one frame nobody was guarding. It costs
+    // nothing at startup — the load was already kicked during initialize, so
+    // this is normally an already-resolved promise — and the first frame's
+    // [PEOPLE PRESENT] is what the Observer sees first, so this is also the
+    // point before which the gates below cannot fire.
+    //
+    // The Observer-facing gates (applyPresenceContextGate /
+    // applyPresenceAttributionGate) are synchronous — they must mutate the
+    // event before recordEvent and cannot await — so they resolve against
+    // whatever roster is cached. Their window is: an Observer context update
+    // or transcript that arrives before this await has ever run AND before the
+    // initialize-time load resolved. Such an event fails OPEN (no demotion, no
+    // evidence). The Observer cannot produce one without first receiving a
+    // frame or a [HEARD SPEECH] turn, and a frame comes through here.
+    await this.loadPresenceRoster();
 
     if (!descriptors.length) {
       if (this.currentIdentifiedFaces.length) {
@@ -12543,8 +13371,13 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       return;
     }
 
+    // Match on the TRACK MEAN when the client has one: single frames of this
+    // student sit 0.40–0.59 from her own stored poses, which is how a sibling
+    // wins a frame; the mean of the last few above-quality descriptors sits
+    // well inside. The raw descriptor stays the correction/seeding sample
+    // below — a gallery must store a real pose, never an average of poses.
     const matches = await Promise.all(
-      descriptors.map(d => findMatchingFace(d.descriptor, this.studentId!, {
+      descriptors.map(d => findMatchingFace(d.meanDescriptor?.length ? d.meanDescriptor : d.descriptor, this.studentId!, {
         age: d.observedAge, sex: d.observedSex, sexConfidence: d.observedSexConfidence,
       }).catch(() => null as FaceMatchResult | null)),
     );
@@ -12589,6 +13422,87 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       };
     });
 
+    // ---- presence ledger: per-track identity, then evidence ---------------
+    //
+    // The order matters. The TRACK decides who this face is (one track holds
+    // one person, and a challenger needs three consecutive wins past the
+    // ambiguity margin to take it); only then does evidence land, and only on
+    // the track's INCUMBENT. Feeding the batch winner directly would put the
+    // sister into the ledger on every frame she happens to win — which is the
+    // exact behaviour that made one face read as two people.
+    const batchAt = Date.now();
+    const facesInFrame: Record<string, number> = {};
+    const presenceRows: Array<{ name: string; entityType?: string; entityId?: string; trackId?: string }> = [];
+    for (let i = 0; i < descriptors.length; i++) {
+      const d = descriptors[i];
+      const m = matches[i];
+      const f = wire[i];
+      const role = d.cameraRole ?? "unknown";
+      if (typeof d.facesInFrame === "number" && Number.isFinite(d.facesInFrame)) {
+        facesInFrame[role] = Math.max(facesInFrame[role] ?? 0, d.facesInFrame);
+      }
+      // No client track id → a per-camera stand-in. It is a WEAKER signal and
+      // the ledger treats it as such (a stand-in track still cannot earn
+      // "sustained" credit across a re-ordered batch), but it keeps the
+      // hysteresis working for the common single-face case.
+      const trackId = d.trackId ?? `cam:${role}:${i}`;
+      f.trackId = trackId;
+
+      const best = m && m.matched
+        ? { entityKey: presenceEntityKey(m.entityType as PresenceEntityType, m.entityId), distance: m.distance }
+        : undefined;
+      const runnerUp = m && m.matched && m.ambiguousWith && typeof m.runnerUpDistance === "number"
+        ? { entityKey: presenceEntityKey(m.ambiguousWith.entityType as PresenceEntityType, m.ambiguousWith.entityId), distance: m.runnerUpDistance }
+        : undefined;
+      const track = this.tracks.observe({ trackId, at: batchAt, cameraRole: role, best, runnerUp });
+
+      const incumbent = track.entityKey;
+      if (incumbent && m) {
+        const [incType, incId] = incumbent.split(/:(.+)/) as [string, string];
+        const person = this.presenceRoster.find(p => p.type === incType && p.id === incId);
+        const contested = best?.entityKey !== incumbent;
+        this.presence.addEvidence(
+          {
+            entityType: incType as PresenceEntityType,
+            entityId: incId,
+            name: person?.name ?? (contested ? incId : m.name),
+            ...(person?.relationship ? { relationship: person.relationship } : {}),
+          },
+          {
+            channel: "face_match",
+            polarity: "for",
+            at: batchAt,
+            // A contested batch is never strong evidence, however good the
+            // number looks: the winner and the incumbent disagree, which is
+            // precisely the state in which a lookalike gets promoted.
+            strength: contested
+              ? "weak"
+              : faceEvidenceStrength({
+                  distance: m.distance,
+                  runnerUpDistance: m.runnerUpDistance,
+                  borderline: f.borderline === true,
+                  ...(f.ambiguousWith ? { ambiguousWith: f.ambiguousWith } : {}),
+                }),
+            trackId,
+            detail: {
+              distance: Number(m.distance.toFixed(4)),
+              confidence: Number(m.confidence.toFixed(3)),
+              cameraRole: role,
+              ...(contested ? { contestedBy: best?.entityKey ?? "none" } : {}),
+            },
+          },
+        );
+        f.presenceStatus = this.presence.statusOf(incType as PresenceEntityType, incId);
+        presenceRows.push({ name: person?.name ?? m.name, entityType: incType, entityId: incId, trackId });
+      } else if (f.matched && f.entityType && f.entityId) {
+        f.presenceStatus = this.presence.statusOf(f.entityType as PresenceEntityType, f.entityId);
+      }
+    }
+    if (Object.keys(facesInFrame).length) this.facesInFrameByCamera = facesInFrame;
+    this.tracks.expire(batchAt);
+    this.presence.tick(batchAt);
+    this.notePresenceBatch(presenceRows);
+
     this.currentIdentifiedFaces = wire;
     this.currentIdentifiedFacesAt = Date.now();
     this.send({ type: "people_identified", data: wire });
@@ -12614,7 +13528,13 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     const now = Date.now();
     for (const f of wire) {
       if (!f.matched || f.entityType !== "contact" || !f.entityId) continue;
-      if (f.confidence < 0.4 || f.ambiguousWith) continue;
+      // With the ledger on, a raw score no longer buys a sighting: this was
+      // the one durable write that bypassed the Observer entirely, so a
+      // lookalike winning a frame put a false visit on the permanent record.
+      // Rung 2 of the ladder needs `corroborated`.
+      if (this.presenceLedgerEnabled) {
+        if (!this.presence.isAtLeast("contact", f.entityId, "corroborated")) continue;
+      } else if (f.confidence < 0.4 || f.ambiguousWith) continue;
       const last = this.lastSightingBumpAt.get(f.entityId) ?? 0;
       if (now - last < AgentCoordinator.SIGHTING_BUMP_INTERVAL_MS) continue;
       this.lastSightingBumpAt.set(f.entityId, now);
@@ -12634,6 +13554,9 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       if (!d) continue;
       if (f.matched && f.entityId && f.entityType) {
         const key = `${f.entityType}:${f.entityId}`;
+        // Deliberately `d.descriptor`, never the track mean: this sample is
+        // what seeding commits to a gallery and what a correction penalizes,
+        // and both need a REAL pose. An averaged vector is a face nobody has.
         this.recentMatchedDescriptors.set(key, { descriptor: d.descriptor, quality: d.quality, at: now });
       } else if (!f.matched && typeof d.quality === "number" && d.quality >= AgentCoordinator.FACE_SAMPLE_QUALITY_MIN) {
         if (!this.recentUnattributedFace || d.quality >= this.recentUnattributedFace.quality) {
@@ -12692,6 +13615,37 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       return { voiceIndex: i, matched: false, name: `Unknown voice #${unknownCounter}`, confidence: 0 };
     });
 
+    // Voice is the channel that UNLOCKS a lookalike pair — face and Observer
+    // together can never take a locked entity past `hypothesized`, but a
+    // strong voice match can. So the strength bar here is the same confident
+    // bar the rest of the code already uses for a voice.
+    void this.loadPresenceRoster();
+    for (let i = 0; i < wire.length; i++) {
+      const v = wire[i];
+      const m = matches[i];
+      if (!v.matched || !v.entityId || !v.entityType || !m) continue;
+      const person = this.presenceRoster.find(p => p.type === v.entityType && p.id === v.entityId);
+      this.presence.addEvidence(
+        {
+          entityType: v.entityType as PresenceEntityType,
+          entityId: v.entityId,
+          name: person?.name ?? v.name,
+          ...(person?.relationship ?? v.relationship ? { relationship: person?.relationship ?? v.relationship } : {}),
+        },
+        {
+          channel: "voice_match",
+          polarity: "for",
+          at: now,
+          strength: v.confidence >= AgentCoordinator.BORDERLINE_CONFIDENCE ? "strong" : "weak",
+          detail: {
+            similarity: Number((m.similarity ?? 0).toFixed(4)),
+            confidence: Number(v.confidence.toFixed(3)),
+            samples: v.sampleCount ?? 0,
+          },
+        },
+      );
+    }
+
     this.currentIdentifiedVoices = wire;
     this.currentIdentifiedVoicesAt = now;
     this.send({ type: "voices_identified", data: wire });
@@ -12741,6 +13695,7 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       logLiveSession("VOICE_SEED", `Observer named "${name}" but no known person matched — not seeding.`);
       return;
     }
+    if (!this.presenceSeedingAllowed(target, "VOICE_SEED", name)) return;
 
     // Prefer the embedding that matched THIS person (confirming a known voice);
     // fall back to the most-recent unattributed one (naming a new voice). Either
@@ -12806,6 +13761,7 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       logLiveSession("FACE_SEED", `Observer named "${name}" but no known person matched — not seeding.`);
       return;
     }
+    if (!this.presenceSeedingAllowed(target, "FACE_SEED", name)) return;
 
     const key = `${target.type}:${target.id}`;
     const matched = this.recentMatchedDescriptors.get(key);
@@ -12917,6 +13873,41 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
    * no-op. Also drops the entity from the current identified-faces list so the
    * AI stops acting on the wrong name immediately.
    */
+  /**
+   * Merge one session's observed baselines into the student's stored set.
+   *
+   * Read-modify-write on a jsonb column. Concurrency is not a practical concern
+   * here — one student is in one AAC session at a time, and the merge is
+   * count-weighted so even a lost update costs one session's worth of evidence,
+   * not correctness.
+   *
+   * ⚠️ Writes the column DIRECTLY rather than going through updateAacSettings:
+   * that path is the clinician/AI surface and filters against WRITABLE_COLUMNS,
+   * which deliberately excludes this. See shared/aac/learned-baselines.ts.
+   */
+  private async persistLearnedBaselines(obs: LearnedBaselineObservation): Promise<void> {
+    const studentId = this.studentId;
+    if (!studentId) return;
+
+    const current = await aacSettingsRepository.getByStudentId(studentId);
+    const merged = mergeLearnedBaselines(
+      coerceLearnedBaselines((current as any)?.learnedBaselines),
+      obs,
+      new Date().toISOString(),
+    );
+    await aacSettingsRepository.upsert(studentId, { learnedBaselines: merged } as any);
+
+    runInSessionContext(this.sessionId || "?", this.debugMode, () => {
+      const hn = merged.headNeutral;
+      const sz = merged.seizure;
+      const fb = merged.face;
+      logLiveSession("COORDINATOR:NOTE",
+        `learned_baselines saved — headNeutral n=${hn?.n ?? 0}/sessions=${hn?.sessions ?? 0}, ` +
+        `seizure samples=${sz?.samples ?? 0}, ` +
+        `face n=${fb?.n ?? 0}/sessions=${fb?.sessions ?? 0}/channels=${Object.keys(fb?.channels ?? {}).length}`);
+    });
+  }
+
   private async correctMisidentification(
     entityType: EntityType,
     entityId: string,
@@ -13009,6 +14000,7 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
   private buildPeoplePresentContext(): string {
     if (!this.currentIdentifiedFaces.length) return "";
     if (Date.now() - this.currentIdentifiedFacesAt > AgentCoordinator.IDENTIFIED_FACES_TTL_MS) return "";
+    if (this.presenceLedgerEnabled) return this.buildPeoplePresentFromLedger();
     const cameraSuffix = (role?: string): string => {
       if (role === "user") return " — in front of student";
       if (role === "environment") return " — environment camera";
@@ -13091,6 +14083,43 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
     return `[PEOPLE PRESENT]\n${lines.join("\n")}${presenceLine}${borderlineLine}`;
   }
 
+  /**
+   * `[PEOPLE PRESENT]` rendered from the LEDGER (flag on).
+   *
+   * Two differences that matter more than the rest. First, every named line
+   * goes through `renderPerson`, so a hypothesis arrives as "someone —
+   * possibly X (unverified; verify by: …)" rather than as a person in the
+   * room. Second, the one-face lookalike case collapses to a single sentence:
+   * today's "— in front of student" suffix plus "DEFAULT to treating the
+   * person at the device as the student" rendered ONE face as the sister AND
+   * the student, and the Observer duly reported two people.
+   */
+  private buildPeoplePresentFromLedger(): string {
+    const now = Date.now();
+    const faces: PresentFace[] = this.currentIdentifiedFaces.map(f => ({
+      matched: f.matched,
+      name: f.name,
+      ...(f.entityType ? { entityType: f.entityType as PresenceEntityType } : {}),
+      ...(f.entityId ? { entityId: f.entityId } : {}),
+      ...(f.relationship ? { relationship: f.relationship } : {}),
+      confidence: f.confidence,
+      ...(f.description ? { description: f.description } : {}),
+      ...(f.cameraRole ? { cameraRole: f.cameraRole } : {}),
+      ...(f.ambiguousWith ? { ambiguousWith: f.ambiguousWith } : {}),
+    }));
+    return renderPeoplePresent({
+      now,
+      entries: this.presence.current(now),
+      faces,
+      ...(Object.keys(this.facesInFrameByCamera).length ? { facesInFrame: this.facesInFrameByCamera } : {}),
+      ...(this.studentId
+        ? { student: { entityId: this.studentId, name: this.currentStudentName || "the student" } }
+        : {}),
+      studentLookalikeKeys: this.studentLookalikeKeys(),
+      presenceTtlMs: PRESENCE_LEDGER_DEFAULTS.presenceTtlMs,
+    });
+  }
+
   /** True when a fresh, positively-matched student face is on file. */
   private sawStudentFace(): boolean {
     if (!this.currentIdentifiedFaces.length) return false;
@@ -13147,6 +14176,19 @@ Other agents draw on the same budget — when the Speaker talks a lot your energ
       const venueId = p?.fetchingMenu?.venueId ?? p?.requestedVenueId;
       const specific = p?.mode === "menu" || !!venueId;
       this.restaurantScreen = { kind: specific ? "venue" : "generic", venueId, at: Date.now() };
+      // Menu-item icons ride the SAME symbol pipeline as Board Manager glyphs:
+      // keys with existing art get a construction_symbol_ready right away, the
+      // rest queue for generation and announce themselves as they land — the
+      // client's Glyph swaps each dish from its kind-emoji fallback exactly as
+      // a sentence button upgrades. Fire-and-forget; the board is already sent.
+      const menuBoard = p?.menuBoard as import("@shared/schema").ParsedBoardData | undefined;
+      if (menuBoard?.pages?.length) {
+        this.generateGlyphPartSymbols(
+          menuBoard.pages.flatMap((page) => page.buttons.map((b) => b.glyph)),
+        ).catch((err) =>
+          flowNote("COORDINATOR", `menu icon symbol pipeline failed: ${String(err)}`),
+        );
+      }
     } else {
       this.restaurantScreen = null;
     }

@@ -363,7 +363,9 @@ describe("cacheMenu — refinement is what writing DOES", () => {
     expect(first.price).toBe(48);
     expect(first.priceText).toBe("₪48");
     expect(first.translatedName).toBe("Beef roll"); // annotation, additive
-    expect(first.imageKey).toBe("beef_wrap");
+    // A legacy single-key imageKey annotation lands on the row as `icon` —
+    // the one field the board builder reads (a bare key is a one-slot glyph).
+    expect(first.icon).toBe("beef_wrap");
   });
 
   it("cannot be handed an invented dish — there is no field for one", async () => {

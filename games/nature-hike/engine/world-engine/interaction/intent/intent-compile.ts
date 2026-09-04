@@ -75,6 +75,26 @@ export interface IntentBinder {
    *  wilderness, at a founded site and in a town), which is why it lives on the
    *  binder rather than in a static table. */
   isStructure?(ref?: Ref): boolean;
+  /**
+   * ⚖️ DOES THIS WORD NAME A STANDING NATURAL FEATURE somebody could be told
+   * to clear — a tree, a bush, an outcrop rooted in the ground of THIS scope?
+   * (user ruling 2026-09-02: break/cut/fight redirect to a removal.)
+   *
+   * 🚨 THIS PREDICATE IS THE WHOLE OF "`fight` DOES NOT EAT COMBAT". `fight`
+   * is a real verb with a real future (combat, the chase) and it is already the
+   * word the absolute taboo is written in ("we do not fight"). It gains the
+   * clearing reading ONLY where this answers yes, and a body is never a
+   * feature: the wilderness keeps its creatures in a different list from the
+   * things rooted in its ground, so "fight the sheep" and "fight the wolf"
+   * cannot reach the clearing arm however the binder is implemented. Absent ⇒
+   * nothing is a feature, and all three verbs keep exactly the meanings they
+   * had (legacy behavior).
+   *
+   * Scope-dependent by nature — what is standing differs between the town, a
+   * founded site and the open wild — which is why it lives on the binder
+   * rather than in a static table.
+   */
+  isFeature?(ref?: Ref): boolean;
 }
 
 export interface DefaultBinderOptions {
@@ -233,6 +253,30 @@ const CATEGORY_NEEDS: Record<string, Record<string, string>> = {
   cook: { food: "cook", meal: "cook" },
   make: { food: "cook", meal: "cook" },
 };
+
+/**
+ * ⚖️ THE CLEARING READING — one function, three verbs (user ruling
+ * 2026-09-02: *"'break', 'cut' and 'fight' all redirect to this"*).
+ *
+ * It lives here rather than being written out three times for the reason the
+ * engine writes every shared rule once: three copies is three chances to
+ * disagree about the ONE thing that must never drift — that the redirect is
+ * gated on the OBJECT and nothing else. A verb reaches this reading only where
+ * the word it was said about names something standing in the ground; every
+ * other use of that verb walks past untouched, which is what lets `fight` keep
+ * combat and the taboo, and `break` keep furniture and rooms.
+ *
+ * The SPOKEN WORD rides the goal, never a species id — the host resolves it
+ * against the standing wilderness (see `GoalSpec.clearFeature`). That is also
+ * what keeps the acknowledgement sayable in every ruleset: the word came off
+ * the child's own board, so it is a lexeme by construction, where `grape_vine`
+ * is a lexeme in no language on earth.
+ */
+function clearing(frame: IntentFrame, binder: IntentBinder): GoalSpec | null {
+  const word = frame.object?.kind === "entity" ? frame.object.symbol : null;
+  if (!word || !binder.isFeature?.(frame.object)) return null;
+  return { kind: "clearFeature", feature: word };
+}
 
 function quantityCap(q?: string): number {
   switch (q) {
@@ -683,7 +727,29 @@ function compileBareAction(frame: IntentFrame, binder: IntentBinder): GoalSpec |
       }
       const room = frame.object?.kind === "entity" ? frame.object.symbol : null;
       if (room && binder.isStructure?.(frame.object)) return { kind: "demolish", room };
-      return null;
+      // …and the THIRD narrow reading, in the same spirit as the two above: a
+      // standing natural feature comes OUT of the ground ("break the plants").
+      // Last of the three because it is the least recoverable — a piece can be
+      // rebuilt and a room re-raised, a felled bush is gone — so a word that is
+      // genuinely both loses this reading, never the other one.
+      return clearing(frame, binder);
+    }
+    case "cut":
+    case "fight": {
+      // ⚖️ THE CLEARING VERBS (user ruling 2026-09-02): *"'break', 'cut' and
+      // 'fight' all redirect to this"* — OBJECT-DEPENDENTLY, never wholesale.
+      //
+      // 🚨 EACH VERB KEEPS EVERY OTHER MEANING IT HAS, and `fight` is why the
+      // rule is written this way round. `fight` is a parseable verb that will
+      // mean combat wherever that lands, and it is TODAY the word the absolute
+      // taboo is stated in ("we do not fight") — a wholesale redirect would
+      // quietly make "fight the wolf" mean "uproot the wolf", and it would be
+      // very hard to notice. So the redirect is gated on the OBJECT being a
+      // standing feature (`binder.isFeature`), and a miss falls through to
+      // exactly what these verbs compiled to before: nothing, the explicit
+      // not-understood. `cut` and `fight` are deliberately NOT in
+      // `TRANSFORM_STATE` — neither one names a state a thing arrives at.
+      return clearing(frame, binder);
     }
     case "empty": {
       // "empty the kitchen" — the stow-only half of `break`: the furniture

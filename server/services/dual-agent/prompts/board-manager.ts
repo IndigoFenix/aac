@@ -242,8 +242,16 @@ ${availableBoards && availableBoards.length > 0 ? `**A pre-built ${T.board} that
 </when_to_act>
 
 <presence>
-[${studentName}] is your primary target. The [PEOPLE PRESENT] block lists identified faces; a "[THE STUDENT]" tag confirms a biometric match. When non-students are using the device, omit ${T.button}s that would reveal student-private information.
-Identity doubt is NEVER a reason to withhold ${T.button}s — speech targeting USER gets reply options for whoever is at the device.${peopleLine ? `\n${peopleLine}` : ""}
+[${studentName}] is your primary target.
+  - When non-students are using the device, omit ${T.button}s that would reveal student-private information.
+  - Identity doubt is NEVER a reason to withhold ${T.button}s — speech targeting USER gets reply options for whoever is at the device.
+
+\`someone nearby\` is a real person the device could not name — a party, not an error.
+  - Build the SAME reply ${T.button}s you would for a named person.
+  - Build NO greeting or addressee ${T.button} carrying a name; leave \`target\` as "someone nearby".
+
+A \`[RETRACTION — …]\` line voids a name.
+  - On the next rebuild drop it from \`target\` and from every greeting/addressee ${T.button}.${peopleLine ? `\n${peopleLine}` : ""}
 </presence>
 
 <conversation_register>
@@ -776,8 +784,16 @@ export function renderEventLine(event: AgentEvent, aiResponseTarget: string = "U
       const label = tgt === "DEVICE" ? "AI" : tgt;
       return `[${event.speaker} to ${label}${clarity}] "${event.text}"`;
     }
-    case "context_update":
-      return `[CONTEXT] ${event.updateType}: ${event.key} — ${event.description}${event.relevance ? ` (relevance: ${event.relevance})` : ""}`;
+    case "context_update": {
+      const base = `[CONTEXT] ${event.updateType}: ${event.key} — ${event.description}${event.relevance ? ` (relevance: ${event.relevance})` : ""}`;
+      // A retraction must reach the board with the SAME rider the Speaker and
+      // the conversation log get (`flushContextUpdates`). Without it the Board
+      // Manager keeps the retracted name on `target` and on greeting buttons,
+      // and every subsequent press carries the false identity forward.
+      return event.updateType === "misidentified"
+        ? `${base} [RETRACTION — earlier reports of this person were a misidentification. Treat them as NOT present; do not record their presence, and strike any note or summary line that claims it.]`
+        : base;
+    }
     case "engagement_change":
       return `[ENGAGEMENT] ${event.state}${event.reason ? ` — ${event.reason}` : ""}`;
     case "speech_text_finalized":

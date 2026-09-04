@@ -640,8 +640,26 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
   // With a baked ecology, the vegetation charters read the REAL biosphere:
   // timber is trees (not the generic green halo) and pasture is grass —
   // a forest-edge founding charters sawmills, a grassland one stables.
-  // Abundance (0..100) maps onto the plant scale (0..7) so every anchor
-  // rate calibrated against `plant` carries over unchanged.
+  // Abundance (0..100) maps onto the plant scale (0..7).
+  //
+  // 🚨 THESE BRANCHES WERE DEAD UNTIL 2026-09-02 (`planet-game.ts` called
+  // `applyEcology` WITHOUT `perSpecies`, so `eco_tree`/`eco_grass` were never
+  // written): timberland fell through to the generic `plant` halo — exactly
+  // what the line above says it is not — and PASTURE WAS 0 FOR EVERY SITE ON
+  // EVERY PLANET.
+  //
+  // 🚨 AND THE OLD CLAIM HERE — "every anchor rate calibrated against `plant`
+  // carries over unchanged" — IS MEASURABLY FALSE, which is why it is gone.
+  // `plant` SATURATES (median 7/7 in a tree-dominant cell) while `eco_tree`
+  // peaks around 0.44 and medians 0.35, so ×7 lands at ~2.45. MEASURED over
+  // the founding sites of three planets (seeds 1/7/42, faceN 24): timberland
+  // AFTER / BEFORE has a median of 0.23 — the vegetation charter reads about
+  // ONE FIFTH of what the halo read. Pasture, by the same arithmetic, goes
+  // 0 → a median of ~52 and becomes the largest vegetation axis on most
+  // sites. That is a real change in what the land says it has, and it is
+  // LEFT AS IT FALLS: `ECO_VEG_SCALE` is a unit conversion, not a balance
+  // dial, and re-anchoring it to reproduce the halo would be inventing a
+  // fudge factor to hide the very measurement this switch exists to expose.
   const ECO_VEG_SCALE = 7 / 100;
   const charter = (cell: number): TriCharter => ({
     farmland: boxSum(grid, "fertility", cell, charterR),

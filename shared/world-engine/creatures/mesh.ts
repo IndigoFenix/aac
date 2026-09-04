@@ -43,6 +43,11 @@ export const LOFT = {
   membraneChordFrac: 0.2,
 };
 
+/** Fraction of a hooved digit's length that is drawn as the keratin cap. */
+const HOOF_CAP_FRAC = 0.22;
+/** How far a hoof's colour goes from skin toward the accent (keratin) tone. */
+const HOOF_KERATIN = 0.85;
+
 export interface BuiltCreature {
   mesh: THREE.SkinnedMesh;
   skeleton: THREE.Skeleton;
@@ -419,6 +424,40 @@ function capRing(
  *  `[-rx + 2rx·k/n, -rx + 2rx·(k+1)/n]`. */
 function slotCenterU(rx: number, k: number, n: number): number {
   return n > 1 ? -rx + (2 * rx * (k + 0.5)) / n : 0;
+}
+
+/**
+ * ⚠️ A LIMB'S ROLL MUST BE SEEDED LATERALLY. The generic loft frame starts at
+ * `cross(worldUp, dir)`, which is ILL-CONDITIONED for a limb: a mammal's femur
+ * hangs within a few degrees of vertical, and there every horizontal direction
+ * is nearly perpendicular to it, so the cross product's DIRECTION is decided by
+ * the femur's tiny tilt AZIMUTH — a 2° change of stance spins the limb's whole
+ * cross-section frame. `loftChain` then parallel-transports that arbitrary roll
+ * faithfully all the way to the foot, where it decides two visible things:
+ *   1. which way the FLATTENED sole lies. A sole lofts 2.07× wider than tall,
+ *      so a rolled frame stands the foot on edge — measured out of horizontal
+ *      by a mean of 30° and up to 69° across the registry.
+ *   2. the axis the DIGIT SLOTS tile. Measured against the axis the skeleton
+ *      actually laid the digit roots on, the frame was off by a mean of 115°
+ *      and by a full 180° at worst — past 90° on 24 of 36 digit rows, which is
+ *      exactly the long-standing "toes reversing" defect: every toe's base sits
+ *      across the foot from its tip.
+ * Seeding on the body's lateral axis is well-conditioned exactly where
+ * `cross(worldUp, dir)` is not, and vice versa — a sprawled limb whose femur
+ * points ALONG X falls back to the cross product, which is well-conditioned
+ * there. `up` keeps `loftChain`'s own `dir × side` handedness so ring winding
+ * is unchanged.
+ */
+function limbStartFrame(dir: THREE.Vector3): { side: THREE.Vector3; up: THREE.Vector3 } {
+  const side = new THREE.Vector3(1, 0, 0).addScaledVector(dir, -dir.x);
+  if (side.lengthSq() < 0.05) {
+    // Femur points laterally (a sprawled or outstretched limb): X is useless
+    // as a reference, but the world-up cross product is well-conditioned.
+    side.copy(new THREE.Vector3(0, 1, 0).cross(dir));
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+  }
+  side.normalize();
+  return { side, up: new THREE.Vector3().crossVectors(dir, side).normalize() };
 }
 
 /**
@@ -1091,6 +1130,11 @@ export function buildCreatureMesh(
   const kerat = h * h * 0.9 + h * 0.1;
   const muzzleBase = base.clone().lerp(accent, kerat);
   const muzzleBelly = belly.clone().lerp(accent, kerat);
+  // Hoof/claw keratin — the same accent tone the beak and the muzzle harden
+  // toward, taken most of the way: a hoof is not a tinted toe, it is a
+  // different material, and the read has to survive a 6-pixel foot.
+  const hoofBase = base.clone().lerp(accent, HOOF_KERATIN);
+  const hoofBelly = belly.clone().lerp(accent, HOOF_KERATIN);
   // Soft-tissue field over the skull (null when bare, or no head landmarks):
   // padding rounds the whole head out; landmark bulges fill the hollows
   // (cheeks, jowl, brow, the cranium→muzzle stop, lips).
@@ -1778,6 +1822,34 @@ export function buildCreatureMesh(
   for (const row of soleDigits.values()) {
     row.sort((a, b) => Number(/d(\d+)$/.exec(a)![1]) - Number(/d(\d+)$/.exec(b)![1]));
   }
+  /**
+   * ⚖️ A DIGIT'S SLOT IS DECIDED BY WHERE ITS ROOT ACTUALLY IS, never by its
+   * index alone. The skeleton tiles the digit roots across the foot in index
+   * order along ITS across-the-foot axis (`cross(worldUp, footDir)`); the slots
+   * tile `[-rx, +rx]` along the sole loft's `end.side`. Those are two different
+   * derivations of "across the foot", and nothing forces them to agree on a
+   * SIGN — when they disagree, digit k's base ring is cut at the far side of
+   * the sole from the tip its bone runs to, and every toe crosses its
+   * neighbours. `limbStartFrame` now keeps the two within a few degrees, but
+   * agreement by construction beats agreement by coincidence: orient the row by
+   * the roots themselves, so a crossing is impossible however the frame lands.
+   */
+  const slotRows = new Map<string, string[]>();
+  const slotRow = (sole: string, end: LoftEnd): string[] => {
+    const cached = slotRows.get(sole);
+    if (cached) return cached;
+    const row = soleDigits.get(sole)!;
+    const u = (n: string): number => {
+      const b = chains.get(n)?.bones[0];
+      if (!b) return 0;
+      return (b.head.x - end.center.x) * end.side.x
+        + (b.head.y - end.center.y) * end.side.y
+        + (b.head.z - end.center.z) * end.side.z;
+    };
+    const oriented = u(row[row.length - 1]) < u(row[0]) ? [...row].reverse() : row;
+    slotRows.set(sole, oriented);
+    return oriented;
+  };
   /** Whether this limb has a SOLE for its digits to split (a wing does not:
    *  its tip ring is a membrane chord, and tiling that would give the wing a
    *  paddle instead of a finger). */
@@ -1808,15 +1880,40 @@ export function buildCreatureMesh(
     // A digit whose sole was lofted takes its slot of that end polygon as its
     // base ring; everything else sinks its root ring into its parent to hide
     // the join.
+    // 🚨 THE HOOF. A digit the skeleton marked `keratin` is one the body
+    // STANDS ON THE TIP OF (skeleton.ts derives it from `stance` alone — there
+    // is no hoof dial), and a toe tip carrying weight has to be capped in
+    // keratin or it wears away. The treatment is deliberately the plainest
+    // thing that reads at a glance: the last fifth of the digit is a BLUNT
+    // barrel in the hardened-keratin tone — no taper into it, no point off the
+    // end — which is what tells a hoof from a claw from a bare toe across a
+    // whole field of animals at gameplay distance.
+    const capBone = chain.bones[chain.bones.length - 1];
+    const hoofed = capBone?.keratin === true;
+    if (hoofed) {
+      const last = rings[rings.length - 1];
+      const prev = rings[rings.length - 2] ?? last;
+      const shoulder: RingSpec = {
+        ...last,
+        center: prev.center.clone().lerp(last.center, 1 - HOOF_CAP_FRAC),
+        radius: prev.radius + (last.radius - prev.radius) * (1 - HOOF_CAP_FRAC),
+      };
+      rings.splice(rings.length - 1, 0, shoulder);
+      shoulder.colorBase = hoofBase;
+      shoulder.colorBelly = hoofBelly;
+      last.colorBase = hoofBase;
+      last.colorBelly = hoofBelly;
+    }
     const dm = /^(limb\d+[LRr])d(\d+)$/.exec(name);
     const soleEnd = dm ? soleEnds.get(dm[1]) : undefined;
     const tiled = !!dm && !!soleEnd && hasSole(name);
     if (tiled) {
-      const row = soleDigits.get(dm![1])!;
-      rings[0].points = digitBasePoints(soleEnd!, row.indexOf(name), row.length, sides);
+      const row = slotRow(dm![1], soleEnd!);
+      const k = row.indexOf(name);
+      rings[0].points = digitBasePoints(soleEnd!, k, row.length, sides);
       rings[0].center = soleEnd!.center
         .clone()
-        .addScaledVector(soleEnd!.side, slotCenterU(soleEnd!.rx, row.indexOf(name), row.length));
+        .addScaledVector(soleEnd!.side, slotCenterU(soleEnd!.rx, k, row.length));
       rings[0].direction = soleEnd!.direction.clone();
     } else {
       // Sink the root ring slightly along the first bone so it sits inside
@@ -1829,8 +1926,16 @@ export function buildCreatureMesh(
       rings,
       sides,
       axialColors,
-      // A tiled digit inherits the sole's frame — see `startFrame`.
-      tiled ? { side: soleEnd!.side, up: soleEnd!.up } : undefined,
+      // A tiled digit inherits the sole's frame — see `startFrame`. Every other
+      // limb seeds its roll laterally rather than off `cross(worldUp, dir)`,
+      // which is ill-conditioned for a near-vertical femur — see
+      // `limbStartFrame`. (`chain*` runs — antennae, horns — keep the generic
+      // seed: they have no lateral axis to speak of.)
+      tiled
+        ? { side: soleEnd!.side, up: soleEnd!.up }
+        : name.startsWith("limb")
+          ? limbStartFrame(rings[0].direction)
+          : undefined,
     );
     if (!isDigit(name)) soleEnds.set(name, end);
     const first = rings[0];
@@ -1843,7 +1948,8 @@ export function buildCreatureMesh(
     const last = rings[rings.length - 1];
     // A sole that carries digits caps FLAT rather than with the usual
     // forward-bulged cone — the toes are seated ON that plane, and a cone
-    // would push through between them.
+    // would push through between them. A HOOF caps nearly as flat, for the
+    // opposite reason: the point is that it has no point.
     const carriesDigits = soleDigits.has(name) && hasSole(name);
     capRing(
       geo,
@@ -1851,7 +1957,7 @@ export function buildCreatureMesh(
       sides,
       carriesDigits
         ? last.center.clone()
-        : last.center.clone().addScaledVector(last.direction, last.radius * 0.5),
+        : last.center.clone().addScaledVector(last.direction, last.radius * (hoofed ? 0.12 : 0.5)),
       base,
       last.boneA,
       false,

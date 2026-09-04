@@ -1400,7 +1400,17 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     input.timezone,
     accessCtx,
   );
-    
+
+  // Presence ledger §6.1: the durable-write validator on the AI's memory ops
+  // is keyed by SESSION, never by student — two sessions of one student can
+  // overlap (the AAC device and a clinician mirror) and their ledgers differ,
+  // so a student key would let one session's verified list authorize the
+  // other's writes. The ops read it off `ctx.all.sessionId`; without this line
+  // they see `undefined` and every presence check is a no-op.
+  if (session?.id) {
+    chatContextManager.getBaseContext().sessionId = session.id;
+  }
+
   // Build memory fields based on mode
   const hasStudent = !!context.student;
 
@@ -2655,6 +2665,26 @@ export async function persistMessages(params: {
 
 export async function getSessionInfo(sessionId: string): Promise<ChatSession | undefined> {
   return getSession(sessionId);
+}
+
+/**
+ * Store the final presence-ledger snapshot on a chat session
+ * (planning-docs/aac-presence-ledger.md §8). Called once at session close, from
+ * the same close path that writes the summary, with the serialized ledger:
+ * entries, derived statuses, the status timeline and the bounded evidence ring.
+ *
+ * Deliberately a single targeted UPDATE rather than a `updateSession` call — a
+ * close-time snapshot must not race the summarizer over the rest of the row,
+ * and the payload is opaque to this module (the ledger owns its own shape).
+ */
+export async function setChatSessionPresenceLedger(
+  sessionId: string,
+  snapshot: unknown,
+): Promise<void> {
+  await db
+    .update(chatSessions)
+    .set({ presenceLedger: snapshot, updatedAt: new Date() })
+    .where(eq(chatSessions.id, sessionId));
 }
 
 // Export for use in other modules

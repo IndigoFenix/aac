@@ -13,6 +13,22 @@
 export const PARTY_DEVICE = "DEVICE";
 export const PARTY_USER = "USER";
 export const PARTY_UNKNOWN = "UNKNOWN";
+/**
+ * A real person in the room whose NAME the presence ledger has not verified.
+ *
+ * Distinct from UNKNOWN, which says "we do not know that anyone is there".
+ * This one asserts presence and withholds only the identity — which is what
+ * the ledger actually knows, and what keeps a guessed sister from being
+ * greeted by name (planning-docs/aac-presence-ledger.md §4, §6). Routing is
+ * unaffected: reply buttons are built off `targetIsUser`, never off the name.
+ */
+export const PARTY_NEARBY = "someone nearby";
+
+/** True when a party label is the anonymised nearby-person token. */
+export function isNearbyParty(value: string | undefined): boolean {
+  if (!value) return false;
+  return value.trim().toLowerCase() === PARTY_NEARBY;
+}
 
 /** Lowercase, punctuation-stripped word tokens of a name/value. The
  *  Observer model writes names with trailing punctuation ("שחף!"),

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { motion } from "framer-motion";
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
+import { renderComposedSentence, studentGender } from "@shared/aac/builder-speech";
 import {
   type GlyphCategory,
   type VocabularyItem,
@@ -320,6 +321,9 @@ export interface SentenceConstructorBoardProps {
   awaitingInterpret?: boolean;
   /** Called when the user dismisses the board. */
   onClose?: () => void;
+  /** The student's gender ("male"/"female") — grammatical agreement for the
+   *  device-rendered sentence the Say button's colour reports on. */
+  studentGender?: string;
   /**
    * Push state to the AI. Pass when the board renders outside the
    * DualAgentProvider subtree; otherwise the optional context is used.
@@ -377,7 +381,7 @@ export interface BuilderRemote {
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { onClose, onPlay, awaitingInterpret = false } = props;
   const ctx = useDualAgentContextOptional();
   // Props take precedence over context — the construction board may render
@@ -471,6 +475,40 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     if (tone.exclamation) tags.push("exclamation");
     return setToneTags(glyph, tags);
   }, [glyph, tone]);
+
+  // CAN THE DEVICE SAY THIS ITSELF? The SAME call `playGlyph` makes with the
+  // SAME string, so the Say button's colour is a truthful readout of which
+  // path a press will take: green = the glyph language renders it (instant,
+  // no model), yellow-green with a "?" = it goes to the AI to interpret.
+  // Shown on the client precisely so that "is it parsable?" and "is it being
+  // treated as parsable?" can be told apart by looking.
+  const parsable = useMemo(
+    () => displayedGlyph.slots.length > 0
+      && renderComposedSentence(serializeGlyph(displayedGlyph), {
+        locale: language,
+        gender: studentGender(props.studentGender),
+      }) !== null,
+    [displayedGlyph, language, props.studentGender],
+  );
+
+  // The slot that just arrived, for the compositor's pop-in. Set on a growth
+  // in slot count, cleared once the animation has run; a deletion instead
+  // bumps the strip (see `stripBump`) since the removed slot is already gone.
+  const [enteringSlot, setEnteringSlot] = useState<number | null>(null);
+  const [stripBump, setStripBump] = useState(0);
+  const prevSlotCountRef = useRef(displayedGlyph.slots.length);
+  useEffect(() => {
+    const prev = prevSlotCountRef.current;
+    const next = displayedGlyph.slots.length;
+    prevSlotCountRef.current = next;
+    if (next > prev) {
+      setEnteringSlot(next - 1);
+      const id = setTimeout(() => setEnteringSlot(null), 300);
+      return () => clearTimeout(id);
+    }
+    if (next < prev) setStripBump((n) => n + 1);
+    return undefined;
+  }, [displayedGlyph.slots.length]);
 
   // Effective active slot: explicit selection wins, else most-recently filled.
   // Used by the modifier zone; the GlyphCompositor outline uses the explicit
@@ -1968,10 +2006,46 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Top action row: glyph display + tone toggles + help + play */}
+        {/* Top action row, in reading order: SAY - the sentence - backspace -
+            tone - find-word - close. The Say button leads because it is the
+            verb of the sentence; the glyphs grow away from it toward the
+            eraser. */}
         <div className="flex items-stretch gap-2 p-3 border-b border-gray-200 dark:border-gray-700 shrink-0 h-36">
-          {/* Glyph display — preview of the assembled glyph (or empty placeholder) */}
-          <div className="flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 p-2 overflow-hidden">
+          {/* Say button — disabled when no slots filled. Arrow points along
+              the reading direction so it reads as "forward / go". While the
+              composed sentence is being interpreted, it shows a spinner and a
+              "wait" label instead of closing instantly (the host closes the
+              board the moment the interpreted sentence starts being voiced).
+
+              COLOUR = WHICH PATH THE PRESS TAKES. Green: the device renders
+              this sentence itself (no model, instant). Yellow-green with a "?":
+              the AI will interpret it. It NEVER gates the press — a partial
+              sentence is still the student's to say, and half a sentence said
+              is worth more than a whole one withheld. */}
+          <ActionButton
+            label={awaitingInterpret ? t("processing.interpreting") : t("construction.play")}
+            icon={forwardTriangle(isRTL)}
+            primary
+            parsable={displayedGlyph.slots.length > 0 ? parsable : null}
+            ready={engineSurface?.complete === true && displayedGlyph.slots.length > 0}
+            busy={awaitingInterpret}
+            disabled={displayedGlyph.slots.length === 0}
+            onPress={handlePlay}
+            testId="construction-play"
+            mirrorId={formatBuilderTarget({ kind: "play" })}
+          />
+
+          {/* Glyph display — preview of the assembled glyph (or empty
+              placeholder), start-aligned so the sentence grows from the Say
+              button and a new word never shoves the rest sideways. The bump
+              on deletion is the only cue a removed slot can leave. */}
+          <motion.div
+            key={stripBump}
+            initial={stripBump > 0 ? { scale: 0.97 } : false}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 500, damping: 22 }}
+            className="flex-1 min-w-0 bg-white dark:bg-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 p-2 overflow-hidden"
+          >
             <GlyphCompositor
               glyph={displayedGlyph}
               rtl={isRTL}
@@ -1980,8 +2054,33 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
               ariaLabel={t("construction.glyphPreviewLabel")}
               onSlotPress={handleSlotPress}
               showEmptyHostSlot={ENABLE_GLYPH_ARGUMENTS}
+              align="start"
+              enteringSlot={enteringSlot}
             />
-          </div>
+          </motion.div>
+
+          {/* Clear-selected button — only when a slot is selected. With no
+              selection, the same spot shows Backspace (removes the last
+              slot) whenever there's something to remove. It sits after the
+              last glyph — the eraser at the end of the line. */}
+          {activeSlot != null ? (
+            <ActionButton
+              label={t("common.delete")}
+              icon="✕"
+              onPress={handleClearSelected}
+              testId="construction-clear"
+              mirrorId={formatBuilderTarget({ kind: "clear" })}
+            />
+          ) : displayedGlyph.slots.length > 0 ? (
+            <ActionButton
+              label={t("construction.backspace")}
+              icon="⌫"
+              mirrorIcon={isRTL}
+              onPress={handleBackspace}
+              testId="construction-backspace"
+              mirrorId={formatBuilderTarget({ kind: "backspace" })}
+            />
+          ) : null}
 
           {/* Tone toggles: ? and ! */}
           <div className="flex flex-col gap-2">
@@ -2011,51 +2110,6 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
             active={guessingActive}
             onPress={handleHelpPress}
             testId="construction-help"
-          />
-
-          {/* Clear-selected button — only when a slot is selected. With no
-              selection, the same spot shows Backspace (removes the last
-              slot) whenever there's something to remove. */}
-          {activeSlot != null ? (
-            <ActionButton
-              label={t("common.delete")}
-              icon="✕"
-              onPress={handleClearSelected}
-              testId="construction-clear"
-              mirrorId={formatBuilderTarget({ kind: "clear" })}
-            />
-          ) : displayedGlyph.slots.length > 0 ? (
-            <ActionButton
-              label={t("construction.backspace")}
-              icon="⌫"
-              mirrorIcon={isRTL}
-              onPress={handleBackspace}
-              testId="construction-backspace"
-              mirrorId={formatBuilderTarget({ kind: "backspace" })}
-            />
-          ) : null}
-
-          {/* Play button — disabled when no slots filled. Arrow points
-              along the reading direction so it reads as "forward / go". While
-              the composed sentence is being interpreted, it shows a spinner and
-              a "wait" label instead of closing instantly (the host closes the
-              board the moment the interpreted sentence starts being voiced).
-
-              READY (the in-game SpeakMenu's own cue): the engine says the
-              sentence already parses to something meaningful, so the button
-              lights. It NEVER gates the press — a partial sentence is still
-              the student's to say, and half a sentence said is worth more than
-              a whole one withheld. */}
-          <ActionButton
-            label={awaitingInterpret ? t("processing.interpreting") : t("construction.play")}
-            icon={forwardTriangle(isRTL)}
-            primary
-            ready={engineSurface?.complete === true && displayedGlyph.slots.length > 0}
-            busy={awaitingInterpret}
-            disabled={displayedGlyph.slots.length === 0}
-            onPress={handlePlay}
-            testId="construction-play"
-            mirrorId={formatBuilderTarget({ kind: "play" })}
           />
 
           {/* Close button (optional) */}
@@ -2643,6 +2697,12 @@ function ActionButton(props: {
   /** READY: the composition is already sayable. A quiet halo — an invitation,
    *  not a gate; the button is pressable with or without it. */
   ready?: boolean;
+  /**
+   * PRIMARY ONLY. Which path a press takes, as a colour: `true` = the device
+   * renders the sentence itself (green); `false` = the AI will interpret it
+   * (yellow-green, with a "?" in the corner); `null` = nothing to say yet.
+   */
+  parsable?: boolean | null;
   /** Flip the icon horizontally. For DIRECTIONAL chrome only — Backspace's ⌫
    *  erases toward the start of the line, which is the RIGHT in RTL, so the
    *  glyph has to turn around with the text. (⌦ U+2326 is the nominal
@@ -2661,13 +2721,16 @@ function ActionButton(props: {
       data-testid={props.testId}
       data-active={props.active ? "true" : undefined}
       data-ready={props.ready ? "true" : undefined}
+      data-parsable={props.parsable == null ? undefined : String(props.parsable)}
       onClick={props.onPress}
       disabled={props.disabled || props.busy}
       whileTap={{ scale: 0.95 }}
       className={[
         "w-24 rounded-xl border-2 flex flex-col items-center justify-center gap-1 px-2 py-2",
         props.primary
-          ? "bg-green-500 hover:bg-green-600 border-green-700 text-white"
+          ? props.parsable === false
+            ? "relative bg-lime-400 hover:bg-lime-500 border-lime-600 text-lime-950"
+            : "relative bg-green-500 hover:bg-green-600 border-green-700 text-white"
           : props.color
           ? "text-gray-800"
           : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
@@ -2689,6 +2752,15 @@ function ActionButton(props: {
           : props.icon}
       </span>
       <span className="text-xs font-medium">{props.label}</span>
+      {props.primary && props.parsable === false && !props.busy && (
+        <span
+          aria-hidden
+          data-testid="construction-play-unparsed"
+          className="absolute top-1 end-1 w-5 h-5 rounded-full bg-white/90 text-lime-900 text-xs font-bold flex items-center justify-center"
+        >
+          ?
+        </span>
+      )}
     </motion.button>
   );
 }

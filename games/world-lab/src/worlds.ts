@@ -80,31 +80,6 @@ export const TEST_WORLDS: NamedWorld[] = [
     },
   },
   {
-    id: "frontier-homestead",
-    name: "Frontier Homestead — found a town from nothing",
-    world: {
-      // CITY-FOUNDING (city-founding.md): a TOWN at age 0 — a site with a
-      // population and a supply box but NO buildings. Wilderness surroundings
-      // come by default at age 0 (trees hold wood, rocks hold stone). The
-      // spirit orders builds ("build farm" founds it by ACT on a street lot —
-      // areas come from the world's own partitioning, never a painted disc;
-      // nations-and-empires §3c) and the day-tick growth loops run on the
-      // town machinery from day one.
-      // ⚖️ FOUNDERS CARRY WHAT THE SPEC SAYS AND NOTHING ELSE (user law,
-      // 2026-08-28 — no default items beside a founding; the supply crate
-      // itself renders only because this stock is declared, and the baskets
-      // are the party's own haulage, stepped out of the crate at boot).
-      tree: {
-        kind: "town",
-        params: { seed: 11, days: 0, population: 5, stock: { wood: 14, stone: 6, basket: 2 } },
-      },
-      // Construction 720 (vs the street clock's 180): a house rises in ~60 s
-      // real time — founding is WATCHED, so builds must finish while the
-      // player's attention holds.
-      session: { avatar: "spirit", scale: { ...STREET_CLOCK, construction: 720 } },
-    },
-  },
-  {
     id: "frontier-planet",
     name: "Frontier Homestead — on the planet",
     world: {
@@ -117,8 +92,15 @@ export const TEST_WORLDS: NamedWorld[] = [
       // FoundedSite at a FOREST founding cell (main.ts stepFoundingPremise,
       // through the save-restore door) and parks the spirit over it; the
       // approach mounts the town with terrain "planet" — no walls, no edge.
-      // The walled `frontier-homestead` above stays as the fast-boot test
-      // world (its size premise is the thing this preset retires).
+      //
+      // ⚖️ THE WALLED `frontier-homestead` PRESET IS GONE (user ruling
+      // 2026-09-02: "a town with no resource cell will never be
+      // constructable"). It was RETIRED, not retuned, and the distinction is
+      // the point: a walled town is a CLOSED BOX — its scatter is fixed at
+      // mount and there is no resource cell past the wall, so no dial on the
+      // supply curve (mix counts, oak yield, BLOCKS_PER_BAY) can ever make it
+      // finish a building. It was a dead scenario, not a mis-tuned one. This
+      // preset is the founding premise now; there is no walled sibling.
       tree: {
         kind: "solar_system",
         params: {

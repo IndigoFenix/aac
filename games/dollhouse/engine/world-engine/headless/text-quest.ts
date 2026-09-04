@@ -44,8 +44,9 @@ import {
   type QuestViewSeam,
 } from "../interaction/quest/quest-host.js";
 import type { LedgerWarpResult } from "../interaction/quest/clock-warp.js";
-import { homesteadWildMix } from "../interaction/quest/wilderness.js";
+import { homesteadWildMix, type WildMixEntry } from "../interaction/quest/wilderness.js";
 import { buildTownScope } from "../interaction/town/town-play-game.js";
+import type { SerializedTownDeltas } from "../kernel/town/construction.js";
 import { FOUNDING_AGE_DAYS } from "../kernel/town/plan.js";
 import { DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale } from "../scale.js";
 import { PLAYER_ID } from "../solver/space3d.js";
@@ -105,6 +106,36 @@ export interface TextQuestOpts {
   /** Per-frame hook, forwarded to the view's `onRender` (the projection's
    *  frame seam). Fires after the reveal cache is fresh. */
   onRender?: TextWorldViewOnRender;
+  /**
+   * 🌲 THE SCATTER MIX, overridden — the ONE thing a text boot could not say.
+   *
+   * The default is the charter arm (`homesteadWildMix`, absolute COUNTS), the
+   * same line every browser boot computes off a town document. A world mounted
+   * on a real planet cell scatters from its baked ECOLOGY instead
+   * (`wildMixForBiome`, per-HECTARE densities), and that difference is not
+   * cosmetic: `perHa` is the condition the founding mount reads to decide
+   * whether the near-stand relevance disc binds AND whether the neighbouring
+   * stands mint (#49). Without this seat the countryside premise — the whole
+   * frontier-planet shape the world-lab boots — was unreachable headlessly, so
+   * every headless measurement of it was taken in an authored-count world.
+   *
+   * Absent ⇒ byte-identical to every run that shipped.
+   */
+  wildMix?: ReadonlyArray<WildMixEntry>;
+  /**
+   * 💾 THE SAVE, RESTORED — `SerializedTownDeltas` handed to the build the way
+   * `siteTownConfig` hands one to a browser boot (#49 Stage 2).
+   *
+   * The persistence law this round writes is *"a depleted neighbouring stand
+   * survives save/load"*, and a law whose only proof is a browser eyeball is a
+   * law nobody checks. With this seat the whole loop runs headless: boot →
+   * draw a stand down → `session.town.deltas.toJSON()` → boot again with that
+   * object → the same stand is still drawn down and the mint declines to put
+   * its trees back.
+   *
+   * Absent ⇒ byte-identical to every run that shipped.
+   */
+  deltas?: SerializedTownDeltas;
 }
 
 type TextWorldViewOnRender = NonNullable<Parameters<typeof createTextWorldView>[0]["onRender"]>;
@@ -170,7 +201,7 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
   }
 
   // ② THE TOWN. Same call, same certification, same deterministic build.
-  const built = buildTownScope(game);
+  const built = buildTownScope(game, "game", opts.deltas);
   const play = built.play;
 
   // ③ THE SESSION SHAPE the game hands `host.start` — verbatim from bootLivingTown.
@@ -326,7 +357,7 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
       ? {
           wilderness: {
             seed: play.config.seed,
-            mix: homesteadWildMix(play.plan.biome, play.config.seed),
+            mix: opts.wildMix ?? homesteadWildMix(play.plan.biome, play.config.seed),
           },
         }
       : {}),

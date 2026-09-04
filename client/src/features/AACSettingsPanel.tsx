@@ -253,6 +253,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [allowNotes, setAllowNotes] = useState(true);
   const [shareMonitorNotesWithInstitute, setShareMonitorNotesWithInstitute] = useState(true);
   const [autoAddContacts, setAutoAddContacts] = useState(true);
+  const [presenceLedger, setPresenceLedger] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
   const [deviceLocationEnabled, setDeviceLocationEnabled] = useState(false);
   const [launchOnBoot, setLaunchOnBoot] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
@@ -590,6 +592,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
+      setPresenceLedger(aac?.presenceLedger ?? false);
+      setDebugMode(aac?.debugMode ?? false);
       setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
       setLaunchOnBoot(aac?.launchOnBoot ?? false);
       setAppConfig(aac?.appConfig || {});
@@ -651,6 +655,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAllowNotes = aac?.allowNotes ?? true;
       const originalShareMonitorNotesWithInstitute = aac?.shareMonitorNotesWithInstitute ?? true;
       const originalAutoAddContacts = aac?.autoAddContacts ?? true;
+      const originalPresenceLedger = aac?.presenceLedger ?? false;
+      const originalDebugMode = aac?.debugMode ?? false;
       const originalDeviceLocationEnabled = aac?.deviceLocationEnabled ?? false;
       const originalLaunchOnBoot = aac?.launchOnBoot ?? false;
       const originalAppConfig = aac?.appConfig || {};
@@ -707,6 +713,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         allowNotes !== originalAllowNotes ||
         shareMonitorNotesWithInstitute !== originalShareMonitorNotesWithInstitute ||
         autoAddContacts !== originalAutoAddContacts ||
+        presenceLedger !== originalPresenceLedger ||
+        debugMode !== originalDebugMode ||
         deviceLocationEnabled !== originalDeviceLocationEnabled ||
         launchOnBoot !== originalLaunchOnBoot ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
@@ -722,7 +730,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, localNeuralVoice, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, deviceLocationEnabled, launchOnBoot, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, autoAacPrompt, liveAudioSpeaker, fullAttentionMode, allowFacilitatorControl, boardManagerLiveModel, budgetTier, seizureDetection, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, localNeuralVoice, iconTextRatio, languageLevel, thoroughStartup, singleGlyphButtons, glyphInputTranslation, pressResponseDelay, interruptOnNewPress, eyegazeEnabled, eyegazeTimeout, eyegazeProvider, selectionMethod, restSpace, autoAudioScan, autoAudioScanDelay, allowReadProgress, allowReadReports, allowNotes, shareMonitorNotesWithInstitute, autoAddContacts, presenceLedger, debugMode, deviceLocationEnabled, launchOnBoot, appConfig, permittedWebsites, homeActions, venueMenus, sessionRecording, definedGestures, permittedYoutubeItems, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -764,6 +772,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowNotes: boolean;
       shareMonitorNotesWithInstitute: boolean;
       autoAddContacts: boolean;
+      presenceLedger: boolean;
+      debugMode: boolean;
       deviceLocationEnabled: boolean;
       launchOnBoot: boolean;
       appConfig?: Record<string, any>;
@@ -872,6 +882,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowNotes,
       shareMonitorNotesWithInstitute,
       autoAddContacts,
+      presenceLedger,
+      debugMode,
       deviceLocationEnabled,
       launchOnBoot,
       appConfig,
@@ -938,6 +950,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
       setAutoAddContacts(aac?.autoAddContacts ?? true);
+      setPresenceLedger(aac?.presenceLedger ?? false);
+      setDebugMode(aac?.debugMode ?? false);
       setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
       setLaunchOnBoot(aac?.launchOnBoot ?? false);
       setAppConfig(aac?.appConfig || {});
@@ -3716,6 +3730,47 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       checked={autoAddContacts}
                       onCheckedChange={setAutoAddContacts}
                       data-testid="switch-auto-add-contacts"
+                    />
+                  </div>
+                  {/* Presence ledger. It belongs under AI Learning because what
+                      it gates is exactly that: whether an unverified guess at
+                      who is in the room may be spoken, written into notes, seed
+                      a contact, or teach the face matcher. Recording and the
+                      session-close snapshot run regardless — this switch only
+                      turns on the behaviour changes. */}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">
+                        {t('aacSettings.presenceLedger')}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t('aacSettings.presenceLedgerDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={presenceLedger}
+                      onCheckedChange={setPresenceLedger}
+                      data-testid="switch-presence-ledger"
+                    />
+                  </div>
+                  {/* AAC debug mode. Clinician-only; persists the full session
+                      trace (prompts, transcripts, tool calls) to session_debug_logs
+                      for this student. See agent-coordinator.ts / agent-flow-logger.ts
+                      persistFlowToDb. Off by default — turn on only while
+                      investigating, the trace contains personal data. */}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium">
+                        {t('aacSettings.debugMode')}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t('aacSettings.debugModeDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={debugMode}
+                      onCheckedChange={setDebugMode}
+                      data-testid="switch-debug-mode"
                     />
                   </div>
                 </CardContent>

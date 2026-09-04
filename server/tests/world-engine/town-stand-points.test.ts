@@ -444,3 +444,53 @@ describe("door-aware routes over REAL generated houses", () => {
     expect(polylineWalkable(s, from, pts)).toBe(true);
   });
 });
+
+// ── ⚖️ "SOLID", NOT "IS FURNITURE" (user ruling 2026-09-02) ────────────────
+//
+// The nudge-off repair asked `spec.fixture && !PASSTHROUGH` — an inline copy
+// of `objectIsSolid`'s FALLBACK arm with the explicit-`solid` clause missing.
+// So everything the world declares solid WITHOUT calling it furniture was
+// invisible to it: a modeled oak, a boulder. Locomotion collided with them
+// (`fixturesWalkable` reads `objectIsSolid`), the repair did not, and the
+// stand point handed back was the trunk's own centre — a body sent there
+// walked into it and ground with no diagnosis. Retiring the founding clear
+// (arrival-untouched.test.ts) is what turns that from a curiosity into the
+// household's daily route, which is why it is pinned here.
+describe("the stand-point repair sees what the LEGS collide with", () => {
+  // A wild oak as quest-host stands one: solid, openable, and no `fixture`.
+  const tree = (id: string, x: number, y: number, radius = 1.2): ObjectSpec => ({
+    id, x, y, shape: "sphere", radius, solid: true, interactions: [],
+  });
+
+  it("finds a solid NON-fixture covering a point", () => {
+    const s = createWorldState(expandWorldBuildings(spec([], [tree("wild:oak_0", 20, 20)])), "me");
+    expect(s.spec.objects[0]!.fixture).toBeUndefined();
+    expect(fixturesWalkable(s, { x: 20, y: 20 }, 0.35)).toBe(false); // the legs agree
+    const cov = fixtureCovering(s, { x: 20, y: 20 });
+    expect(cov?.id).toBe("wild:oak_0");
+    expect(fixtureCovering(s, { x: 30, y: 30 })).toBeNull();
+  });
+
+  it("stands a body OFF the trunk instead of handing back its centre", () => {
+    const s = createWorldState(expandWorldBuildings(spec([], [tree("wild:oak_0", 20, 20)])), "me");
+    const p = standPointFor(s, "wild:oak_0", { x: 20, y: 20 }, { x: 26, y: 20 });
+    expect(p).not.toEqual({ x: 20, y: 20 });
+    expect(Math.hypot(p.x - 20, p.y - 20)).toBeGreaterThan(1.2);
+    expect(standClear(s, p)).toBe(true);
+  });
+
+  it("a LOOSE piece of furniture (`solid: false`) blocks nobody, and never did", () => {
+    // item-prop.ts gives a carried chest `fixture: kind, solid: false`. The
+    // old inline rule saw "chest" and nudged around a thing on the floor.
+    const s = createWorldState(
+      expandWorldBuildings(spec([], [{
+        id: "loose", x: 20, y: 20, shape: "box", radius: 0.5,
+        fixture: "chest", solid: false, interactions: [],
+      } as ObjectSpec])),
+      "me",
+    );
+    expect(fixturesWalkable(s, { x: 20, y: 20 }, 0.35)).toBe(true);
+    expect(fixtureCovering(s, { x: 20, y: 20 })).toBeNull();
+    expect(standPointFor(s, "loose", { x: 20, y: 20 }, { x: 26, y: 20 })).toEqual({ x: 20, y: 20 });
+  });
+});

@@ -104,11 +104,60 @@ describe("applyMenuRefinement — annotation fails OPEN", () => {
     }
   });
 
-  it("accepts a well-formed imageKey", () => {
+  it("folds a well-formed LEGACY imageKey into `icon` — one field to check forever", () => {
     for (const key of ["croissant", "iced_coffee", "coca_cola_can", "burger2"]) {
       const out = applyMenuRefinement(RAW, [{ index: 0, keep: true, imageKey: key }]);
-      expect(out.items[0].imageKey).toBe(key);
+      expect(out.items[0].icon).toBe(key);
+      expect(out.items[0].imageKey).toBeUndefined();
     }
+  });
+});
+
+describe("applyMenuRefinement — icon in regular-board glyph syntax", () => {
+  it("accepts heads, `.modifier` toppings, `+` joins, and emoji parts", () => {
+    for (const icon of [
+      "falafel",
+      "pizza.olive",
+      "ice_cream.chocolate.vanilla",
+      "burger+french_fries",
+      "🍕",
+      "pizza.🫒",
+      "burger+🍟+cola",
+    ]) {
+      const out = applyMenuRefinement(RAW, [{ index: 0, keep: true, icon }]);
+      expect(out.items[0].icon).toBe(icon);
+      expect(out.rejected).toHaveLength(0);
+    }
+  });
+
+  it("keeps the item but refuses an icon outside the documented subset", () => {
+    const bad = [
+      "Pizza", // caps — a proper noun trying to sneak in
+      "פיצה", // not English
+      "want(pizza)", // payload syntax is the live model's, not an annotation's
+      "pizza#request", // tone tags likewise
+      "symbol:abc123", // must never mint refs into the student's symbol store
+      "face:xyz", // ditto
+      "[pizza]", // bracket marker
+      "pizza olives", // whitespace
+      "a+b+c+d", // more slots than a button can draw
+      "pizza.a.b.c", // more badges than the compositor can place
+      "pizza..olive", // empty part
+      "x".repeat(70), // a sentence, not a picture
+    ];
+    for (const icon of bad) {
+      const out = applyMenuRefinement(RAW, [{ index: 0, keep: true, icon }]);
+      expect(out.items[0].name).toBe("רול אנטריקוט"); // row survives
+      expect(out.items[0].icon).toBeUndefined(); // annotation refused
+      expect(out.rejected.some((r) => r.reason === "bad_icon")).toBe(true);
+    }
+  });
+
+  it("prefers `icon` over a legacy imageKey when the model sends both", () => {
+    const out = applyMenuRefinement(RAW, [
+      { index: 0, keep: true, icon: "pizza.olive", imageKey: "pizza" },
+    ]);
+    expect(out.items[0].icon).toBe("pizza.olive");
   });
 });
 

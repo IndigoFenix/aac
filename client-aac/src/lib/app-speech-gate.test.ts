@@ -11,6 +11,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   appSpeechHoldUntil,
   deviceAudioBusy,
+  foreignDeviceAudio,
   APP_SPEECH_TAIL_MS,
   APP_SPEECH_DEFAULT_MS,
   APP_SPEECH_MAX_MS,
@@ -68,7 +69,7 @@ describe("app-speech mic hold", () => {
 
 describe("deviceAudioBusy — one question, independent sources", () => {
   const NOW = 1_000_000;
-  const quiet = { aiTtsBusy: false, appSpeechUntil: 0, remoteCallAudioUntil: 0 };
+  const quiet = { aiTtsBusy: false, appSpeechUntil: 0, remoteCallAudioUntil: 0, localTtsUntil: 0 };
 
   it("is open when nothing on this device is making sound", () => {
     expect(deviceAudioBusy(NOW, quiet)).toBe(false);
@@ -96,18 +97,18 @@ describe("deviceAudioBusy — one question, independent sources", () => {
   it("THE INVARIANT: one source going quiet never releases another's hold", () => {
     // The property that would be lost if the deadlines were ever merged into a
     // single ref — which is exactly why they are separate.
-    const appDoneCallTalking = { aiTtsBusy: false, appSpeechUntil: NOW - 1, remoteCallAudioUntil: NOW + 800 };
+    const appDoneCallTalking = { ...quiet, appSpeechUntil: NOW - 1, remoteCallAudioUntil: NOW + 800 };
     expect(deviceAudioBusy(NOW, appDoneCallTalking)).toBe(true);
 
-    const callDoneAppTalking = { aiTtsBusy: false, appSpeechUntil: NOW + 800, remoteCallAudioUntil: NOW - 1 };
+    const callDoneAppTalking = { ...quiet, appSpeechUntil: NOW + 800, remoteCallAudioUntil: NOW - 1 };
     expect(deviceAudioBusy(NOW, callDoneAppTalking)).toBe(true);
 
     // Only when EVERY source is quiet does the mic open.
-    expect(deviceAudioBusy(NOW, { aiTtsBusy: false, appSpeechUntil: NOW - 1, remoteCallAudioUntil: NOW - 1 })).toBe(false);
+    expect(deviceAudioBusy(NOW, { ...quiet, appSpeechUntil: NOW - 1, remoteCallAudioUntil: NOW - 1, localTtsUntil: NOW - 1 })).toBe(false);
   });
 
   it("our TTS overrides expired deadlines", () => {
-    expect(deviceAudioBusy(NOW, { aiTtsBusy: true, appSpeechUntil: NOW - 1, remoteCallAudioUntil: NOW - 1 })).toBe(true);
+    expect(deviceAudioBusy(NOW, { ...quiet, aiTtsBusy: true, appSpeechUntil: NOW - 1, remoteCallAudioUntil: NOW - 1 })).toBe(true);
   });
 
   it("composes with appSpeechHoldUntil for the live call-audio path", () => {
@@ -121,5 +122,53 @@ describe("deviceAudioBusy — one question, independent sources", () => {
     until = appSpeechHoldUntil(NOW + 600, until, { speaking: false });
     expect(deviceAudioBusy(NOW + 700, { ...quiet, remoteCallAudioUntil: until })).toBe(true);
     expect(deviceAudioBusy(NOW + 1_300, { ...quiet, remoteCallAudioUntil: until })).toBe(false);
+  });
+
+  it("holds for the device's OWN local voice until its deadline", () => {
+    // Device-voice mode (`aac_settings.useLocalTts`) speaks every student press
+    // through speechSynthesis / Kokoro. That audio reaches neither our audio
+    // player nor an iframe, so before this source existed the mic stayed open
+    // and the AAC transcribed the sentence it had just spoken.
+    const s = { ...quiet, localTtsUntil: NOW + 500 };
+    expect(deviceAudioBusy(NOW, s)).toBe(true);
+    expect(deviceAudioBusy(NOW + 501, s)).toBe(false);
+  });
+
+  it("the local voice going quiet does not release an app or a call", () => {
+    expect(deviceAudioBusy(NOW, { ...quiet, localTtsUntil: NOW - 1, appSpeechUntil: NOW + 800 })).toBe(true);
+    expect(deviceAudioBusy(NOW, { ...quiet, localTtsUntil: NOW - 1, remoteCallAudioUntil: NOW + 800 })).toBe(true);
+  });
+});
+
+describe("foreignDeviceAudio — sound the live model did not produce", () => {
+  const NOW = 1_000_000;
+  const quiet = { appSpeechUntil: 0, localTtsUntil: 0 };
+
+  it("is false when the device is quiet", () => {
+    expect(foreignDeviceAudio(NOW, quiet)).toBe(false);
+  });
+
+  it("covers an embedded app's voice", () => {
+    expect(foreignDeviceAudio(NOW, { ...quiet, appSpeechUntil: NOW + 1 })).toBe(true);
+  });
+
+  // THE REGRESSION. The raw PCM stream keeps flowing while our own player
+  // speaks, because that audio is the model's own output and its echo handling
+  // knows it made it. Local TTS is NOT the model's output — to the model it is
+  // a person in the room — so it has to be DROPPED from the stream, exactly as
+  // an app's voice is, not merely counted like our player's echo.
+  it("covers the device's own local voice", () => {
+    expect(foreignDeviceAudio(NOW, { ...quiet, localTtsUntil: NOW + 1 })).toBe(true);
+    expect(foreignDeviceAudio(NOW + 2, { ...quiet, localTtsUntil: NOW + 1 })).toBe(false);
+  });
+
+  it("composes with appSpeechHoldUntil across one utterance", () => {
+    // What useLiveSession does per utterance: raise at the first syllable,
+    // release to the room tail at the end.
+    let until = appSpeechHoldUntil(NOW, 0, { speaking: true, ms: 1_500 });
+    expect(foreignDeviceAudio(NOW + 1_000, { ...quiet, localTtsUntil: until })).toBe(true);
+    until = appSpeechHoldUntil(NOW + 1_500, until, { speaking: false });
+    expect(foreignDeviceAudio(NOW + 1_600, { ...quiet, localTtsUntil: until })).toBe(true);
+    expect(foreignDeviceAudio(NOW + 2_200, { ...quiet, localTtsUntil: until })).toBe(false);
   });
 });

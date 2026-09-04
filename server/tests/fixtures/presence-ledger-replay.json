@@ -1,0 +1,393 @@
+{
+ "description": "Anonymised replay of a real 2026-08-25 home session in which the student's own face was scored as her sister for several consecutive batches, the Observer confirmed the sister, adult speech was attributed to her, and the Speaker named her aloud. Times are ms from the first face batch. Names are role labels; no speech text is included.",
+ "roster": [
+  {
+   "who": "student",
+   "entityType": "student"
+  },
+  {
+   "who": "sister",
+   "entityType": "contact",
+   "lookalikeOf": [
+    "student"
+   ]
+  },
+  {
+   "who": "brother",
+   "entityType": "contact"
+  },
+  {
+   "who": "mother",
+   "entityType": "contact"
+  },
+  {
+   "who": "father",
+   "entityType": "user"
+  },
+  {
+   "who": "grandmother",
+   "entityType": "contact"
+  },
+  {
+   "who": "grandfather",
+   "entityType": "contact"
+  },
+  {
+   "who": "caregiver",
+   "entityType": "contact"
+  },
+  {
+   "who": "therapist",
+   "entityType": "contact"
+  }
+ ],
+ "events": [
+  {
+   "t": 0,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.31,
+   "distance": 0.414,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 10208,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.33,
+   "distance": 0.402,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 236580,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.34,
+   "distance": 0.397,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 236882,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.34,
+   "distance": 0.397,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 341410,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 881651,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 882017,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 966646,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.31,
+   "distance": 0.414,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 995764,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.14,
+   "distance": 0.517,
+   "sampleCount": 9,
+   "borderline": true,
+   "ambiguousWith": "brother",
+   "runnerUpDistance": 0.536
+  },
+  {
+   "t": 997183,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1006189,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1007349,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.34,
+   "distance": 0.397,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 1007411,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.34,
+   "distance": 0.397,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 1012643,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1015859,
+   "kind": "face_match",
+   "matched": true,
+   "who": "sister",
+   "confidence": 0.16,
+   "distance": 0.506,
+   "sampleCount": 5,
+   "borderline": true,
+   "ambiguousWith": "student",
+   "runnerUpDistance": 0.559
+  },
+  {
+   "t": 1024502,
+   "kind": "speaker_named",
+   "who": "sister"
+  },
+  {
+   "t": 1029842,
+   "kind": "speaker_named",
+   "who": "sister"
+  },
+  {
+   "t": 1040100,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1041744,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1059274,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 1084793,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": false
+  },
+  {
+   "t": 1092877,
+   "kind": "observer",
+   "updateType": "new_person",
+   "key": "sister"
+  },
+  {
+   "t": 1095543,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1101744,
+   "kind": "face_match",
+   "matched": true,
+   "who": "sister",
+   "confidence": 0.31,
+   "distance": 0.416,
+   "sampleCount": 5,
+   "borderline": true
+  },
+  {
+   "t": 1102770,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1112619,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1136722,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1140109,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1143351,
+   "kind": "face_match",
+   "matched": true,
+   "who": "sister",
+   "confidence": 0.25,
+   "distance": 0.45,
+   "sampleCount": 5,
+   "borderline": true
+  },
+  {
+   "t": 1170444,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1174769,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1175762,
+   "kind": "speaker_named",
+   "who": "sister"
+  },
+  {
+   "t": 1177032,
+   "kind": "face_match",
+   "matched": true,
+   "who": "sister",
+   "confidence": 0.25,
+   "distance": 0.453,
+   "sampleCount": 5,
+   "borderline": true,
+   "ambiguousWith": "student",
+   "runnerUpDistance": 0.512
+  },
+  {
+   "t": 1215084,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1221361,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.2,
+   "distance": 0.483,
+   "sampleCount": 9,
+   "borderline": true,
+   "ambiguousWith": "sister",
+   "runnerUpDistance": 0.536
+  },
+  {
+   "t": 1223134,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1337290,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.26,
+   "distance": 0.445,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 1351811,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.18,
+   "distance": 0.492,
+   "sampleCount": 9,
+   "borderline": true,
+   "ambiguousWith": "sister",
+   "runnerUpDistance": 0.556
+  },
+  {
+   "t": 1360175,
+   "kind": "transcript",
+   "speaker": "sister",
+   "targetIsUser": true
+  },
+  {
+   "t": 1365645,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 1448371,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.32,
+   "distance": 0.405,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 1528691,
+   "kind": "face_match",
+   "matched": true,
+   "who": "student",
+   "confidence": 0.13,
+   "distance": 0.521,
+   "sampleCount": 9,
+   "borderline": true
+  },
+  {
+   "t": 1554046,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 1583431,
+   "kind": "face_match",
+   "matched": false
+  },
+  {
+   "t": 1637951,
+   "kind": "face_match",
+   "matched": true,
+   "who": "grandmother",
+   "confidence": 0.02,
+   "distance": 0.587,
+   "sampleCount": 1,
+   "borderline": true
+  },
+  {
+   "t": 1650111,
+   "kind": "face_match",
+   "matched": false
+  }
+ ]
+}

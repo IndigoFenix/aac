@@ -86,11 +86,34 @@ const WRITER_PINS: WriterPin[] = [
     law:
       "YARD-STOCK AD-HOC WRITES — recorded exemption: construction's own " +
       "pile arithmetic (deposit, refused-order return, declared-resources " +
-      "boot fold); a write outside these is a new channel to declare",
+      "boot fold) and the FOUNDED-SITE RESTORE FOLD (#50 ⑦, founding.ts " +
+      "`createFoundedSite`); a write outside these is a new channel to declare",
     pattern: /deltas\.stock\[[^\]]+\] =/g,
     sites: {
       "interaction/town/town-play.ts": 1,
       "interaction/quest/construction-director.ts": 2,
+      // ⚖️ THE RESTORE DOOR, DECLARED (#50 ⑦, 2026-09-03). `FoundedSite.stock`
+      // IS `deltas.stock` now — one object, aliased at construction — because
+      // they were two maps and only the first was registered as the site
+      // crate's stack, so every writer reaching for "this settlement's yard"
+      // through the `town?.deltas ?? foundedSite?.deltas` idiom (`cancelWork`
+      // banking a cancelled plot's hoard) credited a ledger no haul, no audit
+      // and no renderer could see.
+      //
+      // This ONE write is the migration that makes the alias safe: on the way
+      // in through the disk door, an old save's two halves are summed into the
+      // surviving map. It is not a new economic path — no unit is created,
+      // destroyed or moved between scopes; it relocates units that were
+      // already this site's, at a boot, exactly once (the writer emits them on
+      // one key again, so the sum is idempotent from the first round trip on —
+      // pinned in town-founding.test.ts). Its kin on this list is town-play's
+      // own declared-resources boot fold: both are doors, not flows.
+      //
+      // 🚫 NOT the #50 ② co-located staging skip, which people will look for
+      // here: that arithmetic moves units between a SHELF and an order PILE
+      // (`dstStack`, construction-director.ts) and never touches a yard
+      // ledger — which is why the director's count below is still 2.
+      "interaction/town/founding.ts": 1,
     },
   },
   {

@@ -40,7 +40,7 @@ SUBJECT: הודעה על אירוע אבטחה אצל אחד מספקי השיר
 בכבוד רב,
 {signer_name}
 {signer_title}
-Aivota / CliniAACian Ltd.
+Aivota Ltd.
 
 מספר אסמכתא: אירוע #{incident_ref}
 מספר אסמכתא של הספק: {vendor_incident_ref}

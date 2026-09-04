@@ -5,6 +5,11 @@
 import type { TrackedFace, FaceEvent, FaceEventType } from "./faceTrackingTypes";
 import type { TrackedHand, HandGestureEvent, HandGestureEventType } from "./handGestureTypes";
 import type { TrackedPose, PoseEventType } from "./poseTrackingTypes";
+import type { AttentionReading } from "@shared/aac/head-attention";
+import { describeAttention } from "@shared/aac/head-attention";
+import { gazeVector } from "@shared/aac/face-features";
+import type { FaceRead } from "@shared/aac/face-read";
+import { faceReadPhrases, noChangePhrase } from "@shared/aac/face-read";
 
 /**
  * Summarize a list of events by counting occurrences of each type
@@ -81,12 +86,10 @@ export function summarizeFaceMovement(face: TrackedFace, windowMs: number = 8_00
   return formatEventSummary(summary);
 }
 
-// Head orientation (~-1..1, yaw=(dLeft-dRight)/sum). Mirrors useFaceEvents
-// conventions: yaw>0 = turned right, pitch>0 = turned down. Graded so a small
-// glance toward something ON-screen reads differently from a strong turn to
-// something OFF-screen. Centered noise sits under MIN.
-const HEAD_TURN_MIN = 0.22;     // below this = facing the camera
-const HEAD_TURN_STRONG = 0.45;  // at/above this = turned away (off-screen)
+// The absolute HEAD_TURN_MIN / HEAD_TURN_STRONG constants that lived here are
+// gone: head orientation is now the debounced attention state (hysteresis +
+// dwell against a running per-face neutral) in shared/aac/head-attention.ts.
+// Only the head-TILT and eye-gaze floors remain local to this file.
 const HEAD_TILT_MIN = 0.3;      // roll (radians) for a noticeable head tilt
 // Eye-look blendshapes are subtle — they rarely exceed ~0.3 even at a hard
 // glance, so the 0.4 event threshold almost never trips. Use a realistic floor
@@ -94,36 +97,32 @@ const HEAD_TILT_MIN = 0.3;      // roll (radians) for a noticeable head tilt
 const EYE_GAZE_MIN = 0.18;
 
 /**
- * "Looking" phrase from the head pose first (the dominant, reliable signal) and
- * eye gaze second. Head turns are graded: a slight turn ("looking slightly X",
- * probably still attending to the screen) vs a strong turn ("looking X", likely
- * at something off-screen). Returns null when facing the camera, eyes centered.
+ * "Looking" phrase: the committed ATTENTION state first, eye gaze second.
+ * Returns null when the head is settled and the eyes are centred.
  */
 function describeLooking(
-  headPose: { yaw: number; pitch: number; roll: number } | null | undefined,
-  g: (k: string) => number,
+  attention: AttentionReading | null | undefined,
+  bs: Map<string, number>,
   eyesClosed: boolean,
 ): string | null {
   if (eyesClosed) return null; // handled separately
-  if (headPose) {
-    const { yaw, pitch } = headPose;
-    const ay = Math.abs(yaw), ap = Math.abs(pitch);
-    if (ay > HEAD_TURN_MIN || ap > HEAD_TURN_MIN) {
-      const strong = Math.max(ay, ap) >= HEAD_TURN_STRONG;
-      const dir = ay >= ap ? (yaw > 0 ? "right" : "left") : (pitch > 0 ? "down" : "up");
-      return strong ? `looking ${dir}` : `looking slightly ${dir}`;
-    }
-  }
-  // Head centered — read eye gaze (eyeLookOutLeft == gaze_left per useFaceEvents).
-  const gaze: Array<[string, number]> = [
-    ["left", g("eyeLookOutLeft")],
-    ["right", g("eyeLookOutRight")],
-    ["up", Math.max(g("eyeLookUpLeft"), g("eyeLookUpRight"))],
-    ["down", Math.max(g("eyeLookDownLeft"), g("eyeLookDownRight"))],
-  ];
-  const top = gaze.reduce((a, b) => (b[1] > a[1] ? b : a));
-  if (top[1] > EYE_GAZE_MIN) return `eyes ${top[0]}`;
-  return null;
+  // Head orientation now comes from the DEBOUNCED state, not a raw per-tick
+  // threshold. The old code compared |yaw|/|pitch| to an absolute 0.22 here,
+  // which measured out as "facing camera" only 4% of the time in prod — and
+  // because that test ran BEFORE the eye-gaze branch below, a small permanent
+  // yaw offset suppressed the eye read entirely. Eye gaze is the more
+  // informative signal for this population, so it must be reachable.
+  const away = describeAttention(attention);
+  if (away) return away;
+  // Head settled — read eye gaze. CONJUGATE (both eyes), from the single shared
+  // implementation: this file used to read one blendshape per direction, which
+  // halves the signal and mislabels the direction whenever the eyes are not
+  // conjugate. See gazeVector in shared/aac/face-features.ts (D6).
+  const gaze = gazeVector(bs);
+  if (gaze.magnitude <= EYE_GAZE_MIN) return null;
+  return Math.abs(gaze.x) >= Math.abs(gaze.y)
+    ? `eyes ${gaze.x > 0 ? "right" : "left"}`
+    : `eyes ${gaze.y > 0 ? "down" : "up"}`;
 }
 
 /**
@@ -136,40 +135,65 @@ function describeLooking(
 function describeBlendshapeState(
   bs: Map<string, number> | undefined,
   headPose: { yaw: number; pitch: number; roll: number } | null | undefined,
+  attention: AttentionReading | null | undefined,
+  read: FaceRead | null | undefined,
 ): string[] {
   if (!bs || bs.size === 0) return [];
   const g = (k: string) => bs.get(k) ?? 0;
   const parts: string[] = [];
 
   const eyesClosed = Math.min(g("eyeBlinkLeft"), g("eyeBlinkRight")) > 0.5;
-  const looking = describeLooking(headPose, g, eyesClosed);
+  const looking = describeLooking(attention, bs, eyesClosed);
   if (eyesClosed) parts.push("eyes closed");
   parts.push(looking ?? "facing camera");
   if (headPose && Math.abs(headPose.roll) > HEAD_TILT_MIN) parts.push("head tilted");
 
-  // Mouth
+  // Expression comes from the DECODER (shared/aac/face-read.ts): action units
+  // scored against this student's own baseline, hysteresis and dwell, and an
+  // explicit "unreadable". The absolute thresholds below are the fallback for a
+  // face the decoder has not produced a read for yet.
+  //
+  // What the fallback measured on real sessions is why it is no longer the
+  // primary path: "brows raised" fired on 23% of one student's frames and 0% of
+  // both other subjects', so the Observer was being told about a constant of
+  // that person on every single turn. A global threshold cannot tell a resting
+  // face from an expression.
+  const phrases = faceReadPhrases(read);
+  if (phrases.unreadable) {
+    parts.push(phrases.unreadable);
+    return parts;
+  }
+  if (read?.readable) {
+    // Engagement is deliberately dropped here: head orientation and eye
+    // direction are already described above, and saying "gaze on screen" next
+    // to "looking away to the left" is both wasted tokens and a contradiction.
+    // Head STABILITY is not covered above, so it is kept.
+    if (read.engagement && read.engagement.headStability < 0.4) parts.push("head moving");
+    parts.push(...phrases.expression);
+    return parts;
+  }
+
+  // Fallback — no read yet. Absolute thresholds, with all the faults above.
   if (g("jawOpen") > 0.4) parts.push("mouth open");
   const smile = (g("mouthSmileLeft") + g("mouthSmileRight")) / 2;
   const frown = (g("mouthFrownLeft") + g("mouthFrownRight")) / 2;
   if (smile > 0.4) parts.push("smiling");
   else if (frown > 0.4) parts.push("frowning");
 
-  // Brows
   if ((g("browDownLeft") + g("browDownRight")) / 2 > 0.4) parts.push("brow furrowed");
   if (g("browInnerUp") > 0.5) parts.push("brows raised");
 
   return parts;
 }
 
-/** Recent dynamic gestures the static blendshape state can't show — head
- *  nods/shakes/turns, surprise bursts, repeated blinks. */
+/** Recent dynamic gestures the static state can't show — nods, head shakes,
+ *  surprise bursts. */
+// head_turn_* removed 2026-09-02 — they were threshold chatter (45% "turned
+// left", left and right in the same window) and are replaced by the debounced
+// attention state, which describeLooking above already reports.
 const SCENE_DYNAMIC_EVENTS: Array<[FaceEventType, string]> = [
   ["head_nod", "nodding"],
   ["head_shake", "shaking head"],
-  ["head_turn_left", "turned left"],
-  ["head_turn_right", "turned right"],
-  ["head_turn_up", "turned up"],
-  ["head_turn_down", "turned down"],
   ["surprise", "surprised"],
 ];
 
@@ -181,7 +205,7 @@ const SCENE_DYNAMIC_EVENTS: Array<[FaceEventType, string]> = [
  * on whatever fired most (usually "brow furrow").
  */
 export function describeFaceForScene(face: TrackedFace, windowMs: number = 8_000): string {
-  const parts = describeBlendshapeState(face.currentBlendshapes, face.headPose);
+  const parts = describeBlendshapeState(face.currentBlendshapes, face.headPose, face.attention, face.read);
   const recent = summarizeEvents(face.events, windowMs);
   for (const [type, label] of SCENE_DYNAMIC_EVENTS) {
     const d = recent.get(type);
@@ -274,10 +298,19 @@ export function serializeGestureContext(
     const name = face.personName || `Person ${i + 1}`;
     const eventSummary = summarizeEvents(face.events, windowMs);
 
-    // Current expression
-    const expression = face.currentExpression
-      ? face.currentExpression.replace(/_/g, " ")
-      : "neutral";
+    // Current expression. `face.currentExpression` is NOT used: it is the
+    // max-confidence pick across detectors with different thresholds and
+    // completely different dynamic ranges, so the channel with the lowest
+    // threshold and the noisiest floor won — in practice it stuck on
+    // "brow furrow" — and it rendered its own null as the word "neutral",
+    // which is an affirmative claim about a child's affect made on no
+    // evidence. Both faults are D3 and D4. The decoder answers instead, and
+    // says "unreadable" when that is the truth.
+    const p = faceReadPhrases(face.read);
+    const expression = p.unreadable
+      ?? (p.expression.length ? p.expression.join(", ")
+        : face.read?.readable ? noChangePhrase(face.read)
+        : "not yet decoded");
 
     const eventsStr = formatEventSummary(eventSummary);
     lines.push(`- ${name} (face): expression=${expression}; recent: ${eventsStr}`);

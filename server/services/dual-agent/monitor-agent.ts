@@ -23,6 +23,7 @@ import {
   buildMonitorSystemPrompt,
   normalizeAacPromptList,
 } from "../memory-schema/aac-memory-schema";
+import { presenceContextForSession } from "../memory-schema/presence-context";
 import { GPT, type GPTInputItem } from "../chat/gpt";
 import { startOfDayInTimezone, formatLocalDateTime } from "../../lib/timezone";
 import { getLanguageName } from "@shared/language-names";
@@ -373,8 +374,15 @@ export class MonitorAgent {
       parts.push(`${label}: ${JSON.stringify(value)}`);
     };
 
+    // Notes written since 2026-09 carry a `[YYYY-MM-DD]` prefix (the date they
+    // were recorded — see student-memory-schema's stampStudentEntry). Saying so
+    // is the whole point of stamping them: "she is in the ER" read as a
+    // standing fact for 22 days because nothing told the reader how old it was.
     if (this.privacyOptions.allowNotes) {
-      renderListField("Previous notes", memory.Student_Notes);
+      renderListField(
+        "Previous notes (a leading [YYYY-MM-DD] is the date the note was written — judge it against today)",
+        memory.Student_Notes,
+      );
     }
     renderListField("Interests", memory.Student_Interests);
     renderListField("Important people", memory.Student_People);
@@ -898,6 +906,18 @@ export class MonitorAgent {
       const open = `[SUMMARY-${nonce}]`;
       const close = `[/SUMMARY-${nonce}]`;
 
+      // Presence ledger §6.1: hand the summarizer the ANSWER instead of asking
+      // it to infer who was in the room from the transcript. Inferring is what
+      // put "a person named X joined and reported her identity" into a
+      // permanent summary when only the student was there. Empty string when
+      // the feature is off for this session — then the old prose warning
+      // stands and this call is byte-identical to before.
+      const presenceBlock = presenceContextForSession(this.sessionId);
+      const presenceSection = presenceBlock ? `\n\n## Who was present\n${presenceBlock}` : "";
+      const presenceRule = presenceBlock
+        ? "- Use the [PRESENCE — system verified] block: only people in its verified list were present."
+        : "- A [RETRACTION] line voids earlier reports of that person: the retracted presence must NOT appear in the summary (drop it from the previous summary too), and never state a person was present from an UNCERTAIN match or the user's own greeting presses alone.";
+
       const systemPrompt = `You maintain a rolling SESSION SUMMARY for an AAC (Augmentative and Alternative Communication) session with ${studentName}. The live AI companion reads this summary to remember what happened earlier in the session after the detailed turn-by-turn history is dropped from its context window.
 
 ## Canonical terminology
@@ -922,11 +942,11 @@ Rules:
 - Write in ${languageName}.
 - Be concise — at most ~250 words. A digest, not a transcript.
 - Plain prose or short dashed bullets. No markdown headers.
-- A [RETRACTION] line voids earlier reports of that person: the retracted presence must NOT appear in the summary (drop it from the previous summary too), and never state a person was present from an UNCERTAIN match or the user's own greeting presses alone.
+${presenceRule}
 - If nothing meaningful has happened, output a one-line note saying so.
 
 ## Output format
-Output ONLY the summary between ${open} and ${close} tags (exact strings, with the nonce). Emit nothing outside the tags.
+Output ONLY the summary between ${open} and ${close} tags (exact strings, with the nonce). Emit nothing outside the tags.${presenceSection}
 
 ## Previous summary
 ${previousSummary?.trim() || "(none yet — this is the first summary)"}
@@ -1028,11 +1048,20 @@ ${transcript}`;
 
     try {
       // Build monitor prompt for dual mode
+      // Presence ledger §6.1: the Monitor's durable writes are validated
+      // against this session's verified list, so it has to SEE that list —
+      // a refusal naming a token it was never shown is unactionable.
+      // Appended AFTER the cache-stable prompt rather than built into it: the
+      // block changes only when presence actually changes (in a session with
+      // only the student it is constant), so the cached prefix survives the
+      // ordinary round. Empty when the feature is off for this session.
+      const presenceBlock = presenceContextForSession(this.sessionId);
       const systemPromptOverride = this.student
         // `interactivePrompt` is no longer quoted into the Monitor prompt (13k
         // tokens per round for a directive nothing consumed) — see
         // buildMonitorSystemPrompt. The parameter stays for the caller's sake.
-        ? buildMonitorSystemPrompt(this.student, muteState, availableBoards)
+        ? buildMonitorSystemPrompt(this.student, muteState, availableBoards) +
+          (presenceBlock ? `\n\n${presenceBlock}` : "")
         : undefined;
 
       // Process through sessionService for memory updates

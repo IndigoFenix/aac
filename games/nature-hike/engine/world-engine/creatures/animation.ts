@@ -14,11 +14,15 @@
 // The caller drives the loop:
 //   const frame = animator.update(dt);
 //   blueprint.posture = frame.posture;               // scratch copy
-//   const skel = buildSkeleton(blueprint, frame.gait, frame.pose);
+//   const skel = buildSkeleton(blueprint, frame.gait, frame.pose, undefined,
+//                              { gravity, loads: frame.loads });
 //   animator.observe(skel);                       // hand-position feedback
 // The observe() feedback is what makes reaching robust: if the hands aren't
 // closing on the object, the controller keeps crouching — no closed-form
-// reachability math to drift out of sync with the strain solver.
+// reachability math to drift out of sync with the strain solver. It is also
+// what makes the body HONEST ABOUT WEIGHT: the ledger it reads back is what
+// the refusal gate measures against and what the carried mass is compared to,
+// so a host that never observes gets the poses and none of the physics.
 //
 // Grasping is one-handed, two-handed, or by MOUTH. One hand needs an
 // opposable digit (a thumb); TWO hands need none — the palms bracket the
@@ -33,10 +37,19 @@
 import type { Blueprint } from "./blueprint";
 import { locomotionGait, type GaitParams, type GaitPattern } from "./gait";
 import {
+  bendCapacity,
+  cantileverStress,
+  canBear,
+  objectMassFromSize,
+  type BearVerdict,
+  type CarriedLoad,
+} from "./physio";
+import {
   limbChainName,
   limbTip,
   type CreatureSkeleton,
   type PoseOverrides,
+  type SupportDiagnostics,
   type Vec3,
 } from "./skeleton";
 
@@ -55,6 +68,11 @@ const ease = (t: number): number => {
 // `point`/`point-back` raise and drop the pointing limb; `point-hold` is timed
 // separately (the caller's hold duration).
 const DUR = { reach: 0.9, grasp: 0.3, lift: 0.8, lower: 0.9, release: 0.3, return: 0.6, point: 0.45, "point-back": 0.5 } as const;
+/** How much LONGER a lift/lower takes for a load as heavy as the body itself.
+ *  Multiplies the existing bulk factor (which is about SIZE — a wide object is
+ *  awkward whatever it weighs) rather than replacing it: a big light thing is
+ *  slow because it is big, a small heavy thing because it is heavy. */
+const LOAD_HEFT = 2;
 const GRIP_CLOSED = 0.85;
 const GRIP_WRAP = 0.55; // two flat palms pressing a bulky object
 const GRIP_OPEN = 0.1;
@@ -138,6 +156,38 @@ export interface AnimFrame {
    *  applies it as a root rotation — lying isn't a solver pose, so the pure-math
    *  animator only reports how far along the recline is. */
   recline?: number;
+  /** 🚨 WHAT THE BODY IS CARRYING THIS FRAME, and the CALLER'S CONTRACT:
+   *  merge it into the `phys` you already pass to `buildSkeleton` —
+   *
+   *      const skel = buildSkeleton(bp, frame.gait, frame.pose, undefined,
+   *                                 { gravity, loads: frame.loads });
+   *
+   *  A load is extra WEIGHT at a point, not a ground contact: it raises the
+   *  total the legs hold, drags the CoM toward itself, and bends the part it
+   *  hangs from. Ignoring it costs nothing but the honesty — the pose is then
+   *  the unloaded one, exactly as before this existed.
+   *
+   *  Undefined (never an empty array) when nothing is carried, so
+   *  `{ loads: frame.loads }` is the byte-identical unloaded build.
+   *
+   *  The points are creature-local POST-LIFT — the frame `pose.limbTargets`
+   *  and `pose.snoutTarget` live in, and the frame the caller is already
+   *  drawing the object in. They are ONE FRAME OLD where they come from
+   *  `observe` (the hand tips, the snout tip, the back's girth peak), which is
+   *  exactly what the renderer does with the same points.
+   *
+   *  A held object appears here from the LIFT (when `holding` goes true) to
+   *  the RELEASE; a `setBackLoad` pack appears every frame until it is
+   *  cleared. An object still sitting on the ground is not a load. */
+  loads?: CarriedLoad[];
+}
+
+/** Where a load can ride: the root of a carrying part and how thick it is —
+ *  what a cantilever needs. Read off the last observed skeleton, never
+ *  computed from the blueprint, so it is the body that was actually built. */
+interface CarrySeat {
+  root: Vec3;
+  radius: number;
 }
 
 /** The limb group usable as a ONE-handed grasper: bilateral, non-membranous,
@@ -294,6 +344,30 @@ export class CreatureAnimator {
   private restHands: Record<SideKey, Vec3 | null> = { L: null, R: null };
   private lastTargets: Record<SideKey, Vec3 | null> = { L: null, R: null };
   private lastHandDist = 0;
+  /** Standing snout-tip position, observed from the last idle skeleton — the
+   *  mouth's equivalent of `restHands`. Null until one has been seen. */
+  private restSnout: Vec3 | null = null;
+  /** The snout tip as of the LAST frame, idle or not — where a mouth-carried
+   *  object actually is (the renderer draws it at this same point). */
+  private snoutTip: Vec3 | null = null;
+
+  // ── Carried mass ──────────────────────────────────────────────────────
+  /** Proxy mass of the object being picked up / carried (physio units — see
+   *  `objectMassFromSize`). 0 = carrying nothing, and the frame then emits no
+   *  load for the hands/mouth. */
+  private loadMass = 0;
+  /** A persistent pack: mass riding on the spine's girth peak until cleared.
+   *  Independent of any action — the beast-of-burden seam. */
+  private backLoad = 0;
+  /** The last ledger `observe` saw. The refusal gate is a MEASUREMENT, so
+   *  with none it cannot veto (see `pickUp`). */
+  private lastSupport: SupportDiagnostics | null = null;
+  /** Why the last `pickUp` said no. Null after any accepted one. */
+  private refusal: BearVerdict | null = null;
+  private seatNeck: CarrySeat | null = null;
+  private seatHand: Record<SideKey, CarrySeat | null> = { L: null, R: null };
+  /** Top of the fattest torso bone — where a pack sits. */
+  private seatBack: Vec3 | null = null;
 
   constructor(blueprint: Blueprint) {
     this.g = blueprint;
@@ -408,36 +482,51 @@ export class CreatureAnimator {
   }
 
   /** Start reaching for an object at `target` (creature-local, +Z forward),
-   *  `sizeM` across. Small objects take the near-side hand; an object wider
-   *  than a palm — or any object, for a kind without opposable digits —
-   *  takes BOTH hands, bracketing it from opposite sides. A kind with no
-   *  usable limb pair at all falls back to its MOUTH (needs head.mouthOpen).
-   *  False if there's no grasper or an action is already running. */
-  pickUp(target: Vec3, sizeM = 0): boolean {
+   *  `sizeM` across, weighing `massProxy` (default: `objectMassFromSize`, an
+   *  object as dense as the body carrying it — pass your own for a bale of
+   *  hay or an anvil; the units are physio's volume proxy, NOT kilograms).
+   *
+   *  Small objects take the near-side hand; an object wider than a palm — or
+   *  any object, for a kind without opposable digits — takes BOTH hands,
+   *  bracketing it from opposite sides. A kind with no usable limb pair at all
+   *  falls back to its MOUTH (needs head.mouthOpen).
+   *
+   *  🚨 FALSE MEANS NOTHING STARTED, and there are three reasons: no grasper,
+   *  an action already running, or the body REFUSES the mass — it cannot bear
+   *  it (see `admits` / `lastRefusal`). The refusal check runs before any
+   *  state is touched, so a refused pick-up leaves the animator exactly as it
+   *  was. */
+  pickUp(target: Vec3, sizeM = 0, massProxy?: number): boolean {
     if (this.action !== "none") return false;
+    const mass = Math.max(0, massProxy ?? objectMassFromSize(sizeM));
     const thumbed = this.handGroup >= 0;
     const group = thumbed ? this.handGroup : this.armGroup;
     if (group < 0) {
       if (!this.mouthChain) return false;
+      if (!this.admits(mass, true, [], group)) return false;
       // Mouth grasp — no limb targets: the crouch/lean feedback carries
       // the whole head down until the snout tip closes on the object.
       this.usingMouth = true;
       this.sides = [];
       this.objectSize = sizeM;
+      this.loadMass = mass;
       this.objectPos = v3(target.x, target.y, target.z);
       this.action = "reach";
       this.actionT = 0;
       this.gape = 0;
       return true;
     }
-    this.usingMouth = false;
     const grp = this.g.limbGroups[group];
     const palm = Math.max(0.05 * this.legLen,
       grp.footLengthFrac * grp.lengthFrac * this.g.spine.torsoLengthM);
     const two = !thumbed || sizeM > palm * 1.5;
+    const sides: Array<1 | -1> = two ? [-1, 1] : [target.x >= 0 ? 1 : -1];
+    if (!this.admits(mass, false, sides, group)) return false;
+    this.usingMouth = false;
     this.activeGroup = group;
     this.objectSize = sizeM;
-    this.sides = two ? [-1, 1] : [target.x >= 0 ? 1 : -1];
+    this.loadMass = mass;
+    this.sides = sides;
     this.objectPos = v3(target.x, target.y, target.z);
     for (const s of this.sides) this.restHands[sideKey(s)] = this.restHandOf(s);
     this.action = "reach";
@@ -469,35 +558,81 @@ export class CreatureAnimator {
     return v3(base.x + s * px * half, base.y, base.z + s * pz * half);
   }
 
-  /** Where the object's CENTER rides while carried: chest height, ahead. */
-  private carryCenter(): Vec3 {
+  /** Where the object's CENTER rides while carried: chest height, ahead.
+   *  Parameterised because the refusal gate asks where a load WOULD ride
+   *  before `sides`/`activeGroup` have been committed to. */
+  private carryCenter(sides: readonly (1 | -1)[] = this.sides, group = this.activeGroup): Vec3 {
     let rx = 0, ry = 0, rz = 0;
-    for (const s of this.sides) {
+    for (const s of sides) {
       const r = this.restHandOf(s);
-      rx += r.x / this.sides.length; ry += r.y / this.sides.length; rz += r.z / this.sides.length;
+      rx += r.x / sides.length; ry += r.y / sides.length; rz += r.z / sides.length;
     }
-    const grp = this.g.limbGroups[this.activeGroup];
+    const grp = this.g.limbGroups[group];
     const armLen = grp ? grp.lengthFrac * this.g.spine.torsoLengthM : this.legLen * 0.5;
-    const inward = this.sides.length === 1 ? -this.sides[0] * 0.15 * armLen : 0;
+    const inward = sides.length === 1 ? -sides[0] * 0.15 * armLen : 0;
     return v3(rx + inward, ry + 0.4 * armLen, rz + 0.32 * armLen + this.objectSize * 0.3);
   }
 
   /** The point the mouth is currently working toward — the object while
-   *  reaching/biting, the put-down spot while lowering, else nothing. */
+   *  reaching/biting, the put-down spot while lowering, else nothing. This is
+   *  the ARRIVAL test's target (how far the snout still has to go), not the
+   *  neck's steering target; `snoutTarget` below is that. */
   private mouthTarget(): Vec3 | null {
     if (this.action === "reach" || this.action === "grasp") return this.objectPos;
     if (this.action === "lower" || this.action === "release") return this.putPos;
     return null;
   }
 
+  /**
+   * Where the neck should put the snout THIS frame — the mouth's counterpart
+   * to `targetOf`, and lerped through the same phases for the same reason: a
+   * carried object rides in the jaws, so the mouth's whole timeline is
+   *   rest → object → (bite) → back to rest carrying it → down to the spot →
+   *   (let go) → back to rest.
+   * Every leg of it lands exactly on `restSnout` at the end, so dropping the
+   * target on "carry" and "none" (which returns the neck to its own rest
+   * curve, and the build to its byte-identical no-target path) is continuous
+   * rather than a snap.
+   *
+   * Null before the first `observe` has seen a snout: with no idea where the
+   * mouth rests there is nothing to lerp out of, and the neck simply holds
+   * its blueprint curve.
+   */
+  private snoutTarget(): Vec3 | null {
+    const rest = this.restSnout;
+    if (!rest) return null;
+    switch (this.action) {
+      case "reach": return lerpV(rest, this.objectPos, ease(this.actionT));
+      case "grasp": return this.objectPos;
+      case "lift": return lerpV(this.objectPos, rest, ease(this.actionT));
+      case "lower": return lerpV(rest, this.putPos, ease(this.actionT));
+      case "release": return this.putPos;
+      case "return": return lerpV(this.putPos, rest, ease(this.actionT));
+      default: return null;
+    }
+  }
+
   /** Feed back the skeleton actually built from the last frame. Keeps the
    *  standing hand positions fresh and measures reach progress. */
   observe(skel: CreatureSkeleton): void {
-    if (this.usingMouth) {
-      const tip = limbTip(skel, this.mouthChain!);
+    // The ledger and the carry seats come off EVERY observation, before any of
+    // the early returns below: they are what the refusal gate measures against
+    // and where `AnimFrame.loads` hangs its masses, and both have to describe
+    // the body that was actually built rather than the blueprint's idea of it.
+    this.lastSupport = skel.support;
+    this.readSeats(skel);
+    if (this.mouthChain && (this.usingMouth || this.action === "none")) {
+      const tip = limbTip(skel, this.mouthChain);
+      if (tip) this.snoutTip = tip;
+      // The STANDING snout position, refreshed whenever nothing is running —
+      // the mouth's `restHands`. It is where a mouth reach lerps out of and
+      // back to, and it must be observed rather than computed: the snout tip
+      // is the far end of a neck curve and a head assembly, not a formula the
+      // animator has any business restating.
+      if (tip && this.action === "none") this.restSnout = tip;
       const target = this.mouthTarget();
       if (tip && target) this.lastHandDist = dist3(tip, target);
-      return;
+      if (this.usingMouth) return;
     }
     if (this.activeGroup < 0) return;
     for (const s of [-1, 1] as const) {
@@ -513,6 +648,166 @@ export class CreatureAnimator {
       if (tip && target) worst = Math.max(worst, dist3(tip, target));
     }
     if (this.sides.length > 0) this.lastHandDist = worst;
+  }
+
+  /** One pass over the built bones for the three places a load can ride: the
+   *  neck root (a mouth carry bends the neck about it), the acting limbs'
+   *  roots (a hand carry bends the arm about its shoulder) and the top of the
+   *  girth peak (where a pack sits). Cheap — a few comparisons per bone — and
+   *  it holds no reference to the skeleton afterwards. */
+  private readSeats(skel: CreatureSkeleton): void {
+    const wantL = this.activeGroup >= 0 ? limbChainName(this.g, this.activeGroup, 0, -1) : null;
+    const wantR = this.activeGroup >= 0 ? limbChainName(this.g, this.activeGroup, 0, 1) : null;
+    let neck: typeof skel.bones[number] | null = null;
+    let head: typeof skel.bones[number] | null = null;
+    let fat: typeof skel.bones[number] | null = null;
+    let armL: typeof skel.bones[number] | null = null;
+    let armR: typeof skel.bones[number] | null = null;
+    for (const b of skel.bones) {
+      if (!neck && b.kind === "neck") neck = b;
+      else if (!head && b.kind === "head") head = b;
+      if (b.kind === "torso" &&
+        (!fat || b.radiusHead + b.radiusTail > fat.radiusHead + fat.radiusTail)) fat = b;
+      // Bones are pushed root-first, so the FIRST bone of a chain is its root.
+      if (wantL && !armL && b.chain === wantL) armL = b;
+      if (wantR && !armR && b.chain === wantR) armR = b;
+    }
+    const front = neck ?? head;
+    this.seatNeck = front ? { root: front.head, radius: front.radiusHead } : null;
+    this.seatHand = {
+      L: armL ? { root: armL.head, radius: armL.radiusHead } : null,
+      R: armR ? { root: armR.head, radius: armR.radiusHead } : null,
+    };
+    // ON the back, not inside it: the load sits on the skin over the girth
+    // peak, which is the bone's own radius above its centreline.
+    this.seatBack = fat
+      ? v3((fat.head.x + fat.tail.x) / 2,
+        (fat.head.y + fat.tail.y) / 2 + (fat.radiusHead + fat.radiusTail) / 2,
+        (fat.head.z + fat.tail.z) / 2)
+      : null;
+  }
+
+  /** Where the carried object IS right now — the same point the renderer
+   *  draws it at: the observed grasper tip(s), falling back to the target this
+   *  frame is steering them toward (the first frame of a lift, before anything
+   *  has been observed holding it). Null when nothing is being carried. */
+  private carryPointNow(): Vec3 | null {
+    if (this.usingMouth) return this.snoutTip ?? this.snoutTarget() ?? this.restSnout;
+    if (this.sides.length === 0) return null;
+    let x = 0, y = 0, z = 0, n = 0;
+    for (const s of this.sides) {
+      const k = sideKey(s);
+      const p = this.handTips[k] ?? this.lastTargets[k];
+      if (!p) continue;
+      x += p.x; y += p.y; z += p.z; n++;
+    }
+    return n > 0 ? v3(x / n, y / n, z / n) : null;
+  }
+
+  /** Where a load WOULD ride once carried — the refusal gate's lever, asked
+   *  before the action starts and so before anything has been observed
+   *  holding anything. */
+  private carryPointFor(mouth: boolean, sides: readonly (1 | -1)[], group: number): Vec3 | null {
+    if (mouth) return this.restSnout;
+    if (sides.length === 0) return null;
+    return this.carryCenter(sides, group);
+  }
+
+  /**
+   * 🚨 REFUSAL — can this body actually take that load? The honest coarse
+   * gate: the stance legs against the new total weight, and the ONE part that
+   * would hold the thing (the neck for a mouth carry, the arm for a hand
+   * carry) against the load alone, in bending. Whichever binds, binds; the
+   * threshold is physio's own `MAX_BEARABLE_STRESS`, which is the same 1.0
+   * that means "at capacity" everywhere else in the ledger.
+   *
+   * ⚖️ IT FAILS OPEN WITH NO LEDGER. The gate measures against the last
+   * skeleton `observe` saw; a caller that never observes (there are hosts that
+   * only want the poses) gets exactly the behaviour it had before refusal
+   * existed. Any host running the documented loop — update, build, observe —
+   * has a ledger from its first frame.
+   */
+  private admits(mass: number, mouth: boolean, sides: readonly (1 | -1)[], group: number): boolean {
+    this.refusal = null;
+    const sup = this.lastSupport;
+    if (!sup || !(mass > 0)) return true;
+    const gravity = sup.body.gravity;
+    // Legs the body is standing ON. None (a belly rest, a swimmer) means the
+    // legs are not what holds this body up, so the stance side cannot bind.
+    const stanceStrengths: number[] = [];
+    for (const leg of sup.legs) if (leg.grounded) stanceStrengths.push(leg.strength);
+    // The worst-off carrier: two hands split the load, so each takes half —
+    // but the arms are not always symmetric, and the gate wants the one that
+    // gives out first.
+    let carrier: { load: number; lever: number; radius: number; baseMoment?: number } | undefined;
+    const at = this.carryPointFor(mouth, sides, group);
+    if (at) {
+      const seats: CarrySeat[] = mouth
+        ? (this.seatNeck ? [this.seatNeck] : [])
+        : sides.map((s) => this.seatHand[sideKey(s)]).filter((x): x is CarrySeat => !!x);
+      const share = seats.length > 0 ? (mass * gravity) / seats.length : 0;
+      // 🚨 A NECK IS ALREADY HOLDING A HEAD OUT THERE. Its current moment is
+      // exactly `chainStress.neck × capacity` — the ledger's own number, run
+      // backwards — so the gate weighs the same sum the ledger will after the
+      // lift, and cannot admit a load that turns the neck red. A LIMB gets no
+      // base: what an arm already carries is its share of the body's weight,
+      // which is compression, not a moment about the shoulder.
+      const baseMoment = mouth
+        ? (sup.chainStress.neck ?? 0) * bendCapacity(this.seatNeck?.radius ?? 0)
+        : 0;
+      let worst = -1;
+      for (const seat of seats) {
+        const lever = Math.hypot(at.x - seat.root.x, at.z - seat.root.z);
+        const sigma = cantileverStress(share * lever + baseMoment, 1, seat.radius);
+        if (sigma > worst) {
+          worst = sigma;
+          carrier = { load: share, lever, radius: seat.radius, baseMoment };
+        }
+      }
+    }
+    const verdict = canBear({
+      // `body.weight` already carries whatever this body is holding (a pack,
+      // an object in the other hand) — the new load goes on top of it.
+      totalWeight: sup.body.weight + mass * gravity,
+      stanceStrengths,
+      carrier,
+    });
+    if (verdict.ok) return true;
+    this.refusal = verdict;
+    return false;
+  }
+
+  /** Why the last `pickUp` returned false — the two stresses, the threshold
+   *  and which one bound. Null when the last one was accepted (or when the
+   *  refusal was structural: no grasper, or an action already running). */
+  lastRefusal(): BearVerdict | null {
+    return this.refusal;
+  }
+
+  /** Mass currently carried in the hands/mouth (proxy units), 0 when empty. */
+  carriedMass(): number {
+    return this.holding ? this.loadMass : 0;
+  }
+
+  /**
+   * Put a persistent load on the animal's BACK — a pack, a rider, a pair of
+   * baskets — riding at the spine's girth peak and emitted every frame until
+   * it is cleared with `setBackLoad(0)`. Deliberately dumb: no straps, no
+   * balance, no timeline, and NOT gated by refusal (a pack is something
+   * someone else puts on the animal). What the load does is then the ledger's
+   * business — the stance sags, every standing leg's force rises and
+   * `chainStress.spine` says how hard the body is working.
+   *
+   * Nothing is emitted until a skeleton has been observed: with no body built
+   * there is no girth peak to hang it from.
+   */
+  setBackLoad(massProxy: number): void {
+    this.backLoad = Number.isFinite(massProxy) ? Math.max(0, massProxy) : 0;
+  }
+
+  /** The pack's proxy mass (0 = none). */
+  get backLoadMass(): number {
+    return this.backLoad;
   }
 
   update(dtS: number): AnimFrame {
@@ -542,8 +837,14 @@ export class CreatureAnimator {
     const durs: Partial<Record<ActionKind, number>> = DUR;
     const dur = durs[this.action];
     if (dur !== undefined) {
+      // HEAVY IS SLOW, and it is slow on top of BULKY: the size factor is the
+      // awkwardness of the shape, the heft factor is the mass, and a big heavy
+      // thing is both. Heft is a ratio of the load to the body that is lifting
+      // it (the ledger's own body mass), so the same crate is nothing to a
+      // horse and a struggle for a cat — and it is 1 with no ledger observed,
+      // which is the pre-load timeline exactly.
       const bulk = this.action === "lift" || this.action === "lower"
-        ? 1 + 0.6 * Math.min(1, this.objectSize / this.legLen)
+        ? (1 + 0.6 * Math.min(1, this.objectSize / this.legLen)) * this.liftHeft()
         : 1;
       this.actionT += dt / (dur * bulk);
       if (this.actionT >= 1) {
@@ -559,6 +860,10 @@ export class CreatureAnimator {
             this.lastTargets = { L: null, R: null };
             this.sides = [];
             this.usingMouth = false;
+            // The object is on the ground and off the books. (It stops being a
+            // LOAD at the release — `holding` — but the mass is kept through
+            // the lower so the descent is as slow as the lift was.)
+            this.loadMass = 0;
             break;
           case "point": this.action = "point-hold"; break;
           case "point-back":
@@ -746,13 +1051,19 @@ export class CreatureAnimator {
     // how erect the creature stands — an upright biped must fold its trunk
     // well forward to bring its shoulders near the ground (the hips can
     // only drop as far as the folded legs allow), while a horizontal
-    // quadruped only dips its nose. A MOUTH reach pitches much harder:
-    // hands hang below the shoulders and cover the last stretch, but a
-    // beak sits on top of a lifted neck — the trunk must tip nose-down
-    // past horizontal, a bird pecking over its feet. The feedback loop
-    // still stops the dive the moment the beak arrives.
-    const leanBase = this.usingMouth ? 1.05 : 0.3;
-    const reachLean = crouchE * (leanBase + 0.55 * Math.max(0, this.basePosture.bodyPitch));
+    // quadruped only dips its nose.
+    //
+    // 🚨 THE MOUTH REACH USED TO PITCH AT 1.05 HERE, AND THAT WAS THE
+    // HANDSTAND. With no neck channel the trunk was the only thing that
+    // could lower a snout, so the mouth path dived the whole body nose-down
+    // past horizontal — which lifts the hind hips out of their legs' reach,
+    // drops the hind legs out of support for free, and stands the animal on
+    // its forelegs. Both halves of that are fixed elsewhere now: the neck
+    // reaches (`pose.snoutTarget`) and the skeleton refuses to pitch a
+    // support leg off the ground (the posture negotiation). So the mouth
+    // takes the SAME modest trunk lean as a hand, and the bow it still needs
+    // comes out of the negotiation as a differential front-leg fold.
+    const reachLean = crouchE * (0.3 + 0.55 * Math.max(0, this.basePosture.bodyPitch));
     // Activity and reach share the crouch channel — the strain engine folds the
     // legs for whichever asks deeper.
     const foldE = Math.max(crouchE, ease(actCrouch));
@@ -762,7 +1073,12 @@ export class CreatureAnimator {
     };
 
     // ── Pose overrides ────────────────────────────────────────────────────
-    const pose: PoseOverrides = {};
+    // `restPitch` rides on every frame: the skeleton decides which limbs are
+    // LEGS (and so whose ground contact it must protect) at the posture the
+    // body holds when it is NOT acting, never at the one this frame is
+    // asking for. Without it the classification would drift as the action
+    // deepened.
+    const pose: PoseOverrides = { restPitch: this.basePosture.bodyPitch };
     if (moving) pose.armSwing = 0.12 + 0.45 * this.speed;
     let handChains: string[] | undefined;
     if (this.usingMouth) {
@@ -770,6 +1086,14 @@ export class CreatureAnimator {
         handChains = [this.mouthChain!];
         pose.gape = this.gape;
       }
+      // THE NECK DOES THE REACHING. The mouth path has no arm to travel with,
+      // so before this the crouch and a 1.05-rad trunk dive were the whole
+      // gesture. Now the snout goes to the object down the same channel a
+      // grazing animal uses — the neck curls and the head rides it down —
+      // and the crouch is left doing what it does for a hand: bringing the
+      // shoulders down the last stretch when the neck alone cannot span it.
+      const snout = this.snoutTarget();
+      if (snout) pose.snoutTarget = snout;
     } else if (this.action !== "none" && this.activeGroup >= 0 && this.sides.length > 0) {
       handChains = [];
       pose.limbTargets = [];
@@ -797,6 +1121,17 @@ export class CreatureAnimator {
       pose.limbTargets = [
         { group: this.handGroup, index: 0, side: s, target: lerpV(rest, mouth, ease(eatCycle)), grip: 0.6 },
       ];
+    }
+    // EAT, for a HANDLESS kind: the same rhythm the handed one carries a hand
+    // to its mouth on, spent the other way round — the mouth goes to the food.
+    // The trunk still bows (actPitch, above) but the bow is no longer the
+    // whole gesture: the neck dips the snout to the ground under it and lifts
+    // again, which is what a grazing or bowl-fed animal actually does, and it
+    // asks nothing of the trunk that the posture negotiation would have to
+    // take back off the hind legs.
+    if (eatCycle > 0.001 && this.action === "none" && this.handGroup < 0 && this.restSnout) {
+      const plate = v3(this.restSnout.x, 0.06 * this.legLen, this.restSnout.z);
+      pose.snoutTarget = lerpV(this.restSnout, plate, ease(eatCycle));
     }
     // PLAY, with no action running: the front pair WORKS a spot on the ground
     // just ahead of the feet — each side stroking half a cycle out of phase with
@@ -827,6 +1162,22 @@ export class CreatureAnimator {
       }
     }
 
+    // ── What the body is carrying, at the point it is carrying it ────────
+    // The held object rides wherever the graspers are THIS frame — the hand
+    // tip(s), between two of them, or the snout tip — and a pack rides the
+    // girth peak. Both are points the renderer is already drawing at, which is
+    // the whole trick: nothing here is a second opinion about where the thing
+    // is. Undefined when there is nothing, so the caller's build is the
+    // byte-identical unloaded one.
+    let loads: CarriedLoad[] | undefined;
+    if (this.holding && this.loadMass > 0) {
+      const at = this.carryPointNow();
+      if (at) (loads ??= []).push({ mass: this.loadMass, at });
+    }
+    if (this.backLoad > 0 && this.seatBack) {
+      (loads ??= []).push({ mass: this.backLoad, at: this.seatBack });
+    }
+
     return {
       gait,
       posture,
@@ -837,6 +1188,16 @@ export class CreatureAnimator {
       speedMps,
       action: this.action,
       recline,
+      loads,
     };
+  }
+
+  /** How much longer this lift/lower takes for the mass in hand: 1 empty, up
+   *  to 1 + LOAD_HEFT for a load as heavy as the body. 1 with no observed
+   *  ledger — there is no body mass to compare against. */
+  private liftHeft(): number {
+    const body = this.lastSupport?.body.mass ?? 0;
+    if (!(this.loadMass > 0) || !(body > 0)) return 1;
+    return 1 + LOAD_HEFT * clamp01(this.loadMass / body);
   }
 }

@@ -784,6 +784,19 @@ export const aacSettings = pgTable("aac_settings", {
   // the Contacts panel. Rows the AI does create are flagged
   // studentContacts.autoAdded until a clinician confirms them.
   autoAddContacts: boolean("auto_add_contacts").default(true).notNull(),
+  // Per-student rollout flag for the presence ledger's BEHAVIOUR changes
+  // (planning-docs/aac-presence-ledger.md §10 "Rollout"). Recording and the
+  // session-close snapshot always run — they are observability and cost
+  // nothing; this flag gates the parts that change what the student and the
+  // agents see: ledger-aware rendering of who is present, and the gates that
+  // stop an unverified guess from being spoken, written to notes, used to
+  // seed a contact, or used to learn a face. Off by default, and
+  // clinician-only — deliberately absent from the AI-writable column list in
+  // aac-settings-memory-schema.ts, like deviceLocationEnabled.
+  presenceLedger: boolean("presence_ledger").default(false).notNull(),
+  // Clinician-only switch: persists the full session trace (prompts, transcripts,
+  // tool calls) for this student. See agent-flow-logger.ts persistFlowToDb.
+  debugMode: boolean("debug_mode").default(false).notNull(),
   // Whether the student's owning institute auto-passes the monitor_note gate
   // and sees AAC-recorded chatMemory (Student_Notes / People / Interests /
   // CommunicationStyle / Preferences) without an explicit standing share.
@@ -883,6 +896,26 @@ export const aacSettings = pgTable("aac_settings", {
   // column level (reads coerce via coerceSeizureConfig) — a strict $type union
   // fights drizzle-zod's insert-schema widening.
   seizureDetection: jsonb("seizure_detection"),
+
+  // Every MACHINE-LEARNED per-student baseline, in one place —
+  // { seizure?: PersistedBaseline, headNeutral?: HeadNeutralProfile }. See
+  // shared/aac/learned-baselines.ts, which owns the shape, the coercion and the
+  // count-weighted merge rules.
+  //
+  // Why a new column rather than more keys under `seizure_detection`: the head
+  // neutral has nothing to do with seizures, and the reason there was no
+  // write-back at all until now is that every learned quantity was being given
+  // its own bespoke path. One column, one channel, one merge policy.
+  //
+  // Reads fall back to `seizure_detection.baseline` when this is empty
+  // (readSeizureBaselineForSeed), so existing rows keep working untouched.
+  //
+  // ⚠️ MACHINE-WRITTEN ONLY. Never clinician-edited, and deliberately absent
+  // from WRITABLE_COLUMNS in aac-settings-memory-schema.ts — that list is
+  // deny-by-default, so this stays out of AI reach unless someone adds it.
+  // Don't. An agent that could edit these could silently blind the seizure
+  // detector.
+  learnedBaselines: jsonb("learned_baselines"),
 
   // When true, a clinician on a video call may facilitate button presses on the
   // student's mirrored board (guided communication). Off by default — facilitator
@@ -1033,6 +1066,14 @@ export const studentContacts = pgTable("student_contacts", {
   // confirm (clears the flag) or delete them. Never set by the AI itself —
   // written by the AAC-scoped Student_Contacts add op, cleared by a PATCH.
   autoAdded: boolean("auto_added").default(false).notNull(),
+  // Evidence summary recorded when the AI auto-adds this contact
+  // (planning-docs/aac-presence-ledger.md §6.2): the presence-ledger status
+  // that cleared the gate and the evidence behind it, so a clinician reviewing
+  // an autoAdded row in StudentContactsPanel sees WHY the system believes this
+  // person exists rather than only that it guessed. Null for rows a human
+  // created. Names only — no embeddings, no evidence beyond what already lives
+  // on this table.
+  provenance: jsonb("provenance"),
 
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -2092,6 +2133,17 @@ export const chatSessions = pgTable("chat_sessions", {
   // True once a clinician has manually renamed the session. The summarizer then
   // refreshes summary/importance on close but never overwrites the chosen title.
   titleManual: boolean("title_manual").notNull().default(false),
+
+  // Final presence-ledger snapshot, written at session close by the same path
+  // that writes the summary (planning-docs/aac-presence-ledger.md §8): the
+  // ledger entries, their derived statuses, the status timeline, and the
+  // bounded evidence ring (≤ 40 evidence entries per person). Forensics —
+  // it answers "what did the face matcher claim, and what did the Observer do
+  // with it" in one query, which no existing log could. No embeddings, and no
+  // PHI beyond names that already live in student_contacts; it sits on the row
+  // the Monitor-notes access gate already governs. Null for sessions that
+  // closed before the column existed, and for non-AAC chat modes.
+  presenceLedger: jsonb("presence_ledger"),
 }, (table) => [
   index("idx_chat_sessions_user_id").on(table.userId),
   index("idx_chat_sessions_student_id").on(table.studentId),

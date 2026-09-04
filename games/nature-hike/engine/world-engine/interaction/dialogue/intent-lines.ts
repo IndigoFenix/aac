@@ -356,6 +356,17 @@ export function goalIntentLine(
     case "breakPiece":
       // "I'll break the bed" — `place`'s echo with the opposite verb.
       return phrase({ subject: "i_me", verb: "break", object: syms.item(goal.item) });
+    case "clearFeature":
+      // "I'll cut the tree" — the removal act (user ruling 2026-09-02).
+      //
+      // CUT, whichever of the three verbs was said. `break` and `fight` reach
+      // this goal too, but a creature saying back what it is about to do should
+      // use the word that fits the act: you cut down a plant, you do not fight
+      // one. (The same rule `craft` follows for saying "make" when the child
+      // said "build".) `cut` is a lexeme in all four shipped rulesets, and
+      // `goal.feature` is the child's OWN word, so the whole line is sayable
+      // wherever the sentence was.
+      return phrase({ subject: "i_me", verb: "cut", object: goal.feature });
     case "buildwork":
       // ⑥ standing site work — "I'll build" (the site names no glyph word).
       return { a: "build", b: "i_me + build", c: "i_me + build" };
@@ -646,6 +657,8 @@ export function goalActivity(
       return { verb: "empty", object: goal.room };
     case "breakPiece":
       return { verb: "break", object: syms.item(goal.item) };
+    case "clearFeature":
+      return { verb: "cut", object: goal.feature };
     case "buildwork":
       return { verb: "build" }; // ⑥ standing site work
     case "trade":

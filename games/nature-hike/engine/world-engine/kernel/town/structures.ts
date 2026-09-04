@@ -25,7 +25,7 @@
 
 import type { BuildingProgram, StationKind } from "./stations.js";
 import { headOf } from "../../variations.js";
-import { BLOCK_GLYPH, rawsForRefined, withRefinableCredit } from "../../products.js";
+import { BLOCK_GLYPH, effectiveInPerOut, rawsForRefined, withRefinableCredit } from "../../products.js";
 import { shellBill } from "./block-bill.js";
 
 /** One buildable structure — a registry row (StationDef/ClusterDef pattern). */
@@ -211,12 +211,20 @@ export function spendCosts(
  * happens as ledger arithmetic at exactly the ratio the live refine orders
  * pay — same knob, both accounts. Returns false (spending nothing) when
  * even the chain can't cover.
+ *
+ * ⚖️ "EXACTLY THE RATIO THE LIVE REFINE ORDERS PAY" IS `effectiveInPerOut`,
+ * so `conversionDial` (default 1, byte-identical) rides through to BOTH
+ * halves below — the credit test AND the implicit mill that spends. They are
+ * one arithmetic read twice: crediting at one ratio and spending at another
+ * would admit a bill the spend then under-pays, and this function returns
+ * true regardless — a silent item-conservation leak.
  */
 export function spendCostsChain(
   spec: CostBearing,
   stock: Record<string, number>,
+  conversionDial = 1,
 ): boolean {
-  if (!costsMet(spec, withRefinableCredit(stock))) return false;
+  if (!costsMet(spec, withRefinableCredit(stock, conversionDial))) return false;
   for (const [glyph, cost] of Object.entries(structureCosts(spec))) {
     let left = cost;
     const keys = Object.keys(stock)
@@ -234,7 +242,7 @@ export function spendCostsChain(
     // catalogue order (wood before stone), facted raw variants included.
     for (const p of rawsForRefined(glyph)) {
       if (left <= 0) break;
-      const per = p.refinesTo?.inPerOut ?? 1;
+      const per = effectiveInPerOut(p.refinesTo?.inPerOut ?? 1, conversionDial);
       const rawKeys = Object.keys(stock)
         .filter((k) => headOf(k) === p.glyph)
         .sort((a, b) => (a === p.glyph ? -1 : b === p.glyph ? 1 : a < b ? -1 : 1));

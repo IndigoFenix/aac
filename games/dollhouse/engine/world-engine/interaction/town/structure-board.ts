@@ -178,6 +178,11 @@ export function structureActsOf(input: {
   neighbors: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
   /** The builder's stock the annex would spend from (yard / site). */
   stock: Readonly<Record<string, number>>;
+  /** `scale.resourceCompression` — the conversion dial the MILL charges at,
+   *  so the chain credit below reads the same ratio the bench and the
+   *  refusal gate do. Default 1, byte-identical (a caller with no scale in
+   *  reach simply omits it and gets the shipped dial-1 arithmetic). */
+  conversionDial?: number;
   furnStock: (glyph: string) => number;
 }): StructureActs {
   const key = input.buildingKey ?? `h_${input.house.index}`;
@@ -189,7 +194,10 @@ export function structureActsOf(input: {
   // the board, not the order: pick a room this stock can't quite reach and the
   // designation still posts, naming its shortfall (the "missing materials
   // never refuse" law).
-  const affordable = costsMet({ costs: { ...MIN_ROOM_COSTS } }, withRefinableCredit(input.stock));
+  const affordable = costsMet(
+    { costs: { ...MIN_ROOM_COSTS } },
+    withRefinableCredit(input.stock, input.conversionDial),
+  );
   // THE ENUMERATION IS THE LIT GROUND. It used to be run for its LENGTH and
   // thrown away, which left the board naming kinds with no idea where they
   // would go; the candidates are what the player aims at now, so they are

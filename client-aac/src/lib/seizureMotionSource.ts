@@ -29,6 +29,7 @@ import type {
   FacialSample, MotionFrame, MotionFieldSample, MotionPoint, Region,
 } from "@shared/aac/motion-types";
 import { poseFrameToMotion } from "@shared/aac/seizure-signature";
+import { gazeVector } from "@shared/aac/face-features";
 
 /** Blendshape pairs whose left/right disagreement reads as unilateral facial
  *  involvement. Expression muscles only — blink is excluded because ordinary
@@ -60,12 +61,10 @@ const bs = (m: Map<string, number>, k: string): number => m.get(k) ?? 0;
 export function facialSampleFrom(face: RawTrackedFace): FacialSample {
   const b = face.blendshapes;
 
-  // Gaze, + = subject's RIGHT (same convention as yaw). Looking right means the
-  // left eye rotates IN toward the nose while the right eye rotates OUT.
-  const gazeRight = (bs(b, "eyeLookInLeft") + bs(b, "eyeLookOutRight")) / 2;
-  const gazeLeft = (bs(b, "eyeLookOutLeft") + bs(b, "eyeLookInRight")) / 2;
-  const gazeDown = (bs(b, "eyeLookDownLeft") + bs(b, "eyeLookDownRight")) / 2;
-  const gazeUp = (bs(b, "eyeLookUpLeft") + bs(b, "eyeLookUpRight")) / 2;
+  // Gaze, + = subject's RIGHT (same convention as yaw). This file had the only
+  // correct conjugate implementation of four; it now imports the shared one so
+  // there is exactly one (D6).
+  const gaze = gazeVector(b);
 
   let asymSum = 0, asymN = 0;
   for (const [l, r] of ASYMMETRY_PAIRS) {
@@ -82,8 +81,8 @@ export function facialSampleFrom(face: RawTrackedFace): FacialSample {
     jawOpen: bs(b, "jawOpen"),
     eyeBlinkLeft: bs(b, "eyeBlinkLeft"),
     eyeBlinkRight: bs(b, "eyeBlinkRight"),
-    gazeX: gazeRight - gazeLeft,
-    gazeY: gazeDown - gazeUp,
+    gazeX: gaze.x,
+    gazeY: gaze.y,
     asymmetry: asymN ? asymSum / asymN : 0,
   };
 }

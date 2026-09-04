@@ -25,6 +25,9 @@ import {
   growthValidationErrors,
 } from "./growth";
 import { GARMENT_KINDS, MAX_GARMENTS, clampOutfit, type OutfitBlueprint } from "./clothing";
+import type { SkeletonPlan } from "./physio";
+
+export type { SkeletonPlan };
 
 export { MAX_GROWTHS };
 export type { GrowthBlueprint };
@@ -40,6 +43,32 @@ export interface SpineBlueprint {
   /** Trunk length, chest to hip, in meters. The main size knob — most
    *  other lengths are fractions of this. */
   torsoLengthM: number;
+  /** 🚨 BODY DENSITY, RELATIVE TO FLESH AND WATER (1 = solid tissue). The one
+   *  body-wide MASS dial: it scales what the creature weighs and nothing about
+   *  what its legs can carry (physio.ts `massKg`). A lighter body needs less
+   *  leg, and that already falls out of weighing less — giving density a
+   *  second effect on strength would count the same air twice.
+   *
+   *  Below 1 means a PNEUMATISED skeleton — air sacs invading the bones, which
+   *  is not an exotic case: sauropods run ≈ 0.8, theropods ≈ 0.85, and modern
+   *  birds 0.6–0.75. Above 1 is dense bone and little air (a hippo, a diving
+   *  mammal's ballast). Every body shipped today is 1, so this changes no
+   *  existing number. */
+  density: number;
+  /** 🚨 WHERE THE BODY KEEPS ITS SKELETON — the one anatomical switch that
+   *  changes what a drawn limb is MADE OF.
+   *
+   *  "endo" (default) is the vertebrate: a thin bone inside a lot of muscle, so
+   *  only ~1/6.1 of the capsule's radius carries the column. "exo" is the
+   *  arthropod: the cuticle IS the structure and the flesh is inside it, so
+   *  nearly the whole capsule is load-bearing (physio.ts `K_BONE_EXO`). It
+   *  enters strength as k² and buckling as k⁴ — ~22× and ~484× — which is the
+   *  entire reason a 7 cm mantis could not stand up under a single global
+   *  mammalian constant.
+   *
+   *  A body must opt OUT of vertebrate anatomy deliberately: anything unset or
+   *  unrecognised clamps to "endo", so no existing body moves. */
+  skeleton: SkeletonPlan;
   /** Max torso radius as a fraction of torso length. 0.08 = slender
    *  (snake/heron), 0.3 = plump (seal/grub). */
   girth: number;
@@ -365,14 +394,29 @@ export interface LimbGroupBlueprint {
   // ── Ankle (3rd joint) + foot (3rd section); digits ride on it ────────
   /** Foot (3rd section) length / leg length. 0 = the limb tip is the foot. */
   footLengthFrac: number;
-  /** Ankle REST pitch — where the foot joint sits when relaxed: 0 =
-   *  plantigrade (sole flat), 0.5 = digitigrade (up on the ball), 1 =
-   *  unguligrade (on the tip / hoof). This is the joint's NEUTRAL; a planted
-   *  foot deviates from it toward the range limit as posture demands — a
-   *  body held high rides up onto the tip, a low one settles flat — so the
-   *  actual stance emerges rather than being dialled in. (Named `stance`
-   *  still; it is now the ankle rest, not the outcome.) */
+  /** WHERE ALONG THE FOOT COLUMN THE BODY'S WEIGHT SITS — heel → sole → ball
+   *  → toe tip, as one dial. 0 = plantigrade (the whole sole flat, ankle on the
+   *  ground, toes lying forward); 0.5 = digitigrade (ankle up, standing on the
+   *  ball, toes still flat); 1 = unguligrade (the foot a VERTICAL column and
+   *  the toes in line with it, standing on their tips — which is why a hoof
+   *  cap derives from a high stance and nowhere else).
+   *
+   *  This is the joint's NEUTRAL; a planted foot deviates from it toward the
+   *  range limit as posture demands — a body held high rides up onto the tip, a
+   *  low one settles flat — so the actual stance emerges rather than being
+   *  dialled in. (Named `stance` still; it is the ankle rest, not the outcome.) */
   stance: number;
+  /** FAT FILL OF THE HEEL AND ANKLE, 0..1 — the pad. It does three things at
+   *  once, which is why it is one dial and not three: it fills the wedge under
+   *  the ankle so the limb reads as a COLUMN rather than a leg on a slanted
+   *  strut (an elephant at 1, a carnivoran heel pad at ~0.3); it puts a broad
+   *  ground DISC under the ankle that the ledger prices like any other contact
+   *  patch; and it runs the load path straight DOWN through itself, so the
+   *  foot's bent lever stops costing the knee anything.
+   *
+   *  It is also where the digit-length floor went (skeleton.ts): a thick limb
+   *  demands a wide pad, not long toes. */
+  padFrac: number;
   /** Ankle RANGE — how far the foot joint can pitch from its rest before it
    *  locks, as a fraction. 1 = free to rise onto the tip under load, 0 =
    *  rigid at its rest pitch. */
@@ -529,6 +573,8 @@ export const MAX_CHAINS = 4;
 export const MAX_CHAIN_COUNT = 12;
 export const CHAIN_ATTACH: readonly ChainAttach[] = ["head", "body"];
 export const CHAIN_TIPS: readonly ChainTip[] = ["none", "club", "eye", "stinger"];
+/** The two skeleton plans a spine may declare (physio.ts `SkeletonPlan`). */
+export const SKELETON_PLANS: readonly SkeletonPlan[] = ["endo", "exo"];
 export const MAX_MEMBRANES = 4;
 export const MEMBRANE_EDGES: readonly MembraneEdge[] = ["dorsal", "ventral"];
 /** Trunk profile control points one body can carve. */
@@ -560,7 +606,18 @@ export type RangesOf<T> = {
 
 export const SPINE_RANGES: RangesOf<SpineBlueprint> = {
   torsoSegments: { min: 3, max: 12, int: true },
-  torsoLengthM: { min: 0.05, max: 30, step: 0.05 },
+  // 🚨 FLOOR 0.01 m, NOT 0.05 (2026-09-03). The old floor was a full
+  // centimetre-scale animal above every real insect: a wasp's thorax+abdomen is
+  // ~0.02 m, a beetle's ~0.03. Under 0.05 the registry's arthropods could not
+  // be authored at their own size at all, which is most of why they read as
+  // impossible metre-long monsters. Lowering a MINIMUM cannot move an existing
+  // output — verified before the change that no shipped body sits below 0.05,
+  // so nothing was being clamped up by it.
+  torsoLengthM: { min: 0.01, max: 30, step: 0.05 },
+  // 0.3 = lighter than any vertebrate has managed; 1.3 = denser than bone-
+  // ballasted flesh gets. Wide enough for every real body plan, narrow enough
+  // that a corrupt value cannot make a creature weigh nothing.
+  density: { min: 0.3, max: 1.3, step: 0.01 },
   girth: { min: 0.05, max: 0.45 },
   girthPeak: { min: 0, max: 1 },
   frontTaper: { min: 0, max: 1 },
@@ -644,6 +701,7 @@ export const LIMB_GROUP_RANGES: RangesOf<LimbGroupBlueprint> = {
   legBalance: { min: -1, max: 1 },
   footLengthFrac: { min: 0, max: 0.6 },
   stance: { min: 0, max: 1 },
+  padFrac: { min: 0, max: 1 },
   ankleRange: { min: 0, max: 1 },
   toeCount: { min: 1, max: 5, int: true },
   toeLengthFrac: { min: 0.2, max: 1 },
@@ -692,6 +750,10 @@ export function defaultBlueprint(): Blueprint {
     spine: {
       torsoSegments: 6,
       torsoLengthM: 1.2,
+      density: 1,
+      // Vertebrate by default — an exoskeleton is a body plan a blueprint opts
+      // into, never something a body acquires by omission.
+      skeleton: "endo",
       girth: 0.18,
       girthPeak: 0.45,
       frontTaper: 0.45,
@@ -754,7 +816,7 @@ export function defaultBlueprint(): Blueprint {
         lengthFrac: 0.58, radiusFrac: 0.18, taper: 0.55,
         membrane: 0, attachHeight: 0.38, restProtraction: 0, restLevation: -0.45, restFlexion: -0.3,
         flexRange: 1, legTwist: 0, legBalance: 0,
-        footLengthFrac: 0.22, stance: 0.4, ankleRange: 1, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5,
+        footLengthFrac: 0.22, stance: 0.4, padFrac: 0, ankleRange: 1, toeCount: 3, toeLengthFrac: 0.5, toeSpread: 0.5,
         toeContrast: 0.2, opposition: 0, toeCurl: 0.1,
       },
     ],
@@ -899,6 +961,15 @@ export function validateBlueprint(value: unknown): ValidationResult {
       continue;
     }
     checkNumbers(section, ranges, name, errors);
+  }
+
+  // Skeleton plan: an enum, so `checkNumbers` above cannot see it. Optional —
+  // a blueprint written before the field existed is a vertebrate, not invalid.
+  if (isRecord(g.spine) && g.spine.skeleton !== undefined
+      && !SKELETON_PLANS.includes(g.spine.skeleton as SkeletonPlan)) {
+    errors.push(
+      `spine.skeleton: expected one of ${SKELETON_PLANS.join("/")}, got ${JSON.stringify(g.spine.skeleton)}`,
+    );
   }
 
   // Trunk profile: optional array; each point's at/scale in range.
@@ -1140,6 +1211,12 @@ export function clampBlueprint(value: unknown): Blueprint {
   const skinIn = isRecord(g.skin) ? g.skin : {};
   const spine = clampSection(g.spine, SPINE_RANGES as unknown as Record<string, FieldRange>, d.spine);
   spine.profile = clampProfile(isRecord(g.spine) ? g.spine.profile : undefined);
+  // Enum, so it is not in SPINE_RANGES and clampSection cannot see it — the
+  // same shape as `placement` / `edge` / `tip`. Anything unrecognised (and
+  // every blueprint written before the field existed) is a vertebrate.
+  spine.skeleton = SKELETON_PLANS.includes(
+    (isRecord(g.spine) ? g.spine.skeleton : undefined) as SkeletonPlan,
+  ) ? ((g.spine as Record<string, unknown>).skeleton as SkeletonPlan) : "endo";
   return {
     version: 1,
     ...(typeof g.name === "string" ? { name: g.name } : {}),
@@ -1278,6 +1355,9 @@ export function randomBlueprint(seed: number): Blueprint {
     legBalance: lerp(-0.3, 0.5, rng()),
     footLengthFrac: lerp(0.12, 0.35, rng()),
     stance,
+    // A hoof stands on keratin, not on fat, so the pad is the NON-hoofward
+    // body's option: anything from a bare foot to a soft padded column.
+    padFrac: hoofward ? 0 : lerp(0, 0.6, rng()),
     ankleRange: 1,
     toeCount,
     toeLengthFrac: lerp(0.35, 0.7, rng()),
@@ -1380,6 +1460,16 @@ export function randomBlueprint(seed: number): Blueprint {
     spine: {
       torsoSegments: Math.round(lerp(4, 9, rng())),
       torsoLengthM,
+      // Solid flesh. The re-roll does not gamble with density: a pneumatised
+      // skeleton is a specific body plan (a bird, a sauropod), not a dial to
+      // spin, and a random body that weighs 40% less for no visible reason
+      // would read as a bug in the ledger rather than as a feature.
+      density: 1,
+      // Vertebrate, for the same reason: an exoskeleton is a body PLAN (which
+      // also implies a centimetre-scale body), not a coin the re-roll flips.
+      // A random creature that could stand on hair-thin legs one seed in two
+      // would read as a broken ledger, not as variety.
+      skeleton: "endo",
       girth,
       girthPeak: lerp(0.25, 0.7, rng()),
       frontTaper: lerp(0.2, 0.8, rng()),

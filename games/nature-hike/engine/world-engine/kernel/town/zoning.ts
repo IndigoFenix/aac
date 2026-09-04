@@ -387,6 +387,11 @@ export interface FoundingGrowthInput {
    * worldgen/twin caller and every fixture — byte-for-byte the shipped gate.
    */
   reserve?: (head: string) => number;
+  /** `scale.resourceCompression` — the mill's conversion dial, so the chain
+   *  credit and the twin's implicit mill below charge what the live bench
+   *  charges (`effectiveInPerOut`). Absent ⇒ 1, byte-for-byte the shipped
+   *  arithmetic; every worldgen/twin caller and every fixture omits it. */
+  conversionDial?: number;
 }
 
 export interface FoundingGrowthOrder {
@@ -516,7 +521,7 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     // mill below) fill a block bill out of wood. The spend still draws the
     // REAL stock: free ⊆ real, so covering costs from free leaves reserved
     // units untouched.
-    if (!costsMet(r.spec, withRefinableCredit(growthStock))) continue;
+    if (!costsMet(r.spec, withRefinableCredit(growthStock, input.conversionDial))) continue;
     // Geometric capacity — feasibility inside the enumeration.
     const candidate = input.candidatesFor(r.spec, r.zone)[0];
     if (!candidate) continue;
@@ -524,7 +529,12 @@ export function foundingGrowthStep(input: FoundingGrowthInput): FoundingGrowthOr
     // yard pays now and the clock raises it (worldgen / unwatched towns) —
     // milling implicitly at the refinement ratio (the twin is unobserved
     // by definition; ledger arithmetic is its whole mode).
-    if (!input.pipeline && (!spendCostsChain(r.spec, growthStock) || !spendCostsChain(r.spec, d.stock))) continue;
+    if (
+      !input.pipeline &&
+      (!spendCostsChain(r.spec, growthStock, input.conversionDial) ||
+        !spendCostsChain(r.spec, d.stock, input.conversionDial))
+    )
+      continue;
     const building = d.foundBuilding(
       candidate,
       input.day,

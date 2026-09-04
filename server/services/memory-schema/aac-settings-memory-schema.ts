@@ -43,6 +43,7 @@ import { activityLogService } from "../activityLogService";
 import { summarizeChanges, changeDetails } from "../activityChanges";
 import type { AccessCtx } from "../sharing/visibility";
 import { normalizeAacPromptList, promptNoteToday, stampPromptNote } from "./aac-memory-schema";
+import { assertPresenceSafe } from "./presence-context";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
 import { coerceSeizureConfig, type SeizureConfig } from "@shared/aac/seizure-config";
 import { coerceSeizureMarkers, kindTakesSide } from "@shared/aac/seizure-markers";
@@ -474,11 +475,17 @@ export const AAC_AUTO_PROMPT_FIELD: AgentMemoryFieldArrayWithDB = {
       return normalizeAacPromptList(settings?.autoAacPrompt);
     },
     write: async (ctx, value) => {
+      // Presence ledger §6.1: the scratchpad is injected as standing
+      // instructions into every future session, so "her sister is usually
+      // here" written off one weak face match becomes a prior the AI acts on.
+      // No-op when the session has no ledger provider.
+      assertPresenceSafe(value, ctx.all.sessionId, "this scratchpad note");
       const next = sanitizePromptList(value as any, promptNoteToday());
       await writeAACSettings(ctx, { autoAacPrompt: next });
       return next;
     },
     add: async (ctx, value) => {
+      assertPresenceSafe(value, ctx.all.sessionId, "this scratchpad note");
       const current = normalizeAacPromptList((await readAACSettings(ctx))?.autoAacPrompt);
       const note = stampPromptNote(sanitizePromptField(String(value ?? "")).trim(), promptNoteToday());
       if (note) current.push(note);

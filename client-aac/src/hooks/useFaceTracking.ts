@@ -6,6 +6,7 @@ import type { FaceTrackingConfig, RawTrackedFace, BoundingBox } from "@/lib/face
 import { DEFAULT_FACE_TRACKING_CONFIG } from "@/lib/faceTrackingTypes";
 import { createModelLoader, type ModelLoader } from "@/lib/modelLoader";
 import { createRawVisionTask, visionAssetSources } from "@/lib/visionTasks";
+import { pickFaceLandmarks } from "@shared/aac/face-features";
 
 // =============================================================================
 // SHARED LOADER (retrying — see lib/modelLoader.ts)
@@ -148,6 +149,13 @@ export function useFaceTracking(options: UseFaceTrackingOptions): UseFaceTrackin
       try {
         const results = landmarker.detectForVideo(video, now);
 
+        // Landmark x/y are normalized to the IMAGE, so one unit of x is
+        // `aspect` units of y. Every geometric distance downstream needs this
+        // to be isotropic; 1 is the honest fallback before metadata arrives.
+        const aspect = video.videoWidth > 0 && video.videoHeight > 0
+          ? video.videoWidth / video.videoHeight
+          : 1;
+
         const rawFaces: RawTrackedFace[] = [];
 
         if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
@@ -214,12 +222,23 @@ export function useFaceTracking(options: UseFaceTrackingOptions): UseFaceTrackin
               }
             }
 
+            // Retain the landmark SUBSET the geometry decoder reads (D7). The
+            // full 478-point array used to be dropped here, which is why every
+            // geometric feature was unavailable; ~30 named points cost almost
+            // nothing to carry and make all of them computable. See
+            // shared/aac/face-features.ts.
+            const landmarks = results.faceLandmarks?.[i]
+              ? pickFaceLandmarks(results.faceLandmarks[i])
+              : null;
+
             rawFaces.push({
               faceIndex: i,
               boundingBox,
               blendshapes: blendshapeMap,
               noseTip,
               headPose,
+              landmarks,
+              aspect,
             });
           }
         }

@@ -41,6 +41,13 @@ import {
   type LinkableEntity,
 } from "../biometric";
 import { activityLogService } from "../activityLogService";
+import {
+  assertPresenceSafe,
+  contactProvenanceFor,
+  getPresenceLists,
+  isRetractedName,
+  retractedContactRefusal,
+} from "./presence-context";
 
 // ============================================================================
 // Key helpers
@@ -238,6 +245,19 @@ function makeStudentContactsOps(
         );
       }
 
+      // Presence ledger §6.2. Two guards, both no-ops when the session has no
+      // ledger provider (the feature is off for this student):
+      //  * a RETRACTED name never becomes a row — the correction that struck
+      //    them would not outlive the contact it created;
+      //  * contextNotes is a durable narrative, so it goes through the same
+      //    presence validator as Student_Notes.
+      const sessionId: string | undefined = ctx.all.sessionId;
+      const presenceLists = getPresenceLists(sessionId);
+      if (presenceLists && value.name && isRetractedName(presenceLists, String(value.name))) {
+        throw new Error(retractedContactRefusal(String(value.name)));
+      }
+      assertPresenceSafe(value.contextNotes, sessionId, "this contact's contextNotes");
+
       const insert: InsertStudentContact = {
         studentId,
         name: value.name,
@@ -253,6 +273,12 @@ function makeStudentContactsOps(
         // Set from the field options, never from `value` — the AI cannot
         // choose whether its own creation counts as reviewed.
         autoAdded: opts.markAutoAdded === true,
+        // WHY the system believes this person exists, in the ledger's own
+        // words, so the clinician reviewing the autoAdded row in
+        // StudentContactsPanel sees the evidence and not just the guess.
+        // Null when there is no ledger — a row created before the feature
+        // must stay distinguishable from one created with no evidence.
+        provenance: contactProvenanceFor(String(value.name ?? ""), sessionId),
       };
       const created = await createContact(insert);
 
@@ -275,6 +301,16 @@ function makeStudentContactsOps(
 
       const row = await findContactByKey(studentId, String(key));
       if (!row) throw new Error(`Contact with key ${key} not found`);
+
+      // Presence ledger §6.1: contextNotes is the per-contact permanent
+      // narrative ("Aug 20: X present in the living room…"), reinjected for
+      // the rest of the student's life. It is checked against the session's
+      // verified list before it can name an unverified person as present.
+      assertPresenceSafe(
+        (value as any)?.contextNotes,
+        ctx.all.sessionId,
+        "this contact's contextNotes",
+      );
 
       // Strip read-only biometric descriptors — the AI must not edit those here.
       // `autoAdded` is absent by design: only a human confirming the contact in

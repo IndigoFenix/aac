@@ -570,6 +570,17 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🐝" },
   { key: "mantis", tKey: "aac.glyph.mantis", pos: "animal", categories: ["who"],
     modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦗" },
+  // THE TWO NAMED DINOSAURS (2026-09-03). `dinosaur` above is the category
+  // word; these are the two shapes a child can tell apart. The KEY is the
+  // clade (it joins to the body plan in `world-engine/creatures/species.ts`),
+  // the WORD is the picture-book name — "T. rex", not tyrannosaur;
+  // "brontosaurus", not sauropod. `tyrannosaur` shares 🦖 with `dinosaur` for
+  // now (nearest honest mark, not a match), so it heads the art queue: the
+  // pair only reads apart once the sauropod's long neck is drawn.
+  { key: "tyrannosaur", tKey: "aac.glyph.tyrannosaur", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦖" },
+  { key: "sauropod", tKey: "aac.glyph.sauropod", pos: "animal", categories: ["who"],
+    modeChips: { who: ["all", "animals"] }, tone: "comment", emoji: "🦕" },
 
   // ── DO ───────────────────────────────────────────────────────────────────
   { key: "want", tKey: "aac.glyph.want", pos: "verb", categories: ["do"],
@@ -1295,6 +1306,11 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "🌴" },
   { key: "seedling", tKey: "aac.glyph.seedling", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "🌱" },
+  // Like the rock below: a wild feature the child can walk up to (and now cut
+  // down) needs a name on the board. No bush emoji exists; the tree stands in
+  // until the art queue hands it its own picture.
+  { key: "bush", tKey: "aac.glyph.bush", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "nature"] }, tone: "comment", emoji: "🌳" },
   // The ROCK — the outcrop standing in the world, filed beside the tree because
   // that is what it is: the other thing you walk up to and take a material out
   // of. NOT the material — `stone` is what comes off it — and NOT a fixture, so

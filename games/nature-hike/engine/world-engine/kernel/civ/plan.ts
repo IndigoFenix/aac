@@ -143,6 +143,10 @@ export function planHistory(prep: TriPrep, opts: PlanOpts): PlannedHistory {
   };
   // Vegetation charters mirror tri.ts (the plan must reproduce the live
   // founding): a baked ecology's trees/grass, scaled onto the plant range.
+  // 🚨 See tri.ts for the 2026-09-02 measurement — these branches were dead
+  // until `perSpecies` was switched on, and the scale does NOT reproduce the
+  // `plant` halo's magnitude (timberland ≈ ×0.23, pasture 0 → real). Kept
+  // identical to tri.ts by law: the plan must reproduce the live founding.
   const ECO_VEG_SCALE = 7 / 100;
   const charter = (cell: number): TriCharter => ({
     farmland: boxSum(grid.fields.fertility, cell, charterR),

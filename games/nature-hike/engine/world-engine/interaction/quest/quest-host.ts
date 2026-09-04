@@ -121,9 +121,11 @@ import {
   requestInterior,
   stagingMissing,
   TOWN_YARD_EP,
+  rectsCoverDisc,
   workDeltaKey,
   type AnnexCandidate,
   type AnnexCluster,
+  type AreaRecordStore,
   type BuildingDelta,
   type ConstructionOrder,
   type FoundedBuilding,
@@ -239,6 +241,9 @@ import {
 // direct question must never be answered by a DOM banner alone).
 import {
   CANT_HERE,
+  cutFirstLine,
+  ORDER_OK,
+  sourceKindWord,
   WHO_DO_YOU_MEAN,
 } from "@shared/world-engine/interaction/dialogue/host-lines.js";
 import { noStock, type LeveledGlyphs } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
@@ -276,15 +281,19 @@ import {
   dueGrowthAdvance,
   dueHarvestRegrowth,
   growthClassPeriodS,
+  isNaturalSourceBodyId,
+  nearStandRadiusM,
   reseedGrowthStock,
   wildAnimalBodyId,
   wildFeatureContainerId,
   wildFeatureEmbodied,
-  wildFeatureRadius,
+  wildFeatureRadiusOf,
+  wildFeatureStandsAsBody,
   type WildernessContent,
   type WildernessCreature,
   type WildernessFeature,
   type WildernessParams,
+  type WildMixEntry,
   type WildSource,
 } from "./wilderness.js";
 import {
@@ -298,6 +307,7 @@ import {
   localYieldPerDay,
   ripenWildArea,
   readWildRecord,
+  wakeAreaRecords,
   seedAccessOf,
   sowStarterStand,
   standingSpeciesOf,
@@ -305,6 +315,7 @@ import {
   wildAreaPopulation,
   wildAreaQuote,
   wildAreaStock,
+  wildRectPointToward,
   wildSourceEndpoint,
   wildSourcePartner,
   type WildAreaQuote,
@@ -312,6 +323,10 @@ import {
   type WildFoldCtx,
   type WildSourcePartner,
 } from "./wild-area.js";
+// ⚖️ #49 — THE NEIGHBOURING STANDS: the record tier for never-loaded ground.
+// The mint is PURE (see its own header); the host owns only where it is called
+// and which keys it installs.
+import { mintNeighborStands, NEIGHBOR_TILE_M } from "./neighbor-stands.js";
 // ⚖️ F1 (fold-round.md) — the ONE fold's generic accounting: `foldedStock`
 // sums a registered kind's own `stockOf` over a set of folded payloads, so
 // `sessionStockAudit` below no longer hand-rolls the wild-only formula
@@ -418,14 +433,15 @@ import {
 } from "../../creatures/clothing.js";
 import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, listSpecies, requireSpecies, speciesBodyRadius, speciesCanSpeak } from "../../creatures/species.js";
 import {
-  drinkGlyphs, foodPlants, growthClassYield, naturalSourceOf, sourceKillExhausted,
-  sourceSuitabilityAt, sourcesForGood, takeUnitsOf,
+  drinkGlyphs, foodPlants, glyphTakeableFrom, growthClassYield, isBodyProduct, naturalSourceOf, sourceIsConsumable,
+  sourceIsCuttable, sourceIsSubstantial,
+  sourceSpent, sourceSuitabilityAt, sourcesForGood, takeUnitsOf,
   type ClimateSample, type NaturalSource,
 } from "../../products.js";
 import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { hashSeed, mulberry32 } from "@shared/prng.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
-import { propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
+import { isPlant, propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
 import {
   craftRecipeOf,
   drawnGlyph,
@@ -1000,6 +1016,9 @@ import {
   SITE_HAUL_FOCUS_R,
   BUILD_WORK_DWELL_S,
   isDerivedStoreObject,
+  // ⚖️ #50 ③ — "is this endpoint a construction PILE?", the one predicate the
+  // four pile spellings share; the haul's stand-point planner asks it.
+  isPileEndpointId,
   type BuildContext,
 } from "./construction-director.js";
 
@@ -1330,6 +1349,11 @@ export interface QuestSession {
   embodiedNodeIds: Set<string>;
   /** NPC avatar id → head icon, for the model factory. */
   npcIcons: Map<string, string>;
+  /** NPC avatar id → CREATURE SPECIES, for the model factory — the
+   *  AUTHORITATIVE body identity, consulted before any emoji rule. A
+   *  wilderness local registers its species here (its face is derived FROM
+   *  the species, so the face can never decide the body). */
+  npcSpecies: Map<string, string>;
   /** Converse items living as REAL world carry objects, by object id. */
   convItems: Map<string, ConverseWorldItem>;
   /** Object ids already absorbed into the runtime satchel (no double-adds). */
@@ -1870,6 +1894,22 @@ export interface QuestSession {
   /** WILDERNESS session (founding flow): the deterministic resource/creature
    *  scatter laid over the open ground, or null. */
   wilderness: WildernessContent | null;
+  /**
+   * ⚖️ THE NEAR STAND (user ruling 2026-09-02 — *"only the near stand should
+   * be relevant"*): how much the settlement has BUILT, latched MONOTONE, and
+   * the disc radius that count buys (`nearStandRadiusM`, the one owner).
+   *
+   * 🚨 LATCHED, NOT READ. The count is `standingFootprints().length`, which a
+   * demolition can lower — and a relevance radius that CONTRACTS would take
+   * standing sources, a player's selection and the drawn border away
+   * mid-harvest. A site does not un-reach ground it has worked, so the latch
+   * only ever climbs. Together with the ladder's `floor(log2(1+n))` that makes
+   * the radius a step function of a monotone integer: it moves at building
+   * events, never per tick and never per frame.
+   *
+   * Null on every session with no scatter (nothing to bound).
+   */
+  nearStand: { built: number; radiusM: number } | null;
   /** ⚖️ THE SESSION'S FOLDED AREA RECORDS (scope-agnostic INDEX, ruling ⑦
    *  of the persistence round 2026-08-27): every offloaded source-region
    *  record of ANY kind — forests AND farms today, further kinds as their
@@ -2734,6 +2774,21 @@ export interface QuestHost3D {
    *  session, when the id already stands, or when the stand-in could not
    *  spawn (body budget) — the caller must NOT hide its scenery then. */
   addWildFeature(f: WildernessFeature): boolean;
+  /**
+   * ⚖️ THE NEAR STAND, in SIM coords — the RELEVANCE boundary (user ruling
+   * 2026-09-02). Inside it the session's own sources stand; outside it nothing
+   * is materialized and the DRIVER's streamed scenery is the only thing there.
+   *
+   * Read by the embedding driver for exactly two render-side jobs: drawing the
+   * border, and suppressing its own field inside the disc so the two tree
+   * authorities do not stack a second forest on the first. ONE OWNER — the
+   * driver must never re-derive this number, or the picture and the sim start
+   * disagreeing about where the site ends.
+   *
+   * Null when the session bounds no stand (no scatter, or a plain wilderness
+   * chunk, whose whole ground is its stand).
+   */
+  nearStand(): { at: { x: number; y: number }; radiusM: number } | null;
   /** Release a live wilderness feature back to scenery: remove its stand-in
    *  (box object or embodied body), its container maps and its scatter
    *  record. False when no such feature stands (e.g. already felled — the
@@ -3344,10 +3399,30 @@ function speakingCast(): string[] {
   return cast.length ? cast : ["human"];
 }
 
-/** The body a puzzle character wears. Stable per character (hashed from its
- *  id, not random per frame) so a face does not change species as it rebuilds
- *  across LOD tiers. Null = no creature body; render the emoji capsule. */
-function bodySpeciesForIcon(icon: string | undefined, id: string): string | null {
+/** THE BODY A PUZZLE-PREFIX CHARACTER WEARS. Null = no creature body; render
+ *  the emoji capsule.
+ *
+ *  ⚖️ A DECLARED SPECIES WINS, ALWAYS (2026-09-02). An emoji is a FACE — a
+ *  display detail — and it stopped being an identity key the day the animal
+ *  people moved into a creature mod: `🐻` named a body that exists only in a
+ *  world running `animal_people`, so every wilderness local fell through to
+ *  the speaking cast and the frontier homestead spawned wild HUMANS. Anything
+ *  that knows what a body IS (the wilderness scatter picks its fauna species;
+ *  see `wildLocalCast`) registers it in `npcSpecies` and this reads that first.
+ *
+ *  The emoji arms below stay, unchanged, for the cast that has nothing else:
+ *  a FIXED body (grazing herds), then the PERSON faces of the puzzle cast,
+ *  whose species is drawn from the world's speaking cast and hashed from the
+ *  character id (stable per character, so a face does not change species as it
+ *  rebuilds across LOD tiers). */
+function bodySpeciesOf(
+  id: string,
+  npcIcons: Map<string, string>,
+  npcSpecies: Map<string, string>,
+): string | null {
+  const declared = npcSpecies.get(id);
+  if (declared) return declared;
+  const icon = npcIcons.get(id);
   if (!icon) return null;
   const fixed = FIXED_SPECIES_BY_ICON[icon];
   if (fixed) return fixed;
@@ -3412,21 +3487,32 @@ export function isCreatedPersonBodyId(id: string): boolean {
   return id.startsWith("npc_settler_") || id.startsWith(`npc_${ATTACHED_AVATAR_CID_PREFIX}`);
 }
 
-/** Puzzle characters (`npc_<nodeId>`): a CREATURE model when their emoji face
- *  marks them as a person (species drawn from the world's speaking cast) or
- *  pins a fixed body, else the emoji-capsule fallback. Wild
- *  PRODUCT ANIMALS (`fauna:<species>:…` — step ④) stand their registry
- *  species body, exactly as a town's herds do. */
-function makePuzzleCharacterFactory(npcIcons: Map<string, string>): AvatarModelFactory {
+/** Everything under the generic `npc_` prefix, in priority order: a DECLARED
+ *  species (`npcSpecies` — a wilderness local's fauna body) stands its own
+ *  registry species; failing that, a CREATURE model when the emoji face pins a
+ *  fixed body or marks a PERSON (species drawn from the world's speaking cast);
+ *  failing that, the emoji-capsule fallback. Wild PRODUCT ANIMALS
+ *  (`fauna:<species>:…` — step ④) and flora stand their registry species body,
+ *  exactly as a town's herds and orchards do. */
+function makePuzzleCharacterFactory(
+  npcIcons: Map<string, string>,
+  npcSpecies: Map<string, string>,
+): AvatarModelFactory {
   const emoji = makeNpcModelFactory(npcIcons);
   const animal = createCreatureAvatarFactory({
-    speciesFor: (id) => bodySpeciesForIcon(npcIcons.get(id), id) ?? "human",
+    speciesFor: (id) => bodySpeciesOf(id, npcIcons, npcSpecies) ?? "human",
     heightM: 1.7,
   });
   const naturalBody = makeNaturalBodyFactory();
   return (id, isLocal) => {
     if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpeciesOf(id))(id, isLocal);
-    return bodySpeciesForIcon(npcIcons.get(id), id) ? animal(id, isLocal) : emoji(id, isLocal);
+    // A DECLARED SPECIES (a wilderness local's fauna body) stands at its OWN
+    // registry height, through the same per-species factory a town's herds
+    // use — a deer is not person-tall. The 1.7 m stance below belongs to the
+    // PEOPLE the emoji cast resolves to, and stays theirs.
+    const declared = npcSpecies.get(id);
+    if (declared) return naturalBody(declared)(id, isLocal);
+    return bodySpeciesOf(id, npcIcons, npcSpecies) ? animal(id, isLocal) : emoji(id, isLocal);
   };
 }
 
@@ -3474,6 +3560,9 @@ export {
 
 function makeTownModelFactory(
   npcIcons: Map<string, string>,
+  // Declared body species (`QuestSession.npcSpecies`) — passed straight
+  // through to the puzzle factory, which reads it BEFORE any emoji rule.
+  npcSpecies: Map<string, string>,
   species: string,
   // DEFINED FAMILY overrides (resident cid → hand-authored member): species
   // and outfit-preset choices from the world document's `entities.creatures`.
@@ -3554,7 +3643,7 @@ function makeTownModelFactory(
     heightM: 0.75,
     detailFor,
   });
-  const puzzle = makePuzzleCharacterFactory(npcIcons);
+  const puzzle = makePuzzleCharacterFactory(npcIcons, npcSpecies);
   return (id, isLocal) => {
     // SETTLERS (city-founding ②) are the town's founding PEOPLE — real
     // creature-builder bodies, never emoji capsules. Their creature-scoped
@@ -3609,6 +3698,87 @@ function retieringBodyId(id: string): boolean {
     id.startsWith("cohort_")
   );
 }
+
+/**
+ * ⚖️ #49 STAGE 2 — WHERE A FOLDED AREA RECORD DURABLY LIVES.
+ *
+ * `session.areaRecords` is SESSION state and dies with the session; the store
+ * below is the thing that outlives it. It is the SAME store the boundary shelf
+ * already rides (`session.partnerStock` aliases `deltas.partnerStock`), and
+ * they are chosen the same way, in the same order and for the same reason: a
+ * FOUNDED SITE's deltas are what `foundedSiteToJSON` saves and what
+ * `siteTownConfig` cuts the site's town from, so once a site exists its books
+ * outrank the town's; before that, the town's own deltas are the durable
+ * thing. Null on a session with neither (bare wilderness, a questless pad) —
+ * which is also every session that mints nothing, since the neighbour mint
+ * needs a town gate to measure a neighbourhood from.
+ *
+ * 🚨 ONE STORE AT A TIME, and the pair must never disagree about which. If the
+ * shelf serialized through the site while the stand serialized through the
+ * town, a reload would restore cut timber whose source had reverted to full —
+ * the exact conservation break this round exists to close.
+ */
+function areaRecordStore(session: QuestSession): AreaRecordStore | null {
+  return session.foundedSite?.deltas.areaRecords ?? session.town?.deltas.areaRecords ?? null;
+}
+
+/**
+ * ⚖️ THE ANCHOR FOLLOWS THE CLOCK — called wherever `session.taskClock` is
+ * written, and nowhere else.
+ *
+ * The durable store keeps the session's records VERBATIM (absolute deadlines)
+ * plus the clock they are absolute in. Keeping that one number current is the
+ * whole of the at-rest machinery: `deadline − at` is the remaining time at any
+ * instant, so a mid-play autosave — which fires at a moment nothing here
+ * controls — always reads a true store.
+ *
+ * 🚨 THE ALTERNATIVE FROZE CLOCKS, and the failure was silent. Rebasing each
+ * record at the moment it is WRITTEN sounds equivalent and is not: a record
+ * only gets written when it CHANGES, and a harvest clock is armed once and
+ * then sits still until it fires — so its anchor would stay pinned at the
+ * arming instant and a save taken most of a day later would restore a queue
+ * with the whole day still to wait. One scalar per clock tick buys exactness.
+ */
+function syncAreaClock(session: QuestSession): void {
+  const store = areaRecordStore(session);
+  if (store) store.at = session.taskClock;
+}
+
+/**
+ * ⚖️ THE ONE WRITER for `session.areaRecords` — every set in this host goes
+ * through here, and the mirror into the durable store is why.
+ *
+ * The alternative shapes were both worse. A LIVE ALIAS (the `partnerStock`
+ * trick — hand the deltas the very Map the session mutates) cannot work for
+ * records: the store must hold them AT REST and the session holds them awake,
+ * and one object cannot be both. A PERIODIC MIRROR would have to run on the
+ * ledger sweep, which is a per-frame block, and would rebuild twenty records a
+ * frame to catch a change that happens a few times a minute. Mirroring at the
+ * write is exact, costs one shift per real change, and — the load-bearing
+ * part — leaves nothing to remember: a mid-play autosave reads `toJSON()` at
+ * an arbitrary instant and finds the store already current.
+ */
+function putAreaRecord(session: QuestSession, key: string, rec: WildAreaRecord): void {
+  session.areaRecords.set(key, rec);
+  const store = areaRecordStore(session);
+  if (!store) return;
+  store.rows.set(key, rec);
+  store.at = session.taskClock;
+}
+
+/** …and the one dropper. A record that stopped existing in the session (an
+ *  UNFOLD — its units are standing features again) must stop being durable in
+ *  the same instant, or the reload would stand the trees AND the record. */
+function dropAreaRecord(session: QuestSession, key: string): void {
+  session.areaRecords.delete(key);
+  areaRecordStore(session)?.rows.delete(key);
+}
+
+// (The store CHANGES at a founding and an abandonment — the same two seats
+// `session.transfers`/`reservations`/`partnerStock` are re-pointed at. Those
+// re-adoptions live where the new store is named, in the construction
+// director's `foundSite`/`stepFoundedSite`, through the same one shift:
+// `restAreaRecords`.)
 
 export function makeQuestSession(
   game: GoalTreeGame | null,
@@ -3751,6 +3921,7 @@ export function makeQuestSession(
     transports: transport.placements,
     embodiedNodeIds,
     npcIcons,
+    npcSpecies: new Map<string, string>(),
     convItems: new Map(converse.items.map((i) => [i.objectId, i])),
     absorbed: new Set(),
     granted: new Set(),
@@ -3846,7 +4017,24 @@ export function makeQuestSession(
     farmHaulDay: null,
     dlogged: new Set(),
     wilderness: null,
-    areaRecords: new Map(),
+    nearStand: null,
+    // ⚖️ #49 STAGE 2 — RESTORE IS FOUND. The durable index wakes into this
+    // session at its birth clock (0), which is the at-rest form unchanged —
+    // so a save reloaded with no rest interval is byte-identical, and one that
+    // sat closed was already aged by the rest interval at the door it came
+    // through (`createFoundedSite`'s `restS`). Absent store ⇒ an empty map,
+    // exactly as every session that shipped before this field existed.
+    //
+    // 🚨 AND IT HAPPENS HERE, WHICH IS BEFORE THE MINT. `start()` mints the
+    // neighbouring stands long after the session object exists, and the mint
+    // is idempotent by key — so a restored, drawn-down tile is already in the
+    // map when the mint runs and the mint declines to put its trees back.
+    // Restore-before-mint is the whole of the interplay, and it is an ordering
+    // fact rather than a flag.
+    areaRecords: wakeAreaRecords(
+      town?.deltas.areaRecords.rows,
+      0 - (town?.deltas.areaRecords.at ?? 0),
+    ),
     foundedSite: null,
     taskPool: createTaskPool(),
     taskClock: 0,
@@ -7903,13 +8091,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (session.town) {
       return makeTownModelFactory(
         session.npcIcons,
+        session.npcSpecies, // declared bodies (wild fauna) — read before any face
         session.town.plan.species ?? "human", // the town's constructing species
         overrides, // authored rows + the live avatar rows
         session.dress, // the town's culture palette
         tierFor, // Phase 3 view tier — PER BODY, read at every model build
       );
     }
-    const rest = makePuzzleCharacterFactory(session.npcIcons);
+    const rest = makePuzzleCharacterFactory(session.npcIcons, session.npcSpecies);
     // No town ⇒ no culture palette to bound an outfit, so a created person
     // wears only what an override row explicitly names (an authored member);
     // otherwise the bare species body, exactly as a pet or a wild animal does.
@@ -9001,6 +9190,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       case "demolish":
       case "emptyRoom":
       case "breakPiece":
+      case "clearFeature":
       case "transfer":
         return false;
       case "give":
@@ -9105,6 +9295,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // speaks for nothing. (A completed take already consumed its own inside
         // the effect; this is the failure arm.)
         releaseNeedUnits(session, cid);
+        // ⚖️ #50 ⑥ — A SETTLER LEAVES THE LIVE SET WITH ITS PURSUIT.
+        // `installAttentionPursuit` marks every commanded body live so this
+        // driver owns it; for a resident or a pet the NEED LOOP clears that
+        // flag again when nothing fires, but `stepNeeds` `continue`s straight
+        // past a settler (no house row — `residentTownCtx` answers nothing),
+        // so nothing would ever clear it. And `idleForDirect` reads the flag:
+        // a settler that obeyed one order would be un-directable and
+        // unclaimable FOREVER, which is a worse idle than the one ⑥ fixes.
+        // Scoped to the one body kind whose flag has no other owner — a
+        // settler is deliberately NOT given need meters here or anywhere.
+        if (isSettlerCid(cid)) session.liveNeedBodies.delete(cid);
       };
       // GIVE-UP GUARD: a pursuit that keeps ACTING without ever completing (hands
       // already full so `pick` no-ops, an un-grabbable target) would crouch on the
@@ -15719,6 +15920,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // OPEN the lid to reach in — the access action (a lidded box); it stays
         // open until the taker leaves (stepContainerLids) or "shut".
         if (session.containerRecords.get(boxId)?.relation === "in") openContainerLid(session, cid, boxId);
+        // ⚖️ "GET WOOD" MEANS "CUT A TREE" (user ruling 2026-09-02). The body
+        // was ORDERED here for this glyph and it has walked all the way out to
+        // the tree; refusing at the trunk because the wood is still inside it
+        // would be the order failing for want of the one act that answers it.
+        // The cut moves nothing, so the withdraw below is unchanged.
+        cutForDraw(session, boxId, glyph);
         const stock = session.containerRecords.get(boxId)?.stock ?? {};
         if ((stock[glyph] ?? 0) <= 0) return; // emptied during the walk — re-command re-resolves
         const body = world.state.avatars[npcId];
@@ -15749,7 +15956,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (stock[glyph]! <= 0) delete stock[glyph];
         setContainerStock(session, boxId, stock);
         removeVisibleContainedProp(session, boxId, glyph);
-        fellIfConsumed(session, boxId); // an emptied kill-source is felled
+        depleteWildSource(session, boxId); // a spent source retires
         // A unit that went INTO A BAG leaves no instance behind, so the goal
         // that asked for it ("hold one of these") can never read as satisfied
         // and the plan would re-issue this withdraw until the act cap. The
@@ -19517,7 +19724,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function idleForDirect(session: QuestSession, cid: string): boolean {
     if (cid === PLAYER_ID) return false;
     const attached = attachedAvatarPeerOf(cid) !== null;
-    if (!attached && !isPetCid(cid) && !/^resident_\d+_\d+$/.test(cid)) return false;
+    // ⚖️ #50 ⑥ — SETTLERS ARE DIRECTABLE (user ruling 2026-09-03: *"Player
+    // orders should take high priority…"*, and #50 Builder ①'s root cause).
+    // The whitelist named the dollhouse cast — pets and housed residents —
+    // and a FOUNDING town has neither: its people are `settler_<i>` bodies
+    // (`settlersOf`), so on the one world the player is asked to build,
+    // EVERY press, spoken noun and hover-direct was unaddressable. They are
+    // the player's own group by construction (`seedSettlers` writes
+    // FAMILY_RELATION toward the guiding spirit, which is what makes them
+    // volunteer for pooled work), so refusing to let that same spirit ASK one
+    // of them directly was never a policy — it was a missing case.
+    if (!attached && !isPetCid(cid) && !isSettlerCid(cid) && !/^resident_\d+_\d+$/.test(cid)) return false;
     if (!attached && session.party.has(cid)) return false;
     // A PURSUIT ONLY SPEAKS FOR A BODY WHILE SOMETHING IS DRIVING IT. Normally
     // that is true every frame and this reads exactly as the plain
@@ -20016,6 +20233,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * `by` names the creature whose attention it is (a conversation partner);
    * without one the room decides — the last creature spoken to, else whoever is
    * engaged or idle and nearby (`attentionAddressee`).
+   *
+   * ⚖️ AND WHEN THE ROOM ANSWERS NOBODY, THE PRESS STILL SPEAKS (user report
+   * 2026-09-03: *"selecting the 'stone' that is inside the 'rock' doesn't do
+   * anything"*). This is the ONE seat every silent press shared — a spirit's
+   * `take:` (it has no hands, so a stack press is an instruction to somebody
+   * else), the `attend:` press on the thing itself, and a bare spoken noun all
+   * arrive here with no `by`, and all three returned without a word when
+   * `attentionAddressee` came up empty. Fixing it at any one of them would have
+   * left the other two silent, so it is fixed here, once.
    */
   function attendTo(
     session: QuestSession,
@@ -20046,7 +20272,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!point) return;
     const author = opts.author ?? LOCAL_PLAYER_CID;
     const cid = opts.by ?? attentionAddressee(session, point, author);
-    if (!cid) return;
+    if (!cid) {
+      // 🚨 SILENCE MUST BE EXPLICIT. The instruction was understood and there is
+      // simply nobody within `ATTEND_REACH_M` free to take it — which is exactly
+      // the case `CANT_HERE`'s own docblock names ("no focus area, no site, NO
+      // PARTNER"), and exactly the line the sibling "nobody can come" refusal
+      // already speaks. Reused rather than invented: a new "no person comes"
+      // phrase would need a `person`+`come.not` frame nobody has render-checked
+      // in four rulesets, and a line built from a word a ruleset cannot say is
+      // worse than the one it replaced (host-lines.ts's vocabulary discipline).
+      // The English banner carries the precise reason for the adult watching.
+      //
+      // ONLY A COMMAND SPEAKS. A settled gaze is not a command (see `command`
+      // above) — it waits for an idle body, and a refusal on that path would
+      // fire every time the child's eyes crossed an empty room.
+      if (opts.command) {
+        const named =
+          subject.kind === "glyph"
+            ? labelOfGlyph(drawnGlyph(subject.glyph))
+            : subject.kind === "object"
+              ? labelOfGlyph(objectWord(session, subject.objId))
+              : subject.kind === "creature"
+                ? subject.cid
+                : "here";
+        saySystem(session, CANT_HERE, `💬 "${named}" — nobody is near enough`);
+      }
+      return;
+    }
     const command = { ...(opts.command ? { command: true } : {}), author };
     switch (subject.kind) {
       case "glyph":
@@ -20289,7 +20541,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): string | null {
     let best: string | null = null;
     let bestScore = Infinity;
-    for (const [cid, av] of Object.entries(state.avatars)) {
+    for (const [bodyId, av] of Object.entries(state.avatars)) {
+      // ⚠️ THE BODY, NOT THE CREATURE — the same id-space slip `directCreatureTo`
+      // and `walkTo` each carried once (#50 ⑥). This loop walks `state.avatars`,
+      // whose KEYS are body ids, and handed them to `idleForDirect` as creature
+      // ids. That is an identity for a resident or a pet (their body IS their
+      // cid) and a LIE for everybody else: a settler stands as `npc_settler_0`,
+      // so the membership test never matched one, and even a matching id would
+      // have installed a pursuit under a name `avatarIdOf` cannot resolve back
+      // to a body. `cidOfAvatar` is the documented inverse and makes both ends
+      // speak the same id space.
+      const cid = cidOfAvatar(bodyId);
       if (!idleForDirect(session, cid)) continue;
       // ANOTHER PLAYER'S BODY IS NOT UP FOR GRABS. Attached avatars became
       // directable above, which is right for our OWN — but a fallback that can
@@ -20596,6 +20858,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * Order is by specificity, never by distance: a body wins over the furniture
    * it stands among, furniture wins over the floor beneath it, and bare ground
    * is what is left when the gaze is on nothing at all.
+   *
+   * ⚖️ …AND NOT EVERY BODY IS A CREATURE (user report 2026-09-03: *"selecting
+   * trees doesn't seem to work — the spark hovers over it, but nothing
+   * happens"*). A rooted plant and a walking product animal are STOCKED THINGS
+   * wearing a body (`isNaturalSourceBodyId` carries the argument in full), and
+   * the creature lane has no cell for either of them: the dwell table answers a
+   * creature with `talk`, and the talk targeter finds no mind, so the gesture
+   * ended in nothing at all — no board, no refusal, no sound. They fall through
+   * to `gazeFurniture`, which has always resolved them correctly (a registered
+   * container whose standpoint IS its live body) and opens the very board the
+   * `cut` button lives on.
+   *
+   * 🚨 THE OTHER HALF OF THE PREDICATE IS THE CONTAINER REGISTRY, and it is
+   * what keeps this from being "anything with a plant-shaped id is furniture":
+   * a town's scenery herd and its orchard rows carry the same prefixes with NO
+   * container row (their stock is the town's abstract account), and those stay
+   * exactly where they were — bodies, in the creature lane, dead-ending as they
+   * always have. Only a body you can actually open moves.
    */
   function hoverTargetOf(
     session: QuestSession,
@@ -20605,8 +20885,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): HoverTarget | null {
     const hv = gz.hover;
     if (hv?.kind === "avatar" && hv.id !== PLAYER_ID) {
+      // The fall-through, and it is asked of BODIES only: a felled tree keeps
+      // its `flora:` key and stands as an OBJECT (`standWildFeature`), which
+      // already takes the furniture arm below and must not be re-decided here.
+      const stocked = isNaturalSourceBodyId(hv.id) && isContainerId(session, hv.id);
       const av = state.avatars[hv.id];
-      if (av) return { kind: "creature", id: cidOfAvatar(hv.id), x: av.x, y: av.y };
+      if (av && !stocked) return { kind: "creature", id: cidOfAvatar(hv.id), x: av.x, y: av.y };
     }
     const fx = gazeFurniture(session, state, gz, me, "furniture", true);
     if (fx) return { kind: "object", id: fx.id, x: fx.x, y: fx.y };
@@ -20651,7 +20935,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function presentContainer(session: QuestSession) {
     if (!container) return;
     const contents = containerContents(session, container.objId);
-    const glyphs = Object.keys(contents);
+    // ⚖️ A STANDING TREE DOES NOT OFFER ITS WOOD (user ruling 2026-09-02). The
+    // stock is still THERE — `containerContents` is the ledger's answer and
+    // must stay the ledger's answer, or a conservation audit would lose a
+    // forest — but what a hand can take off a living body is only what the body
+    // BEARS. The cut below is what turns the rest into something takeable, so
+    // the board never simply goes quiet on a child who wants wood.
+    const glyphs = Object.keys(contents).filter((g) =>
+      wildGlyphTakeable(session, container!.objId, g),
+    );
     container.items = glyphs;
     const cObj = world ? containerStandpoint(world.state, container.objId) : undefined;
     if (!cObj) {
@@ -20695,6 +20987,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           if (!wa || session.containerRecords.get(container.objId)?.owner) return [];
           const g = `${wa.species}.my`;
           return [{ id: `tame:${container.objId}`, label: labelOfGlyph(g), glyph: g, spokenText: playerStatement(g) }];
+        })()),
+        // ⚖️ THE CUT, AS A BUTTON (user ruling 2026-09-02) — one act, whatever
+        // the plant yields, so there is exactly ONE of these and it reads the
+        // same on a berry bush and on an oak. It is what a standing tree offers
+        // INSTEAD of `wood ×8`: the wood is real, it is simply on the far side
+        // of this press.
+        //
+        // 🚨 `cut` IS A LEXEME IN ALL FOUR SHIPPED RULESETS (lang/en.ts and its
+        // siblings), which is the whole reason the button is labelled with the
+        // VERB and never with the plant: `oak`, `tree` and `grape_vine` have a
+        // lexeme in no language on earth, and naming one here would put English
+        // on a Hebrew board while looking perfect in English.
+        ...(((): QuestBoardView["options"] => {
+          const f = wildFeatureOf(session, container.objId);
+          if (!f || f.downed || !sourceIsCuttable(f.species, f.sizeClass)) return [];
+          return [{
+            id: `cut:${container.objId}`,
+            label: labelOfGlyph("cut"),
+            glyph: "cut",
+            spokenText: playerStatement("cut"),
+          }];
         })()),
         // Phase 3 (attention-spark.md): the FURNITURE ITSELF, after its contents —
         // pressing it draws the family's attention to the thing (a fill-check)
@@ -20795,6 +21108,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return;
       }
     }
+    // ⚖️ A KILL PRODUCT REQUIRES THE KILL (user ruling 2026-09-02). A living
+    // tree's wood is not a stack anyone can withdraw from — the board does not
+    // offer it (`presentContainer` filters, and offers the CUT instead), and
+    // this is the same law said at the mover so that no OTHER way in (a
+    // commanded `stock:` pick, a restored board, a test) can slip a unit off a
+    // standing body. It is the honest "you can't do that from here", not
+    // silence: the child is told what is in the way.
+    //
+    // 🚨 SPOKEN, NOT SHOUTED IN ENGLISH. This is the refusal a child meets more
+    // often than any other on this board, and it shipped as a bare
+    // `"cut it down first"` toast — the one adjacent line that never reached
+    // the lexicon, on a board whose every other press speaks. It now takes the
+    // leveled-glyph channel every sibling refusal takes (`saySystem`), with the
+    // standing thing NAMED at the one altitude that has a lexeme
+    // (`sourceKindWord`); the English banner survives only as the fallback for
+    // a world with nobody in it to say the line.
+    if (!wildGlyphTakeable(session, objId, glyph)) {
+      const ws = wildSourceOf(session, objId); // non-null whenever the gate refuses
+      const blocker = sourceKindWord(naturalSourceOf(ws?.species ?? "")?.kind);
+      saySystem(
+        session,
+        blocker ? cutFirstLine(drawnGlyph(glyph), blocker) : CANT_HERE,
+        `💬 "${labelOfGlyph(glyph)}" — cut it down first`,
+      );
+      return;
+    }
     const goodKey = session.marketStore.get(objId);
     const pb = session.produceBox.get(objId);
     if (objId === "trade:imports") {
@@ -20826,7 +21165,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const ws = wildSourceOf(session, objId);
       if (ws) {
         const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
-        const units = takeUnitsOf(naturalSourceOf(ws.species), glyph, (t) => (onMe[t] ?? 0) > 0);
+        const units = takeUnitsOf(naturalSourceOf(ws.species), glyph, (t) => (onMe[t] ?? 0) > 0, {
+          downed: wildFeatureDowned(session, objId),
+        });
         for (let took = 1; took < units && (stock[glyph] ?? 0) > 0; took++) {
           // Keep one slot for the unit already off the source — the first one
           // is spoken for, and overfilling here would strand it.
@@ -20857,7 +21198,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     giveUnitsToBody(session, session.handsCid, glyph, 1);
     pushPocket(session);
     presentContainer(session); // refresh remaining contents (closes when empty)
-    fellIfConsumed(session, objId); // an emptied kill-source is felled
+    depleteWildSource(session, objId); // a spent source retires
   }
 
   function closeContainer() {
@@ -20887,6 +21228,58 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return (
       w.features.find((x) => wildFeatureContainerId(x) === objId) ?? wildAnimalOf(session, objId)
     );
+  }
+
+  /** The standing FEATURE an endpoint names, or undefined — the feature half of
+   *  `wildSourceOf` (a product animal is a creature and is never one). */
+  function wildFeatureOf(session: QuestSession, objId: string): WildernessFeature | undefined {
+    return session.wilderness?.features.find((f) => wildFeatureContainerId(f) === objId);
+  }
+
+  /** Has this endpoint been CUT — is it a heap rather than a standing thing?
+   *  False for everything that is not a wild feature, which is the truthful
+   *  answer for a chest, a shelf and a living sheep alike. */
+  function wildFeatureDowned(session: QuestSession, objId: string): boolean {
+    return wildFeatureOf(session, objId)?.downed === true;
+  }
+
+  /**
+   * ⚖️ MAY THIS ENDPOINT GIVE UP THIS GLYPH TO AN ORDINARY TAKE — the ONE gate,
+   * asked by the board (what to offer), the take path (what to move) and the
+   * automated draw (what it must cut for first). Non-wild containers always say
+   * yes: a chest holds what it holds, and the kill/harvest split is a fact
+   * about growing things, not about boxes.
+   */
+  function wildGlyphTakeable(session: QuestSession, objId: string, glyph: string): boolean {
+    const ws = wildSourceOf(session, objId);
+    if (!ws) return true;
+    return glyphTakeableFrom(naturalSourceOf(ws.species), glyph, wildFeatureDowned(session, objId));
+  }
+
+  /**
+   * ⚖️ "GET WOOD" MEANS "CUT A TREE" (user ruling 2026-09-02: *"A command to
+   * 'get wood' does translate into cutting a tree first if that's the most
+   * straightforward source"*). A draw aimed at a STANDING body's kill glyph
+   * cuts it where it stands, and then takes what it wanted from the trunk in
+   * front of it — an order for a kill product must never simply fail for want
+   * of loose wood.
+   *
+   * 🚨 THE MEANS-END STEP IS A REAL ACT, NOT A LOOPHOLE. It runs the ONE cut
+   * (`cutWildFeature`) the child's button and the child's sentence run, so
+   * everything the cut is — the tree coming down, the heap standing where it
+   * stood, the cheaper collection off it — happens for an automated draw
+   * exactly as it does for a pressed one.
+   *
+   * ⚖️ AND IT MOVES NOTHING, which is what makes it safe to slip in front of a
+   * draw that has already been planned and reserved: the cut with a kill
+   * product leaves every unit in the very same container under the very same
+   * key, so the draw that follows is the draw that was planned. Called at every
+   * take site rather than inside the take, because the take is also the
+   * PLAYER'S take, and a child's press must never fell a tree by side effect.
+   */
+  function cutForDraw(session: QuestSession, objId: string, glyph: string) {
+    if (wildGlyphTakeable(session, objId, glyph)) return;
+    cutWildFeature(session, objId);
   }
 
   /** TAME a wild product animal (step ④ husbandry): the claim makes it the
@@ -20942,10 +21335,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  grown body, whose size is its blueprint's business, and a product animal
    *  is a body too (a half-milked cow is not a smaller cow). */
   function resizeWildFeature(session: QuestSession, f: WildernessFeature, objId: string) {
-    if (!world || wildFeatureEmbodied(f)) return;
+    if (!world || wildFeatureStandsAsBody(f)) return;
     const spec = world.state.spec.objects.find((o) => o.id === objId);
     if (!spec) return;
-    const radius = wildFeatureRadius(f.species, session.containerRecords.get(objId)?.stock);
+    const radius = wildFeatureRadiusOf(f, session.containerRecords.get(objId)?.stock);
     if (Math.abs(spec.radius - radius) < 0.01) return; // nothing a player could see
     // A re-add mints FRESH object state, and the two things that survive a
     // resize in the player's eyes are the lid someone is holding open and
@@ -20960,7 +21353,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       .filter((o) => o.containedIn?.objectId === objId)
       .map((o) => ({ id: o.id, relation: o.containedIn!.relation }));
     world.removeObject(objId);
-    world.addObject({ ...spec, x: at?.x ?? f.x, y: at?.y ?? f.y, radius });
+    // …and re-ask the floor on every resize: the spread carries the OLD
+    // `solid`, so without this a sapling that grows into a young tree stays
+    // walk-through forever (and a felled one stays solid).
+    world.addObject({
+      ...spec, x: at?.x ?? f.x, y: at?.y ?? f.y, radius,
+      // A DOWNED source is not in the legs' way (a felled trunk lies flat and
+      // the haulers have to reach it); anything standing above the obstruction
+      // floor is.
+      solid: !f.downed && sourceIsSubstantial(f.species, f.sizeClass),
+    });
     const now = world.state.objects[objId];
     if (now) {
       if (held !== undefined) now.heldOpen = held;
@@ -20973,16 +21375,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
-  /** KILL-METHOD ACQUISITION MADE REAL (products.ts): a wild source that is
-   *  consumable (it carries kill products — the tree IS its wood, the animal
-   *  its meat) disappears the moment its KILL stock empties: the last unit
-   *  taken IS the felling/quarrying/kill, even while harvest yield still
-   *  hangs (a felled tree bears nothing, a taken animal gives no more milk —
-   *  the harvest stock dies with the source). Pure-harvest sources persist
-   *  picked clean. A feature's object is removed; a product animal's BODY
-   *  is removed (sandbox termination — clean, no carcass state). No-op for
-   *  any container that isn't a wild source. */
-  function fellIfConsumed(session: QuestSession, objId: string) {
+  /**
+   * ⚖️ A SOURCE WORN TO NOTHING RETIRES (products.ts `sourceSpent`) — the
+   * `deplete` method's own ending, and the ending a CUT source reaches once
+   * its timber has been carried away. Every path that takes from a wild source
+   * calls this after the take: it re-sizes what is left (depletion has to be
+   * visible) and retires it when there is nothing left to take.
+   *
+   * ⚠️ IT IS NO LONGER A FELLING (it was `fellIfConsumed`, and the rename is
+   * the point). *"Harvesting kill products without killing the plant/animal
+   * should not be possible"* — so a STANDING tree can never arrive here: its
+   * wood is not reachable, nothing can draw it down, and "the last unit taken
+   * IS the felling" described a tree that thinned away over many hauls and
+   * vanished with no act at all. What arrives here now is an outcrop quarried
+   * out, or a trunk the cut already killed and the haulers have emptied.
+   *
+   * A feature's object is removed; a product animal's BODY is removed (sandbox
+   * termination — clean, no carcass state). A growth-bearing species re-seeds
+   * instead of vanishing. No-op for any container that isn't a wild source.
+   */
+  function depleteWildSource(session: QuestSession, objId: string) {
     const w = session.wilderness;
     if (!w || !world) return;
     const fi = w.features.findIndex((f) => wildFeatureContainerId(f) === objId);
@@ -20992,13 +21404,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const src = naturalSourceOf(species);
     if (!src) return;
     // A take that DIDN'T finish the source still changed it: what is left of a
-    // rock is smaller than what was there. Riding the felling check is the
-    // whole point — every path that empties a wild source already calls this
-    // (the player's take, a commanded body's `stock:` pick, a haul's load), so
+    // rock is smaller than what was there. Riding the spent check is the whole
+    // point — every path that draws on a wild source already calls this (the
+    // player's take, a commanded body's `stock:` pick, a haul's load), so
     // depletion becomes visible everywhere at once without one new call site,
     // one new flag, or anything running per frame.
     if (fi >= 0) resizeWildFeature(session, w.features[fi]!, objId);
-    if (!sourceKillExhausted(src, session.containerRecords.get(objId)?.stock)) return;
+    if (!sourceSpent(src, session.containerRecords.get(objId)?.stock)) return;
     // ⚖️ S&D S3 H2 — A GROWTH-BEARING FEATURE RE-SEEDS, NEVER DELETES (user
     // law, verbatim: "trees grow and larger trees will typically be cut
     // first"). The SAME feature id/position stands on as a sapling instead
@@ -21010,14 +21422,232 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       reseedWildFeature(session, w.features[fi]!, src.growth);
       return;
     }
+    retireWildSource(session, objId, fi, ci);
+  }
+
+  /** THE TEARDOWN both endings share — felling's and the removal's. The
+   *  source's stand-in goes with it: a placed box object, or — an embodied
+   *  plant / product animal — its body. */
+  function retireWildSource(session: QuestSession, objId: string, fi: number, ci: number) {
+    const w = session.wilderness;
+    if (!w || !world) return;
     if (container?.objId === objId) closeContainer();
-    // The source's stand-in goes with it: a placed box object, or — an
-    // embodied plant / product animal — its body.
     if (world.state.objects[objId]) world.removeObject(objId);
     else world.removeNpc(objId);
     if (fi >= 0) w.features.splice(fi, 1);
     else w.creatures.splice(ci, 1);
     deleteContainerRecord(session, objId);
+  }
+
+  /**
+   * ⚖️ WHICH STANDING THING DID THE CHILD MEAN — a spoken plant word resolved
+   * against the live wilderness, the way `spokenRoomKind` resolves a room word
+   * against a plan. Answers the feature's CONTAINER ID (the endpoint every
+   * other wild-source path is keyed by), or null for "nothing of that name is
+   * standing here".
+   *
+   * 🚨 A SPECIES ID IS NOT A SPOKEN WORD, AND THIS IS THAT TRAP READ BACKWARDS
+   * (the blocker-word law, `construction-director.blockerWordOf`, in the other
+   * direction). The child's board says `tree`, `flower`, `plants` — words with
+   * lexemes — and the ground holds `oak`, `grape_vine`, `banana_plant` — ids
+   * with none. Nothing would ever match if this compared the two directly.
+   *
+   * So a GENERIC PLANT WORD is derived, never listed: a plant word that names
+   * no CATALOGUE source is a word nothing standing can ever BE (`tree` grows
+   * nowhere — oaks do), so it can only mean the plant it is being said at. That
+   * is read off the two registries — `isPlant` says plant, `naturalSourceOf`
+   * says whether anything of that name can stand — so a new stub word files
+   * itself and a stub that graduates to a real source stops being generic in
+   * the same edit.
+   *
+   * CUTTABLE FIRST, THEN NEAREST. The first key is no longer "has no kill
+   * product" — under the unified act an oak and a bush are equally cuttable, so
+   * ranking one above the other would be re-erecting the partition this round
+   * took out. It is now "can the act be done to it AT ALL": a thing already
+   * lying cut, and an outcrop (which ends by being quarried, not by being cut),
+   * lose to anything still standing that the child could really mean. Where
+   * every candidate is equally cuttable — the ordinary case — this is pure
+   * nearest, which is also what an exact species word always gets.
+   */
+  function spokenFeatureId(session: QuestSession, word: string): string | null {
+    const w = session.wilderness;
+    if (!w?.features.length || !word) return null;
+    const head = headOf(word) || word;
+    // `plants` is the board's KIND chip and has no species row of its own; the
+    // rest fall out of the registries.
+    const generic = head === "plants" || (isPlant(head) && !naturalSourceOf(head));
+    const at = playerWorldPos(session);
+    let best: string | null = null;
+    let bestRank = Infinity;
+    let bestD = Infinity;
+    for (const f of w.features) {
+      const src = naturalSourceOf(f.species);
+      if (!src) continue;
+      if (f.species !== head && !(generic && src.kind === "plant")) continue;
+      const rank = !f.downed && sourceIsCuttable(f.species, f.sizeClass) ? 0 : 1;
+      const d = at ? Math.hypot(f.x - at.x, f.y - at.y) : 0;
+      if (rank < bestRank || (rank === bestRank && d < bestD)) {
+        bestRank = rank;
+        bestD = d;
+        best = wildFeatureContainerId(f);
+      }
+    }
+    return best;
+  }
+
+  /**
+   * ═════ ⚖️ THE CUT — ONE ACT, TWO OUTCOMES (user ruling 2026-09-02) ═════
+   *
+   *   *"Cutting IS removal, and also a harvesting method for kill products. It
+   *    applies to trees, which should produce wood when cut, as well as any
+   *    other plants that have kill products. If there are no kill products, it
+   *    simply removes them. It's the same action for both."*
+   *
+   * 🚨 THE YIELD IS A CONSEQUENCE, NEVER A GATE ON THE VERB. This function was
+   * `clearWildFeature` and it REFUSED anything with a kill product, because the
+   * round that built it treated removal as felling's exact complement. That was
+   * wrong: `cut` bound to a bush and told a child "that one can't be cleared"
+   * about an oak. The verb, the button and the task are one; what happens next
+   * is read off the source's own products:
+   *
+   *   ① IT HAS SUBSTANCE TO GIVE (a `kill` product — the oak's wood): THE TREE
+   *      COMES DOWN AND STAYS WHERE IT FELL. It keeps its id, its container,
+   *      its stock and its spot; it stops standing as a body and stands as a
+   *      heap of its own timber, whose wood is now reachable
+   *      (`glyphTakeableFrom`) and cheaper to collect than the standing trunk's
+   *      ever was (`takeUnitsOf`'s downed arm). Hauling empties it; empty, it
+   *      retires through `depleteWildSource` exactly as a quarried-out outcrop
+   *      does — and re-seeds, which is where the sapling comes back from.
+   *   ② IT HAS NONE (a berry bush): there is nothing for it to become, so it is
+   *      simply GONE, and what it was BEARING is shed first.
+   *
+   * ⚖️ CONSERVATION IS STRUCTURAL, NOT REMEMBERED. Outcome ① MOVES NOTHING AT
+   * ALL — not one unit changes container — which is the strongest form of the
+   * law available: a felled oak's wood cannot be lost or duplicated by an act
+   * that never touched it, and every reservation and in-flight haul aimed at
+   * that endpoint survives the tree falling out from under it. Outcome ② has to
+   * move the fruit, and does it the removal round's way: INTO A HAND, exactly
+   * as a harvest would deliver it, and onto the ground where it grew when there
+   * is no hand with room. NO new good is invented ("brush", "sticks") to make
+   * the books balance — minting matter to pay for a bookkeeping worry is the
+   * thing the law forbids.
+   *
+   * ⚠️ THE HAND IS TRIED FIRST FOR A LEDGER REASON, not a narrative one. A prop
+   * set down on OPEN GROUND hangs off no scope — `scopeOfPoint` returns the
+   * honest null out there, "open ground still counts for nobody (the recorded
+   * census residual)" — so a berry that falls in the wild is still a real
+   * re-grabbable thing but leaves `stockAudit`. Carried, it stays counted. The
+   * ground arm is the truthful fallback, not the preference.
+   *
+   * 🚨 SHED FIRST, REMOVE SECOND, AND ONLY IF THE SHEDDING FINISHED. If neither
+   * sink will take a unit it stays on the stack (`dropFromStack`'s own law) and
+   * this removes NOTHING and answers false — so there is no arrangement of
+   * failures in which the fruit is destroyed by the cut.
+   *
+   * False = not a cuttable standing feature (a seedling, an outcrop, something
+   * already down), or the shedding could not finish; the caller speaks the
+   * refusal (silence must be explicit).
+   */
+  function cutWildFeature(session: QuestSession, objId: string, intoCid?: string): boolean {
+    const w = session.wilderness;
+    if (!w || !world) return false;
+    // 🚨 FEATURES ONLY. A wild CREATURE is in the other list and is not reached
+    // from here at any price — "fight the sheep" must never mean "uproot the
+    // sheep", and the two lists are what makes that structural rather than a
+    // guard in the compiler.
+    const fi = w.features.findIndex((f) => wildFeatureContainerId(f) === objId);
+    if (fi < 0) return false;
+    const f = w.features[fi]!;
+    if (f.downed) return false; // already cut — one act, once
+    if (!sourceIsCuttable(f.species, f.sizeClass)) return false;
+    const stock = session.containerRecords.get(objId)?.stock ?? {};
+    const src = naturalSourceOf(f.species);
+    // ① THE TREE COMES DOWN. Everything it holds — timber and any fruit that
+    // was on it when it fell — is in the heap, where a hand or a haul can now
+    // reach the half that was out of reach a moment ago.
+    if (src && sourceIsConsumable(src)) {
+      f.downed = true;
+      standWildFeature(session, f); // the body goes, the heap stands under the same key
+      bumpStockEpoch(session); // ⏸️ stock that was unreachable is reachable — wake parked rows
+      return true;
+    }
+    // ② NOTHING TO BECOME. Shed what it bears, then it is gone.
+    let shed = false;
+    for (const glyph of Object.keys(stock)) {
+      // Unit by unit, hand then ground. `dropFromStack` puts the unit back if
+      // the world will not take the prop, which is what ends this loop safely.
+      while ((stock[glyph] ?? 0) > 0) {
+        const at = { x: f.x, y: f.y };
+        if (intoCid && giveUnitsToBody(session, intoCid, glyph, 1, { at }) >= 1) {
+          stackTake(stock, glyph);
+        } else if (!dropFromStack(session, stock, glyph, f.x, f.y)) {
+          break;
+        }
+        shed = true;
+      }
+    }
+    setContainerStock(session, objId, stock);
+    if (shed) bumpStockEpoch(session); // ⏸️ units moved — wakes parked rows
+    if (Object.values(stock).some((n) => n > 0)) return false; // nothing shed away, nothing removed
+    retireWildSource(session, objId, fi, -1);
+    return true;
+  }
+
+  /**
+   * ⚖️ RE-STAND a feature as whatever it is NOW — the body↔heap swap the cut
+   * needs, and the ONE place that swap happens.
+   *
+   * `resizeWildFeature` cannot do it: it re-adds an OBJECT under an object's
+   * own spec, and a standing plant is an NPC body with no spec to re-add. So a
+   * cut plant is torn down (body out) and stood back up (heap in) UNDER THE
+   * SAME CONTAINER KEY — `wildFeatureContainerId` reads `wildFeatureEmbodied`,
+   * the data question, precisely so the key does not move when the answer to
+   * "is it standing?" changes. The container record is left alone throughout:
+   * the stock, the owner and every reservation pointing at this endpoint are
+   * untouched, so nothing observes anything but the shape on the ground.
+   */
+  function standWildFeature(session: QuestSession, f: WildernessFeature) {
+    if (!world) return;
+    const key = wildFeatureContainerId(f);
+    if (container?.objId === key) closeContainer();
+    if (world.state.objects[key]) world.removeObject(key);
+    else if (world.state.avatars[key]) world.removeNpc(key);
+    if (wildFeatureStandsAsBody(f)) {
+      // Back on its feet: a re-seeded sapling is a living plant again, and it
+      // stands the way `spawnWildFeature` stands one.
+      world.addNpc({
+        id: key,
+        x: f.x,
+        y: f.y,
+        species: f.species,
+        behavior: { movement: "wander", wanderRadius: 0, home: { x: f.x, y: f.y }, speed: 0, conversationRadius: 3 },
+      });
+      return;
+    }
+    const src = naturalSourceOf(f.species);
+    const stock = session.containerRecords.get(key)?.stock ?? f.stock;
+    // WHAT A HEAP LOOKS LIKE: its own substance. The glyph of the biggest thing
+    // it is made of names the model, so a felled oak reads as the timber it is
+    // — never a hardcoded emoji, and never the standing plant's own face.
+    const body = (src?.products ?? []).filter(isBodyProduct).map((p) => p.glyph);
+    const glyph = body.find((g) => (stock[g] ?? 0) > 0) ?? body[0] ?? Object.keys(stock)[0];
+    const icon = src?.feature?.icon ?? "🌳";
+    world.addObject({
+      id: key,
+      x: f.x,
+      y: f.y,
+      shape: "sphere",
+      radius: wildFeatureRadiusOf(f, stock),
+      // A felled trunk lies flat — the haulers have to be able to walk to it,
+      // and a heap you cannot step over is a locomotion trap on your own lot.
+      solid: !f.downed && sourceIsSubstantial(f.species, f.sizeClass),
+      openable: true,
+      facing: 0,
+      interactions: [],
+      contains: [{ relation: "in", capacity: 12 }],
+      iconRef: icon,
+      glyph,
+    });
   }
 
   /** THE RE-SEED (S3 H2): sapling stock (kill glyphs) + a fresh growth clock,
@@ -21027,7 +21657,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  that keeps trying to take from a bare sapling from pinning it at
    *  class 0 forever. Harvest glyphs (fruit) are zeroed and their OWN
    *  regrow clock re-armed — "a felled tree bears nothing; its harvest
-   *  stock dies with it" (products.ts `sourceKillExhausted`'s law), read
+   *  stock dies with it" (products.ts `sourceSpent`'s law), read
    *  forward through a re-seed instead of a deletion. */
   function reseedWildFeature(
     session: QuestSession,
@@ -21040,7 +21670,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const stock = ensureContainerStock(session, objId);
     const src = naturalSourceOf(f.species)!;
     for (const p of src.products) {
-      if (p.method === "kill") {
+      if (isBodyProduct(p)) {
         if (!alreadySapling) stock[p.glyph] = growthClassYield(p, growth.classes[0]!.yieldMul, dial);
       } else if ((stock[p.glyph] ?? 0) > 0) {
         stock[p.glyph] = 0;
@@ -21051,7 +21681,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       f.sizeClass = 0;
       f.growAt = session.taskClock + growthClassPeriodS(session.scale, growth);
     }
-    resizeWildFeature(session, f, objId); // depletion-visible (box features only)
+    // ⚖️ THE SAPLING IS STANDING AGAIN. A re-seed is the end of the heap, so
+    // the downed mark comes off with it and the feature goes back to standing
+    // as its species stands — otherwise the new growth would draw as a pile of
+    // its own timber forever.
+    const wasDowned = f.downed;
+    delete f.downed;
+    if (wasDowned) standWildFeature(session, f);
+    else resizeWildFeature(session, f, objId); // depletion-visible (box features only)
   }
 
   /** LIVE-HARVEST REGROWTH made real (products.ts regrowDays): apply a wild
@@ -21089,6 +21726,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!f?.growAt) return;
     const src = naturalSourceOf(f.species);
     if (!src?.growth) return;
+    // TREES DON'T GROW WHERE A BUILDING ALREADY IS (user ruling 2026-09-02).
+    // The other half of the felling-prerequisite ruling, and what keeps a
+    // re-seeded sapling a sapling instead of a tree in somebody's kitchen. The
+    // occupancy test is the BUILDER'S OWN — never a second notion of "the
+    // ground is taken". The clock is not advanced and not re-armed: it simply
+    // does not tick here, so clearing the ground later resumes growth exactly
+    // where it stopped.
+    // 🚨 MEASURED AS THE SAPLING IT IS. This asked the disc question about a
+    // class-0 feature at MATURE size, so a re-seeded sapling standing clear of
+    // a wall was suppressed by a footprint only the grown tree would ever fill
+    // — and stayed a sapling forever, since the clock it needs to climb is the
+    // one being suppressed. `wildFeatureRadiusOf` is the same derivation the
+    // builder's own occupancy uses.
+    if (rectsCoverDisc(
+      director.standingFootprints(session),
+      f.x, f.y,
+      wildFeatureRadiusOf(f, session.containerRecords.get(objId)?.stock),
+    )) return;
     const period = growthClassPeriodS(session.scale, src.growth);
     const advance = dueGrowthAdvance(f, session.taskClock, period);
     if (!advance) return;
@@ -24945,16 +25600,166 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     } else if (opts.wilderness && town) {
       // FOUNDING-AGE SURROUNDINGS (city-founding): a TOWN session with open
       // country around it — the scatter lays over the town's OWN manifold
-      // (never resized: the stage owns it), cleared around the plaza/site so
-      // the ground the settlers build on stays open. Same seed ⇒ same trees.
+      // (never resized: the stage owns it). Same seed ⇒ same trees.
+      //
+      // ═══ ⚖️ ARRIVAL IS NOT AN EVENT IN THE WORLD (user ruling, 2026-09-02) ═══
+      //
+      //   "when they arrive, their presence should have no physical impact on
+      //    the resources in the area — that happens only after they start
+      //    harvesting. The 'town clears the surrounding area when generated'
+      //    is meant to be a *logical* outcome, not an intrinsic property of
+      //    site definitions. The land should still be untouched."
+      //
+      // 🚫 SO THERE IS NO CLEAR HERE. This branch used to pass
+      // `clearAt: town.stage.center, clearR: town.plan.radius + 6` — a disc
+      // the size of the whole settlement in which no tree, no outcrop and no
+      // wild flock was ever laid. That is a mount-time destruction of standing
+      // resources with NO ACTOR and NO EVENT, which is item conservation read
+      // from the worldbuilding side: founding mounts a claim, a party and a
+      // supply box onto ground otherwise bit-identical to the wilderness that
+      // was there a moment before.
+      //
+      // The town clears its own ground the only way a town may — by ACTING:
+      // a build whose lot is occupied stakes the felling as required work,
+      // somebody fells the tree, the wood goes on the shelf and pays for the
+      // wall (`stepLotClearing`, construction-director.ts), and a building
+      // standing over a re-seeded sapling suppresses its growth clock
+      // (`growWildFeature` above). Both of those are acts by agents at times;
+      // a mount-time hole is neither.
+      //
+      // ⚖️ …BUT NEVER INSIDE A WALL SOMEBODY BUILT. Refusing to LAY a tree in
+      // a standing house destroys nothing (the scatter is being created — the
+      // tree never existed), and a building IS an act by agents at a time:
+      // that is precisely the "logical outcome" the ruling contrasts with an
+      // intrinsic property of the site. So the mount reads the BUILDER'S OWN
+      // occupancy — `standingFootprints` + `rectsCoverDisc`, the same pair the
+      // unfold's `blocked` seat and the growth clock read — and never a second
+      // notion of taken ground. A FOUNDING-age town has laid neither a house
+      // nor a work (plan.ts FOUNDING_AGE_DAYS), so this filter passes its
+      // whole scatter through untouched and the land really is as it was; an
+      // ESTABLISHED town that asks for open country gets its countryside
+      // without an oak in the parlour.
+      //
+      // ═══ ⚖️ RELEVANCE AND VISIBILITY ARE TWO DIFFERENT RADII (2026-09-02) ═══
+      //
+      //   "generally speaking, only the near stand should be relevant. […] we
+      //    shouldn't stop *rendering* trees that should be on-camera just
+      //    because they're not technically part of the site or its sources,
+      //    but they shouldn't be selectable."
+      //
+      // The scatter's EXTENT stays the manifold's — it is what resolves the
+      // per-hectare density (`buildWilderness`: "the one place that knows the
+      // extent"), and changing it would change how thick the country is, which
+      // is the one thing this must not touch. What changes is what gets LAID:
+      // the `keep` disc bounds the scatter to the NEAR STAND, so the site's
+      // source set is its own ground rather than every hectare inside its rect.
+      //
+      // RE-MEASURED over 400 seeds, the frontier homestead (forest cell, eco
+      // tree 0.35 ⇒ 15.05 oaks/ha; near-stand.test.ts ⑥ holds the numbers):
+      // the 190 m rect stands 54 oaks — 3.61 ha × 15.05, the same 54 on EVERY
+      // seed, since a `perHa` count is rounded, not rolled — and ~867 wood on
+      // day one, seven houses' worth of timber on ground nobody had touched.
+      // The disc an age-0 site buys (r = 30 m, 0.283 ha) stands 5.1 oaks and
+      // ~81 wood on the mean.
+      //
+      // ⚠️ THE MEAN IS THE LAW; A SEED IS NOT. An earlier note here read "the
+      // disc stands 13", which is seed 1337's own draw (13 oaks, 192 wood) —
+      // 2.5× the mean, and the number a reader would size the ladder against.
+      // A 0.283 ha disc holding ~5 trees is small enough that single-seed
+      // counts run from 2 to 13, so nothing about the stand may be argued from
+      // one of them.
+      //
+      // 🚫 AND THE FAR COUNTRY IS NOT DELETED — it was never CREATED, which is
+      // why item conservation has nothing to weigh (the `clears` note's own
+      // argument). It is still DRAWN: the driver's streamed flora field renders
+      // the same forest at the same per-hectare law on both sides of the
+      // boundary, camera-driven and render-only. A tree out there is visible
+      // and not selectable, which is exactly the ruling.
+      //
+      // 🚨 …AND THE BOUND APPLIES WHERE THE EXTENT IS ARBITRARY, WHICH IS
+      // WHERE SOMETHING ELSE DRAWS THE FAR COUNTRY (measured, this round).
+      //
+      // A `perHa` line describes a COUNTRYSIDE: the extent is a free variable
+      // and the density is the truth, so "which of it is the site's" is a real
+      // question and the disc answers it. Those lines come from a cell's baked
+      // ecology (`wildMixForBiome`'s `eco` arm) — i.e. from a REAL PLANET,
+      // whose streamed flora field is standing the same forest at the same
+      // per-hectare law outside the boundary. The ruling's exception clause is
+      // satisfied because that renderer exists.
+      //
+      // An absolute `count` line is the opposite on both halves. It was
+      // authored against `LEGACY_SCATTER_SIDE_M` — a founding town's own 3.61
+      // ha rect — so the count ALREADY is a near-stand-sized number, and
+      // bounding it again would not select the site's share, it would delete
+      // most of an authored one. And its callers are the no-cell boots (a
+      // preset town, a flat test world, the headless harness): there is no
+      // field out there, so those features ARE the visible countryside, and
+      // trimming them would not move a tree from selectable to scenery — it
+      // would empty the horizon. MEASURED on `scripts/worlds/frontier.spec.json`
+      // (days 4, 486 m rect, legacy counts): the disc would have cut 14
+      // features to 3 with nothing drawn in their place.
+      //
+      // Derived, never declared: nothing has to remember to pass a flag, and
+      // the test is the same one `buildWilderness` uses to decide whether a
+      // line is a density at all.
       const m = sess.embedding.spec.manifold as { width?: number; height?: number };
       const side = Math.max(60, Math.min(m.width ?? 240, m.height ?? 240));
-      sess.wilderness = buildWilderness({
+      const bounded = (opts.wilderness.mix ?? []).some((e) => e.perHa !== undefined);
+      const laid = buildWilderness({
         ...opts.wilderness,
         side,
-        clearAt: town.stage.center,
-        clearR: town.plan.radius + 6,
+        ...(bounded
+          ? { keep: { ...town.stage.center, r: refreshNearStand(sess).radiusM } }
+          : {}),
       });
+      const built = director.standingFootprints(sess);
+      sess.wilderness = built.length
+        ? {
+            ...laid,
+            features: laid.features.filter(
+              (f) => !rectsCoverDisc(built, f.x, f.y, wildFeatureRadiusOf(f)),
+            ),
+          }
+        : laid;
+      // ⚖️ #49 — …AND THE COUNTRYSIDE THE DISC DECLINED TO OWN GETS ITS RECORD
+      // TIER. Read the two branches together: `bounded` is the one test, asked
+      // once, and it decides BOTH halves of the same question. A `perHa` mix
+      // says "this is a countryside whose extent is a free variable", so the
+      // near stand bounds what the site OWNS (above) and the neighbouring
+      // tiles mint what the site can REACH FOR (here). A `count` mix says "this
+      // is an authored stand" and gets neither — which is why every bench world
+      // is byte-identical by construction rather than by a flag.
+      //
+      // This is what un-jams the founding deadlock the disc created: remote
+      // wood → `built` grows → the disc widens. Nothing else in the supply
+      // chain changes; `siteMaterialSources` and `sourcesByLeg` have always
+      // enumerated a KEYED MAP of any size.
+      //
+      // ⚖️ #49 STAGE 2 — …BUT THIS GROUND IS LIVE AGAIN FIRST. The lines above
+      // have just DEALT the session's own ground as real features, and
+      // `makeQuestSession` may have restored a record over exactly that rect
+      // (the LOD sweep folds the home scatter whenever nobody is looking, so a
+      // mid-play autosave can easily catch it folded). An area is loaded or
+      // condensed, NEVER BOTH — so the restored record retires, and the trees
+      // are the ones standing here now.
+      //
+      // 🚫 THIS IS A RECT TEST, NOT A KIND TEST. It asks the same question
+      // `stepAreaRecordClocks` and the LOD gate ask (`isSessionGroundRecord`);
+      // it does not know the word "home" and would retire a farm or a tile
+      // record just the same if one ever named this session's own ground. The
+      // scope-agnostic index has no per-key casing anywhere on the save path.
+      //
+      // ⚠️ WHAT IT COSTS, STATED: a HARVESTED home stand comes back un-played.
+      // That is the shipped behaviour either way — a LIVE scatter has never
+      // been persisted at all, so a stand you picked resets on reload whether
+      // it happened to be folded at the moment of the save or not. Making the
+      // session's own ground durable is the session-snapshot rung
+      // (record-persistence.md's recorded next), not this field.
+      for (const key of [...sess.areaRecords.keys()]) {
+        const rec = sess.areaRecords.get(key);
+        if (rec && isSessionGroundRecord(sess, rec)) dropAreaRecord(sess, key);
+      }
+      if (bounded) mintNeighborRecords(sess, opts.wilderness.mix ?? []);
     }
     // A SPIRIT DOLLHOUSE frames its house (the structure-scope camera: low 3/4
     // angle, gaze-edge orbit) — resolved BEFORE the view exists, since a town's
@@ -25139,7 +25944,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const src = naturalSourceOf(f.species);
     const key = wildFeatureContainerId(f);
     let stood: boolean;
-    if (wildFeatureEmbodied(f)) {
+    if (wildFeatureStandsAsBody(f)) {
       // A refused addNpc (body budget) means NOTHING stands here — report it,
       // so a flora-twin caller keeps its scenery instance visible instead of
       // hiding a tree that has no body anywhere.
@@ -25180,14 +25985,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // — a feature that rolled a single stone stands as a pebble from the
         // moment it is laid down, exactly as one quarried down to its last
         // stone does (wildFeatureRadius).
-        radius: wildFeatureRadius(f.species, f.stock),
+        radius: wildFeatureRadiusOf(f),
         ...(fixture ? { fixture } : {}),
         // SOLID regardless of which model won. Collision used to be a silent
         // side effect of the forced chest — drop the chest and bodies walk
         // straight through the boulder, which is a worse lie than the chest
         // was. Said outright now (ObjectSpec.solid), so how a feature LOOKS
         // and whether you can walk into it stop being the same fact.
-        solid: true,
+        // …EXCEPT BELOW THE OBSTRUCTION FLOOR (2026-09-02: "a minimum growth
+        // level below which they are ignored"). A seedling you can't walk
+        // through is an invisible locomotion trap. "Ignored" has to mean
+        // ignored by the legs too, and it is the SAME predicate the builder
+        // uses — one floor, three readers.
+        // (The companion half landed 2026-09-02: `fixtureCovering`
+        // (stand-points.ts) used to nudge bodies off FIXTURES only, and a
+        // modeled tree declares none, so anything ABOVE the floor stranded
+        // the household instead. It reads `objectIsSolid` now — the engine's
+        // own collision predicate — so the nudge sees exactly what the legs
+        // collide with.)
+        solid: !f.downed && sourceIsSubstantial(f.species, f.sizeClass),
         openable: true,
         facing: 0,
         interactions: [],
@@ -25206,21 +26022,148 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  round's (the record and its id grammar already take a key). */
   const HOME_WILD_AREA = "home";
 
-  /** The ground a folded area covers, and the disc kept clear in it — the
-   *  scatter's own two facts (`buildWilderness`: a square manifold side, the
-   *  plaza/site clearing), so a re-expand lays the stand back where the stand
-   *  was and never through the town. */
+  /** The ground a folded area covers — the scatter's own fact
+   *  (`buildWilderness`: a square manifold side), so a re-expand lays the
+   *  stand back where the stand was.
+   *
+   *  ⚖️ AND NO KEEP-CLEAR DISC (user ruling 2026-09-02, the same removal the
+   *  town mount above carries). This used to hand `expandWildArea` the town's
+   *  whole `plan.radius + 6` disc, so every fold/unfold cycle re-imposed the
+   *  actorless clearing the mount had just stopped imposing — a town could
+   *  flatten its countryside simply by being walked away from and back to.
+   *  BUILT ground is still refused, and that is a different fact: the
+   *  `blocked` seat at the unfold reads `director.standingFootprints`, the
+   *  builder's own occupancy, so a stand never deals a tree into a wall
+   *  somebody actually raised. */
   function wildAreaGround(session: QuestSession): {
     area: { x: number; y: number; w: number; h: number };
-    clearAt?: { x: number; y: number };
-    clearR?: number;
   } {
     const side = session.wilderness?.side ?? 240;
-    const t = session.town;
-    return {
-      area: { x: 0, y: 0, w: side, h: side },
-      ...(t ? { clearAt: t.stage.center, clearR: t.plan.radius + 6 } : {}),
-    };
+    // 🚨 …AND THE GROUND NEVER MOVES UNDER A LIVE RECORD. A folded area's own
+    // rect IS its ground — the unfold arm gates on `sameRect(rec.area,
+    // ground.area)`, so if the near stand stepped while the stand was folded,
+    // a widened answer here would silently strand the record folded forever
+    // (still conserved, still a draw source, but never standing again).
+    const held = session.areaRecords.get(HOME_WILD_AREA);
+    if (held) return { area: held.area };
+    // ⚖️ …AND A BOUNDED STAND FOLDS AT ITS OWN EXTENT (2026-09-02). The area is
+    // the ground the stand actually occupies, so a fold/unfold cycle re-lays it
+    // where it stood. Handing the whole manifold here would make the round trip
+    // an EXPANSION — a town could deal itself a full-rect forest simply by
+    // being walked away from and back to, which is precisely the shape of the
+    // clearing bug the same file removed one ruling ago, inverted.
+    const ns = session.nearStand;
+    const at = session.town?.stage.center;
+    if (ns && at) {
+      return {
+        area: { x: at.x - ns.radiusM, y: at.y - ns.radiusM, w: ns.radiusM * 2, h: ns.radiusM * 2 },
+      };
+    }
+    return { area: { x: 0, y: 0, w: side, h: side } };
+  }
+
+  // ── ⚖️ THE NEAR STAND (user ruling 2026-09-02) ─────────────────────────────
+  //
+  // RELEVANCE is a SIM fact and lives here: what the site HAS, deterministic in
+  // the seed, blind to the camera, changing only at building events. VISIBILITY
+  // is the driver's — a streamed field draws whatever should be on-camera and
+  // materializes nothing. Nothing below ever reads a viewpoint, and that is not
+  // an accident: a sim whose entities depended on where somebody was looking
+  // would give every multiplayer peer a different world (the LOD-per-camera
+  // law, read from the other side).
+
+  /** Is this sim point inside the session's relevance boundary? A session that
+   *  bounds no stand answers TRUE everywhere — its whole ground is its stand,
+   *  which is every wilderness chunk and every pre-2026-09-02 session. */
+  function inNearStand(session: QuestSession, x: number, y: number): boolean {
+    const ns = session.nearStand;
+    const at = session.town?.stage.center;
+    if (!ns || !at) return true;
+    return Math.hypot(x - at.x, y - at.y) <= ns.radiusM;
+  }
+
+  /** The site's near-stand disc RIGHT NOW: `standingFootprints().length`
+   *  latched monotone (a demolition must not contract the stand out from under
+   *  a harvester) through the one radius owner, `nearStandRadiusM`, and clamped
+   *  to the ground the session actually has — relevance may never exceed
+   *  extent.
+   *
+   *  ⚖️ #49 — …NOR THE SITE'S OWN TILE. A bounded stand is exactly the case
+   *  that also mints a neighbourhood (both read `mix.some(perHa)`), and the two
+   *  must PARTITION the ground: the disc is what the site OWNS, the tiles are
+   *  what it can REACH FOR, and a disc that grew past tile (0,0)'s edge would
+   *  stand real, selectable trees on ground a tile record already counts —
+   *  the same timber in the supply list twice.
+   *
+   *  🔒 INERT AT EVERY SHIPPED SCALE, and that is why it is a belt rather than
+   *  a behaviour change: the ladder's own ceiling is a need cycle's walk
+   *  (`serviceRadiusM(scale,"hunger")` = 96 m at street clock), comfortably
+   *  under the 100 m half-tile. It bites only where that ceiling does NOT bind
+   *  — REAL_SCALE, where a hunger walk is tens of kilometres and the ladder is
+   *  free to climb 30 + 15·floor(log₂(1+built)) past 100 at 31 buildings. The
+   *  ladder's own stopgap note already says the walk budgets "land at neither
+   *  scale"; this keeps the double-count invariant true anyway. */
+  function refreshNearStand(session: QuestSession): { built: number; radiusM: number } {
+    const built = Math.max(
+      session.nearStand?.built ?? 0,
+      director.standingFootprints(session).length,
+    );
+    const m = session.embedding.spec.manifold as { width?: number; height?: number };
+    const side = session.wilderness?.side ?? Math.min(m.width ?? 240, m.height ?? 240);
+    // The scatter's own 8 m draw margin — a disc past it can hold nothing.
+    const extentCap = Math.max(0, side / 2 - 8);
+    const radiusM = Math.min(
+      extentCap,
+      NEIGHBOR_TILE_M / 2,
+      nearStandRadiusM(session.scale, built),
+    );
+    const next = { built, radiusM };
+    session.nearStand = next;
+    return next;
+  }
+
+  /**
+   * THE STAND GROWS WITH THE SITE — one more building's frontage per doubling
+   * of what stands (`nearStandRadiusM`). A step deals out the ANNULUS between
+   * the old radius and the new, and nothing else:
+   *
+   *  • the features are re-derived from the SAME `buildWilderness` call the
+   *    mount made, with a wider `keep`. Because `keep` is a post-filter over a
+   *    scatter drawn as if it did not exist, the annulus holds exactly the
+   *    trees that were always going to be there, at their original ids and
+   *    coordinates — a step REVEALS, it never re-rolls;
+   *  • 🚨 STRICTLY the annulus (`d > previous radius`), so a tree the settlers
+   *    already felled inside the old disc can never walk back in. The live
+   *    features list is not a reliable "have" set for that — a felling removes
+   *    the row — but the geometry is;
+   *  • never onto BUILT ground, the mount's own filter.
+   *
+   * Steps at building events by construction (the ladder is an integer over a
+   * monotone counter), so this sweep is a cheap no-op on almost every pass.
+   */
+  function growNearStand(session: QuestSession): void {
+    const w = session.wilderness;
+    const town = session.town;
+    const params = session.bootOpts.wilderness;
+    if (!w || !town || !params || !world) return;
+    const prev = session.nearStand;
+    if (!prev) return; // no stand was bounded — nothing to grow
+    // 🚨 AN AREA IS LOADED OR CONDENSED, NEVER BOTH (the fold's conservation
+    // argument). While the stand is folded away there is nothing to grow ONTO:
+    // dealing the annulus live beside a condensed record would put one area in
+    // both forms at once. The latch holds the count, so the step lands on the
+    // first sweep after the unfold instead — one period late, never lost.
+    if (session.areaRecords.has(HOME_WILD_AREA)) return;
+    const next = refreshNearStand(session);
+    if (!(next.radiusM > prev.radiusM)) return;
+    const c = town.stage.center;
+    const laid = buildWilderness({ ...params, side: w.side, keep: { ...c, r: next.radiusM } });
+    const standing = director.standingFootprints(session);
+    for (const f of laid.features) {
+      if (Math.hypot(f.x - c.x, f.y - c.y) <= prev.radiusM) continue; // already dealt (or felled)
+      if (rectsCoverDisc(standing, f.x, f.y, wildFeatureRadiusOf(f))) continue;
+      if (spawnWildFeature(session, f)) w.features.push(f);
+    }
   }
 
   /**
@@ -25259,7 +26202,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       deleteContainerRecord(session, objId);
     }
     w.features.length = 0;
-    session.areaRecords.set(key, rec);
+    putAreaRecord(session, key, rec);
     return rec;
   }
 
@@ -25268,6 +26211,45 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  fold and unfold to the same stand. */
   function wildAreaSeedOf(session: QuestSession): number {
     return (session.wilderness?.seed ?? session.town?.config.seed ?? 0) >>> 0;
+  }
+
+  /**
+   * ⚖️ #49 — INSTALL THE NEIGHBOURING STANDS. The mint itself is pure
+   * (`neighbor-stands.ts`); all this owns is WHERE the records go and the one
+   * rule the host has to keep:
+   *
+   * 🚨 IDEMPOTENT BY KEY — a key already present is never re-minted. The mint
+   * derives a FRESH stand from the seed, so re-running it over a drawn-down
+   * tile would put the felled trees back: the mint is a WORLD FACT, and a
+   * record that has been harvested is SESSION STATE that outranks it.
+   *
+   * ⚖️ AND THAT IS ALSO THE WHOLE RESTORE INTERPLAY (Stage 2). A save's
+   * records are already in the map by the time this runs (`makeQuestSession`
+   * wakes them at session birth), so this call SKIPS every key that was saved
+   * and FILLS every key that was not — a drawn-down tile stays drawn down, and
+   * a world whose mix now reaches further than the save's did still gets its
+   * new tiles. Mint fills gaps; it never overwrites.
+   *
+   * Returns how many records the call actually installed.
+   */
+  function mintNeighborRecords(
+    session: QuestSession,
+    mix: ReadonlyArray<WildMixEntry>,
+  ): number {
+    const at = session.town?.stage.center;
+    if (!at) return 0; // no gate to measure a neighbourhood from
+    let added = 0;
+    for (const rec of mintNeighborStands({
+      mix,
+      center: at,
+      seed: wildAreaSeedOf(session),
+      now: session.taskClock,
+    })) {
+      if (session.areaRecords.has(rec.key)) continue;
+      putAreaRecord(session, rec.key, rec);
+      added += 1;
+    }
+    return added;
   }
 
   /**
@@ -25282,6 +26264,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const rec = session.areaRecords.get(key);
     if (!rec || !world) return false;
     const ground = wildAreaGround(session);
+    // 🔴 ⚖️ #49 — THE FENCE ON THE `rec.area` RE-LAY HOLE. Everything below
+    // deals this record's stand out through `wildAreaGround(session)` and never
+    // reads `rec.area` at all — so a record whose ground is somewhere ELSE
+    // would have its trees dealt onto the LOCAL ground, standing a second
+    // forest on top of the session's own and doubling the audit. Until now that
+    // hole was unreachable only INCIDENTALLY (the LOD driver's `sameRect` gate
+    // plus the `wildLodFolded` ownership set); this round mints twenty records
+    // that are exactly the wrong shape for it and puts a hauler within 40 m of
+    // the nearest one's rect, so the refusal moves here, in front of every
+    // caller — the LOD sweep, the `/wild load` cheat and the handover restore
+    // alike.
+    //
+    // 🚧 A REFUSAL, NOT A FIX. Teaching the unfold to honour `rec.area` (lay
+    // the stand where the stand IS, and stream it only where the manifold can
+    // hold it) is real work and is recorded as this round's successor. What a
+    // refusal costs is that such a record stays folded FOREVER — which is
+    // exactly what a minted tile wants, and which conserves every unit either
+    // way: a folded record is a draw source, an audited stack and a ripening
+    // stand. Nothing is lost by declining to stand it up.
+    //
+    // ⚠️ ONE BEHAVIOUR MOVES: a session handover carrying a SECOND wild key
+    // whose rect is not ours (`applyHandoverWild` re-installs every record and
+    // unfolds each) now leaves that record condensed instead of dealing a
+    // donor's forest onto our ground. The units cross the handover either way;
+    // only the FORM changes, and the folded form is the correct one.
+    if (!isSessionGroundRecord(session, rec)) return false;
     // AN UNLOADED STAND KEPT GROWING while nobody watched — the same class
     // clock the standing features ride, applied once on the way back in. The
     // 4th arg is Stage A's clock belt: a climb that lifted a harvest cap arms
@@ -25301,7 +26309,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
     const laid = expandWildArea({
       rec: grown,
-      ...(ground.clearAt ? { clearAt: ground.clearAt, clearR: ground.clearR } : {}),
+      // NEVER ONTO BUILT GROUND — the folded half of the growth-suppression
+      // rule. A stand that folded while a town sat on it matures offscreen and
+      // would otherwise deal full-grown trees into the buildings on unfold.
+      // …and NEVER OUTSIDE THE NEAR STAND (2026-09-02): the fold area is the
+      // disc's bounding SQUARE, so its corners lie past the relevance boundary.
+      // A source dealt there would be a selectable tree outside the site's own
+      // ground — the exact thing the boundary exists to stop.
+      blocked: (x, y) =>
+        rectsCoverDisc(director.standingFootprints(session), x, y, 0) || !inNearStand(session, x, y),
       // The scatter's own id spelling, area-keyed so two stands can never
       // collide on `wild:oak_0`.
       idOf: (species, i) => `wild:${species}_${key}.${i}`,
@@ -25317,7 +26333,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       else failed.push(f);
     }
     if (failed.length) {
-      session.areaRecords.set(
+      putAreaRecord(
+        session,
         key,
         condenseWildArea({
           features: failed,
@@ -25329,7 +26346,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         }),
       );
     } else {
-      session.areaRecords.delete(key);
+      dropAreaRecord(session, key);
     }
     return true;
   }
@@ -25442,6 +26459,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     b: { x: number; y: number; w: number; h: number },
   ): boolean => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 
+  /**
+   * ⚖️ #49 — IS THIS RECORD THE SESSION'S OWN GROUND? — i.e. this session's
+   * SCENERY, folded, and nothing else. Its rect IS `wildAreaGround`, which is
+   * the test the LOD driver's unfold arm has always made; this names it so the
+   * three readers that need it cannot drift apart:
+   *
+   *   ① `stepWildLod`'s unfold arm — the driver re-lays only its own ground;
+   *   ② `unfoldWildArea`'s own FENCE — nothing else may be re-laid at all
+   *      (the `rec.area` re-lay hole, quoted at its seat);
+   *   ③ `stepAreaRecordClocks` — this record's clocks run at the UNFOLD, where
+   *      the live features take the harvest ledger back over, so the record
+   *      sweep must not run them a second time.
+   *
+   * A MINTED NEIGHBOUR TILE is never this: its rect is 200 m of ground at a
+   * true offset the session never laid anything on.
+   */
+  function isSessionGroundRecord(session: QuestSession, rec: WildAreaRecord): boolean {
+    return sameRect(rec.area, wildAreaGround(session).area);
+  }
+
   /** ⚖️ H3 — one sweep of the driver. Called on the frame clock (never inside
    *  `stepLedgerSweeps`): a CLOCK WARP is books-only and carries no camera, so
    *  an LOD decision has no business running in one. */
@@ -25492,12 +26529,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // ⚖️ A REMOTE SHED NEVER UNFOLDS HERE. It is a DRAW PARTNER — a region
       // somewhere else that this town ships from — not scenery anybody is
       // walking up to, and the band says nothing about ground the camera can
-      // never reach. 🔴 It is also the guard on a real hole: `unfoldWildArea`
-      // re-lays through `wildAreaGround(session)` and never reads `rec.area`
-      // at all, so a remote record put through it would be dealt onto the
-      // LOCAL ground. Teaching it to honour `rec.area` is a wild-area change
-      // and is not this round's; this gate is what keeps the hole unreachable.
-      if (!rec || !sameRect(rec.area, ground.area)) continue;
+      // never reach. 🔴 It is also the FIRST of three guards on a real hole:
+      // `unfoldWildArea` re-lays through `wildAreaGround(session)` and never
+      // reads `rec.area` at all, so a remote record put through it would be
+      // dealt onto the LOCAL ground. ⚖️ #49 moved the refusal INTO
+      // `unfoldWildArea` itself (see its fence) — this gate, the
+      // `wildLodFolded` ownership set above, and that fence are now three
+      // independent layers, which is what a minted region of twenty records
+      // deserves.
+      if (!rec || !isSessionGroundRecord(session, rec)) continue;
       // ⚖️ #44 D — NPC EXPAND-ON-APPROACH: a body working THIS record's own
       // errand unfolds it on arrival, exactly like the player's approach —
       // the logging party meets a real (already-depleted) forest instead of
@@ -25514,7 +26554,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** #44 D — is a body executing a haul FROM this record standing near its
    *  ground? The unfold trigger's NPC half; small radius on purpose (a body
-   *  needs trees when it is nearly there, never from across the map). */
+   *  needs trees when it is nearly there, never from across the map).
+   *
+   *  ⚖️ #49 — AND IT CANNOT REACH A MINTED TILE, three times over. A hauler
+   *  loading a ring-1 tile stands at that tile's CLAMPED shelf point, which is
+   *  on the manifold edge and therefore well within 40 m of the tile's true
+   *  rect — so this predicate really does answer TRUE for a neighbour stand,
+   *  and it is the callers that refuse: the loop above only ever asks about
+   *  keys in `wildLodFolded` (which a mint never enters — only `foldWildArea`
+   *  adds to it), it asks only after `isSessionGroundRecord`, and
+   *  `unfoldWildArea` fences the record anyway. Nothing here needs a fourth
+   *  guard; what it needs is for a reader to know the answer is deliberately
+   *  not load-bearing. */
   const NPC_UNFOLD_R = 40;
   function regionErrandNear(
     session: QuestSession,
@@ -25813,7 +26864,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // fold the first record's freshly-laid stand back up under another key.
     const firstKey = payload.wild[0]?.key ?? HOME_WILD_AREA;
     foldWildArea(session, firstKey);
-    for (const entry of payload.wild) session.areaRecords.set(entry.key, entry.rec);
+    for (const entry of payload.wild) putAreaRecord(session, entry.key, entry.rec);
     for (const entry of payload.wild) unfoldWildArea(session, entry.key);
   }
 
@@ -25888,15 +26939,28 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         lines.push(`drawn: ${stockLine(session)}`);
       }
     }
+    // ⚖️ #49 — `fold`/`load` TAKE A KEY (default HOME, so every shipped call
+    // and every transcript line is unchanged). A region of many records has
+    // exactly one way to be exercised from text mode, and "the cheat can only
+    // ever say `home`" would leave the fence below — the one guard standing
+    // between a minted record and the `rec.area` re-lay hole — reachable from
+    // nowhere at all.
+    const key = rest[0] ?? HOME_WILD_AREA;
     if (verb === "fold" || verb === "cycle") {
       lines.push(`before: ${stockLine(session)}`);
-      const rec = foldWildArea(session);
+      const rec = foldWildArea(session, key);
       lines.push(rec ? `folded ${wildAreaPopulation(rec)} source(s)` : "nothing to fold");
       lines.push(`folded: ${stockLine(session)}`);
     }
     if (verb === "load" || verb === "cycle") {
-      const ok = unfoldWildArea(session);
-      lines.push(ok ? "loaded the stand back" : "nothing folded to load");
+      const ok = unfoldWildArea(session, key);
+      lines.push(
+        ok
+          ? "loaded the stand back"
+          : session.areaRecords.has(key)
+            ? `refused to load ${wildAreaId(key)} — not this session's own ground`
+            : "nothing folded to load",
+      );
       lines.push(`after: ${stockLine(session)}`);
     }
     lines.push(wildStandLine(session));
@@ -25932,13 +26996,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         });
         continue;
       }
+      // A WANDERING LOCAL: the scatter already chose its SPECIES (fauna —
+      // bodied, non-speaking; `wildLocalCast`), so the body is declared, not
+      // inferred from a face. The icon rides along as the emoji-capsule
+      // fallback for a species with no buildable body, nothing more.
       ensureWildCreature(session, c.id);
       const body = avatarIdOf(c.id);
-      session.npcIcons.set(body, c.icon);
+      if (c.icon) session.npcIcons.set(body, c.icon);
+      if (c.bodySpecies) session.npcSpecies.set(body, c.bodySpecies);
       world.addNpc({
         id: body,
         x: c.x,
         y: c.y,
+        ...(c.bodySpecies ? { species: c.bodySpecies } : {}), // species-sized girth
         behavior: {
           movement: "wander",
           wanderRadius: 18,
@@ -25983,6 +27053,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const defined = town.config.family?.members.length ?? 0;
     const n = Math.min(SETTLER_MAX, Math.max(pop, defined));
     return Array.from({ length: n }, (_, i) => `settler_${i}`);
+  }
+
+  /** Is this a FOUNDING-GROUP body (`settler_<i>` — `settlersOf`'s id shape)?
+   *  The one spelling, so the direct/idle gates and the live-flag release
+   *  below cannot disagree about who is one. */
+  function isSettlerCid(cid: string): boolean {
+    return /^settler_\d+$/.test(cid);
   }
 
   /** A settler's defined member row (names/species ride config.family). */
@@ -26491,6 +27568,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     /** ⚖️ #45 — the head a CIVIC sweep posted this to cover; see
      *  `PooledTask.need`. Omitted = a real order (authority answers). */
     need?: string,
+    /** ⚖️ #50 ④ — a PLAYER asked for this; see `PooledTask.spoken`. The pool
+     *  offers spoken rows to claimants ahead of ambient ones. Omitted/false =
+     *  ambient, which is every civic sweep. */
+    spoken?: boolean,
   ) {
     if (!session.creatures) return null;
     return session.taskPool.post({
@@ -26501,6 +27582,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       sourceGlyph,
       ...(valueS !== undefined ? { valueS } : {}),
       ...(need !== undefined ? { need } : {}),
+      ...(spoken === true ? { spoken: true } : {}),
     });
   }
 
@@ -26794,6 +27876,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   function stepTaskPool(session: QuestSession, dt: number) {
     session.taskClock += dt;
+    syncAreaClock(session); // the durable records' anchor rides the clock
     if (!world || !session.creatures) return;
     // ⚖️ H3 — THE UNWATCHED-STAND SWEEP, on its own slow clock. Here and not in
     // `stepLedgerSweeps` deliberately: that block is the one a CLOCK WARP
@@ -26807,6 +27890,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       wildLodT -= WILD_LOD_SWEEP_S;
       if (wildLodT >= WILD_LOD_SWEEP_S) wildLodT %= WILD_LOD_SWEEP_S;
       stepWildLod(session);
+      // …and the NEAR STAND's own step, on the same slow clock and for the same
+      // reason: it is a discrete answer to a discrete question ("has the site
+      // built enough to reach further?"), so asking it per frame would buy
+      // nothing but work. Camera-blind — see `growNearStand`.
+      growNearStand(session);
     }
     taskSweepT += dt;
     if (taskSweepT < TASK_CLAIM_INTERVAL_S) return;
@@ -28189,6 +29277,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         issuer,
         focus,
         sentence,
+        undefined, // `valueS` — this poster has never priced one
+        undefined, // `need` — a SPOKEN order; authority answers (#45)
+        // ⚖️ #50 ④ — the player said this sentence; its errand outranks the
+        // town's ambient rows in the pool.
+        true,
       );
     }
     presenter.toast(`🪧 ${sentence} — anyone nearby may take it`, "feedback");
@@ -28329,10 +29422,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // real standable spot beside the piece, which is what every other walk-to-
     // furniture path in this file already does.
     const bodyR = world.npcRadiusOf(npcId);
+    // ⚖️ #50 ③ — AND A PILE'S ANCHOR IS A BARE POINT (user report D: "walking
+    // around the box"). A pile is not a registered container, so it took the
+    // raw-point arm — and a pile anchored at a mill spot beside a crate, or on
+    // ground a felled trunk still stands on, is a point no body can occupy:
+    // the carrier halts flush against the collider and the unload never runs.
+    // `nearestClearSpot` is the planner for exactly that shape (a bare point
+    // that may be inside something) and it RETURNS THE POINT UNCHANGED when it
+    // is already standable — so a pile on open ground plans byte-identically.
     const standAt = (epAt: { x: number; y: number }, epId: string, from2: { x: number; y: number }) =>
       isContainerId(session, epId)
         ? standPointFor(world!.state, epId, epAt, from2, bodyR, standAvoid(cid))
-        : { x: epAt.x, y: epAt.y };
+        : isPileEndpointId(epId)
+          ? nearestClearSpot(world!.state, epAt, from2, bodyR, standAvoid(cid))
+          : { x: epAt.x, y: epAt.y };
     const bodyNow = world.state.avatars[npcId] ?? { x: from.at.x, y: from.at.y };
     const pickAt = standAt(from.at, a.from, { x: bodyNow.x, y: bodyNow.y });
     const destAt = standAt(to.at, a.to, pickAt);
@@ -28382,6 +29485,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // one. Either way the source is debited by what the body actually
             // took — the live map stays the truth, so a shelf raided during the
             // walk loads what's LEFT and an emptied one fails ALOUD.
+            // ⚖️ THE HAULER ARRIVED FOR WOOD, SO THE HAULER CUTS THE TREE. The
+            // means-end step (`cutForDraw`) fires HERE, at the load, and not
+            // when the row was posted: the tree stays standing for as long as
+            // nobody has actually walked out to it, which is both truer and the
+            // reason a cancelled haul never leaves a felled trunk behind.
+            for (const g of Object.keys(agr.goods)) cutForDraw(session, agr.from, g);
             const src = stockEndpointOf(session, agr.from);
             const moved: Record<string, number> = {};
             for (const [g, n] of Object.entries(agr.goods)) {
@@ -28424,7 +29533,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               return;
             }
             if (agr.from === activeBagOf(session, LOCAL_PLAYER_CID)?.objId) pushPocket(session);
-            fellIfConsumed(session, agr.from); // a hauled-empty kill-source is felled
+            depleteWildSource(session, agr.from); // a hauled-empty source retires
             // `carried` is now a MANIFEST — what this haul is meant to be
             // delivering — never the storage itself. The goods are on the body.
             session.transfers.load(agreementId, moved);
@@ -28508,7 +29617,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         session.reservations.release(bagHolder(agreementId));
         fireCarryGesture(npcId, "putdown", destAt);
         session.transfers.complete(agreementId);
-        presenter.toast(`📦 ${agr.sourceGlyph ?? "transfer"} — delivered`, "feedback");
+        // 🚨 A "DELIVERED" TOAST STATES WHAT LANDED (#50 ①). This echoed the
+        // agreement's own promise unconditionally, so a 24-wood row whose
+        // porter can only carry a basketful announced *"bring 24 wood —
+        // delivered"* over 8 delivered units — the measured lie. Staging hauls
+        // are now posted at ONE CARRIER-LOAD each, so an ordinary row's
+        // promise and its delivery agree and this renders the same words it
+        // always did; a SHORT delivery (a source raided mid-walk, a
+        // destination that filled up) says the smaller true number instead of
+        // claiming the whole bill.
+        const promised = Object.values(agr.goods).reduce((s, n) => s + n, 0);
+        presenter.toast(
+          landed >= promised
+            ? `📦 ${agr.sourceGlyph ?? "transfer"} — delivered`
+            : `📦 ${agr.sourceGlyph ?? "transfer"} — delivered ${landed} of ${promised}`,
+          "feedback",
+        );
       },
     });
   }
@@ -28779,25 +29903,57 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return session.town?.stage.center ?? session.foundedSite?.at ?? null;
   }
 
+  /** The scatter's own draw margin — a point past it is off the ground the
+   *  session lays anything on (`buildWilderness`: `8 + rng()*(side-16)`, and
+   *  `refreshNearStand`'s extent cap reads the same 8). */
+  const WILD_EDGE_MARGIN_M = 8;
+
+  /**
+   * ⚖️ #49 — INTO THE WALKABLE MANIFOLD. The session's ground is
+   * `[0,width]×[0,height]` (town-stage.ts mints the spec); a point outside it
+   * is somewhere no path this session can plan ends, and on a bounded manifold
+   * it is behind a wall.
+   *
+   * A no-op for every point that was already inside — which is EVERY record
+   * that shipped before this round (`home`'s rect is the near-stand square
+   * inside the manifold, `farm-<key>`'s is the field region), so the clamp
+   * cannot move a byte of existing behaviour.
+   */
+  function clampToManifold(
+    session: QuestSession,
+    p: { x: number; y: number },
+  ): { x: number; y: number } {
+    const m = session.embedding.spec.manifold as { width?: number; height?: number };
+    const w = m.width ?? 240;
+    const h = m.height ?? 240;
+    const mx = Math.min(WILD_EDGE_MARGIN_M, w / 2);
+    const my = Math.min(WILD_EDGE_MARGIN_M, h / 2);
+    return {
+      x: Math.min(Math.max(p.x, mx), w - mx),
+      y: Math.min(Math.max(p.y, my), h - my),
+    };
+  }
+
   /** ⚖️ #44 — THE SHELF POINT: where a region's cut goods wait at the road,
    *  and where a walked haul stands to load them. The record's rect edge
-   *  nearest our own gate (clamp the origin into the rect); an origin INSIDE
-   *  the rect (the home area wraps the town) degenerates to the gate itself,
-   *  which the fold law keeps honest — the home record exists folded only
-   *  while nobody watches, so nothing visibly pops there. No origin at all
-   *  falls back to the rect's own centre. */
+   *  nearest our own gate (`wildRectPointToward`, the ONE geometry); an origin
+   *  INSIDE the rect (the home area wraps the town) degenerates to the gate
+   *  itself, which the fold law keeps honest — the home record exists folded
+   *  only while nobody watches, so nothing visibly pops there. No origin at all
+   *  falls back to the rect's own centre.
+   *
+   *  ⚖️ #49 — …AND THEN INTO THE MANIFOLD, because THIS is the WALK/RENDER
+   *  answer. A minted neighbour tile's rect lies partly or wholly outside the
+   *  session's ground, and a haul aimed at a point out there would fail to
+   *  path (or walk through a wall). The ranking answer — the one that must
+   *  keep ring 1 nearer than ring 2 — is the director's `regionShelfPoint`,
+   *  which reads the same geometry UNCLAMPED. One derivation, two accessors;
+   *  see `wildRectPointToward`'s own note for why the two must differ. */
   function wildShelfPointOf(
     session: QuestSession,
     rec: WildAreaRecord,
   ): { x: number; y: number } {
-    const o = sourceDrawOrigin(session) ?? {
-      x: rec.area.x + rec.area.w / 2,
-      y: rec.area.y + rec.area.h / 2,
-    };
-    return {
-      x: Math.min(Math.max(o.x, rec.area.x), rec.area.x + rec.area.w),
-      y: Math.min(Math.max(o.y, rec.area.y), rec.area.y + rec.area.h),
-    };
+    return clampToManifold(session, wildRectPointToward(rec, sourceDrawOrigin(session)));
   }
 
   /** One folded stand, read as a partner (its road measured from our gate).
@@ -28883,7 +30039,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       for (const [g, n] of Object.entries(out.taken)) shelf[g] = (shelf[g] ?? 0) + n;
       rec = out.rec;
     }
-    session.areaRecords.set(key, rec);
+    putAreaRecord(session, key, rec);
   }
 
   /**
@@ -28914,6 +30070,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       dueAt: session.taskClock + partnerLegSeconds(session, source),
       sourceGlyph: `draw ${glyph} from ${source.id}`,
     });
+  }
+
+  /** ⚖️ #49 — WHAT THE STANDING SCATTER CAN SERVE of one head, right now: the
+   *  live container stack of every feature that stands (the host's own copy,
+   *  never the initial roll — the same reading `foldWildArea` takes). The
+   *  errand-vs-shipment fork reads this; see its seat in `orderSpokenDraw`. */
+  function liveStandYields(session: QuestSession, glyph: string): number {
+    const head = stackHead(glyph);
+    let n = 0;
+    for (const f of session.wilderness?.features ?? []) {
+      const live = session.containerRecords.get(wildFeatureContainerId(f))?.stock ?? f.stock;
+      n += stackUnits(live, head);
+    }
+    return n;
   }
 
   /**
@@ -28985,6 +30155,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       presenter.toast(banner, "feedback");
       return true;
     };
+    // ⚖️ H1's LIVE LAW, KEPT WHOLE AGAINST #49's MINTED REGION.
+    //
+    // "LIVE ⇒ today's behaviour, byte for byte" is stated above and was, until
+    // this round, enforced only by ACCIDENT: the check sits inside the
+    // `!source` arm, and before neighbouring stands existed a live session had
+    // no condensed area holding timber, so the picker never found one. #49
+    // mints twenty of them around every countryside founding — so without this
+    // line a child who says "get wood from the forest" with oaks standing ten
+    // metres away gets a scheduled shipment and nobody moves, which is exactly
+    // the answer the law calls wrong.
+    //
+    // 🚨 AND IT ASKS WHAT THE STAND HOLDS, NOT WHETHER IT EXISTS. A stand
+    // picked clean is not an answer to "get wood" — that is the deadlock this
+    // whole round exists to break — so the errand keeps the sentence only while
+    // the trees here can actually serve it. (Standing timber counts:
+    // `siteMaterialSources` counts it for the same reason, since every
+    // automated load auto-cuts on arrival.)
+    if (liveStandYields(session, glyph) > 0) return false;
     // ⚖️ H2 — WHICH SOURCE. Every condensed area, cheapest road first; the one
     // we draw from is the cheapest that can actually hand the good over.
     const sources = sourcesByLeg(session);
@@ -29651,7 +30839,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         },
       });
       if (sown === rec) continue; // already grown here, or too thin to plant
-      session.areaRecords.set(key, sown);
+      putAreaRecord(session, key, sown);
       presenter.toast(`🌱 ${head} takes root in the fields`, "feedback");
       return;
     }
@@ -29742,9 +30930,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** THE LEDGER SWEEPS the task pool runs every sweep. Order is load-bearing
    *  and documented at each arm; a warp runs this block per day bucket. */
   function stepLedgerSweeps(session: QuestSession) {
-    // ⚖️ E-e — the town's own field feeds it FIRST: register/ripen the farm
-    // source and run the day's haul before any leg draws on the region, so
-    // a due draw never races the pulse that would have served it.
+    // ⚖️ #49 — THE RECORD CLOCKS FIRST, all of them, once. This was the head of
+    // `stepFarmSource` (advance then ripen) and keeps its place in the order
+    // exactly: every offloaded region grows and pulses before the field's haul
+    // and before any leg draws on one, so a due draw never races the growth
+    // that would have served it. A freshly MINTED record is not swept on its
+    // own mint tick, which is a no-op by construction — `farmAreaRecord` mints
+    // at cap with no climb queue, and `mintNeighborStands` mints a fresh,
+    // mature, fully-borne stand.
+    stepAreaRecordClocks(session);
+    // ⚖️ E-e — the town's own field feeds it FIRST: register the farm source
+    // and run the day's haul before any leg draws on the region.
     stepFarmSource(session);
     // STANDING transfer agreements (②): run any DUE scheduled legs over the
     // live endpoints — deterministic given the clock (creation order).
@@ -29893,6 +31089,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // the other — a warp that moved only the town clock would fire the day
         // arms against transfer deadlines that had not moved.
         session.taskClock += t - session.townClock;
+        syncAreaClock(session); // …and rides the WARP's clock exactly the same
         session.townClock = t;
       },
       dayArm: (day) => stepTownDay(session, day),
@@ -29962,6 +31159,56 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // (FARM_CROP_SPECIES / FARM_CROP_GLYPH are town-play.ts's — the farm row's
   // own file owns what the fields grow, so the BOOKS' yield seat and this live
   // one can never be sized off two different crops.)
+  /**
+   * ⚖️ #49 — THE ONE RECORD CLOCK. Every offloaded area this session holds
+   * grows and ripens here, once per ledger sweep, and NOWHERE ELSE.
+   *
+   * It is `stepFarmSource`'s own advance/ripen pair, moved out and widened.
+   * That pair used to be the only record clock in the host — the town field
+   * climbed and pulsed, and nothing else did — which was defensible while the
+   * only other record was `home` (see the exclusion below). This round mints
+   * twenty more, and a stand that could be drawn down but never regrew would
+   * break the felled-oak-re-seeds law inside a week of play. Widening the one
+   * owner is the whole change: a second sweep for "the new records" would have
+   * been a second answer to what time it is in a record, and the farm's
+   * day-latched HAUL (which stays in `stepFarmSource`) would have raced it.
+   *
+   * 🚫 EXCEPT THE SESSION'S OWN GROUND. The `home` record is this session's
+   * SCENERY, folded, and its clocks run at the UNFOLD (`unfoldWildArea`'s
+   * `advanceWildArea` call, closed-form and exact for the whole absence). Two
+   * reasons it must not also run here, and the second is the load-bearing one:
+   *   · it would be REDUNDANT for growth — the climb walk is additive, so
+   *     advancing every sweep and advancing once at the unfold land on the same
+   *     classes;
+   *   · it would be WRONG for harvest. wild-area.ts states the law at
+   *     `advanceWildArea`'s foot: *"an unloaded stand's fruit resumes on
+   *     expand, where `dueHarvestRegrowth` sees a real feature again (a farm
+   *     record gets `ripenWildArea` instead)"*. Ripening a folded scatter here
+   *     would produce fruit through the record AND hand the deadlines to the
+   *     features on unfold — two ledgers for one berry patch.
+   * A MINTED TILE is never unfolded (three guards say so), so the record IS
+   * the only representation of that ground and its clocks belong here.
+   */
+  function stepAreaRecordClocks(session: QuestSession): void {
+    if (!session.areaRecords.size) return;
+    // Sorted, because a Map's insertion order is a fold/mint history and not a
+    // fact about the world (`sourcesByLeg`'s own argument).
+    for (const key of [...session.areaRecords.keys()].sort()) {
+      const rec = session.areaRecords.get(key);
+      if (!rec || isSessionGroundRecord(session, rec)) continue;
+      // The 4th arg is the #48 CLOCK BELT: a climb that lifts a harvest cap
+      // arms the refill it just made possible, on the host's one flat pulse —
+      // the same period the ripen below and the sow arm hand in. One ground,
+      // one pulse.
+      const grown = advanceWildArea(rec, session.taskClock, (species) => {
+        const g = naturalSourceOf(species)?.growth;
+        return g ? growthClassPeriodS(session.scale, g) : Infinity;
+      }, () => FOOD_DAY_SEC);
+      const ripe = ripenWildArea(grown, session.taskClock, () => FOOD_DAY_SEC);
+      if (ripe !== rec) putAreaRecord(session, key, ripe);
+    }
+  }
+
   function farmHaulPerDay(session: QuestSession): number {
     const t = session.town;
     if (!t) return 0;
@@ -30016,7 +31263,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         capUnits: { [FARM_CROP_GLYPH]: cap },
         now: session.taskClock,
       });
-      session.areaRecords.set(key, rec);
+      putAreaRecord(session, key, rec);
       // E-f — the market's amplitude reads the region, live (the goods
       // layer keeps the catchment formula only where no field region
       // exists; the provider registry is the road-bearings handoff shape).
@@ -30053,33 +31300,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return answered ? { dailyUnits } : null;
       });
     }
-    // ⚖️ THE FIELD GROWS UP TOO (resource-access Stage 3). A starter stand of
-    // a CLASSED crop — an orchard tree the arrival rule sowed — goes in as
-    // saplings and must climb, exactly as an unloaded forest does, on the same
-    // one growth clock. 🔒 BYTE-IDENTICAL FOR EVERY FARM THAT SHIPPED: the
-    // founding crop is growth-less (`carrot_plant` has a single class), so
-    // `advanceWildArea` finds no growth block and no climb queue and returns
-    // the SAME record object — the line can only bite once a classed stand
-    // exists, and only `session.climate` can put one there.
-    // The 4th arg is Stage A's CLOCK BELT, threaded here (Stage B): a climb
-    // that lifts a harvest cap arms the refill it just made possible, so a
-    // grown orchard starts bearing on its own next pulse instead of waiting
-    // for the HEAL arm to notice. Same flat period the ripen call below and
-    // the sow above hand in — one field, one pulse.
-    const grown = advanceWildArea(rec, session.taskClock, (species) => {
-      const g = naturalSourceOf(species)?.growth;
-      return g ? growthClassPeriodS(session.scale, g) : Infinity;
-    }, () => FOOD_DAY_SEC);
-    if (grown !== rec) {
-      session.areaRecords.set(key, grown);
-      rec = grown;
-    }
-    // The field pulse, on the record's own clocks.
-    const ripe = ripenWildArea(rec, session.taskClock, () => FOOD_DAY_SEC);
-    if (ripe !== rec) {
-      session.areaRecords.set(key, ripe);
-      rec = ripe;
-    }
+    // (⚖️ #49 — THE FIELD'S OWN CLOCKS MOVED OUT, VERBATIM, to
+    // `stepAreaRecordClocks`, which runs FIRST in this same sweep. They were
+    // the only record clocks in the host, and a second sweep for the minted
+    // neighbour stands would have been a second owner of "what time is it in a
+    // record". Read `rec` fresh below: it is already advanced and ripened.)
+    rec = session.areaRecords.get(key) ?? rec;
     // The day-latched haul — the day's modelled consumption leaves the
     // region. `taken` is deliberately unhoused: eaten food is the sink.
     const day = Math.floor(session.townClock / FOOD_DAY_SEC);
@@ -30117,7 +31343,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!(units > 0)) continue;
       cur = drawWildArea(cur, { glyph: g, units, now: session.taskClock }).rec;
     }
-    if (cur !== rec) session.areaRecords.set(key, cur);
+    if (cur !== rec) putAreaRecord(session, key, cur);
   }
 
   function stepDriftDrain(session: QuestSession) {
@@ -31350,7 +32576,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage, townSurplus,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
     relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
-    gazeCreature, fireCarryGesture, fellIfConsumed, dropFromStack,
+    gazeCreature, fireCarryGesture, depleteWildSource, cutWildFeature, cutForDraw, dropFromStack,
     takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
     creatureMood,
     // ⚖️ batch 2 L3/L4 — the ONE freeness and the ONE labour pool.
@@ -31715,6 +32941,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           else speakPlayerStatement(said);
         }
         tameWildAnimal(sess, id.slice(5));
+        return;
+      }
+      // ⚖️ THE CUT, PRESSED (user ruling 2026-09-02). The same act the spoken
+      // sentence runs and the same act the builders' prerequisite commissions —
+      // one path, whether the word was pressed or said.
+      if (container && id.startsWith("cut:")) {
+        if (!sess) return;
+        const s = sess;
+        const ep = id.slice(4);
+        const said = playerStatement("cut");
+        if (opts.spokenExternally) yieldToStatement(said);
+        else speakPlayerStatement(said);
+        // Into the PLAYER'S OWN hands: a press is the player's act, and what a
+        // take yields goes to the taker. (A bodiless spark simply has no hands
+        // with room, and the shed units land on the ground where they grew —
+        // `cutWildFeature`'s truthful fallback, never a loss.)
+        if (!cutWildFeature(s, ep, s.handsCid)) {
+          saySystem(s, CANT_HERE, `💬 "${said}" — that one can't be cut`);
+          return;
+        }
+        // The board that was open described a STANDING thing, and the act took
+        // it down — both endings close it (`standWildFeature` and
+        // `retireWildSource` each do). A trunk that is still there gets its NEW
+        // board straight away, because its timber is takeable now and the child
+        // pressed for exactly that; a removed bush has no board to give.
+        if (wildFeatureOf(s, ep)) openContainer(s, ep);
         return;
       }
       if (container && id.startsWith("take:")) {
@@ -32100,6 +33352,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // It only ever breaks a make/build TIE, so a word that is BOTH a
       // structure and a makeable still crafts under "make" — "make a house"
       // keeps whatever the makeable join says, and only "build" changes.
+      // ⚖️ A STANDING NATURAL FEATURE (the removal act, 2026-09-02) — what
+      // makes break/cut/fight redirect, and the ONLY thing that makes them.
+      // It asks the LIVE wilderness through the one resolver the order arm
+      // uses, so the compiler can never bind a word the host would then fail
+      // to find; and because the wilderness keeps creatures in a different
+      // list, no body can answer yes here — "fight the sheep" keeps whatever
+      // `fight` means for a body, today and when combat lands.
+      binder.isFeature = (ref) => ref?.kind === "entity" && !!spokenFeatureId(s, ref.symbol);
       binder.isStructure = (ref) => {
         if (ref?.kind !== "entity") return false;
         const w = ref.symbol;
@@ -32548,6 +33808,37 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         saySystem(s, CANT_HERE, `💬 "${sentence}" — can't do that here`);
         return;
       }
+      // ⚖️ THE CUT, SPOKEN (user ruling 2026-09-02) — "cut the tree", "break
+      // the plants", "fight the bush". The word is resolved against the
+      // standing wilderness by the SAME resolver that let the compiler bind it,
+      // so the two can never disagree about what is out there, and it runs the
+      // SAME act the container board's button runs.
+      //
+      // 🚨 EVERY ANSWER IS SPOKEN. Nothing standing by that name, and something
+      // standing this act does not own, are DIFFERENT facts and the child can
+      // act on the difference — so they are two lines, and neither is silence.
+      // What the act does not own is now only a source with its OWN ending: an
+      // outcrop ends by being quarried away stone by stone, and cutting it
+      // would be a second way for one thing to stop standing. A TREE is no
+      // longer refused here — that refusal was the bug this round fixed.
+      if (goal.kind === "clearFeature") {
+        const ep = spokenFeatureId(s, goal.feature);
+        if (!ep) {
+          saySystem(s, CANT_HERE, `💬 "${sentence}" — no ${goal.feature} standing here`);
+          return;
+        }
+        // Into the ADDRESSED body's own carry — the child told somebody to do
+        // this, and what a take yields goes to the taker. The player's hands are
+        // the fallback for an order nobody in particular took. (A cut that
+        // leaves a trunk hands over nothing: the timber stays in the trunk,
+        // where it is now takeable and cheaper to collect than it ever was.)
+        if (cutWildFeature(s, ep, target ?? s.handsCid)) {
+          saySystem(s, ORDER_OK, `🪓 cut the ${goal.feature}`);
+          return;
+        }
+        saySystem(s, CANT_HERE, `💬 "${sentence}" — that one can't be cut`);
+        return;
+      }
       // ⚖️ H1 — REGION DRAW: "get wood from the forest". A fetch whose SOURCE
       // is the wild and whose wild is FOLDED is not an errand at all — it is a
       // shipment from a condensed partner, and it rides the ② ledger like every
@@ -32620,7 +33911,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // creature inside the area may claim it (stepTaskPool); unclaimable
         // tasks expire back to the player ("no one can do that").
         const focus = playerFocusArea(s);
-        const posted = focus ? postPooledTask(s, goal, speaker, focus, sentence) : null;
+        const posted = focus
+          ? postPooledTask(
+              s, goal, speaker, focus, sentence,
+              undefined, // `valueS` — a spoken sentence carries no price
+              undefined, // `need` — somebody ASKED; authority answers (#45)
+              // ⚖️ #50 ④ — a spoken order outranks ambient work in the pool.
+              true,
+            )
+          : null;
         presenter.toast(
           posted
             ? `🪧 ${sentence} — anyone nearby may take it`
@@ -32783,6 +34082,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cursorWorld(out) {
       return questView?.externalCursorWorld?.(out) ?? null;
     },
+    nearStand() {
+      const s = sess;
+      const at = s?.town?.stage.center;
+      return s?.nearStand && at ? { at: { x: at.x, y: at.y }, radiusM: s.nearStand.radiusM } : null;
+    },
     addWildFeature(f) {
       const s = sess;
       const w = s?.wilderness;
@@ -32803,7 +34107,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (fi < 0) return false;
       const f = w.features[fi]!;
       const key = wildFeatureContainerId(f);
-      // Mirror fellIfConsumed's teardown — same stand-in, same maps — but
+      // Mirror depleteWildSource's teardown — same stand-in, same maps — but
       // unconditionally: this is a RELEASE back to scenery, not a felling.
       if (container?.objId === key) closeContainer();
       if (world.state.objects[key]) world.removeObject(key);

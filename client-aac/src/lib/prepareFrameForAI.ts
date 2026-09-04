@@ -1,9 +1,24 @@
 /**
  * Prepares a camera frame for AI vision by:
- * 1. Horizontally flipping the image (cameras produce mirrored images)
+ * 1. Horizontally flipping the image into the SUBJECT's anatomical frame
  * 2. Drawing "L" and "R" direction labels as spatial anchors
  *
  * Only used for AI-bound frames — does not affect camera preview or tracking.
+ *
+ * ⚠️ WHY THE FLIP (the old comment here said "cameras produce mirrored images",
+ * which is wrong and contradicts seizureMotionSource.ts). The source stream is
+ * UNMIRRORED — verified 2026-09-02 against a live camera via
+ * client-aac/public/mirror-check.html (MediaPipe handedness, blendshape
+ * sidedness and yaw sign all read subject-relative). So the subject's left
+ * arrives on the image's RIGHT, and flipping moves it to the image's LEFT.
+ * That is the point: after the flip, image-left IS the subject's left, so the
+ * "L"/"R" labels below mark the subject's own sides and the AI's visual frame
+ * agrees with the [SCENE] text convention (+yaw = subject's right, ARKit
+ * ...Left = subject's left).
+ *
+ * Do NOT remove the flip to "stop mirroring the child" — that would put the L
+ * label on their right and silently invert every sided observation the
+ * Observer makes, including the seizure markers it adjudicates.
  */
 export async function prepareFrameForAI(blob: Blob): Promise<Blob> {
   const image = await createImageBitmap(blob);

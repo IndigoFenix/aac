@@ -102,9 +102,11 @@ const structuredComplete = jest.fn(async (req: { schemaName: string }) => {
     return {
       content: {
         entries: [
-          { index: 0, keep: true, kind: "food", imageKey: "pizza" },
-          { index: 1, keep: true, kind: "food", imageKey: "pasta" },
-          { index: 2, keep: true, kind: "food", imageKey: "cake" },
+          // `icon` is the regular board's glyph syntax — a composed one here
+          // pins that a modifier survives the whole pipeline to the button.
+          { index: 0, keep: true, kind: "food", icon: "pizza.olive" },
+          { index: 1, keep: true, kind: "food", icon: "pasta" },
+          { index: 2, keep: true, kind: "food", icon: "cake+🥜" },
           { index: 3, keep: true, kind: "unknown" },
           { index: 4, keep: false, kind: "notice" },
         ],
@@ -259,6 +261,14 @@ describe("the live failing case, end to end", () => {
     expect(labels).toContain("עוגת בוטנים");
     // The refinement's edit stands: the notice row is not a dish.
     expect(labels).not.toContain("לקוחות יקרים");
+
+    // Icons ride the buttons in regular-board glyph syntax, composition
+    // intact, ready for the same symbol pipeline every other board uses.
+    const buttons = resolved!.board!.pages.flatMap((p) => p.buttons);
+    const glyphOf = (name: string) =>
+      buttons.find((b) => b.spokenText === name)?.glyph;
+    expect(glyphOf("פיצה מרגריטה")).toBe("pizza.olive");
+    expect(glyphOf("עוגת בוטנים")).toBe("cake+🥜");
   });
 
   test("the exact chain: two search passes, binding before fetch, one menu write", async () => {

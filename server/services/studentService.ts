@@ -79,6 +79,8 @@ export const AAC_SETTINGS_FIELDS = new Set([
   "deviceLocationEnabled",
   "launchOnBoot",
   "autoAddContacts",
+  "presenceLedger",
+  "debugMode",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
   "dynamicBoardsEnabled", "appConfig", "permittedWebsites", "homeActions", "venueMenus",
   "sessionRecording",

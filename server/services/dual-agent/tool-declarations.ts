@@ -185,7 +185,7 @@ function buildTranscriptTool(_config: ToolDeclarationConfig): FunctionDeclaratio
       type: "object",
       properties: {
         text: { type: "string", description: "The transcribed speech." },
-        speaker: { type: "string", description: "Who spoke (e.g. 'Mom', 'Teacher', 'Unknown')." },
+        speaker: { type: "string", description: "Who spoke — a name from this turn's candidate list (e.g. 'Mom'), else 'someone nearby'." },
         confidence: { type: "string", enum: ["high", "medium", "low"], description: "Transcription confidence." },
       },
       required: ["text", "speaker"],
@@ -199,12 +199,14 @@ function buildContextTool(_config: ToolDeclarationConfig): FunctionDeclaration {
     description: `Record a specific environmental observation. Log new people, audio, objects, locations, and events when you first notice them (including at the beginning of a new session). Do NOT narrate your own actions.
 
 Types:
-- new_person: Someone appears who you haven't seen this session. Key is their NAME only when identity is verified; otherwise a generic key ("a woman", "visitor").
+- new_person: Someone appears who you haven't seen this session.
+    Key is their NAME only when [PEOPLE PRESENT] grades them verified, or you cite a discriminating feature you checked.
+    Otherwise a generic key ("a woman"), which the device renders as "someone nearby".
 - new_voice: A new voice is heard that you haven't heard this session.
-- set_person_as_user: Identify which visible person is the primary user of this device.
-- person_identified: Confirm whose face this is (an unknown person you've placed, or a guessed match you've verified against the on-file description). The system stores no new face data until you confirm, so confirm only when sure.
-- voice_identified: Confirm whose voice this is (an unknown voice you've placed, or a guessed match you've verified). The system learns the voice only after you confirm, so confirm only when sure.
-- misidentified: Retract a wrong identification — a known person was named/reported present and you now see they aren't. Key: the wrongly-named person; description: what is actually true. Penalizes the bad match and voids earlier reports of their presence.
+- set_person_as_user: Identify which visible person is the primary user of this device. Default to the student; name someone else only on verified evidence.
+- person_identified: Confirm whose face this is, at the same bar — a verified grade, or a discriminating feature you checked against the on-file description. The system stores no new face data until you confirm, so never confirm a weak or convenient guess.
+- voice_identified: Confirm whose voice this is, at the same bar. The system learns the voice only after you confirm.
+- misidentified: Retract a wrong identification — a person was named/reported present and you now see they aren't. Key: the wrongly-named person; description: what is actually true. Penalizes the bad match and strikes their presence from every downstream record.
 - person_leaves: A previously-present person has left the frame.
 - new_location: The device appears to be in a new physical location/room.
 - new_object: A notable object appears in view.

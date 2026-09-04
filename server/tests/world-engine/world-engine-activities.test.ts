@@ -9,7 +9,11 @@
 
 import { describe, it, expect } from "@jest/globals";
 import * as THREE from "three";
-import { CreatureAnimator, type BodyActivity } from "@shared/world-engine/creatures/animation.js";
+import {
+  CreatureAnimator,
+  pickHandGroup,
+  type BodyActivity,
+} from "@shared/world-engine/creatures/animation.js";
 import { speciesBlueprint } from "@shared/world-engine/creatures/species.js";
 import {
   createCreatureAvatarFactory,
@@ -20,7 +24,12 @@ import {
 import type { AvatarFrame } from "@shared/world-engine/render3d.js";
 import type { AvatarActivity } from "@shared/world-engine/engine.js";
 
-const SPECIES = ["human_cute", "frog_person"] as const;
+// A HANDED kind and a HANDLESS one — the pair is the point: these activities
+// are posture modulation over whatever body plan the builder made, so the suite
+// is only honest if the cast spans body plans. (`frog_person` stood here until
+// 2026-09-01; the authored animal people retired into the `animal_people` mod,
+// and a person derived from an undrawn stub base is itself a stub.)
+const SPECIES = ["human_cute", "dog"] as const;
 
 function settle(anim: CreatureAnimator, seconds: number, dt = 1 / 30) {
   let f = anim.update(0);
@@ -111,12 +120,20 @@ describe("CreatureAnimator activities — rig-level, species-agnostic", () => {
         expect(done.pose.limbTargets ?? []).toHaveLength(0);
       });
 
-      it("eat rhythm: a handed kind carries a hand to its mouth", () => {
-        const anim = new CreatureAnimator(speciesBlueprint(sp));
+      it("eat rhythm: a handed kind carries a hand to its mouth, a handless one bows", () => {
+        // The rig's own rule (animation.ts): eat is "a periodic hand-to-mouth
+        // for a handed kind, a bow for the rest". Handedness is DERIVED from
+        // the blueprint via pickHandGroup — never a list of species names, or
+        // the pin would go stale the next time the registry moves.
+        const bp = speciesBlueprint(sp);
+        const handed = pickHandGroup(bp) >= 0;
+        const anim = new CreatureAnimator(bp);
+        const restPitch = anim.update(0).posture.bodyPitch;
         anim.setActivity("eat");
         settle(anim, 2);
         let sawHand = false;
         let maxHandY = -Infinity;
+        let maxBow = 0;
         for (let i = 0; i < 60; i++) {
           const f = anim.update(1 / 30);
           const lt = f.pose.limbTargets ?? [];
@@ -124,9 +141,14 @@ describe("CreatureAnimator activities — rig-level, species-agnostic", () => {
             sawHand = true;
             maxHandY = Math.max(maxHandY, lt[0]!.target.y);
           }
+          maxBow = Math.max(maxBow, Math.abs(f.posture.bodyPitch - restPitch));
         }
-        expect(sawHand).toBe(true); // every people species has a graspable hand
-        expect(maxHandY).toBeGreaterThan(0); // rises toward the mouth, not the floor
+        expect(sawHand).toBe(handed);
+        if (handed) {
+          expect(maxHandY).toBeGreaterThan(0); // rises toward the mouth, not the floor
+        } else {
+          expect(maxBow).toBeGreaterThan(0); // the trunk bows instead
+        }
       });
     });
   }
@@ -311,7 +333,7 @@ describe("creature avatar factory — the activity channel end-to-end", () => {
   });
 
   it("an activity without an anchor plays out in place for every species", () => {
-    for (const sp of ["human_cute", "frog_person"]) {
+    for (const sp of ["human_cute", "dog"]) {
       const factory = createCreatureAvatarFactory({ speciesFor: () => sp, heightM: 1.7 });
       const npc = factory("resident_0_2", false);
       for (const kind of ["sleep", "eat", "sit", "play"] as Exclude<BodyActivity, "none">[]) {

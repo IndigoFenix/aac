@@ -19,6 +19,17 @@ import { getCurrentGps, mayReadDeviceLocation, metersBetween, type GpsReading } 
 import { GUESSING_REJECT } from "@shared/guessing-mode/state.js";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { repairGuessingBoard } from "@/lib/guessing-board-repair";
+import { hasObservation } from "@shared/aac/learned-baselines";
+import { appSpeechHoldUntil } from "@/lib/app-speech-gate";
+import { renderComposedSentence, studentGender } from "@shared/aac/builder-speech";
+import { speakOnDeviceNow } from "@shared/aac/device-voice";
+import { speechEstimateMs } from "@shared/world-engine/npc-voice";
+
+/** How often to push learned baselines to the server. Sessions often end
+ *  abruptly (sleep, force-quit, network drop), so this — not the teardown —
+ *  is what makes the write-back actually happen. */
+const LEARNED_BASELINE_PUSH_MS = 3 * 60_000;
+
 
 /** Context passed when guessing is launched from the sentence builder for a slot.
  *  The server uses this to pre-select the top-level guessing category from
@@ -74,6 +85,10 @@ export interface UseLiveSessionOptions {
   // the classroom and the dual-agent can use it for prompt building / roster.
   classroomId?: string | null;
   language?: string;
+  /** The student's gender as the students table spells it ("male"/"female").
+   *  Used ONLY for grammatical agreement when the device renders a composed
+   *  sentence itself (shared/aac/builder-speech). */
+  studentGender?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
   /** Experiment (glyphInputTranslation): per-sentence glyph-string translation
    *  of the speech just directed at the user, for the header glyph strip. */
@@ -99,6 +114,8 @@ export interface UseLiveSessionOptions {
   /** Cost-saving (Phase 2): structured scene snapshot (people + hand gestures)
    *  used to decide frame-vs-scene_state and to build the scene_state text. */
   getSceneSnapshot?: () => import("@shared/aac/scene-state").SceneSnapshot | null;
+  /** Machine-learned baselines observed this session, for the write-back. */
+  getLearnedBaselines?: () => import("@shared/aac/learned-baselines").LearnedBaselineObservation | null;
   /** Seizure Phase 2b: whether SUSTAINED vocal/sound energy is present right now.
    *  Used ONLY to annotate a "seizure"-escalated [MOTION SIGNATURE] — audio never
    *  escalates on its own (Rett baseline breathing = false-positive trap). */
@@ -592,6 +609,47 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Local browser TTS helpers
   // -------------------------------------------------------------------------
 
+  /**
+   * DEADLINE UNTIL WHICH THE DEVICE'S OWN LOCAL VOICE IS AUDIBLE.
+   *
+   * `client_local_tts` speaks through speechSynthesis or the Kokoro neural
+   * voice — neither of which goes through the shared audio player, so
+   * `isBusyRef` (and with it every mic gate downstream) never sees it. That was
+   * survivable while this was the last rung of the TTS ladder, reached only
+   * after every cloud provider had failed. Device-voice mode
+   * (`aac_settings.useLocalTts`) put it on EVERY student press, and the AAC
+   * started hearing the sentence it had just spoken come back through its own
+   * microphone: transcribed, attributed to whoever the Observer had in the
+   * room, and answered out loud.
+   *
+   * A deadline rather than a flag, for the same reason app speech is one — an
+   * utterance that never fires its end (a cancelled Kokoro buffer, a
+   * speechSynthesis engine that drops `onend`) must not strand the mic shut.
+   * Consumed by DualAgentContext's `deviceAudioBusyRef`.
+   */
+  const localTtsUntilRef = useRef(0);
+  /** Live reads of the three things a locally-voiced press depends on, held in
+   *  refs so `voiceButtons` (memoized on a small dep list) sees the current
+   *  values without being re-created on every language / mute / config change. */
+  const deviceVoiceRef = useRef(false);
+  deviceVoiceRef.current = clientConfig?.deviceVoice ?? false;
+  const audioEnabledRef = useRef(true);
+  audioEnabledRef.current = audioEnabled;
+  const languageRef = useRef(language);
+  languageRef.current = language;
+  /** The student's GRAMMATICAL gender, for the languages that agree. Wrong here
+   *  is a girl's board saying "אני הולך" — so it comes from the student record,
+   *  not from the voice preset. */
+  const studentGenderRef = useRef(studentGender(options.studentGender));
+  studentGenderRef.current = studentGender(options.studentGender);
+  const noteLocalTts = useCallback((speaking: boolean, ms?: number) => {
+    localTtsUntilRef.current = appSpeechHoldUntil(
+      Date.now(),
+      localTtsUntilRef.current,
+      { speaking, ms },
+    );
+  }, []);
+
   /** Find the best matching browser voice for a language and role */
   const pickBrowserVoice = useCallback((lang: string, role: "ai" | "student"): SpeechSynthesisVoice | null => {
     const voices = window.speechSynthesis?.getVoices() || [];
@@ -612,8 +670,28 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
    *  speechSynthesis when it declines: wrong language, model not staged, model
    *  still loading, or synthesis failed. The fallback is the ORIGINAL behaviour
    *  untouched, so the worst case here is exactly what shipped before. */
-  const speakLocal = useCallback(async (text: string, lang: string, role: "ai" | "student"): Promise<void> => {
-    if (await kokoroSpeak(text, lang, role)) return;
+  const speakLocal = useCallback(async (rawText: string, lang: string, role: "ai" | "student"): Promise<void> => {
+    // MARKUP NEVER REACHES A VOICE. `streamStudentTts` strips curly braces
+    // server-side (the caption highlight convention `{pressed word}`, which a
+    // Hebrew engine once read out as "closing curly braces"), and everything
+    // that arrives as `client_local_tts` has been through it. The press and
+    // builder paths now speak text that NEVER passed the server, so the same
+    // guarantee has to hold on this side of the wire too.
+    const text = rawText.replace(/[{}]/g, "");
+    // Hold the mic for as long as this voice is audible. The edge is raised
+    // BEFORE the first syllable in both branches (a gate that closes after it
+    // has already leaked the onset is no gate) and lowered to the room-echo
+    // tail when the utterance ends. The estimate only bounds a hold whose
+    // release never comes — a normal utterance is released by its own end.
+    const est = speechEstimateMs(text);
+    const done = () => noteLocalTts(false);
+    // Kokoro synthesises first and only then plays, so its hold starts at
+    // `onStart` — raising it at the call would deafen the mic for the whole
+    // synthesis, in which a person may well be talking.
+    if (await kokoroSpeak(text, lang, role, { onStart: () => noteLocalTts(true, est) })) {
+      done();
+      return;
+    }
     return new Promise((resolve) => {
       if (!window.speechSynthesis || !text.trim()) { resolve(); return; }
       const utterance = new SpeechSynthesisUtterance(text);
@@ -621,11 +699,17 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       const voice = pickBrowserVoice(lang, role);
       if (voice) utterance.voice = voice;
       utterance.rate = 1.0;
-      utterance.onend = () => resolve();
-      utterance.onerror = () => resolve();
+      const finish = () => { done(); resolve(); };
+      // `onstart` re-arms the hold against the REAL utterance start (queued
+      // speech can sit behind another for seconds); raising it here as well
+      // covers an engine that never fires `onstart` at all.
+      utterance.onstart = () => noteLocalTts(true, est);
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      noteLocalTts(true, est);
       window.speechSynthesis.speak(utterance);
     });
-  }, [pickBrowserVoice]);
+  }, [pickBrowserVoice, noteLocalTts]);
 
   /** Flush any buffered local TTS text as a complete utterance */
   const flushLocalTtsBuffer = useCallback((lang: string, role: "ai" | "student") => {
@@ -764,6 +848,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // speechSynthesis (kokoro post-dates this handler and was missed).
           kokoroCancel();
           window.speechSynthesis?.cancel();
+          // Release the mic hold explicitly: a cancelled utterance may never
+          // fire its end event, and its estimate would otherwise keep the mic
+          // shut for words that were never spoken. A stop only ever cuts back
+          // to the room-echo tail, so an extra one is harmless.
+          noteLocalTts(false);
           localTtsBufferRef.current = "";
           if (localTtsFlushTimerRef.current) { clearTimeout(localTtsFlushTimerRef.current); localTtsFlushTimerRef.current = null; }
           break;
@@ -1864,8 +1953,44 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }
     kokoroCancel();
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
-    wsSend({ type: "button_press", buttons: recentButtons, sentences, board });
-  }, [wsSend, audioPlayer]);
+    // The superseded utterance is not going to fire its end event — hand the
+    // mic back now rather than leaving it held for the rest of its estimate.
+    noteLocalTts(false);
+
+    // DEVICE-VOICE MODE: SAY IT NOW.
+    //
+    // The words are already here — the button carried them. Waiting for the
+    // server to send them back as `client_local_tts` bought nothing except the
+    // round trip, and made the one setting that promises "free, instant, works
+    // with no connection" the slowest path in the app. So the press is voiced
+    // here, before the socket write, and the message carries `spokenLocally`
+    // so the server logs and routes it WITHOUT voicing it again.
+    //
+    // `[MORE]` is excluded because the server excludes it: it is a request for
+    // other options, not something the student said. The audio-output mute is
+    // honoured for the same reason the `client_local_tts` handler honours it —
+    // it silences everything this window makes.
+    const label = recentButtons[0] ?? "";
+    const spoken = (sentences?.[label] ?? label).trim();
+    const speakHere = speakOnDeviceNow(
+      { deviceVoice: deviceVoiceRef.current, audioEnabled: audioEnabledRef.current },
+      spoken,
+      label,
+    );
+    if (speakHere) {
+      clientTtsChainRef.current = clientTtsChainRef.current.then(
+        () => speakLocal(spoken, languageRef.current, "student"),
+      );
+    }
+
+    wsSend({
+      type: "button_press",
+      buttons: recentButtons,
+      sentences,
+      board,
+      ...(speakHere ? { spokenLocally: true } : {}),
+    });
+  }, [wsSend, audioPlayer, noteLocalTts, speakLocal]);
 
   /** Tell the server the sentence builder opened/closed (conversation detour boundary). */
   const setBuilderVisible = useCallback((open: boolean) => {
@@ -1969,16 +2094,53 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend]);
 
   /**
-   * Send a composed glyph from the sentence builder up to the AI for
-   * interpretation. The AI is responsible for converting the glyph to a
-   * natural-language sentence via the `interpret` tool — the relay does
-   * NOT TTS the glyph string itself. See the [GLYPH PRESS] flow in
-   * live-relay.ts.
+   * Send a composed glyph from the sentence builder.
+   *
+   * TWO OUTCOMES, and the fast one is the common one:
+   *
+   *  - THE GLYPH LANGUAGE CAN SAY IT. `renderComposedSentence` returns the
+   *    sentence (shared/aac/builder-speech holds the rules for when that is
+   *    safe), so no model is involved at all: the words go up with the press,
+   *    the server voices and routes them, and in device-voice mode we say them
+   *    here first — before the socket write. A composed sentence used to cost
+   *    an `interpret()` round trip and a spinner every single time, for
+   *    sentences the builder's own grammar renders exactly.
+   *  - IT CANNOT. Unchanged: the glyph goes up bare and the AI interprets it
+   *    (a locale with no ruleset, a word with no lexeme, a shape the parser
+   *    recognizes no frame for — see the module for why each hands over).
+   *
+   * Returns true when the sentence was rendered locally, so the caller can
+   * close the builder and drop the "interpreting" indicator immediately
+   * instead of waiting for speech that is already on its way.
    */
-  const playGlyph = useCallback((glyphString: string) => {
+  const playGlyph = useCallback((glyphString: string): boolean => {
     audioPlayer.clearByTag("utterance");
-    wsSend({ type: "glyph_press", glyph: glyphString });
-  }, [wsSend, audioPlayer]);
+    const rendered = renderComposedSentence(glyphString, {
+      locale: languageRef.current,
+      gender: studentGenderRef.current,
+    });
+    const speakHere = speakOnDeviceNow(
+      { deviceVoice: deviceVoiceRef.current, audioEnabled: audioEnabledRef.current },
+      rendered ?? undefined,
+    );
+    if (speakHere) {
+      // Supersede any local utterance still running, then say it — same rule
+      // as a button press (voiceButtons), for the same reason.
+      kokoroCancel();
+      try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+      noteLocalTts(false);
+      clientTtsChainRef.current = clientTtsChainRef.current.then(
+        () => speakLocal(rendered!, languageRef.current, "student"),
+      );
+    }
+    wsSend({
+      type: "glyph_press",
+      glyph: glyphString,
+      ...(rendered ? { sentence: rendered } : {}),
+      ...(speakHere ? { spokenLocally: true } : {}),
+    });
+    return !!rendered;
+  }, [wsSend, audioPlayer, speakLocal, noteLocalTts]);
 
   /**
    * Activity-driven detection: send composite grid + optional audio clip.
@@ -2207,6 +2369,44 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     },
     [wsSend],
   );
+
+  /**
+   * Hand the server what this session learned about the student's habitual
+   * baselines (motion energy, head neutral). The server merges count-weighted
+   * into aac_settings.learned_baselines and seeds it back next session. Cheap
+   * and idempotent-ish — sending twice just adds evidence twice, which the
+   * caps absorb. See shared/aac/learned-baselines.ts.
+   */
+  const sendLearnedBaselines = useCallback(
+    (data: import("@shared/aac/learned-baselines").LearnedBaselineObservation) => {
+      wsSend({ type: "learned_baselines", data });
+    },
+    [wsSend],
+  );
+
+  /**
+   * Push the session's learned baselines periodically AND on teardown.
+   *
+   * Periodically, because AAC sessions frequently do NOT close cleanly — a
+   * tablet sleeps, the app is force-quit, the network drops — and a write-back
+   * that only fires on a graceful close would rarely fire at all. That is a
+   * plausible part of why the seizure baseline stayed empty even though its
+   * merge helper was written. The merge is count-weighted and capped, so
+   * sending the same session's evidence more than once costs accuracy nothing.
+   */
+  useEffect(() => {
+    const push = () => {
+      const obs = optionsRef.current.getLearnedBaselines?.();
+      if (!obs || !hasObservation(obs)) return;
+      sendLearnedBaselines(obs);
+    };
+    const timer = setInterval(push, LEARNED_BASELINE_PUSH_MS);
+    return () => {
+      clearInterval(timer);
+      push();   // last chance on unmount
+    };
+  }, [sendLearnedBaselines]);
+
 
   /**
    * Capture a FRESH single frame and send it as the first frame_grid the moment
@@ -2542,8 +2742,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     sendSttStreamEnd,
     sendAudioClip,
     sendIdentityCorrection,
+    sendLearnedBaselines,
     sendFreshStartupFrame,
     isBusyRef: audioPlayer.isBusyRef,
+    localTtsUntilRef,
 
     // Pause state
     paused,

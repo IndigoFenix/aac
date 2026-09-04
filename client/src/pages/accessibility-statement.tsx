@@ -101,7 +101,7 @@ export default function AccessibilityStatement() {
                 <div>
                   <h3 className="font-semibold text-lg mb-3">1. {t('legal.accessibility.commitmentHeading')}</h3>
                   <p>
-                    {t('legal.accessibility.commitmentPrefix')}<strong>Aivota</strong>{t('legal.accessibility.commitmentSuffix')}
+                    {t('legal.accessibility.commitmentPrefix')}<strong>Aivota Ltd</strong>{t('legal.accessibility.commitmentSuffix')}
                   </p>
                 </div>
 

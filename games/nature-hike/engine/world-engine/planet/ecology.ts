@@ -69,6 +69,18 @@ export interface SpeciesDef {
    *  species' biome cells (not a stand-in). The ecology field is the
    *  distribution; this is what grows there. */
   model?: string;
+  /**
+   * ⚖️ HOW THICKLY IT STANDS — individuals per HECTARE at FULL suitability
+   * (abundance 1). The species row is the one owner of "how much of X lives
+   * here", so it owns the extensive half of that answer too: a scatter reads
+   * `standDensityPerHa` and multiplies by its OWN ground area, and extent
+   * stops being the same number as abundance.
+   *
+   * 🚫 NOT A BALANCE DIAL. Each value is calibrated so the SHIPPED render
+   * density is reproduced at the abundance the shipped biosphere actually
+   * reaches — see the constants on TREE/GRASS below for the measurement.
+   */
+  standPerHa?: number;
 }
 
 export interface EcologyOpts {
@@ -204,6 +216,80 @@ export function applyEcology(
   return res;
 }
 
+// ── READING THE BAKED ABUNDANCE BACK ───────────────────────────────────────
+// `applyEcology({ perSpecies: true })` is the WRITER; everything below is the
+// one reader. Consumers must not spell `eco_${key}` themselves — the prefix,
+// the ×100 scaling and the "field absent ⇒ this substrate has no ecology"
+// answer live here, so a caller cannot half-know the encoding.
+
+/** The substrate field a species' abundance bakes into. */
+export function ecoFieldName(key: string): string {
+  return `eco_${key}`;
+}
+
+/** The minimum a grid must expose to be asked about its ecology. */
+export interface EcoFieldSource {
+  fields: Record<string, ArrayLike<number>>;
+}
+
+/**
+ * Per-species abundance (0..1) at one cell, off the baked `eco_<key>` fields.
+ *
+ * NULL when this substrate carries no per-species ecology at all — an
+ * un-baked grid, a region substrate (only the planet tier runs `applyEcology`),
+ * or a bake serialized before `perSpecies` was switched on. Null is a REAL
+ * answer and callers must keep their legacy arm for it: inventing an abundance
+ * from the biome integer would be a second derivation of the very fact this
+ * module exists to own, and it would silently disagree with this one.
+ */
+export function ecoAbundanceAt(
+  grid: EcoFieldSource,
+  cell: number,
+  species: readonly SpeciesDef[] = DEFAULT_BIOSPHERE,
+): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  let any = false;
+  for (const s of species) {
+    const arr = grid.fields[ecoFieldName(s.key)];
+    if (!arr) continue;
+    any = true;
+    out[s.key] = Math.max(0, Math.min(1, (arr[cell] ?? 0) / 100));
+  }
+  return any ? out : null;
+}
+
+/**
+ * STANDING DENSITY, individuals per hectare, of the biosphere species whose
+ * body plan is `model` ("oak", "grass" — the creature-registry id both the
+ * flora field and the wilderness scatter name their content by).
+ *
+ * `abundance` is `ecoAbundanceAt`'s answer. Linear in it: a cell half as
+ * suitable stands half the trees. A species with no `standPerHa`, or a model
+ * no species claims, answers 0 — nothing of it stands anywhere, which is the
+ * honest answer for a species nobody said how to scatter.
+ */
+export function standDensityPerHa(
+  model: string,
+  abundance: Readonly<Record<string, number>>,
+  species: readonly SpeciesDef[] = DEFAULT_BIOSPHERE,
+): number {
+  const s = species.find((sp) => sp.model === model);
+  if (!s || !s.standPerHa) return 0;
+  return s.standPerHa * Math.max(0, Math.min(1, abundance[s.key] ?? 0));
+}
+
+/** Individuals of `model` standing on `areaHa` hectares of this cell's ground
+ *  — the density above, resolved against a real extent and rounded to whole
+ *  bodies. THE point of the density: extent may grow without thinning. */
+export function standCountFor(
+  model: string,
+  abundance: Readonly<Record<string, number>>,
+  areaHa: number,
+  species: readonly SpeciesDef[] = DEFAULT_BIOSPHERE,
+): number {
+  return Math.max(0, Math.round(standDensityPerHa(model, abundance, species) * Math.max(0, areaHa)));
+}
+
 /**
  * ONE CELL as a niche query's input (products.ts `ClimateSample`, consumed by
  * `nicheSuitabilityOf` / `usefulPlants`). Reads the BIOSPHERE FIELDS exactly
@@ -256,6 +342,19 @@ export const TREE: SpeciesDef = {
   },
   color: [0.11, 0.29, 0.13], // deep forest green
   model: "oak",              // creatures/species.ts — the actual tree body
+  // 🌲 43 oaks/ha AT FULL SUITABILITY. Calibrated, not chosen: the shipped
+  // flora field stands 60 oaks on a 200 m tile (4 ha) in a tree-dominant
+  // cell — 15.0 oaks/ha — and a tree-dominant cell's MEASURED median
+  // `eco_tree` is 0.35 (seeds 1 / 7 / 42, faceN 24: medians 0.36 / 0.35 /
+  // 0.35). 15.0 / 0.35 = 43, and 43 × 0.35 × 4 ha = 60.2 ⇒ 60, the shipped
+  // count reproduced exactly at the median forest cell. Everything else
+  // follows continuously instead of in four buckets.
+  //
+  // ⚠️ THE CEILING IS NOT 1. `band()` returns 1 only AT the optimum, and no
+  // shipped forest cell is optimal on all three axes at once — the whole
+  // planet's `eco_tree` maxes at ~0.44. So "at full suitability" is a
+  // definition, not a place: read this row against the medians above.
+  standPerHa: 43,
 };
 
 export const GRASS: SpeciesDef = {
@@ -274,6 +373,16 @@ export const GRASS: SpeciesDef = {
   ],
   color: [0.42, 0.55, 0.24], // steppe / meadow green
   model: "grass",            // the grass-tuft body plan
+  // 🌾 30 tufts/ha at full suitability, calibrated the same way: the flora
+  // field stands 44 tufts on a 4 ha tile in a grass-dominant cell (11.0/ha),
+  // whose MEASURED median `eco_grass` is 0.37 (seeds 1 / 7 / 42: 0.34 /
+  // 0.37 / 0.40). 11.0 / 0.37 ≈ 30, and 30 × 0.37 × 4 = 44.4 ⇒ 44.
+  //
+  // ⚖️ A FOREST FLOOR NOW READS NEARLY GRASSLESS, and that is the ecology
+  // speaking, not a regression: the canopy-suppression rule above puts
+  // `eco_grass` at a median of 0.00 in tree-dominant cells. The old bucket
+  // table stood 16 tufts/tile there on no authority at all.
+  standPerHa: 30,
 };
 
 export const HORSE: SpeciesDef = {

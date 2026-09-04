@@ -30,6 +30,7 @@ import { certifyCreatureQuestWorld } from "@shared/world-engine/interaction/ques
 import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan.js";
 import { DOLLHOUSE_SCALE, resolveWorldScale } from "@shared/world-engine/scale.js";
 import { validateFields, type GroupSpec } from "../../kernel/spec-schema.js";
+import type { SerializedTownDeltas } from "@shared/world-engine/kernel/town/construction.js";
 
 function fail(path: string, msg: string): never {
   throw new Error(`${path}: ${msg}`);
@@ -276,7 +277,25 @@ function parseTownEntities(
 
 /** Build the living town a `scope: "town"` document describes. Deterministic
  *  end to end (same seed ⇒ same town). */
-export function buildTownScope(settings: GameSettings, label = "game"): BuiltTownScope {
+export function buildTownScope(
+  settings: GameSettings,
+  label = "game",
+  /**
+   * ⚖️ #49 STAGE 2 — THE SAVE-RESTORE DOOR, for a build that has one.
+   *
+   * A world DOCUMENT cannot carry deltas (`TOWN_WORLD_FIELDS` has no such
+   * field, deliberately: a document describes a world, a save describes a
+   * playthrough of it). The browser's own restore path therefore never comes
+   * through here — it arrives as `TownPlayConfig.deltas` from
+   * `siteTownConfig`. This parameter is that same seat, opened to a caller
+   * that builds the scope from a document AND holds a save — which today is
+   * the headless harness, where the whole persistence law would otherwise be
+   * unprovable at play level.
+   *
+   * Absent ⇒ byte-identical to every build that shipped.
+   */
+  restoreDeltas?: SerializedTownDeltas,
+): BuiltTownScope {
   if (settings.scope !== "town") {
     fail(`${label}.scope`, `buildTownScope builds "town" games (got "${settings.scope}")`);
   }
@@ -309,6 +328,10 @@ export function buildTownScope(settings: GameSettings, label = "game"): BuiltTow
   // scope's documented fallback while goods.ts is hard-paced to the 240 s
   // day (scale.ts DOLLHOUSE_SCALE).
   spec.config.scale = settings.scale ? resolveWorldScale(settings.scale) : DOLLHOUSE_SCALE;
+  // #49 — the save, if one was handed in. It rides the config exactly as
+  // `siteTownConfig`'s does, so `buildTownPlay` → `createTownDeltas` is the
+  // one restore path and this seat adds no second one.
+  if (restoreDeltas) spec.config.deltas = restoreDeltas;
 
   const play = buildTownPlay(spec.config);
   // The quest bundle drawn from the town's residents/goods must PROVE itself

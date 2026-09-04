@@ -19,7 +19,7 @@
 // status-epilepticus cue) and whether a flat window is POST-ICTAL (flat shortly
 // after a convulsive pattern) vs. a plain atonic/still reading.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
 import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import type { RawTrackedPose } from "@/lib/poseTrackingTypes";
@@ -73,6 +73,10 @@ export interface UseSeizureWatchReturn {
   /** Whether a subject was in view on the last tick. For the debugger — the
    *  first thing to check when "nothing ever fires". */
   subjectPresent: boolean;
+  /** The habitual-motion baseline as learned SO FAR this session, for the
+   *  cross-session write-back (shared/aac/learned-baselines.ts). Read at send
+   *  time rather than pushed, so it costs nothing when nobody asks. */
+  getLearnedBaseline: () => MotionBaseline;
 }
 
 // Rolling window the DSP analyzes. Long enough to see rhythm + duration, short
@@ -299,7 +303,9 @@ export function useSeizureWatch(options: UseSeizureWatchOptions): UseSeizureWatc
     setBaselineSamples(baselineRef.current.samples);
   }, [faces, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { signature, seizureInfo, watchActive, baselineSamples, subjectPresent };
+  const getLearnedBaseline = useCallback(() => baselineRef.current, []);
+
+  return { signature, seizureInfo, watchActive, baselineSamples, subjectPresent, getLearnedBaseline };
 }
 
 export default useSeizureWatch;

@@ -465,6 +465,13 @@ export async function speak(
   text: string,
   lang: string,
   role: "ai" | "student",
+  opts?: {
+    /** Fired the instant audio starts leaving the speaker (never on a refusal
+     *  or a failure). The caller uses it to hold the mic gate for exactly the
+     *  span this voice is audible — synthesis runs first and can take a second,
+     *  and a gate raised for that dead time is a second of deafness per press. */
+    onStart?: () => void;
+  },
 ): Promise<boolean> {
   if (!text.trim()) return false;
   if (!supportsLanguage(lang)) return false;
@@ -485,6 +492,7 @@ export async function speak(
     // Measure BEFORE playing — playback duration is the audio's own length and
     // would swamp the synthesis cost we're actually gating on.
     recordSynthesisTiming(Date.now() - t0, audio.length / SAMPLE_RATE);
+    opts?.onStart?.();
     await play(audio);
     return true;
   } catch (err) {

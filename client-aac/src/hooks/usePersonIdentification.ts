@@ -3,6 +3,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { fetchWithAuth } from "@/lib/queryClient";
+import { FaceTrackAssociator } from "@/lib/faceTrackAssociation";
 
 // =============================================================================
 // TYPES
@@ -54,6 +55,35 @@ export interface UnknownFaceDescriptor {
   /** 0..1 probability behind `observedSex`. The server ignores low-confidence
    *  sex readings entirely — face-api's gender head is noisy on children. */
   observedSexConfidence?: number;
+
+  /**
+   * TRACK CONTINUITY (presence ledger §7). All optional and all additive: an
+   * older server that knows nothing about tracks reads the same payload it
+   * always did. Populated by `FaceTrackAssociator` — one track holds ONE
+   * identity server-side, which is what stops a single borderline frame from
+   * renaming the person mid-session.
+   */
+  /** Stable handle for this face across frames: `${sourceKey}#${n}`. */
+  trackId?: string;
+  /** How long this track has been alive, in ms. */
+  trackAgeMs?: number;
+  /** How many frames the track has been seen in. */
+  framesInTrack?: number;
+  /**
+   * Running mean of the last few ABOVE-QUALITY descriptors on this track —
+   * the vector worth matching on, because single frames of one person sit far
+   * enough apart to cross the threshold while their mean does not. Omitted
+   * when only one sample backs it: that mean IS `descriptor`, and a 128-float
+   * duplicate per face per batch is real bytes on a tethered device.
+   */
+  meanDescriptor?: number[];
+  /**
+   * How many faces this camera saw in the frame these entries came from (the
+   * RAW count, before the ≤ 3 cap — the server uses it as a ceiling on how
+   * many people it may claim are present, so under-reporting it would be the
+   * dangerous direction). Identical on every entry from the same frame.
+   */
+  facesInFrame?: number;
 }
 
 export interface IdentifySourceOptions {
@@ -222,6 +252,17 @@ const CACHE_DURATION_MS = 5 * 60 * 1000;
 // Known people refresh interval (10 minutes)
 const KNOWN_PEOPLE_REFRESH_MS = 10 * 60 * 1000;
 
+// Faces kept per camera per tick. Matches DEFAULT_FACE_TRACKING_CONFIG.maxFaces
+// so the identification path and the MediaPipe tracking path agree on how
+// crowded a room they are willing to describe.
+const MAX_FACES_PER_SOURCE = 3;
+
+// ONE associator for the whole app, keyed internally by sourceKey. Module-level
+// on purpose: track ids must survive a remount of the hook, or every reload of
+// the component would hand the server a "new person" for the child who never
+// moved.
+const faceTrackAssociator = new FaceTrackAssociator();
+
 // Crop a face from a media element using detection bounding box
 function cropFaceFromElement(
   element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
@@ -341,8 +382,11 @@ export function usePersonIdentification(
   const lastKnownPeopleFetchRef = useRef<number>(0);
   // One pending flag per source so cameras don't block each other
   const pendingIdentificationRef = useRef<Map<string, boolean>>(new Map());
-  // Descriptors keyed by source — last successful detection per camera
-  const unmatchedDescriptorsRef = useRef<Map<string, UnknownFaceDescriptor>>(new Map());
+  // Descriptors keyed by source — the last successful detection per camera,
+  // now ONE ENTRY PER FACE (≤ MAX_FACES_PER_SOURCE) rather than a single
+  // last-write-wins descriptor, so a room with a parent and a child stops
+  // reporting whichever of them the detector happened to pick.
+  const unmatchedDescriptorsRef = useRef<Map<string, UnknownFaceDescriptor[]>>(new Map());
   const faceImageQualityRef = useRef<Map<string, number>>(new Map());
 
   // ==========================================================================
@@ -530,98 +574,163 @@ export function usePersonIdentification(
           inputSize: 224, // Smaller = faster
           scoreThreshold: 0.5,
         });
+        // detectAllFaces, not detectSingleFace: the presence ledger needs to
+        // know how MANY people the camera can see — a face count is the only
+        // hard ceiling on how many people the AI may claim are in the room —
+        // and a second person in frame is precisely the situation where a
+        // single-face guess picks the wrong one.
         const baseTask = () => faceapi
-          .detectSingleFace(element, detectorOptions())
+          .detectAllFaces(element, detectorOptions())
           .withFaceLandmarks(true); // Use tiny landmarks
 
         // Age/sex ride along ONLY when the optional net loaded. Everything past
         // this point must behave identically either way — the extra pass adds
         // fields, it never gates the descriptor.
-        let detection: any = null;
+        let detections: any[] = [];
         if (ageGenderLoaded) {
           try {
-            detection = await baseTask().withAgeAndGender().withFaceDescriptor();
+            detections = await baseTask().withAgeAndGender().withFaceDescriptors();
           } catch (agErr) {
             console.warn("[PersonID] age/gender pass failed — retrying descriptor only:", agErr);
-            detection = await baseTask().withFaceDescriptor();
+            detections = await baseTask().withFaceDescriptors();
           }
         } else {
-          detection = await baseTask().withFaceDescriptor();
+          detections = await baseTask().withFaceDescriptors();
         }
 
-        if (!detection) {
-          // Clear stale descriptor for this source so empty cameras don't keep
-          // sending old data after the person leaves the frame.
+        if (!detections || detections.length === 0) {
+          // Clear stale descriptors for this source so empty cameras don't keep
+          // sending old data after the person leaves the frame. The TRACKS are
+          // deliberately left alone — a blink or a turned head is a gap of a
+          // tick or two, and `lostAfterMs` is what decides when continuity is
+          // genuinely broken.
           unmatchedDescriptorsRef.current.delete(sourceKey);
           return null;
         }
 
-        const result = matchFaceToKnownPeople(detection.descriptor);
-        if (updateCurrent) {
-          setCurrentIdentification(result);
-        }
+        // The honest face count, taken BEFORE the cap: the server treats it as
+        // a ceiling, so it must never read lower than what the camera saw.
+        const facesInFrame = detections.length;
 
-        // Frame quality (frontality/size/score) — sent with the descriptor so
+        // Largest first, then capped. Size is the closest cheap proxy for "who
+        // is actually with the child" — and it keeps the primary face (index 0)
+        // the same one `detectSingleFace` would most often have returned.
+        // (The cap trims what we SEND and track, not what face-api computed:
+        // the chained task already ran a descriptor per detection. At
+        // scoreThreshold 0.5 on a 224px input a room with more than three
+        // detected faces is rare enough not to buy back with a hand-rolled
+        // per-face `computeFaceDescriptor` pass.)
+        const boxArea = (d: any) => {
+          const b = d?.detection?.box;
+          return b ? b.width * b.height : 0;
+        };
+        const kept = [...detections].sort((a, b) => boxArea(b) - boxArea(a)).slice(0, MAX_FACES_PER_SOURCE);
+
+        // Frame quality (frontality/size/score) — sent with each descriptor so
         // the server can decide whether this pose is worth adding to the
         // person's gallery. Cheap; computed for every detection.
         const elementW = element instanceof HTMLVideoElement ? element.videoWidth : element.width;
         const elementH = element instanceof HTMLVideoElement ? element.videoHeight : element.height;
-        const quality = assessFaceQuality(detection, elementW, elementH);
+        const qualities = kept.map(d => assessFaceQuality(d, elementW, elementH));
+        const descriptors = kept.map(d => Array.from(d.descriptor as Float32Array) as number[]);
 
-        // Always surface the detected descriptor so the server can run its own
-        // (authoritative) database match. The local match above is kept only
-        // for client-side face-image caching; the server is the source of
+        // Tie this frame's faces to the ones from the last frame. Quality is
+        // passed through so a blurred profile shot moves the box without
+        // polluting the track's averaged descriptor.
+        const now = Date.now();
+        const tracks = faceTrackAssociator.associate(
+          sourceKey,
+          kept.map((d, i) => {
+            const b = d.detection.box;
+            return {
+              box: { x: b.x, y: b.y, w: b.width, h: b.height },
+              descriptor: descriptors[i],
+              quality: qualities[i],
+            };
+          }),
+          now,
+        );
+
+        // Always surface every detected descriptor so the server can run its
+        // own (authoritative) database match. The local match below is kept
+        // only for client-side face-image caching; the server is the source of
         // truth for the AI.
-        const box = detection.detection.box;
+        const entries: UnknownFaceDescriptor[] = kept.map((detection, i) => {
+          const box = detection.detection.box;
+          const track = tracks[i];
 
-        // Coarse observed attributes (present only when ageGenderNet ran and
-        // produced usable numbers). Each is spread in individually so a partial
-        // read — say an age with no gender label — still contributes what it
-        // has, and a total miss leaves the payload byte-identical to before.
-        const rawAge = detection.age;
-        const observedAge =
-          typeof rawAge === "number" && Number.isFinite(rawAge) && rawAge > 0 ? rawAge : undefined;
-        const rawSex = detection.gender;
-        const observedSex: "male" | "female" | undefined =
-          rawSex === "male" || rawSex === "female" ? rawSex : undefined;
-        const rawSexConf = detection.genderProbability;
-        const observedSexConfidence =
-          observedSex && typeof rawSexConf === "number" && Number.isFinite(rawSexConf)
-            ? rawSexConf
-            : undefined;
+          // Coarse observed attributes (present only when ageGenderNet ran and
+          // produced usable numbers). Each is spread in individually so a
+          // partial read — say an age with no gender label — still contributes
+          // what it has, and a total miss leaves the payload byte-identical to
+          // before.
+          const rawAge = detection.age;
+          const observedAge =
+            typeof rawAge === "number" && Number.isFinite(rawAge) && rawAge > 0 ? rawAge : undefined;
+          const rawSex = detection.gender;
+          const observedSex: "male" | "female" | undefined =
+            rawSex === "male" || rawSex === "female" ? rawSex : undefined;
+          const rawSexConf = detection.genderProbability;
+          const observedSexConfidence =
+            observedSex && typeof rawSexConf === "number" && Number.isFinite(rawSexConf)
+              ? rawSexConf
+              : undefined;
 
-        unmatchedDescriptorsRef.current.set(sourceKey, {
-          descriptor: Array.from(detection.descriptor),
-          boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
-          cameraRole,
-          cameraLabel,
-          quality,
-          ...(observedAge !== undefined ? { observedAge } : {}),
-          ...(observedSex !== undefined ? { observedSex } : {}),
-          ...(observedSexConfidence !== undefined ? { observedSexConfidence } : {}),
+          const sendMean = !!track?.meanDescriptor && track.descriptorCount >= 2;
+
+          return {
+            descriptor: descriptors[i],
+            boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
+            cameraRole,
+            cameraLabel,
+            quality: qualities[i],
+            ...(observedAge !== undefined ? { observedAge } : {}),
+            ...(observedSex !== undefined ? { observedSex } : {}),
+            ...(observedSexConfidence !== undefined ? { observedSexConfidence } : {}),
+            ...(track
+              ? {
+                  trackId: track.trackId,
+                  trackAgeMs: now - track.firstSeenAt,
+                  framesInTrack: track.frames,
+                  ...(sendMean ? { meanDescriptor: track.meanDescriptor as number[] } : {}),
+                }
+              : {}),
+            facesInFrame,
+          };
         });
+        unmatchedDescriptorsRef.current.set(sourceKey, entries);
+
+        // The primary face — largest in frame — is the one that drives
+        // `currentIdentification` and the face-image cache, matching the old
+        // single-face behaviour as closely as a multi-face pass can.
+        const primary = kept[0];
+        const primaryQuality = qualities[0];
+        const result = matchFaceToKnownPeople(primary.descriptor);
+        if (updateCurrent) {
+          setCurrentIdentification(result);
+        }
 
         if (updateCurrent && result.identified) {
           // Auto-capture face image for contacts (client-side cache only)
           if (result.person?.type === "contact") {
             const contactId = result.person.id;
             const cachedQuality = faceImageQualityRef.current.get(contactId);
-            const shouldCache = !cachedQuality || quality > cachedQuality;
+            const shouldCache = !cachedQuality || primaryQuality > cachedQuality;
 
             if (shouldCache) {
-              const imageData = cropFaceFromElement(element, detection.detection.box);
+              const imageData = cropFaceFromElement(element, primary.detection.box);
               if (imageData) {
                 const dataUrl = `data:image/jpeg;base64,${imageData}`;
-                faceImageQualityRef.current.set(contactId, quality);
-                cacheFaceImageRef.current?.(contactId, dataUrl, quality);
+                faceImageQualityRef.current.set(contactId, primaryQuality);
+                cacheFaceImageRef.current?.(contactId, dataUrl, primaryQuality);
                 setLastCapturedFaceImage({
                   contactId,
                   contactName: result.person.name,
                   dataUrl,
-                  quality,
+                  quality: primaryQuality,
                   timestamp: Date.now(),
                 });
-                console.log(`[PersonID] Cached face image for "${result.person.name}" (${contactId}), quality=${quality.toFixed(3)}`);
+                console.log(`[PersonID] Cached face image for "${result.person.name}" (${contactId}), quality=${primaryQuality.toFixed(3)}`);
               }
             }
           }
@@ -663,10 +772,18 @@ export function usePersonIdentification(
     identificationCacheRef.current.clear();
     setCurrentIdentification(null);
     unmatchedDescriptorsRef.current.clear();
+    // Tracks go too: clearing the cache means "forget what you think you know
+    // about who is here", and a surviving track would carry the old identity
+    // straight back to the server on the next tick.
+    faceTrackAssociator.reset();
   }, []);
 
+  /** Every cached face across every camera — bounded at
+   *  MAX_FACES_PER_SOURCE per source, so this stays small by construction. */
   const getUnmatchedDescriptors = useCallback((): UnknownFaceDescriptor[] => {
-    return Array.from(unmatchedDescriptorsRef.current.values());
+    const out: UnknownFaceDescriptor[] = [];
+    for (const entries of unmatchedDescriptorsRef.current.values()) out.push(...entries);
+    return out;
   }, []);
 
   return {

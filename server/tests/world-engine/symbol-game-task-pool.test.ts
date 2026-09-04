@@ -231,6 +231,70 @@ describe("chooseClaimant — the priced claim", () => {
   });
 });
 
+// ── #50 ④ — THE RULED PRIORITY ─────────────────────────────────────────────
+//
+// User ruling 2026-09-03: *"Player orders should take high priority and
+// creatures should only idle if either their need for rest is high or there
+// is nothing to do."* The claim sweep walks `open()` and fills each row from
+// the bodies that are free, one task per body — so this list's ORDER is the
+// order hands are handed out, and creation order alone put a spoken errand
+// behind whatever ambient stocking row the town happened to post first.
+describe("#50 ④ open() — spoken rows first, age within each group", () => {
+  const post = (pool: ReturnType<typeof createTaskPool>, now: number, spoken?: boolean) =>
+    pool.post({ goal: FETCH_WOOD, issuer: "__player__", focus: FOCUS, now, ...(spoken ? { spoken: true } : {}) });
+
+  it("a SPOKEN task claims ahead of an OLDER ambient row", () => {
+    const pool = createTaskPool();
+    const ambient = post(pool, 0);
+    const spoken = post(pool, 10, true);
+    // The ambient row is older and was posted first; the ruling still puts the
+    // one somebody asked for in front of it.
+    expect(pool.open().map((t) => t.id)).toEqual([spoken.id, ambient.id]);
+  });
+
+  it("AGE still decides inside each group — the partition is stable", () => {
+    const pool = createTaskPool();
+    const a1 = post(pool, 0);
+    const s1 = post(pool, 1, true);
+    const a2 = post(pool, 2);
+    const s2 = post(pool, 3, true);
+    expect(pool.open().map((t) => t.id)).toEqual([s1.id, s2.id, a1.id, a2.id]);
+  });
+
+  it("BYTE-IDENTICAL when nothing is spoken — and when everything is", () => {
+    // The two homogeneous cases are the shipped creation order verbatim, which
+    // is what keeps every determinism/replay pin written before #50 true for an
+    // ambient town (and for a session where the player drives everything).
+    const ambientOnly = createTaskPool();
+    const ids = [post(ambientOnly, 0).id, post(ambientOnly, 1).id, post(ambientOnly, 2).id];
+    expect(ambientOnly.open().map((t) => t.id)).toEqual(ids);
+
+    const spokenOnly = createTaskPool();
+    const sids = [post(spokenOnly, 0, true).id, post(spokenOnly, 1, true).id];
+    expect(spokenOnly.open().map((t) => t.id)).toEqual(sids);
+  });
+
+  it("priority is about HANDS, not status: a spoken row claims and expires like any other", () => {
+    const pool = createTaskPool();
+    const spoken = post(pool, 0, true);
+    const ambient = post(pool, 0);
+    expect(pool.claim(spoken.id, "wolf_1")).toBe(true);
+    expect(pool.open().map((t) => t.id)).toEqual([ambient.id]); // claimed rows leave
+    expect(pool.expire(DEFAULT_TASK_TTL_S).map((t) => t.id)).toEqual([ambient.id]);
+  });
+
+  it("`spoken` rides the row and the round trip; ABSENT stays absent", () => {
+    const pool = createTaskPool();
+    const s = post(pool, 0, true);
+    const a = post(pool, 0);
+    expect(s.spoken).toBe(true);
+    expect("spoken" in a).toBe(false); // an ambient row serializes as it always did
+    const revived = createTaskPool(pool.toJSON());
+    expect(revived.get(s.id)?.spoken).toBe(true);
+    expect("spoken" in (revived.get(a.id) as object)).toBe(false);
+  });
+});
+
 describe("issuer-agnosticism + the mutation-layer contract", () => {
   it("a CREATURE issuer rides the same rows — nothing special-cases the player", () => {
     const pool = createTaskPool();

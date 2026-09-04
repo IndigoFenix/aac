@@ -37,7 +37,22 @@ import {
   type LimbPlacement,
   type MembraneEdge,
 } from "@shared/world-engine/creatures/blueprint";
-import { buildSkeleton, limbTip } from "@shared/world-engine/creatures/skeleton";
+import {
+  buildSkeleton,
+  limbTip,
+  type CreatureSkeleton,
+  type LegSupport,
+  type SkeletonPhysics,
+  type SupportDiagnostics,
+} from "@shared/world-engine/creatures/skeleton";
+import {
+  SAFETY_FACTOR,
+  boneStressPa,
+  massKg,
+  objectMassFromSize,
+  type BearVerdict,
+} from "@shared/world-engine/creatures/physio";
+import { convexHull2D } from "@shared/world-engine/creatures/balance";
 import {
   FRUIT_PLACEMENTS,
   GROWTH_ATTACH,
@@ -219,6 +234,395 @@ function applySectionColors(): void {
   }
   sectionLegendEl.style.display = "block";
 }
+
+// ── Stress physics (phase 2) ─────────────────────────────────────────────
+// `buildSkeleton` attaches a SUPPORT LEDGER to every skeleton it builds
+// (`skel.support`, a SupportDiagnostics computed by physio.ts): what the body
+// weighs, where that weight lands, which legs are actually bearing it and how
+// hard each one works. Phase 1 only computed it. This section makes it
+// VISIBLE — a per-bone stress tint on the skin, a ground overlay (support
+// polygon / CoM / foot forces / tipping lever) and a numeric readout — and
+// owns the gravity dial that every buildSkeleton call on this page reads.
+//
+// Gravity feeds back into NOTHING: it scales forces and stresses and nothing
+// else, so turning that dial must never move a bone.
+//
+// ⚖️ THE LOAD DIALS ARE THE EXCEPTION, and they are supposed to be. A body
+// carrying something really does stand lower (skeleton.ts section 6 derives
+// the sag from the same strengths this readout prints), so the crate in the
+// jaws and the pack on the back both move the pose — through `phys.loads`,
+// which `physEnv` merges from the animator's frame.
+let stressView = false;
+/** Sub-toggle: the ground overlay is the loudest part of the stress view, so
+ *  it can be dropped while keeping the skin tint. Only ever drawn when
+ *  `stressView` is on. */
+let groundOverlay = true;
+// gravity — a pure diagnostic multiplier (never moves a bone);
+// objectMass — the crate's mass as a MULTIPLE of `objectMassFromSize` (1 =
+//   auto: as dense as the creature carrying it), so the dial stays readable
+//   without the reader having to think in π-dropped volume proxies;
+// backLoad  — a persistent pack as a fraction of the creature's OWN body mass
+//   (0.5 = a dog carrying half a dog), which is the only scale on which "is
+//   that a lot?" has an answer.
+const physMisc = { gravity: 1, objectMass: 1, backLoad: 0 };
+/** The last refused pick-up (physio.canBear's verdict), so the panel can SAY
+ *  the body said no instead of the button silently doing nothing. */
+let lastRefusal: BearVerdict | null = null;
+/** The ledger from the MOST RECENT build. Written by rebuildGeometry, so the
+ *  animator tick refreshes it for free; read by the readout, the overlay and
+ *  the `stressReport()` hook. */
+let lastSupport: SupportDiagnostics | null = null;
+/** The readout <pre>. Rebuilt with the panel (buildPanel wipes it), so it is
+ *  held like `statusEl` — nullable, re-attached each buildPanel. */
+let stressReadoutEl: HTMLElement | null = null;
+
+/** THE physics source of truth. Every `buildSkeleton` call in this file
+ *  passes it, so one dial moves the static build, the gait build and the
+ *  animator tick together.
+ *
+ *  🚨 THE ANIMATOR'S LOADS RIDE ALONG. `AnimFrame.loads` is what the creature
+ *  is holding this frame (the crate in its jaws, the pack on its back), and
+ *  the CALLER is the one that has to merge it into `phys` — this is that
+ *  merge, in one place, so the static build, the frozen-gait build and the
+ *  live tick can never disagree about what the body is carrying. With the
+ *  animator off (or empty-handed) it is undefined and the build is the
+ *  byte-identical unloaded one. Gravity multiplies loads for free: it is
+ *  applied to the total weight, and a load is part of the total. */
+const physEnv = (): SkeletonPhysics => ({
+  gravity: physMisc.gravity,
+  loads: animOn ? animFrame?.loads : undefined,
+});
+
+// Stress ramp: green (0) → yellow (0.7) → red (1) → near-black violet (>= 3).
+// The tail past 1 is what separates "borderline red" (a horse at 1.06, an
+// evolutionary edge case) from "over the border red" (a sauropod at 2.3 under
+// a mammal bone fraction) at a glance. Grey is deliberately OFF the ramp — an
+// unloaded manipulator is not "healthy support", it is not supporting
+// anything, and green would read as the former.
+const STRESS_UNLOADED = new THREE.Color("#7c848d");
+const RAMP_LO = new THREE.Color("#2fbf4f");
+const RAMP_MID = new THREE.Color("#e8d13a");
+const RAMP_HI = new THREE.Color("#e03c28");
+const RAMP_OVER = new THREE.Color("#3a0a2e");
+
+function stressRamp(s: number): THREE.Color {
+  const raw = Number.isFinite(s) ? Math.max(0, s) : 0;
+  const c = new THREE.Color();
+  if (raw >= 1) return c.copy(RAMP_HI).lerp(RAMP_OVER, Math.min(1, (raw - 1) / 2));
+  if (raw <= 0.7) c.copy(RAMP_LO).lerp(RAMP_MID, raw / 0.7);
+  else c.copy(RAMP_MID).lerp(RAMP_HI, (raw - 0.7) / 0.3);
+  return c;
+}
+
+/** Which ledger row a bone chain belongs to. Digit bones are named
+ *  `${legChain}d${k}` (skeleton.ts addDigits), so a leg owns its toes. */
+function legForChain(sup: SupportDiagnostics, chain: string): LegSupport | undefined {
+  return sup.legs.find((l) => chain === l.chain || chain.startsWith(`${l.chain}d`));
+}
+
+/** Stress colour for one bone chain. */
+function chainStressColor(sup: SupportDiagnostics, chain: string): THREE.Color {
+  const leg = legForChain(sup, chain);
+  // An ungrounded limb carries nothing — grey, not green (see above). The
+  // ledger cannot tell a relaxed ARM from a hind leg that just lost the
+  // ground (both are `grounded:false, force:0`); the overlay's shrunken
+  // support polygon and tipping arrow are what distinguish them.
+  if (leg) return leg.grounded ? stressRamp(leg.stress) : STRESS_UNLOADED.clone();
+  if (chain === "spine") return stressRamp(sup.chainStress.spine ?? 0);
+  if (chain === "tail") return stressRamp(sup.chainStress.tail ?? 0);
+  // The head IS the load the neck cantilever number measures, so the whole
+  // head group wears it.
+  if (chain === "neck" || chain === "head" || chain === "snout" || chain === "jaw" || chain === "nose") {
+    return stressRamp(sup.chainStress.neck ?? 0);
+  }
+  return STRESS_UNLOADED.clone(); // tentacle chains / growths: no ledger row
+}
+
+/** Repaint the built mesh's colour attribute by per-bone stress.
+ *
+ *  The mesh is a SkinnedMesh and mesh.ts binds every vertex to one or two
+ *  skeleton bones (`skinIndex` / `skinWeight`, bone index == `skel.bones`
+ *  index, 1:1). So the vertex→bone→chain mapping is already in the geometry
+ *  and the REAL SKIN gets tinted — no capsule overlay needed. */
+function applyStressColors(skel: CreatureSkeleton): void {
+  if (!built) return;
+  const geo = built.mesh.geometry;
+  const attr = geo.getAttribute("color") as THREE.BufferAttribute | undefined;
+  const skin = geo.getAttribute("skinIndex") as THREE.BufferAttribute | undefined;
+  const wts = geo.getAttribute("skinWeight") as THREE.BufferAttribute | undefined;
+  if (!attr || !skin || !wts) return;
+  const byBone = skel.bones.map((b) => chainStressColor(skel.support, b.chain));
+  for (let i = 0; i < attr.count; i++) {
+    // Dominant bind — a 50/50 seam vertex takes boneA, which keeps the seam
+    // on the chain boundary instead of dithering it.
+    const bi = wts.getX(i) >= 0.5 ? skin.getX(i) : skin.getY(i);
+    const c = byBone[bi] ?? STRESS_UNLOADED;
+    attr.setXYZ(i, c.r, c.g, c.b);
+  }
+  attr.needsUpdate = true;
+}
+
+// ── Ground overlay ───────────────────────────────────────────────────────
+// One group holding the support polygon, the CoM marker + drop line, an
+// upward force arrow per grounded foot, and (when the body is tipping) the
+// horizontal lever from the CoM's ground point to the centre of pressure.
+const stressOverlay = new THREE.Group();
+stressOverlay.visible = false;
+scene.add(stressOverlay);
+const overlayDisposers: Array<() => void> = [];
+
+function clearStressOverlay(): void {
+  for (const d of overlayDisposers) d();
+  overlayDisposers.length = 0;
+  stressOverlay.clear();
+}
+
+/** ArrowHelper's line/cone geometries are MODULE-SHARED in three — disposing
+ *  them would yank the buffers out from under every later arrow. Only the
+ *  per-instance materials are ours to free. */
+function addArrow(dir: THREE.Vector3, origin: THREE.Vector3, len: number, color: string): void {
+  const head = Math.min(len * 0.3, len);
+  const arrow = new THREE.ArrowHelper(dir.clone().normalize(), origin, Math.max(len, 1e-4), color, head, head * 0.5);
+  // A diagnostic overlay must read THROUGH the body it diagnoses — a force
+  // arrow hidden behind a thigh is the one you needed to see.
+  for (const part of [arrow.line, arrow.cone]) {
+    const m = part.material as THREE.Material;
+    m.depthTest = false;
+    part.renderOrder = 6;
+  }
+  overlayDisposers.push(() => {
+    (arrow.line.material as THREE.Material).dispose();
+    (arrow.cone.material as THREE.Material).dispose();
+  });
+  stressOverlay.add(arrow);
+}
+
+function addLine(pts: THREE.Vector3[], color: string, loop: boolean): void {
+  if (pts.length < 2) return;
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
+  const obj = loop ? new THREE.LineLoop(geo, mat) : new THREE.Line(geo, mat);
+  obj.renderOrder = 5;
+  overlayDisposers.push(() => { geo.dispose(); mat.dispose(); });
+  stressOverlay.add(obj);
+}
+
+/** Centre of pressure, Σ(force·foot)/Σforce over the grounded feet. The
+ *  ledger does not expose it (physio.solveFootForces computes it internally
+ *  and SupportDiagnostics drops it — see the phase-3 wishlist), so the lab
+ *  re-derives it from the per-leg forces it does get. */
+function centerOfPressure(sup: SupportDiagnostics): { x: number; z: number } | null {
+  let fx = 0, fz = 0, sum = 0;
+  for (const leg of sup.legs) {
+    if (!leg.grounded || !leg.foot || !(leg.force > 0)) continue;
+    fx += leg.force * leg.foot.x;
+    fz += leg.force * leg.foot.z;
+    sum += leg.force;
+  }
+  return sum > 1e-9 ? { x: fx / sum, z: fz / sum } : null;
+}
+
+function rebuildStressOverlay(skel: CreatureSkeleton): void {
+  clearStressOverlay();
+  stressOverlay.visible = stressView && groundOverlay;
+  if (!stressOverlay.visible) return;
+  const sup = skel.support;
+  // Scale everything to the body so the overlay reads on a mouse and on a cow.
+  const span = Math.max(
+    skel.bounds.max.y - skel.bounds.min.y,
+    skel.bounds.max.z - skel.bounds.min.z,
+    0.05,
+  );
+  const Y = span * 0.004; // lift off the ground plane so it does not z-fight
+
+  // 1) Support polygon over the grounded feet.
+  const feet = sup.legs
+    .filter((l) => l.grounded && l.foot)
+    .map((l) => ({ x: l.foot!.x, z: l.foot!.z }));
+  const hull = convexHull2D(feet);
+  if (hull.length >= 2) {
+    addLine(hull.map((p) => new THREE.Vector3(p.x, Y, p.z)), "#5fd0ff", hull.length >= 3);
+  } else if (hull.length === 1) {
+    // A single foot is a POINT of support — draw a tick so "one contact" is
+    // visibly different from "no polygon drawn".
+    const r = span * 0.02;
+    addLine([new THREE.Vector3(hull[0].x - r, Y, hull[0].z), new THREE.Vector3(hull[0].x + r, Y, hull[0].z)], "#5fd0ff", false);
+    addLine([new THREE.Vector3(hull[0].x, Y, hull[0].z - r), new THREE.Vector3(hull[0].x, Y, hull[0].z + r)], "#5fd0ff", false);
+  }
+
+  // 2) CoM marker + drop line. Red once the CoM is outside its support.
+  const comColor = sup.body.supportMargin < 0 ? "#ff4433" : "#ffffff";
+  const com = new THREE.Vector3(sup.body.com.x, sup.body.com.y, sup.body.com.z);
+  const ball = new THREE.SphereGeometry(span * 0.022, 12, 8);
+  const ballMat = new THREE.MeshBasicMaterial({ color: comColor, depthTest: false });
+  const ballMesh = new THREE.Mesh(ball, ballMat);
+  ballMesh.position.copy(com);
+  ballMesh.renderOrder = 6;
+  overlayDisposers.push(() => { ball.dispose(); ballMat.dispose(); });
+  stressOverlay.add(ballMesh);
+  addLine([com, new THREE.Vector3(com.x, Y, com.z)], comColor, false);
+
+  // 3) One upward force arrow per grounded foot, length ∝ force / weight
+  //    (so the arrows sum to a body-height's worth of arrow), tinted by the
+  //    leg's own stress.
+  const w = sup.body.weight > 0 ? sup.body.weight : 1;
+  for (const leg of sup.legs) {
+    if (!leg.grounded || !leg.foot || !(leg.force > 0)) continue;
+    const len = (leg.force / w) * span * 0.9;
+    addArrow(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(leg.foot.x, Y, leg.foot.z),
+      len,
+      `#${stressRamp(leg.stress).getHexString()}`,
+    );
+  }
+
+  // 4) The tipping lever: CoM ground point → centre of pressure. Non-zero
+  //    only when no non-negative foot force can balance the body (the
+  //    handstand signature) — its length IS `body.tipping`.
+  if (sup.body.tipping > 1e-6) {
+    const cop = centerOfPressure(sup);
+    if (cop) {
+      const from = new THREE.Vector3(sup.body.com.x, Y, sup.body.com.z);
+      const to = new THREE.Vector3(cop.x, Y, cop.z);
+      const d = to.clone().sub(from);
+      if (d.lengthSq() > 1e-12) addArrow(d, from, d.length(), "#ff7a18");
+    }
+  }
+}
+
+/** Upper edge of the VIABLE band — see the verdict note below. Deliberately
+ *  above 1/SAFETY_FACTOR (≈0.36), the value a real line-conforming animal
+ *  reads, so that such a body lands comfortably inside the band instead of on
+ *  its boundary. */
+const VIABLE_SIGMA = 0.5;
+
+/** The numeric readout — body row, chain row, one row per limb. */
+function updateStressReadout(sup: SupportDiagnostics | null): void {
+  if (!stressReadoutEl) return;
+  if (!sup) { stressReadoutEl.textContent = "(no build yet)"; return; }
+  const n = (v: number, d = 2): string => (Number.isFinite(v) ? v.toFixed(d) : String(v));
+  /** Real mass, in whichever unit a person can picture it in. The proxy is
+   *  π-dropped m³ and spans mouse-to-whale, so a fixed unit is unreadable at
+   *  one end or the other. */
+  const kg = (v: number): string =>
+    !Number.isFinite(v) ? String(v)
+      : v < 1 ? `${(v * 1000).toFixed(v < 0.01 ? 1 : 0)} g`
+      : v < 10 ? `${v.toFixed(2)} kg`
+      : v < 1000 ? `${v.toFixed(1)} kg`
+      : `${(v / 1000).toFixed(2)} t`;
+  const lines: string[] = [];
+  // 🚨 `sup.body.mass` IS ALREADY DENSITY-WEIGHTED — the ledger folds
+  // `spine.density` into every bone's proxy mass — so `massKg` is called at
+  // density 1 here. Multiplying by the dial again would double-count it.
+  lines.push(
+    `mass ${n(sup.body.mass, 3)} (${kg(massKg(sup.body.mass))})` +
+    `   weight ${n(sup.body.weight, 3)}   g ${n(sup.body.gravity)}`,
+  );
+  lines.push(`density ${n(blueprint.spine.density)}× tissue`);
+  // What it is CARRYING, kept on its own line and only when there is
+  // something: body vs load is the whole question a load dial raises.
+  if (sup.body.loadMass > 0) {
+    const share = sup.body.mass > 0 ? (100 * sup.body.loadMass) / sup.body.mass : 0;
+    lines.push(
+      `load ${n(sup.body.loadMass, 3)} (${kg(massKg(sup.body.loadMass))}, ` +
+      `${share.toFixed(0)}% of body)` +
+      `   total ${kg(massKg(sup.body.mass + sup.body.loadMass))}`,
+    );
+  }
+  // A REFUSED PICK-UP MUST SAY SO. The button used to no-op silently, which
+  // reads as a bug; now the body's own reason is on the panel.
+  if (lastRefusal) {
+    lines.push(
+      `REFUSED: ${lastRefusal.bind} σ ` +
+      `${n(lastRefusal.bind === "stance" ? lastRefusal.stance : lastRefusal.carrier)}` +
+      ` > ${n(lastRefusal.limit)}`,
+    );
+  }
+  lines.push(`com  ${n(sup.body.com.x, 3)} ${n(sup.body.com.y, 3)} ${n(sup.body.com.z, 3)}`);
+  lines.push(
+    `tipping ${n(sup.body.tipping, 3)}   margin ${n(sup.body.supportMargin, 3)}`,
+  );
+  lines.push(
+    `belly ${sup.body.bellyRest ? `REST (${n(sup.body.bellyShare)})` : "no"}` +
+    `   standing ${sup.legs.filter((l) => l.grounded).length}/${sup.legs.length}`,
+  );
+  lines.push("");
+  for (const [k, v] of Object.entries(sup.chainStress)) lines.push(`${k.padEnd(9)} σ ${n(v)}`);
+  lines.push("");
+  for (const leg of sup.legs) {
+    const mark = leg.grounded ? "●" : leg.foot ? "○" : "×"; // × = cannot reach the ground
+    // `ema` is the posture tax (1 = columnar pillar, >1 = muscles fighting a
+    // moment through the same bone); `bind` is which failure mode set
+    // `strength`, abbreviated so the row stays one screen wide —
+    // C = crushing, B = Euler buckling (the slender-column mode).
+    lines.push(
+      `${leg.chain.padEnd(9)}${mark} F ${n(leg.force, 3).padStart(7)}` +
+      // ⚖️ ema saturates at physio's EMA_MAX (1e4) on a limb with no lever at
+      // all; printed in full it would blow the column apart, so cap the label.
+      `  ema ${(leg.ema >= 100 ? "99+" : n(leg.ema)).padStart(5)}` +
+      `  ${leg.bind === "buckle" ? "B" : "C"}` +
+      `  σ ${n(leg.stress).padStart(5)}`,
+    );
+  }
+
+  // ── VERDICT ────────────────────────────────────────────────────────────
+  // 🚨 THE LOUDEST LINE, AND THE ONLY ONE THAT ANSWERS THE QUESTION SOMEONE
+  // OPENED THIS PANEL WITH: could this body stand up in the real world?
+  // Read off the WORST GROUNDED SUPPORT leg — a manipulator is allowed to be
+  // off the ground and an ungrounded support leg carries no force, so neither
+  // says anything about what the body is standing on.
+  //
+  // The bands are anchored on physio's own two fixed points, not on taste:
+  //   • σ ≤ 0.5 — VIABLE. A real, Campione-line-conforming quadruped standing
+  //     still reads 1/SAFETY_FACTOR ≈ 0.36, so the band has to CONTAIN that
+  //     number with room on both sides — putting the cut exactly AT 0.36 made
+  //     the shipped cat (0.364, i.e. a textbook-correct body) print "marginal"
+  //     on a rounding error, which is worse than useless. 0.5 still leaves a
+  //     2× margin, so nothing called viable here is anywhere near its limit.
+  //   • σ ≤ 1 — MARGINAL. Standing is fine, but the body has eaten into the
+  //     margin a real animal keeps for running, landing and stumbling.
+  //   • σ ≤ SAFETY_FACTOR (2.75) — OVER CAPACITY. Past the conformance
+  //     threshold: no animal is shaped like this, and it fails the moment it
+  //     moves. (Still standing, though — σ = 1 is not a fracture threshold;
+  //     `boneStressPa(1)` ≈ 1.8 MPa against cortical bone's ~200 MPa.)
+  //   • above that — NOT VIABLE. Beyond even the whole dynamic margin; the
+  //     legs are decorative.
+  const worst = sup.legs
+    .filter((l) => l.role === "support" && l.grounded)
+    .reduce<LegSupport | null>((a, l) => (a && a.stress >= l.stress ? a : l), null);
+  lines.push("");
+  if (!worst) {
+    lines.push(
+      sup.body.bellyRest
+        ? "VERDICT: on its belly — no grounded support leg to judge"
+        : "VERDICT: no grounded support leg",
+    );
+  } else {
+    const s = worst.stress;
+    const verdict =
+      s <= VIABLE_SIGMA ? "viable"
+        : s <= 1 ? "marginal — standing on its safety margin"
+        : s <= SAFETY_FACTOR ? "over capacity"
+        : "NOT viable";
+    lines.push(
+      `VERDICT: σ ${n(s)} — ${verdict}` +
+      `   (${worst.chain}, ${(boneStressPa(s) / 1e6).toFixed(2)} MPa bone)`,
+    );
+  }
+
+  stressReadoutEl.textContent = lines.join("\n");
+}
+
+/** Record one build's ledger and refresh everything that shows it. Called
+ *  from rebuildGeometry, so the static build, the gait build and the
+ *  animator tick all keep the readout, overlay and `stressReport()` current. */
+function publishSupport(skel: CreatureSkeleton): void {
+  lastSupport = skel.support;
+  updateStressReadout(lastSupport);
+  rebuildStressOverlay(skel);
+}
+
 // Polygon picker (debug): click a triangle → highlight it, show + copy its
 // face/vertex indices, so a specific polygon can be named exactly. The
 // three vertices are labeled with their indices ON the model (projected
@@ -404,10 +808,28 @@ function ensureObject(): THREE.Mesh {
 // reach can keep crouching until the hand actually arrives. Shared by the
 // live loop and the deterministic screenshot hook.
 let animPaused = false;
+/** The crate's proxy mass: auto from its size, times the panel's multiplier. */
+function objectMass(): number {
+  return objectMassFromSize(objectMisc.size) * physMisc.objectMass;
+}
+
+/** Fire a pick-up and REMEMBER A REFUSAL (the readout shows it). */
+function tryPickUp(): void {
+  if (!animator) return;
+  objectPos.y = objectMisc.size / 2;
+  const ok = animator.pickUp(
+    { x: objectPos.x, y: objectPos.y, z: objectPos.z }, objectMisc.size, objectMass());
+  lastRefusal = ok ? null : animator.lastRefusal();
+  updateStressReadout(lastSupport);
+}
+
 function stepAnim(dt: number): void {
   if (!animator) return;
   animator.setSpeed(animMisc.speed);
   animator.pattern = gaitParams.pattern;
+  // The pack dial is a fraction of the creature's OWN mass, so it needs the
+  // ledger — before the first build there is nothing to take a fraction of.
+  animator.setBackLoad(physMisc.backLoad > 0 ? physMisc.backLoad * (lastSupport?.body.mass ?? 0) : 0);
   animFrame = animator.update(dt);
   blueprint.posture.bodyPitch = animFrame.posture.bodyPitch;
   blueprint.posture.bodyHeight = animFrame.posture.bodyHeight;
@@ -478,7 +900,7 @@ function disposeLodPreview(): void {
 // Rebuild ONLY the geometry from the current blueprint — cheap enough to run
 // every frame, which is how the posture animation re-solves the strain pose
 // (legs plant/lift, knees fold/straighten) as the torso target moves.
-function rebuildGeometry(): ReturnType<typeof buildSkeleton> {
+function rebuildGeometry(): CreatureSkeleton {
   disposeBuilt();
   disposeLodPreview();
   // Show the soil plane when a root vegetable is present (its body grows
@@ -487,7 +909,8 @@ function rebuildGeometry(): ReturnType<typeof buildSkeleton> {
   if (lodPreview !== "off") {
     // Static-kind preview: what a scattered instance of this blueprint
     // would render as at mid range (LOD1) or far range (impostor).
-    const skel = buildSkeleton(blueprint);
+    const skel = buildSkeleton(blueprint, undefined, undefined, undefined, physEnv());
+    publishSupport(skel);
     const lods = buildPlantLods(blueprint);
     lodDisposers.push(() => lods.dispose());
     if (lodPreview === "stick") {
@@ -517,12 +940,22 @@ function rebuildGeometry(): ReturnType<typeof buildSkeleton> {
     return skel;
   }
   const skel = animOn
-    ? buildSkeleton(blueprint, animFrame?.gait, animFrame?.pose)
-    : buildSkeleton(blueprint, walking ? gaitParams : undefined, mouthMisc.gape > 0 ? { gape: mouthMisc.gape } : undefined);
+    ? buildSkeleton(blueprint, animFrame?.gait, animFrame?.pose, undefined, physEnv())
+    : buildSkeleton(
+        blueprint,
+        walking ? gaitParams : undefined,
+        mouthMisc.gape > 0 ? { gape: mouthMisc.gape } : undefined,
+        undefined,
+        physEnv(),
+      );
+  publishSupport(skel);
   built = buildCreatureMesh(skel, blueprint, { bareSkull, toon: celShading, debugTags: true });
   (built.mesh.material as THREE.MeshStandardMaterial).wireframe = wireframe;
   if (colorBySection) applySectionColors();
   else sectionLegendEl.style.display = "none";
+  // Stress wins over color-by-section when both are on — they share the one
+  // vertex-colour attribute and the stress view is the more specific ask.
+  if (stressView) applyStressColors(skel);
   scene.add(built.mesh);
   if (showSkeleton) {
     skeletonHelper = new THREE.SkeletonHelper(built.mesh);
@@ -607,16 +1040,118 @@ function slider(
   });
 }
 
+/** @param custom keys the caller ships a DEDICATED widget for (see the
+ *  torso-length vernier below). The auto-pass emits the custom row IN PLACE of
+ *  the generated one, at the field's own position — it must never emit both,
+ *  or two widgets write the same field and neither shows the other's value. */
 function sliderSection(
   title: string,
   obj: Record<string, number>,
   ranges: Record<string, FieldRange>,
   open = false,
+  custom: Record<string, (parent: HTMLElement) => void> = {},
 ): void {
   const s = section(title, open);
   for (const [key, range] of Object.entries(ranges)) {
-    slider(s, key, obj, key, range);
+    const own = custom[key];
+    if (own) own(s);
+    else slider(s, key, obj, key, range);
   }
+}
+
+// ── Torso length: coarse + fine vernier ──────────────────────────────────
+// 🚨 WHY THIS FIELD GETS ITS OWN ROW AND NOTHING ELSE DOES. `torsoLengthM`
+// spans 0.05 m (a mouse) to 30 m (a whale) — near three orders of magnitude —
+// and the auto-generated slider is LINEAR over that range with step 0.05. Two
+// things break at once:
+//   • every small creature lives in the first 0.5% of the track, so a mouse, a
+//     cat and a dog are all within four pixels of each other; and
+//   • the shared `fmt()` prints ONE decimal whenever max-min > 5, so 0.05,
+//     0.07 and 0.12 all read "0.1" and the slider looks stuck at its floor.
+//     (It never was: the value moved, only the label lied.)
+//
+// The scheme: a LOG-SCALED coarse slider picks the ballpark in equal
+// multiplicative steps, and a LINEAR fine slider trims within ±one coarse step
+// of the coarse anchor. Log coarse because "next size up" is a RATIO, not a
+// number of metres — one notch is +11% whether you are at 0.05 m or at 20 m;
+// linear fine because once the ballpark is chosen you are thinking in metres
+// again. `blueprint.spine.torsoLengthM` stays the single source of truth: the
+// coarse thumb marks the anchor it last set, the fine thumb marks the trim,
+// and BOTH rows print the one true value.
+//
+// 🚨 THE 0.05 m FLOOR IS `clampBlueprint`'s, NOT OURS. Every window either
+// slider offers is clamped into [min, max] before it reaches the field, so the
+// fine slider can never write a value the clamp would silently pull back —
+// which would desync the thumb from the model on the very next rebuild.
+const TORSO_COARSE_NOTCHES = 64;
+
+/** Metres, printed with enough decimals to tell 0.05 from 0.07 from 0.12 —
+ *  the shared `fmt()` cannot, and is not ours to change (it is right for the
+ *  other ~80 dials). Trailing zeros trimmed so "30" stays "30". */
+function fmtLenM(v: number): string {
+  const d = v < 0.5 ? 4 : v < 5 ? 3 : 2;
+  return `${v.toFixed(d).replace(/0+$/, "").replace(/\.$/, "")} m`;
+}
+
+function torsoLengthRow(parent: HTMLElement): void {
+  const range = SPINE_RANGES.torsoLengthM;
+  const lnMin = Math.log(range.min);
+  const lnMax = Math.log(range.max);
+  const clampLen = (v: number): number => Math.min(range.max, Math.max(range.min, v));
+  const notchToM = (t: number): number => clampLen(Math.exp(lnMin + ((lnMax - lnMin) * t) / TORSO_COARSE_NOTCHES));
+  const mToNotch = (v: number): number =>
+    Math.round((TORSO_COARSE_NOTCHES * (Math.log(clampLen(v)) - lnMin)) / (lnMax - lnMin));
+  /** One coarse notch as a ratio (≈1.105) — the half-width of the fine window
+   *  on each side, so the fine slider can always reach the neighbouring
+   *  anchors and no value is unreachable between two notches. */
+  const notchRatio = Math.exp((lnMax - lnMin) / TORSO_COARSE_NOTCHES);
+
+  const coarseRow = el("div", "lab-row", parent);
+  el("label", undefined, coarseRow).textContent = "torsoLengthM";
+  const coarse = el("input", undefined, coarseRow);
+  coarse.type = "range";
+  coarse.min = "0";
+  coarse.max = String(TORSO_COARSE_NOTCHES);
+  coarse.step = "1";
+  const coarseVal = el("span", "val", coarseRow);
+
+  const fineRow = el("div", "lab-row", parent);
+  el("label", undefined, fineRow).textContent = "  ⤷ fine";
+  const fine = el("input", undefined, fineRow);
+  fine.type = "range";
+  const fineVal = el("span", "val", fineRow);
+
+  /** Re-window the fine slider around `anchor` and put both thumbs and both
+   *  labels where the model actually is. Called on every write from either
+   *  slider, so moving one always updates the other's readout. */
+  const sync = (anchor: number): void => {
+    const v = blueprint.spine.torsoLengthM;
+    const lo = clampLen(anchor / notchRatio);
+    const hi = clampLen(anchor * notchRatio);
+    fine.min = String(lo);
+    fine.max = String(hi);
+    fine.step = String(Math.max(1e-5, (hi - lo) / 200));
+    fine.value = String(Math.min(hi, Math.max(lo, v)));
+    coarse.value = String(mToNotch(anchor));
+    coarseVal.textContent = fmtLenM(v);
+    fineVal.textContent = fmtLenM(v);
+  };
+
+  coarse.addEventListener("input", () => {
+    const v = notchToM(Number(coarse.value));
+    blueprint.spine.torsoLengthM = v;
+    sync(v);
+    rebuild();
+  });
+  fine.addEventListener("input", () => {
+    blueprint.spine.torsoLengthM = clampLen(Number(fine.value));
+    // Keep the fine WINDOW anchored where the coarse thumb is: a trim must not
+    // drag its own window along under the cursor.
+    sync(notchToM(Number(coarse.value)));
+    rebuild();
+  });
+
+  sync(notchToM(mToNotch(blueprint.spine.torsoLengthM)));
 }
 
 function colorRow(parent: HTMLElement, label: string, key: keyof Blueprint["skin"]): void {
@@ -933,7 +1468,16 @@ function buildPanel(): void {
     });
   }
 
-  sliderSection("spine", blueprint.spine as unknown as Record<string, number>, SPINE_RANGES, true);
+  // `torsoLengthM` swaps its generated slider for the coarse+fine vernier, in
+  // place (see `torsoLengthRow`). `density` is NOT special-cased: it is in
+  // SPINE_RANGES, so the auto-pass already dials it.
+  sliderSection(
+    "spine",
+    blueprint.spine as unknown as Record<string, number>,
+    SPINE_RANGES,
+    true,
+    { torsoLengthM: torsoLengthRow },
+  );
 
   // Body profile (tagmata) — pinch/bulge control points along the trunk.
   // An array, so it isn't auto-slidered; it gets a dedicated editor.
@@ -996,11 +1540,7 @@ function buildPanel(): void {
     const row1 = el("div", "lab-row", s);
     const pick = el("button", undefined, row1);
     pick.textContent = "pick up";
-    pick.addEventListener("click", () => {
-      if (!animator) return;
-      objectPos.y = objectMisc.size / 2;
-      animator.pickUp({ x: objectPos.x, y: objectPos.y, z: objectPos.z }, objectMisc.size);
-    });
+    pick.addEventListener("click", () => { tryPickUp(); });
     const put = el("button", undefined, row1);
     put.textContent = "put down";
     put.addEventListener("click", () => {
@@ -1319,6 +1859,78 @@ function buildPanel(): void {
     }
   }
 
+  // Physics / stress — the support ledger (`skel.support`) made visible.
+  // The gravity dial here is the ONE source of truth every buildSkeleton
+  // call on this page reads, so it drives the static build, the gait build
+  // and the animator tick alike.
+  {
+    // Open whenever the stress view is on: the readout IS the stress view's
+    // other half (and the only place a refusal is spoken), so turning the
+    // tint on and leaving its numbers folded away is a small lie.
+    const s = section("physics / stress", true); // always open — the debug view users come here for
+    {
+      const row = el("div", "lab-row", s);
+      const lbl = el("label", undefined, row);
+      lbl.textContent = "stress view";
+      lbl.title = "tint the skin per bone by stress + draw the ground overlay";
+      const input = el("input", undefined, row);
+      input.type = "checkbox";
+      input.checked = stressView;
+      input.addEventListener("change", () => { stressView = input.checked; rebuild(); });
+    }
+    {
+      const row = el("div", "lab-row", s);
+      const lbl = el("label", undefined, row);
+      lbl.textContent = "ground overlay";
+      lbl.title = "support polygon / CoM / foot forces / tipping lever (needs stress view)";
+      const input = el("input", undefined, row);
+      input.type = "checkbox";
+      input.checked = groundOverlay;
+      input.addEventListener("change", () => { groundOverlay = input.checked; rebuild(); });
+    }
+    slider(s, "gravity (×g)", physMisc, "gravity", { min: 0, max: 3, step: 0.05 });
+    // ── Carried mass ───────────────────────────────────────────────────
+    // Two dials, because a body carries things two ways: in its hands/mouth
+    // (an ACTION, so it goes through pickUp and can be refused) and on its
+    // back (a state someone else put it in, never refused — the ledger just
+    // reports what it costs).
+    slider(s, "object mass (×auto)", physMisc, "objectMass", { min: 0, max: 8, step: 0.1 });
+    slider(s, "back load (×body mass)", physMisc, "backLoad", { min: 0, max: 2, step: 0.05 });
+    {
+      const note = el("div", "lab-row", s);
+      note.style.color = "#8b99a8";
+      note.innerHTML =
+        `<span style="flex:1">object mass feeds “pick up” (×1 = as dense as the ` +
+        `creature); back load rides the girth peak while the animator runs</span>`;
+    }
+    {
+      // Ramp legend — grey is off the ramp on purpose (unloaded ≠ healthy).
+      const row = el("div", "lab-row", s);
+      el("label", undefined, row).textContent = "σ ramp";
+      const bar = el("div", undefined, row);
+      bar.style.cssText =
+        `flex:1;height:10px;border-radius:2px;background:linear-gradient(90deg,` +
+        `${RAMP_LO.getStyle()} 0%,${RAMP_MID.getStyle()} 23%,${RAMP_HI.getStyle()} 33%,` +
+        `${RAMP_OVER.getStyle()} 100%)`;
+      const key = el("span", "val", row);
+      key.textContent = "0→1→3+";
+      const note = el("div", "lab-row", s);
+      note.style.color = "#8b99a8";
+      note.innerHTML =
+        `<span style="display:inline-block;width:10px;height:10px;flex:0 0 10px;` +
+        `background:${STRESS_UNLOADED.getStyle()};border:1px solid #fff4"></span>` +
+        `<span style="flex:1">unloaded limb — σ 1.0 = at capacity</span>`;
+    }
+    stressReadoutEl = el("pre", undefined, s);
+    // Named so a headless capture can scroll to THIS block (the panel has
+    // several <pre>s, and the JSON export box is the last one).
+    stressReadoutEl.id = "lab-stress-readout";
+    stressReadoutEl.style.cssText =
+      "margin:6px 0 2px;padding:5px 6px;background:#0d1116;border:1px solid #2a323c;" +
+      "border-radius:3px;color:#cdd6e0;font:11px/1.45 inherit;white-space:pre;overflow-x:auto";
+    updateStressReadout(lastSupport);
+  }
+
   // Loft quality + view toggles.
   {
     const s = section("loft / view");
@@ -1486,6 +2098,37 @@ const labApi = {
     camera.position.copy(controls.target).addScaledVector(dir.normalize(), dist);
     camera.lookAt(controls.target);
   },
+  /** Aim the camera at ANY bone chain — `frameHead` for the rest of the body.
+   *  Added for the digit-crossing pass: judging whether a row of toes leaves
+   *  its foot cleanly needs the toes filling the frame, and every other framing
+   *  affordance here is whole-body or skull. Pass a chain name as the skeleton
+   *  reports it (`limb0L`, `limb1R`, `limb0Ld2`, …); follow with orbit(). */
+  frameChain(chain: string, distMult = 1): boolean {
+    autoFrame = false;
+    const skel = rebuildGeometry();
+    const bs = skel.bones.filter((b) => b.chain === chain);
+    if (bs.length === 0) return false;
+    let cx = 0, cy = 0, cz = 0, r = 0;
+    for (const b of bs) {
+      cx += (b.head.x + b.tail.x) / 2 / bs.length;
+      cy += (b.head.y + b.tail.y) / 2 / bs.length;
+      cz += (b.head.z + b.tail.z) / 2 / bs.length;
+      r = Math.max(r, b.radiusHead, b.radiusTail);
+    }
+    controls.target.set(cx, cy, cz);
+    let extent = r;
+    for (const b of bs) {
+      extent = Math.max(extent,
+        Math.hypot(b.tail.x - cx, b.tail.y - cy, b.tail.z - cz),
+        Math.hypot(b.head.x - cx, b.head.y - cy, b.head.z - cz));
+    }
+    const dist = Math.max(extent * 3.2, 1e-3) * distMult;
+    const dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0.3, 1);
+    camera.position.copy(controls.target).addScaledVector(dir.normalize(), dist);
+    camera.lookAt(controls.target);
+    return true;
+  },
   /** Force a static mouth gape (0..1) for head iteration. */
   setGape(v: number): void {
     mouthMisc.gape = Math.max(0, Math.min(1, v));
@@ -1510,6 +2153,49 @@ const labApi = {
   setColorSection(on: boolean): void {
     colorBySection = on;
     rebuildGeometry();
+  },
+  /** Toggle the stress view: per-bone stress tint on the skin + the ground
+   *  overlay (support polygon, CoM, foot forces, tipping lever). */
+  setStressView(on: boolean, overlay = true): void {
+    stressView = on;
+    groundOverlay = overlay;
+    buildPanel();
+    rebuildGeometry();
+  },
+  /** Set the gravity the STRESS LEDGER is computed under (0..3 × Earth).
+   *  Forces and stresses scale; the pose does not move. */
+  setGravity(g: number): void {
+    physMisc.gravity = Math.max(0, Math.min(3, g));
+    buildPanel();
+    rebuildGeometry();
+  },
+  /** The most recent build's SupportDiagnostics, JSON-safe. Works in static
+   *  and animator modes alike — every build publishes its ledger, so in
+   *  animator mode this is the ledger of the tick that just ran. */
+  stressReport(): SupportDiagnostics | null {
+    if (!lastSupport) rebuildGeometry();
+    return lastSupport ? (JSON.parse(JSON.stringify(lastSupport)) as SupportDiagnostics) : null;
+  },
+  /** What the body is carrying and whether it last said NO — the load half of
+   *  `stressReport`, in the panel's own units. */
+  loadReport(): {
+    objectMassMul: number; backLoadFrac: number; objectMass: number;
+    loadMass: number; weight: number; refusal: BearVerdict | null;
+  } {
+    return {
+      objectMassMul: physMisc.objectMass,
+      backLoadFrac: physMisc.backLoad,
+      objectMass: objectMass(),
+      loadMass: lastSupport?.body.loadMass ?? 0,
+      weight: lastSupport?.body.weight ?? 0,
+      refusal: lastRefusal,
+    };
+  },
+  /** Put a pack on the animal (fraction of its own body mass) — the dial, for
+   *  headless captures. Takes effect on the next animator tick. */
+  setBackLoad(fracOfBody: number): void {
+    physMisc.backLoad = Math.max(0, fracOfBody);
+    buildPanel();
   },
   /** Pick the polygon under normalized device coords (-1..1) — the same
    *  info the click-picker copies. For headless debugging. */
@@ -1549,7 +2235,13 @@ const labApi = {
   /** Drive the animator deterministically: enable it (paused), optionally
    *  set speed / fire an action, then advance `runS` seconds in fixed
    *  1/60 steps and freeze — the frame on screen is reproducible. */
-  anim(opts: { speed?: number; size?: number; action?: "pickUp" | "putDown"; runS?: number; resume?: boolean }): string {
+  anim(opts: {
+    speed?: number; size?: number; action?: "pickUp" | "putDown"; runS?: number; resume?: boolean;
+    /** Crate mass as a multiple of `objectMassFromSize` (the panel's dial). */
+    mass?: number;
+    /** Pack on the back, as a fraction of the creature's own body mass. */
+    backLoad?: number;
+  }): string {
     if (!animOn) {
       savedAnimPosture.bodyPitch = blueprint.posture.bodyPitch;
       savedAnimPosture.bodyHeight = blueprint.posture.bodyHeight;
@@ -1558,13 +2250,25 @@ const labApi = {
     }
     animPaused = !opts.resume;
     if (opts.speed !== undefined) animMisc.speed = opts.speed;
+    if (opts.mass !== undefined) physMisc.objectMass = Math.max(0, opts.mass);
+    if (opts.backLoad !== undefined) physMisc.backLoad = Math.max(0, opts.backLoad);
     if (opts.size !== undefined) {
       objectMisc.size = opts.size;
       objectPos.y = opts.size / 2;
       ensureObject();
     }
+    // A dial set from here must show on the panel — a screenshot of a lab
+    // whose sliders disagree with what it is simulating is worse than no
+    // screenshot. (Only when one actually moved: `anim({runS})` is called in
+    // a loop to advance time.)
+    if (opts.speed !== undefined || opts.mass !== undefined ||
+      opts.backLoad !== undefined || opts.size !== undefined) buildPanel();
+    // A refusal is measured against the LAST OBSERVED ledger, so a hook that
+    // enables the animator and picks up in the same call has to let one frame
+    // run first — otherwise the gate has nothing to measure and fails open.
+    if (opts.action) stepAnim(1 / 60);
     if (opts.action === "pickUp") {
-      animator!.pickUp({ x: objectPos.x, y: objectPos.y, z: objectPos.z }, objectMisc.size);
+      tryPickUp();
     } else if (opts.action === "putDown") {
       const L = blueprint.spine.torsoLengthM;
       const spot = animator!.hasHands()

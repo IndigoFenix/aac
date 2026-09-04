@@ -45,6 +45,7 @@ import AdminForgotPasswordPage from "./pages/AdminForgotPasswordPage";
 import AdminResetPasswordPage from "./pages/AdminResetPasswordPage";
 import AdminMfaRecoveryPage from "./pages/AdminMfaRecoveryPage";
 import LandingPage from "./components/landing-page/LandingPage";
+import FeaturesPage from "./components/landing-page/FeaturesPage";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
 
 // Component to redirect authenticated users away from login page
@@ -400,6 +401,12 @@ function Router() {
 
       {/* Authenticated home (chat/dashboard) */}
       <Route path="/home" component={ProtectedDashboard} />
+
+      {/* Marketing features page. Draft: it sits on its own URL until the copy
+          is signed off, so it has no per-locale routes and isn't prerendered
+          yet. Public either way — a signed-in visitor reads it rather than
+          being bounced to /home the way the landing page does. */}
+      <Route path="/features" component={FeaturesPage} />
 
       {/* Landing page for unauthenticated users, redirects to /home if logged in.
           Per-locale paths (/he, /es, ...) serve the same landing component — the

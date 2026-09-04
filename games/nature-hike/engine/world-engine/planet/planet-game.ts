@@ -388,7 +388,24 @@ export function buildPlanetWorld(game: GameSettings, label = "game"): BuiltPlane
     // BIOMES from the climate: forest / steppe / etc. compete for each cell
     // (ecology.ts). Writes grid.fields.biome; founding then reads a settled,
     // climated AND biomed substrate.
-    applyEcology(prep.grid, { species: DEFAULT_BIOSPHERE, seaHeight: SEA_HEIGHT });
+    //
+    // ⚖️ AND THE PER-SPECIES ABUNDANCE IS KEPT (2026-09-02). `perSpecies`
+    // writes `eco_<key>` (abundance ×100) beside the dominance integer. It
+    // used to be omitted, so every abundance this pass computes was used to
+    // pick a winner and then THROWN AWAY — one integer per cell survived —
+    // while three consumers downstream sat on dead branches or approximated
+    // it: the vegetation charters (`kernel/civ/tri.ts`, `kernel/civ/plan.ts`)
+    // tested `grid.fields.eco_tree`/`eco_grass` and always fell through
+    // (timberland read the generic `plant` halo; PASTURE WAS 0 EVERYWHERE),
+    // and both tree authorities — the flora field's streamed scatter and the
+    // wilderness scatter — switched on the biome BUCKET, so they could not
+    // tile and disagreed on density by 5.4× where they met.
+    //
+    // "How much of species X lives here" now has ONE source, and it is this
+    // array. The cost is 3 extra Float64 fields on the substrate (they ride
+    // `serializeGrid` automatically — see `geo-bake.ts`'s bake key, which was
+    // bumped for exactly this shape change).
+    applyEcology(prep.grid, { species: DEFAULT_BIOSPHERE, seaHeight: SEA_HEIGHT, perSpecies: true });
     const ice = prep.grid.fields.ice;
     prep.sites = findFoundingSites(prep.grid, founding)
       .filter(s => ice[s.cell] < 1);

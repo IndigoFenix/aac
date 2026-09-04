@@ -80,6 +80,21 @@ describe("speak", () => {
     await expect(speak("hello", "en-US", "ai")).resolves.toBe(false);
     await expect(speak("hello", "zz-ZZ", "student")).resolves.toBe(false);
   });
+
+  it("never announces a start for an utterance it declined", async () => {
+    // `onStart` is what closes the mic gate around this voice, and it must mean
+    // "audio is leaving the speaker NOW" — nothing weaker. A refusal that fired
+    // it would deafen the session for an utterance speechSynthesis is about to
+    // speak instead, and the fallback raises its own hold.
+    const starts: number[] = [];
+    const onStart = () => starts.push(Date.now());
+    await speak("hello", "en-US", "student", { onStart });   // model not staged
+    await speak("שלום", "he-IL", "student", { onStart });     // wrong language
+    await speak("   ", "en-US", "ai", { onStart });           // nothing to say
+    setVoiceAllowed(false);
+    await speak("hello", "en-US", "student", { onStart });   // not this student's
+    expect(starts).toHaveLength(0);
+  });
 });
 
 describe("speed gate", () => {

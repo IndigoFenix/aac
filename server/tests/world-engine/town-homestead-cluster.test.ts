@@ -176,19 +176,52 @@ describe("mergeSites — a town founded OVER the homesteads", () => {
     expect(m.foundedDay).toBe(1);
   });
 
+  /**
+   * ⚖️ A SITE'S YARD, COUNTED ONCE (#50 ⑦, 2026-09-03).
+   *
+   * This probe used to add `site.stock` AND `site.deltas.stock` unconditionally,
+   * because they WERE two independent maps and `raise` deliberately writes one
+   * good into each ("every plank that was at a homestead, wherever it was
+   * recorded" — the whole point of the fixture). They are ONE OBJECT now:
+   * `FoundedSite.stock` is aliased to `deltas.stock` at construction, because
+   * only the first was ever registered as the site crate's stack and everything
+   * credited to the second was invisible to hauls, the audit and the screen.
+   *
+   * So the unconditional sum became a DOUBLE COUNT — it reported 42 wood / 18
+   * stone over a fixture that holds 21 and 9, and the two literal assertions at
+   * the bottom (untouched, and older than the alias) are what say which of the
+   * two numbers is the truth. Nothing moved and nothing was lost: `mergeSites`
+   * conserved exactly, and the measuring instrument was what broke.
+   *
+   * The guard is the SAME object-identity test the production folds use
+   * (`mergeSites`, `siteTownConfig`), so the probe and the code cannot drift:
+   * an aliased record counts once, and a hand-built record with two genuinely
+   * separate maps still counts both halves.
+   */
+  const yardUnits = (site: FoundedSite, into: Record<string, number>): void => {
+    for (const [g, n] of Object.entries(site.stock)) into[g] = (into[g] ?? 0) + n;
+    if (site.stock === site.deltas.stock) return;
+    for (const [g, n] of Object.entries(site.deltas.stock)) into[g] = (into[g] ?? 0) + n;
+  };
+
   it("ITEM CONSERVATION: every plank that was at a homestead is at the town", () => {
     const sites = build();
+    // The fixture's own two-ledger shape is the premise: `raise` writes wood
+    // through the site's field and stone through the overlay's, which is the
+    // pair the alias unified. Both land in one yard now — and the assertion is
+    // still that every unit written by EITHER door arrives at the town.
+    expect(sites[0]!.stock).toBe(sites[0]!.deltas.stock);
     const before: Record<string, number> = {};
-    for (const s of sites) {
-      for (const [g, n] of Object.entries(s.stock)) before[g] = (before[g] ?? 0) + n;
-      for (const [g, n] of Object.entries(s.deltas.stock)) before[g] = (before[g] ?? 0) + n;
-    }
+    for (const s of sites) yardUnits(s, before);
     const m = mergeSites(sites);
-    const after: Record<string, number> = { ...m.deltas.stock };
-    for (const [g, n] of Object.entries(m.stock)) after[g] = (after[g] ?? 0) + n;
+    const after: Record<string, number> = {};
+    yardUnits(m, after);
     expect(after).toEqual(before);
     expect(before.wood).toBe(21);
     expect(before.stone).toBe(9);
+    // …and the merged record is aliased like every other producer's, so the
+    // town it becomes cannot inherit a yard half of it cannot see.
+    expect(m.stock).toBe(m.deltas.stock);
   });
 
   it("standing buildings are ANNEXED: translated, on GROUND, records intact", () => {

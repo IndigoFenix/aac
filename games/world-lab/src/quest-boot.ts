@@ -54,7 +54,7 @@ import type { GoalTreeGame } from "@shared/world-engine/solver/types";
 import type { ObjectiveSummary } from "@shared/world-engine/solver/space";
 import type { GoalNode } from "@shared/world-engine/solver/types";
 import { labImageResolver } from "./glyph-resolver";
-import { homesteadWildMix, mulberry, WILD_SIDE, type WildFauna } from "./wilderness-boot";
+import { homesteadWildMix, mulberry, wildMixForBiome, WILD_SIDE, type WildFauna } from "./wilderness-boot";
 import type { BoardIsland } from "./board-island";
 
 export interface QuestBoot {
@@ -300,9 +300,16 @@ function bootQuestGame(
       const res = ladder.step(ladderPtr.inside ? ladderPtr : null, dt, performance.now());
       // GROUND rung: the glide is a live interlocutor — forward the pointer to
       // the host so gaze-hover conversation/containers work mid-glide (the
-      // structure rung forwards from inside the ladder; town/flight keep the
-      // host pointer clear so an orbit dwell never doubles as an interaction).
-      if (ladder.level === "ground") {
+      // structure rung forwards from inside the ladder).
+      //
+      // ⚖️ AND THE TOWN RUNG UNDER THE BUILDER HOLD. The old law read "town/
+      // flight keep the host pointer clear so an orbit dwell never doubles as
+      // an interaction"; under the hold (ladder.setBuilderHold — the early
+      // town-builder ruling, 2026-09-03) the ladder has pinned that orbit's
+      // downward rung changes off, so the dwell has nowhere to descend TO and
+      // the law inverts: the orbit dwell IS the interaction, selection instead
+      // of descent. FLIGHT always clears — nothing is framed up there.
+      if (ladder.level === "ground" || (ladder.level === "town" && ladder.builderHold)) {
         if (ladderPtr.inside) host?.setPointer(ladderPtr.clientX, ladderPtr.clientY);
         else host?.clearPointer();
       } else if (ladder.level === "town" || ladder.level === "flight") {
@@ -838,6 +845,32 @@ export function bootTownEmbedded(
      *  it). The caller derives the sample from the site's DIRECTION, never
      *  from a registered cell id: a founded site's cell is synthetic. */
     climate?: ClimateSample;
+    /** THE FOUNDING CELL'S ECOLOGICAL BIOME (user ruling 2026-09-02, ④) —
+     *  `grid.fields.biome` at this site: 0 barren, then DEFAULT_BIOSPHERE
+     *  order (1 forest, 2 steppe/meadow, 3 grazer range). The mounted town's
+     *  surroundings scatter from THIS, through the same `wildMixForBiome` the
+     *  free-flight wild chunk uses, so the countryside a party arrives in and
+     *  the countryside it wakes up in are one ecology.
+     *
+     *  🚨 IT REPLACES `play.plan.biome`, which is NOT an ecological answer:
+     *  that is a land-use label off the charter's fertility-vs-ore scores, and
+     *  a founded site's charter is hardcoded `{ farmland: 60, ore_access: 0 }`
+     *  (`founding.ts siteTownConfig`), so it read `"farmland"` on every site
+     *  ever founded — a town in the deep forest scattered wild flocks and the
+     *  forest's timber never reached it.
+     *
+     *  Absent ⇒ the legacy charter arm (`homesteadWildMix`), byte-identical:
+     *  a preset town, a pre-bake mount, a flat test world and the headless
+     *  harness all have no cell to read. */
+    biome?: number;
+    /** ⚖️ THE FOUNDING CELL'S PER-SPECIES ABUNDANCE (2026-09-02) —
+     *  `planet/ecology.ts ecoAbundanceAt`, 0..1 per biosphere key. With it
+     *  the scatter mix comes back as DENSITIES and the vegetation line reads
+     *  the abundance field rather than the biome bucket, so the countryside
+     *  inside this town's rect is exactly as thick as the streamed forest
+     *  outside its hole (the two authorities used to disagree 5.4×).
+     *  Absent ⇒ absolute per-biome counts, byte-identical. */
+    eco?: Readonly<Record<string, number>>;
   },
 ): EmbeddedTown {
   // ── Overlay DOM: ONLY the in-world HUD (toast/win) floats over the flight
@@ -918,7 +951,13 @@ export function bootTownEmbedded(
       ? {
           wilderness: {
             seed: play.config.seed,
-            mix: homesteadWildMix(play.plan.biome, play.config.seed, opts?.climate),
+            // ⚖️ THE PLANET'S OWN ECOLOGY DECIDES (④, see opts.biome): the
+            // cell's biome index through `wildMixForBiome` — the SAME function
+            // the free-flight chunk scatters from — so founding on a forest
+            // cell stands a forest. No cell ⇒ the legacy charter arm.
+            mix: opts?.biome !== undefined
+              ? wildMixForBiome(opts.biome, play.config.seed, opts?.climate, opts?.eco)
+              : homesteadWildMix(play.plan.biome, play.config.seed, opts?.climate),
           },
         }
       : {}),
@@ -1172,7 +1211,7 @@ export function bootWildernessQuest(
     const p = place();
     if (!p || !host) return;
     const id = `horse_${horseSeq++}`;
-    host.session.npcIcons.set(id, "🐴"); // → ungulate body (ANIMAL_SPECIES_BY_ICON)
+    host.session.npcIcons.set(id, "🐴"); // → ungulate body (quest-host FIXED_SPECIES_BY_ICON)
     host.world?.addNpc({
       id,
       x: p.x,

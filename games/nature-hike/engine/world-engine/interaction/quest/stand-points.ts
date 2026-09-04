@@ -10,6 +10,7 @@
 import {
   buildingAt,
   fixturesWalkable,
+  objectIsSolid,
   structuresWalkable,
   type WorldState,
 } from "../../engine.js";
@@ -271,18 +272,29 @@ export function clockDodgeAim(
   return dodged;
 }
 
-/** The SOLID fixture whose no-stand box covers `p` (an item resting on a table
+/** The SOLID object whose no-stand box covers `p` (an item resting on a table
  *  reports the tabletop's centre; a place ref can resolve to a fixture centre) —
- *  or null if `p` is in the open. Solid fixtures block a Chebyshev box of
+ *  or null if `p` is in the open. Solid objects block a Chebyshev box of
  *  half-extent `radius + avatarRadius`, the same girth the engine's
- *  `fixturesWalkable` enforces; pass-through kinds (chairs, bowls) never block. */
+ *  `fixturesWalkable` enforces; pass-through kinds (chairs, bowls) never block.
+ *
+ *  ⚖️ SOLID, NOT "IS FURNITURE" (user ruling 2026-09-02, the arrival law's
+ *  safety half). This asked `spec.fixture && !PASSTHROUGH` — an inline copy of
+ *  `objectIsSolid`'s FALLBACK arm with the explicit-`solid` clause missing — so
+ *  everything the world declares solid WITHOUT calling it furniture was
+ *  invisible here: a modeled oak, a boulder. Locomotion collided with them
+ *  (`fixtureGridOf` reads `objectIsSolid`), the repair did not, and once the
+ *  founding clear stopped flattening the town's ground that gap became "a
+ *  resident outside a tree-blocked door grinds forever with no diagnosis".
+ *  Reading the ENGINE'S OWN predicate also drops a loose chest lying on the
+ *  floor (`solid: false`, item-prop.ts), which never blocked anybody. */
 export function fixtureCovering(
   state: WorldState,
   p: { x: number; y: number },
   bodyR = DEFAULT_BODY_RADIUS_M,
 ): { id: string; x: number; y: number; radius: number } | null {
   for (const spec of state.spec.objects) {
-    if (!spec.fixture || PASSTHROUGH_FIXTURES.has(spec.fixture)) continue;
+    if (!objectIsSolid(spec)) continue;
     const o = state.objects[spec.id];
     if (!o) continue;
     if (Math.abs(p.x - o.x) <= spec.radius + bodyR && Math.abs(p.y - o.y) <= spec.radius + bodyR) {
@@ -403,10 +415,15 @@ export function standPointFor(
   // consume point, into the table's centre"). The item is a pass-through prop,
   // so its own spec never nudges; resolve the stand-off from the CONTAINING
   // fixture instead. A loose item / a pass-through station keeps `raw`.
-  if (!spec?.fixture || PASSTHROUGH_FIXTURES.has(spec.fixture)) {
+  //
+  // ⚖️ "SOLID" IS THE TEST, not "is furniture" (2026-09-02) — the same
+  // correction `fixtureCovering` above carries. A standing oak is solid and is
+  // no kind of furniture, so this branch used to hand the tree's own CENTRE
+  // back as the stand point and send the hauler into the trunk.
+  if (!spec || !objectIsSolid(spec)) {
     const containerId = state.objects[objId]?.containedIn?.objectId;
     const cspec = containerId ? state.spec.objects.find((s) => s.id === containerId) : undefined;
-    if (cspec?.fixture && !PASSTHROUGH_FIXTURES.has(cspec.fixture)) {
+    if (cspec && objectIsSolid(cspec)) {
       const cObj = state.objects[containerId!];
       spec = cspec;
       if (cObj) center = { x: cObj.x, y: cObj.y }; // nudge off the FIXTURE's edge, not the item

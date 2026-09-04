@@ -178,6 +178,41 @@ export interface SpiritLadder {
   /** Raise (or set) the zoom-out ceiling — a CONTROL limit, clamped to the
    *  provider's scope. */
   setCeiling(level: SpiritLevel): void;
+  /** Frame a settlement NOW, by REF (the per-focus camera law) — the boot
+   *  seam for a site founded after the ladder was built, which cannot use
+   *  `opts.start`. `district: true` opens at the inner (district) focus
+   *  depth, whose radius is derived from the site's own extent. */
+  focusTown(ref: unknown, opts?: { district?: boolean }): void;
+  /** THE BUILDER HOLD — "in early town builder mode, the camera should be
+   *  fixed to orbiting at a close distance, and hovering over objects should
+   *  select them without shifting into ground mode" (user ruling 2026-09-03).
+   *
+   *  With it on, the DISTRICT depth stops being a rung the gaze can fall
+   *  through: the close orbit IS the play camera, and a dwell is an
+   *  INTERACTION rather than a descent. Precisely — and ONLY — on the town
+   *  rung at depth 1:
+   *   • the street dwell no longer arms `enterGround`, and the building-lot
+   *     dwell no longer descends into the dollhouse. Both DOWNWARD rung
+   *     changes are pinned off exactly as riding a body pins the ground
+   *     rung's own pair (stepGround's `if (body)` block — the same shape,
+   *     keyed on the hold instead of on legs);
+   *   • the CORNER-ORBIT turntable is untouched: it is the manual
+   *     look-around control, and with the descents gone it is the only way
+   *     to see the far side of the build;
+   *   • the bottom-strip step-out is untouched: a deliberate LEAVE gesture
+   *     stays available. Under the founding boot's `ceiling: "town"` it stops
+   *     at the whole-town depth, so the hold is a floor and not a cage — and
+   *     that depth's own district pick (which never leaves this rung) is how
+   *     the player comes back down to the build.
+   *  Every other rung is byte-identical with the hold on: it is READ nowhere
+   *  but `stepTown`. The DRIVER pairs it with the host pointer (world-lab
+   *  main.ts / quest-boot.ts): under the hold the orbit dwell IS the
+   *  interaction, so the pointer is FORWARDED on the town rung instead of
+   *  cleared. */
+  setBuilderHold(on: boolean): void;
+  /** Is the builder hold armed? (Drivers gate the host-pointer forward on it
+   *  — see `setBuilderHold`.) */
+  readonly builderHold: boolean;
   /** THE HOST OWNS THE VIEW ON THE GROUND RUNG (walker-driven embeds only).
    *
    *  A DESIGNATED AVATAR (manifest `avatar: true`) is played through the
@@ -362,6 +397,23 @@ function sphereGroundGeom(s: SphereGroundOps): GroundGeom {
   };
 }
 
+/** THE DISTRICT ORBIT RADIUS, derived from the site's own extent — a
+ *  neighbourhood-sized frame, never a painted metre value. Clamped so a
+ *  hamlet still gets a readable frame and a metropolis still gets a
+ *  district rather than its whole sprawl.
+ *
+ *  ⚖️ ONE DEFINITION (2026-09-02): the structure-start path and the new
+ *  `focusTown` both frame a district, and `planet-provider.pickDistrict`
+ *  frames the same thing from a gaze — they were three copies of this
+ *  expression and are now one. The BAND IS THE POINT: 30–160 m is inside
+ *  the town's full-fidelity window (world-lab `CROWD_FULL_M` 140,
+ *  `TOWN_TIER_BANDS` full < 180 m), so a district focus is the range where
+ *  bodies render at full bake and the ambient crowd is unthrottled — i.e.
+ *  the range at which a player can WATCH people act and TALK to them. The
+ *  whole-town depth (`session.radius()`) is deliberately outside it. */
+export const districtRadiusFor = (townRadius: number): number =>
+  Math.max(30, Math.min(160, townRadius * 0.33));
+
 export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
   const provider = opts.provider;
   const camera = provider.camera;
@@ -376,6 +428,10 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
   let struct: StructureState | null = null;
   let ground: GroundState | null = null;
   let holdZoom = false;
+  /** THE BUILDER HOLD (see `setBuilderHold`): the district orbit is the play
+   *  camera, so its DOWNWARD rung changes are pinned off and the dwell is an
+   *  interaction. Read ONLY by `stepTown`; inert on every other rung. */
+  let builderHold = false;
   /** The entity engine currently opted OUT of drawing its own cursor for the
    *  ground rung (it reports; the provider draws). Held so the opt-out can be
    *  handed back when the rung ends or the engine changes under the glide. */
@@ -449,7 +505,7 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     t.targetRadius = target.radius;
     t.district = {
       x: target.x, z: target.z,
-      radius: Math.max(30, Math.min(160, t.session.radius() * 0.33)),
+      radius: districtRadiusFor(t.session.radius()),
     };
     town = t;
     struct = {
@@ -546,6 +602,41 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
       town.az = az;
       town.targetAz = az;
     }
+    level = "town";
+  }
+
+  /** FOCUS A SETTLEMENT NOW (the boot seam for a site that comes into being
+   *  AFTER the ladder was built — world-lab's founding premise waits on the
+   *  geography bake, so it cannot use `opts.start`).
+   *
+   *  ⚖️ A CAMERA SCHEME IS PER-FOCUS: this takes the site's REF and frames
+   *  the site, never a bare position — the orbit, its radius and every camera
+   *  signal key off the focus body, exactly as an `opts.start` town does.
+   *
+   *  `district: true` opens at the DISTRICT depth instead of the whole-town
+   *  orbit: same rung, the inner focus depth, radius derived from the site's
+   *  own extent (`districtRadiusFor`). That is the range a player can watch
+   *  and talk at; the whole-town depth is an overview and is not. */
+  function focusTown(ref: unknown, o?: { district?: boolean }): void {
+    const t = openTownState(ref);
+    if (o?.district) {
+      const r = districtRadiusFor(t.session.radius());
+      t.depth = 1;
+      t.radius = r;
+      t.targetRadius = r;
+      t.district = { x: 0, z: 0, radius: r };
+    }
+    // Carry the drone's heading into the orbit azimuth, exactly as the
+    // gaze-driven `enterTown` does — the frame must not swing on entry.
+    if (provider.flight) {
+      const chart = t.session.chartAt(0, 0);
+      const h = provider.flight.drone.heading;
+      const az = Math.atan2(h.dot(chart.north), h.dot(chart.east));
+      t.az = az;
+      t.targetAz = az;
+    }
+    town = t;
+    struct = null;
     level = "town";
   }
 
@@ -807,7 +898,17 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     camera.updateMatrixWorld(true);
 
     // ── Gaze input (effects land next frame) ──
-    let hint = t.depth === 0 ? "rest gaze on the town → district" : "rest gaze on a building → enter it";
+    // THE BUILDER HOLD (setBuilderHold): at the district depth the two
+    // DOWNWARD rung changes below are pinned off and the dwell belongs to the
+    // host instead (the driver forwards the pointer). The WHOLE-TOWN depth
+    // keeps its district pick — that never leaves this rung, and it is the way
+    // back down after the step-out gesture.
+    const held = builderHold && t.depth === 1;
+    let hint = t.depth === 0
+      ? "rest gaze on the town → district"
+      : held
+        ? "hover to select — the orbit holds"
+        : "rest gaze on a building → enter it";
     if (pointer && !t.exiting) {
       const ndcX = (pointer.x / w) * 2 - 1;
       const ndcY = -((pointer.y / h) * 2 - 1);
@@ -843,6 +944,16 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
             }
           }
         }
+      } else if (inZone && held) {
+        // PINNED: there is nothing to dwell TOWARD. The hover is the HOST's
+        // (selection), not the ladder's (descent) — so the picks are not even
+        // asked for. The counters rest so a released hold can never land
+        // mid-dwell on a stale count, exactly as the ground rung's body pin
+        // resets its own pair.
+        t.exitHold = 0;
+        t.dwellHold = 0;
+        t.dwellPx = pointer.x;
+        t.dwellPy = pointer.y;
       } else if (inZone) {
         t.exitHold = 0;
         const moved = Math.hypot(pointer.x - t.dwellPx, pointer.y - t.dwellPy) > DWELL_MOVE_PX;
@@ -901,7 +1012,8 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
 
     const lvl = t.depth === 0 ? "TOWN" : "DISTRICT";
     const dwellPct = Math.round((t.dwellHold / CITY_DWELL_S) * 100);
-    const status = `SPIRIT ladder-v1 · FOCUS=${lvl} (${t.session.label}) · ${hint} · dwell ${dwellPct}% · bottom → out`;
+    const status = `SPIRIT ladder-v1 · FOCUS=${lvl}${held ? " [build hold]" : ""} (${t.session.label})` +
+      ` · ${hint} · dwell ${dwellPct}% · bottom → out`;
     return { status, waiting: post.waiting, nearTown: post.nearTown };
   }
 
@@ -1463,6 +1575,9 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     get level() { return level; },
     get ceiling() { return ceiling; },
     setCeiling(l) { ceiling = clampCeiling(l); },
+    focusTown(ref, o) { focusTown(ref, o); },
+    setBuilderHold(on) { builderHold = on; },
+    get builderHold() { return builderHold; },
     setHostDrivesView(on) { hostView = on; },
     dropToGround(worldPoint, townRef = null) {
       // Keep FACING: resume the glide along the camera's current forward.

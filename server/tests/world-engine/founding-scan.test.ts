@@ -345,9 +345,21 @@ describe("the planet tier founds by the derivation", () => {
     // declaration derives is the one the chart already imposed).
     expect(after.cities).toBe(before.cities);
     expect(after.ends).toBe(before.ends);
-    // What moves is the extent, and with it the ports: 18 of 34 road ends ran
+    // What moves is the extent, and with it the ports: 16 of 34 road ends run
     // to the town centre at a 450 m extent; at the derived 195 m, none does.
-    expect(before.unclipped).toBe(18);
+    //
+    // 🌲 WAS 18, AND THE TWO THAT MOVED ARE THE POINT (2026-09-02). `travel.ts`
+    // has always priced an off-road step through `eco_tree` / `eco_grass`
+    // ("routes squeeze through forest gaps and along open country") — and
+    // those fields were NEVER WRITTEN: `planet-game.ts` called `applyEcology`
+    // without `perSpecies`, so every interstate on every planet was solved as
+    // if the world had no forests at all. Switching the bake on woke the
+    // vegetation terms up, two routes now bend around woodland instead of
+    // through it, and their ends land outside the town extent. The number
+    // moved because the model started working, so the PIN moves with it —
+    // re-anchoring the cost model to reproduce 18 would be pinning the
+    // forest-blind net forever.
+    expect(before.unclipped).toBe(16);
     expect(after.unclipped).toBe(0);
   }, 240_000);
 

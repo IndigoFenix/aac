@@ -21,15 +21,21 @@
  *          into stick trees, then into real trees).
  * All three representations share one set of deterministic placements per tile.
  *
- * What grows where comes from the planet's ECOLOGY: each tile reads the biome
- * field at its center (grid.fields.biome — 0 barren, then DEFAULT_BIOSPHERE
- * order) and scatters that biome's species mix on the real terrain, skipping
- * water. Fauna stays with the interactive wilderness chunk (NPC bodies);
- * this layer is pure flora rendering.
+ * What grows where comes from the planet's ECOLOGY: each tile reads the
+ * PER-SPECIES ABUNDANCE at its center (grid.fields.eco_<key>, via
+ * `ecoAbundanceAt`) and stands each species at its own density × the tile's
+ * area, on the real terrain, skipping water. Density rather than a count is
+ * what lets this layer and the interactive wilderness scatter agree: both go
+ * through `ecology.ts`'s `standDensityPerHa`, so a tile and a town rect over
+ * the same ground describe the same wood however wide each of them is. A
+ * substrate with no baked ecology falls back to the legacy per-biome tables.
+ * Fauna stays with the interactive wilderness chunk (NPC bodies); this layer
+ * is pure flora rendering.
  */
 import * as THREE from "three";
 import type { CelestialBody } from "@shared/world-engine/space/world-types";
 import { PLANET_FACES } from "@shared/world-engine/planet/chunk";
+import { ecoAbundanceAt, standCountFor } from "@shared/world-engine/planet/ecology";
 import { speciesBlueprint } from "@shared/world-engine/creatures/species";
 import {
   buildPlantLods,
@@ -55,8 +61,20 @@ const BUILD_BUDGET = 2;      // tile builds per ensure() call (spread the cost)
 // one giant frame.
 const RUNG_BUILD_BUDGET = 3;
 
-// Per-biome scatter counts per tile (biome field: 0 barren, 1 tree, 2 grass,
-// 3 grazer range).
+/** Tile ground area in HECTARES — what a per-hectare standing density is
+ *  resolved against (see the scatter below). */
+const TILE_HA = (TILE_M * TILE_M) / 10_000;
+
+// ⚖️ LEGACY per-biome scatter counts per tile (biome field: 0 barren, 1 tree,
+// 2 grass, 3 grazer range). Reached ONLY by a substrate with no baked
+// per-species ecology — a bake serialized before `perSpecies` was switched on
+// (`planet-game.ts`), or a grid that never ran `applyEcology` at all. On a
+// modern substrate the counts come from the biosphere's own density law
+// (`ecology.ts standCountFor`), which varies CONTINUOUSLY across the region
+// instead of stepping through four buckets, and which the wilderness scatter
+// reads through the same function — the two tree authorities used to disagree
+// by 5.4× where they met (15.00 oaks/ha rendered here, 2.77 oaks/ha scattered
+// inside a founding town's rect).
 const OAK_COUNT = [1, 60, 11, 8];
 const GRASS_COUNT = [2, 16, 44, 40];
 // TREES RENDER AT THE MODEL'S OWN SIZE (the blueprint is the authority — a
@@ -216,9 +234,13 @@ function tileScatterOf(body: CelestialBody, face: number, tx: number, ty: number
       }
       return out;
     };
+    // WHAT STANDS HERE, from the cell's own PER-SPECIES ABUNDANCE — a
+    // density × this tile's area, not a bucket lookup. `null` means this
+    // substrate carries no baked ecology, and the legacy tables answer.
+    const eco = ecoAbundanceAt(geo.grid, cell);
     const placements = new Map<string, Placement[]>();
-    placements.set("oak", scatter(OAK_COUNT[biome]));
-    placements.set("grass", scatter(GRASS_COUNT[biome]));
+    placements.set("oak", scatter(eco ? standCountFor("oak", eco, TILE_HA) : OAK_COUNT[biome]!));
+    placements.set("grass", scatter(eco ? standCountFor("grass", eco, TILE_HA) : GRASS_COUNT[biome]!));
     result = { dir, h0, quat, placements };
   }
   scatterCache.set(cacheKey, result);
@@ -308,9 +330,19 @@ export interface FloraField {
    *  hole and used to survive the whole visit.) */
   ensure(focusWorld: THREE.Vector3, nearWorld: THREE.Vector3 | null, excludes?: ReadonlyArray<{ world: THREE.Vector3; r: number }>): void;
   /** SUPPRESS individual tree instances (twin keys `face:tx:ty:i` from
-   *  floraTreesNear) — the wilderness session stands a real gatherable
-   *  entity there, so the scenery copy must not also draw. Declarative:
-   *  pass the full current set; instances leaving it re-appear. */
+   *  floraTreesNear). Declarative: pass the full current set; instances
+   *  leaving it re-appear.
+   *
+   *  ⚖️ THE FIELD'S ONE PER-INSTANCE MASK, and the driver owns the reasons.
+   *  It began as the twin suppression — the wilderness session stands a real
+   *  gatherable entity there, so the scenery copy must not also draw — and it
+   *  now carries the town's own near stand, the felled marks, and (#49
+   *  Stage 3) the DEPLETION thinning: a neighbouring stand whose record has
+   *  been logged stands fewer trees. Deliberately ONE set rather than one per
+   *  reason: a tree either draws or it does not, and the set is a union
+   *  assembled at a single seat (`syncFloraTwins`) so no authority can
+   *  un-hide another's trees. A tile streaming in later reads the CURRENT
+   *  set at build time, so it builds already-thinned. */
   setTwinHidden(hidden: ReadonlySet<string>): void;
   dispose(): void;
 }

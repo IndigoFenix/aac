@@ -117,10 +117,37 @@ describe("buildVenueMenuBoard — the student reads one thing, the waiter hears 
 });
 
 describe("buildVenueMenuBoard — art", () => {
-  it("passes imageKey through to the auto-icon pipeline", () => {
+  it("carries a LEGACY stored imageKey as a one-slot glyph", () => {
+    // Rows written before 2026-09-02 have `imageKey`; the button field is
+    // `glyph` either way, so old menus upgrade to real art without a rebuild.
     const { board } = buildVenueMenuBoard({ venueName: "T", items: MENU, settings: SETTINGS });
     const button = itemButtons(board!.pages).find((b) => b.spokenText === "רול אנטריקוט")!;
-    expect(button.imageKey).toBe("beef_wrap");
+    expect(button.glyph).toBe("beef_wrap");
+    expect((button as { imageKey?: string }).imageKey).toBeUndefined();
+  });
+
+  it("carries a composed icon in regular-board glyph syntax", () => {
+    const { board } = buildVenueMenuBoard({
+      venueName: "T",
+      items: [
+        item({ name: "פיצה זיתים", icon: "pizza.olive" }),
+        item({ name: "המבורגר עם צ'יפס", icon: "burger+french_fries" }),
+      ],
+      settings: SETTINGS,
+    });
+    const glyphs = itemButtons(board!.pages).map((b) => b.glyph);
+    expect(glyphs).toEqual(["pizza.olive", "burger+french_fries"]);
+    // A dish name is DATA — the glyph must never replace the label or speech.
+    expect(itemButtons(board!.pages).every((b) => !b.localizeFromGlyph)).toBe(true);
+  });
+
+  it("prefers `icon` over a legacy imageKey when a row carries both", () => {
+    const { board } = buildVenueMenuBoard({
+      venueName: "T",
+      items: [item({ name: "X", icon: "pizza.olive", imageKey: "pizza" })],
+      settings: SETTINGS,
+    });
+    expect(itemButtons(board!.pages)[0].glyph).toBe("pizza.olive");
   });
 
   it("gives every item a self-contained emoji fallback by kind", () => {
@@ -135,15 +162,33 @@ describe("buildVenueMenuBoard — art", () => {
     expect(itemButtons(board!.pages).every((b) => !!b.glyphFallback)).toBe(true);
   });
 
-  it("still builds a button for an item with no imageKey", () => {
+  it("still builds a button for an item with no icon", () => {
     const { board } = buildVenueMenuBoard({
       venueName: "T",
       items: [item({ name: "Mystery dish" })],
       settings: SETTINGS,
     });
     const button = itemButtons(board!.pages)[0];
-    expect(button.imageKey).toBeUndefined();
+    expect(button.glyph).toBeUndefined();
     expect(button.glyphFallback).toBe("🍽️");
+  });
+
+  it("dresses a category tab in the HEAD of its first item's icon", () => {
+    // Six identical 📋 tabs are indistinguishable to exactly the student the
+    // pictures exist for. Head only — pizza.olive names one variant, the tab
+    // depicts the group. 📋 stays as the fallback while art generates.
+    const { board } = buildVenueMenuBoard({
+      venueName: "T",
+      items: [
+        item({ name: "פיצה זיתים", category: "פיצות", icon: "pizza.olive" }),
+        item({ name: "קולה", category: "שתייה", kind: "drink", imageKey: "cola" }),
+      ],
+      settings: SETTINGS,
+    });
+    const tabs = allButtons(board!.pages).filter((b) => b.id.startsWith("venue_cat_link_"));
+    expect(tabs.map((b) => b.glyph)).toEqual(["pizza", "cola"]);
+    expect(tabs.every((b) => b.glyphFallback === "📋")).toBe(true);
+    expect(tabs.every((b) => !b.localizeFromGlyph)).toBe(true);
   });
 });
 

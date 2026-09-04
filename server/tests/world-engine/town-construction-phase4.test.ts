@@ -629,6 +629,13 @@ function harness(over: Partial<ConstructionDirectorCtx> = {}) {
     npcChatBubble: () => {},
     // Headless: nothing to drop a re-minted stack into, so break banks it.
     spawnLooseProp: () => null,
+    // ⚖️ "get wood" means "cut a tree" (2026-09-02) — the means-end step in
+    // front of an automated draw. This harness stands no wilderness at all, so
+    // there is never a standing body in front of a draw and the real one would
+    // be a no-op; it is stubbed rather than omitted because a MISSING seam
+    // would throw, and a throw here would say nothing about the question the
+    // craft-gather cases are asking.
+    cutForDraw: () => {},
     removeLooseProp: () => {},
     postPooledTask: () => {},
     stockEndpointOf: () => null,
@@ -1075,7 +1082,7 @@ describe("the craft gather obeys the OBSERVATION LAW (F3)", () => {
       stockEndpointOf: (_s: QuestSession, id: string) =>
         ({ id, kind: "container", at: anchor, stack: {}, owner: null }) as never,
       bumpStockEpoch: () => { moved.push("epoch"); },
-      fellIfConsumed: () => {},
+      depleteWildSource: () => {},
       parkTown: () => {},
       townParked: () => false,
     });

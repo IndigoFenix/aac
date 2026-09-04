@@ -201,7 +201,15 @@ export function createGeologyBaker(opts: GeologyBakerOpts = {}): GeologyBaker {
       // `world` — already the bulk of this key — differs and the stale entry
       // is unreachable by construction. An undeclared world's params and
       // scan are byte-identical to yesterday's and keep their `bake8` entry.
-      const key = `bake8:${JSON.stringify(world)}${scaleSpec ? `:${JSON.stringify(scaleSpec)}` : ""}`;
+      // bake9: the substrate now carries PER-SPECIES ECOLOGY
+      // (`applyEcology({ perSpecies: true })` — `eco_tree` / `eco_grass` /
+      // `eco_horse`, abundance ×100). They ride `serializeGrid` for free, so
+      // nothing in the worker had to change — which is exactly the trap this
+      // key exists for: a `bake8` entry deserializes CLEANLY and simply has
+      // no `eco_*` fields, and every reader (the flora field, the wilderness
+      // scatter, the charters) would silently take its legacy arm forever on
+      // an already-visited world.
+      const key = `bake9:${JSON.stringify(world)}${scaleSpec ? `:${JSON.stringify(scaleSpec)}` : ""}`;
       const db = await dbPromise;
       const hit = await cacheGet(db, key);
       console.info(`geology cache ${hit ? "HIT" : "miss"} for ${resolved.body.id} (db ${db ? "open" : "unavailable"})`);

@@ -21,6 +21,7 @@ import { venueResolutionService } from "../services/venue-menus/venue-resolution
 import { getStudentAllergies } from "../services/venue-menus/student-allergies";
 import { webMenuService } from "../services/venue-menus/web-menu-service";
 import { MAX_FRAMES } from "../services/venue-menus/camera-extraction";
+import { isValidMenuIcon } from "../services/venue-menus/menu-refinement";
 import { resolveVenueMenuSettings, needsReview, isSourceEnabled } from "@shared/venue-menus";
 import { venueBrowseService } from "../services/venue-menus/venue-browse-service";
 import type { DisclosureContext } from "../services/processorDisclosure";
@@ -82,6 +83,10 @@ const editSchema = z.object({
         priceText: z.string().optional(),
         category: z.string().optional(),
         kind: z.enum(["food", "drink", "condiment", "notice", "unknown"]),
+        // Board glyph syntax (pizza.olive). Listed so a caretaker's edit does
+        // not silently STRIP every icon the refinement gave the menu — zod
+        // drops unlisted keys — and validated with the refinement's own rule.
+        icon: z.string().refine(isValidMenuIcon).optional(),
         imageKey: z.string().optional(),
         translatedName: z.string().optional(),
       }),

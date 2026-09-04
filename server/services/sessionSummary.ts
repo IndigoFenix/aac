@@ -40,6 +40,7 @@ import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
 import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
 import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
 import { buildSessionAccessCtx } from "./sharing/sessionCtx";
+import { presenceContextFromSnapshot } from "./memory-schema/presence-context";
 import path from "path";
 import { fileDebugLoggingEnabled, safeAppend } from "./file-debug-log";
 import type { DisclosureContext } from "./processorDisclosure";
@@ -202,6 +203,17 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
       ? `Write the title and summary in ${getLanguageName(student.primaryLanguage)}.`
       : "Write the title and summary in the transcript's dominant language.";
 
+    // Presence ledger §6.1: the coordinator snapshotted its ledger onto the
+    // session row at close, so the close summary is TOLD who was in the room
+    // instead of inferring it from a transcript full of the matcher's guesses.
+    // Empty when the feature was off for that session (or the column is null,
+    // which is every session before this shipped) — then the prose warning
+    // below stands and this path is byte-identical to before.
+    const presenceBlock = presenceContextFromSnapshot(session.presenceLedger);
+    const presenceInstruction = presenceBlock
+      ? "Use the [PRESENCE — system verified] block: only people in its verified list were present."
+      : "A [RETRACTION] line voids earlier reports of that person: never state they were present.";
+
     const baseInstructions = [
       "You are summarizing a chat session transcript for later retrieval.",
       "Produce a concise title, a 2-4 sentence summary, and an importance score (0-3).",
@@ -209,11 +221,12 @@ export async function generateSessionSummary(sessionId: string): Promise<void> {
       languageLine,
       "Do not invent facts. Refer to people exactly as the transcript presents them",
       "— never infer species, age, or relationships that are not stated.",
-      "A [RETRACTION] line voids earlier reports of that person: never state they were present.",
+      presenceInstruction,
       "Do not claim a person was present from the user's own greeting presses alone —",
       "greetings are often practice directed at nobody in the room.",
     ];
-    const userContent = `Summarize the following session transcript.\n\nChat mode: ${session.chatMode}${subjectLine}\nTranscript:\n${transcript}`;
+    const presenceSection = presenceBlock ? `\n\n${presenceBlock}` : "";
+    const userContent = `Summarize the following session transcript.\n\nChat mode: ${session.chatMode}${subjectLine}${presenceSection}\nTranscript:\n${transcript}`;
 
     const chargeResponse = async (r: GPTResponse) => {
       await chargeModelUsage({

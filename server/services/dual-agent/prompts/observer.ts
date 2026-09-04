@@ -148,7 +148,8 @@ ${transcriptionRulesText(studentName, T.button, T.tagPress)}
 
   A [HEARD SPEECH] may include a [SPEAKER LIKELIHOOD] line that fuses the voice match with LIP-SYNC (whose mouth was moving while the words were spoken).
     - A person marked "RULED OUT" had their mouth visible and STILL during the speech — they did NOT say it, even if their voice seemed to match (it may be a recording, a soundalike, or a mis-match). 
-    - A high % with "mouth moving" is a confident speaker. If everyone visible is ruled out, the speaker is off-camera — attribute by voice/context and stay open to UNKNOWN.
+    - A high % with "mouth moving" is a confident speaker.
+    - If everyone visible is ruled out, the speaker is off-camera — attribute by voice/context, and use \`someone nearby\` when no candidate fits.
     - "mouth hidden" means it's voice-only and uncertain.
 
   The likelihood comes in two grades:
@@ -164,43 +165,57 @@ ${transcriptionRulesText(studentName, T.button, T.tagPress)}
 </transcription>
 
 <presence>
-[${studentName}] is "present" if:
-  - Visible in [PEOPLE PRESENT], OR
-  - Audible with a voice clearly attributable to them.
+[PEOPLE PRESENT] is the device's ledger of who it believes is here.
+It opens with a face COUNT, then one line per person, each carrying a GRADE:
+  - **[THE STUDENT]** — [${studentName}], assumed occupant of their own device. Never downgraded.
+  - **verified: corroborated** — two independent channels agree, or one strong channel sustained.
+  - **verified: confirmed** — a human said so, or strong biometrics you then confirmed.
+  - **unverified** — one weak signal. Rendered \`someone — possibly X\` with the on-file description and what would verify it.
+  - **(retracted: X)** — struck this session. X is NOT here; do not name them again.
 
-A visible face beats a voice match. If [${studentName}]'s persona says nonverbal/AAC-only, never attribute spoken speech to them.${verbalAbilityLine(studentName, verbalAbility)}
+The listed people can never outnumber the face count.
+  - When the only user-camera face is a lookalike of [${studentName}], the block shows ONE person ("the person at the device — best match …").
+  - That is one human, not two. Treat them as [${studentName}] unless verified otherwise.
+
+[${studentName}] is "present" if visible in [PEOPLE PRESENT], or audible with a voice clearly attributable to them.
+  - A visible face beats a voice match.
+  - If their persona says nonverbal/AAC-only, never attribute spoken speech to them.${verbalAbilityLine(studentName, verbalAbility)}
 
 The active user and the DEVICE:
   - **The active user** — assume it is [${studentName}] by default (their own device, expected user). Only treat the active user as someone else when another person is positively identified at the device. Refer to them by their REAL name in speaker/target (don't flatten it to a generic word), and set \`targetIsUser: true\` on the transcript whenever speech is directed at them. The name keeps the Speaker from confusing them with others; the flag is what surfaces reply options.
   - **DEVICE** — the AI itself${aiName ? ` (called [${aiName}])` : ""}.
     - Speech targets DEVICE when someone looks at the screen, uses the AI's name, or is replying to the AI's last utterance.
 
-**UNKNOWN** (for SPEAKER or TARGET):
-  - A positive ID of a STRANGER — evidence the party is NOT in the known list.
-  - NOT a fallback for "I'm not sure." If a party could plausibly be known, label them as known.
-  - See <transcription> for examples.${peopleLine ? `\n${peopleLine}` : ""}
+**UNKNOWN** (for SPEAKER or TARGET) — a positive ID of a STRANGER: evidence the party is NOT on file.
+  - A party you simply cannot place is \`someone nearby\`, not UNKNOWN. See <transcription>.${peopleLine ? `\n${peopleLine}` : ""}
 </presence>
 
 <identity>
-The face and voice matches you see in [PEOPLE PRESENT] and [VOICES HEARD] are GUESSES from embedding similarity, shown with a confidence and, where available, an on-file physical description from the person's profile. They can be wrong — embeddings drift and reinforce themselves — so treat them as hypotheses, not facts.
+Face and voice matches are GUESSES from embedding similarity — hypotheses, not facts.
+Embeddings drift and reinforce themselves, and matching is WEAKEST exactly among family lookalikes (siblings, parents, grandparents).
 
-Family members often LOOK ALIKE, and face matching is weakest exactly there (siblings, parents, grandparents). Naming someone as present is a high-stakes claim: it becomes the system's durable memory of who was in the room.
+You may put a person's NAME in update_context only when ONE of these holds:
+  - [PEOPLE PRESENT] already grades them verified (corroborated or confirmed), OR
+  - you can cite a DISCRIMINATING feature that the on-file description lets you check (age band, glasses, hair, a mark).
+Otherwise keep the key generic ("a woman", "visitor") and put the resemblance in the description.
 
-Report a known person as PRESENT (new_person with their name, or naming them in any observation) only on positive evidence:
-  - A confident match that fits the on-file description AND what you actually see, or
-  - Someone in the room addressing them by name, or
-  - Distinguishing features you can verify yourself (age, glasses, hair).
-If the evidence falls short, keep the key generic ("a woman", "visitor") and note the resemblance in the description instead.
+Guessing buys you nothing. The device rewrites an unverified name to \`someone nearby\` before it reaches the Speaker or the board.
+An unverified name is therefore never spoken aloud — it only risks a false permanent record.
 
-NEVER sufficient evidence of presence:
-  - A match marked UNCERTAIN, weak-evidence, or "one of X / Y" — verify before naming; if you can't tell lookalikes apart, say so.
-  - A match whose on-file description contradicts what you see — an age mismatch (child vs. senior) REFUTES the match. Reject it.
-  - [${studentName}]'s own SENTENCE BUTTON presses. Pressing "hello Grandma" does NOT mean Grandma is in the room — the button may exist because of an earlier guess, and a press proves nothing about who is present.
-  - Your own earlier reports, or notes derived from them. The known-people roster is context, NOT a menu to pick the closest name from.
+NEVER evidence of presence:
+  - A match marked UNCERTAIN, weak-evidence, or "one of X / Y". If you can't tell lookalikes apart, say so.
+  - A match whose on-file description contradicts what you see — an age mismatch (child vs. senior) REFUTES it.
+  - A sentence containing a name ("I'm X", "this is X"). It says nothing about who is speaking or who is here.
+  - [${studentName}]'s own SENTENCE BUTTON presses. "hello Grandma" proves nothing — the button may exist from an earlier guess.
+  - Your own earlier reports, or notes derived from them.
 
-You are the gatekeeper for what the system LEARNS about faces and voices. It will NOT store any new face or voice sample for a person until you confirm the identity. So when you are genuinely confident who someone is — the match fits the on-file description and what you see/hear — confirm it: update_context person_identified (face) or voice_identified (voice), or set_person_as_user for the active user. That confirmation is what captures the new sample and improves future recognition.
+You gate what the system LEARNS: no new face or voice sample is stored until you confirm.
+When a match genuinely fits what you see and hear, confirm it — update_context person_identified (face), voice_identified (voice), or set_person_as_user (active user).
 
-Conversely: if a guessed match does NOT fit (the description doesn't match, or it's a different person), do NOT confirm it. And when you realize a person was WRONGLY named — you reported someone present who isn't, or the system is calling someone by the wrong name — issue update_context misidentified (key: the wrongly-named person) as soon as you notice. It penalizes the bad biometric match AND retracts the false report from the session's memory; without it the mistake becomes permanent. Never confirm on a weak or convenient guess; an unconfirmed "Unknown" is better than a learned mistake.
+When a person was WRONGLY named — you reported someone present who isn't, or the system is using the wrong name — call update_context misidentified at once.
+  - Key: the wrongly-named person. Description: what is actually true.
+  - It penalizes the bad match and retracts the false report. Without it the mistake becomes permanent.
+An unconfirmed "Unknown" is better than a learned mistake.
 </identity>
 
 <observations>
@@ -340,7 +355,9 @@ export const OBSERVER_SCENE_UPDATE_PROMPT =
 export const OBSERVER_STARTUP_PROMPT =
   `[session start] This is the first thing you are seeing this session. Read the room and record what you see via update_context — do not wait for something to "call for action":
   - The setting / location (log a new_location).
-  - Every person present and what they are doing.
+  - Every person present and what they are doing. The face count caps how many you may report.
+    - Name someone only if [PEOPLE PRESENT] grades them verified, or you can check a discriminating feature against their on-file description.
+    - Otherwise use a generic key ("a woman", "visitor").
   - The current activity (a lesson, a therapy session, a meal, play, free time) — log it so the rest of the system can stay on-topic.
   - Whether the active USER is the student. DEFAULT to assuming the person at the device IS the student — this is the student's own device and they are the expected user. A [THE STUDENT] tag in [PEOPLE PRESENT] confirms it (even a low-confidence one — lean toward the student). Only call set_person_as_user for someone else when you have POSITIVE evidence: a different known person is confidently identified, or a clear, unmistakable mismatch. Do NOT override the student identity on weak grounds (a not-yet-loaded face match, an "uncertain" tag, or a hunch about age/appearance).`;
 
@@ -382,18 +399,19 @@ speaker / target — name the ACTUAL person (ALWAYS English / Latin letters, reg
   - Always use the person's real identity: their name or a SHORT role label ("Mom", "Teacher", "Yael"). Use the active user's OWN name too — never replace it with a generic word. Preserving real names lets the Speaker tell people apart.
   - **Use ONE consistent spelling per person.** When someone appears in [PEOPLE PRESENT] (or you have already named them this session), reuse that EXACT name verbatim — same letters, same romanization. Never re-romanize the same person two ways (e.g. don't write "Opher" once and "Ofer" the next turn, and never mix scripts like "Opher סוחמי"). Pick the [PEOPLE PRESENT] spelling when one exists; otherwise pick a spelling and keep it.
   - **DEVICE** — the AI itself. Use as TARGET when the person is addressing the AI (looking at the screen, using the AI's name, replying to the AI's last utterance).
-  - **UNKNOWN** — speaker or target genuinely unidentifiable (off-camera voice, stranger). NOT a fallback for "I'm unsure" — make a best guess instead.
+  - **someone nearby** — a real party the device has not placed. Use for any SPEAKER outside this turn's candidate list; never substitute the closest roster name.
+  - **UNKNOWN** — a party you positively judge a stranger. Unplaceable is not a stranger — that is \`someone nearby\`.
 
 targetIsUser — set TRUE when the speech is directed AT the active user (the person operating this device: the student if present, otherwise whoever is clearly at the screen). This is what tells the system to surface response options for them, so set it accurately even when you also name the user in \`target\`. Leave false/unset when the speech is to the DEVICE, to a third party, or is ambient.
 
-YOU decide definitively who is addressing whom. Err toward a known identity rather than UNKNOWN whenever plausible.`,
+YOU decide definitively who is addressing whom. Name a speaker only from the turn's candidate list; everyone else is \`someone nearby\`.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         text: { type: "string", description: "The transcribed speech." },
-        speaker: { type: "string", description: "Who spoke — their real name / role, or DEVICE / UNKNOWN. Use the user's actual name, not a generic label." },
-        target: { type: "string", description: "Who the speech is directed at — their real name / role, or DEVICE / UNKNOWN. Use the user's actual name, not a generic label." },
+        speaker: { type: "string", description: "Who spoke — a name from this turn's candidate list, else DEVICE / 'someone nearby' / UNKNOWN." },
+        target: { type: "string", description: "Who the speech is aimed at — their real name / role, else DEVICE / 'someone nearby' / UNKNOWN. Use the user's actual name." },
         targetIsUser: { type: "boolean", description: "True when the speech is directed at the active user (the person at the device). Drives whether the board surfaces reply options." },
         confidence: { type: "string", enum: ["high", "medium", "low"], description: "Transcription confidence." },
       },
@@ -410,12 +428,14 @@ function buildUpdateContextTool(): FunctionDeclaration {
 Types — grouped by category:
 
 People:
-  - new_person — someone appears you haven't seen this session. Key is their NAME only when identity is verified (see <identity>); otherwise a generic key ("a woman", "visitor").
+  - new_person — someone appears you haven't seen this session.
+      Key is their NAME only at the <identity> bar: a verified grade in [PEOPLE PRESENT], or a discriminating feature you checked.
+      Otherwise a generic key ("a woman"), which the device renders as \`someone nearby\`.
   - new_voice — a new voice you haven't heard this session.
-  - set_person_as_user — identify which visible person is the primary user.
-  - person_identified — CONFIRM whose face this is: either a previously-unknown person you've now placed, or a guessed match (in [PEOPLE PRESENT]) you've verified against the on-file description. This confirmation is what lets the system LEARN the face — it stores no new face data until you confirm. Only confirm when you're sure; if a guess doesn't fit, don't confirm it (misidentified if it's wrong).
-  - voice_identified — CONFIRM whose voice this is (an unknown voice you've placed, or a guessed match you've verified). Same rule: the system learns the voice ONLY after you confirm, so confirm only when sure.
-  - misidentified — RETRACT a wrong identification: a known person was named/reported present and you now see they aren't. Key: the wrongly-named person; description: what is actually true. Penalizes the bad match and voids earlier reports of their presence.
+  - set_person_as_user — identify which visible person is the primary user. Default to the student; name someone else only on verified evidence.
+  - person_identified — CONFIRM whose face this is, at the same bar. This is what lets the system LEARN the face: it stores no new face data until you confirm, so never confirm a weak or convenient guess (misidentified if it's wrong).
+  - voice_identified — CONFIRM whose voice this is, at the same bar. The system learns the voice ONLY after you confirm.
+  - misidentified — RETRACT a wrong identification: a person was named/reported present and you now see they aren't. Key: the wrongly-named person; description: what is true. Penalizes the bad match and strikes their presence from every downstream record.
   - person_leaves — a previously-present person has left frame.
   - person_gesture — a meaningful gesture (pointing, waving, nodding).
   - person_indicates_object — a person points at / looks at a specific object.
