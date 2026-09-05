@@ -347,6 +347,13 @@ const CATALOGUE: NaturalSource[] = [
       tempC: { lo: -2, opt: 12, hi: 25 },
       elevation: { opt: 0, hi: 30 },
     },
+    // 🍏 A CULTIVAR'S WILD ABUNDANCE (2026-09-04, the forage round). The niche
+    // says an apple LIVES in a temperate wood, and that is true — a crab apple
+    // does. It does not stand there as thickly as the hedge it shares the wood
+    // with, and until the forager's query read this field nothing in the engine
+    // could say so. A fifth of "under everyone's feet": occasional, and worth
+    // noticing when you find one.
+    rarity: 0.2,
     products: [
       { glyph: "apple", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
       {
@@ -387,6 +394,9 @@ const CATALOGUE: NaturalSource[] = [
       tempC: { lo: 19, opt: 28 },
       elevation: { opt: 0, hi: 30 },
     },
+    // 🍌 Same reading as the apple's: a wild banana in the rainforest is a real
+    // plant and an occasional one.
+    rarity: 0.2,
     products: [
       { glyph: "banana", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
     ],
@@ -406,6 +416,8 @@ const CATALOGUE: NaturalSource[] = [
       tempC: { lo: 4, opt: 19, hi: 33 },
       elevation: { opt: 0, hi: 30 },
     },
+    // 🍇 …and the wild vine, likewise.
+    rarity: 0.2,
     products: [
       { glyph: "grape", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
     ],
@@ -561,8 +573,152 @@ const CATALOGUE: NaturalSource[] = [
       tempC: { lo: -5, opt: 14, hi: 31 },
       fertility: { lo: 1, opt: 7 },
     },
+    // 🥕 THE THINNEST OF THE FOUR IN THE WILD, and the widest niche of the four
+    // — those two facts are the same fact read from both ends. A wild carrot
+    // grows nearly anywhere and is nowhere a stand you would walk to; without a
+    // rarity the widest window in the catalogue would have made it the
+    // countryside's commonest food on every continent at once.
+    rarity: 0.1,
     products: [
       { glyph: "carrot", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+    ],
+  },
+
+  // ── 🌿 THE WILD LARDER (2026-09-04) ──────────────────────────────────────
+  //
+  // USER RULING (2026-09-04), verbatim: *"We should also add some wild food
+  // sources so that settlers can survive in the wilderness - most areas just
+  // have trees right now."*
+  //
+  // The premise measured true: `wildMixForBiome` stood a forest cell as
+  // `oak ×10` + ONE cultivar `×2` + `rock ×6`, so two features in eighteen bore
+  // anything edible, and the one line that actually scales with the land
+  // (`oak`, through the biosphere's own `standDensityPerHa`) is the line that
+  // bears no food at all. These four rows are the countryside's own pantry:
+  // FORAGE, not crops — you find them, you do not plant them.
+  //
+  // ⚖️ NOTHING NEW IS INTRODUCED HERE. Each is an ordinary source row with one
+  // `harvest` FOOD product, a niche in the same `SpeciesNiche` vocabulary every
+  // other row uses, and (for three of them) a body that was already drawn. What
+  // makes them fill a wilderness rather than sprinkle it is the FORAGER'S QUERY
+  // (`wildFoodPlants` below) and the abundance field this file has carried
+  // unread since it was written (`rarity` / `sourceRarityOf`).
+  //
+  // 🚨 APPENDED, NEVER INSERTED — the FOOD_KINDS law two rows up. Indices 0–3
+  // stay apple/banana/grape/carrot; these take 4–7.
+  {
+    // 🫐 THE BERRY BUSH — and the row this catalogue was always missing.
+    // `creatures/examples.ts` has shipped a blueprint titled "Bush (berries)"
+    // for as long as there have been plants: a low multi-stemmed shrub with
+    // small red fruit drawn ALONG its branches, under a `bush` species row that
+    // already carries four lexemes. The world has been drawing the berries and
+    // yielding nothing off them.
+    species: "bush",
+    kind: "plant",
+    // 1.2 m — waist-high, which is what makes a berry bush a thing you reach
+    // INTO rather than up at. (`bodyHeightM` is the height the avatar factory
+    // STANDS the body at, not the blueprint's own build: the shipped bush
+    // blueprint measures 1.94 m off `buildSkeleton` bounds and is scaled to
+    // this, exactly as the apple tree's 6.34 m build is stood at 3.4.)
+    bodyHeightM: 1.2,
+    feature: { icon: "🌳", radiusM: 0.45 },
+    // THE FOREST EDGE, read against ecology.ts TREE (rain lo .45) and GRASS
+    // (rain .2/.5/1.1): the floor sits BETWEEN them (0.3), which is the ground
+    // neither closed canopy nor open steppe wins outright — exactly where a
+    // hedge berry lives. And it peaks COOL of everything else in the catalogue
+    // (8 °C, against the apple's 12 and the vine's 19) with a −12 °C floor, so
+    // the boreal north is its country rather than its range edge: the one food
+    // plant a cold frontier can count on.
+    // NO elevation band, and the omission IS the statement (`band(v,
+    // undefined)` is 1, the ecology convention): a hillside is berry ground.
+    niche: {
+      rain: { lo: 0.3, opt: 0.75, hi: 1.25 },
+      tempC: { lo: -12, opt: 8, hi: 26 },
+    },
+    // `rarity` UNSET = 1 = "sits under everyone's feet" — the commonest forage
+    // there is, and the row that answers the user's complaint on its own.
+    products: [
+      // Berries come in FLUSHES, so the bearing is generous and the wait is two
+      // days rather than the orchard's one.
+      { glyph: "berry", use: "food", method: "harvest", yield: { min: 2, max: 4 }, regrowDays: 2 },
+    ],
+  },
+  {
+    // 🌰 THE NUT TREE — the storable calorie, and the only one of the four that
+    // is a TREE rather than something you stoop for.
+    species: "hazel",
+    kind: "plant",
+    // 4.0 m — an understorey tree: taller than the fruit trees it shares the
+    // wood with (3.4) and a sixth of the oak's crown, which is what "grows
+    // under the canopy" has to look like from the ground.
+    bodyHeightM: 4,
+    feature: { icon: "🌳", radiusM: 0.55 },
+    // CLOSED TEMPERATE FOREST. Wetter at the floor than TREE (0.55 vs 0.45) and
+    // WARMER at the floor than TREE's 0 °C (lo 2): a hazel is an inhabitant of
+    // the wood TREE makes, not a coloniser of its cold edge — that ground
+    // belongs to the berry bush, whose −12 °C floor is twenty degrees below
+    // this one. Stops at 27 °C, well short of the tropics. Elevation is TREE's
+    // own window verbatim, because it lives inside TREE.
+    niche: {
+      rain: { lo: 0.55, opt: 1.0 },
+      tempC: { lo: 2, opt: 13, hi: 27 },
+      elevation: { opt: 0, hi: 30 },
+    },
+    rarity: 0.6,
+    products: [
+      // A heavy take on a slow clock — one good autumn, carried through a
+      // winter, which is what a nut is FOR.
+      { glyph: "nut", use: "food", method: "harvest", yield: { min: 2, max: 5 }, regrowDays: 4 },
+    ],
+  },
+  // 🍄 THE MUSHROOM IS DESIGNED AND NOT SHIPPED — and the reason is a LAW, not
+  // an oversight (2026-09-04). A wet shaded forest floor is the one obvious gap
+  // left in this set, and the world already has everything the row would need:
+  // a `mushroom` species with a real blueprint (stem + terminal cap), four
+  // lexemes, and an `aac.glyph.mushroom` key in all eleven locales. It would
+  // have cost no vocabulary at all, which is exactly why it was designed first
+  // and why the block is recorded here rather than quietly dropped.
+  //
+  // 🚨 WHAT STOPS IT. `world-engine-creatures.test.ts` pins that a FOOD glyph
+  // names a `kind:"fruit"` species — the market/ground ITEM body — while its
+  // SOURCE names a `kind:"plant"` one, the standing body. Every other food
+  // obeys it: apple_tree/apple, carrot_plant/carrot. A mushroom is the one food
+  // where THE STANDING THING AND THE PICKED THING ARE THE SAME BODY, so a
+  // single id would have to be both kinds at once, and it cannot be.
+  //
+  // Both ways out are somebody else's call, so neither was taken here:
+  //   ① re-kind `mushroom` to "fruit" and give the clump a new plant id — this
+  //      COSTS A BUILDER BUTTON (`walkDefaultNouns` 2b pushes plants only, and
+  //      `mushroom` sits in no pool), i.e. it takes a word off a child's board;
+  //   ② relax the pin to "the food names a species with a real body", which is
+  //      what it actually means — but that is a conformance law other lanes may
+  //      lean on, and weakening a law to fit new content is the wrong direction
+  //      to push from inside the content.
+  // Recorded for a ruling. Nothing else here waits on it: the berry bush
+  // already carries moist ground and the hazel carries the closed wood.
+  {
+    // 🧅 THE GRASSLAND BULB — the open country's answer, and the reason a
+    // steppe founding is no longer a stone quarry with sheep on it.
+    species: "wild_onion",
+    kind: "plant",
+    // 0.5 m — the blade tuft is ankle-high and the flower stalk carries it to
+    // knee height, which is the only reason you can see one in long grass.
+    bodyHeightM: 0.5,
+    feature: { icon: "🌱", radiusM: 0.2 },
+    // GRASS'S OWN WINDOW, NUDGED DRY. Its floor (0.15) is below GRASS's 0.2 and
+    // level with the sheep's, because a bulb keeps its water underground and
+    // holds on where the sward thins to scrub; its ceiling (1.0) closes where
+    // closed forest takes the ground, which is the mirror image of the
+    // mushroom's floor and the reason the two never share a cell.
+    // NO fertility band, and that omission IS the statement: a wild allium is a
+    // weed of poor ground, and giving it a soil window would say the opposite.
+    niche: {
+      rain: { lo: 0.15, opt: 0.45, hi: 1.0 },
+      tempC: { lo: -8, opt: 15, hi: 33 },
+    },
+    rarity: 0.75,
+    products: [
+      { glyph: "onion", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 3 },
     ],
   },
 ];
@@ -1198,6 +1354,55 @@ export function usefulPlants(climate?: ClimateSample): NaturalSource[] {
     (s) =>
       s.kind === "plant" &&
       s.products.some((p) => p.method === "harvest") &&
+      (!climate || nicheSuitabilityOf(s, climate) > 0),
+  );
+}
+
+/**
+ * THE FORAGER'S QUERY (2026-09-04) — every plant a walker could EAT OFF here:
+ * a catalogue row of kind "plant" bearing at least one `use:"food"`
+ * `method:"harvest"` product, catalogue order, and — with a `climate` sample —
+ * only the rows whose niche admits that cell.
+ *
+ * ⚖️ THE THIRD QUERY, AND THE SPLIT #46 PREDICTED. There are now three
+ * questions over one catalogue, and each has exactly one consumer shape:
+ *
+ *   • `foodPlants()`          "what food words exist" — the sentence-builder
+ *                             vocabulary. LOCATION-BLIND BY LAW: a child names
+ *                             a banana on any continent, and filtering it by
+ *                             where the camera stands would take a word out of
+ *                             a mouth. Pairs, because a vocabulary wants the
+ *                             glyph.
+ *   • `usefulPlants(climate)` "what is worth PUTTING IN THE GROUND" — the
+ *                             grower. ANY live renewable take, food or fibre,
+ *                             because that property is what makes a plant worth
+ *                             cultivating rather than felling.
+ *   • `wildFoodPlants(c)`     "what can I EAT off this ground without having
+ *                             planted it" — the scatter's forage line. Food
+ *                             only (a fibre feeds nobody), location-aware, and
+ *                             it returns ROWS because the caller needs the
+ *                             niche and the `rarity` off the SAME object it
+ *                             read the species from.
+ *
+ * Neither of the other two is this one's filter, and this one is neither of
+ * theirs: `usefulPlants` would hand the forager a fibre plant, and `foodPlants`
+ * would hand it a banana on a frozen steppe — which is the very bug the niche
+ * data landed to close, re-opened one consumer over.
+ *
+ * ⚖️ ABUNDANCE IS *NOT* PART OF THE ANSWER. This says which plants LIVE here;
+ * how thickly each one stands is `sourceRarityOf` × `nicheSuitabilityOf`, asked
+ * by the caller that knows its own extent. Baking a count in here would make
+ * this query answer two questions and give the scatter no way to disagree with
+ * it about the size of its own ground.
+ *
+ * EMPTY IS AN ANSWER — frozen scree feeds nobody, and a caller must stand no
+ * forage there rather than fall back to the unfiltered list.
+ */
+export function wildFoodPlants(climate?: ClimateSample): NaturalSource[] {
+  return CATALOGUE.filter(
+    (s) =>
+      s.kind === "plant" &&
+      s.products.some((p) => p.use === "food" && p.method === "harvest") &&
       (!climate || nicheSuitabilityOf(s, climate) > 0),
   );
 }

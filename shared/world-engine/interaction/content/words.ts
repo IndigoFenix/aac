@@ -96,6 +96,38 @@ export const ITEM_WORDS: Readonly<Record<string, ItemWords>> = {
     es: { w: "roca", g: "f" },
     pt: { w: "rocha", g: "f" },
   },
+  // ── 🌿 THE WILD LARDER (2026-09-04) ────────────────────────────────────
+  // The three foods the wilderness scatter's forage plants yield (products.ts:
+  // the berry bush, the hazel, the wild onion). They live HERE for the reason
+  // this catalog exists — products.ts mints the glyph and its rows repeat per
+  // source — and for the reason `carrot`'s comment in species.ts records: with
+  // no spec word the CONTAINER BOARD renders the raw English head in he/es/pt,
+  // and that miss is invisible to all three validators (no `t()` call, no
+  // builder head, and locale files that agree with each other about a key none
+  // of them has). The fourth forage food, `mushroom`, already carries its
+  // lexemes on its own species row.
+  //
+  // COUNT NOUNS, all three: you pick a berry, crack a nut, pull an onion.
+  // (`berry` is `gargar ya'ar` — "forest grain" — the ordinary Hebrew for a
+  // wild berry, and its plural is the form a child will actually meet.)
+  berry: {
+    en: { w: "berry", plw: "berries" },
+    he: { w: "גרגר יער", g: "m", plw: "גרגרי יער" },
+    es: { w: "baya", g: "f" },
+    pt: { w: "baga", g: "f" },
+  },
+  nut: {
+    en: { w: "nut" },
+    he: { w: "אגוז", g: "m", plw: "אגוזים" },
+    es: { w: "nuez", g: "f", plw: "nueces" },
+    pt: { w: "noz", g: "f", plw: "nozes" },
+  },
+  onion: {
+    en: { w: "onion" },
+    he: { w: "בצל", g: "m", plw: "בצלים" },
+    es: { w: "cebolla", g: "f" },
+    pt: { w: "cebola", g: "f" },
+  },
   // The worked materials beside the raw ones. `cloth` and `wool` are what the
   // loom eats and makes; `paper` is the school-side material with no craft row
   // yet. All three are mass, like wood and stone.

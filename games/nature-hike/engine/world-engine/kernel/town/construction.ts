@@ -772,6 +772,58 @@ export interface ServicePoint {
  *  list append-only (the ZONES/SEEDS discipline). */
 export type ServiceRecord = ServicePoint & { ord: number };
 
+/**
+ * ⚖️ A FELLING DESIGNATION (task #51 item 1d) — *"the cut command for trees
+ * isn't supposed to destroy the tree when the button is pressed. It should
+ * issue a COMMAND to cut that tree. Or, alternatively, DESIGNATE the tree to
+ * be cut when available as a task."* (user, 2026-09-04).
+ *
+ * This is the second half of that ruling: a mark on a standing thing, saying
+ * it is to come down — WORK THAT EXISTS BEFORE ANYBODY IS DOING IT, which is
+ * exactly what a bill is in the pull model. Any idle body reads it
+ * (`visibleBills`), walks out, chops, and the mark retires with the thing.
+ *
+ * 🚨 IT LIVES IN THE DELTAS BECAUSE A DESIGNATION MUST SURVIVE A SAVE. The
+ * annex and demolition designations set the precedent in this very file ("the
+ * room comes down later, when builders work it off"), and the record-
+ * persistence law is the same one: a promise the world made to the child
+ * cannot be a session opinion. A pursuit is session-lived and re-decided; the
+ * MARK is not.
+ *
+ * ⚠️ IT IS NOT A `ConstructionOrder`. It has no costs, no pile, no labour
+ * ladder and no ordinal in the construction sequence (`orderpile:<ord>` would
+ * resolve against a row that never wanted materials). It is its own tiny
+ * append-only family, on the ZONES/SEEDS discipline — ordinals monotone, rows
+ * only ever appended and removed by their own verb.
+ */
+export interface FellOrder {
+  ord: number;
+  /** The wilderness feature's OWN id (`WildernessFeature.id`), never its
+   *  container endpoint: the endpoint SPELLING changes when a thing stops
+   *  standing as a body (`wildFeatureContainerId` reads `wildFeatureEmbodied`),
+   *  and a mark that changed key the moment the tree fell could never be
+   *  retired by the fall. */
+  featureId: string;
+  /** Where it stands — so a reader can price the walk without resolving the
+   *  feature first, and so a mark on a thing that has since been folded away
+   *  still says where it was. */
+  at: { x: number; y: number };
+  /** 🚨 A SPOKEN WORD FOR IT, NEVER A SPECIES ID (CLAUDE.md's silent-lexicon
+   *  trap; `host-lines.ts sourceKindWord` is the one mapping). This is what
+   *  the puller ANNOUNCES ("I will cut the plants") and what the toast names,
+   *  so a species id here would put an English word on a Hebrew board. */
+  word: string;
+  /** Who marked it — read ONLY through `relationToward` (every civic sweep
+   *  posts as the local player, so an issuer is never a weight by itself). */
+  issuer: string;
+  /** Whether a PLAYER's own press/sentence made the mark (the "you asked"
+   *  weight); a lot-clearing prerequisite's mark is civic. */
+  spoken: boolean;
+  /** The town street-day the mark was made (the report/aging surface — the
+   *  same field every other designation family carries). */
+  postedDay: number;
+}
+
 export interface SerializedTownDeltas {
   version: number;
   buildings: Record<string, BuildingDelta>;
@@ -793,6 +845,11 @@ export interface SerializedTownDeltas {
   stock?: Record<string, number>;
   /** ZONE CHARTERS (③), in charter (ord) order. Absent = none. */
   zones?: ZoneCharter[];
+  /** FELLING DESIGNATIONS (task #51 item 1d), in mark (ord) order. Absent =
+   *  none, and EMITTED ONLY WHEN NON-EMPTY (the `herd`/`areaRecords`
+   *  precedent), so every save written before this field existed — the
+   *  dollhouse bench's included — round-trips byte-identically. */
+  fellOrders?: FellOrder[];
   /** THE TOWN'S GROWTH SEEDS (growth-phase-B §1.1) — what the street tree
    *  was grown around, in seed (ord) order, on the ZONES discipline:
    *  ordinals are monotone, never reused, and rows are only ever appended,
@@ -1050,6 +1107,23 @@ export interface TownDeltas {
   /** Post a refine order (assigns its ordinal, bumps the version). The
    *  mill runs it through the one order loop; the commit removes it. */
   postRefineOrder(p: Omit<RefineOrder, "ord" | "kind">): RefineOrder;
+  /** FELLING DESIGNATIONS (task #51 item 1d) — the standing things somebody
+   *  marked to come down, in mark (ord) order. Read-only view. */
+  fellOrders(): readonly FellOrder[];
+  /**
+   * MARK a standing thing to be cut (assigns its ordinal, bumps the version).
+   *
+   * ⚖️ IDEMPOTENT ON THE FEATURE: a thing already marked is not marked twice —
+   * the existing row comes back unchanged. Marking is a STATE, not an event
+   * (the `ensureRefineOrders` "one open row per tree" law, applied to the mark
+   * itself), so a lot-clearing sweep that re-derives its blockers every second
+   * and a child pressing the same button twice both leave exactly one row.
+   */
+  designateFell(f: Omit<FellOrder, "ord">): FellOrder;
+  /** UNMARK `featureId` — the child pressed `cut` on a tree already marked
+   *  (the mark is a toggle), or the thing came down / was folded away and the
+   *  bookkeeper retired its mark. True ⇔ a row was removed. */
+  cancelFell(featureId: string): boolean;
   /** PENDING DEMOLITIONS — read-only view of `orders()` (kind
    *  "demolish"), posting order. */
   demolitionSites(): readonly PendingDemolition[];
@@ -1194,6 +1268,9 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     (s) => JSON.parse(JSON.stringify(s)) as SeedRecord,
   );
   const services: ServiceRecord[] = (json?.services ?? []).map((s) => ({ ...s }));
+  const fells: FellOrder[] = (json?.fellOrders ?? []).map(
+    (f) => JSON.parse(JSON.stringify(f)) as FellOrder,
+  );
   const civic = { prosperity: json?.civicProsperity ?? 0 };
   const cohorts: CohortRow[] = (json?.cohorts ?? []).map(
     (r) => JSON.parse(JSON.stringify(r)) as CohortRow,
@@ -1347,6 +1424,26 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       store.version++;
       return row;
     },
+    fellOrders: () => fells,
+    designateFell: (f) => {
+      // ⚖️ ONE MARK PER THING (see the interface's law): the row that is
+      // already standing IS the answer, so a re-derived lot-clearing sweep and
+      // a double press are both no-ops rather than a second bill.
+      const had = fells.find((r) => r.featureId === f.featureId);
+      if (had) return had;
+      const ord = fells.reduce((m, r) => Math.max(m, r.ord + 1), 0);
+      const row: FellOrder = { ord, ...JSON.parse(JSON.stringify(f)) } as FellOrder;
+      fells.push(row);
+      store.version++;
+      return row;
+    },
+    cancelFell: (featureId) => {
+      const i = fells.findIndex((r) => r.featureId === featureId);
+      if (i < 0) return false;
+      fells.splice(i, 1);
+      store.version++;
+      return true;
+    },
     demolitionSites: () => views().demolitionView,
     postDemolitionSite: (p) => {
       const row: DemolishOrder = { kind: "demolish", ord: nextOrd(), ...clone(p) };
@@ -1395,6 +1492,12 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
           .map(([k, q]) => [String(k), q.map((e) => JSON.parse(JSON.stringify(e)) as QueuedCraft)]),
       ),
       driftBank: { ...driftBank },
+      // The felling marks (1d), on the same emit-only-when-non-empty law as
+      // `herd` below: a world where nobody ever marked a tree serializes
+      // exactly the object it always did.
+      ...(fells.length
+        ? { fellOrders: fells.map((f) => JSON.parse(JSON.stringify(f)) as FellOrder) }
+        : {}),
       // Absent-tolerant on read; emitted only when someone lives here, so
       // every pre-B-⑥ save's serialized form stays byte-identical.
       ...(Object.keys(herd).length ? { herd: mergeHerd({}, herd) } : {}),
@@ -1499,6 +1602,69 @@ export function orderGathering(b: {
     if (!worst || have / want < worst.have / worst.want) worst = { head, have, want };
   }
   return worst && worst.have < worst.want ? worst : null;
+}
+
+// ── ⚖️ PULL-MODEL LABOR (task #51) — THE BILL READS A BODY MAY ASK ────────
+// Hoisted VERBATIM out of construction-director's closure (2026-09-04) so a
+// body deciding its own contribution can read the same bill the bookkeeper
+// keeps — "the two arms can never disagree on the bill" now covers a third
+// arm. Pure: nothing here writes.
+
+/** What a pile still needs BEYOND its stacks and its live in-flight hauls
+ *  (legacy endpoint alias included). `missing` is `stagingMissing(row)`;
+ *  `agreements` is the transfer ledger's `all()` (or any iterable of rows
+ *  with `to`/`status`/`goods`). */
+export function pileShortfall(
+  agreements: Iterable<{
+    to: string;
+    status: string;
+    goods: Readonly<Record<string, number>>;
+  }>,
+  opts: { pileId: string; legacyPileId?: string; missing: Readonly<Record<string, number>> },
+): Record<string, number> {
+  const inflight: Record<string, number> = {};
+  for (const a of agreements) {
+    if (a.to !== opts.pileId && (!opts.legacyPileId || a.to !== opts.legacyPileId)) continue;
+    if (a.status !== "pending" && a.status !== "moving") continue;
+    for (const [g, n] of Object.entries(a.goods)) {
+      const head = stackHead(g);
+      inflight[head] = (inflight[head] ?? 0) + n;
+    }
+  }
+  const want: Record<string, number> = {};
+  for (const [head, n] of Object.entries(opts.missing)) {
+    const short = n - (inflight[head] ?? 0);
+    if (short > 0) want[head] = short;
+  }
+  return want;
+}
+
+/** The scope a refine order belongs to when its row names none — the town's
+ *  own book. ONE definition (the director's local const of the same name and
+ *  value re-points here). */
+export const TOWN_ORDER_SCOPE = "town";
+
+/**
+ * ⚖️ ⑤ ONE (head, scope) BOOK, SPLIT BY LADDER PHASE (#50). The refine rows
+ * of one book and which rung each is on: `staging` is still GATHERING its
+ * raws (no `laborStartDay`), `laboring` has its materials in and a mill
+ * running on them. The pipeline's whole bound is expressed over these two
+ * lists — at most one of each — so the gate that POSTS a row, the gate that
+ * STAGES one and a body reading the bill all see the same shape.
+ */
+export function refineBookOf(
+  deltas: Pick<TownDeltas, "refineOrders">,
+  head: string,
+  scope: string,
+): { rows: RefineOrder[]; staging: RefineOrder[]; laboring: RefineOrder[] } {
+  const rows = deltas
+    .refineOrders()
+    .filter((r) => stackHead(r.produces) === head && (r.scope ?? TOWN_ORDER_SCOPE) === scope);
+  return {
+    rows,
+    staging: rows.filter((r) => r.laborStartDay === undefined),
+    laboring: rows.filter((r) => r.laborStartDay !== undefined),
+  };
 }
 
 /** #44 RENDERED PILES — a stack map as the renderer's row list: glyph-sorted

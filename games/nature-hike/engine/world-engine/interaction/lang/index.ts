@@ -26,7 +26,7 @@ import {
 } from "./core.js";
 
 export type { GlyphLanguage, SpeakOpts, Lexeme, Frame, Token, Gender, DirProximity, DirCardinal } from "./core.js";
-export { parseSentence, classify, normalize } from "./core.js";
+export { parseSentence, classify, normalize, isUnspokenMod, baseWord } from "./core.js";
 export { en } from "./en.js";
 export { he } from "./he.js";
 export { es } from "./es.js";
@@ -38,6 +38,20 @@ const LANGUAGES: Record<string, GlyphLanguage> = { en, he, es, pt };
 export function languageFor(locale: string | undefined): GlyphLanguage {
   const primary = (locale ?? "en").toLowerCase().split(/[-_]/)[0]!;
   return LANGUAGES[primary] ?? en;
+}
+
+/**
+ * Does this locale have a ruleset OF ITS OWN?
+ *
+ * `languageFor` answers "which ruleset renders this" and falls back to English,
+ * which is right for a game whose words would otherwise be missing entirely.
+ * It is WRONG for anyone deciding whether to render a sentence here instead of
+ * asking a model that speaks the language: for ru/ar/fr/de/ko/zh/yue that
+ * fallback would put a fluent ENGLISH sentence on a child's board. Callers with
+ * a fallback worth having ask this first.
+ */
+export function hasGlyphRuleset(locale: string | undefined): boolean {
+  return !!LANGUAGES[(locale ?? "en").toLowerCase().split(/[-_]/)[0]!];
 }
 
 /** App locales written right-to-left. Wider than the shipped rulesets on purpose:

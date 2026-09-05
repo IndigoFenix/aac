@@ -7,7 +7,7 @@
 // a WebCodecs MP4 export. The parsed `CaptionSegment[]` is the shared spine
 // those steps build on, so this panel deliberately surfaces it as a list.
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useStudent } from '@/hooks/useStudent';
 import { useInstitute } from '@/hooks/useInstitute';
@@ -24,7 +24,10 @@ import { registerStudentFace, registerSymbolPath, hasResolvedSymbol } from '@/li
 import { parseGlyph, canResolveGlyph } from '@shared/glyph-compositor';
 import { useSymbolStore } from '@/store/symbol-store';
 import { GlyphCaptionOverlay } from '@/components/GlyphCaptionOverlay';
-import { GlyphBuilder } from '@/components/syntAACx/glyph-builder';
+// Lazy: the "Edit visual" dialog carries the engine vocabulary surfacer, so
+// it loads on first open rather than with this panel (same as the board
+// editor's inspector).
+const GlyphBuilder = lazy(() => import('@/components/syntAACx/glyph-builder'));
 import { CaptionTimeline, type TimelineStep } from '@/components/CaptionTimeline';
 import { extractWavMono16k, STT_SAMPLE_RATE, AudioExtractError } from '@/lib/audioExtract';
 import { useUIEvent } from '@/lib/uiEvents';
@@ -578,7 +581,8 @@ export function VideoCaptionPanel(_props: VideoCaptionPanelProps) {
   // Reuses GlyphBuilder (the clinician board-editor glyph composer) so a caption
   // glyph is edited with the exact same UI. Seed it with the EFFECTIVE rendered
   // glyph (the fallback when a `generate:` image is still pending) so the user
-  // starts from what's on screen. onChange fires live → update + clear fallback.
+  // starts from what's on screen. The dialog edits a DRAFT: onChange fires once,
+  // on Done (→ update + clear fallback); Cancel / Esc discards and never fires.
   const editSeed = (() => {
     if (editingIndex == null) return '';
     const g = glyphs[editingIndex] ?? '';
@@ -840,13 +844,17 @@ export function VideoCaptionPanel(_props: VideoCaptionPanelProps) {
         )}
       </ScrollArea>
 
-      <GlyphBuilder
-        value={editSeed}
-        onChange={handleGlyphEdit}
-        studentId={studentId ?? undefined}
-        open={editingIndex != null}
-        onOpenChange={(v) => { if (!v) setEditingIndex(null); }}
-      />
+      {editingIndex != null && (
+        <Suspense fallback={null}>
+          <GlyphBuilder
+            value={editSeed}
+            onChange={handleGlyphEdit}
+            studentId={studentId ?? undefined}
+            open={editingIndex != null}
+            onOpenChange={(v) => { if (!v) setEditingIndex(null); }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

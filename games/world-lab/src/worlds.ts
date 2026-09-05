@@ -40,7 +40,7 @@ export const TEST_WORLDS: NamedWorld[] = [
           contains: [
             { kind: "creature", params: { name: "Mara", outfit: 16, likes: ["apple"] } },
             { kind: "creature", params: { name: "Orrin", outfit: 1, likes: ["banana"] } },
-            { kind: "creature", params: { name: "Pip", species: "frog_person", outfit: 0, likes: ["grape"] } },
+            { kind: "creature", params: { name: "Pip", outfit: 0, likes: ["grape"] } },
             { kind: "creature", params: { name: "Biscuit", pet: true, species: "dog", likes: ["apple"] } },
             { kind: "item", params: { glyph: "ball", at: "floor" } },
           ],

@@ -140,6 +140,13 @@ import {
   orderGathering,
   pendingRoomKindOf,
   pileEntries,
+  // ⚖️ PULL-MODEL LABOR (task #51) — the two bill reads that used to be
+  // closures in here. Hoisted to the kernel beside `stagingMissing` so a BODY
+  // deciding its own contribution reads the same arithmetic the bookkeeper
+  // does; the copies below were deleted, not left to drift.
+  pileShortfall,
+  refineBookOf,
+  TOWN_ORDER_SCOPE,
   placeFurniture,
   removePlacedPiece,
   removeProgram,
@@ -174,6 +181,18 @@ import {
   type GroundFeature,
   type Rect,
 } from "@shared/world-engine/kernel/town/construction.js";
+// ⚖️ PULL-MODEL LABOR (task #51) — THE SEAM, and the only thing this file
+// knows about the other side of it. `pullLaborOn` is the ONE capability
+// derivation (a READ, never a boot boolean: founding is a mid-session act);
+// `isContributePursuit` is the ONE test that a body chose a bill and is
+// working it. The director imports no quest-host type to ask either.
+import {
+  isContributePursuit,
+  pullLaborOn,
+  CLEAR_SITE_PREFIX,
+  type ContributeBill,
+  type FellRow,
+} from "@shared/world-engine/kernel/town/pull-labor.js";
 import {
   BLOCK_GLYPH,
   effectiveInPerOut,
@@ -290,6 +309,10 @@ import {
   structureDoneLine,
   willMakeLine,
 } from "@shared/world-engine/interaction/dialogue/construction-lines.js";
+// ⚖️ ONE DEFINITION of `resident_<hi>_<m>` → the house index (task #51 item ⑤).
+// 🚨 It is DELIBERATELY naive — it splits on `_` and takes field 1 — so every
+// caller owes it a prefix gate; `viewerHouseOf` is where this file pays that.
+import { houseIndexOfCid } from "@shared/world-engine/interaction/quest/creature-inspect.js";
 import type { BuildingSpec } from "@shared/world-engine/index.js";
 import {
   buildingRoomPlan,
@@ -762,6 +785,50 @@ export const BUILD_WORK_R = 8;
 export const BUILD_WORK_EDGE_R = 2.5;
 /** The standing-work dwell chunk the sweep keeps re-issuing (seconds). */
 export const BUILD_WORK_DWELL_S = 30;
+// ⚖️ THE `pullLabor` CAPABILITY IS ASKED THROUGH `pullLaborOn(session)` DIRECTLY
+// (task #51) — ONE DEFINITION, in `kernel/town/pull-labor.ts`. This file used to
+// wrap it in a local `pullOn` that normalized the three fields, because the
+// kernel read was written `foundedSite !== null` and a PARTIAL session (the
+// normal shape of a director unit fixture) simply LACKS the field —
+// `undefined !== null` is `true`, so an unnormalized read handed the capability
+// to every fixture in the suite. 1b fixed that AT THE SOURCE (`!= null`, with
+// the trap stated there), so the wrapper became a second answer to a question
+// that must only have one. Every seat below still re-reads it PER SWEEP: founding
+// is a mid-session act in a wild session, so a boot-time boolean would answer
+// "no" for the whole life of the world this round exists to serve.
+
+/**
+ * ⚖️ WHO IS WORKING THIS SITE'S BILL, BY PURSUIT (task #51 item ③) — the pull
+ * model's replacement for "which bodies claimed a `buildwork` row".
+ *
+ * 🚨 THE HARDEST COUPLING OF THE ROUND, stated as a function: labour banked
+ * only for bodies whose CLAIMED POOLED TASK pointed at the site, so a body
+ * standing at the work with no row banked ZERO — remove the rows without
+ * replacing this read and all construction silently stops. The replacement
+ * asks the body instead of the book: a contribute pursuit names the site it
+ * serves (`bill.siteId`, the exact string `workSite` is called with —
+ * `orderSiteId`), and the two DWELL links are the ones that do labour. A
+ * `haul`/`fell` slice for the same site is real contribution and is NOT a
+ * builder: its work is the trip, and counting it would bank bench-labour for
+ * somebody walking a road.
+ *
+ * Sorted by cid so the crew list is the same on every peer (the pool's own
+ * determinism law); presence and its per-body effects are order-independent
+ * anyway, so the sort is hygiene, not a fix.
+ */
+export function contributeCrewAt(
+  pursuits: ReadonlyMap<string, { tplKey?: string; bill?: ContributeBill }>,
+  siteId: string,
+): string[] {
+  const out: string[] = [];
+  for (const [cid, p] of pursuits) {
+    if (!isContributePursuit(p)) continue;
+    if (p.bill.siteId !== siteId) continue;
+    if (p.bill.link !== "build" && p.bill.link !== "refine") continue;
+    out.push(cid);
+  }
+  return out.sort();
+}
 /** Demolition labor, RELATIVE like ANNEX_BUILD_DAYS — tearing a room down
  *  is half of raising one. */
 export const DEMOLISH_BUILD_DAYS = 0.25;
@@ -828,7 +895,14 @@ export function civicRecruitRadiusM(scale: WorldScale, inTown: boolean): number 
  *  see `craftGatherParkKey` (scope-behaviors.md §2.5.1: the re-gather "re-runs
  *  `resolveMaterials` on a clock while nothing has moved"). The SITE piles
  *  still ride it as a plain gate; converting them is the same park at a third
- *  scope and wants its own pass. */
+ *  scope and wants its own pass.
+ *
+ *  ⚖️ WHO OWNS IT UNDER PULL (task #51 item ⑥). Off the capability this is the
+ *  POSTER's gate, exactly as written above. Under it there is no poster — and
+ *  the gate is kept anyway, now owning the BOOKKEEPING sweep: `bookPileUnderPull`
+ *  walks every source in reach once per head, and the ④ ONE-VOICE law forbids
+ *  a standing condition re-announcing itself per tick. Dead on neither path,
+ *  so it stays. */
 export const SITE_HAUL_RETRY_S = 20;
 // ── THE BLOCK CHAIN (phase 3) ───────────────────────────────────────────
 /** Street-days of milling per refined unit, RELATIVE like ANNEX_BUILD_DAYS
@@ -3457,6 +3531,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       clearHaulSeen.delete(a.id);
       return false; // the goods are on a body — alive by definition
     }
+    // ⚖️ PULL (task #51 item 1d) — AND A BODY THAT TOOK IT IS ALSO ALIVE. Under
+    // the capability a row acquires an executor the moment a puller adopts it,
+    // and the walk out to a staked tree is long: this stopwatch would fail the
+    // agreement under a carrier who is still walking to the load, exactly the
+    // way it may not. The abandon sweep (`sweepPullSlices`) is what reaps a
+    // slice whose body let go, so the two do not overlap — the TTL keeps only
+    // the case it was written for, a row NOBODY has taken.
+    if (pullLaborOn(session) && a.executor) {
+      clearHaulSeen.delete(a.id);
+      return false;
+    }
     const seen = clearHaulSeen.get(a.id);
     if (seen === undefined) {
       clearHaulSeen.set(a.id, session.taskClock);
@@ -3524,12 +3609,41 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // (`sourceBlocksBuilding` widened to substantial-full-stop in the removal
       // round, and stays that way): every substantial thing on the lot now has
       // an act that ends it.
-      if (!f.downed && sourceIsCuttable(f.species, f.sizeClass)) {
+      // ⚖️ PULL (task #51 item 1d) — THE BOOKKEEPER DOES NOT TOUCH THE LAND.
+      // *"Founding must NOT touch the land; clearing is a CONSEQUENCE"*
+      // (feedback_arrival_is_not_an_event), and the user's own cut ruling says
+      // the same thing one act smaller: marking a thing to come down is not
+      // felling it. Under the capability the staked tree therefore STAYS
+      // STANDING — the agreement below is its bill, `visibleBills` offers it as
+      // a FELL link, and a body walks out and chops it. The agreement's units
+      // read the same either way (`clearableUnits` counts the source's own body
+      // products, standing or fallen), so nothing else in this function moves.
+      //
+      // 🚨 AND A BLOCKER WITH NOTHING TO CARRY GETS A MARK INSTEAD. A berry
+      // bush in the walls' way yields no goods, so there is no agreement to be
+      // its bill — and with the instant cut gone it would block the lot
+      // forever. The felling DESIGNATION is exactly the bill for work that
+      // moves nothing, so it is the one that is posted.
+      const pull = pullLaborOn(session);
+      if (!f.downed && sourceIsCuttable(f.species, f.sizeClass) && !pull) {
         cutWildFeature(session, ep);
         if (!stakedFeature(session, id)) continue; // removed outright — nothing to carry
       }
       const goods = clearableUnits(session, f, ep);
-      if (!Object.keys(goods).length) continue;
+      if (!Object.keys(goods).length) {
+        const book = session.town?.deltas ?? session.foundedSite?.deltas;
+        if (pull && book && !f.downed && sourceIsCuttable(f.species, f.sizeClass)) {
+          book.designateFell({
+            featureId: f.id,
+            at: { x: f.x, y: f.y },
+            word: sourceKindWord(naturalSourceOf(f.species)?.kind) ?? "plants",
+            issuer,
+            spoken: false, // the builders' own prerequisite, not a player's ask
+            postedDay: buildDayNow(session),
+          });
+        }
+        continue;
+      }
       if (!obs) {
         // THE ABSTRACT TWIN (`twinStagePile`'s arm, verbatim in shape): the
         // unwatched lot is cleared by the same ledger arithmetic the unwatched
@@ -3560,6 +3674,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         sourceGlyph: `clear the ground for the ${label}`,
       });
       for (const [g, n] of Object.entries(goods)) led.reserve(agrHolder(a.id), ep, g, n);
+      // ⚖️ PULL (task #51 item ①, seat ②) — NO ROW IS ISSUED FOR THE CLEARING.
+      // The AGREEMENT stays: it is the bill for this tree (one open row per
+      // tree, `clearingHaulIsDead` reaps it), and a contribute slice rides an
+      // `agreementId` exactly as a pooled transfer row did — an agreement with
+      // no pool row and no executor IS the shape a puller picks up. What goes
+      // is the invisible foreman handing it to somebody. Off the capability
+      // this is the standing call it always was.
+      if (pullLaborOn(session)) continue;
       postPooledTask(
         session,
         { kind: "transfer", agreementId: a.id, goods: a.goods, to: { kind: "named", id: destWord } },
@@ -3578,6 +3700,87 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    *  head-keyed here, so a plain sum is the honest count. */
   function stackTotalOf(goods: Readonly<Record<string, number>>): number {
     return Object.values(goods).reduce((s, n) => s + n, 0);
+  }
+
+  /**
+   * ⚖️ THE MARK RETIRES WITH THE THING (task #51 item 1d) — one sweep, in the
+   * bookkeeper, because a designation is a BOOK ROW and dead rows are the
+   * books' to close.
+   *
+   * A mark dies three ways and all three are the same read: the thing came
+   * down (the chop happened — the executor retires its own mark, this is the
+   * belt), it was folded away or grown below the obstruction floor, or it was
+   * never cuttable at all. Nothing here CUTS: a sweep that felled would be the
+   * very deed this item removed.
+   */
+  function stepFellOrders(session: QuestSession): void {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return;
+    const rows = deltas.fellOrders();
+    if (!rows.length) return;
+    for (const r of [...rows]) {
+      const f = session.wilderness?.features.find((x) => x.id === r.featureId);
+      if (!f || f.downed || !sourceIsCuttable(f.species, f.sizeClass)) deltas.cancelFell(r.featureId);
+    }
+  }
+
+  /**
+   * ⚖️ THE LOT'S OWN BILLS, READ BY A PULLER (task #51 item 1d — this is 1a's
+   * REQUEST 2 closed).
+   *
+   * Under the capability `commissionClearing` posts a tree→shelf agreement
+   * with NO pool row and NO executor and leaves the tree standing. That row is
+   * a BILL and this is how a body finds it: one entry per staked blocker, in
+   * the shape the reader's second row source takes (`FellRow`) — STANDING ⇒
+   * the FELL link (walk out and chop it), already down ⇒ the HAUL link that
+   * carries the timber to the shelf, riding the agreement that is already
+   * holding those units.
+   *
+   * 🚨 THE ENUMERATION IS DELIBERATELY NARROW: only the endpoints THIS FILE
+   * staked. A blanket "every executor-less agreement is a bill" would sweep up
+   * the spoken-transfer seats (⑨⑩⑪) that the pool still owns by design, and
+   * one body would hold two commitments.
+   */
+  function clearingBills(session: QuestSession): FellRow[] {
+    if (!pullLaborOn(session)) return [];
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return [];
+    const dest = clearingDepositId(session);
+    const destWord = dest === TOWN_YARD_EP || dest === SITE_STOCK_ID ? "yard" : "storehouse";
+    const out: FellRow[] = [];
+    for (const o of deltas.orders()) {
+      if (o.kind !== "found" || !o.clearing?.length) continue;
+      for (const id of o.clearing) {
+        const f = stakedFeature(session, id);
+        if (!f) continue;
+        const ep = wildFeatureContainerId(f);
+        if (ep === dest) continue;
+        const standing = !f.downed && sourceIsCuttable(f.species, f.sizeClass);
+        // The row's own open agreement — pending and untaken is the only state
+        // a puller may adopt (`begin` refuses the rest, which is the
+        // de-confliction).
+        const a = session.transfers
+          .all()
+          .find((r) => r.from === ep && r.status === "pending" && !r.executor);
+        const goods = a?.goods ?? {};
+        const head = stackHead(Object.keys(goods)[0] ?? "");
+        const units = stackTotalOf(goods);
+        if (!standing && !(a && units > 0)) continue; // down and already spoken for
+        out.push({
+          siteId: `${CLEAR_SITE_PREFIX}${f.id}`, // `clearSiteId`, spelled through its prefix
+          objId: ep,
+          at: { x: f.x, y: f.y },
+          word: sourceKindWord(naturalSourceOf(f.species)?.kind) ?? "plants",
+          standing,
+          spoken: false, // the builders' prerequisite is civic, never "you asked"
+          issuer: LOCAL_PLAYER_CID,
+          ...(a && units > 0
+            ? { haul: { agreementId: a.id, to: a.to, destWord, head, units } }
+            : {}),
+        });
+      }
+    }
+    return out;
   }
 
   /**
@@ -3694,21 +3897,50 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return d;
   }
 
+  /**
+   * ⚖️ WHOSE SHELVES A SUBJECT MAY OPEN — the household `mayUse` measures a
+   * reach against, for the cid actually ASKING (task #51 item ⑤).
+   *
+   * This line used to read `familyOf(session)?.house` inside
+   * `siteMaterialSources` whatever cid was passed, so every reach in this file
+   * was the PLAYER'S FAMILY'S reach wearing the issuer's name. Harmless while
+   * the only subject was the player; wrong the moment a BODY reads a bill to
+   * decide its own contribution — a resident of another house would have been
+   * told it may open the player's boxes and not its own.
+   *
+   * 🚨 A SETTLER'S CID PARSES AS A HOUSE INDEX. `houseIndexOfCid` splits on
+   * `_` and takes field 1, so `settler_3` answers house 3 — a real household's
+   * chest, on a world where the settler has no household at all. The prefix
+   * test is the gate, exactly as `idleForDirect`'s whitelist is.
+   *
+   * Everything that is neither a resident nor a settler — the local player,
+   * a remote player cid, a civic sweep posting as LOCAL_PLAYER_CID — keeps the
+   * answer this always gave, so no existing caller moves.
+   */
+  function viewerHouseOf(session: QuestSession, cid: string): number | null {
+    if (cid.startsWith("resident_") || cid.startsWith("pet_")) {
+      const hi = houseIndexOfCid(cid);
+      return Number.isInteger(hi) ? hi : null;
+    }
+    if (/^settler_\d+$/.test(cid)) return null; // no household row anywhere
+    return familyOf(session)?.house ?? null;
+  }
+
   /** Candidate MATERIAL SOURCES for staging a site (pipeline ②): every
    *  usable container stack — the yard, the site crate, communal chests,
    *  wild features, our own boxes — ownership-gated exactly like a spoken
    *  transfer order. Distance-ranked to the work spot BY STREET
    *  (`sourceDistanceM`). Site piles are not containers, so a plot never raids
-   *  another plot's heap.
-   *  Reach is the ISSUER'S reach: propriety is a question about the author of
-   *  the order, so the same yard can be another author's to draw from and not
-   *  this one's. */
+   *  another plot's heap — except for the SURPLUS arm under pull labor, below.
+   *  Reach is the SUBJECT'S reach (`viewerHouseOf`): propriety is a question
+   *  about whoever is asking, so the same yard can be another author's to draw
+   *  from and not this one's. */
   function siteMaterialSources(
     session: QuestSession,
     destAt: { x: number; y: number },
     issuer: string = LOCAL_PLAYER_CID,
   ): TransferSource[] {
-    const issuerHouse = familyOf(session)?.house ?? null;
+    const issuerHouse = viewerHouseOf(session, issuer);
     const sources: TransferSource[] = [];
     for (const [boxId, boxRec] of stockedEntries(session)) {
       if (isDerivedStoreObject(session, boxId) || boxId.startsWith("trade:")) continue;
@@ -3742,7 +3974,113 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const at = regionShelfPoint(session, rec);
       sources.push({ id, stack, d: sourceDistanceM(session, destAt, at) });
     }
+    for (const s of donorPileSources(session, destAt)) sources.push(s);
     return sources;
+  }
+
+  /**
+   * ⚖️ A DONOR PILE'S SURPLUS IS A SOURCE (task #51 item ④, pull labor only) —
+   * and this is how lane ③ DISSOLVES.
+   *
+   * `releaseStarvedPile` exists because a heap that cannot finish its own bill
+   * had no other way to let go: the director had to arbitrate, pick a
+   * recipient it could make FEASIBLE, and push the whole gap across in one
+   * shove. Under pull nobody pushes. A pile's surplus simply STANDS THERE like
+   * any other stack, in the same distance-ranked list as the yard and the
+   * wild, and the body that needs those units comes and takes what it can
+   * carry. The arbitration, the ②b receive-hold and the one-release-at-a-time
+   * invariant all become unnecessary rather than reimplemented.
+   *
+   * 🚨 SURPLUS, NEVER STOCK: `max(0, stock(head) − this row's own need(head))`,
+   * where the need is the row's COSTS folded onto heads exactly as
+   * `stagingMissing` folds them before it subtracts — the same derivation read
+   * in the opposite direction, so the two can never disagree about a bill. The
+   * units are offered by CONCRETE GLYPH in `takeStock`'s own order (plain head
+   * first, then sorted variants), so what a source list promises is what a
+   * draw would actually lift.
+   *
+   * ⚖️ PING-PONG IS STRUCTURALLY IMPOSSIBLE, which is the whole reason this
+   * shape is allowed to be a plain source list. For ONE head a pile is either
+   * short (`stagingMissing` positive ⇒ surplus 0) or spare (`stagingMissing`
+   * zero ⇒ surplus = stock) — never both, because both numbers are the same
+   * subtraction read in opposite directions. So no unit can be pulled toward a
+   * pile that is simultaneously offering it, and the destination pile's own
+   * entry contributes exactly 0 for every head it is asking about — which is
+   * why this needs no "not me" test even though it does not know which pile it
+   * is filling.
+   *
+   * A STAGED pile is not enumerated at all: `pileAccountOf` refuses one, and it
+   * is right to — those raws are committed work with a mill running on them.
+   */
+  function donorPileSources(
+    session: QuestSession,
+    destAt: { x: number; y: number },
+  ): TransferSource[] {
+    if (!pullLaborOn(session)) return [];
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return [];
+    const out: TransferSource[] = [];
+    for (const o of deltas.orders()) {
+      const acct = pileAccountOf(o);
+      if (!acct) continue;
+      const need = new Map<string, number>();
+      for (const [g, n] of Object.entries(acct.costs)) {
+        const head = stackHead(g);
+        need.set(head, (need.get(head) ?? 0) + Math.max(0, n));
+      }
+      const stack: Record<string, number> = {};
+      for (const head of new Set(Object.keys(acct.pile).map(stackHead))) {
+        let spare = stackUnits(acct.pile, head) - (need.get(head) ?? 0);
+        if (spare <= 0) continue;
+        const keys = Object.keys(acct.pile)
+          .filter((k) => stackHead(k) === head)
+          .sort((a, b) => (a === head ? -1 : b === head ? 1 : a < b ? -1 : 1));
+        for (const k of keys) {
+          if (spare <= 0) break;
+          const take = Math.min(spare, acct.pile[k] ?? 0);
+          if (take <= 0) continue;
+          stack[k] = take;
+          spare -= take;
+        }
+      }
+      if (!Object.keys(stack).length) continue;
+      const id = orderPileId(acct.ord);
+      const at = stockEndpointOf(session, id)?.at;
+      if (!at) continue;
+      out.push({ id, stack, d: sourceDistanceM(session, destAt, at) });
+    }
+    return out;
+  }
+
+  /**
+   * ⚖️ HOW MUCH FREE `head` STOCK STANDS WITHIN THIS SITE'S REACH — a PURE,
+   * NON-RESERVING read (task #51 item ①).
+   *
+   * 🚨 WHY IT EXISTS AT ALL: the only "can this bill be covered" question the
+   * director could ask before was `resolveMaterials`, and that RESERVES every
+   * draw it plans (reservations.ts) — which under push was fine, because the
+   * poster handed each draw to a porter in the same breath. Under pull there
+   * is no porter in that breath: a reservation made here would speak for units
+   * no body is walking to, and the bill would deadlock behind its own claim.
+   * So the bookkeeper ASKS and never TAKES; the draw and its reservation belong
+   * to the body that decided to carry it.
+   *
+   * `viewer` is the subject whose reach is measured (`viewerHouseOf` through
+   * `siteMaterialSources`), so a body and the bookkeeper reading on its behalf
+   * get the same number — which is the point of exporting it: the puller sizes
+   * its slice against exactly what this said was there.
+   */
+  function freeHeadStockWithinReach(
+    session: QuestSession,
+    destAt: { x: number; y: number },
+    head: string,
+    viewer: string = LOCAL_PLAYER_CID,
+  ): number {
+    let free = 0;
+    for (const s of siteMaterialSources(session, destAt, viewer)) {
+      free += freeUnits(s.stack, session.reservations, s.id, head);
+    }
+    return free;
   }
 
   /**
@@ -3865,7 +4203,18 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     session: QuestSession,
     sources: readonly TransferSource[],
   ): TransferSource[] {
-    return sources.filter((s) => mayUseByScopes(CIVIC_SCOPES, session.containerRecords.get(s.id)?.owner));
+    return sources.filter(
+      (s) =>
+        // ⚖️ AN ORDER'S PILE IS NOT THE COMMONS (task #51 item ④). Under pull
+        // labor `siteMaterialSources` also lists a gathering pile's SURPLUS,
+        // because a BILL may draw what a sibling bill is not using — that is
+        // the release lane, dissolved into the ordinary supply. The town's own
+        // par loop is not a bill: "a plot never raids another plot's heap"
+        // still holds for it, and a pile carries no `containerRecord`, so the
+        // ownership filter below would wave it through as unowned.
+        !s.id.startsWith(ORDER_PILE_EP) &&
+        mayUseByScopes(CIVIC_SCOPES, session.containerRecords.get(s.id)?.owner),
+    );
   }
 
   /**
@@ -4255,30 +4604,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     presenter.toast(text, "feedback");
   }
 
-  /** What a pile still needs BEYOND its stacks and its live in-flight
-   *  hauls (legacy endpoint alias included) — shared by the haul poster
-   *  and the abstract twin, so the two arms can never disagree on the
-   *  bill. */
-  function pileShortfall(
-    session: QuestSession,
-    opts: { pileId: string; legacyPileId?: string; missing: Record<string, number> },
-  ): Record<string, number> {
-    const inflight: Record<string, number> = {};
-    for (const a of session.transfers.all()) {
-      if (a.to !== opts.pileId && (!opts.legacyPileId || a.to !== opts.legacyPileId)) continue;
-      if (a.status !== "pending" && a.status !== "moving") continue;
-      for (const [g, n] of Object.entries(a.goods)) {
-        const head = stackHead(g);
-        inflight[head] = (inflight[head] ?? 0) + n;
-      }
-    }
-    const want: Record<string, number> = {};
-    for (const [head, n] of Object.entries(opts.missing)) {
-      const short = n - (inflight[head] ?? 0);
-      if (short > 0) want[head] = short;
-    }
-    return want;
-  }
+  // ⚖️ `pileShortfall` — what a pile still needs BEYOND its stacks and its
+  // live in-flight hauls — now lives in kernel/town/construction.ts beside
+  // `stagingMissing` (task #51: a self-issuing BODY must be able to ask the
+  // same question). The closure copy that stood here was deleted; the calls
+  // below pass `session.transfers.all()` where they used to pass `session`.
 
   // ── ⚖️ ① PREEMPT-TO-FEASIBILITY — THE RELEASE PATH FOR A STARVED PILE ────
   //
@@ -4439,7 +4769,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       if (o.ord === donorOrd) continue;
       const acct = pileAccountOf(o);
       if (!acct) continue;
-      const gap = pileShortfall(session, {
+      const gap = pileShortfall(session.transfers.all(), {
         pileId: orderPileId(acct.ord),
         ...(o.kind === "found" ? { legacyPileId: sitePileId(acct.ord) } : {}),
         missing: stagingMissing(acct),
@@ -4467,6 +4797,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const donorAt = stockEndpointOf(session, donorPileId)?.at;
     const coLocated =
       !!donorAt && Math.hypot(at.x - donorAt.x, at.y - donorAt.y) <= CO_LOCATED_PILE_M;
+    // ⚖️ PULL (task #51 item ④) — THE WALKED RELEASE IS RETIRED, and the lane
+    // with it. Under the capability a donor pile's SURPLUS stands in the
+    // ordinary supply walk (`donorPileSources`), so the units reach the bill
+    // that needs them by somebody deciding to carry them — no arbitration, no
+    // recipient chosen for them, no shove. What survives here is the arm that
+    // was never labour: a CO-LOCATED move (and the unobserved `"ledger"` twin),
+    // where the units change column and nothing walks at all. Refusing BEFORE
+    // the receive-hold is set matters: a hold stamped on a recipient that got
+    // nothing would gag it for half a day.
+    if (pullLaborOn(session) && mode === "haul" && !coLocated) return false;
     // The recipient may not hand this heap onward until it has had a real
     // chance to act on it (half a day — the mill's own batch cadence).
     releaseReceivedAt.set(best.acct.ord, session.taskClock + 0.5 * session.scale.dayLengthS);
@@ -4724,7 +5064,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     },
     issuer: string = LOCAL_PLAYER_CID,
   ): void {
-    const want = pileShortfall(session, opts);
+    const want = pileShortfall(session.transfers.all(), opts);
     if (!Object.keys(want).length) return;
     const now = session.taskClock;
     if (now < (pileRetryAt.get(opts.pileId) ?? -Infinity)) return;
@@ -4802,6 +5142,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
             }
           }
         }
+        // ⚖️ A SIBLING PILE'S SURPLUS, UNOBSERVED (task #51 item ④). A pile is
+        // an ENDPOINT, not a container record, so the arm above cannot see one
+        // — and under pull labor `donorPileSources` puts spare pile units in
+        // the ordinary supply walk. This is lane ③'s ledger release arriving
+        // by supply instead of by arbitration: the same two audited stack
+        // writes, no agreement, no porter, no toast. Off pull the surplus arm
+        // lists nothing and this cannot be reached.
+        else if (d.endpoint.startsWith(ORDER_PILE_EP)) {
+          const donor = stockEndpointOf(session, d.endpoint)?.stack;
+          if (donor) {
+            const taken = takeStock(donor, d.glyph, d.take);
+            for (const [g, c] of Object.entries(taken)) {
+              opts.pile[g] = (opts.pile[g] ?? 0) + c;
+            }
+          }
+        }
         continue;
       }
       const taken = takeStock(src, d.glyph, d.take);
@@ -4811,6 +5167,143 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       depleteWildSource(session, d.endpoint);
     }
     led.release(tmp);
+  }
+
+  /**
+   * ⚖️ THE BOOKKEEPER'S SWEEP FOR ONE PILE (task #51, items ①②④⑥) — everything
+   * `postPileHauls` does that is NOT issuing somebody a trip.
+   *
+   * USER RULING: *"no order is issued per person; instead the need exists as a
+   * QUANTITY of required materials, like a stocking bill."* So under the pull
+   * capability this runs in the poster's place and posts NOTHING. What is left
+   * is genuinely the books:
+   *
+   *  ① THE CO-LOCATED MOVE (②, `CO_LOCATED_PILE_M`). When the source and the
+   *    pile stand on the same spot the units change column, not place — that
+   *    was never a trip and must not become one now (the "circling the crate"
+   *    defect #50 fixed, and a puller must never walk a co-located leg). The
+   *    poster's own skip (a LIDDED receiving container within 4 m) plus ②b's
+   *    pile-to-pile arm, which arrives here under pull because a donor pile's
+   *    surplus is an ordinary source now.
+   *  ② THE CHAIN (item ②). The refine row is a BILL WITH ITS OWN PILE, and
+   *    posting it is bookkeeping — the user's ruling 4. It used to fire only as
+   *    the consequence of a FAILED DRAW, which under pull would never happen
+   *    because the bookkeeper no longer draws. So the trigger is stated
+   *    positively: what this pile still misses, MINUS the free head stock
+   *    standing within its reach, is what the chain must make. The #50 ⑤ 1+1
+   *    gather-ahead bound and the #43 anti-runaway law are `ensureRefineOrders`'
+   *    own and are untouched.
+   *  ③ THE VOICE (⑥, the ④ ONE-VOICE law). A site that can neither fetch nor
+   *    mill still SAYS so, through the same rate-limited keys — nothing here
+   *    may speak per sweep.
+   *
+   * 🚨 IT NEVER RESERVES. `resolveMaterials` reserves every draw it plans, and
+   * a reservation with no body walking to it is a deadlock, not a plan (there
+   * is no porter in this breath any more). The draw and its reservation belong
+   * to the body that decided to carry the load — see `freeHeadStockWithinReach`,
+   * the non-reserving read both sides ask.
+   */
+  function bookPileUnderPull(
+    session: QuestSession,
+    opts: {
+      pileId: string;
+      legacyPileId?: string;
+      at: { x: number; y: number };
+      missing: Record<string, number>;
+      glyph: string;
+      scope?: string;
+      spoken?: boolean;
+    },
+    want: Record<string, number>,
+    issuer: string,
+  ): void {
+    const left: Record<string, number> = { ...want };
+    // ① CO-LOCATED — the poster's own skip, without the poster.
+    const dstStack = stockEndpointOf(session, opts.pileId)?.stack;
+    if (dstStack) {
+      // SPARE ONLY for an automated bill (surplus control S1) — the same lens
+      // the draw went through, so a co-located commons crate cannot be emptied
+      // past the floor just because it happens to stand at the site.
+      const { sources } = spareSources(
+        session,
+        siteMaterialSources(session, opts.at, issuer),
+        want,
+        opts.spoken === true,
+      );
+      for (const s of sources) {
+        const srcAt = stockEndpointOf(session, s.id)?.at;
+        if (!srcAt || Math.hypot(srcAt.x - opts.at.x, srcAt.y - opts.at.y) > CO_LOCATED_PILE_M) continue;
+        // TWO kinds of neighbour move as arithmetic, and no third. A LIDDED,
+        // receiving container is the poster's own skip verbatim. ANOTHER
+        // ORDER'S PILE is ②b's release law — "the units change column, not
+        // place" — which under pull arrives here instead of through
+        // `releaseStarvedPile`, because the surplus is now an ordinary source
+        // and a puller must never WALK a co-located leg. A standing tree still
+        // needs a body to go and fell it, and an open shelf's visible props
+        // belong to the walked load/unload seam.
+        const rec = session.containerRecords.get(s.id);
+        const live =
+          rec?.stock && rec.relation === "in" && scopeIdReceivesGoods(s.id)
+            ? rec.stock
+            : s.id.startsWith(ORDER_PILE_EP)
+              ? stockEndpointOf(session, s.id)?.stack
+              : undefined;
+        if (!live) continue;
+        for (const head of Object.keys(left)) {
+          // `s.stack` is what this source OFFERS (a pile's surplus, a commons
+          // stack minus its floor); `live` is the map the units actually leave.
+          const take = Math.min(left[head]!, freeUnits(s.stack, session.reservations, s.id, head));
+          if (take <= 0) continue;
+          let moved = 0;
+          for (const [g, c] of Object.entries(takeStock(live, head, take))) {
+            dstStack[g] = (dstStack[g] ?? 0) + c;
+            moved += c;
+          }
+          if (moved <= 0) continue;
+          // ⏸️ A PILE GAINED UNITS — the same wake the walked unload bumps.
+          bumpStockEpoch(session);
+          left[head] = left[head]! - moved;
+          if (left[head]! <= 0) delete left[head];
+        }
+      }
+    }
+    if (!Object.keys(left).length) return; // the bill closed as arithmetic
+    // ② THE CHAIN — what no stock within reach can cover.
+    const beyondReach: Record<string, number> = {};
+    for (const [head, n] of Object.entries(left)) {
+      const gap = n - freeHeadStockWithinReach(session, opts.at, head, issuer);
+      if (gap > 0) beyondReach[head] = gap;
+    }
+    // Stock STANDS within reach — a body will come and carry it. Honest
+    // waiting is quiet, and there is nothing to mill.
+    if (!Object.keys(beyondReach).length) return;
+    const { milling, rest } = ensureRefineOrders(
+      session, beyondReach, issuer, opts.scope ?? TOWN_ORDER_SCOPE, opts.spoken === true,
+    );
+    // ③ THE VOICE — the poster's own two lines, the same keys, the same window.
+    if (Object.keys(rest).length) {
+      const bill = Object.entries(rest)
+        .map(([g, n]) => `${n} ${g}`)
+        .join(", ");
+      rateLimitedToast(
+        session,
+        `starve:${opts.pileId}`,
+        `🪵 the site still needs ${bill} — and there is none to fetch`,
+      );
+    } else if (milling > 0) {
+      rateLimitedToast(
+        session,
+        `mill:${opts.pileId}`,
+        `🪚 milling ${milling} ${BLOCK_GLYPH} for the site`,
+      );
+    }
+    // ⚖️ ① THE RELEASE PATH, PULL-SIDE. `releaseStarvedPile`'s WALKED arm is
+    // retired under the capability (a donor pile's surplus is an ordinary
+    // SOURCE now — see `donorPileSources`), but its CO-LOCATED arm is a ledger
+    // move like the one above and still belongs to the books.
+    if (Object.keys(rest).length || milling === 0) {
+      releaseStarvedPile(session, opts.pileId, issuer, "haul");
+    }
   }
 
   function postPileHauls(
@@ -4834,11 +5327,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     },
     issuer: string = LOCAL_PLAYER_CID,
   ) {
-    const want = pileShortfall(session, opts);
+    const want = pileShortfall(session.transfers.all(), opts);
     if (!Object.keys(want).length) return;
     const now = session.taskClock;
     if (now < (pileRetryAt.get(opts.pileId) ?? -Infinity)) return;
     pileRetryAt.set(opts.pileId, now + SITE_HAUL_RETRY_S);
+    // ⚖️ PULL (task #51) — THE POSTER IS THE FIRST SEAT TO GO. Under the
+    // capability nobody is issued a trip: the bill is BOOKED (co-located
+    // moves, the chain, the honest voice) and the bodies come to it
+    // themselves. The gate stands here, after the shortfall read and the
+    // retry gate, because both of those are BOOKKEEPING and both still own
+    // their job under pull — the read IS the bill, and the gate is what keeps
+    // the bookkeeping sweep off the 1 s tick (see `bookPileUnderPull`).
+    if (pullLaborOn(session)) {
+      bookPileUnderPull(session, opts, want, issuer);
+      return;
+    }
     const led = session.reservations;
     const tmp = `stage:${opts.pileId}`;
     const { sources, withheld } = spareSources(
@@ -5077,8 +5581,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   //    the same split `crewShareOf` has always made when it sorts spoken
   //    founding rows ahead of ambient ones before allocating builders, and
   //    this is that rule reaching the other pool of hands.
-  /** The town/civic order book — every site bill, every ambient growth row. */
-  const TOWN_ORDER_SCOPE = "town";
+  // The town/civic order book — every site bill, every ambient growth row —
+  // is `TOWN_ORDER_SCOPE`, imported from kernel/town/construction.ts (task
+  // #51: ONE definition, beside the `refineBookOf` that filters on it). The
+  // local const of the same name and value was deleted.
   /** One household's own order book. */
   const houseOrderScope = (hi: number): string => `house:${hi}`;
   /** The house a scope key names, or null for the town/civic book. */
@@ -5271,30 +5777,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return null;
   }
 
-  /**
-   * ⚖️ ⑤ ONE (head, scope) BOOK, SPLIT BY LADDER PHASE (#50). The refine rows
-   * of one book and which rung each is on: `staging` is still GATHERING its
-   * raws (no `laborStartDay`), `laboring` has its materials in and a mill
-   * running on them. The pipeline's whole bound is expressed over these two
-   * lists — at most one of each — so the gate that POSTS a row
-   * (`ensureRefineOrders`) and the gate that STAGES one
-   * (`stepFoundedConstruction`) read the same shape and cannot drift into
-   * "two mills running".
-   */
-  function refineBookOf(
-    deltas: TownDeltas,
-    head: string,
-    scope: string,
-  ): { rows: RefineOrder[]; staging: RefineOrder[]; laboring: RefineOrder[] } {
-    const rows = deltas
-      .refineOrders()
-      .filter((r) => stackHead(r.produces) === head && (r.scope ?? TOWN_ORDER_SCOPE) === scope);
-    return {
-      rows,
-      staging: rows.filter((r) => r.laborStartDay === undefined),
-      laboring: rows.filter((r) => r.laborStartDay !== undefined),
-    };
-  }
+  // ⚖️ ⑤ `refineBookOf` — ONE (head, scope) BOOK, SPLIT BY LADDER PHASE (#50)
+  // — now lives in kernel/town/construction.ts beside `stagingMissing` and
+  // `pileShortfall` (task #51: the pipeline's 1+1 bound is part of the bill a
+  // body reads, so it cannot stay a closure). The copy that stood here was
+  // deleted; both call sites below now read the kernel's one definition.
 
   /** ENSURE the chain covers a starved bill: for each missing head a raw
    *  refines into, keep at most one GATHERING refine order PER SCOPE sized to
@@ -6907,6 +7394,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // reads as a source. A plot whose pile covers its bill starts its labor
     // clock; one still short re-resolves (rate-limited) so fresh stock
     // unsticks it.
+    // ⚖️ PULL (task #51 item 1d) — THE MARKS ARE BOOK ROWS, so the books close
+    // the dead ones: a designation whose thing came down, was folded away or
+    // grew below the obstruction floor. Cheap and idempotent (it returns on the
+    // empty list, which is every world that never marked anything).
+    stepFellOrders(session);
     const isPileDest = (to: string) =>
       to.startsWith(ORDER_PILE_EP) ||
       to.startsWith(SITE_PILE_EP) ||
@@ -6976,6 +7468,29 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         }
       }
       if (a.status === "pending" && !pooledAgr.has(a.id)) {
+        // ⚖️ PULL (task #51 item ①, seat ⑦) — UNDER THE CAPABILITY "NO POOL ROW"
+        // IS THE NORMAL STATE, not a reload seam: every haul is posted by the
+        // body that decided to walk it, and none of them has a row. So the
+        // re-post is retired here — but the reaper it was standing in for is
+        // not. An agreement that NOBODY EVER TOOK (no executor, never began)
+        // and has stood a whole claim window is a claim on goods with no
+        // carrier behind it: `pileShortfall` counts its load against the bill,
+        // so leaving it would answer a real shortfall with `{}` for the rest of
+        // the session (the 2026-08-13 dead-haul disease, one rung earlier). It
+        // EXPIRES: the row fails, its two claims go back on the shelf, and the
+        // shortfall reopens for whoever next reads the bill.
+        //
+        // 🚫 AND IT DOES NOT SPEAK. The push model announced every expiry
+        // ("no one can do that" ×42 on one frontier arc); nothing was asked of
+        // anyone here, so there is no refusal to report.
+        if (pullLaborOn(session)) {
+          if (!a.executor && session.taskClock - a.createdAt >= DEFAULT_TASK_TTL_S) {
+            session.transfers.fail(a.id, "no-executor");
+            session.reservations.release(agrHolder(a.id));
+            session.reservations.release(bagHolder(a.id));
+          }
+          continue;
+        }
         const foundGlyph = (b: FoundedBuilding | undefined): string =>
           b ? (resolveStructure(structureCatalogOf(session), b.type)?.glyph ?? "yard") : "yard";
         // ⚖️ #50 ④ — the ROW this haul feeds says whether a player asked for
@@ -7218,7 +7733,23 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // an unwatched site has always used. The window is the pool's own TTL
       // (no new constant): one whole posting cycle unanswered is the pool's
       // definition of "no one can do that".
-      const staffed = tasks.some((t) => t.status === "claimed");
+      // ⚖️ PULL — WHO IS STAFFING THIS WORK IS A QUESTION ABOUT BODIES, NOT
+      // ROWS (task #51 item ③). Under the capability nobody was issued a slot,
+      // so "staffed" cannot mean "a row says claimed": it means somebody CHOSE
+      // this site's bill and is working it. Everything downstream — the
+      // unstaffed window, the clock arm, `min(cap, present)` — keeps its exact
+      // shape; only the source of the answer changes.
+      //
+      // ⚖️ AND THE 45 s WINDOW KEEPS ITS MEANING WITHOUT ITS OLD OWNER.
+      // `DEFAULT_TASK_TTL_S` is the pool's constant and it stays the pool's,
+      // because the non-pull path still runs — but under pull it is no longer
+      // "one posting cycle unanswered" (nothing is posted): it is one whole
+      // decision cycle in which NOBODY CHOSE this site. Same duration, same
+      // consequence (the abstract crew takes over), an honest re-reading rather
+      // than a second constant.
+      const pull = pullLaborOn(session);
+      const crew = pull ? contributeCrewAt(session.pursuits, siteId) : [];
+      const staffed = pull ? crew.length > 0 : tasks.some((t) => t.status === "claimed");
       if (staffed || !siteStaffedAt.has(siteId)) siteStaffedAt.set(siteId, session.taskClock);
       const unstaffed =
         !staffed && session.taskClock - (siteStaffedAt.get(siteId) ?? session.taskClock) >= DEFAULT_TASK_TTL_S;
@@ -7236,45 +7767,75 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         row.buildDays !== undefined
           ? Math.max(0, row.buildDays - (row.labor ?? 0)) * session.scale.dayLengthS
           : undefined;
-      for (let n = tasks.length; n < (unstaffed ? 1 : cap); n++) {
-        session.taskPool.post({
-          goal: { kind: "buildwork", site: siteId },
-          issuer,
-          focus: { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
-          now: session.taskClock,
-          sourceGlyph: "build",
-          ...(laborLeftS !== undefined ? { valueS: laborLeftS } : {}),
-        });
+      // ⚖️ PULL (task #51 item ①, seat ⑧) — NOTHING IS POSTED. A site under the
+      // capability does not call for hands; it keeps a bill, and the hands
+      // decide. The loop bound below is what Stage 2 turns into SEATS.
+      if (!pull) {
+        for (let n = tasks.length; n < (unstaffed ? 1 : cap); n++) {
+          session.taskPool.post({
+            goal: { kind: "buildwork", site: siteId },
+            issuer,
+            focus: { x: at.x, y: at.y, radius: civicRecruitRadius(session) },
+            now: session.taskClock,
+            sourceGlyph: "build",
+            ...(laborLeftS !== undefined ? { valueS: laborLeftS } : {}),
+          });
+        }
       }
+      /** Is this body standing AT the work? Presence is measured from the site
+       *  rect's EDGE (clamp-point), so a body a step inside the host house no
+       *  longer counts as working. With no rect (a bare point site) the point
+       *  itself is the edge — and for a REFINE row `at` is already
+       *  `refineSpotOf`'s standable answer (the `beside()` point ~1.3 m off the
+       *  crate), which is exactly where a refine dwell stands: distance 0.
+       *  `orderRectOf` gives a refine row a 4 m box around that same point, so
+       *  both spellings agree. */
+      const atWork = (body: { x: number; y: number }): boolean => {
+        const px = rect ? Math.min(Math.max(body.x, rect.x), rect.x + rect.w) : at.x;
+        const py = rect ? Math.min(Math.max(body.y, rect.y), rect.y + rect.h) : at.y;
+        return Math.hypot(body.x - px, body.y - py) <= BUILD_WORK_EDGE_R;
+      };
+      /** The BUILD LOOP animation: the sustained "play" rig — crouched over the
+       *  work, limbs stroking at a spot in front (the same loop a crafter holds
+       *  at the bench). Refreshed each sweep with a margin past the sweep gap,
+       *  so it expires on its own the moment the builder stops standing at the
+       *  site. Aim the body at the work so the stroke lands toward it, not
+       *  wherever the walk finished. */
+      const workPose = (npcId: string, body: { x: number; y: number; fx: number; fy: number }): void => {
+        const d = Math.hypot(at.x - body.x, at.y - body.y);
+        if (d > 0.3) {
+          body.fx = (at.x - body.x) / d;
+          body.fy = (at.y - body.y) / d;
+        }
+        session.needPoseShow.set(npcId, { t: elapsedS + 2, kind: "play" });
+      };
       let present = 0;
-      for (const t of tasks) {
+      for (const cid of crew) {
+        if (!world) break;
+        const npcId = avatarIdOf(cid);
+        const body = world.state.avatars[npcId];
+        if (!body || !atWork(body)) continue;
+        present++;
+        workPose(npcId, body);
+        // 🚫 AND NOTHING IS RE-AIMED. The claimant arm below re-issues a dwell
+        // errand whenever its body runs idle, because the pool put that body
+        // here and nothing else would keep it. A contribute pursuit owns its
+        // own feet — the walk, the dwell and the giving-up are the BODY's
+        // decisions — so a director errand pushed on top would be the invisible
+        // foreman coming back in through the animation.
+      }
+      for (const t of pull ? [] : tasks) {
         if (t.status !== "claimed" || !t.claimedBy || !world) continue;
         const npcId = avatarIdOf(t.claimedBy);
         const body = world.state.avatars[npcId];
         if (!body) continue;
-        // Presence is measured from the site rect's EDGE (clamp-point), so a
-        // body a step inside the host house no longer counts as working.
-        const px = rect ? Math.min(Math.max(body.x, rect.x), rect.x + rect.w) : at.x;
-        const py = rect ? Math.min(Math.max(body.y, rect.y), rect.y + rect.h) : at.y;
-        if (Math.hypot(body.x - px, body.y - py) <= BUILD_WORK_EDGE_R) {
+        if (atWork(body)) {
           present++;
           // THE CLAIM IS ALIVE — a body stood at the work this sweep, so its
           // window restarts. This stamp is the whole difference between "a row
           // says claimed" and "somebody is building it".
           buildClaimSeenAt.set(t.id, session.taskClock);
-          // The BUILD LOOP animation: the sustained "play" rig — crouched
-          // over the work, limbs stroking at a spot in front (the same loop
-          // a crafter holds at the bench). Refreshed each sweep with a
-          // margin past the sweep gap, so it expires on its own the moment
-          // the builder stops standing at the site. Aim the body at the
-          // work so the stroke lands toward it, not wherever the walk
-          // finished.
-          const d = Math.hypot(at.x - body.x, at.y - body.y);
-          if (d > 0.3) {
-            body.fx = (at.x - body.x) / d;
-            body.fy = (at.y - body.y) / d;
-          }
-          session.needPoseShow.set(npcId, { t: elapsedS + 2, kind: "play" });
+          workPose(npcId, body);
         }
         // Keep the builder at the work (or walking to it): re-issue the
         // standing dwell whenever the body runs idle. The commute is
@@ -10051,6 +10612,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // seedling must read as "not there" to the spawner's solidity and to the
     // clock exactly as it does to the builder.
     standingBlockers, lotClearingNow,
+    // ⚖️ PULL (task #51 item 1d) — the lot's own bills, for a puller (1a's
+    // REQUEST 2). Under the capability the clearing posts an agreement nobody
+    // is executing and leaves the tree standing; this is how a body finds it.
+    // Exported rather than re-derived because "which trees did the builders
+    // stake, and what is already spoken for" is the BOOKKEEPER's answer.
+    clearingBills,
+    // …and WHERE A LOOSE GOOD BELONGS (item 1e): the same shelf a felled lot's
+    // timber lands on. "Put it away" and "carry it off" must not disagree
+    // about where away is, so there is one function and both read it.
+    clearingDepositId,
+    // The mark sweep: a designation whose thing is gone or already down is a
+    // dead row, and dead rows are the bookkeeper's to retire.
+    stepFellOrders,
     // THE BLOCK CHAIN's two decision points (phase 5's masonry split): WHERE a
     // raw is worked, and WHICH raw gets worked first. Everything else in the
     // chain is the ordinary order loop, already reachable through the step
@@ -10058,6 +10632,18 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // exported path exposes, and the routing they decide is invisible from
     // outside until a hauler has already walked to the wrong bench.
     refineSpotOf, ensureRefineOrders,
+    // ⚖️ PULL-MODEL LABOR (task #51) — the ONE site-id spelling (`o:<ord>`,
+    // founded / annex / refine rows alike) that `workSite` keys presence on.
+    // A body issuing itself a slice writes it into `ContributeBill.siteId`
+    // through this handle, so the bookkeeper's presence count and the
+    // puller's bill can never disagree about which site a body is working.
+    orderSiteId,
+    // ⚖️ …and the NON-RESERVING reach read the bookkeeper decides the chain on
+    // (task #51 item ①). Exported so the body sizing its own slice measures the
+    // same free stock the books did: the number that says "a mill is needed" and
+    // the number that says "I can carry some of that" must be one number, and
+    // neither side may RESERVE by asking it.
+    freeHeadStockWithinReach,
     // THE REFUSAL'S ONE TEST (order-scoping round, law ③): SLOW vs DEAD. Pure
     // over the live stacks, and the whole difference between an honest
     // designation that waits and an order refused aloud — so it is pinned
@@ -10076,6 +10662,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // Pure over the town plan, and invisible from outside until a hauler has
     // already announced that it is carrying the door to the door.
     shellHaulDestWord,
+    // ⚖️ …and the SAME decision for a STAGING haul (task #51, 1b's R2). Its own
+    // law is "ONE definition for all four order kinds, so the staging poster and
+    // the reload re-pool can never drift apart on it" — and a self-issued slice
+    // is now a THIRD arm naming that destination. Exported rather than
+    // re-derived, or a puller would announce a place the books never called it.
+    pileHaulDestWord,
     executeBuildOrder, stepFoundedConstruction, stepFurnitureSetup,
     orderCraft, orderBuild, orderZone, stepZonedFounding,
     structureFocusOf, structureActsFor, structureConstructionOptions, structureFurnishOptions,

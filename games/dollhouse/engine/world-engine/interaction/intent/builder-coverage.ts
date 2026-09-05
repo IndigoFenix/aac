@@ -45,7 +45,13 @@ import { headOf } from "../../variations.js";
  *                      they are not re-derived here.
  *   - `modifier:<axis>` the descriptor rail, `AXIS_WORDS`, via `baseWord`.
  *   - `group-chip:*`   a cluster chip wears `baseWord(GROUP_LABEL_HEAD[id] ?? id)`,
- *                      and the property clusters ARE their own ids.
+ *                      and the property clusters ARE their own ids. Every chip
+ *                      id the builder can render — the noun clusters, the WHO
+ *                      tab's three, and the Descriptions/Actions slices of
+ *                      `LEXICAL_TAB_CHIPS` — is listed in that table for this
+ *                      reason: an id left out of it is a chip whose label
+ *                      nothing checks, and an unchecked label renders as the
+ *                      raw English id on a Hebrew board.
  *
  * A composed symbol (`room(bed)`) is spoken by its HEAD — that is what a
  * lexicon has to carry — so heads are what this returns.

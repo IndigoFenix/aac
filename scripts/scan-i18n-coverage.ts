@@ -56,8 +56,9 @@
  *   --max=<n>          Max findings printed per check in the console (default 40)
  *   --no-fail          Always exit 0
  *
- * Adding a new surface: append to BUNDLES below. A bundle with i18nDir=null is
- * scanned for hardcoded copy only (no keys of its own to resolve against).
+ * Adding a new surface: append to BUNDLES below. A bundle with i18nDir=null has
+ * no locale files of its own; give it `keyDirs` when its t() calls resolve
+ * against somebody else's bundle(s), or leave both unset for a literals-only scan.
  *
  * Suppressing a false positive:
  *   Add `i18n-ignore` in a comment on the offending line or the line above it,
@@ -79,12 +80,25 @@ const ROOT = path.resolve(path.dirname(__filename_), "..");
 interface BundleConfig {
   /** Display name, also the --bundle= filter value */
   name: string;
-  /** Directory holding en.ts + the locale siblings. null = literals-only scan. */
+  /** Directory holding en.ts + the locale siblings. null = no bundle of its own. */
   i18nDir: string | null;
+  /**
+   * Additional i18n dirs whose en.ts must ALSO contain every key these roots
+   * use. For code hosted by more than one client: a key present in only one
+   * host's en.ts renders as the raw key string in the other.
+   */
+  keyDirs?: string[];
   /** Source roots whose t() keys resolve against this bundle */
   roots: string[];
   /** Identifiers treated as translation lookups in these roots */
   translateFns: string[];
+}
+
+/** One en.ts a bundle's t() keys are resolved against. */
+interface KeySource {
+  /** Path shown in the finding, e.g. "client-aac/src/i18n/en.ts" */
+  label: string;
+  keys: FlatBundle;
 }
 
 const BUNDLES: BundleConfig[] = [
@@ -109,9 +123,12 @@ const BUNDLES: BundleConfig[] = [
   },
   {
     name: "shared",
-    // Rendered inside both clients but has no bundle of its own — any user
-    // text here is hardcoded by definition.
+    // Rendered inside BOTH clients and has no locale files of its own — the
+    // host passes t() in. So every key used here must exist in both hosts'
+    // en.ts (the sentence-builder chrome's `construction.*` labels are the
+    // reason this stopped being a literals-only scan).
     i18nDir: null,
+    keyDirs: ["client/src/i18n", "client-aac/src/i18n"],
     roots: ["client-shared/src"],
     translateFns: ["t"],
   },
@@ -617,12 +634,15 @@ interface ScanResult {
 function scanBundleSources(
   bundle: BundleConfig,
   files: string[],
-  enKeys: FlatBundle | null,
+  keySources: KeySource[],
   allLocales: string[]
 ): ScanResult {
   const staticKeys = new Set<string>();
   const dynamicPatterns: RegExp[] = [];
-  const doKeys = enabled("keys") && enKeys !== null;
+  const doKeys = enabled("keys") && keySources.length > 0;
+  /** Which en.ts files (of the ones this bundle answers to) lack this key. */
+  const missingFrom = (key: string): string[] =>
+    keySources.filter((s) => !s.keys.has(key)).map((s) => s.label);
   const doLiterals = enabled("literals");
   const doFallbacks = enabled("fallbacks");
   const doInline = enabled("inline") && allLocales.length > 1;
@@ -681,23 +701,30 @@ function scanBundleSources(
         for (const ref of keyRefsFrom(node.arguments[0], line)) {
           if (ref.kind === "static") {
             staticKeys.add(ref.key);
-            if (doKeys && !enKeys!.has(ref.key) && !suppressed(ctx, line)) {
-              report({
-                check: "keys",
-                code: "missing-key",
-                severity: "error",
-                bundle: bundle.name,
-                file: ctx.file,
-                line,
-                message: `t("${ref.key}") — key not in en.ts; the raw key string renders to the user`,
-                snippet: snippetOf(ctx, line),
-              });
+            if (doKeys && !suppressed(ctx, line)) {
+              const missing = missingFrom(ref.key);
+              if (missing.length > 0) {
+                report({
+                  check: "keys",
+                  code: "missing-key",
+                  severity: "error",
+                  bundle: bundle.name,
+                  file: ctx.file,
+                  line,
+                  message:
+                    `t("${ref.key}") — key not in ${missing.join(" + ")}; ` +
+                    `the raw key string renders to the user`,
+                  snippet: snippetOf(ctx, line),
+                });
+              }
             }
           } else {
             dynamicPatterns.push(ref.pattern!);
             if (doKeys && !suppressed(ctx, line)) {
-              const anyMatch = [...enKeys!.keys()].some((k) => ref.pattern!.test(k));
-              if (!anyMatch) {
+              const unmatched = keySources
+                .filter((s) => ![...s.keys.keys()].some((k) => ref.pattern!.test(k)))
+                .map((s) => s.label);
+              if (unmatched.length > 0) {
                 report({
                   check: "keys",
                   code: "dynamic-key-no-match",
@@ -705,7 +732,7 @@ function scanBundleSources(
                   bundle: bundle.name,
                   file: ctx.file,
                   line,
-                  message: `t(\`${ref.key}\`) — no key in en.ts can match this template`,
+                  message: `t(\`${ref.key}\`) — no key in ${unmatched.join(" + ")} can match this template`,
                   snippet: snippetOf(ctx, line),
                 });
               }
@@ -995,17 +1022,22 @@ async function main(): Promise<void> {
     console.log(`\n=== ${bundle.name} ===`);
 
     let enKeys: FlatBundle | null = null;
-    if (bundle.i18nDir) {
-      enKeys = await loadLocale(bundle.i18nDir, "en.ts");
-      if (!enKeys) {
-        console.log(`  ! en.ts failed to load — skipping key checks for this bundle`);
-      } else {
-        console.log(`  en.ts: ${enKeys.size} keys`);
-        if (bundle.name === ERROR_CODE_BUNDLE) clientEnKeys = enKeys;
+    const keySources: KeySource[] = [];
+    // The bundle's own en.ts, plus any host bundle it borrows t() from.
+    for (const dir of [...(bundle.i18nDir ? [bundle.i18nDir] : []), ...(bundle.keyDirs ?? [])]) {
+      const keys = await loadLocale(dir, "en.ts");
+      if (!keys) {
+        console.log(`  ! ${dir}/en.ts failed to load — its keys are not checked`);
+        continue;
       }
-    } else {
-      console.log(`  (no bundle of its own — literal scan only)`);
+      console.log(`  ${dir}/en.ts: ${keys.size} keys`);
+      keySources.push({ label: `${dir}/en.ts`, keys });
+      if (dir === bundle.i18nDir) {
+        enKeys = keys;
+        if (bundle.name === ERROR_CODE_BUNDLE) clientEnKeys = keys;
+      }
     }
+    if (keySources.length === 0) console.log(`  (no keys to resolve against — literal scan only)`);
 
     const excludes = bundle.i18nDir ? [bundle.i18nDir] : [];
     const files = bundle.roots.flatMap((r) => collectSources(r, excludes));
@@ -1014,7 +1046,7 @@ async function main(): Promise<void> {
     const locales = bundle.i18nDir
       ? localeFiles(bundle.i18nDir).map((f) => f.replace(/\.ts$/, ""))
       : [];
-    const { staticKeys, dynamicPatterns } = scanBundleSources(bundle, files, enKeys, locales);
+    const { staticKeys, dynamicPatterns } = scanBundleSources(bundle, files, keySources, locales);
 
     if (enKeys && enabled("unused")) {
       const unused: string[] = [];

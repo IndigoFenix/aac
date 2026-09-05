@@ -146,6 +146,24 @@ import {
   TOOL_CLAIM_GLYPH,
   type ReservationLedger,
 } from "@shared/world-engine/kernel/town/reservations.js";
+// ⚖️ PULL-MODEL LABOR (task #51) — THE SEAM (kernel/town/pull-labor.ts) and
+// THE DECIDER (contribute.ts). The import direction is host → contribute,
+// never back: every closure below reaches the decider through `contributeDeps`.
+import {
+  CHOP_DWELL_S,
+  CONTRIBUTE_TPL_KEY,
+  fellSiteId,
+  isContributePursuit,
+  pullLaborOn,
+  type ContributeBill,
+  type FellRow,
+} from "@shared/world-engine/kernel/town/pull-labor.js";
+import {
+  decideCollect,
+  decideContribution,
+  hoverSalience,
+  type ContributeDeps,
+} from "./contribute.js";
 import {
   ANNEX_ORDER,
   resolveStructureFocus,
@@ -243,7 +261,6 @@ import {
   CANT_HERE,
   cutFirstLine,
   ORDER_OK,
-  sourceKindWord,
   WHO_DO_YOU_MEAN,
 } from "@shared/world-engine/interaction/dialogue/host-lines.js";
 import { noStock, type LeveledGlyphs } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
@@ -289,6 +306,7 @@ import {
   wildFeatureEmbodied,
   wildFeatureRadiusOf,
   wildFeatureStandsAsBody,
+  wildSourceWord,
   type WildernessContent,
   type WildernessCreature,
   type WildernessFeature,
@@ -761,6 +779,13 @@ import {
 } from "@shared/world-engine/interaction/dialogue/respond.js";
 import { planGoal, pursue } from "@shared/world-engine/interaction/behavior/action-planner.js";
 import { needPursuitGoals, tasteBonusS } from "@shared/world-engine/interaction/behavior/need-goals.js";
+// ⚖️ PULL-MODEL LABOR (#51) — the two halves of a need row's PRICE. The
+// contribute motive competes in the SAME seconds currency `decideNeeds` ranks
+// its own rows in, so the winning row has to be re-priced here (the decider
+// returns the WINNER, not its rank). Imported from the module rather than the
+// barrel: the barrel exports the decision, not its arithmetic, and widening it
+// for one caller would invite a second pricing seat.
+import { intentCost, rowValueS } from "@shared/world-engine/interaction/behavior/needs.js";
 import {
   driveValueS,
   goodsValueS,
@@ -1198,6 +1223,12 @@ export interface Pursuit {
    *  redirect-eligible. */
   author?: string;
   pt?: { x: number; y: number };
+  /** ⚖️ PULL-MODEL LABOR (task #51) — THE BILL a `tplKey: "contribute"`
+   *  pursuit serves: the slice this body issued to ITSELF (kernel/town/
+   *  pull-labor.ts is the seam; `isContributePursuit` is the one test). The
+   *  hand census, the warp guard, the streamer pin and the why-chain read
+   *  this instead of a pool row. Absent on every other pursuit. */
+  bill?: ContributeBill;
 }
 
 /**
@@ -6360,6 +6391,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         };
       }
     }
+    // ⚖️ PULL-MODEL LABOR (#51) — AND A SELF-ISSUED HAUL IS ITS LEG, by the
+    // same reading, off the BILL instead of a pool row. `ownActivity` above
+    // already answered for the two DWELL links (the pursuit's `buildwork`
+    // goal); this is the carry, whose truth is which way the body is walking.
+    const pull = session.pursuits.get(cid);
+    if (isContributePursuit(pull) && pull.bill.agreementId) {
+      const agr = session.transfers.get(pull.bill.agreementId);
+      if (agr && (agr.status === "pending" || agr.status === "moving")) {
+        const leg = Object.values(agr.carried ?? {}).some((n) => n > 0) ? "deliver" : "fetch";
+        const good = spokenWord(stackHead(pull.bill.head ?? "")) || "thing";
+        return { verb: pull.bill.spoken ? "carry" : leg === "deliver" ? "put" : "get", object: good };
+      }
+    }
     const going = creatureGoing(session, cid);
     if (going) {
       if (going.kind === "fetch") return { verb: "get", object: spokenWord(going.good) };
@@ -6548,6 +6592,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
     // ── ② A PURSUIT — a spoken command, or the walker's own goal ─────────────
     const pursuit = session.pursuits.get(cid);
+    // ⚖️ PULL-MODEL LABOR (#51) — A SELF-ISSUED SLICE EXPLAINS ITSELF THROUGH
+    // ITS BILL, and the bill is DERIVED, never stored: a reload simply
+    // re-decides, which is exactly why `PooledTask.need`'s reload amnesia (the
+    // #45 user report — "because you asked" about errands nobody spoke) cannot
+    // recur here. A CIVIC bill answers with the town's own appetite and says
+    // no more; a SPOKEN one names the asker, exactly as a claimed row does.
+    if (isContributePursuit(pursuit)) {
+      const bill = pursuit.bill;
+      if (!bill.spoken) {
+        chain.push({
+          kind: "because",
+          clause: {
+            subject: "town",
+            verb: "need",
+            ...(bill.head ? { object: spokenWord(stackHead(bill.head)) } : {}),
+          },
+        });
+        return end();
+      }
+      chain.push({
+        kind: "authority",
+        clause: {
+          subject: isPlayerCid(bill.issuer) ? "you" : (nameOfCid(session, bill.issuer) ?? "there"),
+          verb: "ask",
+        },
+      });
+      return end();
+    }
     if (pursuit && pursuit.goal.kind !== "address") {
       if (pursuit.source === "command") {
         // "because you asked" — the player is the only issuer a pursuit records
@@ -9255,6 +9327,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // the driver, whatever is in the registry is not work in progress, and
     // `idleForDirect` reaps it instead of standing down to it.
     pursuitDrivenAt = session.townClock;
+    // ⚖️ PULL-MODEL LABOR (#51) — BEFORE the early return, deliberately: a
+    // pursuit map that just emptied is precisely when an abandoned slice needs
+    // releasing (see `sweepPullSlices`).
+    sweepPullSlices(session);
     if (!world || session.pursuits.size === 0) return;
     const cmdBase = makeGoalResolver(session);
     for (const [cid, pur] of [...session.pursuits]) {
@@ -9306,6 +9382,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // Scoped to the one body kind whose flag has no other owner — a
         // settler is deliberately NOT given need meters here or anywhere.
         if (isSettlerCid(cid)) session.liveNeedBodies.delete(cid);
+        // ⚖️ PULL-MODEL LABOR (#51) — THE SLICE DIES WITH THE PURSUIT. A body
+        // redirected by a command must not leave a phantom agreement holding
+        // units nobody is walking toward: the pile would read as covered and
+        // the bill would stall behind a trip that is not being made.
+        if (isContributePursuit(pur)) releaseContributeSlice(session, pur.bill);
       };
       // GIVE-UP GUARD: a pursuit that keeps ACTING without ever completing (hands
       // already full so `pick` no-ops, an un-grabbable target) would crouch on the
@@ -9331,6 +9412,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // BUSY: the body is mid-crouch on the last action step — leave it be until
       // the hold clears (stepActionHolds), then re-plan from the updated world.
       if (session.actionHold.has(cid)) continue;
+      // ⚖️ PULL-MODEL LABOR (#51) — A CONTRIBUTE PURSUIT IS A MARKER, NOT A
+      // PLAN. Its two goal kinds (`transfer`, `buildwork`) are host-routed by
+      // law (rules.ts says so four times: "never a compileGoal body errand"),
+      // so the ERRAND owns the body and `pursue` would only ever report the
+      // goal unplannable and drop the marker on its first tick. What the
+      // pursuit carries is the BILL — the why-chain, the busy pin, the hand
+      // census, the warp guard and the seat count all read it — so this arm
+      // retires the marker exactly when the work it stands for is over, and
+      // the body re-decides on the next need tick (it keeps working while the
+      // bill stands).
+      if (isContributePursuit(pur)) {
+        if (!contributeStillWorking(session, cid, pur.bill)) clear();
+        continue;
+      }
       const body = state.avatars[avatarIdOf(cid)];
       if (!body) {
         clear();
@@ -9963,6 +10058,424 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     console.log(`[ritual] ${key} retired — ${why}`);
   }
 
+  // ── ⚖️ PULL-MODEL LABOR (task #51) — THE HOST'S SIDE OF THE DECIDER ───────
+  //
+  // USER RULING (2026-09-04): *"it's not an order, it's a PERSONAL DECISION."*
+  // Everything the decider needs is handed over here as CLOSURES — the module
+  // never imports this file's runtime (contribute.ts header states the law),
+  // so the host keeps one owner for its own machinery and the decider stays
+  // testable without booting a world.
+  //
+  // Built once and memoized: every field is a stable closure over the same
+  // `director` handle, so rebuilding it per body per tick would allocate a
+  // dozen functions for nothing.
+  let contributeDepsMemo: ContributeDeps | null = null;
+  function contributeDeps(): ContributeDeps {
+    if (contributeDepsMemo) return contributeDepsMemo;
+    contributeDepsMemo = {
+      deltasOf: (s) => s.town?.deltas ?? s.foundedSite?.deltas ?? null,
+      scopeCtxOf: (s) => scopeTreeOf(s),
+      scopeOfPoint,
+      // ⚖️ THE PILE'S TWO SPELLINGS. New hauls target `orderpile:<ord>`; an
+      // ADAPTED SAVE's in-flight rows still target the pre-phase-2 endpoint,
+      // and they must count against the bill or every reader double-orders
+      // the load (the director's own `legacyPileId` law, read from here).
+      orderPileIds: (o) => {
+        const pileId = `${ORDER_PILE_EP}${o.ord}`;
+        if (o.kind === "found") return { pileId, legacyPileId: `${SITE_PILE_EP}${o.ord}` };
+        if (o.kind === "annex" || o.kind === "interior") {
+          const legacy = o.legacyOrd;
+          return legacy === undefined ? { pileId } : { pileId, legacyPileId: `${ANNEX_PILE_EP}${legacy}` };
+        }
+        return { pileId };
+      },
+      endpointAt: (s, id) => stockEndpointOf(s, id)?.at ?? null,
+      // ⚖️ A HAUL'S DESTINATION IS A PLACE, NEVER THE CARGO — and there is ONE
+      // definition of that place (the director's `pileHaulDestWord`, whose own
+      // law is "so the staging poster and the reload re-pool can never drift
+      // apart on it"). A self-issued slice is the THIRD arm naming it, so it
+      // reads the same function rather than reconstructing the answer from the
+      // site list (1b's D7 workaround, retired by 1a's R2 export).
+      pileWordOf: (s, o) => director.pileHaulDestWord(s, o),
+      bodyAt: (s, cid) => {
+        const b = world?.state.avatars[avatarIdOf(cid)];
+        return b ? { x: b.x, y: b.y } : null;
+      },
+      carryOf: bodyCarryOf,
+      bagCeilingOf: (s, cid) =>
+        idleBagsFor(s, cid).reduce((best, bag) => Math.max(best, bag.room), 0),
+      orderSiteId: (ord) => director.orderSiteId(ord),
+      buildworkSiteAt: (s, siteId) => buildworkSiteAt(s, siteId),
+      // ⚖️ REACH IS THE BODY'S, NOT THE ISSUER'S (the design's own correction):
+      // a body serves what IT can reach, so the `mayUse` subject is the puller.
+      siteMaterialSources: (s, at, viewer) => director.siteMaterialSources(s, at, viewer),
+      freeHeadStockWithinReach: (s, at, head, viewer) =>
+        director.freeHeadStockWithinReach(s, at, head, viewer),
+      agrHolder,
+      billIssuer: () => LOCAL_PLAYER_CID,
+      drawSourceShelf,
+      // …and the slice is RECORDED as it is issued, so the orphan sweep below
+      // can find it again whatever door the pursuit later leaves by.
+      issueTransferHaul: (s, cid, agreementId, destWord) => {
+        pullSlices.set(agreementId, cid);
+        issueTransferHaul(s, cid, agreementId, destWord);
+      },
+      // ⚖️ THE FELL EXECUTOR (item 1d) — walk out, stand, chop, and only then
+      // run the ONE kill draw. Never a second felling.
+      chopAt,
+      fellRowsOf: fellRows,
+      // 🔭 THE HOVER (item 1e) — where a loose good belongs, and what one has
+      // to give. Both read the bookkeeper's own answers.
+      collectDestOf: (s) => {
+        const id = director.clearingDepositId(s);
+        const at = id ? (stockEndpointOf(s, id)?.at ?? null) : null;
+        return id && at
+          ? { id, at, word: id === TOWN_YARD_ID || id === SITE_STOCK_ID ? "yard" : "storehouse" }
+          : null;
+      },
+      looseGoodOf: (s, cid, objId) => looseGoodOf(s, cid, objId),
+      // 🔭 …and the WEIGHT the hover puts on what it is showing (item 1e). A
+      // fact about THIS body's attention, never about the bill: only the
+      // creature the player has ENGAGED sees it, and it re-orders what that
+      // body would have chosen anyway — it never commands.
+      salience: (s, cid, link) => hoverSalience(salientGood, cid, link),
+      standAndWork: (s, cid, at) => {
+        // The SAME dwell the buildwork claim arm issues (⑥): walk to the work
+        // and STAND there. `clocked` because a builder's commute is schedule
+        // playback, exactly as it is for a claimed slot. The bookkeeper's
+        // presence sweep re-issues it while the body keeps the seat; when the
+        // dwell runs out with no bill left, the pursuit retires and the body
+        // re-decides.
+        const npcId = avatarIdOf(cid);
+        clearNeedStep(s, cid);
+        s.npcTasks.delete(npcId);
+        s.lastDrive.set(npcId, "task");
+        enqueueNpcErrand(s, npcId, { points: [{ x: at.x, y: at.y, dwell: BUILD_WORK_DWELL_S }], clocked: true });
+      },
+      // ⚖️ A SELF-ISSUED SLICE ANNOUNCES AS WHAT IT IS (1b's R3). It used to
+      // borrow `"task-claim"` so `defaultAnnounceCriteria` would let the line
+      // through; the criteria now names `"contribute"` too, and the LINE ITSELF
+      // is unchanged (`announceIntent` derives it from the goal and the bill,
+      // never from the source) — pinned in the decider suite.
+      announce: (s, cid, goal, issuer) => {
+        // 🚨 A BODY THAT STEPS UP BECOMES A REAL CREATURE — the pool's own line
+        // (`chooseClaimant`'s winner, qh:~28679), and under pull it is
+        // LOAD-BEARING rather than a courtesy. `sayNpcLine` returns at once for
+        // a cid with no dialogue node, so an ambient street resident that took
+        // a slice would have contributed in TOTAL SILENCE: F1 put dozens of
+        // never-registered bodies into the decide loop, and every one of their
+        // claims would have been swallowed. Registration is lazy on purpose
+        // (the far side of town is workforce, not cast) and this is the moment
+        // it stops being scenery.
+        if (cid.startsWith("resident_") && !s.creatures?.nodeByCreature.has(cid)) {
+          ensureResidentCreature(s, cid);
+        }
+        announceIntent(s, { creatureId: cid, goal, source: "contribute", issuer });
+      },
+      // ⚖️ PRIORITY IS MOTIVE WEIGHT, NOT QUEUE ORDER (design §4). The #50 ④
+      // spoken-first pool partition becomes this number: a civic bill is worth
+      // what it is worth ("the town needs it"), and a bill a PLAYER spoke is
+      // worth more to a body that is well disposed toward the asker ("you
+      // asked"). Never a weight on the issuer alone — every civic sweep posts
+      // as the local player, so an ambient row would read as family warmth.
+      motiveWeight: (s, cid, link) =>
+        link.spoken ? 1 + compliance(relationToward(s, cid, link.issuer), creatureMood(cid)) : 1,
+      forgoneS: claimForgoneS,
+    };
+    return contributeDepsMemo;
+  }
+
+  /**
+   * ⚖️ WHAT THE BODY WAS ABOUT TO DO INSTEAD, priced (task #51, ruling 3 — the
+   * ARGMAX, not an if-idle gate). `decideNeeds` returns the WINNING row, never
+   * its rank, so the winner is re-priced here through the very two functions
+   * that ranked it (`rowValueS` / `intentCost` over the ctx the decision was
+   * made on — never a second world read, never a second answer).
+   *
+   * `-Infinity` for a row with no plan: a PARKED or BLOCKED need is a want,
+   * not an activity, so it cannot be what this body does instead — and an open
+   * bill must beat it. That is the measured frontier defect in one line (two
+   * residents sitting `[sit]` / "I'm bored." while 42 hauls expired unclaimed).
+   */
+  function needRivalNetS(
+    decided: { tpl: NeedTemplate; intent: NeedIntent } | null,
+    ctxSeen: Map<string, NeedCtx>,
+  ): number {
+    if (!decided || decided.intent.kind === "blocked" || decided.intent.kind === "idle") {
+      return Number.NEGATIVE_INFINITY;
+    }
+    const ctx = ctxSeen.get(decided.tpl.key);
+    if (!ctx) return Number.NEGATIVE_INFINITY;
+    return netValueS(
+      rowValueS(decided.tpl, ctx, decided.intent),
+      intentCost(decided.tpl, ctx, decided.intent),
+    );
+  }
+
+  /** Ask `cid` whether an open bill beats `beatS`; true ⇒ a contribute pursuit
+   *  was installed and the caller stops deciding for this body. */
+  function tryContribute(session: QuestSession, cid: string, beatS: number): boolean {
+    if (!decideContribution(session, cid, contributeDeps(), { beatS })) return false;
+    // ONE LINE PER SLICE, ungated (the `[needs] … DEMOTED/BLOCKED` precedent):
+    // WHO decided, WHAT they took and WHAT they gave up for it. Under the
+    // capability only — the dollhouse never reaches here — and it is the only
+    // way an arc transcript can answer "did the streamed cast ever decide?",
+    // which is the round's own acceptance question.
+    const b = session.pursuits.get(cid)?.bill;
+    console.log(
+      `[pull] ${cid} took ${b?.link}${b?.head ? ` ${b.units} ${b.head}` : ""} for ${b?.siteId}` +
+        ` (beat ${Number.isFinite(beatS) ? beatS.toFixed(1) : "nothing"})`,
+    );
+    return true;
+  }
+
+  /**
+   * ⚖️ THE SLICE DIES WITH THE PURSUIT (task #51). A contribute pursuit that
+   * ends — completed, blocked, or PRE-EMPTED BY A COMMAND — must not leave a
+   * phantom agreement holding units nobody is walking toward: the pile's
+   * shortfall would read as covered forever and the bill would silently stall.
+   *
+   * An agreement that never BEGAN (or began and was abandoned before the load)
+   * is failed and its holder released, so the shortfall reopens on the next
+   * read. One that is already carrying is left alone — the units are in a pair
+   * of hands, and the haul's own unload seam owns them (clock owns motion;
+   * disruption disrupts, it never teleports goods home).
+   */
+  /**
+   * ⚖️ IS THIS SLICE STILL BEING WORKED? (task #51.) The one retirement test,
+   * per link family — and each family is asked about the thing that actually
+   * finishes it, never about the walk:
+   *
+   *   HAUL / FELL  the AGREEMENT's status. The trip ends at the crate; the
+   *                ledger is what finished (the pool's own rule for transfer
+   *                rows, unchanged).
+   *
+   *   BUILD/REFINE the SITE. ⚖️ 1a's contract: under the capability the
+   *                bookkeeper no longer walks a present body or re-issues its
+   *                errand — the PURSUIT owns the walk, the dwell and the
+   *                giving-up; the director only sets the pose and the aim. So
+   *                a dwell that has run out is re-issued HERE while
+   *                `buildworkSiteAt` still answers (staged, labour left,
+   *                geometry alive), and the seat retires the moment it does
+   *                not. That is also where the pool's 45 s claim TTL went:
+   *                re-homed as a live question about the work, not deleted —
+   *                the 2026-08-11 "claimed forever" livelock cannot come back,
+   *                because a finished site answers null.
+   */
+  function contributeStillWorking(session: QuestSession, cid: string, bill: ContributeBill): boolean {
+    // ⚖️ THE CHOP (item 1d) — asked FIRST, and asked about the ERRAND rather
+    // than about the tree. A felling is over when the body has finished
+    // standing there, whatever the cut then found: the thing came down (the
+    // mark retired with it), or it could not be cut at all (the mark retired
+    // too, so nobody re-decides an impossible link forever). A body that lets
+    // go mid-chop leaves the MARK standing — which is the design: the next idle
+    // body reads the same bill. A lot-clearing chop carries the agreement along
+    // for the bookkeeper's liveness sweep, so this arm must precede the
+    // agreement one.
+    if (bill.objId !== undefined && bill.units === undefined) {
+      const npcId = avatarIdOf(cid);
+      return (session.npcTasks.get(npcId)?.length ?? 0) > 0 || world?.npcErrandActive(npcId) === true;
+    }
+    if (bill.agreementId) {
+      const st = session.transfers.get(bill.agreementId)?.status;
+      return st === "pending" || st === "moving";
+    }
+    const npcId = avatarIdOf(cid);
+    if ((session.npcTasks.get(npcId)?.length ?? 0) > 0 || world?.npcErrandActive(npcId)) return true;
+    const at = buildworkSiteAt(session, bill.siteId);
+    if (!at) return false; // the work is done, or the row is gone — free the body
+    contributeDeps().standAndWork(session, cid, at); // stay at the seat
+    return true;
+  }
+
+  function releaseContributeSlice(session: QuestSession, bill: ContributeBill): void {
+    // 🚨 A CHOP NEVER TOOK THE GOODS (task #51 item 1d). A lot-clearing bill's
+    // FELL link carries the agreement id so the bookkeeper's liveness sweep can
+    // see that somebody is on that tree — but the chopper never BEGAN that row
+    // and never lifted a unit off it, so retiring the chop must not fail it.
+    // Without this the clearing agreement died the moment the tree came down
+    // (released, failed, re-posted next sweep) — churn on the very bill the
+    // chop had just made servable.
+    if (bill.objId !== undefined && bill.units === undefined) return;
+    if (bill.agreementId) releasePullSlice(session, bill.agreementId);
+  }
+
+  /**
+   * ⚖️ 1a's CONTRACT: an abandoned slice fails its agreement and releases BOTH
+   * holders — the goods under `agrHolder` and the basket's `@tool` claim under
+   * `bagHolder`. The bookkeeper's own expiry only reaps EXECUTOR-LESS
+   * pile-dest rows past the TTL, and an abandoned pull slice has an executor,
+   * so nothing else would ever reap it: the pile's shortfall would read as
+   * covered forever and the bill would stall behind a trip nobody is walking.
+   *
+   * A row already terminal is left alone (that is the normal completion path
+   * — the haul landed and the pursuit is retiring behind it). A row whose
+   * carrier is holding the load is STILL failed: the units are physically in a
+   * pair of hands and stay there (clock owns motion — an interrupted errand is
+   * never teleported home), the bill honestly reopens, and the ordinary
+   * unload/tidy/drop rows put the load away.
+   */
+  function releasePullSlice(session: QuestSession, id: string): void {
+    pullSlices.delete(id);
+    const a = session.transfers.get(id);
+    if (!a || a.status === "done" || a.status === "failed") return;
+    session.reservations.release(agrHolder(id));
+    session.reservations.release(bagHolder(id));
+    session.transfers.fail(id, "no-executor");
+  }
+
+  /**
+   * ⚖️ EVERY SELF-ISSUED HAUL SLICE THIS HOST GAVE OUT — `agreementId → the
+   * body that took it` (task #51). A closure map, like `busyBodiesMemo` and
+   * the director's `buildClaimSeenAt`: session-lived, never serialized, and
+   * NOT a session field (a reload simply re-decides).
+   *
+   * 🚨 WHY IT EXISTS. `session.pursuits` is one slot per cid and a DOZEN seats
+   * write it — the command bail-out in the needs walker, a press, a spoken
+   * order, an eviction, the bag-fetch install. Every one of them can replace a
+   * contribute pursuit, and a replaced pursuit that was carrying a slice would
+   * leave a PHANTOM: an agreement pending against the site pile forever, whose
+   * units read as promised, whose shortfall reads as covered, and which nobody
+   * is walking. Chasing every write site is how that bug survives one of them;
+   * ONE sweep over what was actually issued cannot miss a door.
+   */
+  const pullSlices = new Map<string, string>();
+
+  /**
+   * 🔭 WHAT THE LOCAL SPARK IS SHOWING ITS ENGAGED CREATURE (task #51 item 1e).
+   *
+   * USER RULING (2026-09-04): *"Hovering over loose objects (such as the wood
+   * piles after a tree is cut) should also call attention to them, to collect
+   * them, similar to how the house mode works."*
+   *
+   * A host closure, like `pullSlices` and `contributeIdleDorm` — never a
+   * session field: a hover is live local gaze, it is not on the wire and it
+   * does not survive a reload (a new session simply has nothing hovered).
+   * `strength` ramps and decays through spark-attention's own helpers, so a
+   * glance across a heap is not a decision and a deliberate hold is.
+   */
+  let salientGood: { cid: string; objId: string; strength: number } | null = null;
+
+  /**
+   * 🔭 A LOOSE GOOD — a thing lying in the world with something to give, and
+   * nobody's (item 1e).
+   *
+   * ⚖️ WHAT COUNTS, and why it is this narrow: a DOWNED wild feature. That is
+   * the user's own example ("the wood piles after a tree is cut") and it is
+   * the honest one — a felled trunk is a heap of its own substance whose
+   * timber `glyphTakeableFrom` has just made reachable. A STANDING tree
+   * answers null through the same gate (its wood is on the far side of a cut,
+   * which is item 1d's business); an outcrop is not loose, it is bedrock being
+   * quarried; somebody's chest is not clutter; and a `small:` prop already has
+   * an affordance — the shipped TIDY chore (`hoverObjectChore`) — which this
+   * must not duplicate.
+   */
+  function looseGoodOf(
+    session: QuestSession,
+    cid: string,
+    objId: string,
+  ): { head: string; units: number; at: { x: number; y: number } } | null {
+    if (!wildFeatureDowned(session, objId)) return null;
+    const rec = session.containerRecords.get(objId);
+    const at = stockEndpointOf(session, objId)?.at ?? (world ? containerStandpoint(world.state, objId) : undefined);
+    if (!rec?.stock || !at) return null;
+    if (rec.owner) return null; // spoken for by a household — not free to collect
+    let best: { head: string; units: number; at: { x: number; y: number } } | null = null;
+    for (const glyph of Object.keys(rec.stock)) {
+      if (!wildGlyphTakeable(session, objId, glyph)) continue;
+      const free = freeUnits(rec.stock, session.reservations, objId, glyph);
+      if (free <= 0) continue;
+      if (!best || free > best.units) best = { head: stackHead(glyph), units: free, at: { x: at.x, y: at.y } };
+    }
+    return best;
+  }
+
+  /**
+   * ⚖️ F1 — IDLE IS IDLE, SHOWN OR NOT (MAIN RULING 2026-09-04, task #51).
+   *
+   * 🚨 THE DEFECT. Stage 1's first frontier arc took 20 slices and EVERY ONE of
+   * them was taken by the two on-show residents: the streamed cast — dozens of
+   * `resident_i_j` bodies standing in the same town, embodied, with nothing to
+   * do — never decided ONCE. Not because they refused: because the walker drops
+   * a body whose house interior is not loaded and which is not already live
+   * (the `!shown && !live` gate) long before the contribute seat, and that gate
+   * is a METER abstraction ("nobody is watching, so don't simulate its wants").
+   * A contribution is not about the body's METERS; it is about whether the body
+   * is IDLE. So the gate must not bar it. Measured cost of the bar: staging
+   * took ~1 870 s against the push model's ~670, because two pairs of hands
+   * were carrying a bill 76 abstract carriers used to carry.
+   *
+   * ⚖️ AND THE CLOCK STILL OWNS ITS MOTION. The one thing an unshown body may
+   * be doing is the goods clock's errand, and that errand is the household's
+   * shopping — taking a body OFF it mid-trip is exactly the disruption the
+   * walker exists to refuse (feedback_clock_owns_motion_disruption_disrupts).
+   * So the test is asked TWICE, at both of the clock's own spellings: the
+   * schedule's `phase` (is a trip projected for this body right now?) and the
+   * world's `npcErrandActive` (is one actually being walked?). At HOME by both
+   * readings, with no pursuit and no walk of its own, a body is idle — and an
+   * idle body beside an open bill is the user's standing rule.
+   *
+   * PROMOTION AND DEMOTION ARE THE ONES THAT ALREADY EXIST. The install adds
+   * the body to `liveNeedBodies` (exactly as a live need does), which is what
+   * makes the next tick skip this gate, keeps the streamer from unloading it
+   * mid-haul and stops the goods clock double-driving it. When the slice ends
+   * the body is live with no pursuit, so it falls through to `decideNeeds` —
+   * whose meters were never ticked, so nothing fires — and the EXISTING
+   * "nothing fires" arm demotes it: banks the carry, drops the live flag,
+   * `reanchorHouseGoods`, walks it home. Nothing new had to be written for the
+   * way back, and there is no state that can strand a body live forever.
+   *
+   * NOT RE-DECIDED EVERY TICK: the `needDecideDorm` idiom, one map over. A body
+   * that found nothing sleeps `CONTRIBUTE_IDLE_DECIDE_S` before asking again —
+   * `needDecideDorm` itself cannot be reused for it, because this gate CLEARS
+   * that map every tick on purpose (a re-shown house must decide fresh) and an
+   * entry written here would be read by the on-show decide as if a meter had
+   * been consulted.
+   */
+  const contributeIdleDorm = new Map<string, number>();
+  /** How long an unshown idle body sleeps after finding no bill it wants. Read
+   *  against the SITE's own bookkeeping cadence (`SITE_HAUL_RETRY_S`, 20 s):
+   *  the bill cannot change faster than the books re-read it, so asking more
+   *  often can only re-derive the same answer. */
+  const CONTRIBUTE_IDLE_DECIDE_S = 20;
+
+  function idleContribute(
+    session: QuestSession,
+    state: WorldState,
+    cid: string,
+    clockAtHome: boolean,
+  ): void {
+    if (!pullLaborOn(session)) return;
+    if (!clockAtHome) return; // the clock is spending this body — never mid-trip
+    const npcId = avatarIdOf(cid);
+    if (!state.avatars[npcId]) return; // not embodied: no body, no slice
+    if (world!.npcErrandActive(npcId)) return; // …and not walking one right now
+    if (session.pursuits.has(cid)) return;
+    if (session.walk.has(cid)) return; // mid-walk (heading home / escort)
+    // (party / `npcTasks` / a command already `continue`d this body upstream.)
+    const due = contributeIdleDorm.get(cid);
+    if (due !== undefined && session.townClock < due) return;
+    // ⚖️ THE VACUOUS GATE, SPELLED. This body's meters are deliberately not
+    // ticked while its house is dark, so there is no rival row to price — a
+    // number invented for one would be a want nobody is simulating.
+    if (tryContribute(session, cid, Number.NEGATIVE_INFINITY)) contributeIdleDorm.delete(cid);
+    else contributeIdleDorm.set(cid, session.townClock + CONTRIBUTE_IDLE_DECIDE_S);
+  }
+
+  function sweepPullSlices(session: QuestSession): void {
+    if (!pullSlices.size) return;
+    for (const [agrId, cid] of [...pullSlices]) {
+      const a = session.transfers.get(agrId);
+      if (!a || a.status === "done" || a.status === "failed") {
+        pullSlices.delete(agrId); // finished on its own — nothing to release
+        continue;
+      }
+      const p = session.pursuits.get(cid);
+      if (isContributePursuit(p) && p.bill.agreementId === agrId) continue; // still being walked
+      releasePullSlice(session, agrId);
+    }
+  }
+
   function stepNeeds(session: QuestSession, state: WorldState, dt: number, houseLoaded: (hi: number) => boolean) {
     const town = session.town;
     if (!town || !world) return;
@@ -9988,6 +10501,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // (`errandClaimFor`'s precedent, one ledger over.)
     sweepNeedClaims(session, cidSet);
     for (const cid of cids) {
+      // 🚨 A SETTLER IS NOT HOUSE N (Scout A's trap 6, made REACHABLE by #51).
+      // This loop reads `Number(cid.split("_")[1])` as a house index a few
+      // lines down, so `settler_3` would adopt HOUSE 3's row, goods clock and
+      // chest. Settlers were unreachable here only because nothing put one in
+      // `liveNeedBodies` — and a contribute pursuit now does exactly that. Their
+      // decide is `stepSettlerContribution`, which reads no household at all;
+      // this guard is what keeps the two loops from ever meeting.
+      if (isSettlerCid(cid)) continue;
       // SOFT CONTROL (attention-spark.md): consume the "spark promoted this body
       // to a chore this frame" flag — its chosen pursuit ANNOUNCES below (a
       // stock/mess chore doesn't fire via the meter, so `sparkTriggered` can't
@@ -10005,9 +10526,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // follower resumes its episode the moment the interruption ends, so the
       // carried stack gets deposited or banked (DEMOTE) instead of riding the
       // hands forever.
+      // 🚨 PULL-MODEL LABOR (#51) — A CONTRIBUTE PURSUIT IS ITS OWN ERRAND.
+      // The queued-errand clause below reads `npcTasks` as "somebody else is
+      // spending this body" — and a self-issued haul's own trip IS that queue
+      // (`issueTransferHaul` enqueues it), so the walker deleted the pursuit
+      // that had just put it there, one tick later. MEASURED (s1b-frontier,
+      // before this exemption): the slice orphaned every tick, its agreement
+      // failed mid-walk, 852 transfer drives were issued and the site sat at
+      // `gathering block 0/120` for the whole 2 179 s run.
+      //
+      // ⚠️ EXACTLY ONE CLAUSE IS EXEMPT. The PARTY and the COMMAND still win —
+      // a slice is a decision, and a decision yields to being recruited or
+      // ordered exactly as any need pursuit does (the released slice is swept
+      // by `sweepPullSlices` on the next driver tick).
+      const pulling = isContributePursuit(session.pursuits.get(cid));
       if (
         session.party.has(cid) ||
-        (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0 ||
+        (!pulling && (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0) ||
         session.pursuits.get(cid)?.source === "command" // obeying a spoken errand — stepPursuit owns it
       ) {
         // Recruited/tasked MID-pursuit: a NEED-born pursuit yields (exactly as
@@ -10018,6 +10553,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         releaseErrands(session, cid); // following/obeying — not shopping
         continue;
       }
+      // …and a body still walking the slice it chose is not re-decided: it
+      // keeps working while the bill stands, and `stepPursuit` hands it back
+      // the moment the work is done (see `contributeStillWorking`).
+      if (pulling) continue;
       // BUSY: crouched on a discrete action (a take from the pantry, a deposit).
       // The step already fired beginAction and cleared needStep; leave the body
       // pinned and DON'T reclaim/re-decide until the crouch lands its effect.
@@ -10049,6 +10588,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         for (const tpl of templates) session.needMeters.delete(`${cid}|${tpl.key}`);
         clearNeedStep(session, cid);
         session.needDecideDorm.delete(cid); // a re-shown house decides fresh
+        // ⚖️ …BUT IDLE IS IDLE, SHOWN OR NOT (task #51, F1 — the long note on
+        // `idleContribute`). The bookkeeping above is about METERS; whether
+        // this body may take a piece of an open bill is about whether it is
+        // DOING anything. A pet is exempt (labour is not a species-neutral
+        // affordance) and the goods clock keeps its own body: `phase === "home"`
+        // is the schedule's own word for "not out on an errand".
+        const runner = pet ? undefined : residentShopGoods(session, houseIndex, member);
+        idleContribute(
+          session,
+          state,
+          cid,
+          !pet && (!runner || runner.errand(house, session.townClock).phase === "home"),
+        );
         continue;
       }
       const body = state.avatars[cid];
@@ -10537,6 +11089,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           }
         }
       }
+      // ── ⚖️ PULL-MODEL LABOR (task #51) — CONTRIBUTION COMPETES HERE ──────
+      //
+      // USER RULING (2026-09-04): *"Something needs to get done, someone
+      // doesn't have anything more important to do, so they do a part."* —
+      // and ruling 3: it enters the ARGMAX as one motive in the same seconds
+      // currency, not as an if-idle gate outside it. So a bored resident works
+      // and a hungry one eats first, without a second scheduler.
+      //
+      // PLACED AFTER the blocked surfacing deliberately: a body that goes off
+      // to haul blocks still has an unmet want, and its housemates' adoption
+      // rows must keep seeing it. It releases what the decide above claimed —
+      // the errand and the units — for the reason the walker already states:
+      // anything else this body decides to do drops what it held, or a
+      // housemate reads a trip that is not being walked and a box about to be
+      // emptied that nobody will empty.
+      // ⚖️ AND NOT A PET. One behavior model means a pet runs this very loop
+      // with its species' template rows — but a bill is a piece of the SETTLEMENT's
+      // work, and a dog standing a build seat (a dwell link needs no hands, so
+      // the carry gate would not have caught it) is the engine mistaking "runs
+      // the same machinery" for "is the same kind of participant".
+      if (!pet && pullLaborOn(session) && tryContribute(session, cid, needRivalNetS(decided, ctxSeen))) {
+        releaseErrands(session, cid);
+        releaseNeedUnits(session, cid);
+        continue;
+      }
       if (!decided) {
         if (live) {
           // DEMOTE: the disruption is neutralized — hand the household back to the
@@ -10925,6 +11502,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           legs.points.reduce((s, p) => s + (p.dwell ?? 0), 0),
         ),
       });
+    }
+    stepSettlerContribution(session, state);
+  }
+
+  /**
+   * ⚖️ PULL-MODEL LABOR (task #51) — THE SETTLERS' OWN DECIDE.
+   *
+   * A founding group's people never enter the loop above: they have no house
+   * row (`residentTownCtx` answers nothing) and no need meters at all — the
+   * `clear()` note one screen up says so in the code. So the "no urgent
+   * personal need" gate is VACUOUSLY TRUE for them, exactly as the round's
+   * plan says, and the whole decide is: is this body IDLE, and is there a bill?
+   *
+   * 🚨 `isSettlerCid` FIRST, and never a house parse. The loop above reads
+   * `Number(cid.split("_")[1])` as a house index — `settler_3` yields HOUSE 3,
+   * whose goods clock, chest and members belong to somebody else. Settlers are
+   * kept out of that arithmetic by construction here rather than by luck.
+   *
+   * IDLE is `idleForDirect`'s own shape (no pursuit, not in the party, no
+   * queued errand, not mid-walk) — the same verdict a player's direct order
+   * asks for, so a body the player could aim is a body a bill may claim, and
+   * one the player HAS aimed is left alone.
+   */
+  function stepSettlerContribution(session: QuestSession, state: WorldState): void {
+    if (!pullLaborOn(session)) return;
+    // SORTED, like the walker above: the visit order IS the reservation order,
+    // so every peer over the same clock slices the same bill the same way.
+    for (const cid of settlersOf(session).sort()) {
+      if (!isSettlerCid(cid)) continue; // belt and braces — never a house parse
+      if (!state.avatars[avatarIdOf(cid)]) continue; // not embodied: no body, no slice
+      if (!idleForDirect(session, cid)) continue;
+      // Nothing personal can outrank a bill for a body with no meters, so the
+      // rival is `-Infinity` — the vacuous gate, spelled rather than assumed.
+      tryContribute(session, cid, Number.NEGATIVE_INFINITY);
     }
   }
 
@@ -19565,6 +20176,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const hover = gz.hover;
     let target: { motive: AttentionMotive; x: number; y: number; objId: string } | null = null;
     let choreTarget: { chore: "tidy" | "provision"; x: number; y: number } | null = null;
+    /** 🔭 item 1e — the LOOSE GOOD under the gaze, if this is one. */
+    let goodTarget: string | null = null;
     let engageCid: string | null = null;
     if (!blocked) {
       if (hover?.kind === "object") {
@@ -19572,8 +20185,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const motive = hoverObjectMotive(session, hover.id);
         if (motive && o) target = { motive, x: o.x, y: o.y, objId: hover.id };
         else if (o) {
-          const chore = hoverObjectChore(session, hover.id);
-          if (chore) choreTarget = { chore, x: o.x, y: o.y };
+          // 🔭 PULL (item 1e) — A LOOSE GOOD IS ASKED ABOUT FIRST, and it takes
+          // the frame. Without this a felled trunk falls into the CONTAINER arm
+          // and draws the "provision" chore — a fill-check on a heap of timber
+          // in the wild, which is the wrong question about the right object.
+          const good = pullLaborOn(session) ? looseGoodOf(session, LOCAL_PLAYER_CID, hover.id) : null;
+          if (good) goodTarget = hover.id;
+          else {
+            const chore = hoverObjectChore(session, hover.id);
+            if (chore) choreTarget = { chore, x: o.x, y: o.y };
+          }
         }
       } else if (hover?.kind === "avatar" && hover.id !== PLAYER_ID) {
         engageCid = hover.id;
@@ -19626,6 +20247,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const s = decayStrength(f.strength, dt, SPARK.engageDecayS);
       if (s > 0) session.sparkAttention.set(me, { ...f, strength: s });
       else session.sparkAttention.delete(me);
+    }
+    // 🔭 THE LOOSE GOOD, PAIRED WITH THE ENGAGED CREATURE (item 1e). ⚖️ THE
+    // PAIRING LAW: a draw is only ever read together with the engagement OF THE
+    // SAME AUTHOR, and there is exactly one engaged body per author — so what
+    // is shown reaches THAT body and nobody else. No engagement ⇒ no row at
+    // all: an unengaged creature is never pulled in (the no-ambient-response
+    // law this whole module exists to keep).
+    const engagedNow = session.sparkAttention.get(me) ?? null;
+    if (goodTarget && engagedNow && engagedNow.strength > 0) {
+      const prev = salientGood && salientGood.objId === goodTarget && salientGood.cid === engagedNow.cid
+        ? salientGood.strength
+        : 0;
+      salientGood = { cid: engagedNow.cid, objId: goodTarget, strength: ramp(prev, dt) };
+      // ⏰ …AND IT FIRES THE NEED EARLY, which is the spark's own idiom: the
+      // body re-decides on THIS tick instead of sleeping out its 20 s re-ask.
+      // Both dorms, because either one could be the gate this body is behind.
+      contributeIdleDorm.delete(engagedNow.cid);
+      session.needDecideDorm.delete(engagedNow.cid);
+    } else if (salientGood) {
+      const s = decayStrength(salientGood.strength, dt, SPARK.drawDecayS);
+      salientGood = s > 0 ? { ...salientGood, strength: s } : null;
     }
   }
 
@@ -19721,6 +20363,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  Every BUSY clause below still applies unchanged — that is what makes the
    *  avatar arrive-then-reaim instead of thrashing mid-stride, and it is the
    *  same idleness a hovered resident answers with. */
+  /**
+   * ⚖️ IS THIS A BODY ANYBODY MAY BE TOLD TO DO SOMETHING — the MEMBERSHIP half
+   * of `idleForDirect`, extracted so a seat that may override a BUSY body (a
+   * command) can still ask the same question about WHICH bodies (task #51 item
+   * 1d). One owner, so the two can never drift apart.
+   *
+   * 🚨 IT IS A WHITELIST FOR A MEASURED REASON. In a town with WILDERNESS the
+   * incidental nearest body is a wandering critter with no mind and no hands
+   * ("`build farm` produced no task and no refusal at all", 2026-08-12; a
+   * felling landed on `wild_2` on this item's first arc). A thing that cannot
+   * be asked must never be handed work.
+   */
+  function isDirectableCid(cid: string, attached = attachedAvatarPeerOf(cid) !== null): boolean {
+    return attached || isPetCid(cid) || isSettlerCid(cid) || /^resident_\d+_\d+$/.test(cid);
+  }
+
   function idleForDirect(session: QuestSession, cid: string): boolean {
     if (cid === PLAYER_ID) return false;
     const attached = attachedAvatarPeerOf(cid) !== null;
@@ -19734,7 +20392,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // FAMILY_RELATION toward the guiding spirit, which is what makes them
     // volunteer for pooled work), so refusing to let that same spirit ASK one
     // of them directly was never a policy — it was a missing case.
-    if (!attached && !isPetCid(cid) && !isSettlerCid(cid) && !/^resident_\d+_\d+$/.test(cid)) return false;
+    if (!isDirectableCid(cid, attached)) return false;
     if (!attached && session.party.has(cid)) return false;
     // A PURSUIT ONLY SPEAKS FOR A BODY WHILE SOMETHING IS DRIVING IT. Normally
     // that is true every frame and this reads exactly as the plain
@@ -20188,7 +20846,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (
       last &&
       last !== PLAYER_ID &&
-      (isPetCid(last) || /^resident_\d+_\d+$/.test(last)) &&
+      // ⚖️ #50 ⑥ — AND A SETTLER IS ONE OF THEM (task #51 item 1d). This
+      // whitelist named the dollhouse cast, so on a FOUNDING world — whose
+      // people are all `settler_<i>` — the body the child had just been talking
+      // to was never the default addressee of the next press: `idleForDirect`
+      // admits settlers, the sticky arm above it did not, and the press fell
+      // through to "whoever is nearest". Scout A filed it as a UX gap; it is
+      // load-bearing now that a press can hand a body a piece of work.
+      (isPetCid(last) || isSettlerCid(last) || /^resident_\d+_\d+$/.test(last)) &&
       world.state.avatars[avatarIdOf(last)]
     ) {
       return last;
@@ -20424,6 +21089,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (promoteChore(session, state, f.cid, ch.chore)) {
         session.sparkChore = null; // consumed
         console.log(`[spark] ${f.cid} (engaged) → chore ${ch.chore}`);
+      }
+    }
+    // 🔭 PULL (item 1e) — AND A LOOSE GOOD NOBODY'S BILL WANTS IS COLLECTED.
+    // A DELIBERATE hold (the chore threshold, same number) — a glance across a
+    // heap is not an instruction. When a bill DOES draw from it, `decideCollect`
+    // refuses and the salience has already done the work: the same body
+    // re-decides this tick and takes that link instead, which is the pull model
+    // doing it rather than a second mechanism beside it.
+    if (salientGood && salientGood.cid === f.cid && salientGood.strength >= CHORE_STRENGTH) {
+      if (decideCollect(session, f.cid, salientGood.objId, contributeDeps())) {
+        console.log(`[pull] ${f.cid} (engaged) → collect ${salientGood.objId}`);
+        salientGood = null; // consumed
       }
     }
   }
@@ -20771,7 +21448,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (prop) return drawnGlyph(prop.glyph!); // an unplaced piece IS a chair, not a "furn"
     if (isWellId(objId)) return "water";
     const ws = wildSourceOf(session, objId);
-    if (ws) return ws.species; // a wild source IS its species (oak, sheep)
+    // A wild source is called by a word the board can SAY and DRAW — its own
+    // when the spec side has one (sheep, bush, rock), else `tree` / the kind
+    // (`wildSourceWord`). It used to be the species id, and `oak` is not a word:
+    // no lexeme, no picture — the blank tile over the hovered tree.
+    if (ws) return wildSourceWord(ws.species);
     // THE SPEC'S FIXTURE KIND IS THE TRUTH, ahead of the id — and ids LIE. The
     // food container keeps its historical `furn_<n>_chest_food` id while its
     // kind is `refrigerator` (stations.ts `kindByGood`), so reading the id
@@ -21121,12 +21802,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // `"cut it down first"` toast — the one adjacent line that never reached
     // the lexicon, on a board whose every other press speaks. It now takes the
     // leveled-glyph channel every sibling refusal takes (`saySystem`), with the
-    // standing thing NAMED at the one altitude that has a lexeme
-    // (`sourceKindWord`); the English banner survives only as the fallback for
-    // a world with nobody in it to say the line.
+    // standing thing NAMED by the word the board calls it (`wildSourceWord` —
+    // its own word, else `tree`, else the kind; always one with a lexeme); the
+    // English banner survives only as the fallback for a world with nobody in
+    // it to say the line.
     if (!wildGlyphTakeable(session, objId, glyph)) {
       const ws = wildSourceOf(session, objId); // non-null whenever the gate refuses
-      const blocker = sourceKindWord(naturalSourceOf(ws?.species ?? "")?.kind);
+      const blocker = ws ? wildSourceWord(ws.species) : null;
       saySystem(
         session,
         blocker ? cutFirstLine(drawnGlyph(glyph), blocker) : CANT_HERE,
@@ -21476,6 +22158,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // `plants` is the board's KIND chip and has no species row of its own; the
     // rest fall out of the registries.
     const generic = head === "plants" || (isPlant(head) && !naturalSourceOf(head));
+    // ⚖️ AND `tree` MEANS A TREE-SHAPED THING FIRST (lane W's finding, ruled at
+    // task #51 item 1d). `tree` names no species row, so it takes the generic
+    // arm above — every plant, nearest first. That was harmless while a
+    // homestead stood eight oaks and two bushes; the day the wild larder landed
+    // it stood nineteen pure-harvest plants, and "cut the tree" started
+    // reaching a berry bush while the oak the child was looking at kept
+    // standing. So a generic `tree` word RANKS TREE-SHAPED SOURCES FIRST — a
+    // source with a body product to give (timber) — before the nearest-plant
+    // tiebreak. `plants` stays deliberately generic: it is the board's KIND
+    // chip and means the whole category, which is exactly what it says.
+    //
+    // 🚨 THE TEST IS THE SOURCE'S OWN DATA, never a species list: "does it have
+    // something to become when it comes down" (`sourceIsConsumable` — the same
+    // question `cutWildFeature` asks to decide which of its two endings a cut
+    // has). A new tree species files itself; a new bush does not have to be
+    // remembered anywhere.
+    const wantTreeShape = generic && head !== "plants";
     const at = playerWorldPos(session);
     let best: string | null = null;
     let bestRank = Infinity;
@@ -21484,7 +22183,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const src = naturalSourceOf(f.species);
       if (!src) continue;
       if (f.species !== head && !(generic && src.kind === "plant")) continue;
-      const rank = !f.downed && sourceIsCuttable(f.species, f.sizeClass) ? 0 : 1;
+      const standing = !f.downed && sourceIsCuttable(f.species, f.sizeClass);
+      // Two keys, most significant first: CAN THE ACT BE DONE TO IT AT ALL, and
+      // then IS IT THE SHAPE THE WORD NAMES. Both are ranks rather than
+      // filters, so "cut the tree" in a world of nothing but bushes still
+      // reaches a bush rather than answering "there is no tree here".
+      const rank = (standing ? 0 : 2) + (wantTreeShape && !sourceIsConsumable(src) ? 1 : 0);
       const d = at ? Math.hypot(f.x - at.x, f.y - at.y) : 0;
       if (rank < bestRank || (rank === bestRank && d < bestD)) {
         bestRank = rank;
@@ -21590,6 +22294,229 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (shed) bumpStockEpoch(session); // ⏸️ units moved — wakes parked rows
     if (Object.values(stock).some((n) => n > 0)) return false; // nothing shed away, nothing removed
     retireWildSource(session, objId, fi, -1);
+    return true;
+  }
+
+  // ═══ ⚖️ THE CUT IS A DESIGNATION, NOT A DEED (task #51 item 1d) ═══
+  //
+  // USER RULING (2026-09-04, verbatim): *"the 'cut command' for trees isn't
+  // supposed to destroy the tree when the button is pressed. It should issue a
+  // COMMAND to cut that tree. Or, alternatively, DESIGNATE the tree to be cut
+  // when available as a task."*
+  //
+  // BOTH, and WHICH ONE is decided by whether anybody is listening:
+  //   COMMAND      an ADDRESSEE is attending (`attentionAddressee` — the last
+  //                partner, else the engaged body, else an idle one within
+  //                `ATTEND_REACH_M`) ⇒ a `source:"command"` fell pursuit on
+  //                THAT body: "you, cut that one".
+  //   DESIGNATION  nobody is ⇒ a MARK in the deltas (`fellOrders`), which is a
+  //                BILL: any idle body reads it through `visibleBills`, walks
+  //                out and chops. ⚖️ NO SILENT PRESS — the mark SPEAKS.
+  //   THE DEED     off the `pullLabor` capability (a bare authored world, the
+  //                dollhouse) there is no bill machinery and no body to send,
+  //                so the press is still the instant fell it always was — the
+  //                spirit's piece-moving hands (`spiritGazeCarry`), unchanged,
+  //                and what keeps the jx-doll bench byte-identical.
+  //
+  // ONE ACT THROUGHOUT: every branch ends in `cutWildFeature`. Nothing here
+  // is a second felling.
+
+  /** The order book a mark lives in (a founded site keeps its own). */
+  function fellBook(session: QuestSession): TownDeltas | null {
+    return session.town?.deltas ?? session.foundedSite?.deltas ?? null;
+  }
+
+  /** 🚨 WHAT TO CALL IT OUT LOUD — the word the board calls it by
+   *  (`wildSourceWord`: its own word, else `tree` for a thing with timber to
+   *  give, else the kind), never the species id (`oak` has a lexeme in no
+   *  ruleset on earth). The child's own word wins when there was one (a spoken
+   *  "cut the tree"). */
+  function fellWordOf(session: QuestSession, f: WildernessFeature, said?: string): string {
+    return said ?? wildSourceWord(f.species);
+  }
+
+  /** The standing, cuttable feature this endpoint names — the ONE precondition
+   *  every branch of the cut shares. */
+  function fellableFeature(session: QuestSession, objId: string): WildernessFeature | null {
+    const f = wildFeatureOf(session, objId);
+    if (!f || f.downed || !sourceIsCuttable(f.species, f.sizeClass)) return null;
+    return f;
+  }
+
+  /** Is this thing already marked to come down? */
+  function fellMarked(session: QuestSession, featureId: string): boolean {
+    return (fellBook(session)?.fellOrders() ?? []).some((r) => r.featureId === featureId);
+  }
+
+  /** MARK it (idempotent — the deltas' own law). Null = nothing markable here. */
+  function markFell(
+    session: QuestSession,
+    objId: string,
+    opts: { word?: string; spoken: boolean; issuer: string },
+  ): WildernessFeature | null {
+    const f = fellableFeature(session, objId);
+    const book = fellBook(session);
+    if (!f || !book) return null;
+    book.designateFell({
+      featureId: f.id,
+      at: { x: f.x, y: f.y },
+      word: fellWordOf(session, f, opts.word),
+      issuer: opts.issuer,
+      spoken: opts.spoken,
+      postedDay: director.buildDayNow(session),
+    });
+    return f;
+  }
+
+  /**
+   * ⚖️ WALK OUT, STAND, AND CUT IT DOWN — the FELL EXECUTOR, shared by the
+   * self-issued slice and the direct command (there is one act, so there is
+   * one executor).
+   *
+   * 🚨 THE CUT IS AT THE END OF THE CHOP, not at the arrival. `onArrive` fires
+   * the moment a body reaches the waypoint and the dwell runs AFTER it
+   * (npc-controller), so a cut written there would fell the tree and then have
+   * the body stand admiring it for thirty seconds. `onDone` fires when the
+   * last point's dwell has been spent — which is the act taking time, the
+   * whole of what this item is for.
+   *
+   * The mark retires WITH the thing: cut or refused, the row goes, so no body
+   * can re-decide the same impossible link forever. (A lot-clearing bill has
+   * no mark row; that call is a no-op and its agreement carries on into the
+   * haul link the fallen trunk now offers.)
+   */
+  function chopAt(session: QuestSession, cid: string, objId: string, at: { x: number; y: number }) {
+    if (!world) return;
+    const npcId = avatarIdOf(cid);
+    const featureId = wildFeatureOf(session, objId)?.id ?? null;
+    clearNeedStep(session, cid);
+    session.npcTasks.delete(npcId);
+    session.lastDrive.set(npcId, "task");
+    // BESIDE IT, NEVER ON IT: a trunk is a collider, and a body sent to its
+    // centre halts flush against the face and never reports arrival (the haul
+    // path's own `standAt` law, same helper).
+    const body = world.state.avatars[npcId] ?? at;
+    const spot = nearestClearSpot(
+      world.state,
+      at,
+      { x: body.x, y: body.y },
+      world.npcRadiusOf(npcId),
+      standAvoid(cid),
+    );
+    enqueueNpcErrand(session, npcId, {
+      points: [{ x: spot.x, y: spot.y, dwell: CHOP_DWELL_S }],
+      onDone: () => {
+        // Into the CHOPPER's own hands: what a take yields goes to the taker
+        // (a bush sheds its fruit into the hands of whoever felled it, and onto
+        // the ground it grew on when there is no room — `cutWildFeature`'s own
+        // truthful fallback).
+        cutWildFeature(session, objId, cid);
+        if (featureId) fellBook(session)?.cancelFell(featureId);
+      },
+    });
+  }
+
+  /**
+   * ⚖️ A COMMANDED FELLING — "you, cut that one". The same pursuit shape a
+   * self-issued slice installs (so every consumer — the announce, the activity
+   * verb, the why-chain, the marker arm in `stepPursuit` — reads it unchanged)
+   * with `source:"command"`, which is what makes it OVERRIDE rather than
+   * compete: a command beats a need by construction in the walker's bail-out.
+   */
+  function commandFell(session: QuestSession, cid: string, objId: string, word?: string): boolean {
+    const f = fellableFeature(session, objId);
+    // 🚨 AND ONLY A BODY THAT CAN BE ASKED (see `isDirectableCid`): a critter
+    // handed a felling stands there holding it forever, which is exactly what
+    // the first arc of this item produced.
+    if (!f || !world || !isDirectableCid(cid) || !world.state.avatars[avatarIdOf(cid)]) return false;
+    const goal: GoalSpec = { kind: "clearFeature", feature: fellWordOf(session, f, word) };
+    session.npcTasks.delete(avatarIdOf(cid));
+    session.pursuits.delete(cid);
+    session.walk.delete(cid);
+    session.pursuits.set(cid, {
+      source: "command",
+      tplKey: CONTRIBUTE_TPL_KEY,
+      goal,
+      glyph: "cut",
+      bill: {
+        siteId: fellSiteId(f.id),
+        link: "fell",
+        objId,
+        spoken: true,
+        issuer: LOCAL_PLAYER_CID,
+      },
+    });
+    // ⚖️ #50 ⑥ — a commanded body is LIVE so the pursuit driver owns it (and
+    // `stepPursuit.clear()` takes a settler back out again).
+    session.liveNeedBodies.add(cid);
+    contributeDeps().announce(session, cid, goal, LOCAL_PLAYER_CID);
+    chopAt(session, cid, objId, { x: f.x, y: f.y });
+    return true;
+  }
+
+  /**
+   * EVERY STANDING THING THIS SETTLEMENT HAS MARKED — the reader's second row
+   * source (`ContributeDeps.fellRowsOf`), resolved against the live world here
+   * because "does it still stand, and what do we call it" are the host's
+   * questions, never the decider's.
+   *
+   * TWO FAMILIES, ONE SHAPE: the player's own marks, and the builders' lot
+   * clearing (the bookkeeper's executor-less bill — 1a's seat ②, whose puller
+   * this is). A mark whose thing is gone or already down is simply not
+   * offered; the director's sweep retires the row itself.
+   */
+  function fellRows(session: QuestSession): FellRow[] {
+    const rows: FellRow[] = [];
+    for (const r of fellBook(session)?.fellOrders() ?? []) {
+      const f = session.wilderness?.features.find((x) => x.id === r.featureId);
+      if (!f || !fellableFeature(session, wildFeatureContainerId(f))) continue;
+      rows.push({
+        siteId: fellSiteId(f.id),
+        objId: wildFeatureContainerId(f),
+        at: { x: f.x, y: f.y },
+        word: r.word,
+        standing: true,
+        spoken: r.spoken,
+        issuer: r.issuer,
+      });
+    }
+    for (const c of director.clearingBills(session)) rows.push(c);
+    return rows;
+  }
+
+  /**
+   * THE PRESS AND THE SENTENCE, under the capability — the ONE decision both
+   * seats make. Returns false ⇔ there is nothing cuttable here and the CALLER
+   * speaks the refusal (silence must be explicit).
+   */
+  function markOrCommandCut(
+    session: QuestSession,
+    objId: string,
+    word?: string,
+    /** The body the SENTENCE singled out, when one was named. A press names
+     *  nobody and lets the room answer (`attentionAddressee`). */
+    who?: string | null,
+  ): boolean {
+    const f = fellableFeature(session, objId);
+    if (!f) return false;
+    // ① ALREADY MARKED ⇒ THE PRESS IS A TOGGLE. A child who marked a tree by
+    //    mistake must be able to take the mark off with the same button, and
+    //    the un-marking speaks exactly as the marking did.
+    if (fellMarked(session, f.id)) {
+      fellBook(session)?.cancelFell(f.id);
+      saySystem(session, ORDER_OK, `🪓 the ${fellWordOf(session, f, word)} — no longer marked to be cut`);
+      return true;
+    }
+    // ② SOMEBODY IS ATTENDING ⇒ IT IS A COMMAND TO THEM. A body the sentence
+    //    NAMED comes first; otherwise the room answers. ⚖️ A named body that
+    //    cannot take it falls through to the mark rather than to a refusal:
+    //    the tree is perfectly cuttable, so "that one can't be cut" would be
+    //    the wrong reason, and the work still exists for whoever can.
+    const asked = who ?? attentionAddressee(session, { x: f.x, y: f.y });
+    if (asked && commandFell(session, asked, objId, word)) return true;
+    // ③ NOBODY IS ⇒ THE MARK, AND IT SPEAKS.
+    if (!markFell(session, objId, { word, spoken: true, issuer: LOCAL_PLAYER_CID })) return false;
+    saySystem(session, ORDER_OK, `🪓 the ${fellWordOf(session, f, word)} — marked to be cut`);
     return true;
   }
 
@@ -27811,7 +28738,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // ⚖️ #45b — a claimed NEED task announces as a stockpile errand ("I will
     // get the wood"), never a carry-to: the claim is the fetch leg, and the
     // hauler is walking AWAY from the destination the old line named.
-    const stockpile = !!(ctx.taskId && session.taskPool.get(ctx.taskId)?.need);
+    //
+    // ⚖️ PULL-MODEL LABOR (#51) — AND A SELF-ISSUED SLICE ANSWERS THE SAME WAY,
+    // DERIVED FROM ITS BILL. `PooledTask.need` was cosmetic and died at reload;
+    // a contribute pursuit's `bill` is the durable carrier, and a CIVIC bill is
+    // the town's own appetite — the exact thing the stockpile phrasing says.
+    // A SPOKEN bill keeps the carry line: somebody asked for it, so the line
+    // names where it is going.
+    const pull = session.pursuits.get(ctx.creatureId);
+    const stockpile =
+      !!(ctx.taskId && session.taskPool.get(ctx.taskId)?.need) ||
+      (isContributePursuit(pull) && !pull.bill.spoken);
     const line = goalIntentLine(
       ctx.goal,
       intentLineSyms(session, { deixis: true, speaker: ctx.creatureId }),
@@ -27869,6 +28806,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
     for (const a of session.transfers.active()) {
       if (a.status === "moving" && a.executor) set.add(avatarIdOf(a.executor));
+    }
+    // ⚖️ PULL-MODEL LABOR (#51) — A SELF-ISSUED SLICE IS CIVIC WORK TOO. The
+    // pin exists so the streamer keeps a body doing the town's work embodied
+    // and trip-free; a puller holding a bill is exactly that body, and the two
+    // DWELL links (build / refine) never touch the agreement list above, so
+    // without this the streamer could hand a builder a shopping trip.
+    for (const [cid, p] of session.pursuits) {
+      if (isContributePursuit(p)) set.add(avatarIdOf(cid));
     }
     busyBodiesMemo = { at: session.taskClock, set };
     return set;
@@ -28072,6 +29017,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (isPlayerCid(cid) || cid === possession.creatureId) continue;
         if (session.party.has(cid) || session.escorting.has(cid)) continue;
         if (pool.claimedBy(cid)) continue; // one task per body
+        // ⚖️ PULL-MODEL LABOR (#51) — …AND A SELF-ISSUED SLICE IS THAT ONE
+        // TASK. While both lanes run (the bookkeeper stops posting under the
+        // capability, and until then it still does), a body already walking a
+        // bill it chose must not also be handed a row: the claim would delete
+        // its errand and leave the agreement it posted holding units nobody is
+        // fetching. The pursuit IS the claim.
+        if (isContributePursuit(session.pursuits.get(cid))) continue;
         const mind = session.creatures.world.creatures[cid];
         if (!mind || mind.cannotLeavePost) continue; // a post-bound puzzle creature never volunteers
         const body = world.state.avatars[avatarIdOf(cid)];
@@ -31012,6 +31964,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * live-need bodies against 40–60 streamed walkers.
    */
   function ledgerWarpBlockers(session: QuestSession): string[] {
+    // ⚖️ PULL-MODEL LABOR (#51), ruling 2 — A STANDING CONTRIBUTE PURSUIT
+    // REFUSES A WARP, exactly as a claimed pooled task always has, and it needs
+    // no clause of its own: a self-issued slice is a `source:"need"` pursuit on
+    // a body in `liveNeedBodies`, so BOTH lines below already name it. Folding
+    // a puller's remaining work into the clock arm at warp is a later round;
+    // v1 refuses and names the body.
     const out = new Set<string>(session.liveNeedBodies);
     for (const cid of session.pursuits.keys()) out.add(cid);
     for (const t of session.taskPool.claimed()) if (t.claimedBy) out.add(t.claimedBy);
@@ -32953,6 +33911,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const said = playerStatement("cut");
         if (opts.spokenExternally) yieldToStatement(said);
         else speakPlayerStatement(said);
+        // ⚖️ …AND UNDER THE PULL CAPABILITY IT IS NOT A DEED (task #51 item 1d,
+        // user ruling 2026-09-04). Somebody is asked, or the tree is MARKED and
+        // an idle body comes for it; either way the press SPEAKS and the tree
+        // is still standing when the child looks up. Off the capability (a bare
+        // authored world, the dollhouse) the instant fell below is unchanged.
+        if (pullLaborOn(s)) {
+          if (!markOrCommandCut(s, ep)) {
+            saySystem(s, CANT_HERE, `💬 "${said}" — that one can't be cut`);
+            return;
+          }
+          // The board described a STANDING thing and it is standing still —
+          // but the option it offered has flipped (mark ↔ unmark), so the
+          // board is re-presented rather than left stale.
+          if (wildFeatureOf(s, ep)) openContainer(s, ep);
+          return;
+        }
         // Into the PLAYER'S OWN hands: a press is the player's act, and what a
         // take yields goes to the taker. (A bodiless spark simply has no hands
         // with room, and the shed units land on the ground where they grew —
@@ -33825,6 +34799,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const ep = spokenFeatureId(s, goal.feature);
         if (!ep) {
           saySystem(s, CANT_HERE, `💬 "${sentence}" — no ${goal.feature} standing here`);
+          return;
+        }
+        // ⚖️ THE SENTENCE DESIGNATES TOO (task #51 item 1d). The child's word
+        // reaches the same decision the button does — a COMMAND when somebody
+        // was addressed ("mara, cut the tree"), a MARK when nobody was — so the
+        // two seats cannot mean different things about the same act.
+        //
+        // 🚨 AND IT READS `singledOut`, NEVER `target` (the law stated at that
+        // constant, verbatim: *"an order that hands WORK to a body may read only
+        // this one: nobody explicit ⇒ the order pools, never nearest grabs
+        // it"*). MEASURED, on the very first frontier arc of this item: `target`
+        // falls through to the incidental `nearest` rung, and in a town WITH
+        // WILDERNESS the incidental body is a wandering critter — `wild_2`, a
+        // creature with no mind and no hands, was handed the felling and stood
+        // there holding it. That is the same defect the build/craft arms were
+        // fixed for in 2026-08; a mark that anybody may take is the honest
+        // reading of a sentence that named nobody.
+        if (pullLaborOn(s)) {
+          if (markOrCommandCut(s, ep, goal.feature, singledOut)) return;
+          saySystem(s, CANT_HERE, `💬 "${sentence}" — that one can't be cut`);
           return;
         }
         // Into the ADDRESSED body's own carry — the child told somebody to do

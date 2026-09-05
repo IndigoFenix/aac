@@ -23,6 +23,7 @@ import {
   applyRequestLogger,
 } from "./middleware/security";
 import { assertRequiredSecrets, warnOnInsecureProductionConfig } from "./config/env-guards";
+import { applyPaddleWebhookRawBody } from "./middleware/paddle-webhook-raw";
 
 const app = express();
 
@@ -41,6 +42,9 @@ try {
 
 applySecurityHeaders(app);
 applyCorsPolicy(app);
+// MUST precede express.json(): the Paddle webhook is verified against the raw
+// bytes, which the json parser would consume. See the module comment.
+applyPaddleWebhookRawBody(app);
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: false, limit: '100mb' }));
 

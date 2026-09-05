@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 
 interface PaddlePrice {
@@ -39,6 +40,7 @@ function formatAmount(price: PaddlePrice): string {
 
 export default function PaddleTest() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [paddle, setPaddle] = useState<Paddle | null>(null);
   const [environment, setEnvironment] = useState<string>("");
   const [prices, setPrices] = useState<PaddlePrice[]>([]);
@@ -141,7 +143,22 @@ export default function PaddleTest() {
       });
       return;
     }
-    paddle.Checkout.open({ items: [{ priceId, quantity: 1 }] });
+    if (!user?.id) {
+      toast({
+        title: "Not signed in",
+        description: "The checkout must carry a userId for the webhook to fulfil it.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // customData is the ONLY link between a Paddle checkout and our user: the
+    // webhook arrives server-to-server with no session, and reads userId from
+    // here to decide who gets the credits. Omit it and the event is recorded as
+    // `ignored` — the payment succeeds and nothing is granted.
+    paddle.Checkout.open({
+      items: [{ priceId, quantity: 1 }],
+      customData: { userId: user.id },
+    });
   };
 
   return (

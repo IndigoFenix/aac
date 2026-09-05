@@ -55,9 +55,12 @@ export type ToneTag = "question" | "exclamation" | "request" | "past" | "future"
 
 /**
  * Connectors — a closed set of forward-binding joins between two GLYPHs
- * (`apple + or + banana`). Recognized positionally in `+` slots; they do NOT
- * consume a content slot and bind to the slot that FOLLOWS them (a connector's
- * `join` lives on the next ParsedSlot). See planning-docs/glyph-symbol-vocabulary.md.
+ * (`apple + or + banana`). Recognized positionally in `+` slots; when a slot
+ * PRECEDES them they do NOT consume a content slot and bind to the slot that
+ * FOLLOWS them (a connector's `join` lives on the next ParsedSlot). In
+ * POSITION 0 there is nothing to bind to, so the connector parses as an
+ * ordinary content slot wearing its own art — that is what puts a face on the
+ * lone `and` / `because` tile. See planning-docs/glyph-symbol-vocabulary.md.
  */
 export type Connector = "and" | "or" | "but" | "if" | "because";
 export const CONNECTORS: ReadonlySet<string> = new Set<Connector>(["and", "or", "but", "if", "because"]);
@@ -124,7 +127,9 @@ export interface ParsedSlot {
    * Forward-binding join (logical connector OR spatial relation) joining this
    * slot to the PREVIOUS one (`apple + because + you_go` → the `you_go` slot
    * carries `join: "because"`; `go + to + school` → `school` carries `to`).
-   * Only set on slots after the first; a leading/trailing join is dropped.
+   * Only set on slots after the first. A connector in POSITION 0 has nothing to
+   * bind to and becomes an ordinary content slot instead (see the LEADING
+   * CONNECTOR rule in `parseGlyph`); a TRAILING connector is still dropped.
    */
   join?: Join;
 }
@@ -176,8 +181,26 @@ export function parseGlyph(input: string): ParsedGlyph {
 
   // Parse slots. A `+`-token that is a connector keyword (and/or/but/if/
   // because) does NOT become a content slot — it binds forward to the next
-  // slot as a `join`. A leading connector (no preceding slot) or a trailing
-  // one (no following slot) is dropped.
+  // slot as a `join`. A trailing connector (no following slot to bind) is
+  // dropped.
+  //
+  // LEADING CONNECTOR (user decision, 2026-09-04): a connector with NO SLOT
+  // BEFORE IT falls through to the ordinary slot path and wears its own
+  // registry art. It is the same failure the ARROW-NOTATION SWITCH above fixed
+  // for spatial words: a join is consumed rather than drawn, so the glyph
+  // string `"because"` — exactly what an engine word hands the tile renderer —
+  // parsed to ZERO slots and the `and`/`because` tiles rendered BLANK in both
+  // the sentence builder and the clinician "Edit visual" dialog.
+  //
+  // Only position 0 changes. A connector that FOLLOWS a slot still binds
+  // forward (`slot.join`), so `serializeGlyph` re-emits every existing sentence
+  // byte-identically and the syntax the engine and the AI write is untouched.
+  // The position-0 slot round-trips as a plain slot: `"because"` → 1 slot →
+  // `"because"`, and `"because+tired"` → slot `because` + slot `tired` with NO
+  // join (there was nothing to bind to) → `"because+tired"`. Re-reading that
+  // second form as a join on `tired` was considered and rejected: it would make
+  // serialization lossy (two distinct parses collapsing onto one string) for no
+  // gain — the user's need is the TILE FACE, which position 0 alone delivers.
   const tokens = trimmed.split("+").map((s) => s.trim()).filter(Boolean);
   const slots: ParsedSlot[] = [];
   let pendingJoin: Join | undefined;
@@ -187,8 +210,8 @@ export function parseGlyph(input: string): ParsedGlyph {
     const tok = hashIdx >= 0 ? rawTok.slice(0, hashIdx).trim() : rawTok;
     if (hashIdx >= 0) collectTags(rawTok.slice(hashIdx + 1));
     if (!tok) continue;
-    if (JOINS.has(tok.toLowerCase())) {
-      if (slots.length > 0) pendingJoin = tok.toLowerCase() as Join;
+    if (JOINS.has(tok.toLowerCase()) && slots.length > 0) {
+      pendingJoin = tok.toLowerCase() as Join;
       continue;
     }
     const slot = parseSlot(tok);

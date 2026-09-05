@@ -1084,6 +1084,54 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
       { name: "berry bush", skin: { baseColor: "#5c4630", accentColor: "#41321f" } },
     ),
   },
+  // ── 🌿 Wild food sources (2026-09-04) — the forage plants the wilderness
+  // scatter stands so a settler can eat off the land. `bush` (above) and
+  // `mushroom` were already drawn; these two are the bodies that were missing.
+  {
+    id: "hazel",
+    title: "Hazel (nut tree)",
+    blueprint: plant(
+      {
+        seed: 33,
+        // A small multi-stemmed understorey tree: branches from low down (the
+        // bush habit) on a real trunk (the apple habit), ~3.8 m.
+        stem: { lengthFrac: 45, girth: 0.038, segments: 5, taper: 0.6, lean: 0.05, waviness: 0.35, flatten: 0, lobes: 0, curl: 0, twist: 0, gravitropism: 0.3, hardness: 0.55, rootFlare: 1.4 },
+        branching: { levels: 3, branchStart: 0.15, nodes: 3, whorl: 3, phyllotaxis: 2.4, branchAngle: 1, lengthRatio: 0.6, radiusRatio: 0.55, jitter: 0.55 },
+        foliage: { leafDensity: 2.8, leafSizeFrac: 1.25, leafAspect: 0.75, leafDroop: 0.1, leafColor: "#3d6b2c" },
+        // Small brown nuts clustered along the twigs, not dangling like fruit.
+        fruit: { sizeM: 0.035, aspect: 0.9, bulge: 0.5, neck: 0.3, stemFrac: 0.2, color: "#8a6a3a" },
+        fruitDensity: 0.55,
+        fruitPlacement: "along",
+      },
+      { name: "hazel", skin: { baseColor: "#6f5a3c", accentColor: "#4a3b26" } },
+    ),
+  },
+  {
+    id: "wild_onion",
+    title: "Wild onion",
+    blueprint: plant(
+      {
+        seed: 7,
+        // The grass tuft's flattened blades on a short stem (~0.42 m), topped
+        // with the pale globe umbel that is what you actually SEE of an allium
+        // in open country.
+        stem: { lengthFrac: 5, girth: 0.07, segments: 3, taper: 0.85, lean: 0.05, waviness: 0.1, flatten: 0.4, lobes: 0, curl: 0, twist: 0, gravitropism: 0.15, hardness: 0.1, rootFlare: 1.2 },
+        branching: { levels: 1, branchStart: 0, nodes: 3, whorl: 3, phyllotaxis: 2.4, branchAngle: 0.5, lengthRatio: 0.85, radiusRatio: 0.7, jitter: 0.5 },
+        foliage: { leafDensity: 0 },
+        flowers: { flowerDensity: 0.6, petalCount: 6, flowerSizeFrac: 0.5, flowerColor: "#d8c8ea" },
+        // ⚖️ IT MUST BEAR VISIBLE FRUIT, and that is a LAW, not decoration
+        // (`world-engine-creatures.test.ts`: every food plant's blueprint emits
+        // fruit-body instances). A flower alone would have made this the one
+        // food plant in the world with nothing on it to pick — which is also
+        // just true of an allium: the pale bulblets in the umbel ARE what you
+        // see and take.
+        fruit: { sizeM: 0.012, aspect: 1, bulge: 0.5, neck: 0.15, tipTaper: 0.2, stemFrac: 0, color: "#e6dcc0" },
+        fruitDensity: 0.8,
+        fruitPlacement: "terminal",
+      },
+      { name: "wild onion", skin: { baseColor: "#6f9a4a", accentColor: "#4f7a34" } },
+    ),
+  },
   // ── Orchard plants — shoot growths whose terminal twigs BEAR fruit
   // (fruitDensity > 0), so towns can plant orchards that visibly carry the
   // fruit kinds the market items above/below use. Visual plausibility at
@@ -1243,6 +1291,40 @@ export const CREATURE_EXAMPLES: CreatureExample[] = [
     blueprint: plant(
       { type: "root", seed: 8, fruit: { sizeM: 0.09, aspect: 1.15, bulge: 0.35, neck: 0, tipTaper: 0.85, stemFrac: 0, calyxLeaves: 5, crownSize: 1.1, color: "#7b1f3a" } },
       { name: "beet", skin: { baseColor: "#3f7a34" } },
+    ),
+  },
+  // ── 🌿 The wild larder's ITEM bodies (2026-09-04) — what comes OFF the
+  // forage plants above, in the hand, in a basket, on a market stall.
+  {
+    id: "berry",
+    title: "Berry",
+    blueprint: plant(
+      // Small, round and dark — read against the grape (0.025 m, aspect 1.2):
+      // a shade smaller and rounder still, so the two never look like the same
+      // item at basket scale.
+      { type: "fruit", seed: 22, fruit: { sizeM: 0.018, aspect: 1.05, bulge: 0.52, neck: 0.1, tipTaper: 0.08, stemFrac: 0, color: "#3d3a7a" } },
+      { name: "berry", skin: { baseColor: "#3f7a34" } },
+    ),
+  },
+  {
+    id: "nut",
+    title: "Nut",
+    blueprint: plant(
+      // A hazelnut in the shell: nearly spherical, a blunt point at the tip and
+      // a ragged husk collar at the base (the calyx crown stands in for it).
+      { type: "fruit", seed: 34, fruit: { sizeM: 0.022, aspect: 1.1, bulge: 0.55, neck: 0.2, tipTaper: 0.55, stemFrac: 0, calyxLeaves: 4, crownSize: 0.7, color: "#8a6a3a" } },
+      { name: "nut", skin: { baseColor: "#5f7a2e" } },
+    ),
+  },
+  {
+    id: "onion",
+    title: "Onion (bulb)",
+    blueprint: plant(
+      // A ROOT, like the carrot and the beet — the edible part grows DOWN and
+      // the leaves stand at the ground. Squat and shouldered, tapering to the
+      // root point, with the blade tuft as its calyx crown.
+      { type: "root", seed: 8, fruit: { sizeM: 0.055, aspect: 1.05, bulge: 0.42, neck: 0.15, tipTaper: 0.8, stemFrac: 0, calyxLeaves: 5, crownSize: 1.2, color: "#c9a86b" } },
+      { name: "onion", skin: { baseColor: "#6f9a4a" } },
     ),
   },
 ];

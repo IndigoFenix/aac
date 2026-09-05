@@ -1,4 +1,4 @@
-// Client-side unit tests (client-aac + client).
+// Client-side unit tests (client-aac + client-shared).
 //
 // Separate from jest.config.js on purpose: the server config carries a
 // globalSetup that provisions a test database and a setupFilesAfterEach that
@@ -29,6 +29,10 @@ export default {
   moduleNameMapper: {
     '^@shared/(.*)\\.js$': '<rootDir>/shared/$1',
     '^@shared/(.*)$': '<rootDir>/shared/$1',
+    // The two-client bundle (board renderer + sentence-builder chrome). Listed
+    // before '@/' so the longer prefix wins however the regexes are ordered.
+    '^@client-shared/(.*)\\.js$': '<rootDir>/client-shared/src/$1',
+    '^@client-shared/(.*)$': '<rootDir>/client-shared/src/$1',
     '^@/(.*)$': '<rootDir>/client-aac/src/$1',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
@@ -55,6 +59,7 @@ export default {
           types: ['node', 'jest'],
           paths: {
             '@shared/*': ['./shared/*'],
+            '@client-shared/*': ['./client-shared/src/*'],
             '@/*': ['./client-aac/src/*'],
           },
         },
@@ -64,11 +69,13 @@ export default {
   testMatch: [
     '<rootDir>/client-aac/src/**/*.test.ts',
     '<rootDir>/client-aac/src/**/*.test.tsx',
+    '<rootDir>/client-shared/src/**/*.test.ts',
+    '<rootDir>/client-shared/src/**/*.test.tsx',
   ],
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   rootDir: '.',
-  roots: ['<rootDir>/client-aac'],
+  roots: ['<rootDir>/client-aac', '<rootDir>/client-shared'],
   testTimeout: 15000,
   verbose: true,
 };

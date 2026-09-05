@@ -7,43 +7,19 @@
 // sentence means, so they have to be testable on their own (the AAC's client
 // test path is a node environment — a component cannot run there, a rule can).
 //
-// Three rules, all of them ports of behavior the IN-GAME board already had:
-//   - `autoComposeSlot` — a tapped descriptor lands ON the head it describes.
+// What is left here is the CLIENT-BOUND half — the two rules that need this
+// client's world-engine build or its localStorage:
 //   - `engineNounKind`  — the wire's noun kind as the PARSER names it.
 //   - the recency store — where this student's learned layer is kept.
+//
+// The press-ROUTING rules (`slotKeyForSelection`, `computeTargetSlot`,
+// `autoComposeSlot`) moved to `@shared/glyph-builder-ops`: they decide what a
+// press MEANS, the clinician's "Edit visual" builder must decide it the same
+// way, and while they lived here the two builders drifted (a descriptor pushed
+// beside its head instead of onto it, a room word stored as a bare emoji).
 
-import { getVocabularyItem } from "@shared/glyph-registry";
-import type { ParsedGlyph } from "@shared/glyph-compositor";
 import type { BuilderRecency } from "@shared/games-bridge";
 import { emptyRecency } from "@shared/world-engine/interaction/intent/surface-next";
-
-/**
- * THE DESCRIPTOR AUTO-COMPOSE RULE (the in-game SpeakMenu's `tapWord`, ported
- * verbatim — games/dollhouse/src/board-island.tsx:388, whose own comment calls
- * this "the AAC-board rule").
- *
- * A tapped descriptor lands ON the head it modifies rather than beside it:
- * "banana" then "hot" is `banana.hot` (a hot banana — a request), never
- * `banana + hot` (banana IS hot — a statement). The two boards were building
- * different sentences out of the same two presses, and the parser reads the
- * difference, so the student's meaning depended on which board they used.
- *
- * Registry-gated exactly as the SpeakMenu gates it: the tapped word must be a
- * modifier whose `appliesTo` includes the LAST slot's part of speech, and must
- * not already sit on that slot.
- *
- * @returns the slot index to compose onto, or null to push a new slot.
- */
-export function autoComposeSlot(glyph: ParsedGlyph, tappedKey: string): number | null {
-  const idx = glyph.slots.length - 1;
-  if (idx < 0) return null;
-  const slot = glyph.slots[idx];
-  const head = getVocabularyItem(slot.key);
-  const tapped = getVocabularyItem(tappedKey);
-  if (!head || !tapped?.modifier?.appliesTo.includes(head.pos)) return null;
-  if (slot.modifiers.includes(tappedKey)) return null;
-  return idx;
-}
 
 /** The wire's noun kind as the PARSER names it. The bridge says "person" for a
  *  named human; the parser's vocabulary has only creature/item/place/unknown,

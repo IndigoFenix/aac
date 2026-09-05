@@ -69,7 +69,10 @@ import { asIntent, goalIntentLine, type IntentLineSyms } from "@shared/world-eng
 import { compileGoal } from "@shared/world-engine/interaction/behavior/goal-selection.js";
 import { translateGlyph } from "@shared/world-engine/interaction/lang/index.js";
 import { cutFirstLine, sourceKindWord } from "@shared/world-engine/interaction/dialogue/host-lines.js";
-import { wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness.js";
+import {
+  wildFeatureContainerId,
+  type WildMixEntry,
+} from "@shared/world-engine/interaction/quest/wilderness.js";
 import { bootTextQuest, type TextQuestRun } from "@shared/world-engine/headless/text-quest.js";
 
 // ── ① ONE ACT ──────────────────────────────────────────────────────────────
@@ -347,18 +350,43 @@ describe("what the creature says when the timber is still in the tree", () => {
 
 // ── ④ THE ACT ITSELF, ON THE REAL HOST ─────────────────────────────────────
 //
-// The shipped frontier world stands 13 wilderness features on open ground:
-// oaks and rocks and banana plants. It is the smallest world where the whole
-// chain — board word → binder → compiler → order dispatch → wilderness — is
-// real.
+// The shipped frontier document over an AUTHORED wilderness: the whole chain —
+// board word → binder → compiler → order dispatch → wilderness — is real, and
+// the ground it runs over is this fixture's own.
+//
+// 🌲 WHY THE MIX IS AUTHORED HERE (2026-09-04). These cases need exactly four
+// things standing — a tree to fell, ONE pure-harvest plant (the removal
+// outcome's twin), an outcrop to be refused, and a product animal for the
+// endpoint sweep — and every one of them used to be inherited from
+// `homesteadWildMix`, i.e. from a CONTENT lane. The day the wild larder landed
+// (`forageLines` — berry bush, hazel, wild onion, at six a species) that
+// inheritance stood 19 pure-harvest plants where there had been two, and the
+// clearing below silently changed meaning. The counts are the fixture's
+// premise, so the fixture states them; the content lane may stand whatever it
+// likes on the frontier without moving this file.
+//
+// ⚠️ ONE LINE PER SPECIES (`buildWilderness` ids are `wild:<species>_<i>`, so
+// two lines naming one species would mint duplicate container ids), and a count
+// is an ASK, not a guarantee: the keep-clear disc drops whatever lands in the
+// settlement footprint (6 oaks asked, 5 stand). Each line therefore carries a
+// little headroom, and the PRECONDITION case below reads back what really did.
 
 const doc = JSON.parse(readFileSync(join(process.cwd(), "scripts", "worlds", "frontier.spec.json"), "utf8"));
+
+/** The ground these cases need, and nothing else. */
+const CUT_MIX: WildMixEntry[] = [
+  { species: "oak", count: 6 }, // the felling outcome — several, so the acceptance can spend one
+  { species: "bush", count: 1 }, // the REMOVAL outcome: a pure-harvest plant, no kill product
+  { species: "rock", count: 4 }, // the one-ending refusal
+  { species: "sheep", count: 2 }, // …and the walking half, for the endpoint sweep
+  { species: "cow", count: 1 },
+];
 
 describe("frontier — a child presses `cut`", () => {
   let run: TextQuestRun;
 
   beforeAll(() => {
-    run = bootTextQuest({ world: doc, seed: 11, dt: 0.5 });
+    run = bootTextQuest({ world: doc, seed: 11, dt: 0.5, wildMix: CUT_MIX });
     run.advance(20); // let the streamer stand the residents up
   }, 600_000);
 
@@ -368,6 +396,20 @@ describe("frontier — a child presses `cut`", () => {
     run.session.wilderness!.features.filter((f) => !f.downed && sourceIsCuttable(f.species, f.sizeClass));
   /** The cuttable plants that have NOTHING to become — the removal outcome. */
   const bushes = () => standing().filter((f) => !sourceIsConsumable(naturalSourceOf(f.species)!));
+  /**
+   * 🌲 THE GENERIC WORD AND THE SHAPE IT NAMES (lane W's finding, closed at
+   * task #51 item 1d(e)).
+   *
+   * `cut + tree` takes `spokenFeatureId`'s GENERIC arm — `tree` names no
+   * species row, so it matches every PLANT — and it used to pick the nearest
+   * standing cuttable one, which is a berry bush as often as it is an oak.
+   * This fixture had to clear every bush by SPECIES first to make the oaks the
+   * only candidates, and that loop is gone: a generic `tree` now ranks
+   * TREE-SHAPED sources (one with a body product to give) ahead of the
+   * nearest-plant tiebreak, so the bush below is a CONTROL rather than an
+   * obstacle. `plants` stays generic on purpose — it is the board's KIND chip
+   * and means the whole category.
+   */
   const oaks = () => run.session.wilderness!.features.filter((f) => f.species === "oak");
   const epOf = (f: { species: string; id: string }) => `flora:${f.species}:${f.id}`;
   const propCount = () => Object.keys(run.state.objects).filter((k) => k.startsWith("small:")).length;
@@ -423,15 +465,21 @@ describe("frontier — a child presses `cut`", () => {
     }
   }, 600_000);
 
-  it("🌳 ACCEPTANCE — `cut + tree` on an OAK fells it, and the wood is THERE", () => {
-    // 🚨 THE CASE THE OLD DESIGN REFUSED OUT LOUD. Nothing but the nearest
-    // standing plant decides which feature this reaches, so the oaks are made
-    // the only candidates first.
-    while (bushes().length) run.speak("cut + tree");
-    // WHICH oak the word reaches is the resolver's business (nearest standing),
-    // so this pins the FACT — one of them came down — rather than guessing an
-    // index. Wood is summed over every feature, which is also the conservation
-    // ledger this test cares about.
+  it("🌳 ACCEPTANCE — `cut + tree` DESIGNATES an oak, and a body fells it", () => {
+    // ⚖️ RE-SHAPED, NOT WEAKENED, for task #51 item 1d (user ruling 2026-09-04:
+    // *"the 'cut command' for trees isn't supposed to destroy the tree when the
+    // button is pressed. It should issue a COMMAND to cut that tree. Or,
+    // alternatively, DESIGNATE the tree to be cut when available as a task."*).
+    // This world is the frontier — a town WITH a wilderness scatter — so
+    // `pullLaborOn` is TRUE and the sentence MARKS the tree. Every outcome the
+    // old acceptance pinned is still pinned; it now happens at the END of a
+    // body's walk and chop instead of in the frame the word was said.
+    //
+    // 🌲 …AND THE BUSHES NO LONGER HAVE TO BE CLEARED FIRST (1d(e)): a generic
+    // `tree` prefers a TREE-SHAPED source — one with a body product to give —
+    // before the nearest-plant tiebreak, which is the lane-W finding closed.
+    // The bush standing in this fixture is the control: it is still there at
+    // the end.
     const woodEverywhere = () =>
       run.session.wilderness!.features.reduce(
         (n, f) => n + (run.session.containerRecords.get(epOf(f))?.stock?.["wood"] ?? 0),
@@ -439,36 +487,58 @@ describe("frontier — a child presses `cut`", () => {
       );
     const downedOaks = () => oaks().filter((f) => f.downed).length;
     expect(oaks().some((f) => !f.downed)).toBe(true);
+    expect(bushes().length).toBeGreaterThan(0); // the 1d(e) control stands
     const wood = woodEverywhere();
     expect(wood).toBeGreaterThan(0);
     const fallen = downedOaks();
     const audit = run.host.stockAudit()["wood"] ?? 0;
     const props = propCount();
+    const book = run.session.town!.deltas;
 
     run.speak("cut + tree");
 
-    // ① ONE MORE OAK IS DOWN — and it is still there, as a heap of its own
-    //    timber. The user's report was that a tree never visibly ends; now it
-    //    does, at an ACT, rather than thinning away over many hauls.
+    // ① NOTHING FELL WHEN THE WORD WAS SAID. The tree is still standing, which
+    //    is the whole of the ruling.
+    expect(downedOaks()).toBe(fallen);
+    // ② …AND THE WORK EXISTS: either a MARK any idle body may take, or a
+    //    COMMAND on a body that was attending (both are the ruling; which one
+    //    depends on whether anybody was near enough to be asked).
+    const marked = book.fellOrders();
+    const commanded = [...run.session.pursuits.values()].filter((p) => p.bill?.link === "fell");
+    expect(marked.length + commanded.length).toBeGreaterThan(0);
+    // 🌲 1d(e) — AND IT IS AN OAK, not the berry bush standing nearer.
+    const targetId = marked[0]?.featureId ?? commanded[0]?.bill?.objId;
+    expect(targetId).toContain("oak");
+
+    // ③ A BODY WALKS OUT AND FELLS IT. `CHOP_DWELL_S` plus the walk, so this
+    //    drives real time — the arc IS the assertion.
+    for (let i = 0; i < 40 && downedOaks() === fallen; i++) run.advanceS(10);
     expect(downedOaks()).toBe(fallen + 1);
-    // ② ⚖️ CONSERVATION — THE STRONGEST FORM: nothing moved at all. Same
+    // ④ ⚖️ CONSERVATION — THE STRONGEST FORM: nothing moved at all. Same
     //    containers, same keys, same counts; no prop minted, no unit invented,
     //    and every reservation and in-flight haul aimed at that endpoint
-    //    survived the felling.
+    //    survived the felling. (Measured across the whole walk, which is a
+    //    wider window than the old single-frame check.)
     expect(woodEverywhere()).toBe(wood);
     expect(run.host.stockAudit()["wood"] ?? 0).toBe(audit);
     expect(propCount()).toBe(props);
-    // ③ AND THE WOOD IS REACHABLE NOW, which it was not one line ago.
+    // ⑤ AND THE WOOD IS REACHABLE NOW, which it was not before the chop.
     expect(glyphTakeableFrom(naturalSourceOf("oak")!, "wood", false)).toBe(false);
     expect(glyphTakeableFrom(naturalSourceOf("oak")!, "wood", true)).toBe(true);
-    // ④ …AND IT WAS SPOKEN. `ok` is the reserved confirmation of an accepted
-    //    order — never a silent success.
-    expect(said()).toContain("ok");
+    // ⑥ THE MARK RETIRES WITH THE THING — a felled tree is not still owed.
+    expect(book.fellOrders().some((r) => r.featureId === targetId)).toBe(false);
+    // ⑦ …AND IT WAS SPOKEN. `ok` is the reserved confirmation of an accepted
+    //    order (the designation), `cut.will` the taker's own announcement —
+    //    never a silent success, whichever branch ran.
+    expect(said().some((g) => g === "ok" || g?.startsWith("cut.will"))).toBe(true);
   }, 600_000);
 
   it("🌿 ACCEPTANCE — `cut` on a BUSH takes it out and CONSERVES what it bore", () => {
-    // The other outcome of the same act. A fresh bush, because the oak test
-    // above deliberately cleared them.
+    // The other outcome of the same act, driven the same way as the oak above
+    // (task #51 item 1d): the word MARKS the bush and a body comes and takes it
+    // out. `plants` is the board's KIND chip and stays generic, so the nearest
+    // standing plant is what it reaches — which is this probe, beside the
+    // spirit.
     const c = run.session.town!.stage.center;
     const bush = {
       id: "probe:cut_bush",
@@ -485,16 +555,26 @@ describe("frontier — a child presses `cut`", () => {
 
     run.speak("cut + plants");
 
-    // ⚖️ THE BUSH IS GONE…
+    // ① IT IS STILL STANDING at the word — the mark is not the deed.
+    expect(run.session.wilderness!.features.some((f) => f.id === bush.id)).toBe(true);
+    // ② …AND A BODY COMES AND TAKES IT OUT.
+    for (let i = 0; i < 40 && run.session.wilderness!.features.some((f) => f.id === bush.id); i++) {
+      run.advanceS(10);
+    }
     expect(run.session.wilderness!.features.some((f) => f.id === bush.id)).toBe(false);
-    // …AND EVERY UNIT IT BORE IS STILL A THING IN THE WORLD. One prop per unit:
-    // into the acting body's hands where there was room, onto the ground where
-    // it grew otherwise. Nothing was destroyed and no "brush" was invented to
-    // balance the books. (The audit counts what is SCOPED; a berry dropped on
-    // open ground counts for nobody, which is the recorded census residual —
-    // so the prop count is the honest conservation check here.)
-    expect(propCount() - props).toBe(bearing);
-    expect(run.host.stockAudit()["banana"] ?? 0).toBeLessThanOrEqual(bananas + bearing);
+    // ③ …AND EVERY UNIT IT BORE IS STILL A THING IN THE WORLD. One unit per
+    //    prop on the ground where it grew, or into the CHOPPER's own hands —
+    //    what a take yields goes to the taker, and a bagless body takes one
+    //    whole thing. Nothing was destroyed and no "brush" was invented to
+    //    balance the books. (The audit counts what is SCOPED; a banana dropped
+    //    on open ground counts for nobody — the recorded census residual — so
+    //    the two sinks are counted together and the bound is what a pair of
+    //    hands can hold.)
+    const dropped = propCount() - props;
+    const carried = (run.host.stockAudit()["banana"] ?? 0) - bananas;
+    expect(dropped).toBeGreaterThan(0);
+    expect(dropped + Math.max(0, carried)).toBeGreaterThanOrEqual(bearing);
+    expect(dropped).toBeLessThanOrEqual(bearing);
   }, 600_000);
 
   it("🪨 an OUTCROP is refused OUT LOUD — it ends by being worn away, not cut", () => {

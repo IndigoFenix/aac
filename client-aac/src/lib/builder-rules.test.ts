@@ -1,21 +1,18 @@
-// The sentence builder's pure press rules (builder-rules.ts): what a press
-// MEANS, and where the student's learned layer is kept.
+// The sentence builder's CLIENT-BOUND press rules (builder-rules.ts): the noun
+// kind the parser reads off the wire, and where the student's learned layer is
+// kept.
 //
-// These are the client half of the two seams the AAC board carried for a long
-// time — the grid press that built a different sentence than the in-game menu
-// did, and the learned layer the platform path never had. Both change meaning,
-// so both get pinned here rather than only being typechecked.
+// The press-ROUTING half (`autoComposeSlot` & co.) is now shared with the
+// clinician builder and pinned in server/tests/glyph-builder-ops.test.ts.
 
 import { describe, it, expect, beforeEach } from "@jest/globals";
 import {
-  autoComposeSlot,
   engineNounKind,
   loadRecency,
   recencyStorageKey,
   saveRecency,
   RECENCY_STORAGE_PREFIX,
 } from "./builder-rules";
-import { parseGlyph, serializeGlyph, addModifier, EMPTY_GLYPH } from "@shared/glyph-compositor";
 import { emptyRecency, noteUtterance } from "@shared/world-engine/interaction/intent/surface-next";
 import { parseSentence } from "@shared/world-engine/interaction/intent/parse-intent";
 import type { BuilderRecency } from "@shared/games-bridge";
@@ -35,75 +32,6 @@ function installStore(seed: Record<string, string> = {}): Map<string, string> {
   } as Storage;
   return map;
 }
-
-describe("autoComposeSlot — the descriptor rule (the in-game SpeakMenu's tapWord)", () => {
-  // The seam, stated as the two sentences it produces: `banana.hot` is a
-  // request for a hot banana; `banana + hot` is the claim that the banana is
-  // hot. Same two presses; the parser reads them differently.
-  it("composes a descriptor onto the head it describes", () => {
-    const glyph = parseGlyph("apple");
-    const idx = autoComposeSlot(glyph, "hot");
-    expect(idx).toBe(0);
-    expect(serializeGlyph(addModifier(glyph, idx!, "hot"))).toBe("apple.hot");
-  });
-
-  it("composes onto the LAST head only — an earlier word is not re-described", () => {
-    const glyph = parseGlyph("apple+ball");
-    expect(autoComposeSlot(glyph, "big")).toBe(1);
-  });
-
-  it("pushes (returns null) when there is no head to describe", () => {
-    expect(autoComposeSlot(EMPTY_GLYPH, "hot")).toBeNull();
-    expect(autoComposeSlot(parseGlyph(""), "hot")).toBeNull();
-  });
-
-  it("pushes when the tapped word is NOT a modifier — a noun never composes", () => {
-    expect(autoComposeSlot(parseGlyph("apple"), "ball")).toBeNull();
-    expect(autoComposeSlot(parseGlyph("apple"), "want")).toBeNull();
-    // A word neither registry knows (an engine-only key, a generated symbol)
-    // pushes too — no registry facet, no rule.
-    expect(autoComposeSlot(parseGlyph("apple"), "zzz_not_a_word")).toBeNull();
-  });
-
-  it("pushes when the modifier does not APPLY to that head's part of speech", () => {
-    // The gate is the registry's own `appliesTo`, not a guess: a modifier that
-    // has nothing to say about a head must not silently attach to it.
-    const glyph = parseGlyph("apple");
-    const idx = autoComposeSlot(glyph, "hot");
-    expect(idx).not.toBeNull(); // control: `hot` does apply to a noun
-    // ...and a head the registry doesn't know at all offers no pos to match.
-    expect(autoComposeSlot(parseGlyph("zzz_unknown_head"), "hot")).toBeNull();
-  });
-
-  it("never applies the SAME modifier twice — a second tap pushes instead", () => {
-    const once = addModifier(parseGlyph("apple"), 0, "hot");
-    expect(autoComposeSlot(once, "hot")).toBeNull();
-    // A DIFFERENT descriptor still composes onto the same head.
-    expect(autoComposeSlot(once, "big")).toBe(0);
-  });
-
-  it("the composed sentence is what the ENGINE reads as a modified noun", () => {
-    // END TO END, and the reason the rule exists: the two forms are two
-    // different meanings, and only the composed one asks for a HOT apple.
-    const composed = serializeGlyph(addModifier(parseGlyph("i_me+want+apple"), 2, "hot"));
-    expect(composed).toBe("i_me+want+apple.hot");
-
-    const together = parseSentence(composed);
-    const objectOf = (f: ReturnType<typeof parseSentence>): string[] =>
-      f.object && f.object.kind === "entity" ? [...f.object.modifiers] : [];
-    expect(together.kind).toBe("request");
-    expect(together.object).toMatchObject({ kind: "entity", symbol: "apple" });
-    // "hot" describes the APPLE — it rides on the object ref.
-    expect(objectOf(together)).toContain("hot");
-    expect(together.modifiers).not.toContain("hot");
-
-    // Pushed as its own word, "hot" becomes a PREDICATE attribute of the
-    // utterance instead: the apple is not asked for hot, it is called hot.
-    const apart = parseSentence("i_me+want+apple+hot");
-    expect(objectOf(apart)).not.toContain("hot");
-    expect(apart.modifiers).toContain("hot");
-  });
-});
 
 describe("engineNounKind — the wire's kind as the parser names it", () => {
   it("a person is a CREATURE to the parser", () => {

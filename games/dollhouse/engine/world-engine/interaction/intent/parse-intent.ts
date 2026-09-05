@@ -435,6 +435,38 @@ export const LEXICON: Record<string, Lex> = {
   hungry: { cat: "attribute" }, thirsty: { cat: "attribute" }, tired: { cat: "attribute" },
   bored: { cat: "attribute" },
   lonely: { cat: "attribute" }, sick: { cat: "attribute" }, warm: { cat: "attribute" }, full: { cat: "attribute" },
+  // THE REST OF THE FEELINGS (user decision 2026-09-04). The glyph registry has
+  // drawn all seven for as long as it has drawn happy and sad — they are on the
+  // AAC board's own feelings list — and the parser could not read one of them,
+  // so a child who pressed 😠 composed a fringe NOUN ("an angry") instead of a
+  // predicate, and the Descriptions tab (which lists THIS table) never offered
+  // them at all. `hurt` rides the BODILY axis rather than the mood one: it is a
+  // report about the body, in the same band as hungry and sick.
+  angry: { cat: "attribute" }, scared: { cat: "attribute" }, excited: { cat: "attribute" },
+  hurt: { cat: "attribute" }, surprised: { cat: "attribute" }, proud: { cat: "attribute" },
+  calm: { cat: "attribute" },
+  // THE COLOURS (user decision 2026-09-04) — the glyph registry's own eleven
+  // `color_*` keys, exactly (`colorModifiersFor`).
+  //
+  // They have been FACETS all along — `shirt.color_red`, the recolour goal, the
+  // culture palette — with lexemes in all four rulesets, but they were never
+  // lexicon WORDS, so a standalone "red" was an open-class noun and the
+  // Descriptions tab could not list them. As attributes a bare colour is what it
+  // has always meant in speech: a predicate ("the ball is red"), or the wanted
+  // quality ("something red").
+  //
+  // ⚖️ THE FACET PATH IS UNTOUCHED. A modifier is read off the token's `.mods`
+  // (`parseToken` splits on "."), never through this table, so `shirt.color_red`
+  // parses exactly as it did before — this row only gives the colour a life of
+  // its own as a whole token. Colours are deliberately NOT on the item modifier
+  // rail either (see object-properties `AXIS_WORDS.color`): the rail is capped,
+  // and a palette picker already colours a slot.
+  color_red: { cat: "attribute" }, color_orange: { cat: "attribute" },
+  color_yellow: { cat: "attribute" }, color_green: { cat: "attribute" },
+  color_blue: { cat: "attribute" }, color_purple: { cat: "attribute" },
+  color_pink: { cat: "attribute" }, color_brown: { cat: "attribute" },
+  color_black: { cat: "attribute" }, color_white: { cat: "attribute" },
+  color_gray: { cat: "attribute" },
 };
 
 // ---------------------------------------------------------------------------

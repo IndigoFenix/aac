@@ -268,6 +268,20 @@ const CATALOGUE: ReadonlyArray<{
     },
   },
   { id: "saguaro", kind: "plant" },
+  // 🌿 WILD FOOD SOURCES (2026-09-04) — the two forage plants that needed a body
+  // of their own (`bush` and `mushroom` above already had one, and already bear
+  // their products in the natural-sources catalogue).
+  //
+  // ⚠️ NO `words`, DELIBERATELY, and it is the same call `oak`, `saguaro` and
+  // the four orchard plants already made: a species row with lexemes becomes a
+  // BUILDER NOUN (builder-surface `walkDefaultNouns` 2b), i.e. a button in the
+  // [plants] tab. These are bodies the world stands, not words a child reaches
+  // for — the word a child says about them is the FOOD they bear (`nut`,
+  // `onion`), which lives in the glyph registry and in `ITEM_WORDS`. Authoring
+  // words here would add two buttons to a category tab that lists the whole
+  // category, which is what the no-synonyms law is about.
+  { id: "hazel", kind: "plant" },
+  { id: "wild_onion", kind: "plant" },
   // Orchard plants — shoot growths that BEAR the fruit kinds below.
   { id: "apple_tree", kind: "plant" },
   { id: "banana_plant", kind: "plant" },
@@ -301,6 +315,18 @@ const CATALOGUE: ReadonlyArray<{
     },
   },
   { id: "beet", kind: "fruit" },
+  // 🌿 THE WILD LARDER'S ITEM BODIES (2026-09-04). ⚖️ EVERY FOOD GLYPH IS A
+  // `fruit` SPECIES AND ITS SOURCE IS A `plant` ONE — the law
+  // `world-engine-creatures.test.ts` pins, and the reason these three rows are
+  // not optional: without them a picked berry lying on the ground, in a basket
+  // or on a market stall has no body to draw. The SOURCE bodies (`bush`,
+  // `hazel`, `wild_onion`) are the plants; these are what comes off them.
+  // NO `words` — their lexemes live once, in `content/words.ts` ITEM_WORDS
+  // (the natural-products catalog), and a second definition here would fail
+  // `duplicateSpecWordHeads()`.
+  { id: "berry", kind: "fruit" },
+  { id: "nut", kind: "fruit" },
+  { id: "onion", kind: "fruit" },
   // ── AAC ANIMAL VOCABULARY (2026-08-27) ────────────────────────────────────
   //
   // Animals a child names long before the world can build one. Each is a real

@@ -242,7 +242,20 @@ export type DescriptorAxis =
   | "integrity" // broken
   | "fill" // full / empty
   | "quantity" // more / many / counts
-  | "quality"; // good / bad
+  | "quality" // good / bad
+  /**
+   * COLOUR — the eleven `color_*` words (2026-09-04).
+   *
+   * ⚖️ DELIBERATELY BOUND TO NOTHING. It is absent from `AXES_FOR_KIND` and
+   * `AXES_FOR_PROPERTY` on purpose, so `descriptorAxesFor` never returns it and
+   * no colour ever reaches the item MODIFIER RAIL: the rail is capped at eight
+   * words, eleven colours would be the whole of it, and the board already has a
+   * palette picker for colouring a slot. The axis exists so that the colour
+   * vocabulary has ONE owner — the [colors] chip on the Descriptions tab reads
+   * it, `axisOf` answers "red and blue are the same question", and the builder
+   * lexicon validator can see all eleven words.
+   */
+  | "color";
 
 /** The descriptor vocabulary of each axis. A superset across the two
  *  descriptor stores — the parser LEXICON's attribute/quantity words AND the
@@ -250,8 +263,13 @@ export type DescriptorAxis =
  *  whichever vocabulary they draw from. */
 export const AXIS_WORDS: Readonly<Record<DescriptorAxis, readonly string[]>> = {
   possession: ["my", "your"],
-  bodily: ["hungry", "thirsty", "tired", "sick", "full"],
-  mood: ["happy", "sad", "bored", "lonely"],
+  // `hurt` is a report about the BODY, not a mood — it belongs beside hungry and
+  // sick, and a creature that says "I am hurt" is saying where it needs help.
+  bodily: ["hungry", "thirsty", "tired", "sick", "full", "hurt"],
+  // The whole feelings vocabulary the AAC board draws (2026-09-04). The first
+  // four led the axis before the other six were parseable at all, and they keep
+  // the lead: the rail is capped, and "happy / sad" is what a rail is for.
+  mood: ["happy", "sad", "bored", "lonely", "angry", "scared", "excited", "surprised", "proud", "calm"],
   temperature: ["hot", "cold", "warm"],
   cleanliness: ["dirty", "clean"],
   size: ["big", "small", "long", "short", "tall", "wide", "thin"],
@@ -260,6 +278,12 @@ export const AXIS_WORDS: Readonly<Record<DescriptorAxis, readonly string[]>> = {
   fill: ["full", "empty", "some", "none"],
   quantity: ["more", "many", "one", "two", "three", "all", "less", "none"],
   quality: ["good", "bad"],
+  // The registry's own palette order (`colorModifiersFor`), so the [colors] chip
+  // and the slot picker present the same eleven in the same sequence.
+  color: [
+    "color_red", "color_orange", "color_yellow", "color_green", "color_blue",
+    "color_purple", "color_pink", "color_brown", "color_black", "color_white", "color_gray",
+  ],
 };
 
 /**

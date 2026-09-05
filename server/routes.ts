@@ -257,6 +257,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.path === "/api/smart-home/link/token") return next();
     if (req.path === "/api/smart-home/google/fulfillment") return next();
     if (req.path === "/api/smart-home/alexa/directives") return next();
+    // Paddle posts server-to-server with no Origin and no session cookie, so
+    // there is no cookie for a CSRF attack to ride on. Its own anti-forgery is
+    // the HMAC signature over the raw body, verified in paddleController before
+    // anything is read from it.
+    if (req.path === "/api/paddle/webhook") return next();
     return validateCSRF(req, res, next);
   });
 
@@ -1522,6 +1527,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.post("/api/paddle/test-price", requireAuth, (req, res) =>
     paddleController.createTestPrice(req, res)
+  );
+  // NO requireAuth: Paddle carries no session — the HMAC signature over the raw
+  // body is the authentication. The raw body it verifies against is preserved
+  // by applyPaddleWebhookRawBody() in server/index.ts / server/app.prod.ts,
+  // which must run BEFORE the global express.json().
+  app.post("/api/paddle/webhook", (req, res) =>
+    paddleController.handleWebhook(req, res)
   );
 
   // ============= CHAT ROUTES =============

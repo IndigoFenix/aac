@@ -25,7 +25,11 @@ const CENTRAL: Record<string, Lexeme> = {
   over: { w: "em cima de" },
   behind: { w: "atrás de" },
   in_front_of: { w: "em frente de" },
-  want: { w: "quero", v3: "quer", v3p: "querem", v1p: "queremos" },
+  // `inf` (2026-09-04): the [want] Action chip is labelled by this head, and a
+  // category name wants the CITATION form — "querer", not the 1sg "quero" ("I
+  // want"). No frame reads a MODAL's infinitive (the want-to frame takes the
+  // inner verb's), so this field is label-only and changes no sentence.
+  want: { w: "quero", v3: "quer", v3p: "querem", v1p: "queremos", inf: "querer" },
   give: { w: "dou", v3: "dá", v3p: "dão", v1p: "damos" },
   take: { w: "pego", v3: "pega", v3p: "pegam", v1p: "pegamos" },
   // `inf` matters: the intent periphrasis ("vou conseguir a madeira") reads it,
@@ -83,6 +87,9 @@ const CENTRAL: Record<string, Lexeme> = {
   color_brown: { w: "marrom", f: "marrom", mpl: "marrons", fpl: "marrons" },
   color_black: { w: "preto" },
   color_white: { w: "branco" },
+  // The eleventh colour (2026-09-04) — invariant in gender, regular vowel
+  // plural ("cinzas") straight out of `adjForm`.
+  color_gray: { w: "cinza", f: "cinza" },
   place: { w: "onde" },
   // Cardinal directions — the "perto/longe, ao norte" answers.
   north: { w: "norte" },
@@ -106,8 +113,12 @@ const CENTRAL: Record<string, Lexeme> = {
   teacher: { w: "professor", g: "m" },
   street: { w: "rua", g: "f" },
   animal: { w: "animal", g: "m", plw: "animais" },
-  plants: { w: "planta", g: "f" },
-  individuals: { w: "minha gente", g: "f" },
+  // `plw` because the [plants] chip wears the PLURAL beside [animals]
+  // (2026-09-04). Free to author: unlike `animal`/`want`, the head `plants` is
+  // absent from the pre-move snapshot entirely, so law 1 of
+  // lexicon-spec-words.test.ts has nothing pinned to contradict.
+  plants: { w: "planta", g: "f", plw: "plantas" },
+  individuals: { w: "contatos", g: "m", pl: true },
   creature: { w: "criatura", g: "f" },
   // Devices (§5) + their toggle states (agree with the device's gender).
   on: { w: "aceso", f: "acesa" },
@@ -318,6 +329,29 @@ const CENTRAL: Record<string, Lexeme> = {
   instrument: { w: "instrumento", g: "m" },
   material: { w: "material", g: "m", plw: "materiais" },
   structure: { w: "estrutura", g: "f" },
+
+  // ── THE FEELINGS THE PARSER GAINED (2026-09-04) ─────────────────────────
+  // Seven words the AAC board has drawn all along and no ruleset could say.
+  // All regular -o adjectives — `adjForm`'s -o→-a rule covers the feminine and
+  // the vowel plural, so no override earns its place.
+  angry: { w: "bravo" },
+  scared: { w: "assustado" },
+  excited: { w: "animado" },
+  hurt: { w: "machucado" },
+  surprised: { w: "surpreso" },
+  proud: { w: "orgulhoso" },
+  calm: { w: "calmo" },
+
+  // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
+  // Category NAMES, not words a sentence composes. ⚠️ `colors` is "cores" and
+  // is NOT the head `color`, which is the VERB ("coloro") — the same trap the
+  // `plants`/`plant` pair records.
+  colors: { w: "cores", g: "f", pl: true },
+  feelings: { w: "sentimentos", g: "m", pl: true },
+  size: { w: "tamanho", g: "m" },
+  condition: { w: "estado", g: "m" },
+  hands: { w: "mãos", g: "f", pl: true },
+  body: { w: "corpo", g: "m" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec

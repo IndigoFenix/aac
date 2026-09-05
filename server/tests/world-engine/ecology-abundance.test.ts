@@ -184,8 +184,21 @@ describe("② one density law — the two tree authorities cannot disagree", () 
     }
     // The shipped per-biome shape is untouched (the pins in
     // symbol-game-wilderness.test.ts read the same numbers).
-    expect(wildMixForBiome(1, 0).map((e) => e.count)).toEqual([10, 2, 6]);
-    expect(wildMixForBiome(3, 0).map((e) => e.count)).toEqual([3, 1, 5, 2, 1]);
+    //
+    // 🌿 MOVED BY THE WILD LARDER (2026-09-04): the forage lines sit between the
+    // sprinkle and the rock, so the SWITCH'S OWN content is named rather than
+    // counted positionally. Those numbers — and the sprinkle's — are unchanged;
+    // what moved is the length of the array they used to sit in. (This case is
+    // about the ECOLOGY arm, and no forage line reads `eco` at all: the whole
+    // "nothing reachable without an ecology moved" claim above is intact.)
+    const structural = (b: number): string[] =>
+      wildMixForBiome(b, 0)
+        .filter((e) => ["oak", "rock", "sheep", "cow"].includes(e.species))
+        .map((e) => `${e.species}:${e.count}`);
+    expect(structural(1)).toEqual(["oak:10", "rock:6"]);
+    expect(wildMixForBiome(1, 0)[1]!.count).toBe(2);
+    expect(structural(3)).toEqual(["oak:3", "rock:5", "sheep:2", "cow:1"]);
+    expect(wildMixForBiome(3, 0)[1]!.count).toBe(1);
   });
 });
 

@@ -1583,7 +1583,8 @@
    "w": "רוצה",
    "f": "רוצה",
    "vmpl": "רוצים",
-   "vfpl": "רוצות"
+   "vfpl": "רוצות",
+   "inf": "לרצות"
   },
   "wash": {
    "w": "רוחץ",
@@ -2546,7 +2547,8 @@
    "v2": "quieres",
    "v3": "quiere",
    "v3p": "quieren",
-   "v1p": "queremos"
+   "v1p": "queremos",
+   "inf": "querer"
   },
   "wash": {
    "w": "lavo",
@@ -3462,7 +3464,8 @@
    "w": "quero",
    "v3": "quer",
    "v3p": "querem",
-   "v1p": "queremos"
+   "v1p": "queremos",
+   "inf": "querer"
   },
   "wash": {
    "w": "lavo",

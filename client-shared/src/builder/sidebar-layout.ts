@@ -1,4 +1,7 @@
-// client-aac/src/lib/sidebar-layout.ts
+// client-shared/src/builder/sidebar-layout.ts
+//
+// SHARED BY THE AAC STUDENT BUILDER (SentenceConstructorBoard) AND THE
+// CLINICIAN "EDIT VISUAL" BUILDER. Change it for both, or for neither.
 //
 // HOW THE SENTENCE BUILDER'S TWO SIDEBAR COLUMNS DIVIDE THEIR HEIGHT.
 //
@@ -26,7 +29,7 @@
 //
 // Pure arithmetic + class names, no DOM: the component owns the ResizeObserver
 // and passes the height in. Extracted so the geometry has a test of its own —
-// the same split `builder-rules.ts` already makes for the board's compose rules.
+// the same split `@shared/glyph-builder-ops` already makes for the press rules.
 
 /** The smallest button that still reads: an icon over one line of label. */
 export const SIDEBAR_MIN_BUTTON_PX = 58;

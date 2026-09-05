@@ -150,8 +150,11 @@ describe("serializeBuilderMirror", () => {
         { id: "do", label: "Do" },
       ],
       chips: [
-        { id: "people", label: "People" },
-        { id: "photos", label: "Photos", active: true },
+        // The person tab's engine chips (2026-09-04): the child's own contacts
+        // lead it, and [contacts] is an ENGINE group id now — the host no
+        // longer pins a "photos" chip of its own.
+        { id: "creatures", label: "People" },
+        { id: "individuals", label: "Contacts", active: true },
       ],
     });
     expect(snap.contextButtons[0].color).toBeTruthy();

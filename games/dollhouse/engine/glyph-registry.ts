@@ -990,6 +990,19 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🌽" },
   { key: "strawberry", tKey: "aac.glyph.strawberry", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🍓" },
+  // THE WILD LARDER (2026-09-04) — the three foods the world's forage plants
+  // yield (world-engine products.ts: the berry bush, the hazel, the wild onion;
+  // the fourth, `mushroom`, is registered under nature below and needed no new
+  // key). Each is a word a child can already want and be given — they earn
+  // their rows here for the same reason `rock` does: a thing the child can walk
+  // up to and take must have a name on the board. Emoji-only for now, so all
+  // three sit in the art queue (`npm run validate-glyphs:art`).
+  { key: "berry", tKey: "aac.glyph.berry", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🫐" },
+  { key: "nut", tKey: "aac.glyph.nut", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🌰" },
+  { key: "onion", tKey: "aac.glyph.onion", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🧅" },
   { key: "meat", tKey: "aac.glyph.meat", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "food"] }, tone: "comment", emoji: "🥩" },
 

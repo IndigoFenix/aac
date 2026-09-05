@@ -271,6 +271,21 @@ export class SettingsRepository {
       .orderBy(subscriptionPlans.price);
   }
 
+  /**
+   * The plan sold as a given Paddle catalog price. `paddle_price_id` is UNIQUE,
+   * so this is at most one row — that uniqueness is what lets a webhook resolve
+   * a purchased line item to exactly one plan.
+   */
+  async getSubscriptionPlanByPaddlePriceId(
+    paddlePriceId: string
+  ): Promise<SubscriptionPlan | undefined> {
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.paddlePriceId, paddlePriceId));
+    return plan || undefined;
+  }
+
   async updateSubscriptionPlan(
     id: string,
     updates: Partial<SubscriptionPlan>

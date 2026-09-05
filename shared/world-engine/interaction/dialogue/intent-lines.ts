@@ -739,9 +739,18 @@ export function goalDestination(goal: GoalSpec, syms: IntentLineSyms): GoingDest
 export interface AnnounceContext {
   creatureId: CreatureId;
   goal: GoalSpec;
-  /** What put the goal in its hands: a pooled-task claim, a direct command,
-   *  its own need machinery, or a standing rule. */
-  source: "task-claim" | "command" | "need" | "rule";
+  /** What put the goal in its hands: a pooled-task claim, a SELF-ISSUED slice
+   *  of communal work, a direct command, its own need machinery, or a standing
+   *  rule.
+   *
+   *  ⚖️ `"contribute"` (task #51) is the pull model's own source: nobody handed
+   *  this body the work — it read an open bill and took a piece. It is listed
+   *  beside `"task-claim"` rather than folded into it because the two differ in
+   *  exactly the thing the criteria hook exists to grade: a claim is an ANSWER
+   *  to somebody's posting, a contribution is an OFFER. They announce alike
+   *  today (both are "a body publicly took a piece of communal work"), and a
+   *  later criteria may well separate them. */
+  source: "task-claim" | "contribute" | "command" | "need" | "rule";
   /** Pooled-task metadata, when source === "task-claim". */
   taskId?: string;
   /** Who the act is ultimately FOR (task issuer / command speaker) — a
@@ -752,7 +761,11 @@ export interface AnnounceContext {
 /** THE criteria hook — one predicate, swapped/tuned later. */
 export type AnnounceCriteria = (ctx: AnnounceContext) => boolean;
 
-/** Conservative default: announce when claiming a pooled task (the issuer
- *  can't otherwise see WHO took the order); stay quiet for routine
- *  self-directed behavior and direct commands (those already confirm "ok"). */
-export const defaultAnnounceCriteria: AnnounceCriteria = (ctx) => ctx.source === "task-claim";
+/** Conservative default: announce when a body PUBLICLY TAKES A PIECE OF
+ *  COMMUNAL WORK — claiming a pooled task (the issuer can't otherwise see WHO
+ *  took the order) or issuing itself a slice of an open bill (#51: the same
+ *  fact, from the other side — and the round's own acceptance is the named
+ *  claim lines, "orrin: I will build."). Stay quiet for routine self-directed
+ *  behavior and direct commands (those already confirm "ok"). */
+export const defaultAnnounceCriteria: AnnounceCriteria = (ctx) =>
+  ctx.source === "task-claim" || ctx.source === "contribute";

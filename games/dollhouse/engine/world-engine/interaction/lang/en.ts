@@ -100,6 +100,11 @@ const CENTRAL: Record<string, Lexeme> = {
   color_brown: { w: "brown" },
   color_black: { w: "black" },
   color_white: { w: "white" },
+  // The eleventh colour (2026-09-04): the registry has drawn `color_gray` since
+  // the palette shipped and no ruleset had a word for it — invisible in English
+  // (`baseWord` strips the `color_` prefix and hands back "gray") and an English
+  // word on the other three boards.
+  color_gray: { w: "gray" },
   place: { w: "place" },
   // Cardinal directions — the "close/far, to the {north}" answers.
   north: { w: "north" },
@@ -131,6 +136,11 @@ const CENTRAL: Record<string, Lexeme> = {
   friend: { w: "friend" },
   teacher: { w: "teacher" },
   street: { w: "street" },
+  // NO `plw` on purpose (2026-09-04): the [animals] chip wears the plural, and
+  // "animals" is REGULAR — `pluralize` below is the ruleset's own rule and `plw`
+  // is documented as the IRREGULAR list (see GlyphLanguage.pluralize). he/es/pt
+  // carry a `plw` here because none of them has a regular-plural rule to fall
+  // back on.
   animal: { w: "animal" },
   // The plant CATEGORY word — the head is `plants`, not `plant`, because
   // `plant` is the VERB (he שותל, es planto): one head, one lexeme, and the
@@ -139,8 +149,10 @@ const CENTRAL: Record<string, Lexeme> = {
   // THE SPECIFIC PEOPLE this child knows (2026-09-01) — the [individuals]
   // chip's label. Distinct from `person`, which is somebody in general: this
   // one names the roster, real contacts out of game and a scene's own
-  // characters in it.
-  individuals: { w: "my people", plw: "my people" },
+  // characters in it. Worded "contacts" (user, 2026-09-04): the chip now leads
+  // the WHO tab and its content IS the child's contact directory, so it says
+  // what it opens rather than the vaguer "my people".
+  individuals: { w: "contacts", plw: "contacts" },
   creature: { w: "creature" },
   water: { w: "water", mass: true },
   fire: { w: "fire", mass: true },
@@ -384,6 +396,29 @@ const CENTRAL: Record<string, Lexeme> = {
   instrument: { w: "instrument" },
   material: { w: "material" },
   structure: { w: "structure" },
+
+  // ── THE FEELINGS THE PARSER GAINED (2026-09-04) ─────────────────────────
+  // Seven words the AAC board has drawn all along and no ruleset could say.
+  // Predicate adjectives like `happy`/`sad` beside them.
+  angry: { w: "angry" },
+  scared: { w: "scared" },
+  excited: { w: "excited" },
+  hurt: { w: "hurt" },
+  surprised: { w: "surprised" },
+  proud: { w: "proud" },
+  calm: { w: "calm" },
+
+  // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
+  // Category NAMES, not words a sentence composes: the four Descriptions chips
+  // and the two Action chips with no existing head (`go`, `make`, `together`
+  // and `want` wear their own verb heads). Authored PLURAL where the chip names
+  // a set, so `groupChip` needs no plural lookup for them.
+  colors: { w: "colors", pl: true },
+  feelings: { w: "feelings", pl: true },
+  size: { w: "size" },
+  condition: { w: "condition" },
+  hands: { w: "hands", pl: true },
+  body: { w: "body", plw: "bodies" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec

@@ -26,9 +26,14 @@
 
 import {
   growthClassYield, harvestProductsOf, harvestStockOf, isBodyProduct, bodyStockOf, naturalSourceOf,
-  nicheSuitabilityOf, usefulPlants,
+  nicheSuitabilityOf, sourceIsConsumable, sourceRarityOf, usefulPlants, wildFoodPlants,
   type ClimateSample, type GrowthSizeClass,
 } from "../../products.js";
+// `wildSourceWord` below: the spec side's word table (species rows + ITEM_WORDS,
+// joined) and the ONE owner of the kind word. content/words.ts and
+// dialogue/host-lines.ts import nothing from this layer — both edges one-way.
+import { specWordHeads } from "../content/words.js";
+import { sourceKindWord } from "../dialogue/host-lines.js";
 import { bioYearsGameDays, serviceRadiusM, type WorldScale } from "../../scale.js";
 // ⚖️ THE NEAR STAND IS MEASURED IN THE TOWN'S OWN UNITS (2026-09-02) — the
 // clearing a founding gets and one building's frontage, never two new
@@ -217,6 +222,34 @@ export function wildFeatureStandsAsBody(f: WildernessFeature): boolean {
  *  fact. */
 export function wildFeatureContainerId(f: WildernessFeature): string {
   return wildFeatureEmbodied(f) ? wildFloraBodyId(f) : f.id;
+}
+
+/**
+ * ⚖️ WHAT THE BOARD CALLS A WILD SOURCE — a word the vocabulary can SAY and
+ * DRAW, never the species id (2026-09-05, the user's "trees have no icons").
+ *
+ * `objectWord` used to answer "a wild source IS its species (oak, sheep)", and
+ * for a sheep that is a word: the species row carries lexemes and the registry
+ * an emoji. For an oak it is an ID — `oak` has a lexeme in no ruleset on earth
+ * (`sourceKindWord`'s own law) and no picture anywhere — so the hovered tree's
+ * board opened with a blank tile over a Latin "oak" on a Hebrew board. The fell
+ * MARK already refused to say it (`plants`); the board title and the fell-first
+ * refusal still did.
+ *
+ * ONE ANSWER for all three, in the order a child would give it:
+ *   1. the species' OWN word when the spec side has one (`specWordHeads` joins
+ *      the species rows and ITEM_WORDS — bush, rock, sheep, mushroom);
+ *   2. `tree` for a plant with timber to give — the same test the spoken "cut
+ *      the tree" ranks by (`sourceIsConsumable`: it has a body product, so it is
+ *      tree-shaped by its own data, never by a species list);
+ *   3. the KIND word (`plants`, `animal`) — the altitude that always has a
+ *      lexeme. An unknown species falls through to itself.
+ */
+export function wildSourceWord(species: string): string {
+  if (specWordHeads().has(species)) return species;
+  const src = naturalSourceOf(species);
+  if (src?.kind === "plant" && sourceIsConsumable(src)) return "tree";
+  return sourceKindWord(src?.kind) ?? species;
 }
 
 /** How small a fully-quarried feature gets, as a fraction of its declared
@@ -506,16 +539,110 @@ function weightedPickBySeed<T>(
  * PASS-THROUGH IS THE DEFAULT, twice over: an entry with no catalogue row and
  * an entry whose row declares no niche both survive (`nicheSuitabilityOf`
  * answers 1 with no niche — the band convention that keeps a rock placeable
- * everywhere). ANIMALS ONLY, deliberately: the fruit line already arrived
- * pre-filtered from `usefulPlants(climate)`, and oak/rock are the switch's own
- * STRUCTURAL content — a biome that says "forest" has already decided there
- * are trees, and re-litigating that here would let one cell's climate empty a
- * forest the biome field put there.
+ * everywhere).
+ *
+ * ⚖️ IT USED TO SAY "ANIMALS ONLY", AND DROPPING THAT CLAUSE CHANGES NO SHIPPED
+ * LINE (2026-09-04). The clause was there to protect the switch's STRUCTURAL
+ * content — a biome that says "forest" has already decided there are trees, and
+ * one cell's climate must not empty a forest the biome field put there. But
+ * `oak` and `rock` DECLARE NO NICHE, so the pass-through above already answers
+ * 1 for both, and the fruit line already arrives pre-filtered from
+ * `usefulPlants(climate)`: every line that existed when the clause was written
+ * survives it verbatim. What the clause DID do was make the predicate say
+ * something narrower than it means, so a plant line added later (the forage
+ * lines below) would have been admitted onto ground its own row forbids. The
+ * question is "does this cell carry this source", it is asked of every source
+ * the same way, and the protection oak needed is oak's own silence.
  */
 function climateAdmitsEntry(e: WildMixEntry, climate: ClimateSample): boolean {
   const src = naturalSourceOf(e.species);
-  if (src?.kind !== "animal") return true;
+  if (!src) return true;
   return nicheSuitabilityOf(src, climate) > 0;
+}
+
+// ── ⚖️ THE WILD LARDER (user ruling, 2026-09-04) ───────────────────────────
+//
+//   *"We should also add some wild food sources so that settlers can survive in
+//    the wilderness - most areas just have trees right now."*
+//
+// The complaint was exact. A forest cell stood `oak ×10` + ONE cultivar `×2` +
+// `rock ×6`: two features in eighteen bore anything edible, the edible one was
+// a CROP picked by seed rather than anything a forager would find, and the one
+// line that scales with the land (`oak`, off the biosphere's own density) bears
+// no food at all. The FORAGE LINES below are the countryside's own pantry.
+//
+// ⚖️ THE NICHE DECIDES WHICH, THE RARITY DECIDES HOW MANY, THE BIOME DECIDES
+// HOW MUCH GROUND THERE IS TO FORAGE OVER. Three facts, three owners, and none
+// of them written twice:
+//   • WHICH — `wildFoodPlants(climate)`, the forager's query (products.ts). A
+//     boreal wood offers berries and no hazel because the hazel's own row says
+//     it stops at 2 °C, not because a switch here says "boreal".
+//   • HOW MANY — `sourceRarityOf` × `nicheSuitabilityOf`, both read off the
+//     species' OWN row. Rarity is this catalogue's long-declared, never-read
+//     abundance weight ("1 sits under everyone's feet; a small fraction sits in
+//     a handful of places worth traveling for"); suitability is the shipped
+//     "a plant at its range edge is RARE there, not equally likely" law, here
+//     applied to a count instead of a pick. A marginal plant rounds out of the
+//     mix entirely, which is the honest end of that curve.
+//   • HOW MUCH GROUND — the `base` the biome switch passes, a COUNT exactly
+//     like `oak`/`rock`/`sheep`/`cow`, so `withEcoDensity` re-reads it as a
+//     density through `legacyPerHa` and the `perHa` gate that decides
+//     near-stand bounding and neighbour minting is untouched.
+//
+// 🚨 ONE LINE PER SPECIES, ALWAYS. `buildWilderness` ids are
+// `wild:<species>_<i>`, so two mix lines naming one species would mint
+// DUPLICATE CONTAINER IDS and the second stand would silently overwrite the
+// first's stock. The sprinkle and the larder can want the same plant, so
+// `mergeForage` folds them — see there for why it takes the LARGER count
+// rather than dropping one.
+
+/**
+ * The forage lines for one kind of ground: every food-bearing plant this cell
+ * admits, at `base × rarity × suitability` rounded, zeros dropped.
+ *
+ * WITHOUT a climate sample — a flat test world, a charter-only boot, the
+ * headless harness — there is nothing to filter or weight by, so every
+ * food-bearing plant stands at `base × rarity`. That arm is deliberately NOT
+ * empty: the legacy no-cell callers are exactly the ones the user was looking
+ * at ("most areas just have trees"), and answering them with no forage at all
+ * would leave the complaint standing everywhere it was made.
+ */
+function forageLines(base: number, climate?: ClimateSample): WildMixEntry[] {
+  if (base <= 0) return [];
+  const out: WildMixEntry[] = [];
+  for (const src of wildFoodPlants(climate)) {
+    const weight = climate ? nicheSuitabilityOf(src, climate) : 1;
+    const count = Math.round(base * sourceRarityOf(src) * weight);
+    if (count > 0) out.push({ species: src.species, count });
+  }
+  return out;
+}
+
+/**
+ * ⚖️ THE SPRINKLE AND THE LARDER, FOLDED INTO ONE LINE PER SPECIES.
+ *
+ * The seed's sprinkle pick is a FIXED small count (2 in a wood, 1 elsewhere) —
+ * it was written when it was the only bearer there was. The larder's count for
+ * the same plant is what this GROUND actually carries. When they name the same
+ * species the honest answer is the LARGER of the two, not the sprinkle's: a
+ * hazel wood does not thin to two trees because the seed happened to pick the
+ * hazel, and the alternative (drop the forage line) made the sprinkle a
+ * PENALTY — the one plant the site is known for became its rarest.
+ *
+ * Returns [foldedSprinkle, ...restOfLarder] so the mix keeps its shipped order:
+ * the sprinkle sits where it always sat, the larder follows it.
+ */
+function mergeForage(
+  pick: { species: string } | undefined,
+  sprinkleCount: number,
+  forage: WildMixEntry[],
+): WildMixEntry[] {
+  if (!pick) return forage;
+  const mine = forage.find((e) => e.species === pick.species);
+  return [
+    { species: pick.species, count: Math.max(sprinkleCount, mine?.count ?? 0) },
+    ...forage.filter((e) => e.species !== pick.species),
+  ];
 }
 
 /** The bearer this site stands, or undefined when nothing grows here. WITH a
@@ -541,6 +668,11 @@ function pickBearer(
  * timber over heavy stone. The fruit is picked from the products registry by
  * the landing seed, so neighbouring sites bear different fruit and a
  * live-harvest (regrowing) source stands in every founding.
+ *
+ * 🌿 …AND A WILD LARDER BESIDE THE SPRINKLE (2026-09-04, user ruling — see
+ * `forageLines`). The sprinkle is one CULTIVAR at a fixed count, which is a
+ * founding's orchard rather than its countryside; the forage lines are what a
+ * settler can actually live off while the orchard is still two seedlings.
  *
  * 📦 LIVES HERE, NOT IN A GAME (moved from `games/world-lab/src/wilderness-boot.ts`,
  * 2026-08-12 — ONE definition). Three boots need the same mix and one of them is
@@ -590,12 +722,22 @@ export function homesteadWildMix(
   // the no-climate arm keeps the bare modulo. Same determinism either way.
   const bearers = usefulPlants(climate);
   const pick = pickBearer(bearers, seed, climate);
-  const fruit: WildMixEntry[] = pick ? [{ species: pick.species, count: scaled(2) }] : [];
+  // 🌿 THE WILD LARDER (2026-09-04) — see `forageLines`. A holding's own
+  // hedgerows and wood, as against the orchard sprinkle beside it: MINING
+  // country forages thinner (4 against farmland's 6) for the same reason it
+  // stands more rock and no livestock — the charter already called that ground
+  // stony rather than fertile, and the forage base is the one number that says
+  // so without re-deciding which plants grow there.
+  const larder = mergeForage(
+    pick,
+    scaled(2),
+    forageLines(biome === "mining" ? 4 : 6, climate),
+  );
   const mix: WildMixEntry[] = biome === "mining"
-    ? [{ species: "oak", count: scaled(8) }, ...fruit, { species: "rock", count: scaled(10) }]
+    ? [{ species: "oak", count: scaled(8) }, ...larder, { species: "rock", count: scaled(10) }]
     : [
         { species: "oak", count: scaled(8) },
-        ...fruit,
+        ...larder,
         { species: "rock", count: scaled(4) },
         { species: "sheep", count: scaled(2) },
         { species: "cow", count: scaled(1) },
@@ -646,6 +788,14 @@ export function faunaForBiome(biome: number): WildFauna {
  * live-harvest (regrowing) source stands in every walkable wild. Species come
  * from the registry, never named in the engine.
  *
+ * 🌿 …AND THE WILD LARDER (2026-09-04, user ruling — see `forageLines`): every
+ * FOOD-bearing plant this cell admits, at `base × rarity × suitability`. The
+ * single sprinkle above was the whole of the countryside's food and it was one
+ * crop at count 1–2 — "most areas just have trees", measured. The forage lines
+ * are the answer, and they name no species here either: `wildFoodPlants` says
+ * WHICH, the species' own `rarity` and niche say HOW MANY, and the switch says
+ * only how much ground there is to forage over.
+ *
  * 📦 LIVES HERE, NOT IN A GAME (2026-09-01) — the `homesteadWildMix`
  * precedent in this same file, applied to its sibling. Two games carried
  * byte-identical copies (`games/world-lab/src/wilderness-boot.ts`,
@@ -694,18 +844,25 @@ export function wildMixForBiome(
 ): WildMixEntry[] {
   const bearers = usefulPlants(climate);
   const pick = pickBearer(bearers, seed, climate);
-  const fruit: WildMixEntry[] = pick
-    ? [{ species: pick.species, count: biome === 1 ? 2 : 1 }]
-    : [];
+  // 🌿 THE WILD LARDER (2026-09-04) — see `forageLines`. The base is HOW MUCH
+  // GROUND there is to forage over, and nothing else. A WOOD IS LAYERED and an
+  // open sward is not, which is why the forest base (10) is the larger of the
+  // two and why it sits at the canopy's own count: the understorey of a real
+  // temperate wood carries more bearing plants than the wood carries trees, so
+  // a forest cell that ended up with less forage than timber would be the
+  // original complaint restated more quietly. Barren feeds nobody (0, below).
+  // Which plants and how many of EACH are the species' own rows' business.
+  const forageBase = biome === 1 ? 10 : biome === 2 || biome === 3 ? 6 : 0;
+  const larder = mergeForage(pick, biome === 1 ? 2 : 1, forageLines(forageBase, climate));
   let mix: WildMixEntry[];
   switch (biome) {
     case 1: // forest
-      mix = [{ species: "oak", count: 10 }, ...fruit, { species: "rock", count: 6 }];
+      mix = [{ species: "oak", count: 10 }, ...larder, { species: "rock", count: 6 }];
       break;
     case 2: // steppe / meadow — open country, wild flocks
       mix = [
         { species: "oak", count: 3 },
-        ...fruit,
+        ...larder,
         { species: "rock", count: 5 },
         { species: "sheep", count: 2 },
       ];
@@ -713,7 +870,7 @@ export function wildMixForBiome(
     case 3: // grazer range — flocks and wild cattle
       mix = [
         { species: "oak", count: 3 },
-        ...fruit,
+        ...larder,
         { species: "rock", count: 5 },
         { species: "sheep", count: 2 },
         { species: "cow", count: 1 },

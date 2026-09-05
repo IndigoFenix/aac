@@ -1,4 +1,4 @@
-// client-aac/src/lib/sidebar-layout.test.ts
+// client-shared/src/builder/sidebar-layout.test.ts
 //
 // THE SENTENCE BUILDER'S SIDEBAR COLUMNS — the arithmetic that decides how many
 // buttons a column shows and how tightly they draw.

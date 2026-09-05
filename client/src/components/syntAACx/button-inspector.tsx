@@ -1,6 +1,6 @@
 // src/components/syntAACx/button-inspector.tsx
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useBoardStore, useSelectedButton } from "@/store/board-store";
 import { apiUrl } from "@/lib/queryClient";
 import { useStudent } from "@/hooks/useStudent";
@@ -33,7 +33,11 @@ import { Glyph } from "@/components/Glyph";
 import { BoardButtonVisual } from "@client-shared/board/BoardButtonVisual";
 import { useClinicianBoardDeps, irToButtonInput } from "./use-clinician-board-deps";
 import { mapColorToHex, type ColorToken } from "@shared/button-color";
-import { GlyphBuilder } from "./glyph-builder";
+// CODE-SPLIT, and mounted only while open. The "Edit visual" builder pulls in
+// the world-engine's builder surfacer (the same engine vocabulary the student's
+// board shows); the board EDITOR should not carry that until a clinician
+// actually opens the dialog.
+const GlyphBuilder = lazy(() => import("./glyph-builder"));
 
 // Named color tokens offered as overrides, in display order. The system
 // auto-colors buttons by default ("Auto"); these map to the same pastel hexes
@@ -371,7 +375,7 @@ export function ButtonInspector() {
               "text-xs",
               isDark ? "text-slate-400" : "text-gray-600"
             )}>
-              {t("button.visual") || "Visual"}
+              {t("button.visual")}
             </Label>
             <div className={cn(
               "flex items-center gap-2 rounded-md border p-2",
@@ -393,18 +397,22 @@ export function ButtonInspector() {
                 )}
                 onClick={() => setIsGlyphBuilderOpen(true)}
               >
-                {t("button.editVisual") || "Edit visual"}
+                {t("button.editVisual")}
               </Button>
             </div>
           </div>
 
-          <GlyphBuilder
-            value={selectedBtn.glyph}
-            onChange={(g) => handleUpdate("glyph", g || undefined)}
-            studentId={student?.id}
-            open={isGlyphBuilderOpen}
-            onOpenChange={setIsGlyphBuilderOpen}
-          />
+          {isGlyphBuilderOpen && (
+            <Suspense fallback={null}>
+              <GlyphBuilder
+                value={selectedBtn.glyph}
+                onChange={(g) => handleUpdate("glyph", g || undefined)}
+                studentId={student?.id}
+                open={isGlyphBuilderOpen}
+                onOpenChange={setIsGlyphBuilderOpen}
+              />
+            </Suspense>
+          )}
 
           {/* Action */}
           <div className="space-y-1.5">

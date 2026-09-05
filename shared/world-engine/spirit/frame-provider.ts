@@ -120,6 +120,13 @@ export interface SpiritTownSession {
   /** The dollhouse host once mounted (null until the live town streams in;
    *  always set on flat providers). */
   structureHost(): SpiritStructureHost | null;
+  /** The sim's RELEVANCE DISC — the near stand (quest-host `nearStand`): what
+   *  the site HAS and what is selectable, chart-local centre + radius. Null
+   *  when nothing is mounted or the session bounds no stand. Under the builder
+   *  hold this disc IS the district orbit's outer bound (user 2026-09-05: "the
+   *  circle should really be close to the outer camera bounds, since that's
+   *  the point of it"). Optional: flat providers and city visits leave it out. */
+  relevanceDisc?(): { x: number; z: number; radius: number } | null;
 }
 
 /** The FLIGHT rung's seam — planet+ scopes only (a flat town has no flight). */

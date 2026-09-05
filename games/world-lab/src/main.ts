@@ -889,7 +889,11 @@ function stepFoundingPremise(): void {
     //
     // The radius is DERIVED from the site's own extent inside the ladder
     // (`districtRadiusFor` — 33% of the site radius, held to 30–160 m); no
-    // metre value is painted here.
+    // metre value is painted here. That is only the FROM-pose: once the town
+    // mounts, the held orbit re-frames every frame on the sim's relevance disc
+    // (`relevanceDisc` → `host.nearStand()`, the border ring drawn below), so
+    // the circle IS the orbit's outer bound (user 2026-09-05), and the wheel
+    // zooms in from it (`ladder.zoomBy`).
     //
     // …AND THE CEILING BOUNDS THE ZOOM TO THE SITE. Without this the ladder
     // keeps the boot default `ceiling: "flight"`, whose climb clamp is the
@@ -3560,6 +3564,13 @@ const spiritTrace: string[] = [];
 viewEl.addEventListener("wheel", e => {
   e.preventDefault();
   if (!flight) return;
+  // SPIRIT: nobody is piloting, so the wheel is the district orbit's ZOOM
+  // (ladder.zoomBy — wheel down backs out to the frame's bound, wheel up
+  // closes in; inert on every other rung). The user's "I can't zoom in".
+  if (spirit) {
+    spirit.ladder.zoomBy(e.deltaY / 100);
+    return;
+  }
   // Notches (± = faster/slower). The flight model applies the exponent.
   // NOT while a town session covers the flight — a parked ship must not
   // bank speed notches while the player shops.
@@ -4662,6 +4673,14 @@ function bootSpiritWorld(game: GameSettings): void {
       embedTown && liveViz && liveViz.fc.city.cell === fc.city.cell
         ? { x: liveCenter.x, y: liveCenter.y }
         : null,
+    // The SAME `host.nearStand()` the border ring (`syncNearStandBorder`) and
+    // the flora stand-down read — one owner, so the orbit's outer bound is the
+    // ring on the ground and can never drift from it.
+    nearStand: fc => {
+      if (!embedTown || !liveViz || liveViz.fc.city.cell !== fc.city.cell) return null;
+      const ns = embedTown.host.nearStand?.();
+      return ns ? { x: ns.at.x, y: ns.at.y, radiusM: ns.radiusM } : null;
+    },
     drivenBody: spiritDrivenBody,
     streamGround: (pos, sdt, snow) => {
       const { near } = streamGround(pos, sdt, snow);
@@ -4790,6 +4809,7 @@ function bootPlanetScope(game: GameSettings): void {
     structureHost: () => null,
     buildingFrame: () => null,
     townSimOffset: () => null,
+    nearStand: () => null,
     drivenBody: () => null,
     streamGround: () => ({ near: null }),
     forceGates: () => null,

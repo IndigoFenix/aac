@@ -1,0 +1,557 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=c567724a
+# started=2026-09-04T09:37:19.089Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  orrin (person), here north.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> say build house
+OK     said: build + house
+SAY    mara: "I will build the house."  [build.will + house]
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+SAY    orrin: "I will get the block."  [get.will + block]
+EXIT   mara went out of the orange house.
+EXIT   orrin went out of the orange house.
+TICK   quiet after 4.0s.
+> wait 60
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 0/120, close south, 71 m
+TICK   quiet after 1.0s.
+> watch mara
+ERR    mara is not in view.
+TICK   quiet after 1.0s.
+> watch orrin
+ERR    orrin is not in view.
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+ENTER  mara came into view there north.
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    mara: [water]
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered 6 of 8 (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+EXIT   mara went out of the orange house.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 70/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+ENTER  mara came into view there north.
+EXIT   mara left view here east.
+ENTER  mara came into view here east.
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [apple]
+EXIT   mara left view there west.
+ENTER  orrin came into view there north.
+ENTER  mara came into view there west.
+TOAST  📦 bring 8 block — delivered (feedback)
+EXIT   orrin left view there west.
+SAY    mara: [apple]
+ENTER  orrin came into view there west.
+SAY    orrin: "Help you."  [help + you]
+SAY    mara: "Thank you!"  [thank_you]
+SAY    orrin: [water]
+TOAST  📦 bring 8 block — delivered 4 of 8 (feedback)
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    mara: "😴"
+SAY    orrin: "okay"  [ok]
+EXIT   mara left view there south.
+EXIT   orrin left view here east.
+TOAST  📦 bring 2 block — delivered (feedback)
+ENTER  orrin came into view here east.
+ENTER  mara came into view there south.
+EXIT   mara left view here south.
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   mara left view there west.
+EXIT   orrin left view here east.
+ENTER  mara came into view there west.
+SAY    mara: [apple]
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [apple]
+ENTER  orrin came into view here south.
+TOAST  📦 bring 8 block — delivered (feedback)
+EXIT   mara left view there east.
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    orrin: [meal]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [sit]
+SAY    mara: [banana]
+SAY    orrin: [banana.hot]
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    mara: [sit]
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   orrin went out of the orange house.
+SAY    mara: [water]
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  🧱 materials staged — builders raise the house (feedback)
+SITE   1 thing(s) being built.
+  site-1: a house — floor laid, 0% worked, close south, 71 m
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 8 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  table-1 (table), here north.
+  basket-2 (basket), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  2 chairs, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-22 (house), close west, red, door open, shut to you.
+  15 houses, there west, all shut.
+  8 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — floor laid, 14% worked, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+SITE   1 thing(s) being built.
+  site-1: a house — pillars up, 50% worked, close south, 71 m
+EXIT   mara left view here east.
+TOAST  🏛️ the house is finished (feedback)
+TOAST  📦 bring door — delivered (feedback)
+TOAST  🚪 a door is hung in the living (feedback)
+ENTER  orrin came into view there north.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin left view here east.
+TOAST  🪑 the workbench is set up for the living (feedback)
+ENTER  orrin came into view here east.
+SAY    orrin: [water]
+TOAST  📦 bring door — delivered (feedback)
+TOAST  🚪 a door is hung in the living (feedback)
+EXIT   orrin left view here east.
+ENTER  mara came into view here east.
+ENTER  orrin came into view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [banana.hot]
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    orrin: [banana.hot]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TOAST  📦 bring door — delivered (feedback)
+TOAST  🚪 a door is hung in the bath (feedback)
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+EXIT   mara left view here east.
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+ENTER  mara came into view there south.
+EXIT   orrin left view here east.
+EXIT   mara left view there south.
+ENTER  mara came into view here east.
+SAY    mara: "bye-bye"  [goodbye]
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+TOAST  🏠 a family moves into the new house (feedback)
+SAY    mara: [water]
+ENTER  orrin came into view there south.
+EXIT   mara left view here east.
+EXIT   orrin left view there south.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 28 place(s) around you.
+  table-1 (table), here north.
+  basket-2 (basket), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  10 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> wait 300
+ENTER  orrin came into view here east.
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+EXIT   mara went out of the orange house.
+SAY    orrin: [water]
+SAY    orrin: [banana.hot]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+ENTER  mara came into view there north.
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+SAY    orrin: [meal]
+SAY    mara: [banana.hot]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   mara left view there west.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   orrin left view there west.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 28 place(s) around you.
+  mara (person), here north.
+  table-1 (table), here north.
+  water-5 (water), here north.
+  basket-2 (basket), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SAY    mara: [water]
+TICK   quiet after 2.0s.
+> wait 300
+EXIT   mara left view here east.
+ENTER  orrin came into view there west.
+ENTER  mara came into view here south.
+SAY    orrin: "I'm going to the bedroom."  [go + bedroom]
+EXIT   orrin left view here east.
+EXIT   mara left view here south.
+ENTER  mara came into view here south.
+ENTER  orrin came into view here east.
+SAY    orrin: "😴"
+EXIT   orrin left view here east.
+ENTER  orrin came into view here south.
+SAY    mara: [banana]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   mara left view here east.
+SAY    orrin: [apple]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [apple]
+ENTER  mara came into view here east.
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [water]
+EXIT   mara went out of the orange house.
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [banana]
+EXIT   orrin left view here east.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 6 thing(s) in view, 28 place(s) around you.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  chair-2 (chair), here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  10 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> wait 300
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin went out of the orange house.
+ENTER  mara came into view there north.
+EXIT   mara left view here east.
+ENTER  mara came into view here east.
+SAY    mara: [water]
+SAY    mara: [water]
+ENTER  orrin came into view there north.
+SAY    mara: "Where are you going?"  [place#question + you + go]
+SAY    orrin: [water]
+SAY    orrin: "I'm going to the kitchen."  [go + kitchen]
+SAY    mara: "I don't help you."  [help.not + you]
+EXIT   mara left view there west.
+SAY    orrin: "I'm sad."  [i_me + sad]
+SAY    orrin: "bye-bye"  [goodbye]
+ENTER  mara came into view there west.
+SAY    orrin: [apple]
+SAY    mara: [apple]
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+SAY    mara: [apple]
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+SAY    mara: [grape]
+SAY    orrin: [grape]
+EXIT   mara left view here east.
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+ENTER  mara came into view there south.
+EXIT   mara left view there south.
+SAY    orrin: "Thank you!"  [thank_you]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    mara: "I'm sad."  [i_me + sad]
+ENTER  mara came into view here east.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    orrin: [grape.hot]
+SAY    mara: [grape]
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [grape]
+SAY    mara: "Where are you going?"  [place#question + you + go]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    orrin: [water]
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 28 place(s) around you.
+  mara (person), here east.
+  orrin (person), here west.
+  table-1 (table), here north.
+  basket-1 (basket), here east.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-21 (house), close west, purple, door open, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> wait 300
+SAY    orrin: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+EXIT   orrin left view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view here south.
+SAY    mara: [sit]
+SAY    orrin: "🍳"  [grape.hot]
+EXIT   mara left view there west.
+EXIT   orrin left view there west.
+ENTER  mara came into view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin left view there west.
+SAY    mara: [grape]
+EXIT   mara left view here east.
+ENTER  orrin came into view there west.
+ENTER  mara came into view here east.
+EXIT   orrin left view here east.
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [grape]
+ENTER  orrin came into view here east.
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm lonely."  [i_me + lonely]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+SAY    orrin: [grape]
+ENTER  mara came into view there north.
+EXIT   mara left view here east.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 12 thing(s) in view, 28 place(s) around you.
+  orrin (person), there west, holding small:mat_76.
+  grape-3 (grape), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  2 chairs, here north.
+  a refrigerator, there west.
+  a barrel, there west.
+  an oven, there west.
+  a cupboard, there west.
+  house-1 (house), here north, orange, door open, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, door open, shut to you.
+  house-5 (house), there west, orange, door open, you can see inside.
+  house-6 (house), there east, orange, door open, shut to you.
+  13 houses, there west, all shut.
+  10 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+ENTER  mara came into view here east.
+TICK   quiet after 1.5s.
+# ─────────────────────────────────────────
+# commands=22  presses=0  screens=1  sim=2183.0s
+# events: SAY 135  EXIT 76  ENTER 76  TOAST 70  TICK 22  SCENE 9  SITE 5  ERR 2  BOARD 1  NOTE 1  OK 1  SELF 1

@@ -34,7 +34,6 @@
           },
           {
             "name": "Pip",
-            "species": "frog_person",
             "outfit": 0,
             "likes": [
               "grape"

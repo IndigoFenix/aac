@@ -57,7 +57,12 @@ describe("`isNaturalSourceBodyId` — which bodies are THINGS", () => {
     const oak: WildernessFeature = { id: "wild:oak_3", species: "oak", x: 0, y: 0, stock: { wood: 8 } };
     expect(wildFeatureContainerId(oak)).toBe("flora:oak:wild:oak_3"); // embodied ⇒ the BODY key
     expect(isNaturalSourceBodyId(wildFeatureContainerId(oak))).toBe(true);
-    expect(isNaturalSourceBodyId(wildAnimalBodyId({ id: "c1", species: "sheep", x: 0, y: 0 }))).toBe(true);
+    // (`icon` is DISPLAY ONLY and empty for a product animal — its body comes
+    // from `species`; the row is built through the real type so a convention
+    // change breaks this rather than drifting.)
+    expect(
+      isNaturalSourceBodyId(wildAnimalBodyId({ id: "c1", icon: "", species: "sheep", x: 0, y: 0 })),
+    ).toBe(true);
     // …and everything a session can hover that is a PERSON stays out of it.
     for (const id of [
       "npc_settler_0",
@@ -164,7 +169,7 @@ describe("frontier — the gaze reaches a standing tree, and a press always answ
     // screen through the path the tree's does.
     const beast = run.session.wilderness!.creatures.find((c) => c.species);
     if (!beast) throw new Error("no product animal in the frontier world — fixture broken, not a finding");
-    const ep = wildAnimalBodyId(beast as { id: string; species: string; x: number; y: number });
+    const ep = wildAnimalBodyId(beast);
     const body = run.state.avatars[ep];
     if (!body) throw new Error(`${ep} has no body — fixture broken, not a finding`);
     const board = hoverAndOpen({ x: body.x, y: body.y }, ep);
@@ -199,13 +204,29 @@ describe("frontier — the gaze reaches a standing tree, and a press always answ
 
   // ── ③ THE CUT, PRESSED ───────────────────────────────────────────────────
 
-  it("🪓 pressing `cut` fells the tree, and the board then offers its wood", () => {
+  // ⚖️ RE-SHAPED FOR task #51 item 1d (user ruling 2026-09-04): *"the 'cut
+  // command' for trees isn't supposed to destroy the tree when the button is
+  // pressed. It should issue a COMMAND to cut that tree. Or, alternatively,
+  // DESIGNATE the tree to be cut when available as a task."* This world is the
+  // frontier (a town WITH a wilderness scatter), so `pullLaborOn` is TRUE and
+  // the press is a designation — the instant fell is pinned where it still
+  // lives, off the capability, in feature-removal.test.ts.
+  it("🪓 pressing `cut` with nobody near MARKS the tree — it is still standing", () => {
     const oak = run.session.wilderness!.features.find((f) => f.id === "probe:hover_oak");
     if (!oak) throw new Error("the probe oak is gone — fixture broken, not a finding");
     const ep = wildFeatureContainerId(oak);
     const woodBefore = run.session.containerRecords.get(ep)?.stock?.["wood"] ?? 0;
     expect(woodBefore).toBeGreaterThan(0);
     expect(oak.downed).not.toBe(true);
+    // FIXTURE CONTROL: the addressee resolver prefers an ENGAGED body, then any
+    // idle one within `ATTEND_REACH_M` (16 m). This probe stands 150 m out on
+    // empty ground, and the room is emptied of old attention — so there is
+    // genuinely nobody to ask, which is the branch this case is about.
+    run.session.sparkAttention.clear();
+    run.session.sparkEngageHold.clear();
+    run.session.lastConvoCid = null;
+    const book = run.session.town!.deltas;
+    expect(book.fellOrders()).toEqual([]);
 
     const standing = hoverAndOpen(oak, ep);
     expect(standing!.options).toContain(`cut:${ep}`);
@@ -213,16 +234,43 @@ describe("frontier — the gaze reaches a standing tree, and a press always answ
     run.select(`cut:${ep}`);
     run.advance(2);
 
-    // ① IT CAME DOWN…
-    expect(run.session.wilderness!.features.find((f) => f.id === "probe:hover_oak")!.downed).toBe(true);
-    // ② …AND ITS TIMBER NEVER MOVED (the felling's strongest conservation form).
+    // ① THE TREE IS STILL STANDING — the whole of the ruling in one assertion.
+    expect(run.session.wilderness!.features.find((f) => f.id === "probe:hover_oak")!.downed).not.toBe(true);
+    // ② …AND THE MARK IS IN THE BOOKS, naming the thing (never the species id)
+    //    and carrying a word a ruleset can actually say.
+    const mark = book.fellOrders().find((r) => r.featureId === "probe:hover_oak");
+    expect(mark).toBeDefined();
+    // `wildSourceWord`: an oak has timber to give, so it is a `tree` — the word
+    // with lexemes and a picture — never "oak" (and no longer the kind chip
+    // `plants`, which is what a bush or an onion patch still gets).
+    expect(mark!.word).toBe("tree");
+    expect(mark!.spoken).toBe(true); // a child asked for it
+    // ③ ⚖️ NO SILENT PRESS — the designation SPEAKS ("ok", the reserved
+    //    confirmation of an accepted order).
+    expect(said()).toContain("ok");
+    // ④ NOTHING MOVED. A mark is not a deed: no unit, no prop, no reservation.
     expect(run.session.containerRecords.get(ep)?.stock?.["wood"] ?? 0).toBe(woodBefore);
-    // ③ THE NEW BOARD CAME STRAIGHT BACK, because the child pressed for the
-    //    wood and the wood is takeable now — the cut re-opens the trunk itself.
-    const after = boards.findLast((b) => b.kind === "acts" && b.nodeId === ep);
-    expect(after).toBeDefined();
-    expect(after!.options).toContain("take:wood");
-    expect(after!.options).not.toContain(`cut:${ep}`); // one ending, already reached
+    // ⑤ …and the board came back, because the option it offered has flipped.
+    expect(boards.findLast((b) => b.kind === "acts" && b.nodeId === ep)).toBeDefined();
+  }, 600_000);
+
+  it("🪓 …and pressing it AGAIN takes the mark off (and says so)", () => {
+    // A child who marked a tree by mistake must be able to undo it with the
+    // same button — a mark is a toggle, and both halves speak.
+    const oak = run.session.wilderness!.features.find((f) => f.id === "probe:hover_oak");
+    if (!oak) throw new Error("the probe oak is gone — fixture broken, not a finding");
+    const ep = wildFeatureContainerId(oak);
+    const book = run.session.town!.deltas;
+    expect(book.fellOrders().some((r) => r.featureId === "probe:hover_oak")).toBe(true);
+    run.session.sparkAttention.clear();
+    run.session.sparkEngageHold.clear();
+    run.session.lastConvoCid = null;
+    hoverAndOpen(oak, ep);
+    run.select(`cut:${ep}`);
+    run.advance(2);
+    expect(book.fellOrders().some((r) => r.featureId === "probe:hover_oak")).toBe(false);
+    expect(run.session.wilderness!.features.find((f) => f.id === "probe:hover_oak")!.downed).not.toBe(true);
+    expect(said()).toContain("ok");
   }, 600_000);
 
   // ── ④ THE PRESS THAT USED TO SAY NOTHING ─────────────────────────────────
@@ -412,5 +460,81 @@ describe("#50 ⑥ a founding settler takes the press", () => {
     for (; ran < 40 && run.session.pursuits.has(engaged!.cid); ran++) run.advanceS(5);
     expect(run.session.pursuits.has(engaged!.cid)).toBe(false); // the errand really finished
     expect(run.session.liveNeedBodies.has(engaged!.cid)).toBe(false);
+  }, 600_000);
+
+  // ⚖️ task #51 item 1d — THE OTHER HALF OF THE CUT RULING: *"It should issue a
+  // COMMAND to cut that tree."* With somebody attending, the press is that
+  // command; with nobody, it is the mark (pinned above, on the resident world).
+  it("🪓 a `cut` press with a SETTLER attending is a COMMAND to that settler", () => {
+    const busy = (cid: string): boolean =>
+      run.session.pursuits.has(cid) ||
+      run.session.walk.has(cid) ||
+      run.session.needStep.has(cid) ||
+      run.session.liveNeedBodies.has(cid) ||
+      (run.session.npcTasks.get(cid)?.length ?? 0) > 0;
+    const cid = settlers().find((id) => !busy(id));
+    if (!cid) throw new Error("no idle settler to address — fixture broken, not a finding");
+    const at = run.state.avatars[`npc_${cid}`]!;
+    run.session.sparkAttention.clear();
+    run.session.sparkEngageHold.clear();
+    run.session.lastConvoCid = null;
+
+    // A tree the settler is standing beside — so the addressee resolver's
+    // nearest-idle rung really does have somebody to find.
+    const oak: WildernessFeature = {
+      id: "probe:settler_oak", species: "oak", x: at.x + 2.2, y: at.y + 2.2, stock: { wood: 6 },
+    };
+    if (!run.host.addWildFeature(oak)) throw new Error("the probe oak would not spawn — fixture broken, not a finding");
+    const ep = wildFeatureContainerId(oak);
+    const book = run.session.town!.deltas;
+    const marksBefore = book.fellOrders().length;
+    run.clearLook();
+    run.advance(2);
+    run.look(oak.x, oak.y);
+    for (let i = 0; i < 24; i++) {
+      run.stepFrame();
+      if (run.view.probe().intent?.cursor?.hoverId === ep) break;
+    }
+    run.advance(4); // the short dwell opens the board
+    run.select(`cut:${ep}`);
+    run.advance(2);
+
+    // ① IT IS A COMMAND, ON A BODY — not a mark anybody may take.
+    //
+    // ⚠️ THE ENGAGED ROW IS THE TREE, not the taker: a standing plant is an
+    // AVATAR, so hovering it engages IT (the hover-lane split this file exists
+    // for). `attentionAddressee` then asks `idleForDirect` about that tree,
+    // gets no for a thing with no mind, and falls through to the nearest idle
+    // body — which is the settler. So the taker is read off the pursuit.
+    const who = [...run.session.pursuits.keys()].find(
+      (k) => run.session.pursuits.get(k)?.bill?.objId === ep,
+    );
+    expect(who).toBeDefined();
+    expect(/^settler_\d+$/.test(who!)).toBe(true);
+    const p = run.session.pursuits.get(who!);
+    expect(p?.source).toBe("command");
+    expect(p?.bill?.link).toBe("fell");
+    expect(p?.bill?.objId).toBe(ep);
+    // `wildSourceWord`: the oak is spoken of as a `tree` (timber to give) — the
+    // command line reads "I will cut the tree", never the species id.
+    expect(p?.goal).toEqual({ kind: "clearFeature", feature: "tree" });
+    expect(book.fellOrders().length).toBe(marksBefore); // no mark was posted
+    // ② AND THE TREE IS STILL STANDING at the moment of the press: the body has
+    //    to walk there and spend the chop first.
+    expect(run.session.wilderness!.features.find((f) => f.id === "probe:settler_oak")!.downed).not.toBe(true);
+
+    // ③ …AND IT REALLY FELLS IT. Walk + `CHOP_DWELL_S` + the one kill draw.
+    let ran = 0;
+    for (; ran < 40 && !run.session.wilderness!.features.find((f) => f.id === "probe:settler_oak")?.downed; ran++) {
+      run.advanceS(5);
+    }
+    const fallen = run.session.wilderness!.features.find((f) => f.id === "probe:settler_oak");
+    expect(fallen?.downed).toBe(true);
+    // ④ CONSERVATION, the felling's strongest form: nothing moved at all.
+    expect(run.session.containerRecords.get(ep)?.stock?.["wood"] ?? 0).toBe(6);
+    // ⑤ …and the body let go (a settler that stayed live would be
+    //    un-directable forever — #50 ⑥'s own law).
+    expect(run.session.pursuits.has(who!)).toBe(false);
+    expect(run.session.liveNeedBodies.has(who!)).toBe(false);
   }, 600_000);
 });

@@ -264,6 +264,10 @@ const EXTRA_EMOJIS: Record<string, string> = {
   clean: "🧹",
   cook: "🍳",
   cry: "😢",
+  // `cut` is the world-engine board's verb on anything standing (a tree, a
+  // bush) — one word for many cuts, so the scissors stand in for all of them
+  // (user 2026-09-05: "Let's go with scissors for now").
+  cut: "✂️",
   dance: "💃",
   draw: "🎨",
   hug: "🤗",
@@ -300,6 +304,11 @@ const EXTRA_EMOJIS: Record<string, string> = {
   rainbow: "🌈",
   snow: "❄️",
   snowflake: "❄️",
+  // The MATERIAL that comes off a `rock` (products.ts) — the registry's rock
+  // row is the outcrop you walk up to; the stock in a crate is `stone`, and it
+  // had no picture at all. No stone-material emoji exists, so it shares the
+  // boulder until the art queue gives it its own.
+  stone: "🪨",
   sun: "☀️",
   tree: "🌳",
   wind: "🌬️",

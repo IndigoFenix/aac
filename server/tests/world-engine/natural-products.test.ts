@@ -182,7 +182,15 @@ describe("goods seam — sourcesForGood", () => {
     expect(
       sourcesForGood("food", { kind: "plant", method: "harvest" }).map((s) => s.species),
       // 🥕 …and the first VEGETABLE (food-scale-round E-a), appended last.
-    ).toEqual(["apple_tree", "banana_plant", "grape_vine", "carrot_plant"]);
+      // 🌿 …then the WILD LARDER (2026-09-04): the four FORAGE plants a settler
+      // eats off the land. They are living plant sources of food by exactly the
+      // same property the four cultivars are, so a query over that property has
+      // to return them — the split that matters (found vs planted) is rarity
+      // and niche, never a second list.
+    ).toEqual([
+      "apple_tree", "banana_plant", "grape_vine", "carrot_plant",
+      "bush", "hazel", "wild_onion",
+    ]);
     // Meat (a kill product) feeds food, but a HARVEST query never puts a
     // herd of it beside the farm — kill yields come from features/hunting.
     expect(sourcesForGood("food", { kind: "animal", method: "harvest" })).toEqual([]);
@@ -200,8 +208,20 @@ describe("derived vocabularies — the registry IS the source of truth", () => {
     // behind it. Residents' and pets' favourite foods hash BY INDEX into this
     // list, so a new food species may only ever land at the END — apple,
     // banana and grape keep index 0/1/2 and nobody's likes re-roll.
-    expect(foodGlyphs()).toEqual(["apple", "banana", "grape", "carrot"]);
-    expect(FOOD_KINDS).toEqual(["apple", "banana", "grape", "carrot"]);
+    // 🌿 …and the WILD LARDER (2026-09-04) obeyed the same law: berry, nut
+    // and onion are APPENDED (the mushroom was dropped — its standing body IS
+    // its picked body, see products.ts), so apple/banana/grape/carrot keep
+    // indices 0–3. (The LENGTH still moves, and with it the hash of any cast
+    // that does not author its own `likes` — unavoidable the moment the world
+    // grows a new food, and the reason the order clause is the part that is
+    // pinned.)
+    expect(foodGlyphs()).toEqual([
+      "apple", "banana", "grape", "carrot", "berry", "nut", "onion",
+    ]);
+    expect(FOOD_KINDS).toEqual([
+      "apple", "banana", "grape", "carrot", "berry", "nut", "onion",
+    ]);
+    expect(FOOD_KINDS.slice(0, 4)).toEqual(["apple", "banana", "grape", "carrot"]);
   });
 
   it("SITE_MATERIAL_GLYPHS = the building CHAIN's glyphs (phase 3)", () => {
@@ -239,6 +259,11 @@ describe("derived vocabularies — the registry IS the source of truth", () => {
       { food: "banana", species: "banana_plant" },
       { food: "grape", species: "grape_vine" },
       { food: "carrot", species: "carrot_plant" },
+      // 🌿 The wild larder joined by EXISTING, exactly as the carrot did — no
+      // edit to this query and no second list anywhere.
+      { food: "berry", species: "bush" },
+      { food: "nut", species: "hazel" },
+      { food: "onion", species: "wild_onion" },
     ]);
   });
 

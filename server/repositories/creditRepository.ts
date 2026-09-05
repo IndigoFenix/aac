@@ -155,6 +155,25 @@ export class CreditRepository {
     return creditPackage || undefined;
   }
 
+  /**
+   * The package sold as a given Paddle catalog price. `paddle_price_id` is
+   * UNIQUE, so at most one row comes back — that is what lets a webhook resolve
+   * a purchased line item to exactly one package.
+   *
+   * Deliberately NOT filtered on `isActive`: a customer who has already paid
+   * must be fulfilled even if we retired the package between checkout and the
+   * webhook arriving.
+   */
+  async getCreditPackageByPaddlePriceId(
+    paddlePriceId: string
+  ): Promise<CreditPackage | undefined> {
+    const [creditPackage] = await db
+      .select()
+      .from(creditPackages)
+      .where(eq(creditPackages.paddlePriceId, paddlePriceId));
+    return creditPackage || undefined;
+  }
+
   async updateCreditPackage(
     id: string,
     updates: Partial<CreditPackage>

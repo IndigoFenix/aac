@@ -651,10 +651,15 @@ describe("E-round — the field gets a crop and a mint rate", () => {
     // USER RULING: *"We don't have a bread industry set up, so it would
     // probably be simpler to start with vegetables."* Before this, `FOOD_KINDS`
     // was three fruits — nothing a field grows.
-    expect(FOOD_KINDS).toEqual(["apple", "banana", "grape", "carrot"]);
+    // 🌿 …and the WILD LARDER appended after it (2026-09-04): berry, nut and
+    // onion, the three forage plants a settler eats off the land.
+    expect(FOOD_KINDS).toEqual([
+      "apple", "banana", "grape", "carrot", "berry", "nut", "onion",
+    ]);
     // 🚨 APPEND-ONLY: residents' and pets' favourite foods hash by INDEX, so
-    // the three shipped fruits must keep 0/1/2 forever.
-    expect(FOOD_KINDS.indexOf("carrot")).toBe(FOOD_KINDS.length - 1);
+    // the three shipped fruits must keep 0/1/2 forever — and the carrot 3,
+    // which is what "appended, never inserted" has meant since.
+    expect(FOOD_KINDS.slice(0, 4)).toEqual(["apple", "banana", "grape", "carrot"]);
     // …and it needs no `SATIATION_DAYS` row: the FOOD_KINDS fallthrough already
     // routes it to a fifth of a person-day.
     expect(satiationDaysOf("carrot")).toBe(SATIATION_DAYS.food);

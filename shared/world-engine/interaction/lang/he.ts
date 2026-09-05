@@ -45,7 +45,11 @@ const CENTRAL: Record<string, Lexeme> = {
   here: { w: "כאן" },
   there: { w: "שם" },
   together: { w: "ביחד" },
-  want: { w: "רוצה", f: "רוצה", vmpl: "רוצים", vfpl: "רוצות" },
+  // `inf` (2026-09-04): the [want] Action chip is labelled by this head, and a
+  // category name wants the CITATION form — "לרצות", not the participle "רוצה"
+  // ("wanting"). No frame reads a MODAL's infinitive (the want-to frame takes
+  // the inner verb's), so this field is label-only and changes no sentence.
+  want: { w: "רוצה", f: "רוצה", vmpl: "רוצים", vfpl: "רוצות", inf: "לרצות" },
   give: { w: "נותן", f: "נותנת", vmpl: "נותנים", vfpl: "נותנות" },
   take: { w: "לוקח", f: "לוקחת", vmpl: "לוקחים", vfpl: "לוקחות" },
   // ACQUIRE, not receive: `get` is the fetch verb ("I will get the wood" — the
@@ -140,6 +144,9 @@ const CENTRAL: Record<string, Lexeme> = {
   color_brown: { w: "חום" },
   color_black: { w: "שחור" },
   color_white: { w: "לבן" },
+  // The eleventh colour (2026-09-04) — `color_gray` shipped with the registry
+  // palette and had no word in any ruleset, so the board read the English "gray".
+  color_gray: { w: "אפור" },
   place: { w: "מקום" },
   // Settlement / territory words — P2 puts these on the board (the taboo and
   // claim lines speak of a town and of an area).
@@ -168,7 +175,7 @@ const CENTRAL: Record<string, Lexeme> = {
   street: { w: "רחוב", g: "m" },
   animal: { w: "חיה", g: "f", plw: "חיות" },
   plants: { w: "צמח", g: "m", plw: "צמחים" },
-  individuals: { w: "האנשים שלי", g: "m" },
+  individuals: { w: "אנשי קשר", g: "m", pl: true, defw: "אנשי הקשר" },
   creature: { w: "יצור", g: "m" },
   water: { w: "מים", g: "m", pl: true, mass: true },
   fire: { w: "אש", g: "f", mass: true },
@@ -384,6 +391,29 @@ const CENTRAL: Record<string, Lexeme> = {
   instrument: { w: "כלי נגינה", g: "m", defw: "כלי הנגינה" },
   material: { w: "חומר", g: "m" },
   structure: { w: "בניין", g: "m", plw: "בניינים" },
+
+  // ── THE FEELINGS THE PARSER GAINED (2026-09-04) ─────────────────────────
+  // Seven words the AAC board has drawn all along and no ruleset could say.
+  // Each carries its feminine: the regular ה suffix is wrong often enough that
+  // synthesising one produces words that do not exist (רגועה, not רגועהת).
+  angry: { w: "כועס", f: "כועסת", mpl: "כועסים", fpl: "כועסות" },
+  scared: { w: "מפחד", f: "מפחדת", mpl: "מפחדים", fpl: "מפחדות" },
+  excited: { w: "נרגש", f: "נרגשת", mpl: "נרגשים", fpl: "נרגשות" },
+  hurt: { w: "כואב", f: "כואבת", mpl: "כואבים", fpl: "כואבות" },
+  surprised: { w: "מופתע", f: "מופתעת", mpl: "מופתעים", fpl: "מופתעות" },
+  proud: { w: "גאה", f: "גאה", mpl: "גאים", fpl: "גאות" },
+  calm: { w: "רגוע", f: "רגועה", mpl: "רגועים", fpl: "רגועות" },
+
+  // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
+  // Category NAMES, not words a sentence composes. Plural where the chip names
+  // a set. ⚠️ `colors` is צבעים and is NOT the head `color`, which is the VERB
+  // צובע — the same trap the `plants`/`plant` pair records.
+  colors: { w: "צבעים", g: "m", pl: true },
+  feelings: { w: "רגשות", g: "m", pl: true },
+  size: { w: "גודל", g: "m" },
+  condition: { w: "מצב", g: "m" },
+  hands: { w: "ידיים", g: "f", pl: true },
+  body: { w: "גוף", g: "m", plw: "גופים" },
 };
 
 /** The ruleset's OWN words — grammar, verbs, adjectives, core concepts. Spec

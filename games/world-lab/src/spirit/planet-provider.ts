@@ -56,6 +56,11 @@ export interface PlanetProviderDeps {
    *  registration), or null when not mounted — the ground glide parks the
    *  gaze walker through it. */
   townSimOffset(fc: FlightCity): { x: number; y: number } | null;
+  /** The mounted live town's RELEVANCE DISC (quest-host `nearStand` — the
+   *  near stand the border ring is drawn from), SIM coords, or null when no
+   *  town is mounted under this city or the session bounds no stand. The held
+   *  district orbit frames it (`SpiritTownSession.relevanceDisc`). */
+  nearStand(fc: FlightCity): { x: number; y: number; radiusM: number } | null;
   /** The BODY THE SPARK DRIVES in the live town under this city — SIM coords +
    *  unit facing — or null when the spark has claimed nothing, or no town is
    *  mounted here. The ground rung polls it through the session (see
@@ -273,6 +278,15 @@ export function createPlanetSpiritProvider(deps: PlanetProviderDeps): SpiritFram
       pickDistrict: (x, y) => pick(x, y, "district"),
       pickBuilding: (x, y) => pick(x, y, "building"),
       structureHost: () => deps.structureHost(fc),
+      // The sim's near stand, SIM → PLAN (chart-local: x east, z north) through
+      // the plaza registration — the exact inverse of `buildingFrame`, so the
+      // ring the ladder frames is the ring world-lab draws on the ground.
+      relevanceDisc: () => {
+        const ns = deps.nearStand(fc);
+        const off = deps.townSimOffset(fc);
+        if (!ns || !off || !(ns.radiusM > 0)) return null;
+        return { x: ns.x - off.x, z: ns.y - off.y, radius: ns.radiusM };
+      },
     };
   }
 

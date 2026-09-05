@@ -12,6 +12,14 @@
 //      in the assembled lexicon of its locale — no word CHANGED or VANISHED.
 //      This is the migration's oracle: any slip in any registry shows up here.
 //
+//      RE-BASELINING A SINGLE ENTRY IS ALLOWED when a central lexeme genuinely
+//      GAINS A FORM — the oracle proves the spec-words move rewrote nothing, and
+//      a form authored years later is new vocabulary work, not the move. Patch
+//      only that one entry, never regenerate the file, and say why here.
+//      (2026-09-04: he/es/pt `want` gained `inf` — לרצות / querer / querer — so
+//      the [want] Action chip could wear the citation form instead of "quiero"
+//      ("I want"). Label-only: no frame reads a MODAL's infinitive.)
+//
 //      It was once an exact deep-equal, which also forbade words APPEARING.
 //      That third clause was dropped deliberately (2026-08-20) when the
 //      builder-lexicon coverage round added ~85 central words per ruleset:

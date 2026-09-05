@@ -17,6 +17,7 @@ export { classroomRepository, ClassroomRepository } from "./classroomRepository"
 export { reportRepository, ReportRepository } from "./reportRepository";
 export { voiceRecordRepository, VoiceRecordRepository } from "./voiceRecordRepository";
 export { licenseRepository, LicenseRepository } from "./licenseRepository";
+export { paddleEventRepository, PaddleEventRepository } from "./paddleEventRepository";
 export { calendarRepository, CalendarRepository } from "./calendarRepository";
 export { incidentRepository, IncidentRepository } from "./incidentRepository";
 export { shareInviteRepository, ShareInviteRepository } from "./shareInviteRepository";

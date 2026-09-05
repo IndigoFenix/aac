@@ -26,8 +26,13 @@
 //   groups      ← the SpeakMenu's sub-category chips: on the ranked view the
 //                 surfacer's own group chips (suggestion.groups — property/kind
 //                 clusters), on the "things" tab the same clusters over the
-//                 FULL noun list. `opts.group` filters within the active view,
-//                 exactly like tapping a group cell in the SpeakMenu.
+//                 FULL noun list, on the "person" tab the three LIVING clusters
+//                 (contacts · people · animals), and on the two BIG lexical tabs
+//                 — "attribute" and "verb" — the authored slices of
+//                 `LEXICAL_TAB_CHIPS`. `opts.group` filters within the active
+//                 view, exactly like tapping a group cell in the SpeakMenu. The
+//                 remaining lexical tabs (quantity, relation, question,
+//                 connective, social) each fit one page and stay flat.
 //   complete    ← suggestion.complete
 //   typeChips   ← suggestion.typeChips (the SENTENCE-TYPE controls, offered on
 //                 the empty board only — exactly the surfacer's own verdict).
@@ -535,6 +540,198 @@ function dedupeByHead(nouns: readonly BuilderNounEntry[]): BuilderNounEntry[] {
 /** Person-deixis heads that take the CREATURE descriptor axes ("i_me + hungry"). */
 const ANIMATE_DEIXIS = new Set(["i_me", "you", "we", "us", "they"]);
 
+/**
+ * THE PERSON TAB'S SUB-CHIPS, in the order a child is offered them (user,
+ * 2026-09-04): the people this child actually knows FIRST, then people in
+ * general (mom, teacher, friend…), then animals — not people, but a possible
+ * answer to "who", and there is room for more chips beside them later.
+ *
+ * The tab used to be flat: `LEXICON`'s eight person-deixis words (I, you, we,
+ * they, this, that, here, there) and nothing else, so every host that wanted a
+ * child's own contacts on it had to pin a chip of its own and ask for the
+ * "things" tab behind the child's back. Both did, identically, and both got
+ * three pages of animals in front of the faces because the borrowed surface was
+ * the whole noun library. The chips are the engine's now, and the deixis list
+ * stays as the tab's "All" content.
+ */
+const PERSON_GROUP_ORDER: readonly string[] = ["individuals", "creatures", "animals"];
+
+/**
+ * THE CONTACTS CHIP — the one cluster that is advertised even when the engine
+ * has nothing to put in it.
+ *
+ * Every other chip must open a real subset (the SpeakMenu's ≥2 rule), because a
+ * chip that opens one word is a wasted press. `individuals` is the exception on
+ * purpose: OUT OF GAME the engine's noun library holds no specific people at
+ * all (`defaultBuilderNouns()` is derived from the spec, and a child's contacts
+ * are not in a spec), yet the child's contacts are exactly what the HOST merges
+ * into this chip from its own people directory. Hiding it because the ENGINE's
+ * half is empty would hide the whole list. So it always ships, empty on the
+ * wire, and the host fills it.
+ */
+const PERSON_CONTACTS_GROUP = "individuals";
+
+/**
+ * THE TWO BIG LEXICAL TABS' SUB-CHIPS (user decision 2026-09-04) — Descriptions
+ * (`attribute`) and Actions (`verb`), the way People just got contacts · people ·
+ * animals.
+ *
+ * WHY ONLY THESE TWO. A lexical tab lists its WHOLE category, and every other
+ * one (quantity, relation, question, connective, social) fits a single grid
+ * page — chips there would cost a press and buy nothing. Descriptions is
+ * thirty-eight words and Actions is sixty-five: without chips the child pages
+ * through them, which on a board that withholds words behind More is the same
+ * as not having most of them.
+ *
+ * ⚖️ ONE TABLE, KEYED BY CHIP ID, and the chip ROW derives from it (declaration
+ * order per tab). Two lists — an order here and a membership there — is how a
+ * verb ends up on no chip at all: it stays parseable, it stays on "All", and it
+ * silently leaves the only surface a child can find it on. The partition is
+ * pinned by `builder-attribute-verb-chips.test.ts`: every LEXICON key of either
+ * category lands in exactly ONE chip, so a future word cannot go unlisted.
+ *
+ * Membership is SEMANTIC, not alphabetical: colours, then how somebody feels,
+ * then how big, then what state a thing is in; and for actions — going, hands,
+ * making, doing-with-people, one's own body, wanting.
+ */
+export const LEXICAL_TAB_CHIPS: Readonly<
+  Record<string, { readonly tab: "attribute" | "verb"; readonly keys: readonly string[] }>
+> = {
+  // ── DESCRIPTIONS (`attribute`) ────────────────────────────────────────────
+  colors: {
+    tab: "attribute",
+    keys: [
+      "color_red", "color_orange", "color_yellow", "color_green", "color_blue",
+      "color_purple", "color_pink", "color_brown", "color_black", "color_white", "color_gray",
+    ],
+  },
+  // The mood + bodily axes together: a child does not sort "sad" from "hungry"
+  // before looking for either, and both answer "how are you?".
+  feelings: {
+    tab: "attribute",
+    keys: [
+      "happy", "sad", "bored", "lonely", "hungry", "thirsty", "tired", "sick",
+      "angry", "scared", "excited", "hurt", "surprised", "proud", "calm",
+    ],
+  },
+  // Only the two the parser has words for. `long`/`short`/`tall` live in
+  // AXIS_WORDS (the registry's modifier store) and are not LEXICON words, so
+  // listing them here would advertise buttons that do not exist.
+  size: { tab: "attribute", keys: ["big", "small"] },
+  // What STATE a thing is in — temperature, cleanliness, integrity, age, fill,
+  // and the bare quality pair.
+  condition: {
+    tab: "attribute",
+    keys: ["hot", "cold", "warm", "dirty", "broken", "new", "old", "full", "good", "bad"],
+  },
+
+  // ── ACTIONS (`verb`) ──────────────────────────────────────────────────────
+  // Going and staying — every verb whose whole content is where a body is.
+  go: { tab: "verb", keys: ["go", "come", "stop", "follow", "wait", "stay", "run", "turn", "return", "chase"] },
+  // What HANDS do: things changing hands, and things moved by them.
+  hands: {
+    tab: "verb",
+    keys: ["get", "take", "give", "bring", "put", "drop", "throw", "push", "pull", "pick_up", "carry", "share", "trade", "show"],
+  },
+  // Working on the world: making, unmaking, tending, transforming, operating.
+  make: {
+    tab: "verb",
+    keys: [
+      "make", "build", "break", "fix", "dig", "plant", "cut", "tidy", "area",
+      "heat", "cook", "make_cold", "wash", "fill", "empty", "color", "use", "open", "shut",
+    ],
+  },
+  // Doing things WITH somebody — the verbs that need a second person.
+  together: { tab: "verb", keys: ["help", "play", "talk", "ask", "teach", "fight", "hug"] },
+  // One's OWN body: eating, sleeping, dressing, and the two senses.
+  body: {
+    tab: "verb",
+    keys: ["eat", "drink", "sleep", "rest", "sit", "wake_up", "brush_teeth", "wear", "feel", "see"],
+  },
+  // Wanting and having — the desire channel plus the broad activity verb.
+  want: { tab: "verb", keys: ["want", "need", "have", "like", "do"] },
+};
+
+/** Which chips a lexical tab advertises, in the table's own declaration order.
+ *  DERIVED — never a second list to keep in step with the first. */
+const LEXICAL_TAB_GROUP_ORDER: ReadonlyMap<string, readonly string[]> = (() => {
+  const m = new Map<string, string[]>();
+  for (const [id, def] of Object.entries(LEXICAL_TAB_CHIPS)) {
+    const row = m.get(def.tab) ?? [];
+    row.push(id);
+    m.set(def.tab, row);
+  }
+  return m;
+})();
+
+/** The chip ids one lexical tab offers, in order (empty for a flat tab). */
+export const lexicalTabChipIds = (tab: string): readonly string[] =>
+  LEXICAL_TAB_GROUP_ORDER.get(tab) ?? [];
+
+/**
+ * CHIPS WHOSE LABEL NAMES A SET, not one of its members (user, 2026-09-04).
+ *
+ * "person" and "animal" under a chip that opens forty animals reads as a single
+ * word the child is about to press, which is what a button means everywhere
+ * else on the board. The plural says "there are more of these inside".
+ *
+ * `individuals` is deliberately absent — "contacts" is already plural in every
+ * ruleset — and the two lexical tabs' set-shaped chips (`colors`, `feelings`)
+ * are authored plural outright.
+ */
+const PLURAL_LABEL_CHIPS: ReadonlySet<string> = new Set(["creatures", "animals", "plants"]);
+
+/**
+ * CHIPS WHOSE LABEL IS A VERB, and therefore must be the INFINITIVE (user,
+ * 2026-09-04).
+ *
+ * ⚠️ THE SAME TRAP `colors`-not-`color` RECORDS, one row down. Three Action
+ * chips deliberately wear an existing verb head (`go`, `make`, `want` — those
+ * verbs ARE the names of their families), but `w` is the 1st-person singular in
+ * the romance rulesets and the present participle in Hebrew, so the row read
+ * "voy · hago · quiero" — *I go, I make, I want* — as the names of three
+ * categories. The infinitive is the citation form, which is what a category
+ * name wants: "ir · hacer · querer".
+ *
+ * `together` is not here (it is an adverbial, not a verb) and neither are the
+ * noun-headed chips. English is unaffected either way: its infinitive IS its
+ * base form.
+ */
+const INFINITIVE_LABEL_CHIPS: ReadonlySet<string> = new Set(["go", "make", "want"]);
+
+/** The lexeme's infinitive where it carries one, the base word otherwise —
+ *  which is the right answer for English, whose infinitive IS its base form.
+ *
+ *  All three heads carry one in he/es/pt: `go` and `make` always did, and
+ *  `want` gained לרצות / querer / querer on 2026-09-04 for this chip (the one
+ *  re-baselined entry in `fixtures/lexicon-premove-snapshot.json` — see law 1's
+ *  comment in `lexicon-spec-words.test.ts`). Label-only: no frame reads a
+ *  MODAL's infinitive, so no sentence moved. `builder-attribute-verb-chips`
+ *  pins all three positively, so a lexeme that lost its `inf` fails loudly
+ *  rather than silently putting "I want" back on the chip. */
+function infinitiveWord(lang: GlyphLanguage, head: string): string {
+  return lang.lexicon[head]?.inf?.trim() || baseWord(lang, head);
+}
+
+/**
+ * A head's plural, through the SAME ladder every other count reads: the
+ * lexeme's own `plw` (the irregular list — "people", "אנשים", "animais"), then
+ * the ruleset's regular rule where it has one (`pluralize`; English alone
+ * does), then the singular.
+ *
+ * ⚖️ NEVER an -s of our own. A ruleset without a regular plural — Hebrew's
+ * gendered pairs, and the romance rulesets, which keep the rule inside their own
+ * renderer — keeps the singular here, because a plural synthesised by the
+ * SURFACER would be English grammar leaking onto another language's board. That
+ * is precisely the split `GlyphLanguage.pluralize` exists to draw.
+ */
+function pluralWord(lang: GlyphLanguage, head: string): string {
+  const lex = lang.lexicon[head];
+  if (lex?.plw?.trim()) return lex.plw.trim();
+  const w = baseWord(lang, head);
+  return lang.pluralize?.(w) ?? w;
+}
+
 const MODIFIER_RAIL_CAP = 8;
 
 /** Strip `#op` operators then take the `.`-head — the surfacer's own head rule. */
@@ -621,6 +818,13 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
   //                      (property/kind clusters); `group` opens one in place.
   //   category=things  → the FULL noun listing, sub-grouped by the SAME
   //                      property/kind clustering over the whole library.
+  //   category=person  → the deixis words, sub-chipped by the three LIVING
+  //                      clusters (contacts · people · animals) over the same
+  //                      library — the WHO tab, which a host used to have to
+  //                      fake by borrowing the things surface.
+  //   verb/attribute   → the whole category as "All", sub-chipped by the
+  //                      authored slices (`LEXICAL_TAB_CHIPS`) — the two tabs
+  //                      too big for one grid page.
   //   lexical category → that tab's full flat listing (the fallback ladder,
   //                      exactly like the SpeakMenu tabs — no sub-groups).
   const surfaceWord = (b: { symbol: string; label?: string }): BuilderWordJson => {
@@ -636,9 +840,19 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
   // that drew the bare word would render nothing for it.
   const groupChip = (id: string, faceSymbols: readonly string[]): BuilderGroupJson => {
     const glyphs = faceSymbols.slice(0, GROUP_EXEMPLARS).map((s) => wordJson(s).glyph ?? s);
+    const head = GROUP_LABEL_HEAD[id] ?? id;
     return {
       id,
-      label: baseWord(lang, GROUP_LABEL_HEAD[id] ?? id),
+      // A chip that opens a KIND wears the plural (`PLURAL_LABEL_CHIPS`) — it
+      // names the set, not the one word a button usually is; a chip named by a
+      // VERB wears the infinitive (`INFINITIVE_LABEL_CHIPS`), the citation form,
+      // never a conjugated "I go". The two sets are disjoint by construction:
+      // one labels nouns, the other verbs.
+      label: PLURAL_LABEL_CHIPS.has(id)
+        ? pluralWord(lang, head)
+        : INFINITIVE_LABEL_CHIPS.has(id)
+          ? infinitiveWord(lang, head)
+          : baseWord(lang, head),
       ...(glyphs.length ? { glyph: glyphs[0], glyphs } : {}),
     };
   };
@@ -660,6 +874,49 @@ export function builderSurfaceFor(partialGlyph: string, opts: BuilderSurfaceOpts
           exemplarOrder(members, (n) => n.symbol, (n) => n.properties).map((n) => n.symbol),
         ),
       );
+  } else if (cat === "person") {
+    // THE WHO TAB. "All" is still the flat lexical listing (the deixis words);
+    // the CHIPS open the three living clusters over the FULL noun library, the
+    // same clustering the things tab sub-groups by — contacts, then people in
+    // general, then animals.
+    const clusters = thingClusters(nouns);
+    // Only this tab's OWN chips filter it: a stale id, or a cluster that belongs
+    // to another tab ("food"), shows the full listing rather than a plate of
+    // apples under [who].
+    //
+    // `?? []` matters: [contacts] is EMPTY out of game and an empty answer is
+    // the correct one — the host has a directory to put there. Falling back to
+    // the deixis list (what an unknown id gets) would put "I / you / we" under
+    // a chip that promises the child's family.
+    const active =
+      grp !== undefined && PERSON_GROUP_ORDER.includes(grp) ? clusters.get(grp) ?? [] : undefined;
+    buttons = active
+      ? active.map((n) => wordJson(n.symbol))
+      : LEX_KEYS.filter((k) => LEXICON[k]!.cat === cat).map(wordJson);
+    groups = PERSON_GROUP_ORDER.filter(
+      (id) => id === PERSON_CONTACTS_GROUP || (clusters.get(id)?.length ?? 0) >= 2,
+    ).map((id) =>
+      groupChip(
+        id,
+        exemplarOrder(clusters.get(id) ?? [], (n) => n.symbol, (n) => n.properties).map((n) => n.symbol),
+      ),
+    );
+  } else if (cat && LEXICAL_TAB_GROUP_ORDER.has(cat)) {
+    // THE TWO BIG LEXICAL TABS — Descriptions and Actions. Same shape as the
+    // person tab: "All" stays the WHOLE lexical category (a chip is a filter,
+    // never a replacement), the chips open one slice each, and a foreign or
+    // stale id falls back to the full listing rather than to an empty board.
+    //
+    // Unlike [contacts], every chip here has fixed membership from
+    // `LEXICAL_TAB_CHIPS`, so all of them clear the ≥2 rule by construction and
+    // none can arrive empty — there is no host half to wait for.
+    const order = LEXICAL_TAB_GROUP_ORDER.get(cat)!;
+    const active = grp !== undefined && order.includes(grp) ? LEXICAL_TAB_CHIPS[grp]!.keys : undefined;
+    buttons = (active ?? LEX_KEYS.filter((k) => LEXICON[k]!.cat === cat)).map((k) => wordJson(k));
+    // The face is simply the chip's own leading members: a word has no
+    // properties to rank by (the noun clusters' `exemplarOrder` reads exactly
+    // that), and the members are authored in the order a child meets them.
+    groups = order.map((id) => groupChip(id, LEXICAL_TAB_CHIPS[id]!.keys));
   } else if (cat && BUILDER_CATEGORIES.includes(cat)) {
     buttons = LEX_KEYS.filter((k) => LEXICON[k]!.cat === cat).map(wordJson);
   } else {
@@ -711,6 +968,34 @@ export const GROUP_LABEL_HEAD: Record<string, string> = {
   room: "room",
   building: "building",
   outside: "outside",
+
+  // ── THE TWO BIG LEXICAL TABS' CHIPS (2026-09-04) ─────────────────────────
+  // Listed even where the head IS the id, because `builder-coverage.ts` reads
+  // the VALUES of this table to decide which heads a chip can wear: an id left
+  // out of here is a chip nobody checks the translations of, and it renders as
+  // the raw English id on a Hebrew board — silently, the whole failure mode
+  // that module exists to catch.
+  //
+  // ⚠️ `colors`, NOT `color`, and for exactly the reason `plants` is not
+  // `plant`: the head `color` is the VERB ("color the shirt", he צובע, es
+  // coloreo), so labelling a category of adjectives with it would put a
+  // conjugated verb on the chip in three of the four rulesets. `feelings`,
+  // `hands` and `body` are new nouns for the same reason — there is no existing
+  // head that names those sets without being something else.
+  colors: "colors",
+  feelings: "feelings",
+  size: "size",
+  condition: "condition",
+  // The ACTION chips deliberately DO wear verb heads where one already names
+  // the family exactly (`go`, `make`, `want`) or is already an adverbial
+  // (`together`): "go" is the name of the going family, not a stray conjugation
+  // standing in for it. The two that had no such head get nouns.
+  go: "go",
+  hands: "hands",
+  make: "make",
+  together: "together",
+  body: "body",
+  want: "want",
 };
 
 /** The surfacer's own noun clustering (surface-next buildGroups), applied to

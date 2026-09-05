@@ -1,0 +1,242 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=c567724a+dirty
+# started=2026-09-04T12:12:10.480Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — 9 thing(s) in view, 27 place(s) around you.
+  mara (person), here north.
+  orrin (person), here north.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  2 chairs, here north.
+  a chest, there east.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> say build house
+OK     said: build + house
+SAY    mara: "I will build the house."  [build.will + house]
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TICK   quiet after 1.5s.
+> wait 60
+EXIT   mara went out of the orange house.
+EXIT   orrin went out of the orange house.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 0/120, close south, 71 m
+TICK   quiet after 1.0s.
+> watch mara
+ERR    mara is not in view.
+TICK   quiet after 1.0s.
+> watch orrin
+ERR    orrin is not in view.
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 22/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered 4 of 8 (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  8 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 34/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered 5 of 8 (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 63/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  8 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 82/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered 4 of 8 (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 27 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 102/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+ENTER  orrin came into view there north.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 12 thing(s) in view, 27 place(s) around you.
+  orrin (person), here north, eat water, holding small:mat_18.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  2 chairs, here north.
+  a refrigerator, there west.
+  a barrel, there west.
+  an oven, there west.
+  a cupboard, there west.
+  house-1 (house), here north, orange, door open, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-5 (house), there west, orange, door open, you can see inside.
+  house-27 (house), close west, orange, door open, shut to you.
+  14 houses, there west, all shut.
+  8 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 118/120, close south, 71 m
+TICK   quiet after 1.0s.
+> wait 300
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  🧱 materials staged — builders raise the house (feedback)
+SITE   1 thing(s) being built.
+  site-1: a house — floor laid, 0% worked, close south, 71 m
+SAY    orrin: [water]
+SAY    orrin: "I will build."  [i_me + build.will]
+EXIT   orrin went out of the orange house.
+SITE   1 thing(s) being built.
+  site-1: a house — pillars up, 50% worked, close south, 71 m
+TOAST  🏛️ the house is finished (feedback)
+TOAST  📦 bring door — delivered (feedback)
+TOAST  🚪 a door is hung in the living (feedback)
+ENTER  orrin came into view there north.
+EXIT   orrin left view here east.
+TOAST  🏠 a family moves into the new house (feedback)
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+TICK   waited 300.0s.
+> scene
+SCENE  house-1 — 7 thing(s) in view, 28 place(s) around you.
+  basket-1 (basket), here north.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  a chair, here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+ENTER  orrin came into view there west.
+TICK   quiet after 2.0s.
+# ─────────────────────────────────────────
+# commands=22  presses=0  screens=1  sim=2180.0s
+# events: TICK 22  TOAST 21  SCENE 9  SITE 9  SAY 5  EXIT 5  ENTER 4  ERR 2  BOARD 1  NOTE 1  OK 1  SELF 1

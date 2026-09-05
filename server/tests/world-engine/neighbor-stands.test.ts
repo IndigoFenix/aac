@@ -73,6 +73,7 @@ import {
   wildKeepChance,
   wildKeepMean,
   wildSourceFullStock,
+  wildStandStockOf,
   wildThinField,
   wildThinFraction,
   wildThinHidden,
@@ -891,7 +892,15 @@ describe("⑫ⓒ quantization — the rebuild trigger", () => {
   it("the step moves EXACTLY on a bucket crossing", () => {
     const base = rec();
     const per = wildSourceFullStock("oak");
-    const stock = wildAreaStock(base).wood!;
+    // 🚨 THE OAK STAND'S OWN WOOD, never the record's `wood` TOTAL (2026-09-04).
+    // Those were the same number for as long as the oak was the only
+    // wood-bearing thing a forest mix stood; the wild larder puts crab apples in
+    // the wood, and an apple tree bears timber too. `wildThinFraction` has
+    // always measured PER SPECIES (`wildStandStockOf`) — it was this line that
+    // was measuring per GLYPH, so the count it derived stopped being the count
+    // that produces the fraction it names. The engine was right; the fixture
+    // was reading a total.
+    const stock = wildStandStockOf(base, "oak");
     // fraction = stock / (per × count) — so the count picks the fraction.
     const countFor = (frac: number): number => stock / (per * frac);
     for (let k = 1; k < WILD_THIN_STEPS; k++) {

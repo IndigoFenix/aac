@@ -388,6 +388,13 @@ export const licenses = pgTable("licenses", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
 
+  // Paddle payment integration. Separate columns rather than reusing the
+  // stripe_* ones: a license can carry history from either processor, and
+  // overloading the column would make a Stripe id and a Paddle id
+  // indistinguishable at the point where we have to call an API with it.
+  paddleCustomerId: text("paddle_customer_id"),
+  paddleSubscriptionId: text("paddle_subscription_id"),
+
   // Permissions
   permissions: jsonb("permissions").$type<LicensePermissions>(),
 
@@ -469,6 +476,11 @@ export const creditPackages = pgTable("credit_packages", {
   bonusCredits: integer("bonus_credits").default(0).notNull(), // Extra credits for bulk purchases
   isActive: boolean("is_active").default(true).notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
+  // Paddle catalog price this package is sold as. The webhook resolves a
+  // purchased line item back to a package through this column, so it must be
+  // unique — two packages sharing a price id would make fulfillment ambiguous.
+  // Nullable: packages sold only through other processors have none.
+  paddlePriceId: text("paddle_price_id").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -481,8 +493,47 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   duration: integer("duration").notNull(), // in days
   isActive: boolean("is_active").default(true).notNull(),
   features: text("features").array(),
+  // Paddle catalog price this plan is sold as (unique, same reason as
+  // creditPackages.paddlePriceId — it is the lookup key from a webhook).
+  paddlePriceId: text("paddle_price_id").unique(),
+  // What a paid subscription on this plan GRANTS the license. Both nullable:
+  // a plan that leaves them null sells credits + a validity window only, and
+  // fulfillment then leaves the license's existing tier untouched.
+  licenseType: text("license_type"),
+  permissions: jsonb("permissions").$type<LicensePermissions>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Paddle webhook events — the idempotency ledger for /api/paddle/webhook.
+ *
+ * The primary key is PADDLE's `event_id`, not a generated uuid: that is the
+ * whole point of the table. Paddle retries a webhook until it gets a 2xx, so
+ * the same event id arrives more than once as a matter of course, and the
+ * insert conflicting on the PK is how a replay is recognised BEFORE any credit
+ * is granted. `status` then says what happened, so a retry of an event we
+ * already processed can be answered 200 without re-granting, while one we
+ * previously FAILED is allowed to run again.
+ *
+ * `occurredAt` is Paddle's own event timestamp (not our receipt time) — the
+ * out-of-order guard in paddleFulfillmentService compares against it.
+ */
+export const paddleEvents = pgTable("paddle_events", {
+  id: text("id").primaryKey(), // Paddle event_id, e.g. "evt_01h..."
+  eventType: text("event_type").notNull(), // e.g. "transaction.completed"
+  occurredAt: timestamp("occurred_at").notNull(), // Paddle's occurred_at
+  status: text("status").notNull(), // 'received' | 'processed' | 'failed' | 'ignored'
+  // Free-text note about the outcome: the failure message when `failed`, the
+  // reason when `ignored`, and a summary of what was applied when `processed`.
+  // Named `error` because that is what it is for in the two cases that matter.
+  error: text("error"),
+  payload: jsonb("payload"), // raw event body, for forensics
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+}, (table) => [
+  index("idx_paddle_events_event_type").on(table.eventType),
+  index("idx_paddle_events_occurred_at").on(table.occurredAt),
+]);
 
 // RevenueCat subscriptions table for tracking active subscriptions
 export const revenuecatSubscriptions = pgTable("revenuecat_subscriptions", {
@@ -916,9 +967,16 @@ export const insertCreditPackageSchema = createInsertSchema(creditPackages).omit
   createdAt: true,
 });
 
-export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans, {
+  permissions: licensePermissionsSchema.nullable().optional(),
+}).omit({
   id: true,
   createdAt: true,
+});
+
+export const insertPaddleEventSchema = createInsertSchema(paddleEvents).omit({
+  createdAt: true,
+  processedAt: true,
 });
 
 export const insertRevenuecatSubscriptionSchema = createInsertSchema(revenuecatSubscriptions).omit({
@@ -1238,6 +1296,10 @@ export type RevenuecatWebhookEvent = typeof revenuecatWebhookEvents.$inferSelect
 export type InsertRevenuecatWebhookEvent = z.infer<typeof insertRevenuecatWebhookEventSchema>;
 export type RevenuecatProduct = typeof revenuecatProducts.$inferSelect;
 export type InsertRevenuecatProduct = z.infer<typeof insertRevenuecatProductSchema>;
+export type PaddleEvent = typeof paddleEvents.$inferSelect;
+export type InsertPaddleEvent = z.infer<typeof insertPaddleEventSchema>;
+/** Lifecycle of a row in `paddle_events`. See the table comment. */
+export type PaddleEventStatus = "received" | "processed" | "failed" | "ignored";
 
 // API types
 export type ApiProvider = typeof apiProviders.$inferSelect;

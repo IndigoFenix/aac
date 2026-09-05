@@ -38,6 +38,7 @@ import {
   registerPlaceArt,
   clearRegisteredPlaceArt,
 } from "../../shared/glyph-place-art.js";
+import { getVocabularyItem } from "../../shared/glyph-registry.js";
 
 describe("parseGlyph", () => {
   it("parses a single bare key as a 1-slot glyph", () => {
@@ -547,13 +548,91 @@ describe("connectors (forward-binding joins)", () => {
     expect(serializeGlyph(g)).toBe("sad+because+you");
   });
 
-  it("drops a leading or trailing connector", () => {
+  // LEADING CONNECTOR (user decision, 2026-09-04: the `because` and `and` tiles
+  // rendered BLANK in the sentence builder and the clinician "Edit visual"
+  // dialog). This test previously pinned "drops a leading or trailing
+  // connector" — the leading half is now the opposite: a connector with no slot
+  // before it has nothing to bind to, so it parses as an ordinary content slot
+  // and wears its own registry art. Same fix, same reason as the spatial words
+  // in 2026-08-10 (SPATIAL_JOIN_NOTATION). The TRAILING half is unchanged.
+  it("a LONE connector is a content slot — the tile wears its own art", () => {
+    for (const key of ["and", "because", "if", "or", "but"]) {
+      const g = parseGlyph(key);
+      expect(g.slots.map((s) => s.key)).toEqual([key]);
+      expect(g.slots[0].join).toBeUndefined();
+      expect(g.slots[0].unknown).toBe(false);      // registry-known → art resolves
+      expect(serializeGlyph(g)).toBe(key);         // round-trips
+      expect(canResolveGlyph(g)).toBe(true);       // never falls through to ❓
+    }
+    // The two the user reported: `because` has bundled art, `and` an emoji.
+    expect(getVocabularyItem("because")?.imagePath).toBe("indicators/because");
+    expect(getVocabularyItem("and")?.emoji).toBe("➕");
+    // makeSlot/pushSlot don't reject a connector key either, so the clinician
+    // "Edit visual" dialog can drop `because` into an empty glyph.
+    const pushed = pushSlot(EMPTY_GLYPH, "because");
+    expect(pushed.slots.map((s) => s.key)).toEqual(["because"]);
+    expect(serializeGlyph(pushed)).toBe("because");
+  });
+
+  it("a leading connector followed by a word is TWO slots, no join", () => {
+    // Documented behaviour for `because+tired`: the connector occupies slot 0
+    // and `tired` carries NO join (there was nothing before the connector to
+    // bind to). Re-reading this as a join on `tired` was considered and
+    // rejected — it would make serialization lossy. Round-trip is exact.
+    const g = parseGlyph("because+tired");
+    expect(g.slots.map((s) => s.key)).toEqual(["because", "tired"]);
+    expect(g.slots.every((s) => s.join === undefined)).toBe(true);
+    expect(serializeGlyph(g)).toBe("because+tired");
+
     const lead = parseGlyph("or+apple");
-    expect(lead.slots.map((s) => s.key)).toEqual(["apple"]);
+    expect(lead.slots.map((s) => s.key)).toEqual(["or", "apple"]);
     expect(lead.slots[0].join).toBeUndefined();
+    expect(lead.slots[1].join).toBeUndefined();
+    expect(serializeGlyph(lead)).toBe("or+apple");
+  });
+
+  it("still drops a TRAILING connector (nothing to bind forward to)", () => {
     const trail = parseGlyph("apple+because");
     expect(trail.slots.map((s) => s.key)).toEqual(["apple"]);
     expect(serializeGlyph(trail)).toBe("apple");
+  });
+
+  it("a connector AFTER a slot still binds forward — the wire format is unchanged", () => {
+    // The half of the rule that did NOT change. Every serialized sentence with
+    // a join in a `+` position must stay byte-identical.
+    for (const [str, join] of [
+      ["apple+and+banana", "and"],
+      ["apple+or+banana", "or"],
+      ["apple+but+banana", "but"],
+      ["apple+if+banana", "if"],
+      ["apple+because+banana", "because"],
+    ] as const) {
+      const g = parseGlyph(str);
+      expect(g.slots.map((s) => s.key)).toEqual(["apple", "banana"]);
+      expect(g.slots[0].join).toBeUndefined();
+      expect(g.slots[1].join).toBe(join);
+      expect(serializeGlyph(g)).toBe(str);
+    }
+    // Three glyphs, connector in the middle position only.
+    const g = parseGlyph("i_me+tired+because+you");
+    expect(g.slots.map((s) => s.key)).toEqual(["i_me", "tired", "you"]);
+    expect(g.slots[2].join).toBe("because");
+    expect(serializeGlyph(g)).toBe("i_me+tired+because+you");
+  });
+
+  it("a leading connector carries tone tags and layout like any other slot", () => {
+    // RTL/aria are computed off slot COUNT and keys, so a connector slot is
+    // ordinary to both: 1 slot → full viewBox, 2 slots → reversed visual order.
+    const lone = parseGlyph("because#question");
+    expect(lone.slots).toHaveLength(1);
+    expect(lone.toneTags).toEqual(["question"]);
+    expect(computeLayout(lone).viewBoxWidth).toBe(SLOT_UNIT);
+
+    const two = parseGlyph("because+tired");
+    const rtl = computeLayout(two, true);
+    expect(rtl.viewBoxWidth).toBe(2 * SLOT_UNIT);
+    expect(rtl.slots[0].x).toBe(SLOT_UNIT);   // slot 0 renders rightmost
+    expect(rtl.slots[1].x).toBe(0);
   });
 
   it("a spatial relation parses as an ORDINARY SLOT (arrow notation off)", () => {

@@ -210,6 +210,51 @@ role (see [EMAIL.md](EMAIL.md)). The old SMTP_*/RESEND_*/EMAIL_* keys are
 obsolete and should be deleted from the app-secrets JSON — on Lambda every key
 in it becomes an env var and would override the Terraform-set config.
 
+#### Paddle (billing)
+
+Paddle keeps **sandbox and live accounts entirely separate**, each with its own
+API key, client token and webhook secret; nothing crosses between them. All of
+these are keys in the `app-secrets` JSON — the ECS task loads that whole
+document at boot, so **adding them needs no Terraform change** (see the profiles
+note at the top of this file).
+
+| Key | Purpose |
+| --- | --- |
+| `PADDLE_ENVIRONMENT` | `sandbox` (default) or `production`. Selects which of the pairs below is read — set it FIRST, or a live key sits unused next to a sandbox one. |
+| `PADDLE_API_KEY` | Server-side API key, **live** account. |
+| `PADDLE_API_KEY_SANDBOX` | Server-side API key, **sandbox** account. |
+| `PADDLE_CLIENT_TOKEN` | Client-side token for paddle-js, **live**. A different credential from the API key and safe to expose to the browser — it is served to the client by `GET /api/paddle/config`. |
+| `PADDLE_CLIENT_TOKEN_TEST` | Client-side token, **sandbox**. |
+| `PADDLE_WEBHOOK_SECRET` | Signing secret for the notification destination. Not derived from the API key — copy it from the Paddle dashboard when the destination is created, and note it is shown once. |
+
+**Webhook URL** — register this as the notification destination in the Paddle
+dashboard (Developer tools → Notifications):
+
+```
+https://<host>/api/paddle/webhook
+```
+
+Subscribe it to: `transaction.completed`, `subscription.activated`,
+`subscription.updated`, `subscription.canceled`, `subscription.past_due`,
+`subscription.paused`, `subscription.resumed`. Anything else is accepted,
+recorded in `paddle_events` as `ignored`, and answered 200.
+
+Three operational facts worth knowing before debugging one:
+
+- The endpoint is **unauthenticated** — the HMAC signature over the raw body is
+  the authentication, so it is exempt from CSRF and mounted with
+  `express.raw` ahead of the global `express.json` (`server/middleware/paddle-webhook-raw.ts`).
+  Paddle's validator also rejects a signature whose timestamp is **more than 5
+  seconds old**, so a badly-skewed clock on the task presents as "every webhook
+  is invalid".
+- Every delivery lands in the **`paddle_events`** table keyed by Paddle's own
+  `event_id`, with the raw payload and the outcome. That table, not a log file,
+  is the record: a 200 with `status='ignored'` and a reason is the normal answer
+  to an event we cannot act on, and is NOT a failure.
+- A checkout must pass **`customData: { userId }`** (optionally `licenseId`).
+  It is the only link between a Paddle transaction and our user; without it the
+  payment succeeds and the event is ignored with a reason.
+
 **Runtime Injection:** Secrets are injected into containers at runtime by ECS/Lambda, never baked into images.
 
 ---

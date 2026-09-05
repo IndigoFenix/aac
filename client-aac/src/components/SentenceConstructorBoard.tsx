@@ -1,9 +1,20 @@
 // client-aac/src/components/SentenceConstructorBoard.tsx
 //
-// Layout skeleton for the sentence construction board. Renders the static
-// shell — sidebar tabs, glyph display, tone toggles, help/play, modifier
-// zone, AI strip, mode chips, main grid. State interactions (slot fill,
-// modifier apply, AI refresh, guessing mode) wired in subsequent tasks.
+// THE STUDENT'S SENTENCE BUILDER — the HOST, not the chrome.
+//
+// The chrome it draws (the two measured sidebar columns, the modifier band and
+// its five picker rows, the 9×2 grid with its bracketed paging, and every leaf
+// button) lives in `@client-shared/builder`, because the clinician's "Edit
+// visual" dialog composes the SAME chrome: the two builders produce the same
+// output, so one owner draws them and each client injects what differs (i18n,
+// its Glyph wrapper, its icon-path resolver, its people sources) through
+// `BuilderDepsProvider`. The press LAWS are shared too, in
+// `@shared/glyph-builder-ops` — a press must mean the same thing on both.
+//
+// What stays here is orchestration, all of it AAC-only: engine surface
+// requests, the AI strips, Word Finder / guessing, the call mirror
+// (`onMirror` / `remoteRef` / `data-mirror-id`), the recency memory, and the
+// glyph state itself.
 //
 // Eyegaze constraints baked in:
 //   - No scrolling anywhere
@@ -45,12 +56,21 @@ import {
   type ParsedGlyph,
   type ToneTag,
 } from "@shared/glyph-compositor";
-import { applyExclusiveModifier, applyModifierPress, cycleQualityPole, pushSlotWithJoin } from "@shared/glyph-builder-ops";
+import {
+  applyExclusiveModifier,
+  applyModifierPress,
+  autoComposeSlot,
+  canonicalizeForEngine,
+  computeTargetSlot,
+  cycleQualityPole,
+  pushSlotWithJoin,
+  resolveSlotItem,
+  slotKeyForSelection,
+} from "@shared/glyph-builder-ops";
 import { placeArt } from "@shared/glyph-place-art";
 import { defaultImageResolver, resolveIconPath } from "@/lib/glyph-images";
 import { apiUrl } from "@/lib/queryClient";
 import { resolveEmoji, rtlMirrorStyle } from "@shared/emoji-registry";
-import { ArrowBack } from "@/components/ui/directional-icons";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { forwardTriangle } from "@/components/ui/directional-icons";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
@@ -68,15 +88,36 @@ import {
   type BuilderTarget,
 } from "@shared/call/builder-mirror";
 import type { BuilderRecency, BuilderSurface, BuilderWord } from "@shared/games-bridge";
-// The sidebar columns' geometry — measured capacity, paging and the fill
-// class (see sidebar-layout.ts). Pure arithmetic, tested on its own.
+// THE SHARED BUILDER CHROME — one owner for the layout and the leaf buttons,
+// composed here and by the clinician's "Edit visual" dialog. The sidebar
+// columns' geometry (measured capacity + paging) is pure arithmetic and tested
+// on its own; the host still calls it, because the AAC has to publish the
+// VISIBLE set to a clinician's call mirror.
 import {
-  SIDEBAR_BUTTON_FILL,
-  SIDEBAR_PAD_PX,
+  ActionButton,
+  BuilderDepsProvider,
+  BuilderGrid,
+  BuilderGridEmpty,
+  BuilderSidebar,
+  EngineWordButton,
+  GridButton,
+  ModifierBand,
+  ModifierButton,
+  MoreButton,
+  PersonButton,
+  ToneToggle,
+  CONTACTS_CHIP_ICON,
+  ENGINE_CONTACTS_CHIP,
+  contactChipGlyphs,
+  mergeContactTiles,
+  orderDirectoryPeople,
   sidebarCapacity,
-  sidebarDensity,
   sidebarPage,
-} from "@/lib/sidebar-layout";
+  tabKeyActivate,
+  type BuilderRenderDeps,
+  type BuilderSidebarEntry,
+  type ContactTile,
+} from "@client-shared/builder";
 import { BUILDER_SURFACE_CAPACITY, type EngineBuilderBackend } from "@/lib/engine-builder";
 // ONE paging rule for both word sources (engine surface + registry fallback).
 import { BUILDER_GRID_CELLS, BUILDER_ITEMS_WITH_MORE, pageBuilderGrid } from "@shared/aac-builder-paging";
@@ -86,53 +127,23 @@ import { BUILDER_GRID_CELLS, BUILDER_ITEMS_WITH_MORE, pageBuilderGrid } from "@s
 // unrelated function of the same name (sentence → render Tokens).
 import { parseSentence as parseIntentSentence } from "@shared/world-engine/interaction/intent/parse-intent";
 import { noteUtterance } from "@shared/world-engine/interaction/intent/surface-next";
-// The press rules that decide what a press MEANS — pure, and therefore tested
-// on their own (builder-rules.test.ts) rather than only through this component.
-import { autoComposeSlot, engineNounKind, loadRecency, saveRecency } from "@/lib/builder-rules";
+// The rules that need THIS client's build: the wire's noun kind as the parser
+// names it, and the student's learned layer in localStorage. The press-ROUTING
+// rules (autoComposeSlot / slotKeyForSelection / computeTargetSlot) moved to
+// @shared/glyph-builder-ops so the clinician builder routes a press the same way.
+import { engineNounKind, loadRecency, saveRecency } from "@/lib/builder-rules";
 import { SentenceButton } from "@/components/SentenceButton";
-import { GlyphTriad } from "@client-shared/board/GlyphTriad";
 import { Glyph } from "@/components/Glyph";
 import { parseSuggestionKey, getSuggestionEntry } from "@shared/guessing-mode/suggestion-registry.js";
-
-/** Compute the slot we want the AI to suggest for. */
-function computeTargetSlot(glyph: ParsedGlyph, activeSlot: number | null): number {
-  if (activeSlot != null) return activeSlot;
-  // No upper clamp — slots can grow up to MAX_SLOTS. We always target
-  // the next empty position; if it's at the cap, the last slot is the
-  // target for re-suggestion.
-  return Math.min(glyph.slots.length, MAX_SLOTS - 1);
-}
 
 /**
  * Find a slot that is a composable host with no payload yet. Returns the
  * slot index, or null. When set, item presses route into the payload
  * rather than pushing a new slot.
+ *
+ * Stays HERE (not in the shared ops) because it is gated on this host's
+ * `ENABLE_GLYPH_ARGUMENTS` flag — with the flag off it is a constant `null`.
  */
-/**
- * What goes into a glyph slot when the student selects a vocabulary
- * item from the construction-board grid or AI strip. For items the AI
- * is explicitly taught about (`exposeToAi: true`) the slot keeps the
- * snake_case key — the AI's vocabulary list says `i_me`, `want`,
- * `play`, so the [GLYPH PRESS] should match. For everything else the
- * slot stores the item's CANONICAL EMOJI; the AI's vocabulary is just
- * "emoji" for those concepts, so it sees 🐈 (not "cat"), 🚶 (not
- * "walk"), 🍌 (not "banana"), and interprets intent visually. The
- * renderer reverse-maps emojis back to bundled artwork when one is
- * available (see getVocabularyItemByEmoji), so the visual fidelity is
- * the same whether the slot stores `key` or `emoji`.
- */
-function slotKeyForSelection(item: VocabularyItem): string {
-  if (item.exposeToAi) return item.key;
-  // A PLACE WORD keeps its key even when the AI's vocabulary for it is an
-  // emoji: its picture is a shell plus a fixture (glyph-place-art.ts) and only
-  // the WORD resolves to that. Storing 🛌 for `bedroom` put a bare bed in the
-  // sentence — the very "furniture with no room around it" this exists to fix —
-  // and the word reads more clearly to the interpreter than the emoji anyway.
-  if (placeArt(item.key)) return item.key;
-  if (item.emoji) return item.emoji;
-  return item.key;
-}
-
 function findPendingPayloadSlot(glyph: ParsedGlyph): number | null {
   // Argument composition disabled (ENABLE_GLYPH_ARGUMENTS): no slot is ever
   // "waiting for a payload", so every caller falls through to plain
@@ -168,9 +179,6 @@ const ENGINE_TAB_ICON: Record<string, string> = {
   social: "💬",
 };
 const ENGINE_ALL_TAB_ICON = "⭐";
-/** Client-side chip id for the person-directory list under the engine's
- *  "person" tab (real people with photos — content the engine can't serve). */
-const ENGINE_PHOTOS_CHIP = "photos";
 
 /** Cap on engine modifier-rail buttons so the band never overflows. */
 const ENGINE_MODIFIERS_SHOWN = 5;
@@ -288,7 +296,11 @@ const CHIP_ICON: Record<string, string> = {
   frequency: "📊",
 };
 
-/** One selectable person for the "photos" person list. */
+/** A stable empty list for "no join can be armed right now" — a fresh `[]`
+ *  every render would re-run the band's memoised children for nothing. */
+const EMPTY_JOIN_OPTIONS: VocabularyItem[] = [];
+
+/** One selectable person for the [contacts] person list. */
 export interface ConstructionPerson {
   id: string;
   type: "student" | "user" | "contact";
@@ -309,8 +321,9 @@ export interface SentenceConstructorBoardProps {
    * the tab column becomes "all" (the pure ranked surface) + the engine's
    * advertised categories, the chip column becomes the engine's group chips
    * for the active view, the main grid is the engine surface, the modifier
-   * band gains the engine's modifier rail, and the person tab's "photos"
-   * chip merges the engine's present persons/creatures with the directory.
+   * band gains the engine's modifier rail, and the person tab's engine
+   * [contacts] chip merges the engine's own named individuals with this
+   * student's people directory.
    * Absent (or not answering) → the legacy registry taxonomy.
    */
   engineBuilder?: EngineBuilderBackend | null;
@@ -333,7 +346,7 @@ export interface SentenceConstructorBoardProps {
   constructionSuggestions?: ConstructionSuggestionsClient | null;
   /** AI-driven memory chips per category. */
   constructionMemoryChips?: Partial<Record<ConstructionStateClient["category"], ConstructionMemoryChipsClient>>;
-  /** Full selectable-people directory — the "who → photos" person list. */
+  /** Full selectable-people directory — the [contacts] person list. */
   people?: ConstructionPerson[];
   /** Resolve a `face:<id>` to an image URL (camera capture or stored photo). */
   getFaceImage?: (contactId: string) => string | null;
@@ -401,18 +414,21 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const onEnterGuessing = props.onEnterGuessing;
   const onExitGuessing = props.onExitGuessing;
 
-  // Ordered person list for the "who → photos" mode chip: people seen this
-  // session first (most likely the student wants to talk about who's here),
-  // then the rest alphabetically. Stable across renders for eyegaze.
-  const orderedPeople = useMemo(() => {
-    const present = new Set(presentPersonIds);
-    return [...people].sort((a, b) => {
-      const ap = present.has(a.id) ? 0 : 1;
-      const bp = present.has(b.id) ? 0 : 1;
-      if (ap !== bp) return ap - bp;
-      return a.name.localeCompare(b.name);
-    });
-  }, [people, presentPersonIds]);
+  // Ordered person list for the [contacts] chip (and the legacy "who → photos"
+  // mode chip): people seen this session first (most likely the student wants
+  // to talk about who's here), then the rest alphabetically. Stable across
+  // renders for eyegaze. THE LAW LIVES IN client-shared, because the
+  // clinician's builder has to show the same list in the same order.
+  const orderedPeople = useMemo(
+    () => orderDirectoryPeople(people, presentPersonIds),
+    [people, presentPersonIds],
+  );
+  /** The [contacts] chip's own face: the first few real contacts who have a
+   *  stored photo, as `face:<id>` glyphs the GlyphTriad draws. */
+  const contactFaceGlyphs = useMemo(
+    () => contactChipGlyphs(people, presentPersonIds),
+    [people, presentPersonIds],
+  );
 
   const [activeTab, setActiveTab] = useState<GlyphCategory>("who");
   const [modeChip, setModeChip] = useState<string>(defaultModeChip("who"));
@@ -559,38 +575,39 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
 
   // Engine tab/chip selection: `engineCategory` null = the "all" tab (the
   // pure ranked surfaceNext output — the DEFAULT view after any selection);
-  // `engineChip` = a group id from the active surface's chips, or the
-  // client-side "photos" chip under the person tab.
+  // `engineChip` = a group id from the active surface's chips. Every chip is
+  // the engine's now, [contacts] included: the host no longer pins one of its
+  // own and borrows another tab's surface to fill it.
   const [engineCategory, setEngineCategory] = useState<string | null>(null);
   const [engineChip, setEngineChip] = useState<string | null>(null);
   const [engineTabPage, setEngineTabPage] = useState(0);
   // THE MEASURED COLUMN (2026-08-27). Both sidebars are siblings in the board's
   // `flex h-full` row, so they are always the same height — one observer
-  // answers for both. Everything that decides how many buttons a column shows,
-  // and how tightly they draw, reads this instead of a constant.
-  const sidebarRef = useRef<HTMLElement | null>(null);
+  // answers for both, and it lives in BuilderSidebar. Everything that decides
+  // how many buttons a column shows, and how tightly they draw, reads this
+  // instead of a constant. Held here because the PAGING it feeds decides what
+  // the call mirror publishes, not just what is drawn.
   const [sidebarHeight, setSidebarHeight] = useState(0);
-  useEffect(() => {
-    const el = sidebarRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const apply = (h: number) => setSidebarHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
-    apply(el.getBoundingClientRect().height);
-    const ro = new ResizeObserver((entries) => {
-      for (const e of entries) apply(e.contentRect.height + SIDEBAR_PAD_PX * 2);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-    // The element is stable for the component's life; re-running on every
-    // render would tear the observer down mid-resize.
+  const handleSidebarMeasure = useCallback((h: number) => {
+    setSidebarHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
   }, []);
   const sidebarSlots = sidebarCapacity(sidebarHeight);
   // A tapped SENTENCE-TYPE chip ("I want to ask something"), echoed back on the
   // next request so the openers narrow to that move. Empty board only — the
   // engine stops offering the chips the moment a word lands.
   const [engineSeedKind, setEngineSeedKind] = useState<string | null>(null);
-  const enginePhotos = engineCategory === "person" && engineChip === ENGINE_PHOTOS_CHIP;
+  /** The engine's [contacts] chip on the person tab: the one grid whose content
+   *  the engine cannot fully answer, because the child's own directory is
+   *  platform data. The ENGINE half arrives as ordinary surface buttons (a
+   *  game's named characters); the host merges its directory in. */
+  const engineContacts = engineCategory === "person" && engineChip === ENGINE_CONTACTS_CHIP;
 
-  const serializedGlyph = useMemo(() => serializeGlyph(glyph), [glyph]);
+  // THE ENGINE'S AND THE PARSER'S view of the sentence. A slot may store a bare
+  // emoji (slotKeyForSelection stores 💧 for `water`) and neither the surfacer
+  // nor the intent parser knows emojis — canonicalizeForEngine spells those
+  // heads back as registry keys. NOT what the AI, the call mirror or onPlay
+  // get: those keep the raw glyph, emoji and all.
+  const canonicalGlyph = useMemo(() => canonicalizeForEngine(glyph), [glyph]);
 
   // Debounced surface request per builder state change. The engine's taxonomy
   // IS the builder's while it answers: the selected engine tab/chip is sent
@@ -600,13 +617,16 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   useEffect(() => {
     if (!engineBuilder || guessingActive) return;
     const seq = ++engineSeqRef.current;
-    // The photos person-list needs the engine's NOUN library (kind/present
-    // ride on nouns), which lives under "things".
-    const category = enginePhotos ? "things" : engineCategory ?? undefined;
-    const group = enginePhotos || engineChip == null ? undefined : engineChip;
+    // The selection goes straight through — tab as `category`, chip as `group`.
+    // [contacts] used to be the exception (a host chip that secretly asked for
+    // the "things" tab so it could sift persons out of the noun library, which
+    // is how three pages of animals ended up in front of the child's family);
+    // it is an engine group now and needs no twist.
+    const category = engineCategory ?? undefined;
+    const group = engineChip ?? undefined;
     const timer = setTimeout(() => {
       void engineBuilder
-        .requestSurface(serializedGlyph, category, group, {
+        .requestSurface(canonicalGlyph, category, group, {
           // ONE budget for both backends: the board's own three grid pages.
           // Sent on every request, so the in-game answer pages exactly like the
           // out-of-game one instead of quietly falling to the surfacer's 16.
@@ -634,7 +654,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return () => clearTimeout(timer);
     // activeTab/modeChip: while in the legacy FALLBACK (a timed-out surface),
     // any tab/chip press re-asks the engine so it can win the board back.
-  }, [engineBuilder, guessingActive, enginePhotos, engineCategory, engineChip, engineSeedKind, recency, serializedGlyph, activeTab, modeChip]);
+  }, [engineBuilder, guessingActive, engineCategory, engineChip, engineSeedKind, recency, canonicalGlyph, activeTab, modeChip]);
 
   // Engine chrome (tabs + chips + grid) renders while the engine ANSWERS; a
   // null surface (timeout / error) falls the whole builder back to the legacy
@@ -661,17 +681,16 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const visibleEngineTabs = engineTabPageView.items;
 
   // Sub-category chips for the active view — the ENGINE's own groups (its
-  // vocabulary-menu hierarchy), localized engine-side. The photos view borrows
-  // the "things" surface, whose groups belong to the noun library, not the
-  // person list — suppressed there.
+  // vocabulary-menu hierarchy), localized engine-side. Every view has them now,
+  // the person tab included ([contacts] · [people] · [animals]).
   const engineGroupChips = useMemo(
-    () => (engineUiActive && !enginePhotos ? engineSurface?.groups ?? [] : []),
-    [engineUiActive, enginePhotos, engineSurface]
+    () => (engineUiActive ? engineSurface?.groups ?? [] : []),
+    [engineUiActive, engineSurface]
   );
   /** The engine can serve nine chips (five noun clusters + four action
    *  categories) and this column never paged them — it drew all nine. Budgeted
-   *  against the pinned "all" chip and the person tab's "photos" chip. */
-  const engineChipsFixed = 1 + (engineUiActive && engineCategory === "person" ? 1 : 0);
+   *  against the pinned "all" chip, which is the only fixed one left. */
+  const engineChipsFixed = 1;
   const engineChipPageView = useMemo(
     () => sidebarPage(engineGroupChips, engineChipsFixed, engineChipPage, sidebarSlots),
     [engineGroupChips, engineChipsFixed, engineChipPage, sidebarSlots],
@@ -688,7 +707,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     [engineUiActive, guessingActive, engineSurface]
   );
 
-  const engineGridActive = engineUiActive && !guessingActive && !enginePhotos;
+  const engineGridActive = engineUiActive && !guessingActive && !engineContacts;
 
   const engineWords = useMemo(
     () => (engineGridActive && engineSurface ? engineSurface.buttons : []),
@@ -722,52 +741,47 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return renderable.slice(0, ENGINE_MODIFIERS_SHOWN);
   }, [engineBuilder, guessingActive, effectiveActiveSlot, displayedGlyph.slots.length, engineSurface]);
 
-  // Engine persons/creatures for the "who → photos" list merge.
-  const enginePersonWords = useMemo(() => {
-    if (!engineBuilder || !engineSurface) return [] as BuilderWord[];
-    return engineSurface.buttons.filter((w) => w.kind === "person" || w.kind === "creature");
-  }, [engineBuilder, engineSurface]);
+  // The engine's OWN half of [contacts]: the surface for group=individuals IS
+  // that cluster, so the buttons need no sifting. Out of game the cluster is
+  // empty by construction (the spec has no contacts in it) and the grid is the
+  // directory alone; in game it is the scene's named characters.
+  const engineIndividualWords = useMemo(() => {
+    if (!engineContacts || !engineSurface) return [] as BuilderWord[];
+    return engineSurface.buttons;
+  }, [engineContacts, engineSurface]);
 
-  // Merged "who → photos" list (engine mode only): everyone PRESENT first —
-  // in-scene engine entities, then camera-seen contacts — then the remaining
-  // engine entities, then the rest of the directory (already alphabetical via
-  // orderedPeople). Paged with the same wrap-around More the main grid uses.
-  type WhoTile =
-    | { type: "engine"; word: BuilderWord }
-    | { type: "person"; person: ConstructionPerson };
-  const mergedWhoTiles = useMemo<WhoTile[] | null>(() => {
+  // The merged [contacts] grid (engine mode only). The ordering + de-dup law is
+  // client-shared so the clinician's builder shows the same list; paged with
+  // the same wrap-around More the main grid uses.
+  type ContactCell = ContactTile<ConstructionPerson, BuilderWord>;
+  const contactTiles = useMemo<ContactCell[] | null>(() => {
     if (!engineBuilder) return null;
-    const present = new Set(presentPersonIds);
-    const enginePresent = enginePersonWords.filter((w) => w.present);
-    const engineRest = enginePersonWords.filter((w) => !w.present);
-    const peoplePresent = orderedPeople.filter((p) => present.has(p.id));
-    const peopleRest = orderedPeople.filter((p) => !present.has(p.id));
-    return [
-      ...enginePresent.map((word): WhoTile => ({ type: "engine", word })),
-      ...peoplePresent.map((person): WhoTile => ({ type: "person", person })),
-      ...engineRest.map((word): WhoTile => ({ type: "engine", word })),
-      ...peopleRest.map((person): WhoTile => ({ type: "person", person })),
-    ];
-  }, [engineBuilder, enginePersonWords, orderedPeople, presentPersonIds]);
-  const whoTilesNeedMore = (mergedWhoTiles?.length ?? 0) > GRID_CELLS;
+    return mergeContactTiles<ConstructionPerson, BuilderWord>({
+      people: orderedPeople,
+      engine: engineIndividualWords,
+      presentPersonIds,
+    });
+  }, [engineBuilder, engineIndividualWords, orderedPeople, presentPersonIds]);
+  const contactsNeedMore = (contactTiles?.length ?? 0) > GRID_CELLS;
   // Both controls take a cell here too (`GRID_ITEMS_WITH_MORE` counts them).
-  const whoTilesPerPage = whoTilesNeedMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
-  const pagedWhoTiles = useMemo<WhoTile[]>(() => {
-    if (!mergedWhoTiles) return [];
-    if (!whoTilesNeedMore) return mergedWhoTiles.slice(0, GRID_CELLS);
+  const contactsPerPage = contactsNeedMore ? GRID_ITEMS_WITH_MORE : GRID_CELLS;
+  const pagedContactTiles = useMemo<ContactCell[]>(() => {
+    if (!contactTiles) return [];
+    if (!contactsNeedMore) return contactTiles.slice(0, GRID_CELLS);
     // Negative pages wrap: Back decrements `gridPage`, and JS `%` keeps the
     // sign (the same normalisation `pageBuilderGrid` does).
-    const len = mergedWhoTiles.length;
-    const start = (((gridPage * whoTilesPerPage) % len) + len) % len;
-    const wrapped = [...mergedWhoTiles.slice(start), ...mergedWhoTiles.slice(0, start)];
-    return wrapped.slice(0, whoTilesPerPage);
-  }, [mergedWhoTiles, gridPage, whoTilesNeedMore, whoTilesPerPage]);
+    const len = contactTiles.length;
+    const start = (((gridPage * contactsPerPage) % len) + len) % len;
+    const wrapped = [...contactTiles.slice(start), ...contactTiles.slice(0, start)];
+    return wrapped.slice(0, contactsPerPage);
+  }, [contactTiles, gridPage, contactsNeedMore, contactsPerPage]);
 
   // All applicable modifiers for the active slot (full list, before pagination).
   const allModifiers = useMemo(() => {
     if (effectiveActiveSlot == null) return [] as VocabularyItem[];
     const slot = displayedGlyph.slots[effectiveActiveSlot];
-    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    // resolveSlotItem, not getVocabularyItem: a slot may store an emoji.
+    const item = slot ? resolveSlotItem(slot.key) : undefined;
     if (!item) return [];
     return modifiersFor(item.pos);
   }, [displayedGlyph, effectiveActiveSlot]);
@@ -794,7 +808,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const colorOptions = useMemo<VocabularyItem[]>(() => {
     if (effectiveActiveSlot == null) return [];
     const slot = displayedGlyph.slots[effectiveActiveSlot];
-    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    // resolveSlotItem, not getVocabularyItem: a slot may store an emoji.
+    const item = slot ? resolveSlotItem(slot.key) : undefined;
     if (!item) return [];
     return colorModifiersFor(item.pos);
   }, [displayedGlyph, effectiveActiveSlot]);
@@ -821,7 +836,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const emotionOptions = useMemo<VocabularyItem[]>(() => {
     if (effectiveActiveSlot == null) return [];
     const slot = displayedGlyph.slots[effectiveActiveSlot];
-    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    // resolveSlotItem, not getVocabularyItem: a slot may store an emoji.
+    const item = slot ? resolveSlotItem(slot.key) : undefined;
     if (!item) return [];
     return emotionModifiersFor(item.pos);
   }, [displayedGlyph, effectiveActiveSlot]);
@@ -844,7 +860,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const amountOptions = useMemo<VocabularyItem[]>(() => {
     if (effectiveActiveSlot == null) return [];
     const slot = displayedGlyph.slots[effectiveActiveSlot];
-    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    // resolveSlotItem, not getVocabularyItem: a slot may store an emoji.
+    const item = slot ? resolveSlotItem(slot.key) : undefined;
     if (!item) return [];
     return gaugeModifiersFor(item.pos);
   }, [displayedGlyph, effectiveActiveSlot]);
@@ -866,7 +883,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const qualityPairs = useMemo(() => {
     if (effectiveActiveSlot == null) return [];
     const slot = displayedGlyph.slots[effectiveActiveSlot];
-    const item = slot ? getVocabularyItem(slot.key) : undefined;
+    // resolveSlotItem, not getVocabularyItem: a slot may store an emoji.
+    const item = slot ? resolveSlotItem(slot.key) : undefined;
     if (!item) return [];
     return qualityPairsFor(item.pos);
   }, [displayedGlyph, effectiveActiveSlot]);
@@ -1137,7 +1155,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     try {
       const classifier = engineKindsRef.current;
       const frame = parseIntentSentence(
-        serializedGlyph,
+        // Canonical (emoji heads spelled out) so the learned layer and the
+        // Say-button colour agree with the surfacer — see canonicalizeForEngine.
+        canonicalGlyph,
         classifier.size ? { classifyEntity: (sym) => classifier.get(sym) ?? "unknown" } : {},
       );
       const next = noteUtterance(recency, frame);
@@ -1148,7 +1168,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       console.warn("[builder] recency update failed", e);
     }
     onPlay?.(serializeGlyph(displayedGlyph), spokenFallback || undefined);
-  }, [displayedGlyph, serializedGlyph, recency, onPlay, awaitingInterpret, getPersonName, t]);
+  }, [displayedGlyph, canonicalGlyph, recency, onPlay, awaitingInterpret, getPersonName, t]);
 
   // Help button state machine (per planning-docs/glyph-system.md):
   //   - Slot selected → re-suggest for that slot (excludes current AI strip).
@@ -1330,8 +1350,10 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     return translated === item.tKey ? item.key : translated;
   }, [t]);
 
-  /** Whichever of the builder's several word views is on screen right now. */
-  const photosActive = engineUiActive ? enginePhotos : activeTab === "who" && modeChip === "photos";
+  /** Whichever of the builder's several word views is on screen right now. The
+   *  legacy taxonomy keeps its own "who → photos" mode chip (that path never
+   *  had an engine to ask). */
+  const contactsActive = engineUiActive ? engineContacts : activeTab === "who" && modeChip === "photos";
 
   /**
    * WORD FINDER buttons, filtered exactly as the grid below filters them.
@@ -1366,9 +1388,9 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     // through `guessButtons` below rather than as builder vocabulary cells.
     if (guessingActive) return [];
 
-    if (photosActive) {
-      if (mergedWhoTiles) {
-        return pagedWhoTiles.map((tile) =>
+    if (contactsActive) {
+      if (contactTiles) {
+        return pagedContactTiles.map((tile) =>
           tile.type === "person"
             ? { key: `face:${tile.person.id}`, label: tile.person.name, glyph: `face:${tile.person.id}`, emoji: "🧑", present: presentPersonIds.includes(tile.person.id) }
             : { key: tile.word.key, label: tile.word.label || tile.word.key, glyph: tile.word.glyph ?? tile.word.key, engine: true, present: tile.word.present },
@@ -1401,14 +1423,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
       glyph: item.expandsTo ?? item.key,
       emoji: item.emoji,
     }));
-  }, [guessingActive, photosActive, mergedWhoTiles, pagedWhoTiles, orderedPeople, presentPersonIds, engineGridActive, engineGridWords, gridItems, itemLabel]);
+  }, [guessingActive, contactsActive, contactTiles, pagedContactTiles, orderedPeople, presentPersonIds, engineGridActive, engineGridWords, gridItems, itemLabel]);
 
   const mirrorSnapshot = useMemo<BuilderMirrorSnapshot>(() => serializeBuilderMirror({
     cells: mirrorCells,
     // The child's Word Finder board IS the clinician's Word Finder board — the
     // same buttons the server sent, not a second rendering of them.
     guessButtons: guessingActive ? guessGridButtons : undefined,
-    paging: photosActive ? whoTilesNeedMore : engineGridActive ? engineNeedsMore : gridNeedsMore,
+    paging: contactsActive ? contactsNeedMore : engineGridActive ? engineNeedsMore : gridNeedsMore,
     engine: engineUiActive,
     tabs: engineUiActive
       ? [
@@ -1435,7 +1457,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     },
   }), [
     mirrorCells, guessingActive, guessGridButtons,
-    photosActive, whoTilesNeedMore, engineGridActive, engineNeedsMore, gridNeedsMore,
+    contactsActive, contactsNeedMore, engineGridActive, engineNeedsMore, gridNeedsMore,
     engineUiActive, visibleEngineTabs, engineCategory, visibleEngineChips, engineChip,
     visibleChips, activeTab, modeChip, displayedGlyph, activeSlot, t,
   ]);
@@ -1477,7 +1499,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         case "engineWord": {
           const word =
             engineGridWords.find((w) => w.key === target.key) ??
-            enginePersonWords.find((w) => w.key === target.key) ??
+            engineIndividualWords.find((w) => w.key === target.key) ??
             engineSurface?.buttons.find((w) => w.key === target.key);
           if (!word) return false;
           handleEngineWordPress(word);
@@ -1526,24 +1548,107 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
     handlePersonPress, handleGridPress, handleEngineWordPress, handleTabSelect,
     handleEngineTabSelect, handleModeChipSelect, handleEngineChipSelect,
     handleSlotPress, handlePlay, handleBackspace, handleClearSelected,
-    engineGridWords, enginePersonWords, engineSurface,
+    engineGridWords, engineIndividualWords, engineSurface,
     guessGridButtons, pressGuessButton,
   ]);
 
-  // How tight each sidebar column has to draw itself — the count includes the
-  // pinned buttons and the pager, because they take the same room a category
-  // does (see `sidebarDensity`).
-  const tabDensity = sidebarDensity(
-    engineUiActive ? 1 + visibleEngineTabs.length + (engineTabsNeedMore ? 1 : 0) : TABS.length,
-    sidebarHeight,
-  );
-  const chipDensity = sidebarDensity(
-    engineUiActive
-      ? engineChipsFixed + visibleEngineChips.length + (engineChipsNeedMore ? 1 : 0)
-      : visibleChips.length + (chipsNeedMore ? 1 : 0),
-    sidebarHeight,
-  );
+  // ── The two sidebar columns, as DATA ─────────────────────────────────────
+  // One entry list per column, whichever taxonomy is driving. The markup —
+  // and the density step-down that keeps the labels readable — belongs to
+  // BuilderSidebar; before the split, engine mode and legacy mode each carried
+  // their own copy of it and the two had already drifted.
+  //
+  // `pinned` says where an entry sits relative to the "…" pager: the "all"
+  // tab/chip LEADS, the person tab's "photos" chip TRAILS (it is a fixed
+  // affordance, not part of the paged run) — the order the board has always
+  // drawn them in.
+  const sidebarTabs = useMemo<BuilderSidebarEntry[]>(() => {
+    if (engineUiActive) {
+      return [
+        {
+          id: "all",
+          label: engineTabLabel("all"),
+          icon: ENGINE_ALL_TAB_ICON,
+          active: engineCategory == null,
+          testId: "engine-tab-all",
+          mirrorId: formatBuilderTarget({ kind: "engineTab", tab: "all" }),
+          pinned: "lead" as const,
+          onPress: () => handleEngineTabSelect(null),
+        },
+        ...visibleEngineTabs.map((cat) => ({
+          id: cat,
+          label: engineTabLabel(cat),
+          icon: ENGINE_TAB_ICON[cat] ?? "🔤",
+          active: cat === engineCategory,
+          testId: `engine-tab-${cat}`,
+          mirrorId: formatBuilderTarget({ kind: "engineTab", tab: cat }),
+          onPress: () => handleEngineTabSelect(cat),
+        })),
+      ];
+    }
+    return TABS.map((tab) => ({
+      id: tab,
+      label: t(`construction.tabs.${tab}`),
+      icon: TAB_ICON[tab],
+      active: tab === activeTab,
+      mirrorId: formatBuilderTarget({ kind: "tab", tab }),
+      onPress: () => handleTabSelect(tab),
+      onKeyDown: (e: React.KeyboardEvent) => tabKeyActivate(e, () => handleTabSelect(tab)),
+    }));
+  }, [engineUiActive, engineTabLabel, engineCategory, visibleEngineTabs, handleEngineTabSelect, t, activeTab, handleTabSelect]);
 
+  const sidebarChips = useMemo<BuilderSidebarEntry[]>(() => {
+    if (engineUiActive) {
+      return [
+        {
+          id: "all",
+          label: t("construction.chips.all"),
+          icon: "🔠",
+          active: engineChip == null,
+          testId: "engine-chip-all",
+          mirrorId: formatBuilderTarget({ kind: "engineChip", chip: "all" }),
+          pinned: "lead" as const,
+          onPress: () => handleEngineChipSelect(null),
+        },
+        ...visibleEngineChips.map((chip) => {
+          // The chip wears THREE of its members (best examples first,
+          // engine-ranked) rather than one word standing in for the whole
+          // category; a group that advertises no art at all falls back to 📂.
+          //
+          // [contacts] is the one chip whose members the ENGINE cannot draw out
+          // of game — they are this student's own directory — so its face is
+          // the first few real contacts who have a photo, and only if there are
+          // none does the engine's own exemplar art (a game's characters) show.
+          const engineFaces = chip.glyph || chip.glyphs?.length
+            ? chip.glyphs ?? (chip.glyph ? [chip.glyph] : [])
+            : undefined;
+          const faces =
+            chip.id === ENGINE_CONTACTS_CHIP && contactFaceGlyphs.length
+              ? contactFaceGlyphs
+              : engineFaces;
+          return {
+            id: chip.id,
+            label: chip.label,
+            glyphs: faces,
+            icon: faces ? undefined : chip.id === ENGINE_CONTACTS_CHIP ? CONTACTS_CHIP_ICON : "📂",
+            active: chip.id === engineChip,
+            testId: `engine-chip-${chip.id}`,
+            mirrorId: formatBuilderTarget({ kind: "engineChip", chip: chip.id }),
+            onPress: () => handleEngineChipSelect(chip.id),
+          };
+        }),
+      ];
+    }
+    return visibleChips.map((chip) => ({
+      id: chip.key,
+      label: chip.label,
+      icon: chip.memory ? "✨" : CHIP_ICON[chip.key],
+      memory: chip.memory,
+      active: chip.key === modeChip,
+      mirrorId: formatBuilderTarget({ kind: "chip", chip: chip.key }),
+      onPress: () => handleModeChipSelect(chip.key),
+    }));
+  }, [engineUiActive, t, engineChip, visibleEngineChips, contactFaceGlyphs, handleEngineChipSelect, visibleChips, modeChip, handleModeChipSelect]);
 
   const handleModifierPress = useCallback(
     (mod: VocabularyItem) => {
@@ -1714,295 +1819,53 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   const aiModifierStripVisible =
     SHOW_AI_SUGGESTION_STRIPS && aiModifierCandidates.length > 0 && effectiveActiveSlot != null;
 
+  // WHAT THIS CLIENT LENDS THE SHARED CHROME: its translator, its reading
+  // direction, its Glyph wrapper (animated + fillSlot), its bundled-icon
+  // resolver, and its people sources. The clinician's builder hands over its
+  // own four; nothing below this point knows which client it is drawing for.
+  const builderDeps = useMemo<BuilderRenderDeps>(
+    () => ({ t, rtl: isRTL, GlyphComponent: Glyph, resolveIconPath, getFaceImage, getPersonName }),
+    [t, isRTL, getFaceImage, getPersonName],
+  );
+
   return (
+    <BuilderDepsProvider value={builderDeps}>
     <div
       dir={isRTL ? "rtl" : "ltr"}
       className="flex h-full w-full overflow-hidden bg-gray-50 dark:bg-gray-900"
       data-testid="construction-board"
     >
-      {/* Sidebar: vertical tabs. While the engine answers, the tab set IS the
-          engine's advertised categories behind a pinned "all" (ranked) tab —
-          the legacy who/do/what/where taxonomy renders only as the fallback
-          when no engine surface is available. */}
-      <nav
-        ref={sidebarRef}
-        aria-label={t("construction.tabsLabel")}
-        className="flex flex-col gap-2 p-2 border-e border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 w-28 shrink-0 overflow-hidden"
-        data-testid={engineUiActive ? "engine-tabs" : undefined}
-      >
-        {engineUiActive ? (
-          <>
-            <motion.button
-              data-dwell
-              data-testid="engine-tab-all"
-              data-mirror-id={formatBuilderTarget({ kind: "engineTab", tab: "all" })}
-              role="tab"
-              aria-selected={engineCategory == null}
-              tabIndex={0}
-              onClick={() => handleEngineTabSelect(null)}
-              whileTap={{ scale: 0.96 }}
-              className={[
-                "flex flex-col items-center justify-center rounded-xl overflow-hidden",
-                SIDEBAR_BUTTON_FILL,
-                tabDensity.pad,
-                "border-2 transition-colors",
-                engineCategory == null
-                  ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-                  : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
-              ].join(" ")}
-            >
-              <span className={`${tabDensity.icon} leading-none`} aria-hidden>
-                {ENGINE_ALL_TAB_ICON}
-              </span>
-              <span className={`${tabDensity.label} font-medium truncate w-full text-center`}>
-                {engineTabLabel("all")}
-              </span>
-            </motion.button>
-            {visibleEngineTabs.map((cat) => {
-              const active = cat === engineCategory;
-              return (
-                <motion.button
-                  key={cat}
-                  data-dwell
-                  data-testid={`engine-tab-${cat}`}
-                  data-mirror-id={formatBuilderTarget({ kind: "engineTab", tab: cat })}
-                  role="tab"
-                  aria-selected={active}
-                  tabIndex={0}
-                  onClick={() => handleEngineTabSelect(cat)}
-                  whileTap={{ scale: 0.96 }}
-                  className={[
-                    "flex flex-col items-center justify-center rounded-xl overflow-hidden",
-                    SIDEBAR_BUTTON_FILL,
-                    tabDensity.pad,
-                    "border-2 transition-colors",
-                    active
-                      ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-                      : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
-                  ].join(" ")}
-                >
-                  <span className={`${tabDensity.icon} leading-none`} aria-hidden>
-                    {ENGINE_TAB_ICON[cat] ?? "🔤"}
-                  </span>
-                  <span className={`${tabDensity.label} font-medium truncate w-full text-center`}>
-                    {engineTabLabel(cat)}
-                  </span>
-                </motion.button>
-              );
-            })}
-            {engineTabsNeedMore && (
-              <motion.button
-                data-dwell
-                data-testid="engine-tab-more"
-                onClick={() => setEngineTabPage((p) => p + 1)}
-                whileTap={{ scale: 0.95 }}
-                className={`rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center ${SIDEBAR_BUTTON_FILL}`}
-              >
-                …
-              </motion.button>
-            )}
-          </>
-        ) : (
-          TABS.map((tab) => {
-            const active = tab === activeTab;
-            return (
-              <motion.button
-                key={tab}
-                data-dwell
-                data-mirror-id={formatBuilderTarget({ kind: "tab", tab })}
-                role="tab"
-                aria-selected={active}
-                tabIndex={0}
-                onClick={() => handleTabSelect(tab)}
-                onKeyDown={(e) => onTabKey(e, tab)}
-                whileTap={{ scale: 0.96 }}
-                className={[
-                  "flex flex-col items-center justify-center rounded-xl overflow-hidden",
-                  SIDEBAR_BUTTON_FILL,
-                  tabDensity.pad,
-                  "border-2 transition-colors",
-                  active
-                    ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-                    : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-700/40",
-                ].join(" ")}
-              >
-                <span className={`${tabDensity.icon} leading-none`} aria-hidden>
-                  {TAB_ICON[tab]}
-                </span>
-                <span className={`${tabDensity.label} font-medium truncate w-full text-center`}>
-                  {t(`construction.tabs.${tab}`)}
-                </span>
-              </motion.button>
-            );
-          })
-        )}
-      </nav>
+      {/* The two measured sidebar columns.
 
-      {/* Second sidebar: sub-category chips. Engine mode: the ENGINE's own
-          group chips for the active view (localized engine-side), behind an
-          "all" chip that clears the group filter — plus the client-side
-          "photos" chip under the person tab (the real-people directory).
-          Fallback: the legacy mode chips (static + memory). */}
-      <nav
-        aria-label={t("construction.tabsLabel")}
-        className="flex flex-col gap-2 p-2 border-e border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 w-28 shrink-0 overflow-hidden"
-        data-testid={engineUiActive ? "engine-chips" : undefined}
-      >
-        {engineUiActive ? (
-          <>
-            <motion.button
-              data-dwell
-              data-mirror-id={formatBuilderTarget({ kind: "engineChip", chip: "all" })}
-              data-testid="engine-chip-all"
-              onClick={() => handleEngineChipSelect(null)}
-              whileTap={{ scale: 0.95 }}
-              className={[
-                "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
-                SIDEBAR_BUTTON_FILL,
-                  chipDensity.pad,
-                  chipDensity.label,
-                engineChip == null
-                  ? "bg-blue-600 border-blue-700 text-white"
-                  : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
-              ].join(" ")}
-            >
-              <span className={`${chipDensity.icon} leading-none`} aria-hidden>
-                🔠
-              </span>
-              <span className="truncate w-full text-center">{t("construction.chips.all")}</span>
-            </motion.button>
-            {visibleEngineChips.map((chip) => {
-              const active = chip.id === engineChip;
-              return (
-                <motion.button
-                  key={chip.id}
-                  data-dwell
-                  data-mirror-id={formatBuilderTarget({ kind: "engineChip", chip: chip.id })}
-                  data-testid={`engine-chip-${chip.id}`}
-                  onClick={() => handleEngineChipSelect(chip.id)}
-                  whileTap={{ scale: 0.95 }}
-                  className={[
-                    "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
-                    SIDEBAR_BUTTON_FILL,
-                  chipDensity.pad,
-                  chipDensity.label,
-                    active
-                      ? "bg-blue-600 border-blue-700 text-white"
-                      : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
-                  ].join(" ")}
-                >
-                  {chip.glyph || chip.glyphs?.length ? (
-                    // The chip wears THREE of its members (best examples first,
-                    // engine-ranked) rather than one word standing in for the
-                    // whole category — see GlyphTriad.
-                    <span className={`${chipDensity.face} flex items-center justify-center`} aria-hidden>
-                      <GlyphTriad
-                        glyphs={chip.glyphs ?? (chip.glyph ? [chip.glyph] : [])}
-                        GlyphComponent={Glyph}
-                        fallback={chip.id}
-                        ariaLabel={chip.label}
-                      />
-                    </span>
-                  ) : (
-                    <span className={`${chipDensity.icon} leading-none`} aria-hidden>
-                      📂
-                    </span>
-                  )}
-                  <span className="truncate w-full text-center">{chip.label}</span>
-                </motion.button>
-              );
-            })}
-            {engineChipsNeedMore && (
-              <motion.button
-                data-dwell
-                data-testid="engine-chip-more"
-                onClick={() => setEngineChipPage((p) => p + 1)}
-                whileTap={{ scale: 0.95 }}
-                className={[
-                  "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 px-2 flex items-center justify-center",
-                  SIDEBAR_BUTTON_FILL,
-                  chipDensity.pad,
-                  chipDensity.label,
-                  "font-medium",
-                ].join(" ")}
-              >
-                …
-              </motion.button>
-            )}
-            {engineCategory === "person" && (
-              <motion.button
-                data-dwell
-                data-mirror-id={formatBuilderTarget({ kind: "engineChip", chip: ENGINE_PHOTOS_CHIP })}
-                data-testid="engine-chip-photos"
-                onClick={() => handleEngineChipSelect(ENGINE_PHOTOS_CHIP)}
-                whileTap={{ scale: 0.95 }}
-                className={[
-                  "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
-                  SIDEBAR_BUTTON_FILL,
-                  chipDensity.pad,
-                  chipDensity.label,
-                  engineChip === ENGINE_PHOTOS_CHIP
-                    ? "bg-blue-600 border-blue-700 text-white"
-                    : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
-                ].join(" ")}
-              >
-                <span className={`${chipDensity.icon} leading-none`} aria-hidden>
-                  📷
-                </span>
-                <span className="truncate w-full text-center">{t("construction.chips.photos")}</span>
-              </motion.button>
-            )}
-          </>
-        ) : (
-          <>
-        {visibleChips.map((chip) => {
-          const active = chip.key === modeChip;
-          const baseStyle = active
-            ? chip.memory
-              ? "bg-purple-600 border-purple-700 text-white"
-              : "bg-blue-600 border-blue-700 text-white"
-            : chip.memory
-              ? "bg-purple-50/60 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-100"
-              : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600";
-          const icon = chip.memory ? "✨" : CHIP_ICON[chip.key];
-          return (
-            <motion.button
-              key={chip.key}
-              data-dwell
-              data-mirror-id={formatBuilderTarget({ kind: "chip", chip: chip.key })}
-              onClick={() => handleModeChipSelect(chip.key)}
-              whileTap={{ scale: 0.95 }}
-              className={[
-                "rounded-xl border-2 px-2 flex flex-col items-center justify-center overflow-hidden",
-                SIDEBAR_BUTTON_FILL,
-                  chipDensity.pad,
-                  chipDensity.label,
-                baseStyle,
-              ].join(" ")}
-            >
-              {icon && (
-                <span className={`${chipDensity.icon} leading-none`} aria-hidden>
-                  {icon}
-                </span>
-              )}
-              <span className="truncate w-full text-center">{chip.label}</span>
-            </motion.button>
-          );
-        })}
-        {chipsNeedMore && (
-          <motion.button
-            data-dwell
-            data-testid="chip-more"
-            onClick={() => setChipPage((p) => p + 1)}
-            whileTap={{ scale: 0.95 }}
-            className={`rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 text-xs font-medium py-2 px-2 flex items-center justify-center ${SIDEBAR_BUTTON_FILL}`}
-          >
-            …
-          </motion.button>
-        )}
-          </>
-        )}
-      </nav>
+          TABS: while the engine answers, the tab set IS the engine's advertised
+          categories behind a pinned "all" (ranked) tab — the legacy
+          who/do/what/where taxonomy renders only as the fallback when no engine
+          surface is available.
+
+          CHIPS: in engine mode the ENGINE's own group chips for the active view
+          (localized engine-side), behind an "all" chip that clears the group
+          filter — plus the client-side "photos" chip under the person tab (the
+          real-people directory). Fallback: the legacy mode chips (static +
+          memory).
+
+          Both columns are one component and one measurement: they are siblings
+          in this `flex h-full` row, so they always have the same height. */}
+      <BuilderSidebar
+        ariaLabel={t("construction.tabsLabel")}
+        heightPx={sidebarHeight}
+        onMeasure={handleSidebarMeasure}
+        tabs={sidebarTabs}
+        chips={sidebarChips}
+        tabsNeedMore={engineUiActive && engineTabsNeedMore}
+        chipsNeedMore={engineUiActive ? engineChipsNeedMore : chipsNeedMore}
+        onTabsMore={() => setEngineTabPage((p) => p + 1)}
+        onChipsMore={() => (engineUiActive ? setEngineChipPage((p) => p + 1) : setChipPage((p) => p + 1))}
+        tabsTestId={engineUiActive ? "engine-tabs" : undefined}
+        chipsTestId={engineUiActive ? "engine-chips" : undefined}
+        tabsMoreTestId="engine-tab-more"
+        chipsMoreTestId={engineUiActive ? "engine-chip-more" : "chip-more"}
+        chipsPagerStyle={engineUiActive ? "density" : "plain"}
+      />
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -2123,252 +1986,86 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           )}
         </div>
 
-        {/* Modifier row — combines two sub-groups in a single horizontal
-            band so they don't burn two vertical rows on small screens:
-              left:  AI-modifier sub-group (context-aware ✨ SUGGESTIONs from
-                     suggest_construction_buttons.modifier_candidates), shown
-                     only when the AI actually proposed something AND there's
-                     an active HEAD SYMBOL to attach modifiers to.
-              right: registry-driven modifiers + More / ColorPicker buttons.
-            When only one sub-group has content, it spans the row. The
-            divider only renders when both sides have content.
-            Hidden during guessing mode — the narrowing buttons take the grid
-            and modifiers aren't relevant while the user is still picking a head. */}
+        {/* THE MODIFIER BAND and its five picker rows — one shared component
+            (see @client-shared/builder/ModifierBand for the layout laws).
+            Hidden during guessing mode: the narrowing buttons take the grid and
+            modifiers aren't relevant while the user is still picking a head.
+
+            The ✨ AI-modifier strip is passed in rather than lived in: it is the
+            AAC's alone (context-aware SUGGESTIONs from
+            suggest_construction_buttons), shown only when the AI actually
+            proposed something AND there's an active HEAD SYMBOL to attach
+            modifiers to. */}
         {!guessingActive && (
-          engineModifierItems.length > 0 ||
-          aiModifierStripVisible ||
-          modifierItems.length > 0 ||
-          colorOptions.length > 0 ||
-          emotionOptions.length > 0 ||
-          amountOptions.length > 0 ||
-          qualityPairs.length > 0 ||
-          (canJoin && joinOptions.length > 0)
-        ) && (
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0">
-            {/* Engine modifier rail — the game engine's own modifiers for the
-                active head, composed with "." like every other modifier. */}
-            {engineModifierItems.length > 0 && (
-              <div
-                className="flex items-center gap-2 shrink-0"
-                data-testid="engine-modifier-strip"
-              >
-                <span className="self-center text-xl select-none" aria-hidden>
-                  🎮
-                </span>
-                {engineModifierItems.map((m) => (
-                  <EngineModifierButton
-                    key={m.key}
-                    word={m}
-                    active={activeModifierKeys.has(m.key)}
-                    onPress={() => handleAiModifierPress(m)}
-                  />
-                ))}
-              </div>
-            )}
-            {engineModifierItems.length > 0 && (
-              aiModifierStripVisible ||
-              modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0 ||
-              amountOptions.length > 0 || qualityPairs.length > 0 || (canJoin && joinOptions.length > 0)
-            ) && (
-              <div
-                className="self-stretch w-px bg-gray-300 dark:bg-gray-600 shrink-0"
-                aria-hidden
-              />
-            )}
-            {aiModifierStripVisible && (
-              <div
-                className="flex items-center gap-2 shrink-0"
-                data-testid="ai-modifier-strip"
-              >
-                <span className="self-center text-xl select-none" aria-hidden>
-                  ✨
-                </span>
-                {aiModifierCandidates.map((m) => (
-                  <ModifierButton
-                    key={m.key}
-                    item={
-                      getVocabularyItem(m.key) ?? {
-                        // Synthesized item for AI-only / generated modifier
-                        // SYMBOLs that aren't in the canonical registry. The
-                        // GLYPH stores the bare key; the compositor's
-                        // registered symbol path renders it.
-                        key: m.key,
-                        tKey: `aac.modifier.${m.key}`,
-                        pos: "modifier",
-                        categories: [],
-                        modeChips: {},
-                        tone: "comment",
-                        label: m.label,
-                      } as unknown as VocabularyItem
-                    }
-                    active={activeModifierKeys.has(m.key)}
-                    onPress={() => handleAiModifierPress(m)}
-                  />
-                ))}
-              </div>
-            )}
-            {aiModifierStripVisible
-              && (modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0)
-              && (
-              <div
-                className="self-stretch w-px bg-gray-300 dark:bg-gray-600 shrink-0"
-                aria-hidden
-              />
-            )}
-            {(modifierItems.length > 0 || colorOptions.length > 0 || emotionOptions.length > 0
-              || amountOptions.length > 0 || qualityPairs.length > 0 || (canJoin && joinOptions.length > 0)) && (
-              <div className="flex items-center gap-2 shrink-0">
-                {modifierItems.map((m) => (
-                  <ModifierButton
-                    key={m.key}
-                    item={m}
-                    active={activeModifierKeys.has(m.key)}
-                    onPress={() => handleModifierPress(m)}
-                  />
-                ))}
-                {allModifiers.length > MODIFIERS_PER_PAGE && (
-                  <MoreButton onPress={handleModifierMore} testId="modifier-more" />
-                )}
-                {colorOptions.length > 0 && (
-                  <ColorPickerButton
-                    active={colorPickerOpen}
-                    activeColorValue={
-                      activeColorKey
-                        ? getVocabularyItem(activeColorKey)?.modifier?.colorValue
-                        : undefined
-                    }
-                    onPress={() => setColorPickerOpen((o) => !o)}
-                  />
-                )}
-                {emotionOptions.length > 0 && (
-                  <EmotionPickerButton
-                    active={emotionPickerOpen}
-                    activeEmoji={activeEmotionKey ? getVocabularyItem(activeEmotionKey)?.emoji : undefined}
-                    onPress={() => setEmotionPickerOpen((o) => !o)}
-                  />
-                )}
-                {amountOptions.length > 0 && (
-                  <PickerToggleButton
-                    active={amountPickerOpen}
-                    emoji={activeAmountKey ? (getVocabularyItem(activeAmountKey)?.emoji ?? "🌗") : "🌗"}
-                    label={t("builder.amount")}
-                    testId="amount-picker-toggle"
-                    onPress={() => setAmountPickerOpen((o) => !o)}
-                  />
-                )}
-                {qualityPairs.length > 0 && (
-                  <PickerToggleButton
-                    active={qualityPickerOpen}
-                    emoji="👍"
-                    label={t("builder.quality")}
-                    testId="quality-picker-toggle"
-                    onPress={() => setQualityPickerOpen((o) => !o)}
-                  />
-                )}
-                {canJoin && joinOptions.length > 0 && (
-                  <PickerToggleButton
-                    active={joinPickerOpen}
-                    emoji={pendingJoin ? (getVocabularyItem(pendingJoin)?.emoji ?? "🔗") : "🔗"}
-                    label={t("builder.join")}
-                    testId="join-picker-toggle"
-                    onPress={() => setJoinPickerOpen((o) => !o)}
-                  />
-                )}
-              </div>
-            )}
-          </div>
+          <ModifierBand
+            engineModifiers={engineModifierItems}
+            onEngineModifierPress={handleAiModifierPress}
+            activeModifierKeys={activeModifierKeys}
+            aiStrip={
+              aiModifierStripVisible ? (
+                <div className="flex items-center gap-2 shrink-0" data-testid="ai-modifier-strip">
+                  <span className="self-center text-xl select-none" aria-hidden>
+                    ✨
+                  </span>
+                  {aiModifierCandidates.map((m) => (
+                    <ModifierButton
+                      key={m.key}
+                      item={
+                        getVocabularyItem(m.key) ?? {
+                          // Synthesized item for AI-only / generated modifier
+                          // SYMBOLs that aren't in the canonical registry. The
+                          // GLYPH stores the bare key; the compositor's
+                          // registered symbol path renders it.
+                          key: m.key,
+                          tKey: `aac.modifier.${m.key}`,
+                          pos: "modifier",
+                          categories: [],
+                          modeChips: {},
+                          tone: "comment",
+                          label: m.label,
+                        } as unknown as VocabularyItem
+                      }
+                      active={activeModifierKeys.has(m.key)}
+                      onPress={() => handleAiModifierPress(m)}
+                    />
+                  ))}
+                </div>
+              ) : undefined
+            }
+            modifiers={modifierItems}
+            onModifierPress={handleModifierPress}
+            modifiersHaveMore={allModifiers.length > MODIFIERS_PER_PAGE}
+            onModifierMore={handleModifierMore}
+            modifierMoreMirrorId={formatBuilderTarget({ kind: "page", dir: "more" })}
+            colorOptions={colorOptions}
+            colorPickerOpen={colorPickerOpen}
+            activeColorKey={activeColorKey}
+            onColorToggle={() => setColorPickerOpen((o) => !o)}
+            onColorPick={handleColorPick}
+            emotionOptions={emotionOptions}
+            emotionPickerOpen={emotionPickerOpen}
+            activeEmotionKey={activeEmotionKey}
+            onEmotionToggle={() => setEmotionPickerOpen((o) => !o)}
+            onEmotionPick={handleEmotionPick}
+            amountOptions={amountOptions}
+            amountPickerOpen={amountPickerOpen}
+            activeAmountKey={activeAmountKey}
+            onAmountToggle={() => setAmountPickerOpen((o) => !o)}
+            onAmountPick={handleAmountPick}
+            qualityPairs={qualityPairs}
+            qualityPickerOpen={qualityPickerOpen}
+            onQualityToggle={() => setQualityPickerOpen((o) => !o)}
+            onQualityPress={handleQualityToggle}
+            // A join that cannot be ARMED is not offered at all: no slot to bind
+            // back to, or the sentence is already at MAX_SLOTS.
+            joinOptions={canJoin ? joinOptions : EMPTY_JOIN_OPTIONS}
+            joinPickerOpen={joinPickerOpen}
+            pendingJoin={pendingJoin}
+            onJoinToggle={() => setJoinPickerOpen((o) => !o)}
+            onJoinPick={handleJoinPick}
+          />
         )}
 
-        {/* Color picker row — shown only when the picker button is toggled
-            on. Renders the swatches inline so we don't have to manage
-            popover positioning; tapping the picker button again or a
-            swatch closes the row. */}
-        {!guessingActive && colorPickerOpen && colorOptions.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
-            data-testid="color-picker"
-          >
-            {colorOptions.map((c) => (
-              <ColorSwatchButton
-                key={c.key}
-                item={c}
-                active={activeColorKey === c.key}
-                onPress={() => handleColorPick(c)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Emotion picker row — mirrors the color picker; shows face options to
-            attach as a badge on the active slot. */}
-        {!guessingActive && emotionPickerOpen && emotionOptions.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
-            data-testid="emotion-picker"
-          >
-            {emotionOptions.map((e) => (
-              <EmotionSwatchButton
-                key={e.key}
-                item={e}
-                active={activeEmotionKey === e.key}
-                onPress={() => handleEmotionPick(e)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Amount (quantifier) picker — mutually-exclusive gauge scale. */}
-        {!guessingActive && amountPickerOpen && amountOptions.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
-            data-testid="amount-picker"
-          >
-            {amountOptions.map((a) => (
-              <ModifierButton
-                key={a.key}
-                item={a}
-                active={activeAmountKey === a.key}
-                onPress={() => handleAmountPick(a)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Quality pole-toggle picker — each pair is one button that cycles
-            none → positive → negative → none on the active slot. */}
-        {!guessingActive && qualityPickerOpen && qualityPairs.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
-            data-testid="quality-picker"
-          >
-            {qualityPairs.map((pair) => (
-              <QualityToggleButton
-                key={pair.pos.key}
-                pair={pair}
-                activeKeys={activeModifierKeys}
-                onPress={() => handleQualityToggle(pair)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Join picker — arm a forward-binding connector / spatial relation for
-            the NEXT word. The compositor draws it in the seam once placed. */}
-        {!guessingActive && joinPickerOpen && canJoin && joinOptions.length > 0 && (
-          <div
-            className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-700 shrink-0 bg-gray-50 dark:bg-gray-800/60"
-            data-testid="join-picker"
-          >
-            {joinOptions.map((j) => (
-              <ModifierButton
-                key={j.key}
-                item={j}
-                active={pendingJoin === j.key}
-                onPress={() => handleJoinPick(j.key)}
-              />
-            ))}
-          </div>
-        )}
 
         {/* Sentence-type chips — CONTROLS (what KIND of thing am I saying?),
             never words: pressing one composes nothing, it re-asks the engine
@@ -2450,6 +2147,7 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
           <MoreButton
             onPress={handleAiMore}
             testId="ai-strip-more"
+            mirrorId={formatBuilderTarget({ kind: "page", dir: "more" })}
             disabled={aiCandidates.length === 0 && !aiThinking}
           />
         </div>
@@ -2458,8 +2156,8 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
         {/* Main grid — absorbs remaining vertical space. While guessing is
             active the narrowing buttons replace the grid (the resolved concept
             comes back as a construction suggestion in the AI strip above). The
-            "who → photos" mode chip otherwise swaps the vocabulary grid for the
-            person list. */}
+            [contacts] chip (engine) / "who → photos" mode chip (legacy)
+            otherwise swaps the vocabulary grid for the person list. */}
         <div className="flex-1 min-h-0 p-3 overflow-hidden">
           {guessingActive ? (
             (() => {
@@ -2514,771 +2212,118 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                 </div>
               );
             })()
-          ) : (engineUiActive ? enginePhotos : activeTab === "who" && modeChip === "photos") ? (
-            <div
-              className="grid gap-2 w-full h-full"
-              style={{
-                gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
-                gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-              }}
+          ) : contactsActive ? (
+            <BuilderGrid
+              needsMore={!!contactTiles && contactsNeedMore}
+              onBack={() => setGridPage((p) => p - 1)}
+              onMore={() => setGridPage((p) => p + 1)}
+              backMirrorId={formatBuilderTarget({ kind: "page", dir: "back" })}
+              moreMirrorId={formatBuilderTarget({ kind: "page", dir: "more" })}
+              backTestId="who-back"
+              moreTestId="who-more"
             >
-              {mergedWhoTiles ? (
-                // Engine mode: engine persons/creatures merged with the
-                // contact directory — everyone PRESENT first, paged like the
-                // main grid.
-                mergedWhoTiles.length === 0 ? (
-                  <div className="col-span-9 row-span-2 flex items-center justify-center text-sm text-gray-400">
-                    {t("construction.noPeople")}
-                  </div>
+              {contactTiles ? (
+                // Engine mode: the engine's own named individuals merged with
+                // the contact directory — everyone PRESENT first, paged like
+                // the main grid.
+                contactTiles.length === 0 ? (
+                  <BuilderGridEmpty>{t("construction.noPeople")}</BuilderGridEmpty>
                 ) : (
-                  <>
-                    {/* BACK LEADS THE LIST (user, 2026-08-27) — see the main
-                        grid below for why. */}
-                    {whoTilesNeedMore && (
-                      <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="who-back" />
-                    )}
-                    {pagedWhoTiles.map((tile) =>
-                      tile.type === "person" ? (
-                        <PersonButton
-                          key={`p-${tile.person.id}`}
-                          person={tile.person}
-                          faceUrl={getFaceImage?.(tile.person.id) ?? null}
-                          present={presentPersonIds.includes(tile.person.id)}
-                          onPress={() => handlePersonPress(tile.person.id)}
-                        />
-                      ) : (
-                        <EngineWordButton
-                          key={`e-${tile.word.key}`}
-                          word={tile.word}
-                          onPress={() => handleEngineWordPress(tile.word)}
-                        />
-                      )
-                    )}
-                    {whoTilesNeedMore && (
-                      <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="who-more" />
-                    )}
-                  </>
+                  pagedContactTiles.map((tile) =>
+                    tile.type === "person" ? (
+                      <PersonButton
+                        key={`p-${tile.person.id}`}
+                        person={tile.person}
+                        mirrorId={formatBuilderTarget({ kind: "word", key: `face:${tile.person.id}` })}
+                        faceUrl={getFaceImage?.(tile.person.id) ?? null}
+                        present={presentPersonIds.includes(tile.person.id)}
+                        onPress={() => handlePersonPress(tile.person.id)}
+                      />
+                    ) : (
+                      <EngineWordButton
+                        key={`e-${tile.word.key}`}
+                        word={tile.word}
+                        mirrorId={formatBuilderTarget({ kind: "engineWord", key: tile.word.key })}
+                        onPress={() => handleEngineWordPress(tile.word)}
+                      />
+                    )
+                  )
                 )
               ) : orderedPeople.length === 0 ? (
-                <div className="col-span-9 row-span-2 flex items-center justify-center text-sm text-gray-400">
-                  {t("construction.noPeople")}
-                </div>
+                <BuilderGridEmpty>{t("construction.noPeople")}</BuilderGridEmpty>
               ) : (
                 orderedPeople.map((person) => (
                   <PersonButton
                     key={person.id}
                     person={person}
+                    mirrorId={formatBuilderTarget({ kind: "word", key: `face:${person.id}` })}
                     faceUrl={getFaceImage?.(person.id) ?? null}
                     present={presentPersonIds.includes(person.id)}
                     onPress={() => handlePersonPress(person.id)}
                   />
                 ))
               )}
-            </div>
+            </BuilderGrid>
           ) : engineGridActive ? (
             // Engine-fed main grid: the engine's words for the current view —
             // the ranked surface on the "all" tab, a category/group listing
             // otherwise. Same 9×2 geometry + wrap paging as the registry grid.
-            <div
-              className="grid gap-2 w-full h-full"
-              style={{
-                gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
-                gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-              }}
-              data-testid="engine-grid"
+            <BuilderGrid
+              needsMore={engineNeedsMore}
+              onBack={() => setGridPage((p) => p - 1)}
+              onMore={() => setGridPage((p) => p + 1)}
+              backMirrorId={formatBuilderTarget({ kind: "page", dir: "back" })}
+              moreMirrorId={formatBuilderTarget({ kind: "page", dir: "more" })}
+              backTestId="grid-back"
+              moreTestId="grid-more"
+              testId="engine-grid"
             >
-              {/* BACK LEADS THE LIST (user, 2026-08-27) — see the main grid below. */}
-              {engineNeedsMore && (
-                <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
-              )}
               {engineGridWords.map((word) => (
                 <EngineWordButton
                   key={word.key}
                   word={word}
+                  mirrorId={formatBuilderTarget({ kind: "engineWord", key: word.key })}
                   onPress={() => handleEngineWordPress(word)}
                 />
               ))}
-              {engineNeedsMore && (
-                <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
-              )}
-            </div>
+            </BuilderGrid>
           ) : (
-          <div
-            className="grid gap-2 w-full h-full"
-            style={{
-              gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
-              gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-            }}
-          >
-            {/* THE PAGING CONTROLS BRACKET THE LIST — only rendered when the
-                current mode-chip has more items than fit in one page; without
-                the conditional they would always push the grid onto an implicit
-                extra row and compress the visible buttons.
-
-                BACK as well as More (user, 2026-08-25): forward-only paging
-                made a word you scrolled past cost a full lap of the list, which
-                on a 54-word budget is two more dwells.
-
-                BACK LEADS THE LIST, More closes it (user, 2026-08-27). The two
-                sat side by side in the last two cells, which read as one pair of
-                arrows rather than as the two ENDS of a list — and put the
-                control for "what came before" after everything that comes
-                after. First cell and last cell say which way each one goes
-                without being read, which is the only way a control is read at
-                all on a board driven by dwell. The reading direction carries it:
-                the board's `dir` flips the grid's flow, so on a Hebrew board
-                back is the top-RIGHT cell and still the first one. */}
-            {gridNeedsMore && (
-              <PageBackButton onPress={() => setGridPage((p) => p - 1)} testId="grid-back" />
-            )}
-            {gridItems.map((item) => (
-              <GridButton
-                key={item.key}
-                item={item}
-                mirrorId={formatBuilderTarget({ kind: "word", key: item.key })}
-                onPress={() => handleGridPress(item)}
-              />
-            ))}
-            {gridNeedsMore && (
-              <MoreButton onPress={() => setGridPage((p) => p + 1)} testId="grid-more" />
-            )}
-          </div>
+            <BuilderGrid
+              needsMore={gridNeedsMore}
+              onBack={() => setGridPage((p) => p - 1)}
+              onMore={() => setGridPage((p) => p + 1)}
+              backMirrorId={formatBuilderTarget({ kind: "page", dir: "back" })}
+              moreMirrorId={formatBuilderTarget({ kind: "page", dir: "more" })}
+              backTestId="grid-back"
+              moreTestId="grid-more"
+            >
+              {gridItems.map((item) => (
+                <GridButton
+                  key={item.key}
+                  item={item}
+                  mirrorId={formatBuilderTarget({ kind: "word", key: item.key })}
+                  onPress={() => handleGridPress(item)}
+                />
+              ))}
+            </BuilderGrid>
           )}
         </div>
       </div>
     </div>
+    </BuilderDepsProvider>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components
+// AI-strip sub-components — AAC-ONLY.
+//
+// Everything else the builder draws now lives in `@client-shared/builder`
+// (composed by the clinician's "Edit visual" dialog too). These three stay here
+// because the AI suggestion strip is this client's alone: it is fed by the live
+// Gemini session's `suggest_construction_buttons`, resolves server-generated
+// symbol paths, and is currently gated off wholesale
+// (SHOW_AI_SUGGESTION_STRIPS).
 // ─────────────────────────────────────────────────────────────────────────────
-
-function ToneToggle(props: {
-  label: string;
-  active: boolean;
-  onToggle: () => void;
-  ariaLabel: string;
-}) {
-  return (
-    <motion.button
-      data-dwell
-      onClick={props.onToggle}
-      aria-pressed={props.active}
-      aria-label={props.ariaLabel}
-      whileTap={{ scale: 0.92 }}
-      className={[
-        "w-14 h-14 rounded-xl border-2 text-2xl font-bold flex items-center justify-center",
-        props.active
-          ? "bg-purple-100 border-purple-500 text-purple-700"
-          : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
-      ].join(" ")}
-    >
-      {props.label}
-    </motion.button>
-  );
-}
-
-function ActionButton(props: {
-  label: string;
-  icon: string;
-  onPress: () => void;
-  disabled?: boolean;
-  /** Render a spinner in place of the icon and block presses (e.g. Play while
-   *  the composed sentence is being interpreted). */
-  busy?: boolean;
-  primary?: boolean;
-  /** Background color (overrides the default white). Border matches unless borderColor is set. */
-  color?: string;
-  borderColor?: string;
-  /** When true, render the active highlight (thicker border + ring). Used
-   *  by the Word Finder button to show that guessing mode is currently on. */
-  active?: boolean;
-  /** READY: the composition is already sayable. A quiet halo — an invitation,
-   *  not a gate; the button is pressable with or without it. */
-  ready?: boolean;
-  /**
-   * PRIMARY ONLY. Which path a press takes, as a colour: `true` = the device
-   * renders the sentence itself (green); `false` = the AI will interpret it
-   * (yellow-green, with a "?" in the corner); `null` = nothing to say yet.
-   */
-  parsable?: boolean | null;
-  /** Flip the icon horizontally. For DIRECTIONAL chrome only — Backspace's ⌫
-   *  erases toward the start of the line, which is the RIGHT in RTL, so the
-   *  glyph has to turn around with the text. (⌦ U+2326 is the nominal
-   *  right-erasing character, but it is missing from enough of the fonts the
-   *  iPad shell falls back to that a mirrored ⌫ is the safer draw.) */
-  mirrorIcon?: boolean;
-  testId?: string;
-  /** Encoded builder target, so a clinician on a call can POINT at this control
-   *  from their mirror (`data-mirror-id`, resolved by CallIndicateBridge). */
-  mirrorId?: string;
-}) {
-  return (
-    <motion.button
-      data-dwell
-      data-mirror-id={props.mirrorId}
-      data-testid={props.testId}
-      data-active={props.active ? "true" : undefined}
-      data-ready={props.ready ? "true" : undefined}
-      data-parsable={props.parsable == null ? undefined : String(props.parsable)}
-      onClick={props.onPress}
-      disabled={props.disabled || props.busy}
-      whileTap={{ scale: 0.95 }}
-      className={[
-        "w-24 rounded-xl border-2 flex flex-col items-center justify-center gap-1 px-2 py-2",
-        props.primary
-          ? props.parsable === false
-            ? "relative bg-lime-400 hover:bg-lime-500 border-lime-600 text-lime-950"
-            : "relative bg-green-500 hover:bg-green-600 border-green-700 text-white"
-          : props.color
-          ? "text-gray-800"
-          : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600",
-        props.disabled ? "opacity-40 cursor-not-allowed" : "",
-        props.active ? "ring-2 ring-violet-400 border-violet-600 dark:border-violet-300" : "",
-        props.ready && !props.disabled && !props.busy
-          ? "ring-4 ring-green-300 dark:ring-green-400/60"
-          : "",
-      ].join(" ")}
-      style={props.color ? { backgroundColor: props.active && props.color === "#EDE9FE" ? "#C4B5FD" : props.color, borderColor: props.borderColor ?? props.color } : undefined}
-    >
-      <span
-        className="text-2xl"
-        aria-hidden
-        style={props.mirrorIcon && !props.busy ? { transform: "scaleX(-1)" } : undefined}
-      >
-        {props.busy
-          ? <span className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-          : props.icon}
-      </span>
-      <span className="text-xs font-medium">{props.label}</span>
-      {props.primary && props.parsable === false && !props.busy && (
-        <span
-          aria-hidden
-          data-testid="construction-play-unparsed"
-          className="absolute top-1 end-1 w-5 h-5 rounded-full bg-white/90 text-lime-900 text-xs font-bold flex items-center justify-center"
-        >
-          ?
-        </span>
-      )}
-    </motion.button>
-  );
-}
-
-/** Resolve a vocabulary item's display label via i18n, falling back to its raw key. */
-function useItemLabel(item: VocabularyItem): string {
-  const { t } = useLanguage();
-  const translated = t(item.tKey);
-  return translated === item.tKey ? item.key : translated;
-}
-
-function ModifierButton(props: {
-  item: VocabularyItem;
-  onPress: () => void;
-  active?: boolean;
-}) {
-  const { isRTL } = useLanguage();
-  const { item, active } = props;
-  const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
-  const label = useItemLabel(item);
-  return (
-    <motion.button
-      data-dwell
-      onClick={props.onPress}
-      aria-pressed={active ?? false}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center overflow-hidden",
-        active
-          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      style={{ padding: 6 }}
-      aria-label={label}
-    >
-      <div className="icon-fill-area">
-        {url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? resolveEmoji(item.key), item })} />
-        ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? "•", item })}>
-            {item.emoji ?? "•"}
-          </span>
-        )}
-      </div>
-    </motion.button>
-  );
-}
-
-
-function GridButton(props: { item: VocabularyItem; onPress: () => void; mirrorId?: string }) {
-  const { isRTL } = useLanguage();
-  const { item } = props;
-  const url = item.imagePath ? resolveIconPath(item.imagePath) : null;
-  const label = useItemLabel(item);
-  return (
-    <motion.button
-      data-dwell
-      data-mirror-id={props.mirrorId}
-      onClick={props.onPress}
-      whileTap={{ scale: 0.95 }}
-      className="rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex flex-col items-center justify-center min-h-0 overflow-hidden"
-      style={{ padding: 5 }}
-    >
-      <div className="icon-fill-area">
-        {item.expandsTo ? (
-          // Alias (today/tomorrow/yesterday) — preview the composed glyph it
-          // inserts (day + arrow) so the button matches the result.
-          <Glyph glyph={item.expandsTo} noBackground ariaLabel={label} />
-        ) : placeArt(item.key) ? (
-          // A ROOM or BUILDING is one symbol drawn from two PNGs (shell +
-          // fixture) — it has to go through the compositor, or the palette
-          // shows a bare 🛌 for the button that draws `room(bed)`.
-          <Glyph glyph={item.key} noBackground ariaLabel={label} />
-        ) : url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? resolveEmoji(item.key), item })} />
-        ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: item.key, emoji: item.emoji ?? "❓", item })}>
-            {item.emoji ?? "❓"}
-          </span>
-        )}
-      </div>
-      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
-        {label}
-      </span>
-    </motion.button>
-  );
-}
-
-/**
- * Main-grid tile for an engine-surfaced word (stage-3 builder merge).
- * Renders the engine's composed glyph when it carries one, else the
- * registry's art/emoji for the same key, else an emoji resolved from the
- * key. Present persons/creatures get the same green "here now" treatment
- * as the camera-seen contacts in the person list.
- */
-function EngineWordButton(props: { word: BuilderWord; onPress: () => void }) {
-  // The mirror addresses an engine word by its key, the same way its target is
-  // encoded — no id has to be threaded from the call site.
-  const { t, isRTL } = useLanguage();
-  const { word } = props;
-  const item = getVocabularyItem(word.key);
-  const url = item?.imagePath ? resolveIconPath(item.imagePath) : null;
-  const emoji = item?.emoji ?? resolveEmoji(word.key);
-  let label = word.label;
-  if (!label && item) {
-    const translated = t(item.tKey);
-    label = translated === item.tKey ? word.key : translated;
-  }
-  if (!label) label = word.key;
-  return (
-    <motion.button
-      data-dwell
-      data-mirror-id={formatBuilderTarget({ kind: "engineWord", key: word.key })}
-      data-testid={`engine-word-${word.key}`}
-      onClick={props.onPress}
-      whileTap={{ scale: 0.95 }}
-      className={[
-        "rounded-xl border-2 flex flex-col items-center justify-center min-h-0 overflow-hidden",
-        word.present
-          ? "border-green-500 bg-green-50 dark:bg-green-900/30"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      style={{ padding: 5 }}
-      aria-label={label}
-      title={label}
-    >
-      <div className="icon-fill-area">
-        {word.glyph || placeArt(word.key) ? (
-          // No engine glyph for a place word still draws its shell — the
-          // compositor resolves the composition from the key itself.
-          <Glyph glyph={word.glyph ?? word.key} noBackground ariaLabel={label} />
-        ) : url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: word.key, emoji })} />
-        ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: word.key, emoji: emoji ?? "❓" })}>
-            {emoji ?? "❓"}
-          </span>
-        )}
-      </div>
-      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
-        {label}
-      </span>
-    </motion.button>
-  );
-}
-
-/**
- * Engine modifier-rail button — ModifierButton's 64px footprint, fed by a
- * BuilderWord instead of a registry item so the engine's glyph renders.
- */
-function EngineModifierButton(props: {
-  word: BuilderWord;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const { isRTL } = useLanguage();
-  const { word, active } = props;
-  const item = getVocabularyItem(word.key);
-  const url = item?.imagePath ? resolveIconPath(item.imagePath) : null;
-  const emoji = item?.emoji ?? resolveEmoji(word.key);
-  const label = word.label || word.key;
-  return (
-    <motion.button
-      data-dwell
-      data-testid={`engine-modifier-${word.key}`}
-      onClick={props.onPress}
-      aria-pressed={active}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center overflow-hidden",
-        active
-          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      style={{ padding: 6 }}
-      aria-label={label}
-      title={label}
-    >
-      <div className="icon-fill-area">
-        {word.glyph || placeArt(word.key) ? (
-          <Glyph glyph={word.glyph ?? word.key} noBackground ariaLabel={label} />
-        ) : url ? (
-          <img src={url} alt="" className="icon-fill-img" style={rtlMirrorStyle(isRTL, { key: word.key, emoji, item: item ?? undefined })} />
-        ) : (
-          <span className="icon-fill-emoji" aria-hidden style={rtlMirrorStyle(isRTL, { key: word.key, emoji: emoji ?? "•", item: item ?? undefined })}>
-            {emoji ?? "•"}
-          </span>
-        )}
-      </div>
-    </motion.button>
-  );
-}
-
-/**
- * Person tile for the "who → photos" person list. Shows the contact's face
- * (live camera capture or stored photo) or a 👤 silhouette when no image is
- * available, with their name below and a subtle ring when they've been seen
- * on camera this session. Pressing it inserts a `face:<id>` slot.
- */
-function PersonButton(props: {
-  person: ConstructionPerson;
-  faceUrl: string | null;
-  present: boolean;
-  onPress: () => void;
-}) {
-  const { person, faceUrl, present } = props;
-  const [failed, setFailed] = useState(false);
-  useEffect(() => { setFailed(false); }, [faceUrl]);
-  const showImage = !!faceUrl && !failed;
-  return (
-    <motion.button
-      data-dwell
-      data-mirror-id={formatBuilderTarget({ kind: "word", key: `face:${person.id}` })}
-      data-testid={`person-${person.id}`}
-      onClick={props.onPress}
-      whileTap={{ scale: 0.95 }}
-      className={[
-        "rounded-xl border-2 flex flex-col items-center justify-center gap-1 p-2 min-h-0",
-        present
-          ? "border-green-500 bg-green-50 dark:bg-green-900/30"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      aria-label={person.name}
-      title={person.name}
-    >
-      <div className="icon-fill-area">
-        {showImage ? (
-          <img
-            src={faceUrl!}
-            alt=""
-            className="icon-fill-img rounded-full"
-            onError={() => setFailed(true)}
-          />
-        ) : (
-          <span className="icon-fill-emoji" aria-hidden>👤</span>
-        )}
-      </div>
-      <span className="text-xs font-medium truncate w-full text-center shrink-0" style={{ marginTop: 2 }}>
-        {person.name}
-      </span>
-    </motion.button>
-  );
-}
-
-/**
- * Entry button for the color picker — same footprint as ModifierButton so
- * it slots into the modifier zone without disrupting the row's geometry.
- * Shows a colored paint-drop emoji when no color is active; switches to
- * the currently-active color swatch when one is.
- */
-function ColorPickerButton(props: {
-  active: boolean;
-  activeColorValue?: string;
-  onPress: () => void;
-}) {
-  const { t } = useLanguage();
-  return (
-    <motion.button
-      data-dwell
-      data-testid="color-picker-toggle"
-      onClick={props.onPress}
-      aria-pressed={props.active}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
-        props.active
-          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      aria-label={t("aac.glyph.color")}
-      title={t("aac.glyph.color")}
-    >
-      {props.activeColorValue ? (
-        <span
-          className="w-8 h-8 rounded-full border border-gray-300"
-          style={{ backgroundColor: props.activeColorValue }}
-          aria-hidden
-        />
-      ) : (
-        <span className="text-2xl" aria-hidden>🎨</span>
-      )}
-    </motion.button>
-  );
-}
-
-/**
- * Swatch in the color picker row. Filled disc in the color, with a tick
- * overlay when the swatch is currently applied to the active slot.
- */
-function ColorSwatchButton(props: {
-  item: VocabularyItem;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const colorValue = props.item.modifier?.colorValue ?? "#9CA3AF";
-  const label = useItemLabel(props.item);
-  return (
-    <motion.button
-      data-dwell
-      data-testid={`color-swatch-${props.item.key}`}
-      onClick={props.onPress}
-      aria-pressed={props.active}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-12 h-12 rounded-full border-2 flex items-center justify-center relative",
-        props.active
-          ? "border-blue-600"
-          : "border-gray-300 dark:border-gray-600",
-      ].join(" ")}
-      style={{ backgroundColor: colorValue }}
-      aria-label={label}
-      title={label}
-    >
-      {props.active && (
-        <span
-          className="text-lg font-bold"
-          // Tick contrasts with the swatch — light tick on dark colors,
-          // dark tick on light colors. Cheap luminance proxy.
-          style={{ color: isLightColor(colorValue) ? "#1F2937" : "#FFFFFF" }}
-          aria-hidden
-        >
-          ✓
-        </span>
-      )}
-    </motion.button>
-  );
-}
-
-/** Toggle button that opens the emotion picker — mirrors ColorPickerButton. */
-function EmotionPickerButton(props: {
-  active: boolean;
-  activeEmoji?: string;
-  onPress: () => void;
-}) {
-  const { t } = useLanguage();
-  return (
-    <motion.button
-      data-dwell
-      data-testid="emotion-picker-toggle"
-      onClick={props.onPress}
-      aria-pressed={props.active}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
-        props.active
-          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      aria-label={t("builder.emotion")}
-      title={t("builder.emotion")}
-    >
-      <span className="text-2xl" aria-hidden>{props.activeEmoji ?? "🙂"}</span>
-    </motion.button>
-  );
-}
-
-/** One emotion option in the emotion picker row — the feeling emoji, ringed when active. */
-function EmotionSwatchButton(props: {
-  item: VocabularyItem;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const label = useItemLabel(props.item);
-  return (
-    <motion.button
-      data-dwell
-      data-testid={`emotion-swatch-${props.item.key}`}
-      onClick={props.onPress}
-      aria-pressed={props.active}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-12 h-12 rounded-full border-2 flex items-center justify-center bg-white dark:bg-gray-800",
-        props.active
-          ? "border-blue-600 ring-2 ring-blue-300"
-          : "border-gray-300 dark:border-gray-600",
-      ].join(" ")}
-      aria-label={label}
-      title={label}
-    >
-      <span className="text-2xl" aria-hidden>{props.item.emoji ?? "🙂"}</span>
-    </motion.button>
-  );
-}
-
-/**
- * Generic picker-opener button (mirrors ColorPickerButton/EmotionPickerButton)
- * for the amount / quality / join pickers. Shows a representative emoji.
- */
-function PickerToggleButton(props: {
-  active: boolean;
-  emoji: string;
-  label: string;
-  testId: string;
-  onPress: () => void;
-}) {
-  return (
-    <motion.button
-      data-dwell
-      data-testid={props.testId}
-      onClick={props.onPress}
-      aria-pressed={props.active}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
-        props.active
-          ? "border-blue-600 bg-blue-50 dark:bg-blue-900/40"
-          : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      aria-label={props.label}
-      title={props.label}
-    >
-      <span className="text-2xl" aria-hidden>{props.emoji}</span>
-    </motion.button>
-  );
-}
-
-/**
- * One opposite-pair toggle in the quality picker. Tapping cycles the active
- * slot none → positive → negative → none; the button shows the current pole's
- * emoji (green = positive, red = negative, dimmed = off).
- */
-function QualityToggleButton(props: {
-  pair: { pos: VocabularyItem; neg: VocabularyItem };
-  activeKeys: Set<string>;
-  onPress: () => void;
-}) {
-  const { pair, activeKeys } = props;
-  const posLabel = useItemLabel(pair.pos);
-  const negLabel = useItemLabel(pair.neg);
-  const hasPos = activeKeys.has(pair.pos.key);
-  const hasNeg = activeKeys.has(pair.neg.key);
-  const state = hasPos ? "pos" : hasNeg ? "neg" : "off";
-  const emoji = hasNeg ? (pair.neg.emoji ?? "👎") : (pair.pos.emoji ?? "👍");
-  return (
-    <motion.button
-      data-dwell
-      data-testid={`quality-toggle-${pair.pos.key}`}
-      onClick={props.onPress}
-      aria-pressed={hasPos || hasNeg}
-      whileTap={{ scale: 0.94 }}
-      className={[
-        "w-16 h-16 rounded-xl border-2 flex items-center justify-center",
-        state === "pos"
-          ? "border-green-600 bg-green-50 dark:bg-green-900/40"
-          : state === "neg"
-            ? "border-red-600 bg-red-50 dark:bg-red-900/40"
-            : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800",
-      ].join(" ")}
-      aria-label={`${posLabel} / ${negLabel}`}
-      title={`${posLabel} / ${negLabel}`}
-    >
-      <span className="text-2xl" aria-hidden style={state === "off" ? { opacity: 0.5 } : undefined}>{emoji}</span>
-    </motion.button>
-  );
-}
-
-/** Quick luminance check — true for colors lighter than ~50% perceived brightness. */
-function isLightColor(hex: string): boolean {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return false;
-  const n = parseInt(m[1], 16);
-  const r = (n >> 16) & 0xff;
-  const g = (n >> 8) & 0xff;
-  const b = n & 0xff;
-  // ITU-R BT.709 luminance approximation.
-  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum > 160;
-}
-
-/**
- * PAGE BACK — More's twin, and the reason the grid reserves two cells rather
- * than one.
- */
-function PageBackButton(props: { onPress: () => void; testId?: string; disabled?: boolean }) {
-  const { t } = useLanguage();
-  return (
-    <motion.button
-      data-dwell
-      data-mirror-id={formatBuilderTarget({ kind: "page", dir: "back" })}
-      data-testid={props.testId}
-      onClick={props.onPress}
-      disabled={props.disabled}
-      whileTap={{ scale: 0.95 }}
-      className={[
-        "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 flex flex-col items-center justify-center gap-1 p-2 min-h-0 min-w-[64px]",
-        props.disabled ? "opacity-40 cursor-not-allowed" : "",
-      ].join(" ")}
-    >
-      {/* LOGICAL, never left/right: `ArrowBack` points at the start edge of the
-          reading direction, so a Hebrew board's Back points the Hebrew way. */}
-      <ArrowBack className="w-6 h-6" />
-      <span className="text-xs font-medium">{t("common.back")}</span>
-    </motion.button>
-  );
-}
-
-function MoreButton(props: { onPress: () => void; testId?: string; disabled?: boolean }) {
-  const { t } = useLanguage();
-  return (
-    <motion.button
-      data-dwell
-      data-mirror-id={formatBuilderTarget({ kind: "page", dir: "more" })}
-      data-testid={props.testId}
-      onClick={props.onPress}
-      disabled={props.disabled}
-      whileTap={{ scale: 0.95 }}
-      className={[
-        "rounded-xl border-2 border-dashed border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800 flex flex-col items-center justify-center gap-1 p-2 min-h-0 min-w-[64px]",
-        props.disabled ? "opacity-40 cursor-not-allowed" : "",
-      ].join(" ")}
-    >
-      <span className="text-2xl" aria-hidden>
-        …
-      </span>
-      <span className="text-xs font-medium">{t("common.more")}</span>
-    </motion.button>
-  );
-}
 
 /**
  * Resolve a candidate key (or fallback key) to a render plan. Mirrors the

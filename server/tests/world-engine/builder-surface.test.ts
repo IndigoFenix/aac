@@ -240,8 +240,12 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
     expect(keys(stale)).toEqual(NOUNS.map((n) => n.symbol));
   });
 
-  it("lexical category tabs stay flat (no sub-groups), like the SpeakMenu", () => {
-    expect(builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "verb" }).groups).toBeUndefined();
+  it("the SMALL lexical category tabs stay flat (no sub-groups), like the SpeakMenu", () => {
+    // `verb` and `attribute` grew chips of their own (2026-09-04); the tabs that
+    // fit one grid page did not — see builder-attribute-verb-chips.test.ts.
+    expect(builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "quantity" }).groups).toBeUndefined();
+    expect(builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "quantity", group: "food" }).buttons.length).toBeGreaterThan(0);
+    // A chipped tab still ignores a foreign id and shows its whole category.
     expect(builderSurfaceFor("", { nouns: NOUNS, defaults: false, category: "verb", group: "food" }).buttons.length).toBeGreaterThan(0);
   });
 
@@ -418,13 +422,20 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
             (g) => [g.id, g.label] as const,
           ),
         );
-      expect(groups("en").get("animals")).toBe("animal");
-      expect(groups("en").get("plants")).toBe("plant");
+      // The KIND chips wear the PLURAL wherever they appear (user, 2026-09-04 —
+      // `PLURAL_LABEL_CHIPS`): the label names the set, not the one word the
+      // child is about to press.
+      expect(groups("en").get("animals")).toBe("animals");
+      expect(groups("en").get("plants")).toBe("plants");
       // The [plants] chip must NOT wear the head `plant`: that head is the
       // VERB, so a Hebrew board would have labelled a shelf of nouns "שותל"
-      // ("he is planting"). Hence the separate `plants` category head.
-      expect(groups("he").get("animals")).toBe("חיה");
-      expect(groups("he").get("plants")).toBe("צמח");
+      // ("he is planting"). Hence the separate `plants` category head — and its
+      // plural, which es/pt gained with the chip (the head is absent from the
+      // pre-move snapshot, so nothing pinned it).
+      expect(groups("he").get("animals")).toBe("חיות");
+      expect(groups("he").get("plants")).toBe("צמחים");
+      expect(groups("es").get("plants")).toBe("plantas");
+      expect(groups("pt").get("plants")).toBe("plantas");
     });
 
     it("the new words are spec stubs — a word each, and no body to build", () => {
