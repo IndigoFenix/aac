@@ -215,18 +215,19 @@ build, which is the whole reason it exists.
 When Apple raises the floor (historically each spring), bump `XCODE_VERSION`
 and `MIN_IOS_SDK` together, in both files.
 
-> Whether `Xcode_26*.app` is on the `macos-15` image cannot be checked from
-> Windows, only from a run. If it is not there the *unsigned* workflow fails in
-> ~30 seconds with the installed list printed — run that one first and set the
-> pin from its output. That failure mode is the point: the alternative is a
-> silent SDK downgrade discovered at upload.
+> **Confirmed on the runner, 2026-09-06** (build 19, v1.0.42): `macos-15` carries
+> Xcode 26.3 (`DTXcode 2630`, build `17C529`) with the **iOS 26.2 SDK**, and the
+> major-only pin selected it correctly. Measured out of the shipped bundle, not
+> inferred from a green run.
 >
-> **A green run is not proof the pin took effect** — only that the step did not
-> fail. The proof is in the artifact: `verify-ios-ipa.mjs` (below) reads
-> `DTSDKName` out of the built bundle and compares it to `MIN_IOS_SDK`. A July
-> 2026 artifact, built before the pin, reads `iphoneos17.5` / Xcode `1540` —
-> which is exactly the rejection this pin exists to prevent, and confirms the
-> `macos-14` default really was too old.
+> The pre-pin comparison, from a July 2026 artifact: `iphoneos17.5` / Xcode
+> `1540`. That is the `macos-14` default, and it is below the floor — so the
+> rejection this pin exists to prevent was real, not hypothetical.
+>
+> If a future image drops Xcode 26, the *unsigned* workflow fails in ~30 seconds
+> with the installed list printed; set the pin from that output. And note a green
+> run alone never proves the pin took effect — only that the step didn't fail.
+> The proof is `verify-ios-ipa.mjs` reading `DTSDKName` out of the artifact.
 
 ### Open items before the first submission
 
@@ -443,6 +444,12 @@ Verified by running it against a real July 2026 artifact, which correctly fails
 on exactly the four things fixed since (SDK 17.5, `UIDeviceFamily [1,2]`, no
 encryption key, 0/12 localizations) and against a synthesized compliant bundle,
 which passes.
+
+**First clean pass: build 19 / v1.0.42, 2026-09-06.** The shipped bundle carries
+`UIDeviceFamily [2]`, `ITSAppUsesNonExemptEncryption false`, iOS SDK 26.2, and
+all 12 `.lproj` — with the Hebrew, Arabic and Chinese camera prompts really in
+there, compiled to binary plists, not English copies. Every item on the B-list is
+now confirmed in the artifact rather than only in the generator.
 
 **Not verified — no Mac, no iPad:**
 

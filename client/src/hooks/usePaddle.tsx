@@ -95,20 +95,11 @@ function getPaddle(): Promise<PaddleInitResult> {
 
 export interface OpenCheckoutOptions {
   onCompleted?: (transactionId: string | null) => void;
-  /** Extra data forwarded to Paddle. The WEBHOOK is the only fulfilment path,
-   *  and it arrives with no session — whatever it needs must ride along here. */
-  customData?: Record<string, unknown>;
 }
 
 export interface UsePaddleResult extends PaddleState {
   /** Open a checkout for a transaction the SERVER created (the license flow). */
   openCheckout: (transactionId: string, options?: OpenCheckoutOptions) => boolean;
-  /** Open a checkout straight from a catalog price (the paddle-test page). */
-  openCheckoutForPrice: (
-    priceId: string,
-    customData?: Record<string, unknown>,
-    options?: OpenCheckoutOptions,
-  ) => boolean;
 }
 
 export function usePaddle(): UsePaddleResult {
@@ -149,18 +140,5 @@ export function usePaddle(): UsePaddleResult {
     [state.paddle, register],
   );
 
-  const openCheckoutForPrice = useCallback(
-    (priceId: string, customData?: Record<string, unknown>, options?: OpenCheckoutOptions) => {
-      if (!state.paddle) return false;
-      register(options);
-      state.paddle.Checkout.open({
-        items: [{ priceId, quantity: 1 }],
-        ...(customData ? { customData } : {}),
-      });
-      return true;
-    },
-    [state.paddle, register],
-  );
-
-  return { ...state, openCheckout, openCheckoutForPrice };
+  return { ...state, openCheckout };
 }

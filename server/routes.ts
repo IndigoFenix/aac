@@ -1522,12 +1522,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/paddle/config", requireAuth, (req, res) =>
     paddleController.getConfig(req, res)
   );
-  app.get("/api/paddle/prices", requireAuth, (req, res) =>
-    paddleController.listPrices(req, res)
-  );
-  app.post("/api/paddle/test-price", requireAuth, (req, res) =>
-    paddleController.createTestPrice(req, res)
-  );
   // NO requireAuth: Paddle carries no session — the HMAC signature over the raw
   // body is the authentication. The raw body it verifies against is preserved
   // by applyPaddleWebhookRawBody() in server/index.ts / server/app.prod.ts,
@@ -2750,11 +2744,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= DROPBOX INTEGRATION =============
   registerDropboxRoutes(app);
-
-  // ============= STATIC FILES =============
-  app.get("/purchase-credits.html", (req, res) => {
-    res.sendFile(path.join(process.cwd(), "client/purchase-credits.html"));
-  });
 
   // Admin routes are handled by the SPA fallback in index.prod.ts
   // The admin page is a client-side route within the main React app

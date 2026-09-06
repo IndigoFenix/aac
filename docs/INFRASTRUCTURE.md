@@ -180,7 +180,6 @@ the app secrets is planned, not implemented.
 - SESSION_SECRET
 - ENCRYPTION_KEY
 - OPENAI_API_KEY
-- STRIPE_SECRET_KEY
 - Google OAuth credentials
 - Dropbox credentials
 

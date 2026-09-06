@@ -125,6 +125,63 @@ export function notifyProviderCreditFailure(opts: {
   })();
 }
 
+// ─── Paddle fulfillment (webhook) ────────────────────────────────────────────
+
+export type PaddleFulfillmentProblem = "failed" | "unfulfilled";
+const lastPaddleAlert = new Map<PaddleFulfillmentProblem, number>();
+
+/**
+ * A Paddle webhook that took money but did not flip a license. Two shapes:
+ *   failed      — fulfillment threw (row `failed`, Paddle will retry, 500 sent)
+ *   unfulfilled — a transaction.completed we chose to IGNORE (no licenseId,
+ *                 unknown price…): Paddle will NOT retry, so nobody else will
+ *                 ever notice. A paid customer with no license is the worst
+ *                 billing outcome there is, hence its own alert.
+ * Throttled per shape with the same cooldown as provider alerts; the
+ * `paddle_events` row is the full record, this is just the doorbell.
+ * Fire-and-forget — never throws, never blocks the webhook response.
+ */
+export function notifyPaddleFulfillmentProblem(opts: {
+  kind: PaddleFulfillmentProblem;
+  eventId: string;
+  eventType: string;
+  detail: string;
+}): void {
+  void (async () => {
+    try {
+      const now = Date.now();
+      const last = lastPaddleAlert.get(opts.kind) ?? 0;
+      if (now - last < cooldownMs()) return;
+      lastPaddleAlert.set(opts.kind, now);
+
+      const subject =
+        opts.kind === "failed"
+          ? `⚠️ Paddle webhook FAILED: ${opts.eventType}`
+          : `⚠️ Paddle payment NOT fulfilled: ${opts.eventType}`;
+      const lines = [
+        opts.kind === "failed"
+          ? `Processing a Paddle webhook threw. Paddle will retry; if it keeps failing the customer has paid and has no license.`
+          : `A completed Paddle transaction was ignored by fulfillment. Paddle will NOT retry — the customer has paid and has no license until someone acts.`,
+        ``,
+        `Event:      ${opts.eventId} (${opts.eventType})`,
+        `Time (UTC): ${new Date(now).toISOString()}`,
+        `Detail:     ${opts.detail.slice(0, 500)}`,
+        ``,
+        `Look up the row in paddle_events and the transaction in the Paddle dashboard.`,
+      ];
+      await sendAlertEmail(subject, lines);
+      console.warn(`[providerAlert] Sent Paddle ${opts.kind} alert for ${opts.eventId}`);
+    } catch (err) {
+      console.error("[providerAlert] Failed to send Paddle alert:", err);
+    }
+  })();
+}
+
+/** Test seam: forget the Paddle alert throttle. */
+export function resetPaddleAlertThrottle(): void {
+  lastPaddleAlert.clear();
+}
+
 // ─── Spend-threshold sweep (cron) ────────────────────────────────────────────
 
 /** Local YYYY-MM-DD, matching getCostUsageAnalytics' date-string filter. */

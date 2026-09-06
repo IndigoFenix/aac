@@ -10,7 +10,7 @@
 // paddle-js and then re-read its own state, since the WEBHOOK, not this
 // component, is what flips the license to paid.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -20,7 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { CreditCard, Loader2 } from 'lucide-react';
+import { Check, CreditCard, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
@@ -60,13 +60,44 @@ export function LicenseBillingCard({ scope, className }: LicenseBillingCardProps
   const { info, refresh } = useLicenseBilling();
   const { ready, openCheckout } = usePaddle();
   const [starting, setStarting] = useState(false);
+  // 'confirming' spans the gap between Paddle's CHECKOUT_COMPLETED (fired the
+  // instant the card is charged) and our WEBHOOK landing (a few seconds later,
+  // and that is what actually flips the row). Re-reading once at completion
+  // read the row too early and showed the old state — so we snapshot what we
+  // paid FROM and poll until the server disagrees with it.
+  const [phase, setPhase] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
+  const snapshot = useRef<{ status: string; expiresAt: string | null } | null>(null);
+
+  useEffect(() => {
+    if (phase !== 'confirming' || !info) return;
+    const before = snapshot.current;
+    const changed =
+      !before || info.status !== before.status || info.expiresAt !== before.expiresAt;
+    if (changed && info.status === 'active') {
+      setPhase('confirmed');
+      toast({ title: t('billing.confirmed'), description: t('billing.paymentCompleteDesc') });
+      return;
+    }
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - started > 60_000) {
+        clearInterval(timer);
+        setPhase('idle');
+        toast({ title: t('billing.paymentComplete'), description: t('billing.confirmTimeout') });
+        return;
+      }
+      void refresh();
+    }, 2_000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, info?.status, info?.expiresAt]);
 
   if (!info) return null;
   if (scope && info.scope !== scope) return null;
 
   // A perpetual, live license has nothing to say and nothing to sell. Anything
   // with an end date keeps the card so the customer can see the date.
-  if (info.status === 'active' && !info.expiresAt) return null;
+  if (info.status === 'active' && !info.expiresAt && phase === 'idle') return null;
 
   // Null price = invoice customer. They still see where they stand; they just
   // have no self-serve price to be charged.
@@ -107,12 +138,10 @@ export function LicenseBillingCard({ scope, className }: LicenseBillingCardProps
       const data = await res.json();
       if (!data?.transactionId) throw new Error('missing transactionId');
 
+      snapshot.current = { status: info.status, expiresAt: info.expiresAt };
       const opened = openCheckout(data.transactionId, {
         onCompleted: () => {
-          toast({
-            title: t('billing.paymentComplete'),
-            description: t('billing.paymentCompleteDesc'),
-          });
+          setPhase('confirming');
           void refresh();
         },
       });
@@ -169,12 +198,22 @@ export function LicenseBillingCard({ scope, className }: LicenseBillingCardProps
           <p className="text-sm text-muted-foreground">{t('billing.adminOnly')}</p>
         ) : null}
 
-        {purchasable && (
+        {purchasable && phase === 'confirmed' ? (
+          <Button disabled variant="secondary" data-testid="button-license-pay">
+            <Check className="w-4 h-4 me-2" />
+            {t('billing.confirmed')}
+          </Button>
+        ) : purchasable && phase === 'confirming' ? (
+          <Button disabled data-testid="button-license-pay">
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
+            {t('billing.confirming')}
+          </Button>
+        ) : purchasable ? (
           <Button onClick={handlePay} disabled={starting || !ready} data-testid="button-license-pay">
             {starting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
             {isRenewal ? t('billing.renew') : t('billing.activate')}
           </Button>
-        )}
+        ) : null}
         {purchasable && !ready && (
           <p className="text-xs text-muted-foreground">{t('billing.notReady')}</p>
         )}

@@ -14,8 +14,6 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { StudentProvider, useStudent } from "@/hooks/useStudent";
 import { StudentLabelSync } from "@/hooks/useStudentLabel";
 import NotFound from "@/pages/not-found";
-import PurchaseCredits from "@/pages/purchase-credits";
-import PaddleTest from "@/pages/paddle-test";
 import SttTestPanel from "@/features/sttTest/SttTestPanel";
 import TermsOfService from "@/pages/terms-of-service";
 import PrivacyPolicy from "@/pages/privacy-policy";
@@ -231,18 +229,6 @@ function Router() {
         </ProtectedRoute>
       </Route>
       
-      <Route path="/purchase-credits">
-        <ProtectedRoute>
-          <PurchaseCredits />
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/paddle-test">
-        <ProtectedRoute>
-          <PaddleTest />
-        </ProtectedRoute>
-      </Route>
-
       <Route path="/stt-test">
         <ProtectedRoute>
           <SttTestPanel />

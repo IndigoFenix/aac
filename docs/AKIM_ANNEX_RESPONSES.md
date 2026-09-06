@@ -472,12 +472,15 @@ ISO 27001) על פי דרישה. בדיקת חדירות חיצונית למער
 
 ⇐AIVOTA: לא רלוונטי להתקשרות זו. אביוטה אינה שומרת, אינה מעבדת ואינה מעבירה
 פרטי כרטיסי אשראי. במסלול הרכישה הישירה (ככל שיופעל), פרטי הכרטיס נמסרים ישירות
-מדפדפן המשלם לספק הסליקה Stripe באמצעות רכיב מאובטח מוטמע, ואינם עוברים דרך שרתי
-אביוטה כלל; אביוטה שומרת מזהה עסקה בלבד. Stripe מוסמכת PCI DSS Level 1. בהתאם,
-היקף ה-PCI של אביוטה הוא SAQ-A.
+מדפדפן המשלם לספק הסליקה Paddle (Merchant of Record) באמצעות חלון תשלום מוטמע
+(paddle-js), ואינם עוברים דרך שרתי אביוטה כלל; אביוטה שומרת מזהי עסקה ומנוי בלבד.
+Paddle מוסמכת PCI DSS Level 1. בהתאם, היקף ה-PCI של אביוטה הוא SAQ-A.
 
-🔒 **פנימי:** נבדק בקוד: `client/src/pages/purchase-credits.tsx` משתמש ב-Stripe
-Elements + `confirmCardPayment`, והשרת יוצר PaymentIntent בלבד. אין PAN בשרת. ✔
+🔒 **פנימי:** נבדק בקוד (2026-09-06): השרת יוצר עסקה ב-Paddle
+(`server/services/paddleService.ts`) ומחזיר `transactionId`; הדפדפן פותח את
+`Paddle.Checkout.open({ transactionId })` והתשלום מתבצע ב-iframe של Paddle.
+אישור התשלום מגיע ב-webhook חתום (`/api/paddle/webhook`). אין PAN בשרת.
+מסלול ה-Stripe הישן (`purchase-credits.tsx`) הוסר. ✔
 
 ---
 

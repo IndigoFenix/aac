@@ -157,7 +157,7 @@ export default function ClinicalDataPage() {
   };
 
   const handleUpgrade = () => {
-    window.location.href = "/purchase-credits";
+    window.location.href = "/settings";
   };
 
   // Show access denied message if there's an error

@@ -14,7 +14,6 @@
 import { useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useInstitute } from '@/hooks/useInstitute';
-import { queryClient } from '@/lib/queryClient';
 import type { LicenseStatus } from '@shared/license-status';
 
 export interface LicenseBillingInfo {
@@ -48,9 +47,7 @@ export function useLicenseBilling(): UseLicenseBillingResult {
   const { currentInstitute, refetchInstitutes } = useInstitute();
 
   const refresh = useCallback(async () => {
-    await refetchUser();
-    refetchInstitutes();
-    queryClient.invalidateQueries({ queryKey: ['/api/institutes'] });
+    await Promise.all([refetchUser(), refetchInstitutes()]);
   }, [refetchUser, refetchInstitutes]);
 
   let info: LicenseBillingInfo | null = null;

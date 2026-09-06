@@ -347,6 +347,16 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [institutes, currentInstitute, storageKey]);
 
+  // Keep the selected institute in step with the list it was picked from.
+  // `currentInstitute` is a snapshot taken at selection time; a refetch of
+  // /api/institutes (e.g. after a license payment lands via webhook) would
+  // otherwise leave every consumer reading the pre-payment license fields.
+  useEffect(() => {
+    if (!currentInstitute) return;
+    const fresh = institutes.find((i) => i.id === currentInstitute.id);
+    if (fresh && fresh !== currentInstitute) setCurrentInstitute(fresh);
+  }, [institutes, currentInstitute]);
+
   // =============================================================================
   // IDENTITY VERIFICATION
   // =============================================================================

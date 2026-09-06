@@ -87,6 +87,14 @@ jest.unstable_mockModule("../services/paddleFulfillmentService.js", () => ({
   PaddleFulfillmentService: class {},
 }));
 
+const notifyPaddleFulfillmentProblem = jest.fn<any>();
+// The alert path ends in SES and the test env carries live credentials — a
+// real module here would EMAIL on every failure case below.
+jest.unstable_mockModule("../services/providerAlertService.js", () => ({
+  notifyPaddleFulfillmentProblem,
+  resetPaddleAlertThrottle: () => {},
+}));
+
 let paddleController: typeof import("../controllers/paddleController.js").paddleController;
 let applyPaddleWebhookRawBody: typeof import("../middleware/paddle-webhook-raw.js").applyPaddleWebhookRawBody;
 
@@ -328,6 +336,26 @@ describe("paddle webhook — outcomes", () => {
 
     expect(setStatus).toHaveBeenCalledWith("evt_01test", "ignored", "no customData.userId");
     expect(rows.get("evt_01test")?.status).toBe("ignored");
+    // The fixture is a transaction.completed: money in, nothing fulfilled → alert.
+    expect(notifyPaddleFulfillmentProblem).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "unfulfilled", eventId: "evt_01test" }),
+    );
+  });
+
+  it("does NOT alert when a non-payment event is ignored", async () => {
+    notifyPaddleFulfillmentProblem.mockClear();
+    handleEvent.mockImplementation(async () => ({
+      status: "ignored",
+      reason: "unhandled event type: address.created",
+    }));
+
+    const body = eventBody({ event_type: "address.created" });
+    await withApp(async (port) => {
+      const res = await post(port, body, { "paddle-signature": sign(body) });
+      expect(res.status).toBe(200);
+    });
+
+    expect(notifyPaddleFulfillmentProblem).not.toHaveBeenCalled();
   });
 
   it("returns 500 and marks the row failed when fulfillment throws", async () => {
@@ -343,6 +371,9 @@ describe("paddle webhook — outcomes", () => {
 
     expect(rows.get("evt_01test")?.status).toBe("failed");
     expect(rows.get("evt_01test")?.error).toContain("database is down");
+    expect(notifyPaddleFulfillmentProblem).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failed", detail: "database is down" }),
+    );
   });
 });
 
