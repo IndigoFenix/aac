@@ -29,6 +29,7 @@ import { createSpiritPose, blendPose, applyPose, type SpiritPose } from "./pose.
 import { createChaseRig, type ChaseRig } from "./chase-rig.js";
 import { createGroundGlide, type GroundGlide } from "./ground-glide.js";
 import { cornerOrbitDelta, inOrbitBand } from "./corner-orbit.js";
+import { ORBIT_POSE_DEFAULTS, orbitPose } from "./orbit-pose.js";
 
 // ── FLIGHT regimes (moved verbatim from world-lab main.ts spiritControl) ────
 const DEAD_XY: [number, number] = [0, -0.3];
@@ -46,28 +47,35 @@ const SIDE_SPEED = 0.5;
 // ── TOWN focus (moved from driveCityFocus) ──────────────────────────────────
 export const CITY_FOCUS_ALT = 3_500;
 export const TOWN_ENTER_FACTOR = 2.2;
-const CITY_PITCH = 0.5;
 const CITY_EXIT_S = 0.5;
 const CITY_DWELL_S = 0.6;
-export const CITY_FRAME = 1.35;
+/** ⚖️ THE ORBIT'S FRAME FACTOR — now a FIELD of the tunable pose record
+ *  (`spirit/orbit-pose.ts`, user ruling C1 2026-09-06: the frame is tuned by
+ *  eye and then baked). Still exported under its old name because it is the
+ *  SHIPPED value the distance formula `dist = r / tan(fov/2) × CITY_FRAME`
+ *  documents; the live pose is `orbitPose().frameFactor`, which equals this
+ *  unless a debug override is set. */
+export const CITY_FRAME = ORBIT_POSE_DEFAULTS.frameFactor;
 const CITY_BLEND_RATE = 2.6;
 const DWELL_MOVE_PX = 40;
-/** ⚖️ THE DISTRICT ORBIT'S ZOOM (user 2026-09-05: *"the camera is too far away
- *  to see anything, and I can't zoom in. The circle should really be close to
- *  the outer camera bounds, since that's the point of it"*).
+/** ⚖️ THE SMALLEST DISTRICT FRAME THE ORBIT WILL TAKE (user 2026-09-05: *"the
+ *  circle should really be close to the outer camera bounds, since that's the
+ *  point of it"*).
  *
- *  The OUTER bound is the district frame. Under the builder hold that frame is
- *  the sim's own relevance disc (`SpiritTownSession.relevanceDisc` — the
+ *  The frame's OUTER bound is the district. Under the builder hold that frame
+ *  is the sim's own relevance disc (`SpiritTownSession.relevanceDisc` — the
  *  near-stand ring world-lab draws), re-read every frame so a ring that steps
- *  at a building event re-frames. `zoomBy` walks the frame radius IN from the
- *  bound and never out past it; the floor is the smallest frame the ladder
- *  already uses for a single building (planet-provider clamps a lot frame to
- *  6–22 m). Zoom is a CONTROL state, not a rung: it lives only at the district
- *  depth and resets when the player steps out of it. */
-export const ORBIT_ZOOM_FLOOR_M = 6;
-/** Frame-radius factor per wheel notch (e^0.12 ≈ 1.13 — ~18 notches from the
- *  founding's 30 m ring down to the floor). */
-const ORBIT_ZOOM_STEP = 0.12;
+ *  at a building event re-frames. This floor keeps a degenerate ring (a disc
+ *  that has not sized itself yet) from collapsing the camera onto the ground:
+ *  it is the smallest frame the ladder already uses for a single building
+ *  (planet-provider clamps a lot frame to 6–22 m).
+ *
+ *  🚫 It used to be `ORBIT_ZOOM_FLOOR_M`, the floor of a WHEEL zoom. The wheel
+ *  is gone (user ruling C2 2026-09-06: *"Mouse wheel should not be a control
+ *  for core behaviors — remember, the game is being designed for eyegaze"*);
+ *  the frame is moved by the pose record's `ringFrameFactor` instead, which is
+ *  a debug slider, not a play control. */
+export const ORBIT_FRAME_FLOOR_M = 6;
 
 // ── STRUCTURE blend (the jump fix) ──────────────────────────────────────────
 /** Seconds the orbit→dollhouse pose blend takes (and its reverse). */
@@ -229,14 +237,6 @@ export interface SpiritLadder {
   /** Is the builder hold armed? (Drivers gate the host-pointer forward on it
    *  — see `setBuilderHold`.) */
   readonly builderHold: boolean;
-  /** WHEEL ZOOM on the district orbit (`ORBIT_ZOOM_FLOOR_M`): `notches` > 0
-   *  backs out toward the frame's OUTER bound — the relevance disc under the
-   *  hold, else the district the gaze picked — and < 0 closes in, floored at
-   *  a single building's frame. Inert on every other rung and at the
-   *  whole-town depth: zoom is a control state inside one frame, not a rung. */
-  zoomBy(notches: number): void;
-  /** The zoom as a fraction of the outer bound (1 = at the bound). */
-  readonly orbitZoom: number;
   /** THE HOST OWNS THE VIEW ON THE GROUND RUNG (walker-driven embeds only).
    *
    *  A DESIGNATED AVATAR (manifest `avatar: true`) is played through the
@@ -456,11 +456,6 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
    *  camera, so its DOWNWARD rung changes are pinned off and the dwell is an
    *  interaction. Read ONLY by `stepTown`; inert on every other rung. */
   let builderHold = false;
-  /** THE DISTRICT ORBIT'S ZOOM as a fraction of its frame's outer bound —
-   *  1 = at the bound (the relevance disc under the hold), smaller = closer,
-   *  floored so the frame never drops under `ORBIT_ZOOM_FLOOR_M`. See the
-   *  constant. Reset whenever the district depth is (re)entered. */
-  let orbitZoom = 1;
   /** The entity engine currently opted OUT of drawing its own cursor for the
    *  ground rung (it reports; the provider draws). Held so the opt-out can be
    *  handed back when the rung ends or the engine changes under the glide. */
@@ -610,11 +605,16 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
   /** Fill `_orbRel`/`_orbLookRel` from the current eased town state + a chart
    *  basis. Also fills `pose` (absolute) when `origin` is given. */
   function orbitRelPose(t: TownState, chart: { east: THREE.Vector3; north: THREE.Vector3; up: THREE.Vector3 }, fovRad: number): void {
-    const dist = (t.radius / Math.tan(fovRad / 2)) * CITY_FRAME;
+    // ⚖️ THE POSE IS A RECORD (orbit-pose.ts, user ruling C1): read live, so a
+    // debug slider moves the camera on the next frame. With no override the
+    // three fields ARE the former `CITY_FRAME` / `CITY_PITCH` / `0.35`
+    // literals, so this expression is byte-identical to what shipped.
+    const p = orbitPose();
+    const dist = (t.radius / Math.tan(fovRad / 2)) * p.frameFactor;
     _horiz.copy(chart.east).multiplyScalar(Math.cos(t.az)).addScaledVector(chart.north, Math.sin(t.az));
-    _orbRel.copy(chart.up).multiplyScalar(dist * Math.sin(CITY_PITCH))
-      .addScaledVector(_horiz, -dist * Math.cos(CITY_PITCH));
-    _orbLookRel.copy(chart.up).multiplyScalar(t.radius * 0.35);
+    _orbRel.copy(chart.up).multiplyScalar(dist * Math.sin(p.pitchRad))
+      .addScaledVector(_horiz, -dist * Math.cos(p.pitchRad));
+    _orbLookRel.copy(chart.up).multiplyScalar(t.radius * p.liftFrac);
   }
 
   // ── Transitions ────────────────────────────────────────────────────────────
@@ -654,7 +654,6 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
       t.radius = r;
       t.targetRadius = r;
       t.district = { x: 0, z: 0, radius: r };
-      orbitZoom = 1;
     }
     // Carry the drone's heading into the orbit azimuth, exactly as the
     // gaze-driven `enterTown` does — the frame must not swing on entry.
@@ -668,18 +667,6 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     town = t;
     struct = null;
     level = "town";
-  }
-
-  /** `SpiritLadder.zoomBy` — see `ORBIT_ZOOM_FLOOR_M`. The clamp reads the
-   *  CURRENT outer bound, so a notch can never bank zoom below the floor and
-   *  spend it later; the frame itself is written by `stepTown`. */
-  function zoomBy(notches: number): void {
-    if (!Number.isFinite(notches) || notches === 0) return;
-    const t = town;
-    if (level !== "town" || !t || t.depth !== 1 || t.exiting) return;
-    const bound = t.district.radius;
-    const floor = bound > 0 ? Math.min(1, ORBIT_ZOOM_FLOOR_M / bound) : 1;
-    orbitZoom = Math.min(1, Math.max(floor, orbitZoom * Math.exp(notches * ORBIT_ZOOM_STEP)));
   }
 
   function enterStructure(t: TownState, pick: SpiritFocusTarget, spiritAz: number): void {
@@ -894,23 +881,24 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
 
     // Live plan radius once it loads (whole-town depth only).
     if (t.depth === 0 && !t.exiting) t.targetRadius = t.session.radius();
-    // THE DISTRICT FRAME'S OUTER BOUND, and the zoom inside it (see
-    // ORBIT_ZOOM_FLOOR_M). Under the builder hold the bound IS the sim's
-    // relevance disc — "the circle should be close to the outer camera
-    // bounds" — read live so a ring that steps at a building event re-frames
-    // (eased below like every other radius change, so nothing jumps). Off the
-    // hold the bound stays the district the gaze picked, and at zoom 1 this
-    // line writes the value the pick already wrote: city visits, nature-hike
-    // and the flat boot are byte-identical until somebody turns the wheel.
+    // THE DISTRICT FRAME'S OUTER BOUND (floored at ORBIT_FRAME_FLOOR_M). Under
+    // the builder hold the bound IS the sim's relevance disc — "the circle
+    // should be close to the outer camera bounds" — read live so a ring that
+    // steps at a building event re-frames (eased below like every other radius
+    // change, so nothing jumps), scaled by the pose record's `ringFrameFactor`
+    // (1 = the ring exactly, which is what ships; the debug slider is the only
+    // thing that moves it). Off the hold the bound stays the district the gaze
+    // picked and the disc is never read at all, so city visits, nature-hike and
+    // the flat boot are byte-identical.
     if (t.depth === 1 && !t.exiting) {
       if (builderHold) {
         const disc = t.session.relevanceDisc?.();
         if (disc && disc.radius > 0) {
-          t.district = { x: disc.x, z: disc.z, radius: disc.radius };
+          t.district = { x: disc.x, z: disc.z, radius: disc.radius * orbitPose().ringFrameFactor };
           t.target = { x: disc.x, z: disc.z };
         }
       }
-      t.targetRadius = Math.max(ORBIT_ZOOM_FLOOR_M, t.district.radius * orbitZoom);
+      t.targetRadius = Math.max(ORBIT_FRAME_FLOOR_M, t.district.radius);
     }
     // Ease focus/radius/az/blend from LAST frame's inputs (input lands below,
     // post-rebase — the 1-frame gaze latency discipline).
@@ -995,7 +983,6 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
               t.target = { x: 0, z: 0 };
               t.targetRadius = t.session.radius();
               t.depth = 0;
-              orbitZoom = 1; // stepping out of the frame ends its zoom
             } else if (f) {
               // Keep FACING: the drone leaves along the orbit's forward.
               _tmpDir.copy(chart.east).multiplyScalar(Math.cos(t.az))
@@ -1073,8 +1060,7 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
 
     const lvl = t.depth === 0 ? "TOWN" : "DISTRICT";
     const dwellPct = Math.round((t.dwellHold / CITY_DWELL_S) * 100);
-    const zoom = orbitZoom < 1 ? ` [zoom ${Math.round(orbitZoom * 100)}%]` : "";
-    const status = `SPIRIT ladder-v1 · FOCUS=${lvl}${held ? " [build hold]" : ""}${zoom} (${t.session.label})` +
+    const status = `SPIRIT ladder-v1 · FOCUS=${lvl}${held ? " [build hold]" : ""} (${t.session.label})` +
       ` · ${hint} · dwell ${dwellPct}% · bottom → out`;
     return { status, waiting: post.waiting, nearTown: post.nearTown };
   }
@@ -1640,8 +1626,6 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
     focusTown(ref, o) { focusTown(ref, o); },
     setBuilderHold(on) { builderHold = on; },
     get builderHold() { return builderHold; },
-    zoomBy(notches) { zoomBy(notches); },
-    get orbitZoom() { return orbitZoom; },
     setHostDrivesView(on) { hostView = on; },
     dropToGround(worldPoint, townRef = null) {
       // Keep FACING: resume the glide along the camera's current forward.

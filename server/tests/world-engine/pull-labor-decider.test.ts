@@ -69,6 +69,7 @@ import {
 import { NEED_PRESSURE_S } from "@shared/world-engine/interaction/behavior/needs.js";
 import { driveValueS } from "@shared/world-engine/kernel/town/pricing.js";
 import { defaultAnnounceCriteria } from "@shared/world-engine/interaction/dialogue/intent-lines.js";
+import { seatsOfRect } from "@shared/world-engine/interaction/quest/construction-director.js";
 import type { QuestSession } from "@shared/world-engine/interaction/quest/quest-host.js";
 import { createReservationLedger, freeUnits } from "@shared/world-engine/kernel/town/reservations.js";
 import { createTransferLedger } from "@shared/world-engine/kernel/town/transfer.js";
@@ -190,6 +191,14 @@ function makeFixture(opts?: { pullOn?: boolean }): Fixture {
     carryOf: (_s, cid) => carry.get(cid) ?? bare(),
     bagCeilingOf: () => bagCeiling.n,
     orderSiteId: (ord) => `o:${ord}`,
+    // 🔁 MOVED (Stage 2, S1/S2): seats are a required dep now, and they come
+    // from the REAL bay derivation over this fixture's own 8×6 plot so a change
+    // to the bay arithmetic moves these pins with it. `pull-labor-seats.test.ts`
+    // owns the seat laws themselves.
+    seatsOf: (_s, siteId) =>
+      siteId === "o:1"
+        ? seatsOfRect(siteId, { x: SITE_AT.x - 4, y: SITE_AT.y - 3, w: 8, h: 6 }, 0)
+        : [],
     buildworkSiteAt: (_s, siteId) => {
       const o = orders.find((q) => `o:${q.ord}` === siteId);
       if (!o || o.kind === "demolish") return null;
@@ -383,7 +392,15 @@ describe("③ the slice is the body's OWN carry", () => {
     f.stage();
     f.at.set("resident_0_0", SITE_AT);
     expect(decideContribution(f.session, "resident_0_0", f.deps, { beatS: -Infinity })).toBe(true);
-    expect(f.worked).toEqual([{ cid: "resident_0_0", at: SITE_AT }]);
+    // 🔁 MOVED PIN (Stage 2, S1/S2): the dwell used to stand at the SITE ANCHOR
+    // — one point, however many bodies. A body now stands at the BAY it
+    // claimed, which is what makes many hands on one shell a picture rather
+    // than a pile. The anchor still prices the walk; only the standing point
+    // moved. (Both are inside the site rect, so the presence sweep is
+    // untouched — `pull-labor-seats.test.ts` pins that.)
+    const bay0 = seatsOfRect("o:1", { x: SITE_AT.x - 4, y: SITE_AT.y - 3, w: 8, h: 6 }, 0)[0]!;
+    expect(f.worked).toEqual([{ cid: "resident_0_0", at: bay0.at }]);
+    expect(f.session.pursuits.get("resident_0_0")!.bill!.seatKey).toBe("o:1#seat0");
     expect(f.session.transfers.active()).toEqual([]);
     const p = f.session.pursuits.get("resident_0_0");
     expect(isContributePursuit(p)).toBe(true);
@@ -393,7 +410,14 @@ describe("③ the slice is the body's OWN carry", () => {
     expect(f.session.liveNeedBodies.has("resident_0_0")).toBe(true);
   });
 
-  it("the BUILD SEATS bound holds — a fourth body takes a material link instead", () => {
+  it("🔁 the SEAT bound holds — and it is the WORK's, so a fourth body builds too", () => {
+    // 🔁 MOVED PIN (Stage 2, S1–S3). This asserted `BUILD_SEATS = 3`: three
+    // builders, and the fourth body pushed onto a material link. That integer
+    // is GONE — a seat is a PLACE, and this 8×6 plot has 22 of them (2×3 floor +
+    // 2×3 roof + 10 wall bays), so the fourth body builds. The LAW the pin
+    // guards is unchanged and re-stated below: a bounded number of bodies may
+    // work one site, and the surplus takes the next link. `pull-labor-seats`
+    // owns the bound-exhausted case (a 1×1 shell, six bays, eight bodies).
     const f = makeFixture();
     f.stage();
     (f.orders[0] as { costs?: Record<string, number> }).costs = { block: 130 };
@@ -403,8 +427,11 @@ describe("③ the slice is the body's OWN carry", () => {
       expect(decideContribution(f.session, cid, f.deps, { beatS: -Infinity })).toBe(true);
     }
     const links = cids.map((c) => f.session.pursuits.get(c)!.bill!.link);
-    expect(links.filter((l) => l === "build")).toHaveLength(3);
-    expect(links[3]).toBe("haul");
+    expect(links).toEqual(["build", "build", "build", "build"]);
+    // …each on its OWN bay, lowest index first, and never two on one.
+    const keys = cids.map((c) => f.session.pursuits.get(c)!.bill!.seatKey);
+    expect(keys).toEqual(["o:1#seat0", "o:1#seat1", "o:1#seat2", "o:1#seat3"]);
+    expect(new Set(keys).size).toBe(4);
   });
 });
 

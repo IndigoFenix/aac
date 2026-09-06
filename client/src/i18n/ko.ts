@@ -3166,6 +3166,9 @@ export const ko = {
     SCOPE_MALFORMED: "이 사진의 소유자를 확인할 수 없습니다.",
     SCOPE_REQUIRED: "먼저 {{student}} 또는 기관을 선택하세요.",
     UNAUTHORIZED: "다시 로그인해 주세요.",
+    LICENSE_ALREADY_PAID: "이 라이선스는 이미 결제되었습니다.",
+    LICENSE_NOT_PURCHASABLE: "이 라이선스는 온라인으로 결제할 수 없습니다. 문의해 주세요.",
+    PADDLE_NOT_CONFIGURED: "현재 온라인 결제를 이용할 수 없습니다. 잠시 후 다시 시도하거나 문의해 주세요.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const ko = {
       isTrial: "체험판 라이선스",
       trialExpiresAt: "체험판 만료일",
       trialExpired: "체험판 만료됨",
+      price: "가격",
+      pricePlaceholder: "예: 49.90",
+      priceHint: "청구서 고객은 비워 두세요. 온라인 결제 버튼이 표시되지 않습니다.",
+      currency: "통화",
+      paidUntil: "결제 만료일",
+      expires: "만료",
+      expired: "만료됨",
       // Recipient
       recipient: "수신자",
       email: "이메일",
@@ -4936,5 +4946,34 @@ export const ko = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "라이선스 활성화",
+    adminOnly: "조직 관리자만 이 라이선스를 관리할 수 있습니다.",
+    banner: {
+      dismiss: "닫기",
+      expired: "라이선스가 만료되었습니다. 일부 기능을 사용할 수 없습니다.",
+      trialEndsIn: "체험 기간이 {{days}}일 후에 종료됩니다.",
+      trialEndsToday: "체험 기간이 오늘 종료됩니다.",
+      trialEndsTomorrow: "체험 기간이 내일 종료됩니다.",
+      viewBilling: "결제 보기",
+    },
+    checkoutFailed: "결제를 시작할 수 없습니다",
+    expiredOn: "{{date}}에 만료됨",
+    invoiceOnly: "이 라이선스는 청구서로 결제됩니다. 갱신하거나 변경하려면 문의해 주세요.",
+    notReady: "현재 온라인 결제를 이용할 수 없습니다.",
+    paidUntil: "{{date}}까지 결제됨",
+    paymentComplete: "결제 완료",
+    paymentCompleteDesc: "라이선스가 업데이트되었습니다. 감사합니다!",
+    planMonthly: "월간",
+    planYearly: "연간",
+    renew: "갱신",
+    statusActive: "활성",
+    statusExpired: "만료됨",
+    statusNone: "라이선스 없음",
+    statusTrial: "체험",
+    subtitle: "요금제와 가격, 만료 시점입니다.",
+    title: "라이선스 및 결제",
+    trialEnds: "체험 종료: {{date}}",
   },
 };

@@ -3166,6 +3166,9 @@ export const yue = {
     SCOPE_MALFORMED: "無法確定呢張照片嘅歸屬。",
     SCOPE_REQUIRED: "請先揀一位{{student}}或者機構。",
     UNAUTHORIZED: "請重新登入。",
+    LICENSE_ALREADY_PAID: "呢個授權已經付咗款。",
+    LICENSE_NOT_PURCHASABLE: "呢個授權唔可以喺網上付款，請聯絡我哋。",
+    PADDLE_NOT_CONFIGURED: "而家未能網上付款，請稍後再試或聯絡我哋。",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const yue = {
       isTrial: "試用許可證",
       trialExpiresAt: "試用到期時間",
       trialExpired: "試用已過期",
+      price: "價格",
+      pricePlaceholder: "例如 49.90",
+      priceHint: "發票客戶請留空，佢哋唔會見到網上付款掣。",
+      currency: "貨幣",
+      paidUntil: "已付款至",
+      expires: "到期",
+      expired: "已過期",
       // Recipient
       recipient: "接收者",
       email: "電郵",
@@ -4936,5 +4946,34 @@ export const yue = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "啟用授權",
+    adminOnly: "只有機構管理員先可以管理呢個授權。",
+    banner: {
+      dismiss: "關閉",
+      expired: "你嘅授權已過期，部分功能未能使用。",
+      trialEndsIn: "你嘅試用期仲有 {{days}} 日完結。",
+      trialEndsToday: "你嘅試用期今日完結。",
+      trialEndsTomorrow: "你嘅試用期聽日完結。",
+      viewBilling: "查看帳單",
+    },
+    checkoutFailed: "無法開始付款",
+    expiredOn: "喺 {{date}} 到期",
+    invoiceOnly: "呢個授權以發票收費，如需續期或更改請聯絡我哋。",
+    notReady: "而家未能網上付款。",
+    paidUntil: "已付款至 {{date}}",
+    paymentComplete: "已收到付款",
+    paymentCompleteDesc: "你嘅授權已更新，多謝！",
+    planMonthly: "每月",
+    planYearly: "每年",
+    renew: "續期",
+    statusActive: "生效中",
+    statusExpired: "已過期",
+    statusNone: "冇授權",
+    statusTrial: "試用",
+    subtitle: "你嘅方案、價錢同幾時到期。",
+    title: "授權同帳單",
+    trialEnds: "試用期 {{date}} 完結",
   },
 };

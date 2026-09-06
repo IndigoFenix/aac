@@ -1,7 +1,8 @@
 /**
- * THE HELD ORBIT FRAMES THE RELEVANCE RING, AND ZOOMS IN FROM IT
- * (shared/world-engine/spirit/ladder.ts `relevanceDisc` + `zoomBy`) — the
- * user's GL finding on the founding boot, pinned at the state-machine level:
+ * THE HELD ORBIT FRAMES THE RELEVANCE RING — AND ITS POSE IS ONE TUNABLE RECORD
+ * (shared/world-engine/spirit/ladder.ts `relevanceDisc` + spirit/orbit-pose.ts).
+ *
+ * The user's GL finding on the founding boot, pinned at the state-machine level:
  *
  *   "Right now the camera is too far away to see anything, and I can't zoom
  *    in. The circle should really be close to the outer camera bounds, since
@@ -14,11 +15,18 @@
  * people inside it were specks, and the builder hold — correctly — pinned the
  * only gaze gesture that ever got closer.
  *
- * Under the hold the OUTER bound of the frame is now the disc itself, re-read
- * every frame (a ring that steps at a building event re-frames), and `zoomBy`
- * walks the frame in from that bound, floored at one building's frame
- * (`ORBIT_ZOOM_FLOOR_M`), never out past it. Off the hold nothing changes:
- * the disc is not read and zoom 1 rewrites the value the pick already wrote.
+ * Under the hold the OUTER bound of the frame is the disc itself, re-read every
+ * frame (a ring that steps at a building event re-frames). Off the hold nothing
+ * changes: the disc is not read at all.
+ *
+ * 🚫 THE ZOOM PINS ARE GONE (user ruling C2, 2026-09-06): *"Mouse wheel should
+ * not be a control for core behaviors — remember, the game is being designed
+ * for eyegaze."* `zoomBy`/`orbitZoom` were removed from the ladder, so their
+ * six pins (wheel-in, floor, bound, step-out reset, off-hold zoom, garbage) had
+ * nothing left to describe. What replaced them is the pose RECORD (C1): the
+ * four numbers the frame is made of, tuned by eye in the lab's 🎥 Camera panel
+ * and then baked — pinned below as (a) byte-identical at the shipped defaults
+ * and (b) each field doing exactly one thing.
  *
  * Same harness as builder-hold.test.ts: the REAL ladder over a minimal flat
  * town provider (the contract world-lab's planet provider implements), so
@@ -26,9 +34,12 @@
  */
 import * as THREE from "three";
 import {
-  CITY_FRAME, ORBIT_ZOOM_FLOOR_M, createSpiritLadder, districtRadiusFor,
+  CITY_FRAME, ORBIT_FRAME_FLOOR_M, createSpiritLadder, districtRadiusFor,
   type SpiritLadder, type SpiritPointer,
 } from "@shared/world-engine/spirit/ladder";
+import {
+  ORBIT_POSE_DEFAULTS, orbitPose, orbitPoseOverridden, resetOrbitPoseForTests, setOrbitPose,
+} from "@shared/world-engine/spirit/orbit-pose";
 import type {
   SpiritFocusTarget, SpiritFrameProvider, SpiritGroundSession,
   SpiritStructureHost, SpiritTownSession,
@@ -120,12 +131,21 @@ function hover(ladder: SpiritLadder, p: SpiritPointer | null, secs: number): str
 }
 
 /** Camera → focus distance (focus at the chart origin) — `orbitRelPose` read
- *  back: `dist = radius / tan(fov/2) · CITY_FRAME`. */
+ *  back: `dist = radius / tan(fov/2) · frameFactor`. */
 const orbitDist = (camera: THREE.PerspectiveCamera): number => camera.position.length();
-const frameDistFor = (radius: number): number =>
-  (radius / Math.tan((FOV_DEG * Math.PI) / 360)) * CITY_FRAME;
+/** The two legs of that distance: how far OUT along the ground and how far UP. */
+const orbitOut = (camera: THREE.PerspectiveCamera): number =>
+  Math.hypot(camera.position.x, camera.position.z);
+const orbitUp = (camera: THREE.PerspectiveCamera): number => camera.position.y;
+const frameDistFor = (radius: number, frameFactor = CITY_FRAME): number =>
+  (radius / Math.tan((FOV_DEG * Math.PI) / 360)) * frameFactor;
 /** Long enough for the 4 s⁻¹ radius easing to land (e^-16 of the gap). */
 const SETTLE_S = 4;
+
+// The pose record is a PERSISTED GLOBAL (the lag-comp shape). Every test starts
+// from the shipped defaults, and none may leak an override into the next.
+beforeEach(() => resetOrbitPoseForTests());
+afterEach(() => resetOrbitPoseForTests());
 
 describe("the held orbit's outer bound is the relevance disc", () => {
   it("frames the RING, not a third of the site — the circle at the camera's bound", () => {
@@ -176,83 +196,143 @@ describe("the held orbit's outer bound is the relevance disc", () => {
   });
 });
 
-describe("zoomBy — in from the bound, never out past it", () => {
-  it("wheel-up (negative notches) closes in; the status says so", () => {
+describe("NO WHEEL ON THE EYEGAZE SURFACE (C2) — the zoom control is gone", () => {
+  // MOVED PINS, and why: the six `zoomBy` cases below this line used to pin the
+  // wheel's behaviour (in from the bound, floored, never out past it, reset on
+  // step-out, off-hold, garbage-proof). The user rejected the whole control the
+  // day after it landed — an eyegaze player has a pointer and a dwell, so a
+  // core behaviour reachable only by wheel is unreachable for the product's
+  // actual user. There is nothing left to pin except its ABSENCE, and the fact
+  // that the frame it used to fight over is still the ring.
+  it("the ladder exposes no zoom at all, and the status never advertises one", () => {
     const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
     const ladder = bootHomestead(w.provider, true);
-    hover(ladder, CENTRE, SETTLE_S);
-    const d0 = orbitDist(w.camera);
-    expect(ladder.orbitZoom).toBe(1);
-    ladder.zoomBy(-3);
-    expect(ladder.orbitZoom).toBeLessThan(1);
+    const l = ladder as unknown as Record<string, unknown>;
+    expect(l.zoomBy).toBeUndefined();
+    expect(l.orbitZoom).toBeUndefined();
     const status = hover(ladder, CENTRE, SETTLE_S);
-    expect(orbitDist(w.camera)).toBeLessThan(d0);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING * ladder.orbitZoom), 2);
-    expect(status).toMatch(/\[zoom \d+%\]/);
+    expect(status).not.toContain("zoom");
+    expect(status).toContain("[build hold]");
   });
 
-  it("is FLOORED at one building's frame (ORBIT_ZOOM_FLOOR_M)", () => {
-    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+  it("the FRAME FLOOR survives the zoom's removal (a degenerate ring never collapses the camera)", () => {
+    // The floor used to be the wheel's stop; it is now simply the smallest
+    // frame the orbit will take, which is what protects a ring that has not
+    // sized itself yet.
+    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: 0.5 }) });
     const ladder = bootHomestead(w.provider, true);
     hover(ladder, CENTRE, SETTLE_S);
-    ladder.zoomBy(-1000);
-    hover(ladder, CENTRE, SETTLE_S);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(ORBIT_ZOOM_FLOOR_M), 2);
-    // Banked notches below the floor do not exist: one notch out MOVES.
-    ladder.zoomBy(1);
-    hover(ladder, CENTRE, SETTLE_S);
-    expect(orbitDist(w.camera)).toBeGreaterThan(frameDistFor(ORBIT_ZOOM_FLOOR_M) * 1.05);
+    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(ORBIT_FRAME_FLOOR_M), 2);
   });
 
-  it("never exceeds the bound — wheel-down from the ring frame is a no-op", () => {
-    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
-    const ladder = bootHomestead(w.provider, true);
-    hover(ladder, CENTRE, SETTLE_S);
-    ladder.zoomBy(50);
-    const status = hover(ladder, CENTRE, SETTLE_S);
-    expect(ladder.orbitZoom).toBe(1);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING), 2);
-    expect(status).not.toContain("[zoom");
-  });
-
-  it("stepping OUT of the district ends the zoom; coming back frames the ring again", () => {
+  it("stepping out and back still frames the ring (the reset the zoom used to need)", () => {
     const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
     const ladder = bootHomestead(w.provider, true);
     w.picks.district = STREET;
     hover(ladder, CENTRE, SETTLE_S);
-    ladder.zoomBy(-5);
-    hover(ladder, CENTRE, 0.5);
-    expect(ladder.orbitZoom).toBeLessThan(1);
     expect(hover(ladder, BOTTOM, 1)).toContain("FOCUS=TOWN");
-    expect(ladder.orbitZoom).toBe(1);
-    // Zoom is inert at the whole-town depth.
-    ladder.zoomBy(-5);
-    expect(ladder.orbitZoom).toBe(1);
     hover(ladder, CENTRE, 1.2); // the depth-0 district pick — back down
     const status = hover(ladder, CENTRE, SETTLE_S);
     expect(status).toContain("FOCUS=DISTRICT");
     expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING), 2);
   });
+});
 
-  it("works OFF the hold too, against the district frame (a city visit can lean in)", () => {
-    const w = makeWorld();
-    const ladder = bootHomestead(w.provider, false);
-    hover(ladder, CENTRE, SETTLE_S);
-    const bound = districtRadiusFor(TOWN_RADIUS);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(bound), 2);
-    ladder.zoomBy(-4);
-    hover(ladder, CENTRE, SETTLE_S);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(bound * ladder.orbitZoom), 2);
-    expect(orbitDist(w.camera)).toBeLessThan(frameDistFor(bound));
-  });
+describe("THE POSE IS ONE RECORD (C1) — tuned by eye, then baked", () => {
+  it("the shipped defaults ARE the old literals, and the camera lands where they say", () => {
+    // Byte-identity, stated as the arithmetic rather than as a snapshot: pitch
+    // 0.5 rad, frame 1.35, lift 0.35 of the radius, ring→frame 1.0 — the four
+    // numbers that were spelled inline in ladder.ts before the round.
+    expect(ORBIT_POSE_DEFAULTS).toEqual({
+      pitchRad: 0.5, frameFactor: 1.35, liftFrac: 0.35, ringFrameFactor: 1,
+    });
+    expect(CITY_FRAME).toBe(ORBIT_POSE_DEFAULTS.frameFactor);
+    expect(orbitPose()).toEqual(ORBIT_POSE_DEFAULTS);
+    expect(orbitPoseOverridden()).toBe(false);
 
-  it("ignores garbage and zero", () => {
     const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
     const ladder = bootHomestead(w.provider, true);
+    hover(ladder, CENTRE, SETTLE_S);
+    const dist = orbitDist(w.camera);
+    expect(dist).toBeCloseTo(frameDistFor(RING_FOUNDING), 4);
+    expect(orbitUp(w.camera)).toBeCloseTo(dist * Math.sin(0.5), 6);
+    expect(orbitOut(w.camera)).toBeCloseTo(dist * Math.cos(0.5), 6);
+  });
+
+  it("PITCH swings the camera along an arc — the distance to the focus never moves", () => {
+    // Which is exactly why pitch cannot change an LOD tier: the ladder bands on
+    // camera→body distance, and this control does not touch it.
+    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+    const ladder = bootHomestead(w.provider, true);
+    hover(ladder, CENTRE, SETTLE_S);
+    const before = orbitDist(w.camera);
+    setOrbitPose({ pitchRad: 0.9 });
     hover(ladder, CENTRE, 0.2);
-    ladder.zoomBy(0);
-    ladder.zoomBy(Number.NaN);
-    ladder.zoomBy(Number.POSITIVE_INFINITY * -1);
-    expect(ladder.orbitZoom).toBe(1);
+    const dist = orbitDist(w.camera);
+    expect(dist).toBeCloseTo(before, 4);
+    expect(orbitUp(w.camera)).toBeCloseTo(dist * Math.sin(0.9), 6);
+    expect(orbitOut(w.camera)).toBeCloseTo(dist * Math.cos(0.9), 6);
+  });
+
+  it("FRAME scales the stand-off, and nothing else", () => {
+    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+    const ladder = bootHomestead(w.provider, true);
+    hover(ladder, CENTRE, SETTLE_S);
+    setOrbitPose({ frameFactor: 0.7 });
+    hover(ladder, CENTRE, SETTLE_S);
+    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING, 0.7), 4);
+    // Same arc, so the up:out ratio is untouched — only the radius changed.
+    expect(orbitUp(w.camera) / orbitOut(w.camera)).toBeCloseTo(Math.tan(0.5), 6);
+  });
+
+  it("LIFT raises what the camera looks AT without moving the camera", () => {
+    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+    const ladder = bootHomestead(w.provider, true);
+    hover(ladder, CENTRE, SETTLE_S);
+    const pos = w.camera.position.clone();
+    const before = w.camera.getWorldDirection(new THREE.Vector3()).y;
+    setOrbitPose({ liftFrac: 1.2 });
+    hover(ladder, CENTRE, 0.2);
+    expect(w.camera.position.distanceTo(pos)).toBeLessThan(1e-3);
+    // Looking at a HIGHER point from the same place = a less steeply downward
+    // view (the forward vector's y rises toward 0).
+    expect(w.camera.getWorldDirection(new THREE.Vector3()).y).toBeGreaterThan(before);
+  });
+
+  it("RING scales the frame the disc gives — and is not read off the hold", () => {
+    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+    const ladder = bootHomestead(w.provider, true);
+    hover(ladder, CENTRE, SETTLE_S);
+    setOrbitPose({ ringFrameFactor: 0.6 });
+    hover(ladder, CENTRE, SETTLE_S);
+    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING * 0.6), 4);
+    // A city visit never reads the disc, so it never reads this either — the
+    // off-hold framing stays exactly the district the gaze picked.
+    const w2 = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+    const l2 = bootHomestead(w2.provider, false);
+    hover(l2, CENTRE, SETTLE_S);
+    expect(orbitDist(w2.camera)).toBeCloseTo(frameDistFor(districtRadiusFor(TOWN_RADIUS)), 2);
+  });
+
+  it("an override is a DEBUG state: clearing it restores the shipped pose exactly", () => {
+    const w = makeWorld({ disc: () => ({ x: 0, z: 0, radius: RING_FOUNDING }) });
+    const ladder = bootHomestead(w.provider, true);
+    hover(ladder, CENTRE, SETTLE_S);
+    const pos = w.camera.position.clone();
+    setOrbitPose({ pitchRad: 1.1, frameFactor: 0.55, liftFrac: 0.9, ringFrameFactor: 1.7 });
+    expect(orbitPoseOverridden()).toBe(true);
+    hover(ladder, CENTRE, SETTLE_S);
+    expect(w.camera.position.distanceTo(pos)).toBeGreaterThan(1);
+    resetOrbitPoseForTests();
+    expect(orbitPose()).toEqual(ORBIT_POSE_DEFAULTS);
+    hover(ladder, CENTRE, SETTLE_S);
+    expect(w.camera.position.distanceTo(pos)).toBeLessThan(1e-3);
+  });
+
+  it("refuses garbage — a hand-edited override can never NaN the camera", () => {
+    setOrbitPose({ pitchRad: Number.NaN, frameFactor: Number.POSITIVE_INFINITY });
+    expect(orbitPose()).toEqual(ORBIT_POSE_DEFAULTS);
+    (globalThis as unknown as { __orbitPose?: unknown }).__orbitPose = { pitchRad: "0.9" };
+    expect(orbitPose()).toEqual(ORBIT_POSE_DEFAULTS);
   });
 });

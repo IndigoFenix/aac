@@ -3166,6 +3166,9 @@ export const he = {
     SCOPE_MALFORMED: "לא ניתן לקבוע למי שייכת התמונה.",
     SCOPE_REQUIRED: "בחר קודם {{student}} או ארגון.",
     UNAUTHORIZED: "אנא התחבר מחדש.",
+    LICENSE_ALREADY_PAID: "הרישיון הזה כבר שולם.",
+    LICENSE_NOT_PURCHASABLE: "לא ניתן לשלם עבור רישיון זה באופן מקוון. אנא צרו איתנו קשר.",
+    PADDLE_NOT_CONFIGURED: "תשלום מקוון אינו זמין כרגע. נסו שוב מאוחר יותר או צרו איתנו קשר.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const he = {
       isTrial: "רישיון ניסיון",
       trialExpiresAt: "תפוגת ניסיון",
       trialExpired: "ניסיון פג תוקף",
+      price: "מחיר",
+      pricePlaceholder: "לדוגמה 49.90",
+      priceHint: "השאירו ריק עבור לקוחות בחשבונית — הם לא יראו כפתור תשלום מקוון.",
+      currency: "מטבע",
+      paidUntil: "שולם עד",
+      expires: "תפוגה",
+      expired: "פג תוקף",
       // Recipient
       recipient: "נמען",
       email: "אימייל",
@@ -4936,5 +4946,34 @@ export const he = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "הפעלת רישיון",
+    adminOnly: "רק מנהל ארגון יכול לנהל את הרישיון הזה.",
+    banner: {
+      dismiss: "סגירה",
+      expired: "תוקף הרישיון שלכם פג. חלק מהתכונות אינן זמינות.",
+      trialEndsIn: "תקופת הניסיון שלכם מסתיימת בעוד {{days}} ימים.",
+      trialEndsToday: "תקופת הניסיון שלכם מסתיימת היום.",
+      trialEndsTomorrow: "תקופת הניסיון שלכם מסתיימת מחר.",
+      viewBilling: "לצפייה בחיוב",
+    },
+    checkoutFailed: "לא ניתן היה להתחיל את התשלום",
+    expiredOn: "פג תוקף ב-{{date}}",
+    invoiceOnly: "רישיון זה מחויב בחשבונית. צרו איתנו קשר לחידוש או לשינוי.",
+    notReady: "תשלום מקוון אינו זמין כרגע.",
+    paidUntil: "שולם עד {{date}}",
+    paymentComplete: "התשלום התקבל",
+    paymentCompleteDesc: "הרישיון שלכם עודכן. תודה!",
+    planMonthly: "חודשי",
+    planYearly: "שנתי",
+    renew: "חידוש",
+    statusActive: "פעיל",
+    statusExpired: "פג תוקף",
+    statusNone: "אין רישיון",
+    statusTrial: "ניסיון",
+    subtitle: "התוכנית שלכם, המחיר ומועד סיום התוקף.",
+    title: "רישיון וחיוב",
+    trialEnds: "הניסיון מסתיים ב-{{date}}",
   },
 };

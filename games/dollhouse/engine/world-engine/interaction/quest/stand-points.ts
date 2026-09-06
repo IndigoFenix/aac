@@ -572,3 +572,51 @@ export function nearestClearSpot(
   if (any) return any;
   return raw; // best effort — the errand leg deadline copes
 }
+
+/**
+ * ⚖️ A SOLID PROP MUST NOT STAND WHERE A BUILDING'S DOOR IS.
+ *
+ * A prop placed by a fixed offset from a building's DOORSTEP is placed blind:
+ * a doorstep already sits on the door's outward normal, so an offset that
+ * happens to point the other way walks the prop back through the opening. Two
+ * 0.6 m boxes across a 2.0 m doorway leave no lane at all, and a building with
+ * one door is then SEALED — every body inside it is stuck for good (measured on
+ * the frontier: `w_1`'s two market shelves, its two workers wedged for a whole
+ * arc, `clearLanes 1/41`).
+ *
+ * The rule is deliberately the WEAKEST one that states the defect: the prop may
+ * not land inside its own building's footprint grown by `clearance` (= the
+ * prop's half-extent + a walker's radius — the width the prop actually denies).
+ * A prop already standing clear is returned UNMOVED, so this changes nothing in
+ * a town whose props were placed on the right side to begin with.
+ *
+ * Recovery keeps the placer's intent — the same offset, turned: mirrored first
+ * (the far side of the doorstep, the shopper's other elbow), then the two
+ * perpendiculars (along the wall). All four inside ⇒ the raw spot stands, because
+ * a placed shelf beats a missing one and the offending building is the caller's
+ * to fix. `rect` null (a prop with no building of its own) ⇒ unchanged.
+ */
+export function propSpotClearOfRect(
+  src: { x: number; y: number },
+  offset: { x: number; y: number },
+  rect: { x: number; y: number; w: number; h: number } | null,
+  clearance: number,
+): { x: number; y: number } {
+  const raw = { x: src.x + offset.x, y: src.y + offset.y };
+  if (!rect) return raw;
+  const outside = (p: { x: number; y: number }): boolean =>
+    p.x <= rect.x - clearance ||
+    p.x >= rect.x + rect.w + clearance ||
+    p.y <= rect.y - clearance ||
+    p.y >= rect.y + rect.h + clearance;
+  if (outside(raw)) return raw;
+  for (const d of [
+    { x: -offset.x, y: -offset.y },
+    { x: -offset.y, y: offset.x },
+    { x: offset.y, y: -offset.x },
+  ]) {
+    const p = { x: src.x + d.x, y: src.y + d.y };
+    if (outside(p)) return p;
+  }
+  return raw;
+}

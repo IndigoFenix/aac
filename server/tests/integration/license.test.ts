@@ -214,6 +214,102 @@ describe('License integration', () => {
     });
   });
 
+  describe('getInstituteLicenseInfo — expiry', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    it('an expired trial keeps its identity and price but grants nothing', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id);
+      const license = await makeLicense({
+        instituteId: institute.id,
+        permissions: { all: true } as any,
+        licenseType: 'premium',
+        isTrial: true,
+        trialExpiresAt: new Date(Date.now() - DAY).toISOString(),
+      });
+      await licenseRepository.updateLicense(license.id, {
+        priceAmount: 120000,
+        priceCurrency: 'ILS',
+      } as any);
+
+      const info = await licenseService.getInstituteLicenseInfo(institute.id);
+
+      // Permissions are gone...
+      expect(info.status).toBe('expired');
+      expect(info.permissions.aacEnabled).toBe(false);
+      expect(info.permissions.maxStudents).toBe(0);
+      // ...but the client still learns WHICH license to offer, and for how much.
+      expect(info.licenseId).toBe(license.id);
+      expect(info.priceAmount).toBe(120000);
+      expect(info.priceCurrency).toBe('ILS');
+      expect(info.subscriptionType).toBe('monthly');
+      expect(info.expiresAt).toBeInstanceOf(Date);
+    });
+
+    it('a running trial is "trial" and keeps its permissions', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id);
+      await makeLicense({
+        instituteId: institute.id,
+        permissions: { all: true } as any,
+        isTrial: true,
+        trialExpiresAt: new Date(Date.now() + 7 * DAY).toISOString(),
+      });
+
+      const info = await licenseService.getInstituteLicenseInfo(institute.id);
+      expect(info.status).toBe('trial');
+      expect(info.permissions.aacEnabled).toBe(true);
+    });
+
+    it('a license with NO expiry stays active — nobody loses access on deploy', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id);
+      await makeLicense({ instituteId: institute.id, permissions: { all: true } as any });
+
+      const info = await licenseService.getInstituteLicenseInfo(institute.id);
+      expect(info.status).toBe('active');
+      expect(info.expiresAt).toBeNull();
+      expect(info.permissions.aacEnabled).toBe(true);
+    });
+
+    it('a paid license lapsed past the grace period expires', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id);
+      const license = await makeLicense({
+        instituteId: institute.id,
+        permissions: { all: true } as any,
+      });
+      await licenseRepository.updateLicense(license.id, {
+        subscriptionExpiresAt: new Date(Date.now() - 10 * DAY),
+      } as any);
+
+      const info = await licenseService.getInstituteLicenseInfo(institute.id);
+      expect(info.status).toBe('expired');
+      expect(info.permissions.aacEnabled).toBe(false);
+    });
+
+    it('prefers a live license over an expired one in the same institute', async () => {
+      const owner = await makeUser();
+      const { institute } = await makeInstitute(owner.id);
+      const stale = await makeLicense({
+        instituteId: institute.id,
+        permissions: { all: true } as any,
+        isTrial: true,
+        trialExpiresAt: new Date(Date.now() - DAY).toISOString(),
+      });
+      const live = await makeLicense({
+        instituteId: institute.id,
+        permissions: { all: true } as any,
+        licenseType: 'premium',
+      });
+
+      const info = await licenseService.getInstituteLicenseInfo(institute.id);
+      expect(info.licenseId).toBe(live.id);
+      expect(info.licenseId).not.toBe(stale.id);
+      expect(info.status).toBe('active');
+    });
+  });
+
   describe('getInviteLink', () => {
     // The admin "copy verification link" fallback: hands over the same link the
     // invite email carries, without sending mail and without invalidating a

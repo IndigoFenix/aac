@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, createContext, useContext, ReactNode } fro
 import { apiRequest, queryClient, setUnauthorizedHandler } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
+import type { LicenseStatus } from '@shared/license-status';
 
 export interface LicensePermissions {
   all?: boolean;
@@ -25,7 +26,12 @@ interface User {
   isAdmin: boolean;
   isSystemAdmin: boolean;
   credits: number;
-  subscriptionType: string;
+  /** The USER's tier ('free' | 'premium' | 'enterprise') — NOT the license
+   *  billing interval; userAuth reads this to decide premium. */
+  subscriptionType: string | null;
+  /** Billing interval of the license: 'monthly' | 'yearly'. Null when the
+   *  license has no plan (admin-granted / perpetual). */
+  licenseSubscriptionType?: string | null;
   profileImageUrl?: string;
   isActive: boolean;
   referralCode?: string;
@@ -36,6 +42,19 @@ interface User {
   licenseType?: string;
   isTrial?: boolean;
   trialExpiresAt?: string;
+  // ── Billing (per-license Paddle) ───────────────────────────────────────────
+  // The license this user's access derives from. `licenseId` is null when the
+  // user has no license of their own (institute members inherit the
+  // institute's — see useInstitute), and the paywall keys off that: a null id
+  // means there is nothing this user can buy here.
+  licenseId?: string | null;
+  licenseStatus?: LicenseStatus;
+  /** Expiry of whichever clock applies (trial end, or paid-until). */
+  licenseExpiresAt?: string | null;
+  /** Integer MINOR units (cents/agorot). Null for invoice customers, who see
+   *  status text and no pay button. */
+  licensePriceAmount?: number | null;
+  licensePriceCurrency?: string | null;
   supportSession?: { instituteId: string; startedAt: string } | null;
   // SLP MODE — a per-USER AAC session behavior (a speech-language pathologist
   // running therapy sessions WITH students). Unlike every other AAC option it

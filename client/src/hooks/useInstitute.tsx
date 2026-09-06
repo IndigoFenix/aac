@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { type LicensePermissions, DEFAULT_LICENSE_PERMISSIONS } from '@shared/license-permissions';
+import type { LicenseStatus } from '@shared/license-status';
 
 // =============================================================================
 // TYPES
@@ -33,6 +34,19 @@ export interface Institute {
   licenseType?: string;
   isTrial?: boolean;
   trialExpiresAt?: string | null;
+  // ── Billing (per-license Paddle) ───────────────────────────────────────────
+  // Mirrors the same block on the auth user: an institute member's access comes
+  // from the INSTITUTE's license, so the billing card an institute admin sees
+  // reads these, not the user's.
+  licenseId?: string | null;
+  licenseStatus?: LicenseStatus;
+  /** Expiry of whichever clock applies (trial end, or paid-until). */
+  licenseExpiresAt?: string | null;
+  /** Integer MINOR units (cents/agorot). Null for invoice customers. */
+  licensePriceAmount?: number | null;
+  licensePriceCurrency?: string | null;
+  /** 'monthly' | 'yearly'; null for a perpetual / admin-granted license. */
+  subscriptionType?: string | null;
   createdAt: string;
   updatedAt: string;
 }

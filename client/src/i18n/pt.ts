@@ -3166,6 +3166,9 @@ export const pt = {
     SCOPE_MALFORMED: "Não foi possível determinar o proprietário desta foto.",
     SCOPE_REQUIRED: "Escolha primeiro um {{student}} ou uma organização.",
     UNAUTHORIZED: "Inicie sessão novamente.",
+    LICENSE_ALREADY_PAID: "Esta licença já está paga.",
+    LICENSE_NOT_PURCHASABLE: "Esta licença não pode ser paga online. Entre em contacto connosco.",
+    PADDLE_NOT_CONFIGURED: "O pagamento online não está disponível de momento. Tente mais tarde ou entre em contacto connosco.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const pt = {
       isTrial: "Licença de teste",
       trialExpiresAt: "Teste expira",
       trialExpired: "Teste expirado",
+      price: "Preço",
+      pricePlaceholder: "ex.: 49,90",
+      priceHint: "Deixe em branco para clientes faturados — não verão o botão de pagamento online.",
+      currency: "Moeda",
+      paidUntil: "Pago até",
+      expires: "Expira",
+      expired: "Expirada",
       // Recipient
       recipient: "Destinatário",
       email: "E-mail",
@@ -4936,5 +4946,34 @@ export const pt = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "Ativar licença",
+    adminOnly: "Apenas um administrador da organização pode gerir esta licença.",
+    banner: {
+      dismiss: "Dispensar",
+      expired: "A sua licença expirou. Algumas funcionalidades não estão disponíveis.",
+      trialEndsIn: "A sua avaliação termina em {{days}} dias.",
+      trialEndsToday: "A sua avaliação termina hoje.",
+      trialEndsTomorrow: "A sua avaliação termina amanhã.",
+      viewBilling: "Ver faturação",
+    },
+    checkoutFailed: "Não foi possível iniciar o pagamento",
+    expiredOn: "Expirou em {{date}}",
+    invoiceOnly: "Esta licença é faturada por fatura. Contacte-nos para renovar ou alterar.",
+    notReady: "O pagamento online não está disponível de momento.",
+    paidUntil: "Pago até {{date}}",
+    paymentComplete: "Pagamento recebido",
+    paymentCompleteDesc: "A sua licença foi atualizada. Obrigado!",
+    planMonthly: "Mensal",
+    planYearly: "Anual",
+    renew: "Renovar",
+    statusActive: "Ativa",
+    statusExpired: "Expirada",
+    statusNone: "Sem licença",
+    statusTrial: "Avaliação",
+    subtitle: "O seu plano, o preço e quando termina.",
+    title: "Licença e faturação",
+    trialEnds: "A avaliação termina em {{date}}",
   },
 };

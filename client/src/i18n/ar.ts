@@ -3166,6 +3166,9 @@ export const ar = {
     SCOPE_MALFORMED: "لم يتمكن من تحديد مالك هذه الصورة.",
     SCOPE_REQUIRED: "اختر {{student}} أو مؤسسة أولاً.",
     UNAUTHORIZED: "يرجى تسجيل الدخول مرة أخرى.",
+    LICENSE_ALREADY_PAID: "تم دفع رسوم هذا الترخيص بالفعل.",
+    LICENSE_NOT_PURCHASABLE: "لا يمكن دفع رسوم هذا الترخيص عبر الإنترنت. يرجى التواصل معنا.",
+    PADDLE_NOT_CONFIGURED: "الدفع عبر الإنترنت غير متاح حاليًا. حاول مرة أخرى لاحقًا أو تواصل معنا.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const ar = {
       isTrial: "ترخيص تجريبي",
       trialExpiresAt: "انتهاء الفترة التجريبية",
       trialExpired: "انتهت الفترة التجريبية",
+      price: "السعر",
+      pricePlaceholder: "مثال: 49.90",
+      priceHint: "اتركه فارغًا لعملاء الفواتير — لن يظهر لهم زر الدفع عبر الإنترنت.",
+      currency: "العملة",
+      paidUntil: "مدفوع حتى",
+      expires: "ينتهي",
+      expired: "منتهي",
       // Recipient
       recipient: "المستلم",
       email: "البريد الإلكتروني",
@@ -4936,5 +4946,34 @@ export const ar = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "تفعيل الترخيص",
+    adminOnly: "يمكن لمسؤول المؤسسة فقط إدارة هذا الترخيص.",
+    banner: {
+      dismiss: "إغلاق",
+      expired: "انتهى ترخيصك. بعض الميزات غير متاحة.",
+      trialEndsIn: "تنتهي فترتك التجريبية خلال {{days}} أيام.",
+      trialEndsToday: "تنتهي فترتك التجريبية اليوم.",
+      trialEndsTomorrow: "تنتهي فترتك التجريبية غدًا.",
+      viewBilling: "عرض الفوترة",
+    },
+    checkoutFailed: "تعذّر بدء عملية الدفع",
+    expiredOn: "انتهى في {{date}}",
+    invoiceOnly: "تتم فوترة هذا الترخيص عبر فاتورة. تواصل معنا لتجديده أو تغييره.",
+    notReady: "الدفع عبر الإنترنت غير متاح حاليًا.",
+    paidUntil: "مدفوع حتى {{date}}",
+    paymentComplete: "تم استلام الدفعة",
+    paymentCompleteDesc: "تم تحديث ترخيصك. شكرًا لك!",
+    planMonthly: "شهري",
+    planYearly: "سنوي",
+    renew: "تجديد",
+    statusActive: "نشط",
+    statusExpired: "منتهي",
+    statusNone: "لا يوجد ترخيص",
+    statusTrial: "تجريبي",
+    subtitle: "خطتك وسعرها وموعد انتهائها.",
+    title: "الترخيص والفوترة",
+    trialEnds: "تنتهي الفترة التجريبية في {{date}}",
   },
 };

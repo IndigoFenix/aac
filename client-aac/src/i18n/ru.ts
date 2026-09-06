@@ -739,6 +739,7 @@ export const ru: Translations = {
       barrel: "Бочка",
       basket: "Корзина",
       satchel: "Сумка",
+      cart: "Тележка",
       lamp: "Лампа",
       window: "Окно",
       heater: "Обогреватель",

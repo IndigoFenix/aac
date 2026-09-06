@@ -7,13 +7,39 @@ import { instituteRepository } from "../repositories";
 import { insertInstituteSchema } from "@shared/schema";
 import { emailService } from "server/services/emailService";
 import { isInSupportMode, getSupportSession } from "../services/customerSupportService";
-import { licenseService } from "../services/licenseService";
+import { licenseService, type LicenseInfo } from "../services/licenseService";
 import { regimeService } from "../services/regimeService";
 import { identityService } from "../services/identityService";
 import { activityLogService } from "../services/activityLogService";
 
 function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+}
+
+/**
+ * The license half of an institute payload.
+ *
+ * One function rather than a spread of `licenseInfo`, because the info object's
+ * field names (`status`, `expiresAt`, `priceAmount`) are about a license while
+ * these sit on an institute, where an unprefixed `status` would read as the
+ * institute's own.
+ */
+function licensePayload(info: LicenseInfo) {
+  return {
+    licensePermissions: info.permissions,
+    licenseType: info.licenseType,
+    isTrial: info.isTrial,
+    trialExpiresAt: info.trialExpiresAt,
+    licenseId: info.licenseId,
+    licenseStatus: info.status,
+    licenseExpiresAt: info.expiresAt,
+    licensePriceAmount: info.priceAmount,
+    licensePriceCurrency: info.priceCurrency,
+    // On an institute there is no competing `subscriptionType`, so both the
+    // contract name and the explicit one are safe to publish.
+    subscriptionType: info.subscriptionType,
+    licenseSubscriptionType: info.subscriptionType,
+  };
 }
 
 export class InstituteController {
@@ -32,7 +58,7 @@ export class InstituteController {
       if (support?.instituteId) {
         const institute = await instituteRepository.getInstituteById(support.instituteId);
         if (institute) {
-          const { permissions, licenseType, isTrial, trialExpiresAt } = await licenseService.getInstituteLicenseInfo(institute.id);
+          const licenseInfo = await licenseService.getInstituteLicenseInfo(institute.id);
           res.json({
             success: true,
             institutes: [{
@@ -40,10 +66,7 @@ export class InstituteController {
               isAdmin: true,
               role: 'support',
               membershipId: null,
-              licensePermissions: permissions,
-              licenseType,
-              isTrial,
-              trialExpiresAt,
+              ...licensePayload(licenseInfo),
             }],
           });
           return;
@@ -57,16 +80,13 @@ export class InstituteController {
       // Resolve license permissions for each institute
       const institutesWithPermissions = await Promise.all(
         institutesWithMembership.map(async ({ institute, membership }) => {
-          const { permissions, licenseType, isTrial, trialExpiresAt } = await licenseService.getInstituteLicenseInfo(institute.id);
+          const licenseInfo = await licenseService.getInstituteLicenseInfo(institute.id);
           return {
             ...institute,
             isAdmin: membership.isAdmin,
             role: membership.role,
             membershipId: membership.id,
-            licensePermissions: permissions,
-            licenseType,
-            isTrial,
-            trialExpiresAt,
+            ...licensePayload(licenseInfo),
           };
         })
       );

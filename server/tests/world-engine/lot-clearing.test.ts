@@ -381,8 +381,16 @@ describe("fell → re-seed → build → stay a sapling", () => {
     // a removal arm and a felling arm, and a child pressing `cut` on a tree was
     // told no. One act, both blockers.
     expect(sourceIsCuttable("oak", undefined)).toBe(true);
-    // A seedling is neither: below the bearing floor it is in nobody's way, so
-    // there is nothing to end.
-    expect(sourceIsCuttable("apple_tree", 0)).toBe(false);
+    // ⚠️ PIN MOVED 2026-09-06 (PLANTS GROW LIKE PLANTS, R6). This read
+    // `sourceIsCuttable("apple_tree", 0) === false` — "a seedling is neither".
+    // The user split the two halves (*"technically the player should be given
+    // the option to cut saplings if needed, they'll just be deprioritized by
+    // automatic designation because they produce less wood"*): the ACT is
+    // offered on a seedling, and everything THIS FILE is about — the lot, the
+    // stake, the bill — is the OTHER predicate, unmoved. A seedling is still in
+    // nobody's way, and that is what the two lines below assert.
+    expect(sourceIsCuttable("apple_tree", 0)).toBe(true);
+    expect(sourceBlocksBuilding("apple_tree", 0)).toBe(false);
+    expect(blockersOn(lot, { species: "apple_tree", sizeClass: 0, stock: { wood: 0 } })).toEqual([]);
   });
 });

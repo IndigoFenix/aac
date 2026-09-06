@@ -31,8 +31,10 @@ name: Build AAC iPad (unsigned)
 # DISTRIBUTION: with `publish` on (the default), the .ipa is also uploaded to
 # the AAC download feed (s3 → https://updates.aivota.ai/aac/ios/) so clinicians
 # can fetch it themselves from the dashboard's Downloads page instead of it
-# being emailed around. That needs the AWS_ROLE_ARN secret; uncheck `publish`
-# to build without it.
+# being emailed around. That needs the AWS_PUBLISH_ROLE_ARN secret; uncheck
+# `publish` to build without it. Publishing is the ONLY part of this workflow
+# that touches AWS, and it runs after the artifact upload — so an OIDC failure
+# there still leaves a downloadable .ipa on the run.
 #
 # Trigger: manual only (workflow_dispatch).
 
@@ -232,7 +234,12 @@ jobs:
         if: ${{ inputs.publish }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # The least-privilege publish role (terraform/iam.tf): s3:PutObject on the
+          # AAC update bucket and nothing else. It is what lets this run from a branch
+          # or a tag — the deploy role behind AWS_ROLE_ARN trusts refs/heads/main ONLY,
+          # so off main it fails with "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+          # The fallback keeps main-branch runs working before the new secret is set.
+          role-to-assume: ${{ secrets.AWS_PUBLISH_ROLE_ARN || secrets.AWS_ROLE_ARN }}
           role-session-name: github-actions-aac-ios-release
           aws-region: il-central-1
 

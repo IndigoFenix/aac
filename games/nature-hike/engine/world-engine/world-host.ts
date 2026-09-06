@@ -49,6 +49,7 @@ import {
 } from "./engine.js";
 import { createDwellTracker } from "./dwell.js";
 import { probesOn } from "./perf-probes.js";
+import { LAG_COMP_MAX_FACTOR, lagCompOn, type LagCompProbe } from "./lag-comp.js";
 import { speciesBodyRadius } from "./creatures/species.js";
 import { applyInbound, collectOutbound, sayMessage, type WorldNetMessage } from "./net.js";
 import { WORLD_MAX_NPCS, WORLD_MAX_ROOTED_NPCS, isRootedNpc, type BuildingSpec, type NpcSpec, type ObjectSpec, type StructureSpec, type TransitPoint, type Vec2, type WorldSpec } from "./types.js";
@@ -105,7 +106,7 @@ export interface WorldHostNet {
 /** THE FRAME-LENGTH CEILING with no wide tick configured — today's value, and
  *  the reason a caller's wider `dt` has always been a silent no-op: the loop
  *  re-derives dt from the clock and clamps it here (wide-tick-round.md). */
-const FRAME_DT_CAP_S = 0.05;
+export const FRAME_DT_CAP_S = 0.05;
 /** Default inner MOTION cap for a wide tick — BLESSED at 0.1 by the W4a
  *  calibration (wide-tick-round.md): the A/B comparator's gating channels
  *  (toast/depart/ledger) read identical to today's 0.05 at every tested
@@ -128,6 +129,28 @@ const FRAME_DT_CAP_S = 0.05;
 export const WIDE_TICK_INNER_STEP_S = 0.1;
 /** The widest frame a wide-tick host will admit — text-mode's `--dt` ceiling. */
 export const WIDE_TICK_MAX_FRAME_S = 0.5;
+
+/** ⏩ LAG COMPENSATION — the NOMINAL FRAME STEP the ×N factor is measured
+ *  against: the host's own frame cap, i.e. the largest dt today's GL path can
+ *  ever admit. So `×1` is exactly today and `×10` is ten times the sim time
+ *  today's clamp would have allowed through. (See `shared/world-engine/lag-comp.ts`
+ *  for the toggle and the why.) */
+export const LAG_COMP_NOMINAL_S = FRAME_DT_CAP_S;
+/** The widest frame the compensator will admit: 10 × 0.05 = 0.5 s — which is
+ *  also `WIDE_TICK_MAX_FRAME_S`, the widest frame the wide-tick round actually
+ *  calibrated. The cap lands on a tested value, not a new one. */
+export const LAG_COMP_MAX_FRAME_S = LAG_COMP_MAX_FACTOR * LAG_COMP_NOMINAL_S;
+/** Seconds of MOTION per inner step inside a compensated frame — the wide
+ *  tick's own blessed value (W-②), reused rather than reinvented:
+ *   • 0.1 is `WORLD_ENGINE_DEFAULTS.maxStep`, so the engine's internal clamp
+ *     (engine.ts :708/:852) never binds and there is only ever ONE clock;
+ *   • it caps a compensated frame at 5 motion substeps instead of 10. The
+ *     compensator engages precisely when the frame is ALREADY too expensive,
+ *     and `advanceNpcs` is the frame's dearest arm — multiplying it by ten to
+ *     rescue a lagging frame would be self-defeating;
+ *   • 0.15 was tested and REJECTED upstream (silent under-integration).
+ *  Physics still runs at a normal step; only the decision pass sees the wide dt. */
+export const LAG_COMP_INNER_STEP_S = WIDE_TICK_INNER_STEP_S;
 
 /**
  * ⏩ THE WIDE TICK (planning-docs/games/world-engine/wide-tick-round.md).
@@ -461,6 +484,9 @@ export interface WorldHost {
   step(dt: number, now: number): void;
   /** Stop the loop and dispose the view. */
   stop(): void;
+  /** ⏩ LAG COMPENSATION READOUT for the last frame (see lag-comp.ts). Inert
+   *  (`on: false`, `factor: 1`) whenever the compensator is off. Read-only. */
+  lagProbe(): LagCompProbe;
   /** The live world state (read-only use — e.g. diagnostics). */
   readonly state: WorldState;
 }
@@ -511,10 +537,79 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
   const frameCapS = deps.wideTick
     ? Math.max(FRAME_DT_CAP_S, deps.wideTick.maxFrameS ?? WIDE_TICK_MAX_FRAME_S)
     : FRAME_DT_CAP_S;
+  /** The inner MOTION cap in force for the frame being assembled. Equals
+   *  `innerStepS` (⇒ `Infinity`, ⇒ one substep, in every GL build) unless the
+   *  lag compensator widened THIS frame — `admitFrameDt` is the only writer and
+   *  it runs immediately before the frame it describes. */
+  let activeInnerStepS = innerStepS;
   /** How many equal motion substeps this frame's dt needs. Always 1 without a
    *  wide tick, and 1 for any frame already inside the inner cap. */
   const wideSubsteps = (dt: number): number =>
-    dt > innerStepS ? Math.ceil(dt / innerStepS) : 1;
+    dt > activeInnerStepS ? Math.ceil(dt / activeInnerStepS) : 1;
+
+  // ── ⏩ AUTOMATIC LAG COMPENSATION (user ruling 2026-09-05) ─────────────────
+  // Both drive paths clamp their dt (`loop` re-derives it from the clock,
+  // `step` takes the caller's), so on a machine that renders a frame in 0.5 s
+  // the sim is told 0.05 s elapsed and 0.45 s of world time is destroyed every
+  // frame. With the global toggle on (shared/world-engine/lag-comp.ts), a frame
+  // instead admits the REAL elapsed time up to `LAG_COMP_MAX_FRAME_S` and spends
+  // it through the wide tick that already exists: motion in fixed substeps of
+  // ≤ `LAG_COMP_INNER_STEP_S`, the decision pass ONCE with the whole dt (W-①).
+  //
+  // ⚖️ IT IS NOT A FAST-FORWARD: the sim never runs faster than the wall clock,
+  // it just stops losing wall-clock seconds. At 60 fps it does nothing.
+  //
+  // ⚖️ ANTI-SPIRAL LAW: sim time beyond the cap is DROPPED, never banked. A
+  // compensator that carries the surplus forward feeds itself — a longer frame
+  // makes more backlog, which makes a longer frame, which makes more backlog.
+  // Work per frame must stay bounded, so past 0.5 s the sim simply falls behind
+  // the wall clock exactly as it does today, only ten times less.
+  //
+  // ⚖️ OFF ⇒ BYTE-IDENTICAL: `admitFrameDt` returns its `baseS` untouched and
+  // `activeInnerStepS` is never reassigned, so every argument reaching `frame`
+  // is the one today's code computes. Second, independent guard: a host that
+  // declared `wideTick` (headless / text mode) owns its own frame policy and is
+  // never compensated — the transcripts cannot move.
+  const lagProbe: LagCompProbe = {
+    on: false, realS: 0, admittedS: 0, droppedS: 0, factor: 1, substeps: 1,
+  };
+  /** Wall-clock stamp of the previous compensated frame (`-1` = none yet). Only
+   *  maintained while compensating, so the off path stays literally today's. */
+  let lagLastNow = -1;
+  /**
+   * The dt this frame will actually advance the sim by.
+   * @param baseS today's clamped value — the compensated frame can only ever be
+   *              WIDER, never narrower, so nothing here can slow a sim down.
+   * @param realS true wall-clock seconds since the previous frame, or `baseS`
+   *              when that is unknown (the first frame, or a non-advancing clock).
+   */
+  const admitFrameDt = (baseS: number, realS: number): number => {
+    if (!lagCompOn() || deps.wideTick) {
+      if (lagProbe.on) {
+        // The toggle just went off: park the readout and hand the substep cap
+        // back to the wide-tick value, so the very next frame is today's again.
+        lagProbe.on = false; lagProbe.factor = 1; lagProbe.substeps = 1;
+        lagProbe.realS = 0; lagProbe.admittedS = 0; lagProbe.droppedS = 0;
+        activeInnerStepS = innerStepS;
+        lagLastNow = -1;
+      }
+      return baseS;
+    }
+    const admittedS = Math.max(baseS, Math.min(realS, LAG_COMP_MAX_FRAME_S));
+    // The tighter of the host's own inner cap (`Infinity` in a GL build) and the
+    // compensator's, so a widened frame ALWAYS substeps at a normal physics step.
+    activeInnerStepS = Math.min(innerStepS, LAG_COMP_INNER_STEP_S);
+    lagProbe.on = true;
+    lagProbe.realS = realS;
+    lagProbe.admittedS = admittedS;
+    lagProbe.droppedS = Math.max(0, realS - admittedS); // dropped, never banked
+    lagProbe.factor = baseS > 0 ? admittedS / baseS : 1;
+    lagProbe.substeps = wideSubsteps(admittedS);
+    // Console readout for any world-engine game (`globalThis.__lagProbe`) —
+    // written only while compensating, so nothing is published on the off path.
+    (globalThis as unknown as Record<string, unknown>).__lagProbe = lagProbe;
+    return admittedS;
+  };
 
   const state: WorldState = createWorldState(spec, localId, deps.spawnIndex, deps.spawnAt, deps.groundAt, deps.waterAt);
 
@@ -1376,12 +1471,16 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     if (!running) return;
     // ⏩ `frameCapS` is 0.05 unless a wide tick was configured — the host
     // RE-DERIVES dt from the clock, so this clamp (not the engine's) is what a
-    // caller's wide frameDt has always died against.
-    const dt = Math.min(frameCapS, (now - last) / 1000);
-    last = now;
+    // caller's wide frameDt has always died against. The lag compensator (off by
+    // default) is exactly the lift of THIS clamp: it re-admits the real elapsed
+    // seconds, up to ten of them.
+    const rawS = (now - last) / 1000;
     // Paused: still render (and update the pointer pick, so click-to-inspect works)
     // but advance the sim by ZERO — nothing moves, no clock/errand/chatter tick.
-    frame(paused ? 0 : dt, now);
+    // (Paused also means no compensation: there is no lost sim time to recover.)
+    const dt = paused ? 0 : admitFrameDt(Math.min(frameCapS, rawS), Math.max(0, rawS));
+    last = now;
+    frame(dt, now);
     cancel = deps.scheduleFrame(loop);
   };
 
@@ -1683,12 +1782,27 @@ export function runWorldHost(deps: WorldHostDeps): WorldHost {
     },
     step(dt, now) {
       // The external-clock twin of the loop's clamp — same ceiling, same lift.
-      frame(paused ? 0 : Math.min(frameCapS, Math.max(0, dt)), now);
+      const baseS = Math.min(frameCapS, Math.max(0, dt));
+      if (paused) { frame(0, now); return; }
+      // ⏩ COMPENSATION ON THIS PATH TOO. The world-lab town runs here (the
+      // planet composer owns the rAF: spirit/ladder.ts → QuestHost3D.step), and
+      // that composer ALREADY clamped its own dt to 0.1 s before we see it — so
+      // the caller's dt cannot tell us how long the frame really took. `now` can:
+      // it is the same wall clock in both paths (and a synthetic, exactly-uniform
+      // one headless, where this measures the caller's own dt back and changes
+      // nothing). Unknown on the first compensated frame ⇒ fall back to `baseS`.
+      const realS = lagLastNow >= 0 && now > lagLastNow ? (now - lagLastNow) / 1000 : baseS;
+      if (lagCompOn()) lagLastNow = now;
+      frame(admitFrameDt(baseS, realS), now);
     },
     stop() {
       running = false;
       if (cancel) { cancel(); cancel = null; }
       view.dispose();
+    },
+    lagProbe() {
+      // The LIVE record (no per-frame allocation); treat it as read-only.
+      return lagProbe;
     },
   };
 }

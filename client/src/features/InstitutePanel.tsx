@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { LicenseBillingCard } from '@/components/billing/LicenseBillingCard';
 import {
   Dialog,
   DialogContent,
@@ -1419,6 +1420,10 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* License & billing. Self-hiding: renders nothing for a
+                  perpetual license, and shows status without a pay button for
+                  invoice customers and non-admin members. */}
+              <LicenseBillingCard scope="institute" />
               <Card>
                 <CardHeader>
                   <CardTitle>{t('institute.details') || 'Details'}</CardTitle>

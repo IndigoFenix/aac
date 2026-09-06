@@ -51,6 +51,11 @@ const DASHBOARD_LEVELS = [
   { value: '-1', label: 'Full Analysis' },
 ] as const;
 
+/** Currencies a license can be quoted in. Deliberately short — extend as
+ *  markets open. All are 2-decimal; see the priceMajor comment before adding a
+ *  zero-decimal one. */
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS'] as const;
+
 const USER_TYPES = [
   { value: 'Caregiver', labelEn: 'Caregiver', labelHe: 'מטפל/ת' },
   { value: 'Parent', labelEn: 'Parent', labelHe: 'הורה' },
@@ -103,6 +108,18 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [subscriptionType, setSubscriptionType] = useState('monthly');
   const [isTrial, setIsTrial] = useState(false);
   const [trialExpiresAt, setTrialExpiresAt] = useState('');
+  // Price is stored in MINOR units (cents/agorot) but typed in MAJOR ones —
+  // an admin quoting "49.90" must not have to think in cents. Kept as the raw
+  // string so a half-typed "49." doesn't get rewritten under the cursor;
+  // converted on submit. Every currency in CURRENCIES has 2 decimal places, so
+  // one ×100 factor is correct for all of them — adding a zero-decimal
+  // currency (JPY, KRW) means teaching this conversion about exponents.
+  const [priceMajor, setPriceMajor] = useState('');
+  const [priceCurrency, setPriceCurrency] = useState('USD');
+  // Paid-until. Only meaningful for a NON-trial license: this is the field a
+  // system admin sets by hand to mark an invoice customer paid, and the field
+  // the Paddle webhook advances for a self-serve one.
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState('');
 
   // Permissions
   const [grantAll, setGrantAll] = useState(false);
@@ -143,6 +160,15 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         setSubscriptionType(license.subscriptionType || 'monthly');
         setIsTrial(license.isTrial || false);
         setTrialExpiresAt(license.trialExpiresAt ? license.trialExpiresAt.split('T')[0] : '');
+        setSubscriptionExpiresAt(
+          license.subscriptionExpiresAt ? license.subscriptionExpiresAt.split('T')[0] : '',
+        );
+        setPriceMajor(
+          license.priceAmount === null || license.priceAmount === undefined
+            ? ''
+            : (license.priceAmount / 100).toFixed(2),
+        );
+        setPriceCurrency(license.priceCurrency || 'USD');
         setAllowSessionRecording(license.allowSessionRecording === true);
 
         const perms = license.permissions;
@@ -214,8 +240,22 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setSubscriptionType('monthly');
     setIsTrial(false);
     setTrialExpiresAt('');
+    setSubscriptionExpiresAt('');
+    setPriceMajor('');
+    setPriceCurrency('USD');
     setAllowSessionRecording(false);
     resetPermissions();
+  }
+
+  /** Major-unit decimal string → integer minor units, or null when blank.
+   *  Null is meaningful: it marks an INVOICE customer, whose billing card shows
+   *  status only and no pay button. */
+  function priceToMinorUnits(): number | null {
+    const trimmed = priceMajor.trim();
+    if (!trimmed) return null;
+    const value = Number(trimmed);
+    if (!Number.isFinite(value) || value < 0) return null;
+    return Math.round(value * 100);
   }
 
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -286,6 +326,12 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           subscriptionType,
           isTrial,
           trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : null,
+          // Same PATCH-merge rule as trialExpiresAt: send null explicitly so a
+          // cleared field actually clears instead of being dropped by
+          // JSON.stringify and leaving the old value in place.
+          subscriptionExpiresAt: !isTrial && subscriptionExpiresAt ? subscriptionExpiresAt : null,
+          priceAmount: priceToMinorUnits(),
+          priceCurrency: priceToMinorUnits() === null ? null : priceCurrency,
           permissions: buildPermissions(),
         };
         // Only ever SENT by an admin allowed to set it. The server refuses the
@@ -314,6 +360,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           subscriptionType,
           isTrial,
           trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : undefined,
+          subscriptionExpiresAt:
+            !isTrial && subscriptionExpiresAt ? subscriptionExpiresAt : undefined,
+          priceAmount: priceToMinorUnits() ?? undefined,
+          priceCurrency: priceToMinorUnits() === null ? undefined : priceCurrency,
           permissions: buildPermissions(),
           inviteEmail,
           firstName: firstName || undefined,
@@ -636,6 +686,43 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                   </Select>
                 </div>
               </div>
+
+              {/* Price — organisations are quoted individually, so this lives on
+                  the license row. Leaving it blank marks an INVOICE customer:
+                  their billing card shows status only, with no pay button. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="licensePrice">{t('admin.licenses.price')}</Label>
+                  <Input
+                    id="licensePrice"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    dir="ltr"
+                    inputMode="decimal"
+                    value={priceMajor}
+                    onChange={(e) => setPriceMajor(e.target.value)}
+                    placeholder={t('admin.licenses.pricePlaceholder')}
+                    data-testid="input-license-price"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('admin.licenses.priceHint')}
+                  </p>
+                </div>
+                <div>
+                  <Label>{t('admin.licenses.currency')}</Label>
+                  <Select value={priceCurrency} onValueChange={setPriceCurrency}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((code) => (
+                        <SelectItem key={code} value={code}>{code}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
 
             {/* Trial */}
@@ -652,6 +739,20 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                     className="w-44"
                     value={trialExpiresAt}
                     onChange={(e) => setTrialExpiresAt(e.target.value)}
+                  />
+                </div>
+              )}
+              {/* Paid-until. Shown only off-trial — it is how an admin marks an
+                  invoice customer paid without a Paddle checkout ever running. */}
+              {!isTrial && (
+                <div className="flex items-center gap-2">
+                  <Label>{t('admin.licenses.paidUntil')}</Label>
+                  <Input
+                    type="date"
+                    className="w-44"
+                    value={subscriptionExpiresAt}
+                    onChange={(e) => setSubscriptionExpiresAt(e.target.value)}
+                    data-testid="input-license-paid-until"
                   />
                 </div>
               )}

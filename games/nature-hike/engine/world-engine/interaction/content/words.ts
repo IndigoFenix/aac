@@ -222,22 +222,60 @@ export const ITEM_WORDS: Readonly<Record<string, ItemWords>> = {
 };
 
 /**
- * THE PLACE WORDS WITH NO PROGRAM YET (2026-08-24) — heads defined in
+ * THE PLACE WORDS WITH NO PROGRAM ROW (2026-08-24) — heads defined in
  * `ITEM_WORDS` above that name a PLACE rather than a thing, so the sentence
  * board offers them as places (`affords: ["go"]`, drawn as themselves) instead
  * of as objects.
  *
- * They are a stub in exactly one respect: the TOWN cannot build them, because a
- * structure program derives a building from the rooms inside it and none of
- * these derive from anything the generator raises. The word, the icon and the
- * four translations are real. Each row graduates to a `StructureProgramDef` (and
- * leaves this list) when the town workstream models the place — at which point
- * its words move onto the program row, since a head is defined once.
+ * Two reasons a place lands here rather than on a `StructureProgramDef`:
+ *  - THE TOWN CANNOT RAISE IT (school, park, playground). A structure program
+ *    derives a building from the rooms inside it and none of these derive from
+ *    anything the generator raises. The word, the icon and the four
+ *    translations are real; the row graduates when the town workstream models
+ *    the place, and its words move onto the program row (a head is defined
+ *    once).
+ *  - THE TOWN RAISES IT FROM ANOTHER FILE (farm, market, storehouse — the
+ *    `TOWN_PLAY_STRUCTURES` catalog, whose rows live in `town-play.ts`, a file
+ *    another workstream owns; that is exactly why their words are in
+ *    `ITEM_WORDS` above rather than on their specs). ⚖️ ONE WORD BANK (user
+ *    law, 2026-09-06): these three used to reach a board ONLY through
+ *    `pushKnownNouns`, which pushed them at a town or a founded site and
+ *    nowhere else — so a child could say "market" in one session and not in
+ *    the next. They are default vocabulary now; the host pushes names only.
+ *    All three already draw (`glyph-place-art.ts`: building(grain) /
+ *    building(money) / building(box)).
  */
-export const PLACE_STUBS: readonly string[] = ["school", "park", "playground"];
+export const PLACE_STUBS: readonly string[] = [
+  "school", "park", "playground",
+  "farm", "market", "storehouse",
+];
 // `garden` is authored above and deliberately NOT here: it has no bundled
 // artwork yet, and a place button with no picture is a blank one. It joins the
 // list when the art queue reaches it (`npm run validate-glyphs:art`).
+// `well` and `store` likewise wait on a decision about which sense ships.
+
+/**
+ * THE THING WORDS WITH NO REGISTRY ROW (2026-09-06) — `PLACE_STUBS`' sibling:
+ * heads defined in `ITEM_WORDS` above that name an OBJECT and belong on the
+ * sentence board, but whose defining registry is a plain string array or a file
+ * another workstream owns, so no station / program / species / pool row carries
+ * them and the builder's spec walk cannot find them.
+ *
+ * ⚖️ ONE WORD BANK (user law, 2026-09-06). Every one of these was a word the
+ * quest host pushed from inside a scope — the build materials at a town or a
+ * founded site, the wardrobe garment inside a dollhouse — so the same child had
+ * them on Monday's board and not on Tuesday's. The bank does not move with the
+ * session: they are default vocabulary, and the host pushes names only.
+ *
+ * ART IS THE ENTRY GATE, exactly as it is for `PLACE_STUBS` and for
+ * `KIND_CATEGORY` (pools.ts `paper`): a button with no picture is a blank one.
+ * `wood` 🪵, `stone` 🪨 and `block` 🧱 resolve through `emoji-registry`; `dress`
+ * has a glyph-registry row of its own. `cloth`, `wool`, `rock` and `paper`
+ * deliberately stay out — the first two have no artwork, `rock` is the wild
+ * outcrop rather than a thing in hand, and `paper` is already default
+ * vocabulary through its `KIND_CATEGORY` tag.
+ */
+export const ITEM_STUBS: readonly string[] = ["wood", "stone", "block", "dress"];
 
 // ---------------------------------------------------------------------------
 // The joiner

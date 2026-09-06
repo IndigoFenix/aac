@@ -26,6 +26,8 @@ import {
   type WorldScale, type WorldScaleSpec,
 } from "@shared/world-engine/scale";
 import { getShadingMode, setShadingMode } from "@shared/world-engine/materials";
+import { lagCompOn, lagProbeGlobal, setLagComp } from "@shared/world-engine/lag-comp";
+import { mountCameraPanel } from "./camera-panel";
 import { ECONOMY_MODULE } from "@shared/world-engine/kernel/modules/economy/index";
 import { createSpaceFlight, type SpaceFlight, type FlightCity } from "./space-fly";
 import { createSpaceHud, type SpaceHud, type HudCity } from "./space-hud";
@@ -87,7 +89,7 @@ import { createFlashWatch } from "./flash-watch";
 import { HdrProbePass } from "./hdr-probe";
 import type { QuestHost3D, QuestSession } from "@shared/world-engine/interaction/quest/quest-host";
 // The tier ladder from its own pure module, not through the host.
-import { steppedTier, type CreatureTier } from "@shared/world-engine/creatures/view-tiers";
+import { seedTier, steppedTier, tierDistanceM, TIER_BANDS, TOWN_TIER_BANDS, TIER_RANK, type CreatureTier } from "@shared/world-engine/creatures/view-tiers";
 import { probesOn } from "@shared/world-engine/perf-probes";
 
 // LAG HUNT (perf-probes.ts): the dormant probes ([sim-blocks]/[frame-phase]/
@@ -892,8 +894,10 @@ function stepFoundingPremise(): void {
     // metre value is painted here. That is only the FROM-pose: once the town
     // mounts, the held orbit re-frames every frame on the sim's relevance disc
     // (`relevanceDisc` → `host.nearStand()`, the border ring drawn below), so
-    // the circle IS the orbit's outer bound (user 2026-09-05), and the wheel
-    // zooms in from it (`ladder.zoomBy`).
+    // the circle IS the orbit's outer bound (user 2026-09-05). The pose itself
+    // — pitch, stand-off, look-at lift, ring-to-frame ratio — is the tunable
+    // record in `spirit/orbit-pose.ts` (🎥 Camera panel); there is no zoom
+    // control on the play surface (user ruling C2: no wheel on eyegaze).
     //
     // …AND THE CEILING BOUNDS THE ZOOM TO THE SITE. Without this the ladder
     // keeps the boot default `ceiling: "flight"`, whose climb clamp is the
@@ -1920,13 +1924,12 @@ function hystereticCrowdBudget(distM: number): number | null {
 // The COARSE town clamp (camera → town CENTRE), one rung per band. It is the
 // orbit/approach clamp only: the effective tier is the coarser of this and the
 // per-body band quest-host runs from the local camera focus, which is what
-// actually tiers a crowd the camera is standing inside.
-const TOWN_TIER_BANDS: ReadonlyArray<{ tier: CreatureTier; from: number }> = [
-  { tier: "full", from: 0 },
-  { tier: "simple", from: 180 },
-  { tier: "stick", from: 320 },
-  { tier: "capsule", from: 450 },
-];
+// actually tiers a crowd the camera is standing inside. Its table
+// (`TOWN_TIER_BANDS` 180/320/450) moved to creatures/view-tiers.ts beside the
+// per-body one — the pin reads it there, and two ladders that must never
+// disagree may not be two tables. Its DISTANCE was already true 3-D
+// (`anchorPos.distanceTo(fc.worldPos)`, camera→centre through the air), which
+// is why the 2026-09-06 ruling only had to fix the per-body side.
 const TIER_HYST_M = 40;
 let appliedTier: CreatureTier = "full";
 // DEBOUNCE on the PUSHED values (dollhouse crawl-cycle fix, 2026-07-23): the
@@ -1971,6 +1974,15 @@ function debouncedBudget(b: number | null, now: number): number | null {
 function hystereticCreatureTier(distM: number): CreatureTier {
   appliedTier = steppedTier(TOWN_TIER_BANDS, appliedTier, distM, TIER_HYST_M);
   return appliedTier;
+}
+/** ⚖️ THE LOCAL CAMERA'S LENS — the other half of the ONE LOD seam (user ruling
+ *  C4, 2026-09-06: "the drivers hand the provider the FULL camera … nothing
+ *  reads `camera` from a global"). Spread into every `setViewPoint` push so the
+ *  host can band a body by the share of the SCREEN it fills rather than by
+ *  metres, which is what makes one ladder serve the walker, the district orbit
+ *  and the dollhouse alike. THREE's `fov` is the VERTICAL angle, in degrees. */
+function viewLens(): { fovRad: number; viewportH: number } {
+  return { fovRad: (camera.fov * Math.PI) / 180, viewportH: viewEl.clientHeight || 1 };
 }
 // SINGLE GROUND HOST (PLANET_ENTITY_PLAN step 3, slice 1): true boots the
 // wilderness side of the ground path as a QuestHost3D wilderness session
@@ -2444,12 +2456,15 @@ function townSessionToWorld(x: number, y: number, out: THREE.Vector3): THREE.Vec
   liveAnchor.updateWorldMatrix(true, false);
   return liveAnchor.localToWorld(out.set(x, 0, y));
 }
-/** World → session (x, y). Null when no town is mounted. */
-function townWorldToSession(world: THREE.Vector3): { x: number; y: number } | null {
+/** World → session (x, y) — plus `z`, the HEIGHT above the sim ground plane
+ *  (the anchor's local y), which is what the per-body LOD band's third leg is
+ *  (`TierPoint`; user ruling 2026-09-06). Readers that only want the plane
+ *  ignore it. Null when no town is mounted. */
+function townWorldToSession(world: THREE.Vector3): { x: number; y: number; z: number } | null {
   if (!liveAnchor) return null;
   liveAnchor.updateWorldMatrix(true, false);
   const p = liveAnchor.worldToLocal(_sessWorld.copy(world));
-  return { x: p.x, y: p.z };
+  return { x: p.x, y: p.z, z: p.y };
 }
 
 /** The mounted town's relevance disc in WORLD space — the sim's own answer
@@ -3564,13 +3579,16 @@ const spiritTrace: string[] = [];
 viewEl.addEventListener("wheel", e => {
   e.preventDefault();
   if (!flight) return;
-  // SPIRIT: nobody is piloting, so the wheel is the district orbit's ZOOM
-  // (ladder.zoomBy — wheel down backs out to the frame's bound, wheel up
-  // closes in; inert on every other rung). The user's "I can't zoom in".
-  if (spirit) {
-    spirit.ladder.zoomBy(e.deltaY / 100);
-    return;
-  }
+  // 🚫 NO WHEEL ON THE EYEGAZE SURFACE (user ruling C2, 2026-09-06: *"Mouse
+  // wheel should not be a control for core behaviors — remember, the game is
+  // being designed for eyegaze"*). The wheel used to drive the district orbit's
+  // zoom here; an eyegaze player has a pointer and a dwell and no wheel at all,
+  // so a core behaviour reachable only this way is unreachable for the
+  // product's actual user. The FRAME is the fix, not a control: the held orbit
+  // frames the relevance ring at the pose record's own factors
+  // (spirit/orbit-pose.ts), and the 🎥 Camera debug panel's sliders are how
+  // those get tuned. In spirit mode the wheel now does nothing.
+  if (spirit) return;
   // Notches (± = faster/slower). The flight model applies the exponent.
   // NOT while a town session covers the flight — a parked ship must not
   // bank speed notches while the player shops.
@@ -3796,6 +3814,9 @@ async function boot(): Promise<void> {
 // ── 🗣 LANGUAGE — see lab-locale.ts for what the locale actually drives and
 //    why switching it rebuilds the world instead of retranslating it. ────────
 let labLocale = normalizeLabLocale(localStorage.getItem(LOCALE_STORAGE_KEY));
+// ⚖️ The Speak menu's word bank reads in the chosen ruleset. The island is
+// mounted long before this line runs, so the locale arrives through a setter.
+labBoard.island.setLocale(labLocale);
 
 for (const l of LAB_LOCALES) {
   const opt = document.createElement("option");
@@ -3849,6 +3870,7 @@ resetSaveBtn.addEventListener("click", () => {
 langSelect.addEventListener("change", () => {
   labLocale = langSelect.value;
   localStorage.setItem(LOCALE_STORAGE_KEY, labLocale);
+  labBoard.island.setLocale(labLocale);
   // build-time choice — rebuild, don't half-translate
   void boot().then(applyPaths).then(() => applyWorldSave());
 });
@@ -3884,6 +3906,64 @@ pathsBtn.addEventListener("click", () => {
   pathsOn = !pathsOn;
   applyPaths();
 });
+
+// ── ⏩ LAG COMP — the automatic lag compensator's GLOBAL switch ─────────────
+//    (shared/world-engine/lag-comp.ts; the mechanism is in world-host's
+//    `admitFrameDt`.) The world host clamps every frame at 0.05 s, so on a
+//    machine that renders a frame in half a second the sim is told 0.05 s
+//    elapsed and loses the other 0.45 — the 560-sim-second frontier house that
+//    took 45 real minutes on screen. On, a frame admits the REAL elapsed time up
+//    to ×10 and spends it through the wide tick (motion substepped at a normal
+//    physics step, decisions once with the whole dt). It never runs the sim
+//    faster than the wall clock; it stops losing wall-clock seconds.
+//
+//    The setting is GLOBAL (every world-engine game reads the same module) and
+//    PERSISTED in localStorage, so it survives a reload and a world switch —
+//    which is why nothing here is stored on the lab's own state. The `lag:` field
+//    of the status line is the readout. Built in code rather than index.html
+//    because the button belongs to this feature, not to the lab's markup.
+const lagBtn = document.createElement("button");
+lagBtn.id = "lag-comp";
+lagBtn.type = "button";
+lagBtn.textContent = "⏩ Lag comp";
+lagBtn.title =
+  "Automatic lag compensation (global, persisted, ≤10×). Off, a slow frame silently loses sim " +
+  "time — the world runs slower than the clock. On, the frame admits the real elapsed time, " +
+  "capped at 10× the 0.05 s nominal step; anything beyond the cap is DROPPED, never banked. " +
+  "Watch `lag:×N` in the status line.";
+pathsBtn.insertAdjacentElement("afterend", lagBtn);
+function applyLagComp(): void {
+  lagBtn.setAttribute("aria-pressed", String(lagCompOn()));
+}
+lagBtn.addEventListener("click", () => {
+  setLagComp(!lagCompOn());
+  applyLagComp();
+  refreshLagReadout(performance.now(), true);
+});
+applyLagComp(); // adopt the persisted choice at boot
+
+/** THE LIVE READING, beside the button: `×N` is the sim time this frame admitted
+ *  divided by what today's 0.05 s clamp would have admitted — 1.0 when the
+ *  machine is keeping up, 10.0 when it is a tenth of real time behind. `sub` is
+ *  the motion substeps that dt was integrated in; `DROP` is the seconds the ×10
+ *  cap refused, which are gone for good (never banked — the anti-spiral law). */
+const lagReadEl = document.createElement("span");
+lagReadEl.id = "lag-read";
+lagReadEl.style.cssText = "color:#8b94a8;font-variant-numeric:tabular-nums;min-width:9ch";
+lagBtn.insertAdjacentElement("afterend", lagReadEl);
+let lagReadAt = 0;
+function refreshLagReadout(nowMs: number, force = false): void {
+  if (!force && nowMs - lagReadAt < 250) return; // ~4 Hz; a per-frame write is waste
+  lagReadAt = nowMs;
+  const lp = lagCompOn() ? lagProbeGlobal() : null;
+  lagReadEl.textContent = !lagCompOn()
+    ? ""
+    : lp && lp.on
+      ? `×${lp.factor.toFixed(1)}${lp.substeps > 1 ? ` sub${lp.substeps}` : ""}` +
+        `${lp.droppedS > 0.001 ? ` DROP${lp.droppedS.toFixed(2)}s` : ""}`
+      : "×—";
+}
+refreshLagReadout(0, true);
 
 // Size the renderer and load the default demo on startup (the ResizeObserver
 // above re-runs resize once the flex panel is measured). This call was
@@ -4075,10 +4155,19 @@ function streamGround(
     // bodies NEAR the camera are far from the plaza (sticks) while the crowd
     // across town renders full: the inverted-LOD defect. liveAnchor's local
     // frame IS sim coords (mountLiveTown registration).
+    //
+    // ⚖️ ALL THREE COMPONENTS (user ruling 2026-09-06, "use true 3D camera
+    // distance"): the anchor-local frame is metres, so `lv.y` IS the camera's
+    // height above the sim ground plane — the third leg the per-body band was
+    // dropping. At the founding's held district orbit the camera sits 41.6 m up
+    // and 76.2 m out; without this the ladder called that 76.2 m.
     if (liveAnchor) {
       liveAnchor.updateWorldMatrix(true, false);
       const lv = liveAnchor.worldToLocal(_viewPt.copy(anchorPos));
-      embedTown.host.setViewPoint({ x: lv.x, y: lv.z });
+      embedTown.host.setViewPoint({ x: lv.x, y: lv.z, z: lv.y, ...viewLens() });
+      // …and the same three numbers, kept for the 🎥 Camera readout (debug only
+      // — nothing reads this but the panel).
+      lastViewLocal = { outM: Math.hypot(lv.x, lv.z), upM: lv.y, distM: lv.length() };
     }
   }
   // The layer that OWNS the walker is stepped at full frame rate by the
@@ -4111,11 +4200,13 @@ function streamGround(
   // (worldToLocal on the chunk anchor = wild-SIM coords, the spiritParkWild
   // mapping). Ungated by ownership: whoever steps the session, the CAMERA is
   // what LOD measures from. `.quest` is the full host (the legacy sandbox
-  // handle has no creature tiers to anchor).
+  // handle has no creature tiers to anchor). Height rides along here too — one
+  // measure for both sessions, so a fauna body and a resident at the same
+  // camera distance band the same way.
   if (embedWild?.quest && wildAnchor) {
     wildAnchor.updateWorldMatrix(true, false);
     const wv = wildAnchor.worldToLocal(_viewPt.copy(anchorPos));
-    embedWild.quest.setViewPoint({ x: wv.x, y: wv.z });
+    embedWild.quest.setViewPoint({ x: wv.x, y: wv.z, z: wv.y, ...viewLens() });
   }
   if (embedWild && groundedIn !== "wild") {
     // Cadence step only while nothing else owns the tick: the spirit ground
@@ -4562,6 +4653,21 @@ function stepSpirit(dt: number, now: number): void {
     statusLine += ` | cur:${s.ladder.debugGround()} cast:${castDbg} spk:${sparkProbe(s)} town:${
       embedTown ? "MOUNTED" : "-"
     }`;
+  }
+  // ⏩ LAG COMP READOUT — always shown (the whole point is to watch it under
+  // load, and it costs one object read). `×N` = how much sim time this frame
+  // admitted against the 0.05 s nominal step, i.e. how many frames' worth of
+  // world time today's clamp would have thrown away; `sub` = the motion
+  // substeps that N was integrated in; `DROP` = seconds the ×10 cap refused,
+  // which are gone for good (never banked — that is the anti-spiral law).
+  // Read from the engine's own global, so this reads the ACTIVE host whichever
+  // one is driving (town embed, wilderness, planet composer).
+  {
+    const lp = lagCompOn() ? lagProbeGlobal() : null;
+    statusLine += lp && lp.on
+      ? ` | lag:×${lp.factor.toFixed(1)}${lp.substeps > 1 ? ` sub${lp.substeps}` : ""}` +
+        `${lp.droppedS > 0.001 ? ` DROP${lp.droppedS.toFixed(2)}s` : ""}`
+      : ` | lag:${lagCompOn() ? "on" : "off"}`;
   }
   if (!statusEl.classList.contains("error")) setStatus(statusLine);
 
@@ -5855,6 +5961,342 @@ function sampleSparkWatch(now: number): void {
   },
 };
 
+// ── 🌳 TREE-LOD AUDIT (__flora) — "the tree LOD is kind of random" ───────────
+//
+// A tree in view can be drawn by EITHER of two authorities and they band by
+// different rules, so "why is this one flat and that one solid?" has never had
+// one readable answer:
+//
+//   • the FIELD (flora-field.ts) bands per TILE — one rung for a 200 m tile,
+//     picked from tile centre → camera against NEAR_R 260 / STICK_R 700, and
+//     warmed under RUNG_BUILD_BUDGET;
+//   • a SESSION BODY (`flora:<species>:<id>`) bands per BODY, from the TRUE 3-D
+//     distance to the driver-fed viewPoint (TIER_BANDS 15/45/110) — and its
+//     DETAIL is sampled ONCE at model build (creature-model
+//     `createCreatureAvatarFactory`: "Detail is sampled ONCE per model build").
+//
+// This probe reads BOTH, from the GL side only: field rows come from the field's
+// own enumerator, body rows from the scene graph (`userData.pick.kind ===
+// "avatar"`), and the DRAWN form is classified off the material/geometry
+// actually in the scene — never from a tier variable, so a tier that has gone
+// stale against what is on screen is exactly what shows up. Render-only: it
+// materialises nothing, hides nothing and writes no sim state. Default OFF.
+//
+//   __flora.audit()      — the table, radius 60 m around the camera
+//   __flora.audit(150)   — …at another radius
+//   __flora.overlay(true)— 2-letter tags on every tree in view (or the button)
+interface FloraBodyRow {
+  id: string;
+  world: THREE.Vector3;
+  /** Classified from the SCENE, not from a tier variable: an exact read for
+   *  `stick` (stick-lod.ts names its material "stick-lod") and `capsule` (the
+   *  placeholder's CapsuleGeometry); `mesh` is the lofted body, whose FULL and
+   *  SIMPLE forms differ only in loft sides ⇒ in triangle count. */
+  form: "stick" | "capsule" | "mesh";
+  tris: number;
+  visible: boolean;
+}
+/** Every `flora:` body model currently in the scene within `r` of a point. */
+function floraBodiesNear(centre: THREE.Vector3, r: number): FloraBodyRow[] {
+  const out: FloraBodyRow[] = [];
+  const p = new THREE.Vector3();
+  scene.traverse(o => {
+    const pick = (o.userData as { pick?: { kind?: string; id?: string } }).pick;
+    const id = pick?.kind === "avatar" ? pick.id : undefined;
+    if (!id || !id.startsWith("flora:")) return;
+    o.getWorldPosition(p);
+    if (p.distanceTo(centre) > r) return;
+    let stick = false;
+    let capsule = false;
+    let tris = 0;
+    let visible = o.visible;
+    for (let a: THREE.Object3D | null = o.parent; a; a = a.parent) if (!a.visible) visible = false;
+    o.traverse(c => {
+      const m = c as THREE.Mesh;
+      if (!(m as unknown as { isMesh?: boolean }).isMesh || !m.geometry) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      // The invisible body-sized pick box render3d adds to every non-local
+      // avatar (colorWrite:false) is not part of what is DRAWN.
+      if (mats.some(mm => mm && (mm as THREE.Material).colorWrite === false)) return;
+      for (const mm of mats) if (mm && (mm as THREE.Material).name === "stick-lod") stick = true;
+      if (m.geometry.type === "CapsuleGeometry") capsule = true;
+      const idx = m.geometry.index;
+      const pos = m.geometry.getAttribute("position");
+      tris += idx ? idx.count / 3 : pos ? pos.count / 3 : 0;
+    });
+    out.push({ id, world: p.clone(), form: stick ? "stick" : capsule ? "capsule" : "mesh", tris: Math.round(tris), visible });
+  });
+  return out;
+}
+/** One audited tree — a field instance, a body, or (the bug shapes) both/neither. */
+interface FloraAuditRow {
+  tag: string;
+  key: string;
+  dCam: number;
+  /** What the PER-BODY ladder actually measures: `tierDistanceM` from the
+   *  driver-fed viewPoint — TRUE 3-D since the 2026-09-06 ruling, i.e. the
+   *  camera's HEIGHT is in it. It should now track `dCam` closely (the two
+   *  differ only by the tree's own trunk-base height vs the sim ground plane
+   *  and the anchor round-trip); a big gap is a bug in one of them. */
+  dFocus: number;
+  authority: string;
+  drawn: string;
+  /** The tier the ladder would seed for `dFocus` RIGHT NOW, coarsened by the
+   *  town clamp — what the body SHOULD be wearing. */
+  want: string;
+  ring: string;
+  cls: string;
+  note: string;
+  world: THREE.Vector3;
+}
+function floraAuditRows(radiusM: number): FloraAuditRow[] {
+  const rows: FloraAuditRow[] = [];
+  if (!flora || !floraBody) return rows;
+  const cam = camera.getWorldPosition(new THREE.Vector3());
+  const ns = townNearStand();
+  const camSess = townWorldToSession(cam);
+  const clamp = pushedTier ?? "full";
+  const sess = embedTown?.host.session;
+  // sizeClass + the refusal check need the session's own feature rows.
+  const feats = new Map<string, { cls: string; x: number; y: number }>();
+  for (const f of sess?.wilderness?.features ?? []) {
+    feats.set(wildFeatureContainerId(f), {
+      cls: f.sizeClass === undefined ? "mature" : String(f.sizeClass),
+      x: f.x, y: f.y,
+    });
+  }
+  // THE LADDER'S OWN MEASURE, not a re-derivation: `tierDistanceM` is the same
+  // function quest-host's sweep calls, and the tree is fed as a body — i.e. ON
+  // the sim ground plane (z omitted), exactly as the host treats it. Only the
+  // camera carries height. Change the ladder and this column follows.
+  const dFocusOf = (w: THREE.Vector3): number => {
+    if (!camSess) return NaN;
+    const p = townWorldToSession(w);
+    return p ? tierDistanceM(camSess, { x: p.x, y: p.y }) : NaN;
+  };
+  const wantOf = (d: number): string => {
+    if (!Number.isFinite(d)) return "—";
+    const band = seedTier(TIER_BANDS, d);
+    return TIER_RANK[band] > TIER_RANK[clamp] ? band : clamp;
+  };
+  const inRing = (w: THREE.Vector3): boolean => !!ns && w.distanceTo(ns.world) <= ns.radiusM;
+  const bodies = floraBodiesNear(cam, radiusM);
+  const used = new Set<FloraBodyRow>();
+  // FINEST mesh per species = the `full` loft; anything lower-poly is `simple`
+  // (they share one material and differ only in loft sides).
+  const finest = new Map<string, number>();
+  for (const b of bodies) {
+    if (b.form !== "mesh") continue;
+    const sp = b.id.split(":")[1] ?? "";
+    finest.set(sp, Math.max(finest.get(sp) ?? 0, b.tris));
+  }
+  const drawnOf = (b: FloraBodyRow): string =>
+    b.form === "stick" ? "stick"
+      : b.form === "capsule" ? "capsule"
+        : b.tris >= (finest.get(b.id.split(":")[1] ?? "") ?? 0) ? "full" : "simple";
+  // ① FIELD instances — and any body standing on the same spot (the double draw).
+  for (const t of flora.debugTrees(cam, radiusM)) {
+    const twin = bodies.find(b => !used.has(b) && b.world.distanceTo(t.world) < 1.5);
+    if (twin) used.add(twin);
+    const d = dFocusOf(t.world);
+    const fieldDrawn = t.hidden ? "—" : t.tier === "billboard" ? "impostor" : t.tier;
+    const warm = `${t.stickWarm ? "S" : "-"}${t.realWarm ? "R" : "-"}`;
+    const both = !t.hidden && twin !== undefined;
+    const tag = both ? "!!"
+      : twin ? bodyTag(drawnOf(twin))
+        : t.hidden ? "--"
+          : t.tier === "billboard" ? "FI" : t.tier === "stick" ? "FS" : "FR";
+    rows.push({
+      tag, key: t.key,
+      dCam: t.world.distanceTo(cam), dFocus: d,
+      authority: both ? "BOTH DRAWN" : twin ? "twin body" : t.hidden ? "neither (field hidden)" : "field instance",
+      drawn: twin ? `${drawnOf(twin)}${both ? ` + field ${fieldDrawn}` : ""}` : fieldDrawn,
+      want: twin ? wantOf(d) : `field ${t.tier}`,
+      ring: inRing(t.world) ? "in" : "out",
+      cls: twin ? (feats.get(twin.id)?.cls ?? "?") : "—",
+      note: both
+        ? "field instance AND a body on the same spot"
+        : t.hidden && !twin
+          ? (inRing(t.world)
+            ? "expected: the town's stand suppresses the field by DISC, and stands its own scatter at its own coords"
+            : "suppressed with no body here — felled mark, depletion, or a REFUSED addNpc")
+          : !t.hidden && !t.realWarm && t.tier !== "real"
+            ? `tile rung not warmed (${warm}) — RUNG_BUILD_BUDGET may still be catching up`
+            : "",
+      world: t.world,
+    });
+  }
+  // ② Bodies with no field instance under them (the town's own scatter — the
+  //    normal case inside the ring, where the field stood down by disc).
+  for (const b of bodies) {
+    if (used.has(b)) continue;
+    const d = dFocusOf(b.world);
+    const drawn = drawnOf(b);
+    const want = wantOf(d);
+    rows.push({
+      tag: bodyTag(drawn), key: b.id,
+      dCam: b.world.distanceTo(cam), dFocus: d,
+      authority: "twin body",
+      drawn: `${drawn} (${b.tris}t)${b.visible ? "" : " [culled]"}`,
+      want,
+      ring: inRing(b.world) ? "in" : "out",
+      cls: feats.get(b.id)?.cls ?? "?",
+      note: want !== drawn ? `STALE — the ladder wants ${want}, GL shows ${drawn}` : "",
+      world: b.world,
+    });
+  }
+  // ③ Session features with NO body anywhere — a refused spawn (rooted cap) or
+  //    a feature standing as a heap object rather than a body.
+  for (const [id, f] of feats) {
+    if (!id.startsWith("flora:")) continue;
+    if (bodies.some(b => b.id === id)) continue;
+    const w = townSessionToWorld(f.x, f.y, new THREE.Vector3());
+    if (!w || w.distanceTo(cam) > radiusM) continue;
+    rows.push({
+      tag: "??", key: id, dCam: w.distanceTo(cam), dFocus: dFocusOf(w),
+      authority: "neither (feature, no body)",
+      drawn: "—", want: "—",
+      ring: inRing(w) ? "in" : "out", cls: f.cls,
+      note: "a session feature with no avatar model — refused addNpc (rooted cap) or standing as a heap",
+      world: w.clone(),
+    });
+  }
+  rows.sort((a, b) => a.dCam - b.dCam);
+  return rows;
+}
+const bodyTag = (drawn: string): string =>
+  drawn === "stick" ? "TS" : drawn === "capsule" ? "TC" : drawn === "simple" ? "TM" : "TF";
+
+// ── The on-screen overlay: a 2-letter tag over every audited tree ────────────
+const floraTagsEl = document.createElement("div");
+floraTagsEl.className = "lab-treetags";
+floraTagsEl.style.cssText =
+  "position:absolute;inset:0;pointer-events:none;z-index:6;display:none;font:11px/1 ui-monospace,monospace";
+viewEl.appendChild(floraTagsEl);
+let floraOverlayOn = false;
+let floraOverlayRows: FloraAuditRow[] = [];
+let floraOverlayAt = 0;
+const FLORA_OVERLAY_R = 220; // the tags are for reading the MIX, not the horizon
+/** Re-projected every frame (the tags must sit on their trees while the camera
+ *  moves); the ROW SET is recomputed at ~5 Hz, which is where the cost is. */
+function drawFloraTags(): void {
+  if (!floraOverlayOn) return;
+  const nowMs = performance.now();
+  if (nowMs - floraOverlayAt > 200) {
+    floraOverlayAt = nowMs;
+    floraOverlayRows = floraAuditRows(FLORA_OVERLAY_R);
+    floraTagsEl.textContent = "";
+    for (const r of floraOverlayRows) {
+      const el = document.createElement("span");
+      el.textContent = r.tag;
+      el.style.cssText =
+        "position:absolute;transform:translate(-50%,-50%);padding:0 2px;border-radius:2px;" +
+        `background:rgba(6,8,14,.72);color:${floraTagColor(r.tag)}`;
+      floraTagsEl.appendChild(el);
+    }
+  }
+  const w = renderer.domElement.clientWidth;
+  const h = renderer.domElement.clientHeight;
+  const p = new THREE.Vector3();
+  const kids = floraTagsEl.children;
+  for (let i = 0; i < floraOverlayRows.length && i < kids.length; i++) {
+    const el = kids[i] as HTMLElement;
+    p.copy(floraOverlayRows[i]!.world).project(camera);
+    if (p.z > 1 || p.x < -1.2 || p.x > 1.2 || p.y < -1.2 || p.y > 1.2) { el.style.display = "none"; continue; }
+    el.style.display = "";
+    el.style.left = `${((p.x + 1) / 2) * w}px`;
+    el.style.top = `${((1 - p.y) / 2) * h}px`;
+  }
+}
+const floraTagColor = (tag: string): string =>
+  tag === "!!" || tag === "??" ? "#ff6b6b"
+    : tag === "TF" ? "#7ee787"
+      : tag === "TM" ? "#a8d8a0"
+        : tag === "TS" || tag === "TC" ? "#f2c14e"
+          : tag === "FR" ? "#79c0ff"
+            : tag === "FS" ? "#8ea9c9"
+              : tag === "FI" ? "#6b7a90"
+                : "#8b94a8";
+function setFloraOverlay(on: boolean): void {
+  floraOverlayOn = on;
+  floraTagsEl.style.display = on ? "" : "none";
+  floraTagsEl.textContent = "";
+  floraOverlayRows = [];
+  floraOverlayAt = 0;
+  treeLodBtn.setAttribute("aria-pressed", String(on));
+}
+const treeLodBtn = document.createElement("button");
+treeLodBtn.id = "tree-lod";
+treeLodBtn.type = "button";
+treeLodBtn.textContent = "🌳 Tree LOD";
+treeLodBtn.title =
+  "DEBUG: label every tree in view with which authority draws it and at what tier. " +
+  "TF twin-full · TM twin-simple · TS twin-stick · TC twin-capsule · " +
+  "FR field-real · FS field-stick · FI field-impostor · !! BOTH drawn · -- neither · ?? feature with no body. " +
+  "Console: __flora.audit(radiusM=60).";
+treeLodBtn.setAttribute("aria-pressed", "false");
+lagReadEl.insertAdjacentElement("afterend", treeLodBtn);
+treeLodBtn.addEventListener("click", () => setFloraOverlay(!floraOverlayOn));
+
+// ── 🎥 CAMERA — the held orbit's pose, tuned by eye (user ruling C1) ─────────
+//    The sliders live in camera-panel.ts over the ONE record
+//    (shared/world-engine/spirit/orbit-pose.ts); this is the mount plus the
+//    per-frame reading of what the lab can actually see. Nothing here is a play
+//    control — the wheel is gone from the eyegaze surface (C2) and this section
+//    is how the frame gets chosen and then BAKED.
+const cameraPanel = mountCameraPanel(treeLodBtn, document.body);
+let cameraReadAt = 0;
+/** The last camera pose the LOD seam pushed, in the live town's anchor-local
+ *  frame (metres): the MEASURED half of the panel's readout, so a derivation
+ *  that drifts from where the ladder really put the camera is visible. */
+let lastViewLocal: { outM: number; upM: number; distM: number } | null = null;
+function refreshCameraReadout(nowMs: number): void {
+  if (nowMs - cameraReadAt < 250) return; // ~4 Hz; the panel itself no-ops when closed
+  cameraReadAt = nowMs;
+  const lens = viewLens();
+  cameraPanel.refresh({
+    ringM: embedTown?.host.nearStand?.()?.radiusM ?? null,
+    fovDeg: (lens.fovRad * 180) / Math.PI,
+    viewportH: lens.viewportH,
+    held: !!spirit?.ladder.builderHold,
+    measured: lastViewLocal,
+  });
+}
+
+(window as unknown as Record<string, unknown>).__flora = {
+  /** The table. `dCam` is the honest 3-D camera distance measured in GL;
+   *  `dFocus` is what the per-body ladder actually measures — since the
+   *  2026-09-06 ruling that is ALSO true 3-D (`tierDistanceM` through the town
+   *  anchor), so the two columns should now agree within a metre or two. They
+   *  used to differ by the whole camera altitude, and that gap was the people-
+   *  LOD bug; a gap here again means a driver stopped feeding `z`. `want` is
+   *  the tier `dFocus` asks for right now and `drawn` is what GL is showing —
+   *  the two disagreeing is a tier that never re-banded. */
+  audit(radiusM = 60) {
+    const rows = floraAuditRows(radiusM);
+    if (!rows.length) return "no trees within that radius (no flora field on this body, or none loaded)";
+    const t = rows.map(r => ({
+      tag: r.tag, key: r.key,
+      dCam: +r.dCam.toFixed(1), dFocus: Number.isFinite(r.dFocus) ? +r.dFocus.toFixed(1) : null,
+      authority: r.authority, drawn: r.drawn, want: r.want, ring: r.ring, cls: r.cls, note: r.note,
+    }));
+    if (typeof console.table === "function") console.table(t);
+    const mix = new Map<string, number>();
+    for (const r of rows) mix.set(r.tag, (mix.get(r.tag) ?? 0) + 1);
+    const stale = rows.filter(r => r.note.startsWith("STALE")).length;
+    return `${rows.length} trees ≤${radiusM} m · ` +
+      [...mix].map(([k, n]) => `${k}×${n}`).join(" ") +
+      (stale ? ` · ${stale} STALE (drawn tier ≠ the tier the ladder wants)` : " · no stale tiers");
+  },
+  /** The on-screen tags (same as the 🌳 Tree LOD button). */
+  overlay(on = true) {
+    setFloraOverlay(!!on);
+    return `tree-LOD overlay ${floraOverlayOn ? "on" : "off"} (r=${FLORA_OVERLAY_R} m)`;
+  },
+  /** The raw rows, for ad-hoc console work. */
+  rows: (radiusM = 60) => floraAuditRows(radiusM),
+};
+
 let frameErrAt = 0;
 let camNaNAt = 0;
 /** While in the future, frame() presents RAW renderer output (no composer). */
@@ -5904,6 +6346,9 @@ let dbgBeaconFixedM = 0;
 /** Debug overrides re-asserted every frame, right before each present —
  *  each one fights a system that rewrites the same state per frame. */
 function applyDebugOverrides(): void {
+  // 🌳 Tree-LOD tags (default OFF) — re-projected here because the tags must
+  // sit on their trees as the camera moves; the row set refreshes at ~5 Hz.
+  drawFloraTags();
   if (dbgHideCityBeacons && flight) {
     for (const fc of flight.cities()) flight.setCityMarkerVisible(fc.city.cell, false);
   }
@@ -5964,6 +6409,16 @@ function frame(): void {
   const now = performance.now();
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
+  // ⏩ LAG COMP readout, refreshed here because this is the ONE frame body every
+  // mode passes through — the status line below only exists on the spirit/flight
+  // rung, and a compensator you can only watch in one mode is not watchable.
+  // NOTE this local clamp (0.1) is exactly why the compensator measures its own
+  // elapsed time from `now` inside the host: by the time the town host is
+  // stepped, the real frame length is no longer in `dt`.
+  refreshLagReadout(now);
+  // 🎥 CAMERA PANEL readout — same reasoning, same beat (a no-op while the
+  // panel is closed, which it is unless a builder opened it).
+  refreshCameraReadout(now);
   // NON-FINITE CAMERA watchdog: one NaN pose OR projection frame turns the
   // whole presented frame black (stars included) — catch it in the trace even
   // when it self-heals. Checks position, quaternion, up AND the projection

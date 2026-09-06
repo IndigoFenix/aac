@@ -269,6 +269,11 @@ output "github_actions_plan_role_arn" {
   value       = aws_iam_role.github_actions_plan.arn
 }
 
+output "github_actions_publish_role_arn" {
+  description = "Least-privilege role for publishing AAC build artifacts (s3:PutObject on the AAC update bucket, nothing else). Set the repo secret AWS_PUBLISH_ROLE_ARN to this. Trusts main, staging and v* tags — unlike the deploy role, which is main-only — but NOT pull_request. Null when enable_aac_auto_update is false."
+  value       = var.enable_aac_auto_update ? aws_iam_role.github_actions_publish[0].arn : null
+}
+
 output "ssm_session_log_location" {
   description = "S3 URI where interactive SSM shell transcripts land. Empty when session logging is off. Port-forwarding sessions (npm run db-tunnel) produce no transcript — see CloudTrail StartSession/TerminateSession for those."
   value       = var.enable_ssm_session_logging ? "s3://${aws_s3_bucket.logs.bucket}/${local.ssm_session_log_prefix}/" : ""

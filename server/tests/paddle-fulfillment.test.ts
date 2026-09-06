@@ -68,6 +68,12 @@ function makeLicense(over: Partial<License> = {}): License {
     instituteId: null,
     licenseType: "standard",
     isActive: true,
+    isTrial: false,
+    trialExpiresAt: null,
+    subscriptionType: "monthly",
+    priceAmount: null,
+    priceCurrency: "USD",
+    paddleTransactionId: null,
     permissions: null,
     paddleCustomerId: null,
     paddleSubscriptionId: null,
@@ -117,6 +123,11 @@ function harness(opts: {
       },
       async getLicenseByUserId(userId) {
         return Array.from(licenses.values()).find((l) => l.userId === userId);
+      },
+      async getLicenseByPaddleSubscriptionId(subscriptionId) {
+        return Array.from(licenses.values()).find(
+          (l) => l.paddleSubscriptionId === subscriptionId,
+        );
       },
       async getLicensesByInstituteId(instituteId) {
         return Array.from(licenses.values()).filter((l) => l.instituteId === instituteId);
@@ -403,6 +414,153 @@ describe("paddleFulfillment — subscriptions", () => {
     const { updates } = bare.licenseUpdates[0];
     expect(updates).not.toHaveProperty("licenseType");
     expect(updates).not.toHaveProperty("permissions");
+  });
+});
+
+describe("paddleFulfillment — per-license (non-catalog) purchases", () => {
+  const trialLicense = () =>
+    makeLicense({
+      id: "lic_org",
+      userId: "user_1",
+      instituteId: "inst_1",
+      isTrial: true,
+      trialExpiresAt: new Date("2026-09-30T00:00:00.000Z"),
+      priceAmount: 120000,
+      priceCurrency: "USD",
+      subscriptionType: "yearly",
+    });
+
+  /** A checkout we created: no catalog price id, a licenseId in customData. */
+  function licenseTxn(over: Record<string, unknown> = {}): PaddleEventLike {
+    return txnEvent({
+      id: "txn_org",
+      customerId: "ctm_org",
+      subscriptionId: "sub_org",
+      customData: { userId: "user_1", licenseId: "lic_org" },
+      items: [{ price: { id: "pri_inline_generated" }, quantity: 1 }],
+      currencyCode: "USD",
+      details: { totals: { subtotal: "120000", total: "132000" } },
+      billingPeriod: {
+        startsAt: "2026-09-01T00:00:00.000Z",
+        endsAt: "2027-09-01T00:00:00.000Z",
+      },
+      ...over,
+    });
+  }
+
+  it("activates the license: trial off, paid through the billing period, ids recorded", async () => {
+    const h = harness({ packages: [makePackage()], licenses: [trialLicense()] });
+
+    const outcome = await h.service.handleEvent(licenseTxn());
+
+    expect(outcome.status).toBe("processed");
+    expect(h.licenseUpdates).toHaveLength(1);
+    const { id, updates } = h.licenseUpdates[0];
+    expect(id).toBe("lic_org");
+    expect(updates).toMatchObject({
+      isTrial: false,
+      trialExpiresAt: null,
+      isActive: true,
+      paddleCustomerId: "ctm_org",
+      paddleSubscriptionId: "sub_org",
+      paddleTransactionId: "txn_org",
+    });
+    expect((updates.subscriptionExpiresAt as Date).toISOString()).toBe(
+      "2027-09-01T00:00:00.000Z",
+    );
+    // Credits are a separate product — buying a license grants none.
+    expect(h.grants).toHaveLength(0);
+  });
+
+  it("falls back to the subscriptionType's own length when Paddle sends no billing period", async () => {
+    const h = harness({ licenses: [trialLicense()] });
+
+    await h.service.handleEvent(licenseTxn({ billingPeriod: null }));
+
+    // occurredAt 2026-09-01T10:00 + 365 days (the license is yearly)
+    expect((h.licenseUpdates[0].updates.subscriptionExpiresAt as Date).toISOString()).toBe(
+      "2027-09-01T10:00:00.000Z",
+    );
+  });
+
+  it("LOGS a price mismatch but still activates — the money already moved", async () => {
+    const h = harness({ licenses: [trialLicense()] });
+
+    const outcome = await h.service.handleEvent(
+      licenseTxn({ details: { totals: { subtotal: "9900", total: "9900" } } }),
+    );
+
+    expect(outcome.status).toBe("processed");
+    expect(h.licenseUpdates[0].updates).toMatchObject({ isTrial: false, isActive: true });
+  });
+
+  it("leaves the catalog credit-package path untouched when there is no licenseId", async () => {
+    const h = harness({ packages: [makePackage()], licenses: [trialLicense()] });
+
+    const outcome = await h.service.handleEvent(txnEvent());
+
+    expect(outcome.status).toBe("processed");
+    expect(h.grants).toHaveLength(1);
+    expect(h.licenseUpdates).toHaveLength(0);
+  });
+
+  it("ignores a transaction whose licenseId names no license, without granting anything", async () => {
+    const h = harness({ packages: [makePackage()] });
+
+    const outcome = await h.service.handleEvent(licenseTxn());
+
+    expect(outcome.status).toBe("ignored");
+    expect(h.licenseUpdates).toHaveLength(0);
+    expect(h.grants).toHaveLength(0);
+  });
+
+  it("resolves a later subscription.canceled by the stored paddleSubscriptionId alone", async () => {
+    const h = harness({
+      licenses: [
+        makeLicense({
+          id: "lic_org",
+          instituteId: "inst_1",
+          paddleSubscriptionId: "sub_abc",
+          priceAmount: 120000,
+        }),
+      ],
+    });
+
+    const outcome = await h.service.handleEvent(
+      subEvent("subscription.canceled", {
+        customData: null, // Paddle's own later events carry none
+        items: [{ price: { id: "pri_inline_generated" }, quantity: 1 }],
+        scheduledChange: { action: "cancel", effectiveAt: "2026-12-31T00:00:00.000Z" },
+      }),
+    );
+
+    expect(outcome.status).toBe("processed");
+    const { id, updates } = h.licenseUpdates[0];
+    expect(id).toBe("lic_org");
+    expect((updates.subscriptionExpiresAt as Date).toISOString()).toBe(
+      "2026-12-31T00:00:00.000Z",
+    );
+    // Law 2: a cancellation never switches the license off early.
+    expect(updates).not.toHaveProperty("isActive");
+  });
+
+  it("renews from currentBillingPeriod on subscription.updated", async () => {
+    const h = harness({
+      licenses: [makeLicense({ id: "lic_org", paddleSubscriptionId: "sub_abc" })],
+    });
+
+    const outcome = await h.service.handleEvent(
+      subEvent("subscription.updated", {
+        customData: null,
+        items: [{ price: { id: "pri_inline_generated" }, quantity: 1 }],
+      }),
+    );
+
+    expect(outcome.status).toBe("processed");
+    expect(h.licenseUpdates[0].updates).toMatchObject({ isActive: true, isTrial: false });
+    expect(
+      (h.licenseUpdates[0].updates.subscriptionExpiresAt as Date).toISOString(),
+    ).toBe("2026-10-01T00:00:00.000Z");
   });
 });
 

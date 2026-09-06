@@ -1,0 +1,566 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=2030abb9+dirty
+# started=2026-09-06T05:10:04.155Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> say make cart
+OK     said: make + cart
+SAY    mara: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🔨 making a cart — by hand, no workbench (feedback)
+TICK   quiet after 1.5s.
+> wait 10
+EXIT   mara went out of the orange house.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "Are you okay?"  [you + ok#question]
+ENTER  mara came into view there north.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "I will build."  [i_me + build.will]
+TOAST  📦 bring 4 block — delivered (feedback)
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [water]
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+SAY    orrin: [meal]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [banana.hot]
+ENTER  mara came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [water]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: "Are you okay?"  [you + ok#question]
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+ENTER  orrin came into view here east.
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "Help you."  [help + you]
+SAY    mara: "Thank you!"  [thank_you]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   mara went out of the orange house.
+SAY    orrin: [water]
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+SAY    orrin: [banana]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+EXIT   orrin went out of the orange house.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there north.
+EXIT   orrin left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [meal]
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here south.
+ENTER  mara came into view there north.
+SAY    orrin: [banana]
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> say build house
+OK     said: build + house
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+SAY    orrin: "I will build the house."  [build.will + house]
+TICK   quiet after 2.0s.
+> wait 10
+EXIT   orrin went out of the orange house.
+ENTER  mara came into view there west.
+SAY    mara: [carrot]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [banana]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here south.
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+EXIT   mara went out of the orange house.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered 5 of 8 (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there north.
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [water]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+TOAST  📦 bring 24 block — delivered (feedback)
+SAY    mara: [sit]
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [carrot]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [carrot]
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  🧱 materials staged — builders raise the house (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [carrot]
+SITE   1 thing(s) being built.
+  site-1: a house — floor laid, 0% worked, close south, 71 m
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [carrot]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [berry]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [berry]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [berry]
+SITE   1 thing(s) being built.
+  site-1: a house — pillars up, 52% worked, close south, 71 m
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+ENTER  mara came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [berry]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara went out of the orange house.
+TOAST  🏛️ the house is finished (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  🏠 a family moves into the new house (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring door — delivered (feedback)
+TOAST  🚪 a door is hung in the living (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there north.
+ENTER  mara came into view there north.
+EXIT   orrin left view there west.
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here south.
+ENTER  orrin came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view there west.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    mara: [banana]
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [berry]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view here east.
+ENTER  orrin came into view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [water]
+SAY    orrin: [meal]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [apple.hot]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara went out of the orange house.
+ENTER  orrin came into view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [meal]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [water]
+SAY    orrin: [apple.hot]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there north.
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here east.
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    orrin: "bye-bye"  [goodbye]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+SAY    mara: [sit]
+SAY    mara: [sit]
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+SAY    mara: [apple.hot]
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=174  presses=0  screens=1  sim=1710.0s
+# events: TICK 174  SAY 72  EXIT 52  ENTER 51  TOAST 22  OK 2  SITE 2  BOARD 1  NOTE 1  SELF 1

@@ -739,6 +739,7 @@ export const zh: Translations = {
       barrel: "木桶",
       basket: "篮子",
       satchel: "背包",
+      cart: "手推车",
       lamp: "灯",
       window: "窗户",
       heater: "暖气",

@@ -122,10 +122,25 @@ describe("cut is one act — the yield is a consequence, never a gate on the ver
     expect(sourceIsCuttable("sheep", undefined)).toBe(false); // named, so a rename shows
   });
 
-  it("a seedling is neither — below the bearing floor it is in nobody's way", () => {
-    // The floor is the growth ladder's own, not a number this test knows.
-    expect(sourceIsCuttable("apple_tree", 0)).toBe(false);
+  it("a seedling is IN NOBODY'S WAY — but the act is still offered on it", () => {
+    // ⚠️ PIN MOVED 2026-09-06 (PLANTS GROW LIKE PLANTS, R6). This read
+    // `sourceIsCuttable("apple_tree", 0) === false`, on the reasoning that a
+    // seedling below the bearing floor is "neither" — neither substantial nor
+    // cuttable. The user ruled the second half the other way, verbatim:
+    // *"technically the player should be given the option to cut saplings if
+    // needed, they'll just be deprioritized by automatic designation because
+    // they produce less wood."*
+    //
+    // So "cuttable" (the ACT) and "substantial" (the WOOD, the collision, the
+    // lot) came apart, and this file's own ① — *the yield is a consequence,
+    // never a gate on the verb* — now holds one rung further down: it was
+    // written for BUSHES and it turns out to be the same argument for saplings.
+    // The floor is unmoved; only which question it answers.
+    expect(sourceIsCuttable("apple_tree", 0)).toBe(true);
+    expect(sourceIsSubstantial("apple_tree", 0)).toBe(false);
     expect(naturalSourceOf("apple_tree")!.growth!.classes[0]!.yieldMul).toBe(0);
+    // The full matrix, the 0-yield cut's honest ending and the automatic
+    // chooser's deprioritisation live in `plant-growth-stage.test.ts`.
   });
 
   it("nothing the catalogue never heard of is cuttable", () => {

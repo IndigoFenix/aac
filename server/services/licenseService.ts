@@ -5,6 +5,12 @@ import { licenseRepository, instituteRepository, studentRepository } from "../re
 import { emailService } from "./emailService";
 import type { InsertLicense, UpdateLicense, License } from "@shared/schema";
 import { type LicensePermissions, resolvePermissions, MAX_LICENSE_PERMISSIONS } from "@shared/license-permissions";
+import {
+  computeLicenseStatus,
+  licenseExpiryDate,
+  licenseStatusRank,
+  type LicenseStatus,
+} from "@shared/license-status";
 import { toE164 } from "@shared/phone";
 import crypto from "crypto";
 
@@ -63,6 +69,85 @@ interface CreateLicenseInput {
 
   // Language for email (e.g. 'he' for Hebrew)
   language?: string;
+
+  // Per-license pricing. Organisations are quoted individually, so the price
+  // lives on the row rather than on a catalog tier. `priceAmount` is in the
+  // currency's MINOR unit (cents/agorot), as Paddle expects.
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
+  /** Paid-through date. Set by fulfillment, or by an admin marking an
+   *  invoice/bank-transfer customer as paid. */
+  subscriptionExpiresAt?: string | null;
+}
+
+/**
+ * What every caller asking "what may this party do" gets back.
+ *
+ * `permissions` is already expiry-adjusted (an expired license resolves to the
+ * same permissions as none). The remaining fields describe the ROW so a client
+ * can render a paywall for it; they are populated even when the permissions are
+ * empty, which is the whole point.
+ */
+export interface LicenseInfo {
+  permissions: LicensePermissions;
+  licenseType: string;
+  isTrial: boolean;
+  trialExpiresAt: Date | null;
+  licenseId: string | null;
+  status: LicenseStatus;
+  /** Whichever date applies: trial end for a trial, subscription end otherwise. */
+  expiresAt: Date | null;
+  priceAmount: number | null;
+  priceCurrency: string | null;
+  subscriptionType: string | null;
+}
+
+const NO_LICENSE_INFO: LicenseInfo = {
+  permissions: resolvePermissions(null),
+  licenseType: "none",
+  isTrial: false,
+  trialExpiresAt: null,
+  licenseId: null,
+  status: "none",
+  expiresAt: null,
+  priceAmount: null,
+  priceCurrency: null,
+  subscriptionType: null,
+};
+
+/** Project one license row into the info payload, applying expiry. */
+function licenseInfoOf(license: License, now: Date = new Date()): LicenseInfo {
+  const status = computeLicenseStatus(license, now);
+  return {
+    // An expired license grants exactly what no license grants.
+    permissions:
+      status === "active" || status === "trial"
+        ? resolvePermissions(license.permissions)
+        : resolvePermissions(null),
+    licenseType: status === "none" ? "none" : license.licenseType,
+    isTrial: license.isTrial,
+    trialExpiresAt: license.trialExpiresAt,
+    licenseId: license.id,
+    status,
+    expiresAt: licenseExpiryDate(license),
+    priceAmount: license.priceAmount ?? null,
+    priceCurrency: license.priceCurrency ?? null,
+    subscriptionType: license.subscriptionType ?? null,
+  };
+}
+
+/** The most useful of several licenses: live beats expired, expired beats none. */
+function bestLicense(candidates: License[], now: Date = new Date()): License | undefined {
+  let best: License | undefined;
+  let bestRank = 0;
+  for (const candidate of candidates) {
+    const rank = licenseStatusRank(computeLicenseStatus(candidate, now));
+    if (rank > bestRank) {
+      best = candidate;
+      bestRank = rank;
+    }
+  }
+  return best;
 }
 
 class LicenseService {
@@ -138,6 +223,9 @@ class LicenseService {
       allowSessionRecording: data.allowSessionRecording === true,
       isTrial: data.isTrial || false,
       trialExpiresAt: data.trialExpiresAt ? new Date(data.trialExpiresAt) : null,
+      subscriptionExpiresAt: data.subscriptionExpiresAt ? new Date(data.subscriptionExpiresAt) : null,
+      priceAmount: data.priceAmount ?? null,
+      priceCurrency: data.priceCurrency ?? "USD",
       inviteEmail: normalizedEmail,
       inviteToken: inviteToken || null,
       instituteId: instituteId || null,
@@ -207,6 +295,54 @@ class LicenseService {
 
   async deleteLicense(id: string) {
     return licenseRepository.deleteLicense(id);
+  }
+
+  /**
+   * Start a Paddle checkout for ONE license, at the price quoted on its own row.
+   *
+   * Non-catalog pricing on purpose: organisations are quoted individually, so
+   * there is no catalog price to point at. Paddle accepts a price object inline
+   * on the transaction item — it needs a productId to hang off, which is the
+   * single shared "Aivota License" product (see paddleService.ensureLicenseProduct).
+   *
+   * Refusals are RETURNED, not thrown, because each maps to a distinct HTTP
+   * status the client translates. The caller checks authorisation; this method
+   * checks only whether the license is in a state that can be bought.
+   */
+  async createCheckout(
+    licenseId: string,
+  ): Promise<
+    | { ok: true; transactionId: string }
+    | { ok: false; code: "LICENSE_NOT_PURCHASABLE" | "LICENSE_ALREADY_PAID" }
+  > {
+    const license = await licenseRepository.getLicenseById(licenseId);
+    if (!license) return { ok: false, code: "LICENSE_NOT_PURCHASABLE" };
+    if (!license.isActive) return { ok: false, code: "LICENSE_NOT_PURCHASABLE" };
+    if (!license.priceAmount || license.priceAmount <= 0) {
+      // No quoted price = invoice-paid or admin-granted; nothing to charge.
+      return { ok: false, code: "LICENSE_NOT_PURCHASABLE" };
+    }
+    if (
+      !license.isTrial &&
+      license.subscriptionExpiresAt &&
+      license.subscriptionExpiresAt.getTime() > Date.now()
+    ) {
+      return { ok: false, code: "LICENSE_ALREADY_PAID" };
+    }
+
+    const { paddleService } = await import("./paddleService");
+    const transactionId = await paddleService.createLicenseTransaction({
+      licenseId: license.id,
+      userId: license.userId ?? null,
+      name: license.name || "Aivota License",
+      priceAmount: license.priceAmount,
+      priceCurrency: license.priceCurrency || "USD",
+      subscriptionType: license.subscriptionType === "yearly" ? "yearly" : "monthly",
+      paddleCustomerId: license.paddleCustomerId ?? null,
+    });
+
+    await licenseRepository.updateLicense(license.id, { paddleTransactionId: transactionId });
+    return { ok: true, transactionId };
   }
 
   async resendInvite(licenseId: string, baseUrl: string, adminUserId: string): Promise<{ success: boolean; error?: string }> {
@@ -326,21 +462,27 @@ class LicenseService {
    * Resolve the effective license info for an institute.
    * If no instituteId is provided, returns defaults (no optional permissions).
    * System admins always get MAX permissions.
+   *
+   * EXPIRY IS ENFORCED HERE (and only here): an expired license resolves to the
+   * same permissions as no license at all, but the payload still names the row
+   * — id, status, dates, price — because the client cannot render a "renew"
+   * button for a license it was never told about.
    */
-  async getInstituteLicenseInfo(instituteId?: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string; isTrial: boolean; trialExpiresAt: Date | null }> {
-    if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise", isTrial: false, trialExpiresAt: null };
-
-    if (!instituteId) {
-      return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
+  async getInstituteLicenseInfo(instituteId?: string, isSystemAdmin?: boolean): Promise<LicenseInfo> {
+    if (isSystemAdmin) {
+      return {
+        ...NO_LICENSE_INFO,
+        permissions: { ...MAX_LICENSE_PERMISSIONS },
+        licenseType: "enterprise",
+        status: "active",
+      };
     }
+
+    if (!instituteId) return { ...NO_LICENSE_INFO };
 
     const instituteLicenses = await licenseRepository.getLicensesByInstituteId(instituteId);
-    const activeLicense = instituteLicenses.find((l) => l.isActive && l.permissions);
-    if (activeLicense) {
-      return { permissions: resolvePermissions(activeLicense.permissions), licenseType: activeLicense.licenseType, isTrial: activeLicense.isTrial, trialExpiresAt: activeLicense.trialExpiresAt };
-    }
-
-    return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
+    const best = bestLicense(instituteLicenses.filter((l) => l.isActive && l.permissions));
+    return best ? licenseInfoOf(best) : { ...NO_LICENSE_INFO };
   }
 
   /**
@@ -381,17 +523,29 @@ class LicenseService {
    * institutes (picks the first one with an active license). Kept for callers that
    * don't have an instituteId available.
    */
-  async getUserLicenseInfo(userId: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string; isTrial: boolean; trialExpiresAt: Date | null }> {
-    if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise", isTrial: false, trialExpiresAt: null };
-
-    // Check institute licenses (getInstitutesByUserId respects support mode)
-    const institutes = await instituteRepository.getInstitutesByUserId(userId);
-    for (const inst of institutes) {
-      const result = await this.getInstituteLicenseInfo(inst.id);
-      if (result.licenseType !== "none") return result;
+  async getUserLicenseInfo(userId: string, isSystemAdmin?: boolean): Promise<LicenseInfo> {
+    if (isSystemAdmin) {
+      return {
+        ...NO_LICENSE_INFO,
+        permissions: { ...MAX_LICENSE_PERMISSIONS },
+        licenseType: "enterprise",
+        status: "active",
+      };
     }
 
-    return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
+    // Check institute licenses (getInstitutesByUserId respects support mode).
+    // A LIVE license anywhere wins; an expired one is remembered as a fallback
+    // so the paywall has a row to offer, but never short-circuits the search —
+    // a second institute with a paid license must still get through.
+    const institutes = await instituteRepository.getInstitutesByUserId(userId);
+    let expiredFallback: LicenseInfo | null = null;
+    for (const inst of institutes) {
+      const result = await this.getInstituteLicenseInfo(inst.id);
+      if (result.status === "active" || result.status === "trial") return result;
+      if (result.status === "expired" && !expiredFallback) expiredFallback = result;
+    }
+
+    return expiredFallback ?? { ...NO_LICENSE_INFO };
   }
 
   /** @deprecated Use getInstitutePermissions instead */

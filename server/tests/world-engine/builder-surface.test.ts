@@ -12,8 +12,8 @@ import {
   type BuilderNounEntry,
 } from "@shared/world-engine/interaction/intent/builder-surface.js";
 import { isAnimal, isPlant, propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
-import { PLACE_STUBS } from "@shared/world-engine/interaction/content/words.js";
-import { CORE_CONCEPTS } from "@shared/world-engine/object-properties.js";
+import { ITEM_STUBS, PLACE_STUBS } from "@shared/world-engine/interaction/content/words.js";
+import { CORE_BOARD_NOUNS, CORE_CONCEPTS } from "@shared/world-engine/object-properties.js";
 import { headOf } from "@shared/world-engine/variations.js";
 import {
   DEFAULT_ROOM_PROGRAMS,
@@ -269,8 +269,15 @@ describe("builderSurfaceFor — group chips (the SpeakMenu's sub-category hierar
     // A refrigerator is a container too, and a box is also furniture — the
     // basket is a container and nothing else, so it is the purest example.
     expect(byId.get("container")!.glyphs![0]).toBe("basket");
-    // Clothing wears the everyday garments, in the vocabulary's order.
-    expect(byId.get("clothing")!.glyphs).toEqual(["hat", "shirt", "scarf"]);
+    // Clothing wears the CATEGORY WORD and then the everyday garments, in the
+    // vocabulary's order. The umbrella leads because `clothing` is an
+    // OBJECT_PROPERTY and therefore a `CATEGORY_NOUNS` head — vocab-order.ts
+    // has always ranked those top ("they are what the group chips are labelled
+    // with, and they are sayable in their own right"). It only reached the noun
+    // library on 2026-09-06 (ONE WORD BANK: it used to be a word the quest host
+    // pushed inside a dollhouse and nowhere else), which is why a chip that was
+    // always going to lead with it did not.
+    expect(byId.get("clothing")!.glyphs).toEqual(["clothing", "hat", "shirt"]);
   });
 
   it("the chip's faces are the members' DISPLAY glyphs, so places draw their icon", () => {
@@ -334,9 +341,23 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
       // property (2026-08-27: a rose is not a container, a toy or a food, and
       // giving it a property to satisfy this law would be the invention the
       // law exists to forbid).
-      expect(
-        n.properties!.length > 0 || CORE_CONCEPTS.has(headOf(n.symbol)) || isPlant(n.symbol),
-      ).toBe(true);
+      //
+      // …or an ITEM STUB (words.ts `ITEM_STUBS`, 2026-09-06): a build material
+      // whose defining registry is products.ts, which mints the glyph once per
+      // SOURCE (wood grows on the oak AND the apple tree) and tags no object
+      // property at all — which is exactly why its words live in the ITEM_WORDS
+      // catalog rather than on a row. Registry-known, property-less; giving
+      // `wood` a `material` property would mean adding it to `KIND_CATEGORY`,
+      // and that map is read by the NEED and QUEST matchers, so it is a spec
+      // change with sim consequences rather than a board fix (left open).
+      expect({
+        head: n.symbol,
+        known:
+          n.properties!.length > 0 ||
+          CORE_CONCEPTS.has(headOf(n.symbol)) ||
+          isPlant(n.symbol) ||
+          ITEM_STUBS.includes(n.symbol),
+      }).toEqual({ head: n.symbol, known: true });
     }
     // A PLACE's key is legitimate for the same reason, one repository over:
     // it IS a room kind or a building character the programs declare.
@@ -344,11 +365,23 @@ describe("defaultBuilderNouns — the out-of-game object set", () => {
       ...DEFAULT_ROOM_PROGRAMS.map((d) => d.word ?? d.kind),
       ...DEFAULT_STRUCTURE_PROGRAMS.map((d) => d.word ?? d.type),
     ]);
+    // …or a CORE FRAME PLACE: the yard, the town, a building — core concepts
+    // no registry defines by law (`CORE_BOARD_NOUNS`, 2026-09-06). Each used to
+    // reach a board only through the quest host's scope-gated push, which is
+    // exactly what the ONE WORD BANK rule ended.
+    const coreFramePlaces = new Set(
+      CORE_BOARD_NOUNS.filter((n) => n.kind === "place").map((n) => n.head),
+    );
     for (const n of places) {
-      // …or a PLACE STUB: a word for a place the town has no program for yet
+      // …or a PLACE STUB: a word for a place no program row carries
       // (words.ts PLACE_STUBS), which is still a place a child goes to.
-      expect({ place: n.symbol, known: declared.has(n.symbol) || PLACE_STUBS.includes(n.symbol) })
-        .toEqual({ place: n.symbol, known: true });
+      expect({
+        place: n.symbol,
+        known:
+          declared.has(n.symbol) ||
+          PLACE_STUBS.includes(n.symbol) ||
+          coreFramePlaces.has(n.symbol),
+      }).toEqual({ place: n.symbol, known: true });
     }
     // The staples the dollhouse teaches.
     const syms = nouns.map((n) => n.symbol);

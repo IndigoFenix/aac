@@ -21,6 +21,7 @@
 // A basket holding eight units of grain still only shows a couple of props.
 // `INSTANCE_SLOTS` is the convention every container in the game already uses.
 
+import { blockCosts, furnitureBlocks } from "./block-bill.js";
 import { furnitureKindOfGlyph, STATION_PROPERTIES, type StationKind } from "./stations.js";
 
 /** How a body holds a portable container. */
@@ -39,6 +40,47 @@ export interface ContainerDef {
   hold?: HoldMode;
 }
 
+/**
+ * HOW A BAG IS MADE — the same shape `FurnitureItemDef.craft` uses, so
+ * `craftRecipeOf` (interaction/content/makeable.ts) reads one recipe kind for
+ * furniture, toys and bags alike and the craft job never learns which it got.
+ *
+ * `at` is the station that ACCELERATES the work, never a gate
+ * (`stations.ts craftLaborDaysFor`): a body with no workbench still makes it,
+ * slowly, by hand.
+ */
+export interface PortableCraftDef {
+  /** The station that speeds the work. Never required to start it. */
+  at?: StationKind;
+  /** Materials consumed, head-paid (`craftItems`' atomic consume-and-produce). */
+  consumes: Record<string, number>;
+}
+
+/**
+ * A PORTABLE row — a bag proper. Two fields the furniture branch never has:
+ *
+ *  • `seeded` — DOES THE WORLD STOCK IT? Baskets and satchels are laid down by
+ *    `container-seeds.ts` in every house, market and yard, so a poster may
+ *    assume one exists. A cart must be MADE, so it may not be assumed
+ *    (see `haulTripUnits`, and ⚖️ C3 of the pull-labor round).
+ *  • `craft` — the recipe, HERE beside the capacity rather than in a table of
+ *    its own. ⚖️ ONE OWNER FOR "WHAT A BAG IS": capacity, hold mode, whether
+ *    the world stocks it and what it costs to make are one row, so a new bag
+ *    is one edit and none of the four facts can drift from the other three.
+ *    (`PORTABLE_CONTAINER_ITEMS`, the alternative shape, would have been a
+ *    second list keyed by the same head — the drift this avoids.)
+ */
+export interface PortableContainerDef extends ContainerDef {
+  hold: HoldMode;
+  seeded: boolean;
+  craft?: PortableCraftDef;
+}
+
+/** A hand cart's half-extent, world metres — the dimension its bill is read
+ *  off, exactly as a piece of furniture's is read off its own radius. A cart
+ *  you push in front of you is about 1.4 m end to end. */
+export const CART_HALF_EXTENT_M = 0.7;
+
 /** Whole objects a container shows in/on itself — the town-stage convention,
  *  unchanged. Not the unit cap; see the header. */
 export const INSTANCE_SLOTS = 2;
@@ -47,23 +89,54 @@ export const INSTANCE_SLOTS = 2;
  * THE PORTABLE CONTAINERS — a creature's own storage, and the reason a body
  * will ever be able to haul more than it can hold in two hands.
  *
- * The two differ in exactly one field, and that field is the whole point: you
- * hold a basket, so it costs you a hand; you WEAR a satchel, so it does not.
- * When carry becomes bounded (step ③) that is the difference between being able
- * to fetch something while already carrying something, and not.
+ * The basket and the satchel differ in exactly one field, and that field is the
+ * whole point: you hold a basket, so it costs you a hand; you WEAR a satchel,
+ * so it does not. When carry becomes bounded (step ③) that is the difference
+ * between being able to fetch something while already carrying something, and
+ * not.
  *
  * A satchel holds less than a basket for the same reason — it is on your body,
  * not swinging from your arm.
+ *
+ * 🛒 THE CART (user ruling 2026-09-05: *"there is no path to creating baskets…
+ * carts would be a good addition as a basic object — more associated with
+ * carrying large numbers of heavy objects, were one of the earliest
+ * technologies, can be made from wood and are still in use today. They can be
+ * made from blocks."*).
+ *
+ * It is a third row of this table and nothing else — every capacity hook in the
+ * game already reads here (`haulTripUnits`, `bagFetchGoal`, `haulBagLeg`,
+ * `idleBagsFor`, the `@tool` claim, the floor put-down, `mayDissolveToStack`),
+ * so a bag that holds three times as much needs no new machinery, only an
+ * honest row.
+ *   • 24 units — 3× the basket ("large numbers of heavy objects"), and it
+ *     divides the frontier cottage's 120-block bill exactly (5 loads).
+ *   • `hold: "carry"` — a cart takes your hands, the same trade a basket makes.
+ *     (A TOWED cart, following its holder, would be a fifth item location and
+ *     the conservation law has a closed set of four. Refused, deliberately.)
+ *   • `seeded: false` — nothing lays a cart down. It is MADE, which is the
+ *     user's whole complaint answered, and the reason `seeded` exists.
+ *   • The bill is DERIVED, not painted: a 0.7 m half-extent through the rule
+ *     furniture already bills by (`furnitureBlocks`) = 4 blocks = 8 wood ≈ half
+ *     a felled oak. A bigger cart would cost more without anybody guessing.
  */
-export const PORTABLE_CONTAINERS: Readonly<Record<string, ContainerDef>> = {
-  basket: { capacity: 8, relation: "in", hold: "carry" },
-  satchel: { capacity: 5, relation: "in", hold: "wear" },
+export const PORTABLE_CONTAINERS: Readonly<Record<string, PortableContainerDef>> = {
+  basket: { capacity: 8, relation: "in", hold: "carry", seeded: true },
+  satchel: { capacity: 5, relation: "in", hold: "wear", seeded: true },
+  cart: {
+    capacity: 24,
+    relation: "in",
+    hold: "carry",
+    seeded: false,
+    craft: { at: "workbench", consumes: blockCosts(furnitureBlocks(CART_HALF_EXTENT_M)) },
+  },
 };
 
 /**
- * UNITS ONE BODY CAN MOVE IN ONE TRIP — the biggest portable container there
- * is (a basket today), or the one whole thing a bagless body carries in its
- * hands when the world declares no portable container at all.
+ * UNITS ONE BODY CAN MOVE IN ONE TRIP — the biggest portable container the
+ * world may be ASSUMED to have (a basket today), or the one whole thing a
+ * bagless body carries in its hands when it declares no portable container at
+ * all.
  *
  * ⚖️ WHY A POSTER NEEDS THIS (#50 ①). A haul is posted long before anybody
  * claims it, so the poster cannot ask a body what IT can hold
@@ -76,13 +149,43 @@ export const PORTABLE_CONTAINERS: Readonly<Record<string, ContainerDef>> = {
  * units. Sizing the row to this number makes N porters work in parallel and
  * every delivery toast true.
  *
- * DERIVED, never a literal: the capacity lives on the container definitions
- * and nowhere else, so adding a cart moves this number with it.
+ * 🚨 SEEDED ROWS ONLY — A HAUL IS NEVER SIZED TO A BAG THE WORLD MAY NOT HAVE
+ * (⚖️ C3, pull-labor round). This docblock used to end "so adding a cart moves
+ * this number with it". That is exactly what it must NOT do. A cart is `seeded:
+ * false`: it exists only where somebody made one, so a global max over the
+ * whole table would cut every posted pile-haul row at 24 in every world — and a
+ * basket porter handed a 24-unit agreement delivers 8 of it, which is the lie
+ * #50 fixed, restored. So the ceiling is the max over rows the world STOCKS
+ * (`container-seeds.ts`), and it stays 8 the day the cart lands.
+ *
+ * A cart still pays, on the PULL path: `decideContribution` sizes each slice to
+ * the body's OWN bag (`bagCeilingOf`), so a cart standing in the yard raises
+ * that puller's slice to 24 the sweep after it exists — no catalogue optimism
+ * needed. The push path under-uses a cart until it retires; accepted.
+ *
+ * DERIVED, never a literal: the capacity lives on the container definitions and
+ * nowhere else, so a new SEEDED bag moves this number with it.
  */
 export function haulTripUnits(): number {
   let best = 1; // no bag at all ⇒ one whole thing in the hands (scope-shape.ts)
-  for (const def of Object.values(PORTABLE_CONTAINERS)) best = Math.max(best, def.capacity);
+  for (const def of Object.values(PORTABLE_CONTAINERS)) {
+    if (!def.seeded) continue;
+    best = Math.max(best, def.capacity);
+  }
   return best;
+}
+
+/**
+ * THE RECIPE FOR A BAG, or null when nothing makes one (a basket is woven, not
+ * carpentered — a fibre craft, when the world has a weaver). Takes a glyph or a
+ * bare symbol: a red cart is still a cart.
+ *
+ * The single reader is `craftRecipeOf` (interaction/content/makeable.ts), which
+ * is where the three — soon four — makeable families meet.
+ */
+export function portableCraftOf(glyph: string): PortableCraftDef | null {
+  const head = glyph.split(".")[0] ?? glyph;
+  return PORTABLE_CONTAINERS[head]?.craft ?? null;
 }
 
 /** Portable containers a body WEARS — they leave the hands free, so a body may

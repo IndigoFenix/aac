@@ -996,6 +996,41 @@ export function standingGrowthClass(species: string, sizeClass?: number): number
 }
 
 /**
+ * ⚖️ HOW OLD IS THIS TREE — 0 (a fresh shoot) .. 1 (the authored adult).
+ * THE ONE OWNER of that question (user 2026-09-06: trees *"should grow in
+ * the manner of real plants"*). The SIM decides, the RENDER reads: the twin
+ * factory and the creature-lab feed this straight into `ageGrowth`
+ * (creatures/growth.ts), and no viewer-side code is ever allowed to decide
+ * an age of its own (the LOD-per-camera law — a sim entity must not depend
+ * on who is looking).
+ *
+ * It is the class's POSITION ON ITS OWN LADDER — `cls / (classes − 1)` —
+ * so an oak (sapling / young / mature) draws at 0 / 0.5 / 1 and an apple
+ * tree (sapling / mature) at 0 / 1, and a longer ladder invented later
+ * spaces itself without touching this function.
+ *
+ * 1 IN BOTH THE ABSENT CASES, and for the same reason: UNSET = MATURE is
+ * the wilderness's own scatter law (`standingGrowthClass`'s docblock — "a
+ * freshly-laid feature stands MATURE"), and a species with NO ladder (bush,
+ * hazel, rock) has no young state to be in. Both must therefore draw the
+ * body they have always drawn — which is what keeps a founding's stand
+ * byte-identical to every stand built before growth existed.
+ *
+ * 🚨 THIS IS NOT THE `yieldMul` LADDER AND NEITHER IS DERIVED FROM THE
+ * OTHER. `yieldMul` says how much wood a class gives up (oak: 0 / .25 / 1);
+ * this says how tall it stands (0 / .5 / 1). A `yieldMul 0.25` oak is NOT a
+ * 0.25-scale tree — yield is a volume-and-usefulness fact, height is a
+ * geometry fact, and the moment one is computed from the other a content
+ * edit to a yield silently resizes the forest.
+ */
+export function growthAgeOf(species: string, sizeClass?: number): number {
+  const g = BY_SPECIES.get(species)?.growth;
+  if (!g || sizeClass === undefined) return 1; // no ladder / unset ⇒ mature
+  const last = Math.max(1, g.classes.length - 1);
+  return Math.min(1, Math.max(0, sizeClass / last));
+}
+
+/**
  * ⚖️ IS THIS STANDING SOURCE SUBSTANTIAL — big enough to be a THING in the
  * world rather than a seedling in the grass? The ONE answer, asked by
  * construction ("is it on my lot?"), by the spawner ("is it solid?") and by
@@ -1029,9 +1064,27 @@ export function sourceIsSubstantial(species: string, sizeClass?: number): boolea
  * gives them up (the oak's wood, lying where the oak stood), a source with
  * none is simply gone, and the child pressed the same button either way.
  *
- * WHAT IT IS NOT DEFINED FOR:
- *   • a SEEDLING — below the bearing floor it is not in anybody's way, the
- *     same reason it does not block a lot and does not collide;
+ * ⚖️ …AND IT IS NOT THE WOOD QUESTION (user ruling 2026-09-06, verbatim):
+ *
+ *   *"technically the player should be given the option to cut saplings if
+ *    needed, they'll just be deprioritized by automatic designation because
+ *    they produce less wood."*
+ *
+ * 🚨 SO "CUTTABLE" AND "SUBSTANTIAL" CAME APART, and the tail that used to
+ * join them (`return sourceIsSubstantial(...)`) is gone. The act is possible on
+ * ANY standing plant: a child looking at a sapling may cut it, and the board
+ * offers the same one button it offers on an oak. What a sapling does NOT do is
+ * any of the things `sourceIsSubstantial` answers — it does not collide, it
+ * does not block a lot, it is never staked as clearing work, and it is ranked
+ * LAST by every automatic chooser (`spokenFeatureId`), because it has no wood
+ * to give. The yield is a consequence of the act; it was never a licence for it
+ * — which is the SAME correction this predicate already made once, for bushes.
+ *
+ * A 0-yield cut is honest, not a no-op: nothing is left lying where the plant
+ * stood, so the plant is simply gone (the cut's outcome ②) and the host says so
+ * with the plant's KIND word.
+ *
+ * WHAT IT IS STILL NOT DEFINED FOR:
  *   • an ANIMAL — the ruling names plants and the cut's own docblock names the
  *     reason: *"'fight the sheep' must never mean 'uproot the sheep'"*. The
  *     wilderness keeps creatures in a different list from the things rooted in
@@ -1052,12 +1105,16 @@ export function sourceIsSubstantial(species: string, sizeClass?: number): boolea
  * SUBSTANCE TO GIVE UP is cuttable whatever else it also sheds; only a source
  * whose ONLY body product wears away unit by unit keeps the outcrop's ending.
  */
-export function sourceIsCuttable(species: string, sizeClass?: number): boolean {
+export function sourceIsCuttable(species: string, _sizeClass?: number): boolean {
   const src = BY_SPECIES.get(species);
   if (!src) return false; // nothing known ⇒ nothing to cut
   if (src.kind === "animal") return false;
   if (sourceDepletes(src) && !src.products.some((p) => p.method === "kill")) return false;
-  return sourceIsSubstantial(species, sizeClass);
+  // ⚠️ `sizeClass` IS STILL IN THE SIGNATURE ON PURPOSE. Every caller holds a
+  // feature and asks this question about THAT feature; dropping the parameter
+  // would make each of them decide, one at a time, whether size still matters
+  // — and the answer ("no, for the ACT") is exactly what this file is for.
+  return true;
 }
 
 /**

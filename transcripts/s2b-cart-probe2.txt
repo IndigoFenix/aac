@@ -1,0 +1,108 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=2030abb9+dirty
+# started=2026-09-05T19:50:37.047Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> /stock
+CHEAT  /stock
+> say make cart
+OK     said: make + cart
+TOAST  🔨 making a cart — by hand, no workbench (feedback)
+TICK   quiet after 1.5s.
+> wait 400
+EXIT   mara went out of the orange house.
+EXIT   orrin went out of the orange house.
+ENTER  orrin came into view there north.
+EXIT   orrin left view here east.
+ENTER  orrin came into view here south.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [banana]
+SAY    orrin: "🥺"  [shirt.color_red]
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [carrot]
+EXIT   orrin left view here east.
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+SAY    orrin: [banana.hot]
+EXIT   orrin left view here east.
+TICK   waited 400.0s.
+> /stock
+CHEAT  /stock
+> scene
+SCENE  house-1 — 6 thing(s) in view, 27 place(s) around you.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  chair-2 (chair), here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  house-25 (house), close north, orange, door open, shut to you.
+  15 houses, there west, all shut.
+  8 houses, close west, all shut.
+TICK   quiet after 1.0s.
+> say build house
+OK     said: build + house
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TICK   quiet after 1.5s.
+> wait 400
+ENTER  orrin came into view here east.
+EXIT   orrin went out of the orange house.
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered 4 of 8 (feedback)
+ENTER  mara came into view there north.
+EXIT   mara left view there west.
+TOAST  📦 craft:cart — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 400.0s.
+> /stock
+CHEAT  /stock
+> /carry resident_19_2
+CHEAT  /carry resident_19_2
+> scene
+SCENE  house-1 — 6 thing(s) in view, 27 place(s) around you.
+  table-1 (table), here north.
+  bin-1 (bin), here west.
+  bowl-1 (bowl), here north.
+  chest-1 (chest), there east.
+  chair-1 (chair), here north.
+  chair-2 (chair), here north.
+  house-1 (house), here north, orange, you can see inside.
+  house-2 (house), here south, orange, shut to you.
+  house-3 (house), here south, orange, shut to you.
+  15 houses, there west, all shut.
+  9 houses, close west, all shut.
+SITE   1 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 92/120, close south, 71 m
+TICK   quiet after 1.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=12  presses=0  screens=1  sim=811.5s
+# events: TOAST 15  EXIT 10  TICK 8  ENTER 8  SAY 7  CHEAT 4  OK 2  SCENE 2  BOARD 1  NOTE 1  SITE 1  SELF 1

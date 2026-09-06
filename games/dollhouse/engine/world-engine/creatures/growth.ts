@@ -571,6 +571,256 @@ export function growthValidationErrors(value: unknown, path: string): string[] {
   return errors;
 }
 
+// ── AGE — plants grow like plants ────────────────────────────────────────
+//
+// ⚖️ GROWTH IS AN AGE FUNCTION ON THE BLUEPRINT, NEVER A UNIFORM SCALE OF
+// THE ADULT MESH (user 2026-09-06, verbatim: *"ideally they should grow in
+// the manner of real plants - starting as a shoot and then branching out"*
+// — and *"just scaling them would be the simple approach"* is the thing
+// that ruling rejects). `stem.lengthFrac` ALONE would be exactly that
+// scale: `curvature = curl/stemLen`, `radius0 = girth*stemLen` and every
+// tropism is an angle, so halving `lengthFrac` reproduces the same tree at
+// half size. Age therefore moves the STRUCTURE too — how many branch
+// levels exist, where on the parent they start, how leafy they are, how
+// stout the trunk is relative to its own height.
+//
+// 🎁 WHY PRUNING LEVELS IS A PRUNE AND NOT A RE-ROLL. Every stochastic
+// choice in this module hashes on (seed, NODE PATH) — never a sequential
+// stream — and a child's path is `${parent.path}.${j*whorl+k}`, which
+// mentions `levels` nowhere. Lower `branching.levels` and the branches that
+// remain are bit-for-bit the SAME branches the adult grows: a sapling is
+// the oak's own first branches, not a different small tree. Foliage follows
+// for free — `leafLevel = levels===0 ? 0 : max(1, levels-1)` (emitBranch),
+// so a 0-level shoot wears its leaves on its stem, a 1-level young tree on
+// its only branches, and a 3-level adult in its crown.
+//
+// 🚨 `age === 1` (and anything ≥ 1, and NaN) RETURNS `g` ITSELF — the same
+// object reference, not a lerp that lands on 1. A mature plant is therefore
+// byte-identical to every plant drawn before ageing existed, which is the
+// only reason this can land without moving a single existing pin.
+//
+// THE AGE IS THE SIM'S, NOT THE RENDER'S: `growthAgeOf(species, sizeClass)`
+// (products.ts) is the one owner of "how old is this tree"; this function
+// only draws what it is told (the LOD-per-camera law — a sim entity must
+// never depend on the viewer). The `yieldMul` ladder is NOT this curve.
+
+/** Stem length at age 0, as a fraction of the adult's — a SHOOT (the oak's
+ *  23.8 m body ⇒ 0.27 m), never a vanished plant. */
+export const AGE_SHOOT_HEIGHT = 0.015;
+/** Height ∝ age^p. Calibrated on the oak's own 40-year ladder — three
+ *  classes ⇒ ages 0 / 0.5 / 1 (`growthAgeOf`, products.ts) ⇒ 1.5 % / 36 % /
+ *  100 % of the adult's stem, which builds as bodies 0.27 m / 8.6 m /
+ *  23.8 m tall: the three rungs the sim can actually stand read apart at a
+ *  glance — shoot / young tree / adult. A REAL tree's height curve
+ *  decelerates (p < 1), which would put `young` at ~15 m and make two of
+ *  the three rungs the same picture; the deceleration is expressed here by
+ *  the BRANCH LEVELS saturating at age 0.75 instead — a nearly-mature tree
+ *  has its final crown structure and is still putting on height. */
+export const AGE_HEIGHT_POWER = 1.5;
+/** Leaves per segment at age 0, as a fraction of the adult's. A seedling is
+ *  sparse — but a BARE shoot reads as a STICK, which is the whole failure
+ *  this round exists to avoid, so it never reaches zero: an oak shoot keeps
+ *  ~6 leaves on its 6 segments, which is what an oak seedling is. */
+export const AGE_LEAF_DENSITY_AT_0 = 0.35;
+/** 🚨 LEAF SIZE GOES THE OTHER WAY, AND MEASUREMENT IS WHY. `leafSizeFrac`
+ *  is leaf length / SEGMENT length — a RATIO, exactly like `girth`, so
+ *  leaving it alone already shrinks a seedling's leaves 60× with its
+ *  segments. Scaling the ratio DOWN as well (the obvious reading of "a
+ *  shoot has small leaves") measured as a bare vertical stick: crown width
+ *  / height 0.18 at age 0, leaf area 0.07 × H². A real seedling's leaves
+ *  are nearly full size on a tiny stem — proportionally HUGE — so the ratio
+ *  rises as the plant gets younger and the shoot reads as a sprout. The
+ *  absolute leaves still shrink with the plant; only the proportion moves.
+ *  The lift falls off as (1−age)², so it is spent almost entirely on the
+ *  leafless-looking end and a half-grown tree wears the adult's own
+ *  foliage proportions (measured in the lab: at age 1.9 flat, a young
+ *  oak's leaf cards were twice as coarse relative to it as the adult's). */
+export const AGE_LEAF_SIZE_AT_0 = 1.9;
+/** How far a shoot's first branches move toward the tip: age 0 sits this
+ *  fraction of the way from the adult's `branchStart` to the 0.95 ceiling
+ *  (a shoot branches LATE — its crown is a tuft at the growing tip, which
+ *  is also what separates a young tree from a bush at a glance). Never
+ *  below the adult's own value, never above the range's ceiling. */
+export const AGE_BRANCH_START_LIFT = 0.7;
+/** Age at which a plant begins to flower/fruit, ramping to full by 1. A
+ *  sapling bearing apples is the same lie as a 24 m seedling; the sim
+ *  already agrees (a class-0 oak's `yieldMul` is 0). */
+export const AGE_REPRODUCTIVE_START = 0.6;
+
+const clamp01 = (v: number): number => (v > 1 ? 1 : v > 0 ? v : 0);
+
+/** Stem length at `age` as a fraction of the adult's. Monotone, 0 ⇒
+ *  AGE_SHOOT_HEIGHT, 1 ⇒ 1. Also the driver for girth and root flare, so
+ *  the whole habit answers to ONE curve. */
+export function growthHeightFactor(age: number): number {
+  const a = clamp01(age);
+  return AGE_SHOOT_HEIGHT + (1 - AGE_SHOOT_HEIGHT) * Math.pow(a, AGE_HEIGHT_POWER);
+}
+
+/** Branch levels REACHED at `age` out of an adult's `levels`. Level k
+ *  unlocks at age k/(levels+1) — the last rung lands with life to spare so
+ *  a nearly-mature tree is already full-crowned and `age = 1` is a step
+ *  onto nothing. For an oak (levels 3) that is 0 / .25 / .5 / .75, which is
+ *  the oak's own class ladder: sapling ⇒ a 0-level shoot, young ⇒ 1 level,
+ *  mature ⇒ all 3. An unbranched blueprint (grass blade, cow horn) has no
+ *  ladder to climb and stays at 0. */
+export function growthLevelsAt(levels: number, age: number): number {
+  const L = Math.max(0, Math.round(levels));
+  if (L <= 0) return 0;
+  return Math.min(L, Math.floor(clamp01(age) * (L + 1)));
+}
+
+/**
+ * The blueprint this growth was at `age` ∈ [0, 1] — 0 a shoot, 1 the
+ * authored adult. PURE and deterministic: no RNG, no time, no world; the
+ * same (g, age) always yields the same numbers, and the SEED is untouched,
+ * so every branch keeps its identity as the plant grows into it.
+ *
+ * The allometry, all of it derived from `growthHeightFactor` so nothing can
+ * drift out of step:
+ *  - `branching.levels` — steps (see growthLevelsAt). The structural knob.
+ *  - `stem.lengthFrac` — × the height factor.
+ *  - `stem.girth` — × √(height factor). Girth is a RATIO (radius / own
+ *    length), so leaving it alone is ISOMETRIC growth and a sapling comes
+ *    out as stout as an oak. Elastic similarity (McMahon) has diameter ∝
+ *    height^1.5, i.e. the ratio ∝ √height — a young tree is SLENDER, and
+ *    grows stout as it ages.
+ *  - `stem.rootFlare` — the buttress is a consequence of size; a seedling
+ *    has none (1 = no flare).
+ *  - `stem.hardness` — 0 is green/fleshy, 1 is wood. A shoot is green and
+ *    lignifies with age; this is what stops a young tree reading as a bare
+ *    brown stick.
+ *  - `branching.branchStart` — high (near the tip) when young, falling to
+ *    the authored value.
+ *  - `foliage.leafDensity` — fewer leaves young (never none).
+ *  - `foliage.leafSizeFrac` — a RATIO to the segment, so it RISES as the
+ *    plant gets younger; the leaves still shrink with the plant, but a
+ *    seedling's are proportionally large, which is what stops a shoot
+ *    measuring as a bare stick (crown width / height 0.37 instead of 0.18).
+ *  - `flowers.flowerDensity` / `fruitDensity` — nothing until maturity.
+ * Everything else — segments, taper, curl/twist (TOTALS over the stem, so
+ * the habit is preserved at every size), lean, waviness, nodes, whorl,
+ * phyllotaxis, ratios, jitter, colors, the fruit BODY — is age-invariant by
+ * construction. A `fruit`/`root` growth (the growth IS one determinate
+ * body) only ages its pedicel: fruit size is phenology, not age.
+ *
+ * The result is clamped into GROWTH_*_RANGES with the same `clampSection`
+ * the authored path uses, so an aged blueprint is a legal blueprint and
+ * `growthValidationErrors` on it is empty.
+ */
+export function ageGrowth(g: GrowthBlueprint, age: number): GrowthBlueprint {
+  // ≥ 1 (and NaN, and +∞) ⇒ THE ADULT ITSELF. Same reference, no copy.
+  if (!(age < 1)) return g;
+  const a = clamp01(age);
+  const h = growthHeightFactor(a);
+  const bs = g.branching.branchStart;
+  const repro = clamp01((a - AGE_REPRODUCTIVE_START) / (1 - AGE_REPRODUCTIVE_START));
+  const stem = clampSection(
+    {
+      ...g.stem,
+      lengthFrac: g.stem.lengthFrac * h,
+      girth: g.stem.girth * Math.sqrt(h),
+      rootFlare: 1 + (g.stem.rootFlare - 1) * h,
+      hardness: g.stem.hardness * Math.sqrt(a),
+    },
+    GROWTH_STEM_RANGES as unknown as Record<string, FieldRange>,
+    g.stem,
+  );
+  const branching = clampSection(
+    {
+      ...g.branching,
+      levels: growthLevelsAt(g.branching.levels, a),
+      branchStart: bs + (0.95 - bs) * AGE_BRANCH_START_LIFT * (1 - a),
+    },
+    GROWTH_BRANCHING_RANGES as unknown as Record<string, FieldRange>,
+    g.branching,
+  );
+  const foliage = clampSection(
+    {
+      ...g.foliage,
+      leafDensity: g.foliage.leafDensity * (AGE_LEAF_DENSITY_AT_0 + (1 - AGE_LEAF_DENSITY_AT_0) * a),
+      leafSizeFrac: g.foliage.leafSizeFrac * (1 + (AGE_LEAF_SIZE_AT_0 - 1) * (1 - a) * (1 - a)),
+    },
+    GROWTH_FOLIAGE_RANGES as unknown as Record<string, FieldRange>,
+    g.foliage,
+  );
+  const flowers = clampSection(
+    { ...g.flowers, flowerDensity: g.flowers.flowerDensity * repro },
+    GROWTH_FLOWER_RANGES as unknown as Record<string, FieldRange>,
+    g.flowers,
+  );
+  return {
+    ...g,
+    fruitDensity: Math.max(0, g.fruitDensity * repro),
+    stem,
+    branching,
+    foliage: { ...foliage, leafColor: g.foliage.leafColor },
+    flowers: { ...flowers, flowerColor: g.flowers.flowerColor },
+  };
+}
+
+/** `ageGrowth` over every growth a blueprint-shaped object carries — the
+ *  call the render seams make (`{ ...bp, growths: … }`). Structurally typed
+ *  so growth.ts stays a leaf module; returns `bp` ITSELF at age ≥ 1, so an
+ *  adult body is not even a fresh object. */
+export function ageGrowths<T extends { growths: GrowthBlueprint[] }>(bp: T, age: number): T {
+  if (!(age < 1)) return bp;
+  return { ...bp, growths: bp.growths.map((g) => ageGrowth(g, age)) };
+}
+
+/** The floor `blueprint.ts`'s `SPINE_RANGES.torsoLengthM.min` puts under a
+ *  torso, repeated here because growth.ts is a LEAF (blueprint.ts imports
+ *  THIS module, so the range table cannot be imported back). The two are
+ *  pinned equal by `plant-growth-stage.test.ts`; the compensation below
+ *  measures the shrink it ACTUALLY achieved, so a clamped torso still
+ *  yields the exact stem length rather than a silently taller plant. */
+export const AGE_TORSO_MIN_M = 0.01;
+
+/**
+ * ⚖️ THE PLANT BODY at `age` — `ageGrowths` plus the NUB.
+ *
+ * `plantBlueprint` stands every plant on a "near-invisible" 0.1 m torso nub
+ * and makes the stem a RATIO of it (`stemLen = stem.lengthFrac × torsoLengthM`,
+ * skeleton.ts). `ageGrowths` alone therefore shrinks the STEM and leaves the
+ * nub at its adult 0.1 m — which on a 0.36 m oak shoot is a brown spindle
+ * taking up a third of the plant (PART 1's defect 2, seen in the lab).
+ *
+ * The fix is not a second height owner: it MOVES the one height factor
+ * (`growthHeightFactor`) off the ratio and onto the thing the ratio
+ * multiplies. The torso shrinks by `h`; each stem's `lengthFrac` is divided
+ * by the shrink that was actually achieved (the torso floor above can bite on
+ * a very young plant), so `lengthFrac × torsoLengthM` — and therefore every
+ * absolute length, radius, curl and leaf in the generated structure — is
+ * IDENTICAL to what `ageGrowths` alone produces. Only the nub moves.
+ *
+ * `age ≥ 1` ⇒ `bp` ITSELF, exactly like `ageGrowths`: the adult body is not
+ * even a fresh object, so a mature bake is byte-identical to one built before
+ * ageing existed. Structurally typed, so growth.ts stays a leaf.
+ */
+export function agePlantBody<T extends {
+  growths: GrowthBlueprint[];
+  spine: { torsoLengthM: number };
+}>(bp: T, age: number): T {
+  if (!(age < 1)) return bp;
+  const torso = bp.spine.torsoLengthM;
+  const shrunk = Math.max(AGE_TORSO_MIN_M, torso * growthHeightFactor(age));
+  // What the torso ACTUALLY lost (1 when there is nothing to divide by).
+  const back = torso > 0 && shrunk > 0 ? torso / shrunk : 1;
+  const lr = GROWTH_STEM_RANGES.lengthFrac;
+  const aged = ageGrowths(bp, age);
+  return {
+    ...aged,
+    spine: { ...bp.spine, torsoLengthM: shrunk },
+    growths: aged.growths.map((g) => ({
+      ...g,
+      stem: {
+        ...g.stem,
+        lengthFrac: Math.min(lr.max, Math.max(lr.min, g.stem.lengthFrac * back)),
+      },
+    })),
+  };
+}
+
 // ── Deterministic per-node hash RNG ──────────────────────────────────────
 // Every stochastic choice is hash(seed, nodePath, channel) — a pure
 // function of the node's position in the tree (the scatter.ts hashCell

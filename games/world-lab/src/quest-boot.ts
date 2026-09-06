@@ -55,7 +55,7 @@ import type { ObjectiveSummary } from "@shared/world-engine/solver/space";
 import type { GoalNode } from "@shared/world-engine/solver/types";
 import { labImageResolver } from "./glyph-resolver";
 import { homesteadWildMix, mulberry, wildMixForBiome, WILD_SIDE, type WildFauna } from "./wilderness-boot";
-import type { BoardIsland } from "./board-island";
+import type { BoardIsland, NounEntry } from "./board-island";
 
 export interface QuestBoot {
   dispose(): void;
@@ -212,7 +212,11 @@ function bootQuestGame(
       board.setCity([]);
     },
     board(view: QuestBoardView) { board.set(view); },
-    nouns(list: { symbol: string; label: string }[]) { board.setNouns(list); },
+    // ⚖️ ONE WORD BANK: the host pushes the INDIVIDUAL PEOPLE (household
+    // members, pets — `individual: true`), and the island merges them under the
+    // default world-spec lexicon. Typed as the island's own entry so the
+    // contacts flag survives the seam instead of being widened away.
+    nouns(list: NounEntry[]) { board.setNouns(list); },
     pocket(items: Parameters<BoardIsland["setPocket"]>[0]) { board.setPocket(items); },
     family(members: Parameters<BoardIsland["setFamily"]>[0]) { board.setFamily(members); },
     city(chips: Parameters<BoardIsland["setCity"]>[0]) { board.setCity(chips); },
@@ -278,8 +282,18 @@ function bootQuestGame(
       // LOD measures from it. One frame of latency by construction (this hook
       // runs before the ladder re-poses), which the tier bands' own hysteresis
       // absorbs.
+      // …and its HEIGHT is `cam.position.y` (user ruling 2026-09-06, "use true
+      // 3D camera distance") — in this frame the sim ground IS y = 0, so the
+      // camera's own y is exactly the `z` the band wants.
+      // …and its LENS (user ruling C4, 2026-09-06): fov + viewport height, so
+      // the per-body tier is picked by the share of the SCREEN a body fills
+      // rather than by metres — one ladder for the walker, the orbit and the
+      // dollhouse. THREE's `fov` is the VERTICAL angle, in degrees.
       const cam = host?.camera;
-      if (cam) host?.setViewPoint({ x: cam.position.x, y: cam.position.z });
+      if (cam) host?.setViewPoint({
+        x: cam.position.x, y: cam.position.z, z: cam.position.y,
+        fovRad: (cam.fov * Math.PI) / 180, viewportH: canvas.clientHeight || 1,
+      });
       if (!ladder) return;
       // INTERIORS FOLLOW WHETHER A REAL BODY IS IN THE HOUSE — never the rung
       // alone, and never the glide's parked stand-in (the planet path's rule,
@@ -907,7 +921,11 @@ export function bootTownEmbedded(
       winEl.hidden = true;
     },
     board(view: QuestBoardView) { board.set(view); },
-    nouns(list: { symbol: string; label: string }[]) { board.setNouns(list); },
+    // ⚖️ ONE WORD BANK: the host pushes the INDIVIDUAL PEOPLE (household
+    // members, pets — `individual: true`), and the island merges them under the
+    // default world-spec lexicon. Typed as the island's own entry so the
+    // contacts flag survives the seam instead of being widened away.
+    nouns(list: NounEntry[]) { board.setNouns(list); },
     pocket(items: Parameters<BoardIsland["setPocket"]>[0]) { board.setPocket(items); },
     family(members: Parameters<BoardIsland["setFamily"]>[0]) { board.setFamily(members); },
     city(chips: Parameters<BoardIsland["setCity"]>[0]) { board.setCity(chips); },
@@ -1130,7 +1148,11 @@ export function bootWildernessQuest(
       winEl.hidden = true;
     },
     board(view: QuestBoardView) { board.set(view); },
-    nouns(list: { symbol: string; label: string }[]) { board.setNouns(list); },
+    // ⚖️ ONE WORD BANK: the host pushes the INDIVIDUAL PEOPLE (household
+    // members, pets — `individual: true`), and the island merges them under the
+    // default world-spec lexicon. Typed as the island's own entry so the
+    // contacts flag survives the seam instead of being widened away.
+    nouns(list: NounEntry[]) { board.setNouns(list); },
     pocket(items: Parameters<BoardIsland["setPocket"]>[0]) { board.setPocket(items); },
     family(members: Parameters<BoardIsland["setFamily"]>[0]) { board.setFamily(members); },
     city(chips: Parameters<BoardIsland["setCity"]>[0]) { board.setCity(chips); },

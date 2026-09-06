@@ -202,10 +202,27 @@ export class UserService {
     const base = this.formatUserForResponse(user);
     try {
       const { licenseService } = await import("./licenseService");
-      const { permissions, licenseType, isTrial, trialExpiresAt } = instituteId
+      const info = instituteId
         ? await licenseService.getInstituteLicenseInfo(instituteId, user.isSystemAdmin)
         : await licenseService.getUserLicenseInfo(user.id, user.isSystemAdmin);
-      return { ...base, licensePermissions: permissions, licenseType, isTrial, trialExpiresAt };
+      return {
+        ...base,
+        licensePermissions: info.permissions,
+        licenseType: info.licenseType,
+        isTrial: info.isTrial,
+        trialExpiresAt: info.trialExpiresAt,
+        // Billing/paywall fields. `licenseSubscriptionType` is NOT named
+        // `subscriptionType`: that key is already taken on this payload by the
+        // USER's own tier ('free' | 'premium' | 'enterprise', read by
+        // userAuth.ts), and a license's 'monthly' | 'yearly' silently
+        // overwriting it would change who counts as premium.
+        licenseId: info.licenseId,
+        licenseStatus: info.status,
+        licenseExpiresAt: info.expiresAt,
+        licensePriceAmount: info.priceAmount,
+        licensePriceCurrency: info.priceCurrency,
+        licenseSubscriptionType: info.subscriptionType,
+      };
     } catch (err) {
       console.error("Failed to fetch license permissions:", err);
       return base;

@@ -163,6 +163,83 @@ export interface FellRow {
   haul?: { agreementId: string; to: string; destWord: string; head: string; units: number };
 }
 
+/**
+ * ⚖️ THE BILL ID OF A SPOKEN MAKE — `craft:<houseIndex>` (Stage 2d).
+ *
+ * 🚨 NOT `orderSiteId(ord)`, for the felling designation's reason exactly: a
+ * `CraftJob` has no construction ordinal, it is keyed by the HOUSE INDEX whose
+ * one craft slot it occupies (`TownDeltas.craftJobs`), and borrowing a
+ * construction number would make `contributeCrewAt` count a body at a bench as
+ * a body on a build site of the same ordinal. The house index IS the job's
+ * identity — one slot per house — so it is also what gives the bench its one
+ * seat for free.
+ *
+ * (The community slot is `COMMUNITY_CRAFT_HI`, a negative index, and spells
+ * itself `craft:-1`. That is a legal key and a distinct one, which is the whole
+ * requirement.)
+ */
+export const CRAFT_SITE_PREFIX = "craft:";
+export function craftSiteId(houseIndex: number): string {
+  return `${CRAFT_SITE_PREFIX}${houseIndex}`;
+}
+/** The house index of a `craft:` site id, or null when the id is some other
+ *  family's. Total — the director switches on it. */
+export function hiOfCraftSiteId(siteId: string): number | null {
+  if (!siteId.startsWith(CRAFT_SITE_PREFIX)) return null;
+  const tail = siteId.slice(CRAFT_SITE_PREFIX.length);
+  // 🚨 `Number("")` IS 0, so an empty tail would answer HOUSE 0 — the bare
+  // prefix must be a non-answer, not the first house's craft slot.
+  if (!/^-?\d+$/.test(tail)) return null;
+  return Number(tail);
+}
+
+/**
+ * ⚖️ A SPOKEN `make`, READ AS A BILL (Stage 2d) — the row the BOOKKEEPER hands
+ * the DECIDER for a standing `CraftJob`, and the reason it lives in the seam:
+ * the construction director owns the job and the reader consumes it, and
+ * neither imports the other.
+ *
+ * 🚨 THE PROBLEM IT ANSWERS. A craft's gathering was a HOUSEHOLD PUSH LANE —
+ * one named body (`resident_<hi>_0`) carrying one draw per sweep, and only
+ * while its house was watched — so the player's own `make cart` on a founded
+ * frontier was served DEAD LAST behind every town-wide pull slice (2c: t≈440,
+ * after all 16 site hauls), and on a quiet frontier not at all (measured: 0
+ * deliveries in 408 s; 2b saw 0 in 900 s). Under the capability the materials
+ * become an ordinary bill and the labour an ordinary seat, so the SAME argmax
+ * that staffs a house staffs the bench.
+ *
+ * ⚖️ SPOKEN ONLY. The household's inventory rotation and its program crafts
+ * are the family's own appetite, not the settlement's; they keep the direct
+ * haul untouched (C4: "v1 IS THE SPOKEN `make cart`"). So this list is empty
+ * off the capability AND empty for every automated job.
+ */
+export interface CraftBillRow {
+  /** `craftSiteId(hi)` — what the seat and the presence count key on. */
+  siteId: string;
+  /** The house index the job's slot belongs to (negative = the community slot). */
+  hi: number;
+  /** The container the inputs pile into and the finished stack lands in. */
+  spotId: string;
+  /** The spot's own world anchor — where a haul delivers. */
+  at: { x: number; y: number };
+  /** head → units still wanted ON THE SPOT, ignoring hauls in flight (the
+   *  reader nets those itself with `pileShortfall`, exactly as it does for a
+   *  construction pile, so both families press on what has LANDED). */
+  missing: Record<string, number>;
+  /** head → the recipe's own folded total: the urgency denominator. */
+  required: Record<string, number>;
+  /** The dwell this row offers RIGHT NOW, or null when it is not workable yet
+   *  (materials still short) or not workable any more (the job is gone).
+   *  `leftS` is the labour still owed in seconds — the same currency a build
+   *  row's `left × dayLengthS` is in. */
+  work: { at: { x: number; y: number }; leftS: number; urgency: number } | null;
+  /** The place word a haul to the spot announces ("house", "yard"). */
+  destWord: string;
+  /** Always true today (only spoken jobs are enumerated) — carried rather than
+   *  assumed so the weight is read where every other bill reads it. */
+  spoken: boolean;
+}
+
 /** ⚖️ THE BILL ID OF A COLLECT — `collect:<endpoint>` (item 1e). A collect has
  *  no construction row either: its whole bill is "this loose thing belongs in
  *  that container", so it is keyed by the DESTINATION, and two bodies asked to
@@ -224,6 +301,14 @@ export interface ContributeBill {
   /** The bill's issuer cid — read ONLY through `relationToward`. 🚨 Never a
    *  weight by itself: every civic sweep posts as LOCAL_PLAYER_CID. */
   issuer: string;
+  /** ⚖️ THE SEAT THIS BODY IS STANDING ON (Stage 2, S1) — the ledger endpoint
+   *  its `pull:<cid>` claim is spoken on (`seatKey`). Present ⇔ this slice
+   *  holds a place at the work: a build bay, a bench, a tree. Absent for a
+   *  HAUL (the reservation IS a haul's bound — S1/co:598) and for any slice
+   *  that lost its seat and never got another. Carried on the pursuit so the
+   *  sweep, the re-issue and the transcript can ask a BODY which seat it holds
+   *  without walking the ledger. */
+  seatKey?: string;
 }
 
 /** The reservation-ledger HOLDER a puller books its slice under. One holder
@@ -237,6 +322,140 @@ export function pullHolder(cid: string): string {
 }
 export function cidOfPullHolder(holder: string): string | null {
   return holder.startsWith(PULL_HOLDER_PREFIX) ? holder.slice(PULL_HOLDER_PREFIX.length) : null;
+}
+
+// ── ⚖️ SEATS, NOT CAPS (Stage 2, rulings S1–S5) ─────────────────────────────
+//
+// USER RULING (#50/#51): caps become SEATS. A cap is a number somebody wrote
+// down; a seat is a PLACE — a bay of the shell, the bench, the tree — and a
+// body that finds it taken takes the next link instead. So "how many may work
+// here" stops being an integer and becomes a question about the work itself.
+//
+// 🚨 S1 — A SEAT IS A LEDGER CLAIM ON A SYNTHETIC ENDPOINT, NEVER ON A WORLD
+// OBJECT. The claim is `reserve(pullHolder(cid), seatKey, "@tool", 1)`, and
+// `seatKey` is `"<siteId>#seat<i>"` — a string NOTHING in the world answers to.
+// A `@tool` unit on the bench OBJECT would be read by every `toolClaimed` /
+// `freeUnits` consumer there is (`bagHolder`, `resolveMaterials` on the craft
+// rotation), which is exactly the cross-talk that would move the dollhouse
+// bench: the craft rotation resolves materials at the very spot a refine seat
+// would sit on. A `#seat` endpoint is read by nothing but the seat code.
+//
+// ⚖️ LEDGER-BACKED, not a session map, because the occupancy record has to
+// survive a reload, THREE decider entry points (`decideContribution` /
+// `idleContribute` / `stepSettlerContribution` are separate sweeps) and a peer.
+// Stage 1's `seatedOn` was a scan of `session.pursuits` — session-local, and
+// blind to everything that is not a live pursuit.
+
+/** The glyph a seat claim is spoken under — reservations.ts's
+ *  `TOOL_CLAIM_GLYPH`, spelled out because this file is IMPORT-FREE by law
+ *  (the header states why). The two are pinned equal in
+ *  `pull-labor-seats.test.ts`, so they cannot drift in silence. */
+export const SEAT_CLAIM_GLYPH = "@tool";
+
+/**
+ * A CLAIMABLE PLACE TO STAND AND WORK.
+ *
+ * `key` is the ledger ENDPOINT the claim is spoken on; `at` is where the body
+ * actually stands; `index` is stable in `shellGhostPieces` build order (floor,
+ * then walls, then roof) — and INDEX is what a body claims, never a point,
+ * because the offered set MOVES as labour banks (S2: a bay raised under a body
+ * simply drops out of the offer, and the body re-claims the next free index).
+ */
+export interface WorkSeat {
+  siteId: string;
+  link: ContributeLink;
+  key: string;
+  at: { x: number; y: number };
+  index: number;
+}
+
+/**
+ * THE RESERVATION LEDGER, structurally typed — the seam stays import-free, so
+ * it names the four methods it uses rather than importing `ReservationLedger`.
+ *
+ * ⚠️ THE FIELD NAMES ARE THE REAL LEDGER'S (`endpoint` / `qty`), not a prettier
+ * pair: structural assignability is the whole mechanism here, and a row shaped
+ * `{ objId, units }` would simply refuse the real `ReservationRow`.
+ */
+export interface SeatLedger {
+  reserve(holder: string, endpoint: string, glyph: string, qty: number): unknown;
+  release(holder: string): void;
+  reservedUnits(endpoint: string, glyph: string): number;
+  holderRows(holder: string): ReadonlyArray<{ endpoint: string; glyph: string; qty: number }>;
+}
+
+/** `"<siteId>#seat<i>"` — the ONE spelling. A build bay's `i` is its index in
+ *  `shellGhostPieces` order; a bench and a tree have exactly one seat, `i = 0`
+ *  (so a mark's seat is `fell:<featureId>#seat0`). */
+export function seatKey(siteId: string, index: number): string {
+  return `${siteId}#seat${index}`;
+}
+
+/** Is this seat spoken for — by ANYBODY, this body included? */
+export function seatTaken(ledger: SeatLedger, key: string): boolean {
+  return ledger.reservedUnits(key, SEAT_CLAIM_GLYPH) > 0;
+}
+
+/** Every seat this body currently holds, in claim order. One holder per body
+ *  by construction (`pull:<cid>`), so this is the whole of its occupancy. */
+export function heldSeats(ledger: SeatLedger, cid: string): string[] {
+  return ledger
+    .holderRows(pullHolder(cid))
+    .filter((r) => r.glyph === SEAT_CLAIM_GLYPH && r.qty > 0)
+    .map((r) => r.endpoint);
+}
+
+/** Does THIS body hold this exact seat? */
+export function seatHeldBy(ledger: SeatLedger, cid: string, key: string): boolean {
+  return ledger
+    .holderRows(pullHolder(cid))
+    .some((r) => r.endpoint === key && r.glyph === SEAT_CLAIM_GLYPH && r.qty > 0);
+}
+
+/**
+ * ⚖️ TAKE IT — READ AND RESERVE IN ONE SYNCHRONOUS STEP (the Stage 1 haul law,
+ * contribute.ts:744-751). `reserve` CANNOT FAIL (reservations.ts: it merges,
+ * there is no stack check and no compare-and-swap), so the free-check and the
+ * claim must be one expression with nothing between them, and the callers must
+ * visit bodies in one sorted-cid pass. Returns false ⇔ somebody else got there
+ * first.
+ *
+ * IDEMPOTENT FOR ITS OWN HOLDER: a body re-issuing its standing dwell asks for
+ * the seat it is already on and is told yes, rather than being bounced onto a
+ * second bay and holding two.
+ */
+export function claimSeat(ledger: SeatLedger, cid: string, key: string): boolean {
+  if (seatHeldBy(ledger, cid, key)) return true;
+  if (seatTaken(ledger, key)) return false;
+  ledger.reserve(pullHolder(cid), key, SEAT_CLAIM_GLYPH, 1);
+  return true;
+}
+
+/** ⚖️ S4 — DROP EVERY SEAT THIS BODY HOLDS. One holder per body, so this is
+ *  one `release`, and it is idempotent exactly like `release(agrHolder)`:
+ *  call it on EVERY release door, unconditionally, rather than reasoning about
+ *  which door a pursuit left by. */
+export function releaseSeats(ledger: SeatLedger, cid: string): void {
+  ledger.release(pullHolder(cid));
+}
+
+/**
+ * ⚖️ S2 — HOW MANY BAYS LABOUR HAS ALREADY RAISED: `floor(f × n)`.
+ *
+ * 🚨 THERE IS NO PER-BAY BUILD RECORD ANYWHERE. A shell rises as a SCALAR
+ * fraction (`labor / buildDays`), so a bay has a position but no "raised" bit —
+ * which means the raised set is DERIVED, and it moves under the bodies as the
+ * fraction climbs. That is the taper the ruling wants: many hands on the first
+ * courses, one on the ridge, with nobody scheduling it.
+ *
+ * Clamped both ways. `f < 1` on any unfinished row, and `floor(f × n) ≤ n - 1`
+ * there, so an unfinished site ALWAYS offers at least one seat — the site can
+ * never starve itself of the hands that finish it.
+ */
+export function raisedBays(laborFraction: number, bayCount: number): number {
+  if (!(bayCount > 0)) return 0;
+  const f = Math.max(0, Math.min(1, laborFraction));
+  return Math.max(0, Math.min(bayCount, Math.floor(f * bayCount)));
 }
 
 /** The structural shape every consumer needs of a pursuit to recognise a

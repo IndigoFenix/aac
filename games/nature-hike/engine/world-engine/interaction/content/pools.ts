@@ -299,6 +299,27 @@ export const POOLS: Record<string, PoolDef> = {
           pt: { w: "bolsa", g: "f" },
         },
       },
+      // THE CART — the third portable container (kernel/town/containers.ts) and
+      // the only one anybody can MAKE. It belongs HERE, with the things you put
+      // things in, and emphatically NOT in the `vehicle` pool: that pool's
+      // `startable-movable` affordance feeds `depictableHeads()`, so a cart
+      // filed there would become dollable and "make cart" would quietly produce
+      // `cart.toy` — a toy cart — instead of the thing the child asked for.
+      //
+      // ONE WORD, no `wagon`/`trolley` sibling: a category tab lists its WHOLE
+      // category, so a synonym is a second button reading the same meaning.
+      {
+        id: "cart",
+        label: "Cart",
+        iconRef: "🛒",
+        symbol: "cart",
+        words: {
+          en: { w: "cart" },
+          he: { w: "עגלה", g: "f" },
+          es: { w: "carreta", g: "f" },
+          pt: { w: "carroça", g: "f" },
+        },
+      },
     ],
   },
   // AAC stubs: the table setting. `bowl` is a STATION (the kitchen fixture) and

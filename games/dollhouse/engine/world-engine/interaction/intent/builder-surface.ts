@@ -63,9 +63,9 @@ import {
 } from "../../kernel/town/programs.js";
 import { AFFORDANCE_VERBS, buildConcepts } from "../content/concepts.js";
 import { listSpecies } from "../../creatures/species.js";
-import { PLACE_STUBS, specWordHeads } from "../content/words.js";
+import { ITEM_STUBS, PLACE_STUBS, specWordHeads } from "../content/words.js";
 import { placeGroupOf } from "../content/vocab-order.js";
-import { CORE_PEOPLE } from "../../object-properties.js";
+import { CORE_BOARD_NOUNS, CORE_PEOPLE } from "../../object-properties.js";
 import { clusterIdsOf } from "../content/noun-clusters.js";
 import { FURNITURE_ITEMS, STATION_ACTS } from "../../kernel/town/stations.js";
 import { fixtureWord } from "../../types.js";
@@ -272,16 +272,31 @@ const LEX_KEYS = Object.keys(LEXICON);
 //   1. CONCEPTS  — `buildConcepts()`, the joined taught vocabulary (pool
 //      members + category-tagged symbols, with affordances already derived from
 //      pool affordance, category and species).
-//   2. PEOPLE    — the kinship and role frame words (`CORE_PEOPLE`), which have
-//      no spec row by law and would otherwise reach no board.
-//   3. FIXTURES  — the built world's stations (`FURNITURE_ITEMS`), spoken as
+//   2. SPECIES   — the animals, the plants and the food bodies: every `creature`
+//      / `plant` / `fruit` row the world can say (one with no lexeme anywhere is
+//      a body the builder makes, not a word a child presses).
+//   3. FRAME WORDS — the kinship and role words (`CORE_PEOPLE`) and the other
+//      core-concept buttons (`CORE_BOARD_NOUNS` — yard, town, building,
+//      clothes), which have no spec row BY LAW and would otherwise reach no
+//      board.
+//   4. FIXTURES  — the built world's stations (`FURNITURE_ITEMS`), spoken as
 //      `fixtureWord`, with the verbs their kind affords (`STATION_ACTS`).
-//   4. PLACES    — every room and building the programs declare, plus the place
-//      words the town has no program for yet (`PLACE_STUBS`).
+//   5. PLACES    — every room and building the programs declare, plus the place
+//      words no program row carries (`PLACE_STUBS`).
+//   6. ITEM STUBS — the objects no registry row carries either: the build
+//      materials and the wardrobe garment (`ITEM_STUBS`).
 //
 // Everything else follows from the row: properties through `propertiesOf`,
 // words through the lang layer's spec overlay, rank through `nounRank`. Adding a
 // spec row adds a button, in one edit, in four languages.
+//
+// ⚖️ THIS IS THE WHOLE BANK, IN GAME AND OUT (user law, 2026-09-06): "the word
+// bank in the sentence builder should always be the same with a default
+// world-spec lexicon, even outside the game — the context is irrelevant. The
+// only exception is the individual people list." A quest host adds NAMES and
+// nothing else (`quest-host.ts pushKnownNouns`); a word the game needs is added
+// HERE, spec-side, never pushed from inside a scope. Steps 2c, 3b and 6 are the
+// words that came back the other way when that ruling landed.
 
 /** The verbs a thing's PROPERTIES imply (the quest host's own affordance
  *  derivation, mirrored) — mechanics and board agree by construction. */
@@ -404,10 +419,46 @@ function walkDefaultNouns(): BuilderNounEntry[] {
     push(entry(sp.id, "item", ["see", "want", "cut"]));
   }
 
+  // 2c. The FOOD BODIES — the same registry, the third kind (2026-09-06). ⚖️
+  //    EVERY FOOD GLYPH IS A `fruit` SPECIES AND ITS SOURCE IS A `plant` ONE
+  //    (the law `world-engine-creatures.test.ts` pins), so what a child eats is
+  //    filed here and the walk above misses it. Most `fruit` rows are already
+  //    reached as pool members (apple, banana, grape); `carrot` and the wild
+  //    larder (`berry`, `nut`, `onion`) are NOT in a pool — deliberately, since
+  //    a new pool row shifts a seeded quest draw — so before the ONE WORD BANK
+  //    ruling they reached a board only when a quest host happened to push one
+  //    it had seen lying in a house.
+  //
+  //    SAYABLE, not merely defined, exactly as the plant walk reads it: a row
+  //    with no lexeme anywhere would put the raw English head on a Hebrew
+  //    board, which is the whole failure `builder-coverage.ts` exists to catch.
+  //    That guard is what keeps `pear`, `strawberry`, `pumpkin`, `pineapple`
+  //    and `beet` out — they are bodies the world can grow, not words it can
+  //    say, and each joins the day it is translated.
+  for (const sp of listSpecies()) {
+    if (sp.kind !== "fruit") continue;
+    if (!sp.words && !specHeads.has(sp.id)) continue;
+    const props = propertiesOf(sp.id);
+    push(entry(sp.id, "item", [...ITEM_BASELINE, ...propertyAffords(props)], props));
+  }
+
   // 3. The people a child names. Frame words with no spec row by law, so they
   //    are the one group this walk cannot read off a registry.
   for (const person of CORE_PEOPLE) {
     push(entry(person, "creature", ["talk", "help", "hug", "give", "see", "want"], []));
+  }
+
+  // 3b. The other frame nouns — the yard, the town, a building, clothes. The
+  //    same law as the people above (no registry defines a core concept), and
+  //    the same reason they are listed: without them the ONE WORD BANK would be
+  //    missing words the quest host used to push from inside a scope.
+  for (const { head, kind } of CORE_BOARD_NOUNS) {
+    const props = propertiesOf(head);
+    push(
+      kind === "place"
+        ? entry(head, "place", ["go"], props)
+        : entry(head, "item", [...ITEM_BASELINE, ...propertyAffords(props)], props),
+    );
   }
 
   // 4. The built world. A station is spoken as its `fixtureWord` (the chest row
@@ -421,6 +472,17 @@ function walkDefaultNouns(): BuilderNounEntry[] {
 
   // 5. Places.
   for (const place of placeBuilderNouns()) push(place);
+
+  // 6. The things whose defining registry carries no row for them — the build
+  //    materials and the one garment (`ITEM_STUBS`, words.ts). Their words live
+  //    in the ITEM_WORDS catalog for the reason that catalog exists (products.ts
+  //    mints a material glyph once per SOURCE, so the word cannot ride a row),
+  //    and before the ONE WORD BANK ruling only a town-scoped host push put them
+  //    on a board.
+  for (const symbol of ITEM_STUBS) {
+    const props = propertiesOf(symbol);
+    push(entry(symbol, "item", [...ITEM_BASELINE, ...propertyAffords(props)], props));
+  }
 
   return out;
 }

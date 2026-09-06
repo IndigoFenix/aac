@@ -739,6 +739,7 @@ export const ar: Translations = {
       barrel: "برميل",
       basket: "سلة",
       satchel: "حقيبة",
+      cart: "عربة",
       lamp: "مصباح",
       window: "نافذة",
       heater: "سخان",

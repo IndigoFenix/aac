@@ -297,7 +297,7 @@ export function floraTreesNear(body: CelestialBody, world: THREE.Vector3, r: num
 
 // ── Per-tile state ──────────────────────────────────────────────────────────
 /** Which representation a tile is drawing. Ordered far → near. */
-type FloraTier = "billboard" | "stick" | "real";
+export type FloraTier = "billboard" | "stick" | "real";
 
 interface Tile {
   /** Tile address (`face:tx:ty`) — prefix of its instances' twin keys. */
@@ -344,7 +344,37 @@ export interface FloraField {
    *  un-hide another's trees. A tile streaming in later reads the CURRENT
    *  set at build time, so it builds already-thinned. */
   setTwinHidden(hidden: ReadonlySet<string>): void;
+  /** 🐞 DEBUG-ONLY (`__flora.audit` in world-lab): every TREE instance the
+   *  field currently holds within `r` of a world point, with the rung its TILE
+   *  is drawing and whether the finer rungs are warmed. Pure read — it
+   *  materialises nothing, hides nothing and touches no matrices; the tier is
+   *  reported, never decided here. Cheap enough for a ~5 Hz overlay (a walk of
+   *  the loaded tiles' placement arrays), never called on the sim path. */
+  debugTrees(nearWorld: THREE.Vector3, r: number): FloraTreeDebug[];
   dispose(): void;
+}
+
+/** 🐞 One row of `FloraField.debugTrees` — what the FIELD is doing with one
+ *  streamed instance right now. `tier` is the TILE's rung (the field bands per
+ *  TILE, not per instance — a 200 m tile against a 260 m NEAR_R is why two
+ *  trees at the same camera distance can draw at different rungs);
+ *  `stickWarm`/`realWarm` say whether that rung's InstancedMesh has been built
+ *  yet, so a tile still on billboards because RUNG_BUILD_BUDGET has not reached
+ *  it is distinguishable from one that is correctly far. */
+export interface FloraTreeDebug {
+  /** Instance key `face:tx:ty:i` — the twin/suppression address. */
+  key: string;
+  /** Tile address `face:tx:ty`. */
+  tile: string;
+  world: THREE.Vector3;
+  tier: FloraTier;
+  stickWarm: boolean;
+  realWarm: boolean;
+  /** In the one per-instance mask (a twin/town stand/felled mark/depletion
+   *  stands here) ⇒ drawn at scale 1e-6, i.e. not drawn at all. */
+  hidden: boolean;
+  /** The per-placement scale jitter (0.85–1.35). */
+  v: number;
 }
 
 export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialBody): FloraField | null {
@@ -574,6 +604,27 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
         // targetH = geomH: trees render at native model size (scale = v).
         for (const o of tile.oak) writeMatrices(o.mesh, pls, o.geomH, o.geomH, oakHiddenAt(tKey));
       }
+    },
+    debugTrees(nearWorld, r) {
+      const out: FloraTreeDebug[] = [];
+      const w = new THREE.Vector3();
+      for (const [tKey, tile] of tiles) {
+        const pls = tile.placements.get(FLORA_TREE_SPECIES);
+        if (!pls || !pls.length) continue;
+        tile.group.updateWorldMatrix(true, false);
+        for (let i = 0; i < pls.length; i++) {
+          const pl = pls[i]!;
+          w.set(pl.x, pl.y, pl.z).applyMatrix4(tile.group.matrixWorld);
+          if (w.distanceTo(nearWorld) > r) continue;
+          const key = `${tKey}:${i}`;
+          out.push({
+            key, tile: tKey, world: w.clone(), tier: tile.tier,
+            stickWarm: tile.sticks !== null, realWarm: tile.real !== null,
+            hidden: twinHidden.has(key), v: pl.v,
+          });
+        }
+      }
+      return out;
     },
     dispose() {
       for (const [key, tile] of tiles) disposeTile(tile, key);

@@ -38,11 +38,23 @@ import { headOf } from "../../variations.js";
  *   - `tab:<cat>`      a lexical-category tab lists its WHOLE category
  *                      (`LEX_KEYS.filter(cat === tab)`), so every LEXICON key
  *                      under a builder category is one press away.
- *   - `things:*`       `defaultBuilderNouns()` — the curated out-of-game
- *                      objects plus every room/building the programs declare.
- *                      In-game nouns are host-pushed and carry their own
- *                      spec-side words (pinned by the spec-words oracle), so
- *                      they are not re-derived here.
+ *   - `things:*`       `defaultBuilderNouns()` — the spec walk: the taught
+ *                      vocabulary, the species, the frame words, the stations,
+ *                      every room/building the programs declare, and the item
+ *                      stubs.
+ *
+ *                      ⚖️ THAT IS NOW THE WHOLE NOUN BANK (ONE WORD BANK, user
+ *                      law 2026-09-06). This note used to say in-game nouns
+ *                      "are host-pushed … so they are not re-derived here",
+ *                      and that exemption was a blind spot with a bug in it:
+ *                      the quest host pushed a scene's furniture, structures,
+ *                      materials and area words from inside a scope, so a word
+ *                      could be missing from a real child's board (the frontier
+ *                      lost every furniture word behind a `session.dollhouse`
+ *                      gate) with every validator green. A host pushes NAMES
+ *                      now — and a name has no lexeme in any ruleset by
+ *                      definition, so there is nothing left for this module to
+ *                      exempt: what it derives is what a child can press.
  *   - `modifier:<axis>` the descriptor rail, `AXIS_WORDS`, via `baseWord`.
  *   - `group-chip:*`   a cluster chip wears `baseWord(GROUP_LABEL_HEAD[id] ?? id)`,
  *                      and the property clusters ARE their own ids. Every chip

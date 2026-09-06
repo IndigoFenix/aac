@@ -23,6 +23,7 @@
 // structures: the caller (intent-compile) holds the two answers and picks.
 
 import { listSpecies } from "../../creatures/species.js";
+import { portableCraftOf } from "../../kernel/town/containers.js";
 import {
   FURNITURE_ITEMS,
   furnitureGlyph,
@@ -87,12 +88,21 @@ const CRAFTABLE_FURNITURE: ReadonlySet<string> = new Set(
 
 /**
  * The GLYPH "make <symbol>" produces, or null when the symbol names nothing
- * makeable. Three families, checked in order of specificity:
+ * makeable. Four families, checked in order of specificity:
  *
  *   1. an AUTHORED TOY  → the toy, in its default material (`ball.material_cloth`)
  *   2. a CRAFTABLE PIECE of furniture → its unplaced stack glyph (`furn.chair`)
  *   3. anything DEPICTABLE → a DOLL of it (`rabbit.toy.material_cloth`) — this is
  *      "make + animal means make a toy of that animal" (toys-and-song-expansion.md)
+ *   4. a PORTABLE CONTAINER with a recipe → the bag itself (`cart`)
+ *
+ * ⚠️ FAMILY ORDER IS LOAD-BEARING FOR ④. A bag is checked LAST, so a head that
+ * is ALSO dollable would come back as a toy of itself. `cart` is safe because
+ * the cart lives in the `container` pool (affordance `openable`), NOT the
+ * `vehicle` pool — `depictableHeads()` reads `receptive-npc` and
+ * `startable-movable` only. Filing a cart as a vehicle would silently make
+ * "make cart" produce `cart.toy`: a toy cart, before any container branch is
+ * ever consulted. The pin lives in `server/tests/world-engine/cart.test.ts`.
  *
  * The material is the recipe's DEFAULT, because no material word is speakable
  * yet: `wood` and `cloth` have no glyph records (they are part of the M4 motif
@@ -116,6 +126,11 @@ export function makeableGlyph(symbol: string, material?: string): string | null 
       material && DOLL_RECIPE.materials.includes(material) ? material : DOLL_RECIPE.materials[0];
     return dollGlyph(symbol, m);
   }
+  // ④ A BAG. It makes as ITSELF — a cart is a cart, not `furn.cart` and not a
+  // toy — because a portable container is already a whole item everywhere else
+  // in the game (`itemObjectSpec`, `idleBagsFor`, the put-down): giving it a
+  // storage prefix here would be the only place it wore one.
+  if (portableCraftOf(symbol)) return symbol;
   return null;
 }
 
@@ -186,6 +201,20 @@ export function craftRecipeOf(
       consumes: def.craft.consumes,
       ...(def.craft.at ? { at: def.craft.at } : {}),
       label: furnKind,
+    };
+  }
+  // ④ THE BAG BRANCH — checked before the toy fallback so a bag head can never
+  // be reinterpreted as a doll's material. `basket` reaches here and falls
+  // straight through: it has no `craft` row, which is the honest "no weaver
+  // yet" rather than a recipe nobody authored.
+  const bag = portableCraftOf(glyph);
+  if (bag) {
+    return {
+      // The ORDER's glyph, facets and all — the same rule the toy branch keeps.
+      produces: glyph,
+      consumes: bag.consumes,
+      ...(bag.at ? { at: bag.at } : {}),
+      label: spokenWord(glyph),
     };
   }
   const head = headOf(glyph);

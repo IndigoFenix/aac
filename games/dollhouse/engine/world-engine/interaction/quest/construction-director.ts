@@ -187,11 +187,17 @@ import {
 // `isContributePursuit` is the ONE test that a body chose a bill and is
 // working it. The director imports no quest-host type to ask either.
 import {
+  craftSiteId,
+  hiOfCraftSiteId,
   isContributePursuit,
   pullLaborOn,
+  raisedBays,
+  seatKey,
   CLEAR_SITE_PREFIX,
   type ContributeBill,
+  type CraftBillRow,
   type FellRow,
+  type WorkSeat,
 } from "@shared/world-engine/kernel/town/pull-labor.js";
 import {
   BLOCK_GLYPH,
@@ -828,6 +834,52 @@ export function contributeCrewAt(
     out.push(cid);
   }
   return out.sort();
+}
+
+/**
+ * ⚖️ THE SEATS A BUILD ROW OFFERS RIGHT NOW (task #51 Stage 2, ruling S2) —
+ * the staged ghost bays labour has NOT yet raised, in build order.
+ *
+ * 🚨 DERIVED FROM THE RECT, NEVER FROM THE PAINTED GHOSTS. `computeGhosts` is
+ * OBSERVATION-GATED (`if (!observedRect(...)) continue`), so a seat count read
+ * through `buildGhostsNow` would be ZERO whenever the camera looks away — which
+ * is exactly when the clock arm is supposed to agree with the embodied count.
+ * `shellGhostPieces` is pure geometry over the same rect and the same bill
+ * (block-bill.ts), so the two answers cannot disagree about WHERE the bays are;
+ * they simply disagree about whether anybody is looking, and a seat does not
+ * care.
+ *
+ * 🚨 AND STAGING IS ALL-OR-NOTHING, which is why "staged bays" cannot be read
+ * literally: a row leaves gather only when `stagingMissing` is empty, so on the
+ * first labour tick EVERY bay is staged — 30 of them for the frontier cottage,
+ * against the old `BUILDERS_CAP = 3`. What a bay means once it is BUILT is
+ * "nothing left to do here", so the offered set is the bays still to raise
+ * (`raisedBays`), and it tapers on its own as the fraction climbs.
+ *
+ * Pure and exported so the seat arithmetic can be pinned without a director,
+ * a session or a world.
+ */
+export function seatsOfRect(
+  siteId: string,
+  rect: { x: number; y: number; w: number; h: number },
+  laborFraction: number,
+  opts?: Parameters<typeof shellGhostPieces>[2],
+): WorkSeat[] {
+  const bays = shellGhostPieces(`seat_${siteId}`, rect, opts);
+  const raised = raisedBays(laborFraction, bays.length);
+  const out: WorkSeat[] = [];
+  for (let i = raised; i < bays.length; i++) {
+    const b = bays[i]!;
+    out.push({ siteId, link: "build", key: seatKey(siteId, i), at: { x: b.x, y: b.y }, index: i });
+  }
+  return out;
+}
+
+/** ⚖️ …AND A BENCH IS ONE SEAT (S2). A refine row offers exactly its own work
+ *  point — a second bench row is a second seat, because it is a second bench.
+ *  Kept beside the bay derivation so "how many may work here" has ONE shape. */
+export function benchSeatOf(siteId: string, at: { x: number; y: number }): WorkSeat[] {
+  return [{ siteId, link: "refine", key: seatKey(siteId, 0), at: { x: at.x, y: at.y }, index: 0 }];
 }
 /** Demolition labor, RELATIVE like ANNEX_BUILD_DAYS — tearing a room down
  *  is half of raising one. */
@@ -1868,6 +1920,205 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     );
   }
 
+  /**
+   * ⚖️ WHAT THIS JOB STILL NEEDS ON ITS SPOT (Stage 2d) — the START gate's own
+   * number, hoisted so there is ONE definition of it.
+   *
+   * `stepCraftJob` asks it to decide whether labour may begin; `craftBillsOf`
+   * asks it to say what the BILL wants. A second derivation is exactly how
+   * gather and START drifted apart before ("ONE SHORTFALL, TWO QUESTIONS"), and
+   * a bill that disagreed with the START gate would either stall a covered job
+   * or keep asking for wood nobody needs.
+   *
+   * Someone ELSE's claim on this spot is untouchable (the one-reservation law);
+   * this job's own banked units (the `craftspot:` holder) are exactly what it
+   * consumes. PURE — it reads the container record rather than ensuring one.
+   * In-flight hauls are deliberately NOT counted: the reader nets those with
+   * `pileShortfall` exactly as it does for a construction pile, so both
+   * families press on what has LANDED.
+   */
+  function craftShortfall(session: QuestSession, hi: number, job: CraftJob): Record<string, number> {
+    const spot = session.containerRecords.get(job.spotId)?.stock ?? {};
+    const spotHolder = `craftspot:${hi}`;
+    const ownReserved = (head: string): number => {
+      let n = 0;
+      for (const r of session.reservations.holderRows(spotHolder)) {
+        if (r.endpoint === job.spotId && r.glyph === head) n += r.qty;
+      }
+      return n;
+    };
+    const out: Record<string, number> = {};
+    for (const [g, n] of Object.entries(job.consumes)) {
+      const head = stackHead(g);
+      const othersReserved = Math.max(
+        0,
+        session.reservations.reservedUnits(job.spotId, head) - ownReserved(head),
+      );
+      const have = Math.max(0, stackUnits(spot, head) - othersReserved);
+      if (n > have) out[head] = n - have;
+    }
+    return out;
+  }
+
+  /**
+   * ⚖️ IS THIS BENCH WORKABLE, AND WHERE (Stage 2d) — `buildworkSiteAt`'s craft
+   * twin, and the ONE answer both the seat and the presence gate read.
+   *
+   * `raw` is the point the CRAFTER's presence is measured to (the bench, else
+   * the spot's own anchor — exactly what `stepCraftJob` has always used);
+   * `stand` is the standable ground beside it, because a workbench and a
+   * cupboard are both solid and a body sent to the centre halts against the
+   * face (the `beside()` idiom `refineSpotOf` states from the other side).
+   *
+   * Null ⇔ there is nothing to stand and work at right now: no job, or its
+   * materials are still short. A job already banking labour keeps answering
+   * (`laborStart !== undefined`) so a body that walks away can come back to it.
+   */
+  function craftWorkAt(
+    session: QuestSession,
+    hi: number,
+  ): { raw: { x: number; y: number }; stand: { x: number; y: number }; job: CraftJob } | null {
+    const job = craftJobsOf(session).get(hi);
+    if (!job) return null;
+    const raw = craftBenchOf(session, hi) ?? containerAnchor(session, job.spotId);
+    if (!raw) return null;
+    if (job.laborStart === undefined && Object.keys(craftShortfall(session, hi, job)).length) {
+      return null; // not staged yet — the MATERIAL link is what this bill offers
+    }
+    const centre = session.town?.stage.center ?? session.foundedSite?.at ?? raw;
+    const stand = world
+      ? standPointFor(world.state, job.spotId, raw, centre, DEFAULT_BODY_RADIUS_M)
+      : raw;
+    return { raw, stand: stand ?? raw, job };
+  }
+
+  /**
+   * ⚖️ A SPOKEN `make` IS A BILL (Stage 2d) — the row source the reader reads
+   * a standing `CraftJob` through, so the SAME argmax that staffs a house
+   * staffs the bench.
+   *
+   * 🚨 SPOKEN ONLY, AND ONLY UNDER THE CAPABILITY. The household's inventory
+   * rotation and its program crafts are the family's own appetite and keep the
+   * direct household haul (C4: "v1 IS THE SPOKEN `make cart`"); off the
+   * capability this is `[]` and NOTHING about a craft changes, which is what
+   * holds the dollhouse bench byte-identical.
+   */
+  function craftBillsOf(session: QuestSession): CraftBillRow[] {
+    if (!pullLaborOn(session)) return [];
+    const rows: CraftBillRow[] = [];
+    for (const [hi, job] of craftJobsOf(session)) {
+      if (job.spoken !== true) continue;
+      const at = containerAnchor(session, job.spotId);
+      if (!at) continue; // an unstreamed spot has no place to deliver to
+      const required: Record<string, number> = {};
+      for (const [g, n] of Object.entries(job.consumes)) {
+        const head = stackHead(g);
+        required[head] = (required[head] ?? 0) + Math.max(0, n);
+      }
+      const work = craftWorkAt(session, hi);
+      // The labour still owed, in the currency labour is measured in — the same
+      // reading a build row's `left × dayLengthS` is (`laborRatePerS` inverted).
+      const total = job.laborStart === undefined ? craftLabourSecondsOf(session, hi, job) : job.laborS;
+      const leftS =
+        job.laborStart === undefined
+          ? total
+          : Math.max(0, job.laborStart + job.laborS - session.townClock);
+      rows.push({
+        siteId: craftSiteId(hi),
+        hi,
+        spotId: job.spotId,
+        at,
+        missing: craftShortfall(session, hi, job),
+        required,
+        work: work
+          ? { at: work.stand, leftS, urgency: total > 0 ? Math.max(0, Math.min(1, leftS / total)) : 1 }
+          : null,
+        // Cosmetic only (`issueTransferHaul`'s "where are you going?" word): a
+        // household bench is IN the house, the camp's crate is the yard — and
+        // the yard endpoints answer "yard" for themselves anyway.
+        destWord: hi >= 0 ? "house" : "yard",
+        spoken: true,
+      });
+    }
+    return rows;
+  }
+
+  /** ⚖️ WHO IS WORKING THIS BENCH (Stage 2d) — presence-by-pursuit, 1a's
+   *  contract for build rows applied to the craft slot: a body holding a
+   *  contribute pursuit for THIS craft site and standing within `CRAFT_POSE_R`
+   *  of the work. Never a named household member; never a claim row. */
+  function craftContributorAt(session: QuestSession, hi: number, raw: { x: number; y: number }): string | null {
+    if (!world) return null;
+    for (const cid of contributeCrewAt(session.pursuits, craftSiteId(hi))) {
+      const body = world.state.avatars[avatarIdOf(cid)];
+      if (!body) continue;
+      if (Math.hypot(body.x - raw.x, body.y - raw.y) <= CRAFT_POSE_R) return cid;
+    }
+    return null;
+  }
+
+  /**
+   * 🚨 A CLAIM IS NOT A CARRIER, AT THE BENCH (Stage 2d) — the pile-haul
+   * liveness rule, applied to a craft spot because under the capability a craft
+   * spot IS a bill destination.
+   *
+   * The rule and its constants are the site bills' own (`haulSeenWalking`,
+   * `HAUL_STEP_EPS_M`, `DEFAULT_TASK_TTL_S`, the "nobody came; calling again"
+   * toast); the only reason it did not already cover this row is that the sweep
+   * that states it is gated on PILE destinations, and a craft spot is an
+   * ordinary cupboard. WHY IT MATTERS HERE AND NOT BEFORE: the craft's bill is
+   * FOUR blocks, so ONE body takes the whole of it — `pileShortfall` then nets
+   * that in-flight row against the want and NOBODY ELSE CAN SEE THE BILL. A
+   * carrier that stops walking therefore does not merely slow the cart down, it
+   * ends it (MEASURED on the quiet frontier: `resident_24_0` walked 55 m toward
+   * the yard, halted at (243, 242) with its errand still "active", and held the
+   * cart's whole bill for the rest of the arc — the same shape the 2026-08-13
+   * pile-haul note describes, "a carrier stood on one spot for 1 400 s with
+   * `npcErrandActive` true").
+   *
+   * WALKING = THE BODY MOVED, never "has an errand" — the pile rule's own
+   * wording. A LOADED row is alive by definition. On death the row fails NAMED
+   * and both its claims (the source units, the basket) go back on the shelf, so
+   * nothing can be double-drawn: the next reader sees the shortfall honest
+   * again and any body may take it — usually from somewhere the walk works.
+   */
+  function sweepCraftHauls(session: QuestSession, job: CraftJob): void {
+    if (!world) return;
+    for (const a of session.transfers.active()) {
+      if (a.to !== job.spotId) continue;
+      if (a.status !== "moving" || !a.executor) {
+        haulSeenWalking.delete(a.id);
+        continue;
+      }
+      const av = world.state.avatars[avatarIdOf(a.executor)];
+      const dead = (): void => {
+        session.transfers.fail(a.id, "no-executor");
+        session.reservations.release(agrHolder(a.id));
+        session.reservations.release(bagHolder(a.id));
+        haulSeenWalking.delete(a.id);
+      };
+      if (!av) {
+        dead();
+        continue;
+      }
+      const seen = haulSeenWalking.get(a.id);
+      const walking =
+        !seen ||
+        Math.hypot(av.x - seen.x, av.y - seen.y) > HAUL_STEP_EPS_M ||
+        haulIsLoaded(session, a);
+      if (walking) {
+        // Moving, loaded, or seen for the first time — one whole window before
+        // anything judges it (the pile rule seeds itself for the same reason).
+        haulSeenWalking.set(a.id, { at: session.taskClock, x: av.x, y: av.y });
+        continue;
+      }
+      if (session.taskClock - seen.at < DEFAULT_TASK_TTL_S) continue;
+      dead();
+      // …AND IT SAYS SO, in the pile rule's own words (no new string).
+      presenter.toast(`📦 ${a.sourceGlyph ?? "the haul"} — nobody came; calling again`, "feedback");
+    }
+  }
+
   /** Advance one house's craft job: gather (resolve + haul or the abstract
    *  twin), start labor when the spot covers the bill, finish on the clock. */
   function stepCraftJob(session: QuestSession, hi: number, job: CraftJob, isShown: boolean) {
@@ -1890,21 +2141,43 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // #44 — WHO WORKS IT: a house job's own member, or the community slot's
     // chosen hand (re-picked when that body is gone — the camp borrows
     // whoever is willing and near; it never wedges on a departed cid).
+    //
+    // ⚖️ STAGE 2d — A SPOKEN `make` IS A BILL. Under the capability the
+    // player's own make-order stops being a household errand: its materials
+    // are a bill any body may serve and its labour is a SEAT any body may
+    // take, so the crafter is WHOEVER CHOSE THIS BENCH rather than
+    // `resident_<hi>_0` by name. Everything below keeps its exact shape; only
+    // the source of "who is at the work" changes — which is 1a's contract for
+    // build rows ("presence-by-pursuit"), read at the bench.
+    // 🚫 An AUTOMATED job (the inventory rotation, a program craft) is the
+    // family's own appetite and keeps the household lane verbatim, on or off
+    // the capability.
+    const pull = pullLaborOn(session) && job.spoken === true;
+    // The bill's own liveness: a slice nobody is walking must go back on the
+    // shelf, or one wedged carrier holds a 4-block bill forever (see the sweep).
+    if (pull) sweepCraftHauls(session, job);
+    const crafterWorkAt = craftBenchOf(session, hi) ?? containerAnchor(session, job.spotId);
     let member = hi >= 0 ? `resident_${hi}_0` : (job.crafter ?? "");
-    if (hi < 0 && (!member || !world.state.avatars[avatarIdOf(member)])) {
+    if (pull) {
+      member = (crafterWorkAt ? craftContributorAt(session, hi, crafterWorkAt) : null) ?? "";
+    } else if (hi < 0 && (!member || !world.state.avatars[avatarIdOf(member)])) {
       const anchor = containerAnchor(session, job.spotId);
       member = (anchor ? communityCrafterCid(session, anchor) : null) ?? "";
       job.crafter = member || undefined;
       if (!member) return; // nobody willing stands anywhere — the job waits
     }
-    const crafterBody = world.state.avatars[avatarIdOf(member)];
-    const crafterWorkAt = craftBenchOf(session, hi) ?? containerAnchor(session, job.spotId);
+    const crafterBody = member ? world.state.avatars[avatarIdOf(member)] : undefined;
+    // 🚨 UNDER PULL THERE IS NO ABSTRACT ARM AND NO APPROACH GRACE: presence
+    // was ALREADY measured (`craftContributorAt` tested the distance), and an
+    // unwatched bench with nobody on it must keep offering its seat rather
+    // than quietly working itself — the same reading the build sites got.
     let atWork =
+      pull ||
       !isShown ||
       !crafterWorkAt ||
       (!!crafterBody &&
         Math.hypot(crafterBody.x - crafterWorkAt.x, crafterBody.y - crafterWorkAt.y) <= CRAFT_POSE_R);
-    if (!atWork && crafterBody) {
+    if (!pull && !atWork && crafterBody) {
       // TERMINATION OVER FIDELITY: a bench standing in a crowded corner can
       // be genuinely unreachable within the pose radius — the approach is
       // time-boxed, then the embodied-anywhere rule resumes so a craft can
@@ -1920,7 +2193,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     /** Send a SHOWN, idle crafter to stand at the work (re-issued whenever
      *  they idle off-spot — the walk the at-the-bench gate waits on). */
     const walkCrafterToWork = (): void => {
-      if (!isShown || !crafterBody || !crafterWorkAt || !world) return;
+      // 🚫 UNDER PULL THE PURSUIT OWNS THE WALK (1a's contract): the director
+      // sets the pose and the aim and never re-issues an errand, or the seat's
+      // dwell and this one would fight over the same body's task queue.
+      if (pull || !isShown || !crafterBody || !crafterWorkAt || !world) return;
       const npcId = avatarIdOf(member);
       if (session.transfers.executing(member)) return; // hauling first
       if (world.npcErrandActive(npcId) || (session.npcTasks.get(npcId)?.length ?? 0)) return;
@@ -1943,15 +2219,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // one tick).
     const spotHolder = `craftspot:${hi}`;
     const spot = ensureContainerStock(session, job.spotId);
-    const consumes = job.consumes; // (`member` hoisted above — #44)
-    // Units this job has already banked ON the spot (its own reservations).
-    const ownReserved = (head: string): number => {
-      let n = 0;
-      for (const r of session.reservations.holderRows(spotHolder)) {
-        if (r.endpoint === job.spotId && r.glyph === head) n += r.qty;
-      }
-      return n;
-    };
+    // (`ownReserved` moved to `craftShortfall`, the ONE definition — Stage 2d.)
     job.agreements = job.agreements.filter((id) => {
       const a = session.transfers.get(id);
       if (!a || a.status === "done" || a.status === "failed") {
@@ -1973,26 +2241,22 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // the spot. When a haul went missing between them the job wedged: gather
       // saw nothing to fetch, START saw nothing to use, and neither branch could
       // move. They now share this function, so they can never disagree.
+      // …and the base half is `craftShortfall`, hoisted (Stage 2d) so the BILL
+      // and this gate read one number. Arithmetic unchanged: the live arm
+      // subtracts what is walking from what the spot still lacks.
       const shortfallOf = (countLive: boolean): Record<string, number> => {
+        const base = craftShortfall(session, hi, job);
+        if (!countLive) return base;
         const out: Record<string, number> = {};
-        for (const [g, n] of Object.entries(consumes)) {
-          const head = stackHead(g);
-          // Someone ELSE's claim on this spot is untouchable (the one-
-          // reservation law); our own banked units are exactly what we consume.
-          const othersReserved = Math.max(
-            0,
-            session.reservations.reservedUnits(job.spotId, head) - ownReserved(head),
-          );
-          let have = Math.max(0, stackUnits(spot, head) - othersReserved);
-          if (countLive) {
-            for (const id of job.agreements) {
-              const a = session.transfers.get(id);
-              if (a && (a.status === "pending" || a.status === "moving")) {
-                have += stackUnits(a.goods, head);
-              }
+        for (const [head, short] of Object.entries(base)) {
+          let inflight = 0;
+          for (const id of job.agreements) {
+            const a = session.transfers.get(id);
+            if (a && (a.status === "pending" || a.status === "moving")) {
+              inflight += stackUnits(a.goods, head);
             }
           }
-          if (n > have) out[head] = n - have;
+          if (short > inflight) out[head] = short - inflight;
         }
         return out;
       };
@@ -2018,6 +2282,81 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         missing = shortfallOf(true); // re-measure with the dead rows gone
       } else {
         job.waitingSince = undefined; // there is real fetching to do
+      }
+      if (Object.keys(shortNow).length && pull) {
+        // ⚖️ STAGE 2d — THE GATHERING IS THE BILL'S, AND THE BILL HAS ONE OWNER.
+        //
+        // Under the capability this branch posts NOTHING: no resolve, no haul,
+        // and no abstract twin. `craftBillsOf` publishes the same `shortNow` as
+        // a material link on the settlement's own rung, `visibleBills` lists it
+        // beside the site's hauls, and whoever has nothing more urgent to do
+        // sizes a slice from its OWN carry and walks it. That is the whole of
+        // the fix: the household's single named carrier — one draw per sweep,
+        // and only while its house was watched — is why a player's `make cart`
+        // was served dead last (2c: t≈440, behind all 16 site slices) or never
+        // at all (measured: 0 deliveries in 408 s on a quiet frontier).
+        //
+        // 🚫 AND THE TWIN GOES WITH IT. Two gatherers on one bill is how a
+        // stack gets promised twice; an unwatched bench under pull simply waits
+        // for a body, exactly as an unwatched build site does.
+        //
+        // ⚖️ THE CHAIN STAYS A BOOKKEEPER WRITE (ruling ④). Nothing reachable
+        // holds a short head ⇒ open the refine order that will make it — the
+        // same `ensureRefineOrders` on the same book, said from the same place.
+        const anchor = containerAnchor(session, job.spotId);
+        if (!anchor) return;
+        if (townParked(session, craftGatherParkKey(hi), session.townClock)) return;
+        const dead: Record<string, number> = {};
+        for (const [head, n] of Object.entries(shortNow)) {
+          // ⚖️ THE SAME NUMBER THE PULLERS READ (1a's `freeHeadStockWithinReach`):
+          // "a mill is needed" and "I can carry some of that" must be ONE answer,
+          // or the chain opens an order for stock a puller is about to lift.
+          if (freeHeadStockWithinReach(session, anchor, head, LOCAL_PLAYER_CID) <= 0) dead[head] = n;
+        }
+        if (Object.keys(dead).length) {
+          const { milling, rest } = ensureRefineOrders(
+            session,
+            dead,
+            LOCAL_PLAYER_CID,
+            hi >= 0 ? houseOrderScope(hi) : TOWN_ORDER_SCOPE,
+            true, // a spoken job draws the reserve (surplus control S1)
+          );
+          if (session.townClock >= (craftStarvedAt.get(hi) ?? 0)) {
+            craftStarvedAt.set(hi, session.townClock + 90);
+            if (Object.keys(rest).length) {
+              const bill = Object.entries(rest)
+                .map(([g, n]) => `${n} ${g}`)
+                .join(", ");
+              presenter.toast(
+                `🪵 making the ${job.label} needs ${bill} — and there is none to fetch`,
+                "feedback",
+              );
+              const dry = Object.keys(rest)[0];
+              // …and SOMEBODY says it when somebody is there (silence must be
+              // explicit): under pull no body is the job's by name, so the line
+              // is spoken by whoever is at the bench, or by nobody at all.
+              if (dry && member) speakLine(session, member, noSourceLine(stackHead(dry)), isShown);
+            } else if (milling > 0) {
+              presenter.toast(`🪚 milling ${milling} ${BLOCK_GLYPH} for the ${job.label}`, "feedback");
+              if (member) speakLine(session, member, willMakeLine(BLOCK_GLYPH, milling > 1), isShown);
+            }
+          }
+        } else {
+          craftStarvedAt.delete(hi);
+        }
+        // ⏸️ …and the director stops looking until the world could answer
+        // differently — a container GAINED units or a claim was RELEASED, the
+        // gather park's own two events. The BILL is unaffected: `craftBillsOf`
+        // reads the job, never the park.
+        parkTown(session, craftGatherParkKey(hi), {
+          scope: "job",
+          why: Object.keys(dead).length
+            ? `no free source offers ${Object.keys(dead).join(", ")}`
+            : "the bill is open — the settlement's own hands serve it",
+          now: session.townClock,
+          staleAfterS: craftLabourSecondsOf(session, hi, job),
+        });
+        return;
       }
       if (Object.keys(shortNow).length) {
         // ⏸️ THE GATHER PARK (scope-behaviors.md §2.5.1, §7 step 6). What stood
@@ -2236,7 +2575,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // A shown crafter walks to the bench (or the store) and DWELLS there
       // for the labor — the body renders the work; the clock stays the
       // truth either way.
-      if (isShown) {
+      // 🚫 …AND NEVER UNDER PULL: the body is already standing on the seat its
+      // own contribute pursuit claimed, and `contributeStillWorking` re-issues
+      // that dwell. A second errand from here would fight it for the queue.
+      if (isShown && !pull) {
         const body = world.state.avatars[avatarIdOf(member)];
         const raw = bench ?? containerAnchor(session, job.spotId);
         if (body && raw && !session.transfers.executing(member)) {
@@ -2276,7 +2618,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // stands at the work, hold the sustained "play" rig — crouched over
     // the bench, hands working the piece. Refreshed each step; it expires
     // on its own the moment the job finishes or the crafter walks off.
-    if (isShown) {
+    if (isShown && member) {
       const body = world.state.avatars[avatarIdOf(member)];
       const raw = craftBenchOf(session, hi) ?? containerAnchor(session, job.spotId);
       if (body && raw && Math.hypot(body.x - raw.x, body.y - raw.y) <= CRAFT_POSE_R) {
@@ -3163,14 +3505,25 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return host ? annexWorldRect(t.stage.center, host.shape, o.candidate) : null;
   }
 
-  /** THE one labor rate (phase 2 step 3): build-day credit per elapsed
-   *  SECOND for `crew` builders. Both arms call this — the observed arm
-   *  with the builders physically present at the edge, the clock arm with
-   *  the abstract crew × CLOCK_SCHEDULE_RATE — so the two can only ever
-   *  differ by the schedule factor, never by unit (the FOOD_DAY_SEC vs
-   *  dayLengthS mis-rate is what two conversions produce). */
-  function laborRatePerS(session: QuestSession, crew: number): number {
-    return Math.min(BUILDERS_CAP, Math.max(0, crew)) / session.scale.dayLengthS;
+  /**
+   * THE one labor rate (phase 2 step 3): build-day credit per elapsed
+   * SECOND for `crew` builders. Both arms call this — the observed arm
+   * with the builders physically present at the edge, the clock arm with
+   * the abstract crew × CLOCK_SCHEDULE_RATE — so the two can only ever
+   * differ by the schedule factor, never by unit (the FOOD_DAY_SEC vs
+   * dayLengthS mis-rate is what two conversions produce).
+   *
+   * ⚖️ AND THE CLAMP IS A PARAMETER NOW (task #51 Stage 2, S3). It used to be
+   * `BUILDERS_CAP` on BOTH arms, which is what made seats decorative: a site
+   * with thirty free bays and six bodies standing on them would still bank at
+   * three builders. Under the capability the caller passes the row's SEAT count
+   * (`crewCapOf`), so the clock arm and the embodied count clamp at the same K
+   * — ruling 5's own condition. Off the capability every caller passes
+   * `BUILDERS_CAP` / `REFINE_CREW_CAP` exactly as before, and the default keeps
+   * any future caller honest.
+   */
+  function laborRatePerS(session: QuestSession, crew: number, cap: number = BUILDERS_CAP): number {
+    return Math.min(cap, Math.max(0, crew)) / session.scale.dayLengthS;
   }
 
   /** Would this hand volunteer for `issuer`'s civic work? The pool's
@@ -3341,7 +3694,23 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     const a = session.transfers.get(agreementId);
     if (!a) return;
     for (const [hi, job] of craftJobsOf(session)) {
-      if (job.spotId !== a.to || !job.agreements.includes(agreementId)) continue;
+      if (job.spotId !== a.to) continue;
+      // ⚖️ STAGE 2d — A PULLER'S LOAD IS THIS JOB'S TOO. Under the capability
+      // the job does not post its own hauls, so the arriving agreement is not
+      // in `job.agreements` and the old membership test would have left the
+      // landed blocks FREE SUPPLY on the bench — readable by every civic
+      // resolver, and by the very site bill the settlement is also serving.
+      // The honest test is what actually arrived: goods this job's recipe
+      // consumes, delivered to this job's own spot. Read at the UNLOAD SEAM, so
+      // it can never miss a landing the way a sweep-time adoption could.
+      const mine =
+        job.agreements.includes(agreementId) ||
+        (pullLaborOn(session) &&
+          job.spoken === true &&
+          Object.keys(landed).some((g) =>
+            Object.keys(job.consumes).some((c) => stackHead(c) === stackHead(g)),
+          ));
+      if (!mine) continue;
       for (const [g, c] of Object.entries(landed)) {
         if (c > 0) session.reservations.reserve(`craftspot:${hi}`, a.to, stackHead(g), c);
       }
@@ -4534,6 +4903,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
   function buildworkSiteAt(session: QuestSession, siteId: string): { x: number; y: number } | null {
     const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
     if (!deltas) return null;
+    // ⚖️ STAGE 2d — A BENCH IS A WORK SITE TOO. `craft:<hi>` answers the same
+    // three questions this function answers for a construction row (is there
+    // work here / is it workable / where do I stand), so the pull decider's
+    // dwell arm and its retirement test need no craft-shaped branch at all.
+    const chi = hiOfCraftSiteId(siteId);
+    if (chi !== null) return pullLaborOn(session) ? (craftWorkAt(session, chi)?.stand ?? null) : null;
     const m = /^o:(\d+)$/.exec(siteId);
     if (!m) return null;
     const o = deltas.orders().find((q) => q.ord === Number(m[1]));
@@ -4556,6 +4931,106 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         if (o.laborStartDay === undefined || (o.labor ?? 0) >= o.buildDays - 1e-9) return null;
         return o.at;
     }
+  }
+
+  /**
+   * ⚖️ THE SEATS THIS SITE OFFERS RIGHT NOW (task #51 Stage 2, S1/S2) — the
+   * director's half of the seat seam, and `buildworkSiteAt`'s sibling: the same
+   * `o:<ord>` id, the same liveness, one rung more detail. `buildworkSiteAt`
+   * says WHETHER there is work here and where the site is; this says how many
+   * PLACES the work has and where each of them stands.
+   *
+   * It lives here because it needs the bookkeeper's own three answers —
+   * `orderRectOf` (the geometry), the labour books (`labor / buildDays`) and
+   * the annex ghost options — and a body must never re-derive any of them: the
+   * clock arm's cap and the bodies' seats are ONE number (S3), or the abstract
+   * crew and the embodied one drift exactly as they did before this round.
+   */
+  function seatsOf(session: QuestSession, siteId: string): WorkSeat[] {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return [];
+    // ⚖️ STAGE 2d — ONE BENCH, ONE SEAT (S2's refine reading, unchanged: "a
+    // second bench row is a second seat, because it is a second bench"). A
+    // house has ONE craft slot, so its job has exactly one place to stand, and
+    // that place is the standable ground beside the work — never the solid
+    // centre of a cupboard.
+    const chi = hiOfCraftSiteId(siteId);
+    if (chi !== null) {
+      if (!pullLaborOn(session)) return [];
+      const w = craftWorkAt(session, chi);
+      return w
+        ? [{ siteId, link: "refine", key: seatKey(siteId, 0), at: w.stand, index: 0 }]
+        : [];
+    }
+    const m = /^o:(\d+)$/.exec(siteId);
+    if (!m) return [];
+    const o = deltas.orders().find((q) => q.ord === Number(m[1]));
+    return o ? seatsOfOrder(session, o) : [];
+  }
+
+  /** THE SEAT MEMO. `seatsOf` is asked by EVERY deciding body every decide
+   *  tick and by the order loop twice per row per sweep, and each miss walks a
+   *  30-piece shell. Keyed on the book's own version plus the task clock —
+   *  banking labour bumps the version, which is precisely when the offered set
+   *  moves, so the memo can never hand out a bay that has already risen. */
+  const seatMemo = new Map<number, WorkSeat[]>();
+  let seatMemoKey = "";
+
+  function seatsOfOrder(session: QuestSession, o: ConstructionOrder): WorkSeat[] {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    const key = `${deltas?.version ?? 0}|${session.taskClock}`;
+    if (key !== seatMemoKey) {
+      seatMemo.clear();
+      seatMemoKey = key;
+    }
+    const hit = seatMemo.get(o.ord);
+    if (hit) return hit;
+    const seats = computeSeats(session, o);
+    seatMemo.set(o.ord, seats);
+    return seats;
+  }
+
+  function computeSeats(session: QuestSession, o: ConstructionOrder): WorkSeat[] {
+    const siteId = orderSiteId(o.ord);
+    // A BENCH IS ONE SEAT — and a second bench row is a second seat, because it
+    // is a second bench (S2). `o.at` is `refineSpotOf`'s own standable answer,
+    // which is exactly where a refine dwell already stands.
+    if (o.kind === "refine") return benchSeatOf(siteId, o.at);
+    // 🚧 A DEMOLITION HAS NO PULL BILL AT ALL (contribute.ts skips the kind:
+    // "tearing down needs hands, not materials… its labour stays with the pool
+    // until the capability widens — Stage 3"). Offering seats nobody can claim
+    // would hand its clock arm a cap derived from geometry no body is working,
+    // so it keeps the pool's constant until Stage 3 moves it with the rest.
+    if (o.kind === "demolish") return [];
+    const rect = orderRectOf(session, o);
+    if (!rect) return [];
+    const days = o.buildDays ?? 0;
+    return seatsOfRect(siteId, rect, days > 0 ? (o.labor ?? 0) / days : 0, ghostOptsOf(session, o));
+  }
+
+  /** The ghost options this order's shell is laid out with — an outward annex
+   *  skips the wall it shares with its host, an interior cut builds ONLY its
+   *  partition. Read off the SAME two geometry helpers `computeGhosts` reads,
+   *  so the bays a body may stand on and the bays the player sees outlined are
+   *  one list rather than two counts of the same wall. */
+  function ghostOptsOf(
+    session: QuestSession,
+    o: ConstructionOrder,
+  ): Parameters<typeof shellGhostPieces>[2] {
+    if (o.kind !== "annex" && o.kind !== "interior") return undefined;
+    const t = session.town;
+    if (!t) return undefined;
+    const b = pendingBuildingOf(session, o.buildingKey);
+    if (!b) return undefined;
+    const center = t.stage.center;
+    const rect = annexWorldRect(center, b.shape, o.candidate);
+    const hostId = isInteriorCandidate(o.candidate) ? o.candidate.hostId : null;
+    const host = hostId
+      ? b.plan.rooms.find((r) => r.id === hostId)?.rect
+      : { x: center.x + b.shape.dx, y: center.y + b.shape.dy, w: b.shape.w, h: b.shape.h };
+    return hostId
+      ? { wallsOnly: true, onlyWall: host ? freeEdgesOf(rect, host) : [] }
+      : { skipWall: host ? [sharedEdgeWith(rect, host)] : [] };
   }
 
   /** Commit-time validation for an INTERIOR designation: the recorded host
@@ -7636,8 +8111,27 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // already (one task per body) and a site that stopped calling could never
     // be found by a passer-by. The pool bounds the ABSTRACT crew — the one
     // that was being minted out of nothing.
-    const crewCapOf = (o: ConstructionOrder): number =>
-      o.kind === "refine" ? REFINE_CREW_CAP : BUILDERS_CAP;
+    //
+    // ⚖️ …AND UNDER THE CAPABILITY IT IS K — THE SEATS (task #51 Stage 2, S3).
+    // A cap is a number somebody wrote down; a seat is a PLACE. `seatsOf` says
+    // how many places this row's work HAS right now (the staged bays labour has
+    // not yet raised; one point for a bench), and that same K is what the rate
+    // clamp uses — so the abstract crew the books allocate and the bodies that
+    // actually stand at the work can never again disagree about how many may
+    // work here. `Math.max(1, …)` is defensive only: an unfinished row's
+    // `raisedBays` is at most `n - 1`, so a live site always offers a seat.
+    //
+    // 🚫 OFF THE CAPABILITY NOTHING MOVES. `BUILDERS_CAP` / `REFINE_CREW_CAP`
+    // stand exactly as they did — they die with the push code in Stage 3, not
+    // here — which is what holds `town-labor-pool`, `scope-shape` and
+    // `civic-labor-locality` still and keeps the dollhouse bench byte-identical
+    // by construction (the dollhouse never reads a seat).
+    const crewCapOf = (o: ConstructionOrder): number => {
+      if (!pullLaborOn(session) || o.kind === "demolish") {
+        return o.kind === "refine" ? REFINE_CREW_CAP : BUILDERS_CAP;
+      }
+      return Math.max(1, seatsOfOrder(session, o).length);
+    };
     /** Did a PLAYER speak this row? Only a founded row records it (that is the
      *  only kind `orderBuild` posts); everything else is the town's own. */
     const orderIsSpoken = (o: ConstructionOrder): boolean =>
@@ -7679,7 +8173,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const crew = session.town
         ? crewShareOf(row.ord)
         : Math.min(cap, availableCrew(session, issuer));
-      const banked = elapsedS * CLOCK_SCHEDULE_RATE * laborRatePerS(session, crew);
+      // ⚖️ THE CLAMP IS THIS ROW'S OWN CAP (S3), not a global three. Under the
+      // capability `cap` arrives as K from `crewCapOf`; off it, it is the same
+      // `BUILDERS_CAP` / `REFINE_CREW_CAP` this call has always passed, so the
+      // arithmetic is byte-identical there.
+      const banked = elapsedS * CLOCK_SCHEDULE_RATE * laborRatePerS(session, crew, cap);
       bankLabor(row, banked);
       if (banked > 0) deltas.version++;
     };
@@ -7851,7 +8349,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         clockArm(row, cap); // schedule-banked: the abstract crew, same rate function
         return;
       }
-      const banked = elapsedS * laborRatePerS(session, Math.min(cap, present));
+      const banked = elapsedS * laborRatePerS(session, Math.min(cap, present), cap);
       bankLabor(row, banked);
       // Labor is a first-class mutation: without the bump every
       // deltas.version watcher (stage restage, overlays, the spot cache)
@@ -7935,9 +8433,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           if (at && rect) {
             if (obs) {
               if (!wasObs) materializeCrew(session, at, undefined, issuer);
-              workSite(orderSiteId(b.ord), at, b, rect);
+              workSite(orderSiteId(b.ord), at, b, rect, crewCapOf(b));
             } else {
-              clockArm(b);
+              clockArm(b, crewCapOf(b));
             }
           }
         }
@@ -8019,9 +8517,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         if (!((r.labor ?? 0) >= r.buildDays - 1e-9)) {
           if (obs) {
             if (!wasObs) materializeCrew(session, r.at, REFINE_CREW_CAP, issuer);
-            workSite(orderSiteId(r.ord), r.at, r, rect ?? undefined, REFINE_CREW_CAP);
+            workSite(orderSiteId(r.ord), r.at, r, rect ?? undefined, crewCapOf(r));
           } else {
-            clockArm(r, REFINE_CREW_CAP);
+            clockArm(r, crewCapOf(r));
           }
           continue;
         }
@@ -8043,9 +8541,9 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           }
           if (obs) {
             if (!wasObs) materializeCrew(session, at, undefined, issuer);
-            workSite(orderSiteId(o.ord), at, o, rect ?? undefined);
+            workSite(orderSiteId(o.ord), at, o, rect ?? undefined, crewCapOf(o));
           } else {
-            clockArm(o);
+            clockArm(o, crewCapOf(o));
           }
           continue;
         }
@@ -8114,9 +8612,10 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
               at,
               p,
               annexWorldRect(session.town.stage.center, host.shape, p.candidate),
+              crewCapOf(p),
             );
           } else {
-            clockArm(p);
+            clockArm(p, crewCapOf(p));
           }
         }
         continue;
@@ -10638,6 +11137,18 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // through this handle, so the bookkeeper's presence count and the
     // puller's bill can never disagree about which site a body is working.
     orderSiteId,
+    // ⚖️ SEATS, NOT CAPS (task #51 Stage 2) — the PLACES this site's work has,
+    // beside `contributeCrewAt`'s "who is standing in them". Exported for the
+    // same reason `orderSiteId` is: the clock arm's cap, the body's claim and
+    // the point the body stands on must be ONE derivation, and it needs the
+    // bookkeeper's rect + labour books to make it.
+    seatsOf,
+    // ⚖️ A SPOKEN `make` IS A BILL (Stage 2d) — the standing craft jobs the
+    // reader lists beside the construction rows, so the SAME argmax that
+    // staffs a house staffs the bench. `[]` off the capability and for every
+    // automated job, which is what leaves the household craft lane — and the
+    // dollhouse bench — byte-identical.
+    craftBillsOf,
     // ⚖️ …and the NON-RESERVING reach read the bookkeeper decides the chain on
     // (task #51 item ①). Exported so the body sizing its own slice measures the
     // same free stock the books did: the number that says "a mill is needed" and

@@ -30,17 +30,19 @@ import type { CityHudChip, FamilyHudEntry, PocketEntry, QuestBoardView } from "@
 import { familyStateGlyph } from "@shared/world-engine/interaction/quest/family-hud";
 import { wellbeingGlyph } from "@shared/world-engine/interaction/quest/city-hud";
 import { iconGlyph } from "@shared/world-engine/interaction/quest/activity-bubble";
-import { LEXICON, parseSentence, type IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
+import { parseSentence, type IntentKind } from "@shared/world-engine/interaction/intent/parse-intent";
 import {
   emptyRecency,
   noteUtterance,
-  surfaceNext,
-  TYPE_CHIPS,
   type RecencyMemory,
-  type SurfaceNoun,
 } from "@shared/world-engine/interaction/intent/surface-next";
-import { getVocabularyItem, modifiersFor, type GlyphPos } from "@shared/glyph-registry";
-import { AXIS_WORDS, descriptorAxesFor } from "@shared/world-engine/object-properties";
+import {
+  builderSurfaceFor,
+  type BuilderGroupJson,
+  type BuilderNounEntry,
+  type BuilderWordJson,
+} from "@shared/world-engine/interaction/intent/builder-surface";
+import { getVocabularyItem } from "@shared/glyph-registry";
 import { gameImageResolver } from "./glyph-resolver";
 
 // Icon/text sizing mirrors AppMiniBoard's 4-row column, so the buttons read the
@@ -229,10 +231,40 @@ function Footer({
   );
 }
 
-// ── Speak menu: the parser's whole vocabulary, grouped, with glyph icons ──────
+// ── Speak menu: the ENGINE's sentence-builder surface, drawn ──────────────────
+//
+// ⚖️ ONE WORD BANK (user law, 2026-09-06): *"the word bank in the sentence
+// builder should always be the same with a default world-spec lexicon, even
+// outside the game — the context is irrelevant. The only exception is the
+// individual people list."*
+//
+// So this menu asks `builderSurfaceFor` — the SAME entry point the AAC's own
+// builder (`client-shared/src/game/engine-builder.ts`) and text mode
+// (`interaction/text/builder.ts`) call — instead of driving `surfaceNext` over
+// the host's raw noun push. `builderSurfaceFor` merges `defaultBuilderNouns()`
+// under whatever the caller pushed, so the bank is the SPEC's whole vocabulary
+// in every session and out of a game entirely; the host contributes NAMES and
+// nothing else (`quest-host.ts pushKnownNouns`).
+//
+// ⚠️ THAT DIVERGENCE IS WHAT HID A REAL BUG. This file used to map the raw push
+// straight into `surfaceNext`, so the host push WAS the board here while text
+// mode and the AAC — both on `builderSurfaceFor` — were immune to anything the
+// host failed to push. A furniture block gated on `session.dollhouse !== null`
+// therefore left a founding frontier able to name a box and a bin and not a
+// bed, a table, a chair or a workbench, and no test, transcript or validator
+// could see it. One caller, one bank.
+//
+// The menu draws what the surface says: `buttons` (the ranked words, or one
+// chip's members, or one tab's listing), `groups` (sub-category chips),
+// `modifiers` (the active head's rail), `categories` (the tab ladder),
+// `typeChips` (sentence-type controls, empty board only) and `complete` (Play
+// is ready). WORDS stay visually distinct from CONTROLS — the user-decided dual
+// surface — and every label arrives already localized by the lang layer.
 
-const CATEGORY_ORDER = ["person", "verb", "attribute", "quantity", "relation", "question", "connective", "social"] as const;
+/** Friendly English names for the engine's category ids. Bench chrome, not
+ *  vocabulary: the WORDS are localized by the engine, these tabs are not. */
 const CATEGORY_LABEL: Record<string, string> = {
+  things: "Things",
   person: "People",
   verb: "Actions",
   attribute: "Descriptions",
@@ -242,149 +274,86 @@ const CATEGORY_LABEL: Record<string, string> = {
   connective: "Joiners",
   social: "Social",
 };
-const WORD_LABEL: Record<string, string> = {
-  i_me: "I / me",
-  dont_understand: "don't understand",
-  in_order_to: "in order to",
-};
-/** Friendly names for surface-next GROUP chips (property + kind clusters). */
-const GROUP_LABEL: Record<string, string> = {
-  food: "food",
-  toy: "toys",
-  clothing: "clothes",
-  container: "containers",
-  openable: "open & shut",
-  furniture: "furniture",
-  appliance: "appliances",
-  device: "devices",
-  tableware: "dishes",
-  instrument: "music",
-  book: "books",
-  material: "materials",
-  structure: "buildings",
-  creatures: "people",
-  places: "places",
-  things: "things",
-};
-const wordLabel = (w: string): string => WORD_LABEL[w] ?? w.replace(/_/g, " ");
 
-/** The parser vocabulary, grouped by lexical category in a friendly order. */
-function useVocabularyGroups() {
-  return useMemo(() => {
-    const byCat = new Map<string, string[]>();
-    for (const [word, lex] of Object.entries(LEXICON)) {
-      const arr = byCat.get(lex.cat) ?? [];
-      arr.push(word);
-      byCat.set(lex.cat, arr);
-    }
-    return CATEGORY_ORDER.filter((c) => byCat.has(c)).map((c) => ({
-      cat: c,
-      label: CATEGORY_LABEL[c] ?? c,
-      words: byCat.get(c)!,
-    }));
-  }, []);
-}
+/**
+ * A noun the HOST knows about. Under the ONE WORD BANK rule that is a NAME —
+ * a household member, a pet — and nothing else; every other word is default
+ * vocabulary. Structurally the engine's own entry type, so the list is handed
+ * to `builderSurfaceFor` unchanged (and `individual: true` files a name on the
+ * builder's [contacts] chip).
+ */
+export type NounEntry = BuilderNounEntry;
 
-/** A learned noun/subject the player can compose with — the vocabulary grows with
- *  knowledge (an item you've seen, the creature's need, a place you've heard of).
- *  `kind`/`affords` carry the noun's world semantics for the SURFACER. */
-export interface NounEntry {
-  symbol: string;
-  label: string;
-  kind?: "place" | "item" | "creature" | "unknown";
-  affords?: string[];
-  /** Spec-derived object properties (object-properties.ts) — how the things
-   *  tab FILES this noun, and what the verb pre-load matches on. */
-  properties?: string[];
-}
-
-/** One speakable WORD button (glyph icon + label). */
-function WordButton({ symbol, label, onTap }: { symbol: string; label?: string; onTap: (w: string) => void }) {
+/** One speakable WORD button. The PRESSED token is `key` — what the sentence
+ *  keeps and the parser reads — while the face is `glyph`, which differs for a
+ *  place (one word, a composed shell+symbol icon). */
+function WordButton({ word, onTap }: { word: BuilderWordJson; onTap: (key: string) => void }) {
   return (
-    <button className="lab-word" title={symbol} onClick={() => onTap(symbol)}>
+    <button className="lab-word" title={word.key} onClick={() => onTap(word.key)}>
       <span className="lab-word-icon">
-        <LabGlyph glyph={symbol} fallback={symbol} ariaLabel={symbol} noBackground />
+        <LabGlyph glyph={word.glyph ?? word.key} fallback={word.key} ariaLabel={word.label} noBackground />
       </span>
-      <span className="lab-word-label">{label ?? wordLabel(symbol)}</span>
+      <span className="lab-word-label">{word.label}</span>
     </button>
   );
 }
 
-/**
- * The SURFACER-driven sentence builder (language-expansion.md): only
- * meaningful continuations show (surface-next.ts), WORDS visually distinct
- * from CONTROLS (sentence-type chips, category tabs, modifier rail — the
- * user-decided dual surface). Category tabs are the graceful fallback to the
- * full vocabulary; modifiers compose onto the last word's head (the AAC
- * SentenceConstructorBoard pattern).
- */
+/** One sub-category CHIP — a control that opens its cluster in place, wearing
+ *  up to three of its members' faces so a category shows what it holds. */
+function GroupCell({ group, onOpen }: { group: BuilderGroupJson; onOpen: (id: string) => void }) {
+  const glyphs = group.glyphs ?? (group.glyph ? [group.glyph] : []);
+  return (
+    <button className="lab-word lab-group" title={group.id} onClick={() => onOpen(group.id)}>
+      <span className="lab-word-icon">
+        <GlyphTriad glyphs={glyphs} GlyphComponent={LabGlyph} fallback={group.id} ariaLabel={group.label} />
+      </span>
+      <span className="lab-word-label">{group.label} ▾</span>
+    </button>
+  );
+}
+
 function SpeakMenu({
   onClose,
   onSpeak,
   nouns,
+  locale,
   recency,
   onUttered,
 }: {
   onClose: () => void;
   onSpeak: (sentence: string) => void;
   nouns: NounEntry[];
+  /** The player's ruleset, so the bank reads in their language (the same locale
+   *  the host stamps on the world). Absent ⇒ English. */
+  locale?: string | undefined;
   recency: RecencyMemory;
   onUttered: (mem: RecencyMemory) => void;
 }) {
-  const groups = useVocabularyGroups();
   const [words, setWords] = useState<string[]>([]);
   const [seedKind, setSeedKind] = useState<IntentKind | undefined>(undefined);
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const sentence = words.join(" + ");
 
-  const surfaceNouns: SurfaceNoun[] = useMemo(
+  // THE ENGINE ANSWERS EVERY QUESTION THE MENU HAS. `category`/`group` echo the
+  // chips back exactly as the AAC board does, so tabs and chips are the
+  // engine's hierarchy rather than a second one drawn over it.
+  const surface = useMemo(
     () =>
-      nouns.map((n) => ({
-        symbol: n.symbol.split(".")[0] ?? n.symbol,
-        label: n.label,
-        kind: n.kind ?? "unknown",
-        affords: n.affords ?? ["want", "get", "give"],
-        properties: n.properties ?? [],
-      })),
-    [nouns],
+      builderSurfaceFor(sentence, {
+        nouns,
+        capacity: 16,
+        recency,
+        ...(locale ? { locale } : {}),
+        ...(openCat ? { category: openCat } : {}),
+        ...(openGroupId ? { group: openGroupId } : {}),
+        ...(seedKind ? { seedKind } : {}),
+      }),
+    [sentence, nouns, locale, recency, openCat, openGroupId, seedKind],
   );
-  const suggestion = useMemo(
-    () => surfaceNext(words, { nouns: surfaceNouns, recency, seedKind, capacity: 16 }),
-    [words, surfaceNouns, recency, seedKind],
-  );
-  // The modifier rail: the ACTIVE head's applicable modifiers (registry-driven,
-  // the AAC pattern) — rendered as CONTROLS that compose onto the head, RANKED
-  // by the head's DESCRIPTOR AXES (object-properties.ts): food leads with
-  // hot/cold, places with my/your ("my city" — the scope-breadth rule). A game
-  // noun the registry doesn't know falls back to a pos by its kind, so a
-  // learned "city" still gets the place rail instead of no rail at all.
-  const lastWord = words[words.length - 1];
-  const railMods = useMemo(() => {
-    if (!lastWord) return [];
-    const headSym = lastWord.split(".")[0] ?? lastWord;
-    const item = getVocabularyItem(headSym);
-    const noun = nouns.find((n) => (n.symbol.split(".")[0] ?? n.symbol) === headSym);
-    const KIND_POS: Record<string, GlyphPos> = { creature: "animal", place: "place", item: "noun", unknown: "noun" };
-    const pos = item?.pos ?? (noun ? KIND_POS[noun.kind ?? "unknown"] : undefined);
-    if (!pos) return [];
-    const POS_KIND: Partial<Record<GlyphPos, "creature" | "place" | "item" | "unknown">> = {
-      person: "creature", animal: "creature", place: "place", noun: "item",
-    };
-    const axes = descriptorAxesFor(noun?.kind ?? POS_KIND[pos] ?? "unknown", noun?.properties ?? []);
-    const axisRank = new Map<string, number>();
-    axes.forEach((a, i) => {
-      for (const w of AXIS_WORDS[a]) if (!axisRank.has(w)) axisRank.set(w, i);
-    });
-    return modifiersFor(pos)
-      .slice()
-      .sort(
-        (m1, m2) =>
-          (axisRank.get(m1.key) ?? 99) - (axisRank.get(m2.key) ?? 99) ||
-          m1.modifier!.order - m2.modifier!.order,
-      )
-      .slice(0, 8);
-  }, [lastWord, nouns]);
+  const groups = surface.groups ?? [];
+  const typeChips = surface.typeChips ?? [];
+  const railMods = surface.modifiers ?? [];
 
   const tapWord = (w: string) => {
     setWords((cur) => {
@@ -392,8 +361,8 @@ function SpeakMenu({
       // whether reached via the modifier rail, the suggested grid, or a
       // category tab — instead of being appended as a stray new head word
       // ("banana" + "hot" → "banana.hot", never "banana + hot"). Registry-
-      // driven, exactly like the rail: the tapped word must be a modifier that
-      // applies to the current head's part of speech, and not already present.
+      // driven: the tapped word must be a modifier that applies to the current
+      // head's part of speech, and not already present.
       const last = cur[cur.length - 1];
       if (last) {
         const head = getVocabularyItem(last.split(".")[0] ?? last);
@@ -418,12 +387,10 @@ function SpeakMenu({
     setWords([]);
     setSeedKind(undefined);
   };
-
-  const catWords = openCat
-    ? openCat === "things"
-      ? nouns.map((n) => ({ symbol: n.symbol, label: n.label }))
-      : (groups.find((g) => g.cat === openCat)?.words ?? []).map((w) => ({ symbol: w, label: wordLabel(w) }))
-    : null;
+  const openTab = (cat: string | null) => {
+    setOpenCat(cat);
+    setOpenGroupId(null);
+  };
 
   return (
     <div className="lab-speak-overlay" data-dwell-trap onClick={onClose}>
@@ -437,28 +404,31 @@ function SpeakMenu({
           <button className="lab-footer-btn" disabled={!words.length} onClick={() => setWords((w) => w.slice(0, -1))}>⌫</button>
           <button className="lab-footer-btn" disabled={!words.length} onClick={() => { setWords([]); setSeedKind(undefined); }}>Clear</button>
           <button
-            className={`lab-footer-btn lab-speak${suggestion.complete ? " ready" : ""}`}
+            className={`lab-footer-btn lab-speak${surface.complete ? " ready" : ""}`}
             disabled={!words.length}
             onClick={play}
           >
             ▶ Play
           </button>
         </div>
-        {/* Sentence-type chips — CONTROLS (refiners), never spoken words. */}
-        {suggestion.typeChips.length > 0 && (
+        {/* Sentence-type chips — CONTROLS (refiners), never spoken words. The
+            surfacer decides WHEN they exist (empty board only). */}
+        {typeChips.length > 0 && (
           <div className="lab-typechips">
-            {TYPE_CHIPS.map((c) => (
+            {typeChips.map((c) => (
               <button
                 key={c.kind}
                 className={`lab-control lab-typechip${seedKind === c.kind ? " selected" : ""}`}
-                onClick={() => setSeedKind((cur) => (cur === c.kind ? undefined : c.kind))}
+                onClick={() => setSeedKind((cur) => (cur === c.kind ? undefined : (c.kind as IntentKind)))}
               >
                 {c.label}
               </button>
             ))}
           </div>
         )}
-        {/* Modifier rail — CONTROLS that refine the active head word. */}
+        {/* Modifier rail — CONTROLS that refine the active head word, ranked by
+            its descriptor axes (the engine's own rail, so the lab bench and the
+            student's board offer the same modifiers in the same order). */}
         {railMods.length > 0 && (
           <div className="lab-modrail">
             {railMods.map((m) => (
@@ -469,96 +439,52 @@ function SpeakMenu({
                 onClick={() => setWords((cur) => [...cur.slice(0, -1), `${cur[cur.length - 1]}.${m.key}`])}
               >
                 <span className="lab-mod-icon">
-                  <LabGlyph glyph={m.key} fallback={m.key} ariaLabel={m.key} noBackground />
+                  <LabGlyph glyph={m.glyph ?? m.key} fallback={m.key} ariaLabel={m.label} noBackground />
                 </span>
               </button>
             ))}
           </div>
         )}
         <div className="lab-speak-scroll">
-          {catWords ? (
-            <section className="lab-speak-group">
-              <h4>{openCat === "things" ? "Things" : (CATEGORY_LABEL[openCat!] ?? openCat)}</h4>
-              <div className="lab-speak-grid">
-                {catWords.map((w) => (
-                  <WordButton key={w.symbol} symbol={w.symbol} label={w.label} onTap={tapWord} />
-                ))}
-              </div>
-            </section>
-          ) : (
-            <section className="lab-speak-group">
-              {/* Words first, then GROUP cells — likely subcategories
-                  (surface-next `groups`) rendered INSIDE the list as teal
-                  cards: CONTROLS that expand in place without speaking. An
-                  open group shows a back cell + its full ranked membership. */}
-              <div className="lab-speak-grid">
-                {(() => {
-                  const activeGroup = suggestion.groups.find((g) => g.id === openGroupId);
-                  if (activeGroup) {
-                    return (
-                      <>
-                        <button className="lab-word lab-group" onClick={() => setOpenGroupId(null)}>
-                          <span className="lab-group-glyph">↩</span>
-                          <span className="lab-word-label">back</span>
-                        </button>
-                        {activeGroup.members.map((b) => (
-                          <WordButton key={b.symbol} symbol={b.symbol} label={b.label} onTap={tapWord} />
-                        ))}
-                      </>
-                    );
-                  }
-                  return (
-                    <>
-                      {suggestion.buttons.map((b) => (
-                        <WordButton key={b.symbol} symbol={b.symbol} label={b.label} onTap={tapWord} />
-                      ))}
-                      {suggestion.groups.map((g) => (
-                        <button
-                          key={g.id}
-                          className="lab-word lab-group"
-                          title={`${g.members.length} words`}
-                          onClick={() => setOpenGroupId(g.id)}
-                        >
-                          <span className="lab-word-icon">
-                            {/* THREE members, best examples first — a category
-                                shows what it holds, not one stand-in word. */}
-                            <GlyphTriad
-                              glyphs={g.exemplars.map((e) => e.symbol)}
-                              GlyphComponent={LabGlyph}
-                              fallback={g.id}
-                              ariaLabel={GROUP_LABEL[g.id] ?? g.id}
-                            />
-                          </span>
-                          <span className="lab-word-label">{GROUP_LABEL[g.id] ?? g.id} ▾</span>
-                        </button>
-                      ))}
-                    </>
-                  );
-                })()}
-              </div>
-            </section>
-          )}
-          {/* Category tabs — the fallback ladder to the full vocabulary. */}
+          <section className="lab-speak-group">
+            {openCat && <h4>{CATEGORY_LABEL[openCat] ?? openCat}</h4>}
+            {/* Words first, then GROUP cells — likely subcategories rendered
+                INSIDE the list as teal cards: CONTROLS that expand in place
+                without speaking. An open group shows a back cell + the surface's
+                filtered membership (the engine did the filtering). */}
+            <div className="lab-speak-grid">
+              {openGroupId !== null && (
+                <button className="lab-word lab-group" onClick={() => setOpenGroupId(null)}>
+                  <span className="lab-group-glyph">↩</span>
+                  <span className="lab-word-label">back</span>
+                </button>
+              )}
+              {surface.buttons.map((b) => (
+                <WordButton key={b.key} word={b} onTap={tapWord} />
+              ))}
+              {/* ⚠️ `grp:` prefix: a chip id and a WORD key can be the same string
+                  (the [clothing] chip sits beside the word "clothes" after
+                  `make`), and they are siblings in this one grid. */}
+              {openGroupId === null &&
+                groups.map((g) => <GroupCell key={`grp:${g.id}`} group={g} onOpen={setOpenGroupId} />)}
+            </div>
+          </section>
+          {/* Category tabs — the fallback ladder to the full vocabulary, and the
+              engine's own tab set (`BUILDER_CATEGORIES`). */}
           <div className="lab-cattabs">
             <button
               className={`lab-control lab-cattab${openCat === null ? " selected" : ""}`}
-              onClick={() => setOpenCat(null)}
+              onClick={() => openTab(null)}
             >
               ★ suggested
             </button>
-            <button
-              className={`lab-control lab-cattab${openCat === "things" ? " selected" : ""}`}
-              onClick={() => setOpenCat("things")}
-            >
-              Things
-            </button>
-            {groups.map((g) => (
+            {(surface.categories ?? []).map((c) => (
               <button
-                key={g.cat}
-                className={`lab-control lab-cattab${openCat === g.cat ? " selected" : ""}`}
-                onClick={() => setOpenCat(g.cat)}
+                key={c}
+                className={`lab-control lab-cattab${openCat === c ? " selected" : ""}`}
+                onClick={() => openTab(c)}
               >
-                {g.label}
+                {CATEGORY_LABEL[c] ?? c}
               </button>
             ))}
           </div>
@@ -581,6 +507,7 @@ function BoardApp({
   registerSetPocket,
   registerSetFamily,
   registerSetCity,
+  registerSetLocale,
 }: {
   onSelect: (id: string) => void;
   onSpeak: (sentence: string) => void;
@@ -595,6 +522,11 @@ function BoardApp({
   registerSetPocket: (fn: (items: PocketEntry[]) => void) => void;
   registerSetFamily: (fn: (members: FamilyHudEntry[]) => void) => void;
   registerSetCity: (fn: (chips: CityHudChip[]) => void) => void;
+  /** ⚖️ THE PLAYER'S RULESET reaches the island LATE — the lab picks it from a
+   *  dropdown, an embedded game learns it from the bridge's `init`, and both
+   *  happen after mount. So it arrives through a setter like every other piece
+   *  of live state rather than as a mount option. Absent ⇒ English. */
+  registerSetLocale: (fn: (locale: string | undefined) => void) => void;
 }) {
   const [view, setView] = useState<QuestBoardView | null>(null);
   const [nouns, setNouns] = useState<NounEntry[]>([]);
@@ -602,6 +534,7 @@ function BoardApp({
   const [family, setFamily] = useState<FamilyHudEntry[]>([]);
   const [city, setCity] = useState<CityHudChip[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [locale, setLocale] = useState<string | undefined>(undefined);
   // Recent-utterance memory (surface-next.ts) — player-entered words only,
   // per session (a fresh session is a fresh board — predictability).
   const [recency, setRecency] = useState<RecencyMemory>(emptyRecency);
@@ -611,7 +544,8 @@ function BoardApp({
     registerSetPocket(setPocket);
     registerSetFamily(setFamily);
     registerSetCity(setCity);
-  }, [registerSet, registerSetNouns, registerSetPocket, registerSetFamily, registerSetCity]);
+    registerSetLocale(setLocale);
+  }, [registerSet, registerSetNouns, registerSetPocket, registerSetFamily, registerSetCity, registerSetLocale]);
   return (
     <>
       <CityStrip chips={city} />
@@ -627,6 +561,7 @@ function BoardApp({
       {menuOpen && (
         <SpeakMenu
           nouns={nouns}
+          locale={locale}
           recency={recency}
           onUttered={setRecency}
           onClose={() => setMenuOpen(false)}
@@ -647,6 +582,8 @@ export interface BoardIsland {
   setFamily(members: FamilyHudEntry[]): void;
   /** Replace the CITY HUD strip (④ per-district cohort chips; empty = hidden). */
   setCity(chips: CityHudChip[]): void;
+  /** The ruleset the sentence builder reads its word bank in. */
+  setLocale(locale: string | undefined): void;
   /** ⑫ — who is standing in the child's conversation, as spoken words. The
    *  island itself renders nothing for it; the AAC bridge captures it so the
    *  sentence builder can open an ADDRESSEE slot in a crowd
@@ -673,6 +610,7 @@ export function mountBoardIsland(
   let setPocketRef: ((p: PocketEntry[]) => void) | null = null;
   let setFamilyRef: ((m: FamilyHudEntry[]) => void) | null = null;
   let setCityRef: ((c: CityHudChip[]) => void) | null = null;
+  let setLocaleRef: ((l: string | undefined) => void) | null = null;
   root.render(
     <StrictMode>
       <BoardApp
@@ -686,6 +624,7 @@ export function mountBoardIsland(
         registerSetPocket={(fn) => (setPocketRef = fn)}
         registerSetFamily={(fn) => (setFamilyRef = fn)}
         registerSetCity={(fn) => (setCityRef = fn)}
+        registerSetLocale={(fn) => (setLocaleRef = fn)}
       />
     </StrictMode>,
   );
@@ -695,6 +634,7 @@ export function mountBoardIsland(
     setPocket: (items) => setPocketRef?.(items),
     setFamily: (members) => setFamilyRef?.(members),
     setCity: (chips) => setCityRef?.(chips),
+    setLocale: (l) => setLocaleRef?.(l),
     dispose: () => root.unmount(),
   };
 }

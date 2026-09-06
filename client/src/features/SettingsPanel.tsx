@@ -48,6 +48,7 @@ import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { Slider } from '@/components/ui/slider';
 import { openUI } from '@/lib/uiEvents';
 import { useRegimes } from '@/hooks/useRegimes';
+import { LicenseBillingCard } from '@/components/billing/LicenseBillingCard';
 
 // The CLINICIAN's own workflow/locale preference — deliberately NOT
 // ProgramFramework. It is unpersisted local state whose only effect is picking
@@ -264,6 +265,12 @@ export function SettingsPanel() {
               </CardContent>
             </Card>
           )}
+
+          {/* License & billing — PRIVATE licenses only (scope="user"). An
+              organisation's billing belongs on the institute panel, where the
+              admin who can act on it is; showing it in every member's personal
+              settings would just be a bill they cannot pay. */}
+          <LicenseBillingCard scope="user" />
 
           {/* System Settings */}
           <Card>

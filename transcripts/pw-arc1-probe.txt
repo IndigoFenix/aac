@@ -1,0 +1,136 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=2030abb9+dirty
+# started=2026-09-06T05:14:57.733Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> say make cart
+OK     said: make + cart
+SAY    mara: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🔨 making a cart — by hand, no workbench (feedback)
+TICK   quiet after 1.5s.
+> wait 10
+EXIT   mara went out of the orange house.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "Are you okay?"  [you + ok#question]
+ENTER  mara came into view there north.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "I will build."  [i_me + build.will]
+TOAST  📦 bring 4 block — delivered (feedback)
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [water]
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> /stock
+CHEAT  /stock
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here south.
+TICK   waited 10.0s.
+> /stock
+CHEAT  /stock
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> /stock
+CHEAT  /stock
+> wait 10
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+SAY    orrin: [meal]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [banana.hot]
+ENTER  mara came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> /stock
+CHEAT  /stock
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> /stock
+CHEAT  /stock
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [water]
+TICK   waited 10.0s.
+> /stock
+CHEAT  /stock
+# ─────────────────────────────────────────
+# commands=44  presses=0  screens=1  sim=367.0s
+# events: TICK 38  EXIT 12  SAY 11  ENTER 11  CHEAT 6  TOAST 2  BOARD 1  NOTE 1  OK 1

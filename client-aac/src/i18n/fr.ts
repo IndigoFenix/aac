@@ -739,6 +739,7 @@ export const fr: Translations = {
       barrel: "Tonneau",
       basket: "Panier",
       satchel: "Sacoche",
+      cart: "Charrette",
       lamp: "Lampe",
       window: "Fenêtre",
       heater: "Chauffage",

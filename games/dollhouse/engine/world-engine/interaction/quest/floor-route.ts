@@ -17,7 +17,7 @@ import {
   structuresWalkable,
   type WorldState,
 } from "../../engine.js";
-import { standClear } from "./stand-points.js";
+import { nearestClearSpot, standClear } from "./stand-points.js";
 import { DEFAULT_BODY_RADIUS_M } from "../../creatures/species.js";
 
 interface Vec2 {
@@ -120,6 +120,38 @@ export function adjustTransitPair(
     }
   }
   return null;
+}
+
+/**
+ * ⚖️ A STREET-ROUTE VERTEX IS A CORRIDOR HINT, NOT A STAND POINT.
+ *
+ * `roadRoute` returns the street CENTRELINE, and a town puts things ON its
+ * centreline — the plaza well is placed at the town centre, which IS the street
+ * graph's origin junction. Splicing such a vertex into an errand verbatim hands
+ * the body a waypoint INSIDE a solid, and then the legs either side of it are
+ * planned from opposite faces of that solid, so the straight joining them
+ * crosses it. MEASURED (frontier seed 11): carriers pinned at (243.1, 242.2)
+ * against the well at (243.36, 243.36) with `npcErrandActive` true, the plan
+ * stepping 0.25 m at a time round the well's keep-out and then turning BACK
+ * north across it. The wedge is permanent because the routed corner after it
+ * carries `arrive 0.5` ⇒ tight ⇒ both steer-time escapes are withheld.
+ *
+ * So every spliced vertex is answered here: KEEP it when a body can stand on it
+ * (the ordinary case — nothing moves), else nudge it to the nearest standable
+ * ground, else DROP it (the road still runs through the gap, and the longer leg
+ * that results is exactly what `refineIndoorLeg` exists to route around).
+ * Never applied to a leg's real ENDPOINT — a caller's own spot, dwell and
+ * arrival semantics are not this rule's business.
+ */
+export function standableVia(
+  state: WorldState,
+  raw: Vec2,
+  from: Vec2,
+  bodyR: number = DEFAULT_BODY_R,
+): Vec2 | null {
+  if (standClear(state, raw, bodyR)) return raw;
+  const nudged = nearestClearSpot(state, raw, from, bodyR);
+  return standClear(state, nudged, bodyR) ? nudged : null;
 }
 
 /**

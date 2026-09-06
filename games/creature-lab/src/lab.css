@@ -122,6 +122,14 @@ button.danger { border-color: #5e3333; background: #402424; color: #f5cdcd; }
   white-space: pre;
 }
 
+/* Derived-stage readout under the plant-age scrub. */
+.lab-age {
+  color: #8fd0ff;
+  margin: 2px 0 4px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
 .lab-errors {
   color: #ff9d9d;
   white-space: pre-wrap;

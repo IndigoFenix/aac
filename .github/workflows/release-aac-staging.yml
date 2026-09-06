@@ -50,7 +50,12 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # The least-privilege publish role (terraform/iam.tf): s3:PutObject on the
+          # AAC update bucket and nothing else. It is what lets this run from a branch
+          # or a tag — the deploy role behind AWS_ROLE_ARN trusts refs/heads/main ONLY,
+          # so off main it fails with "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+          # The fallback keeps main-branch runs working before the new secret is set.
+          role-to-assume: ${{ secrets.AWS_PUBLISH_ROLE_ARN || secrets.AWS_ROLE_ARN }}
           role-session-name: github-actions-aac-release-staging
           aws-region: il-central-1
 

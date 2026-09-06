@@ -255,6 +255,40 @@ Three operational facts worth knowing before debugging one:
   It is the only link between a Paddle transaction and our user; without it the
   payment succeeds and the event is ignored with a reason.
 
+**Per-license (individually-quoted) billing.** Organisations are quoted one at a
+time, so the price lives on the `licenses` row (`price_amount` in the currency's
+MINOR unit, `price_currency`, interval from `subscription_type`) rather than in
+a catalog tier. Catalog prices (`subscription_plans.paddle_price_id`) still work
+and are the future self-serve path.
+
+- `POST /api/licenses/:id/checkout` (auth: the license's user, an **admin** of
+  its institute, or a system admin) creates a Paddle transaction with a
+  **non-catalog price** supplied inline — no `priceId` — hanging off one shared
+  product named **"Aivota License"** (`paddleService.ensureLicenseProduct`,
+  looked up by name, created once, memoised per process, tax category `saas`).
+  It answers `200 { transactionId }` for the browser to open with
+  `Paddle.Checkout.open({ transactionId })`; `409 LICENSE_NOT_PURCHASABLE`
+  (no price quoted, or the row is inactive), `409 LICENSE_ALREADY_PAID`,
+  `503 PADDLE_NOT_CONFIGURED`.
+- Fulfillment recognises these by `customData.licenseId`, **before** any catalog
+  price lookup: `transaction.completed` clears the trial and sets
+  `subscription_expires_at` from the transaction's billing period (falling back
+  to +30/+365 days). Later `subscription.*` events find the row by
+  `licenses.paddle_subscription_id`, since Paddle's own events carry no
+  customData we did not attach at checkout. A price that does not match the
+  quote is **logged, never rejected** — the money has already moved. No credits
+  are granted: credits are a separate product.
+- An invoice or bank-transfer customer is activated by an admin instead, with
+  `PATCH /api/admin/licenses/:id` setting `isTrial: false` and a
+  `subscriptionExpiresAt`.
+- **Expiry is enforced in `licenseService`**, nowhere else
+  (`shared/license-status.ts`): a NULL expiry is perpetual (every license
+  granted before billing existed looks like that), a paid license gets
+  `PAID_GRACE_DAYS = 3` past its date, a trial gets none, and `is_active = false`
+  is `none` rather than `expired`. An expired license resolves to no permissions
+  but still reports its id, status, dates and price so the client can render a
+  paywall with a pay button.
+
 **Runtime Injection:** Secrets are injected into containers at runtime by ECS/Lambda, never baked into images.
 
 ---
@@ -653,6 +687,8 @@ selects the role and it does not change on merge:
 2. **Set the secrets.** Point `AWS_ROLE_ARN` at the `github_actions_role_arn`
    output, and add `AWS_PLAN_ROLE_ARN` from `github_actions_plan_role_arn`. The
    next push to main is the first deploy that runs on the scoped role.
+   Also add `AWS_PUBLISH_ROLE_ARN` from `github_actions_publish_role_arn` — see
+   "Publishing artifacts off main" below.
 3. **Keep the bootstrap role as break-glass.** Do not delete
    `cliniaccian-github-actions-bootstrap`. If a scoped apply ever fails with
    `AccessDenied`, repoint `AWS_ROLE_ARN` back to it, merge the permission fix
@@ -668,6 +704,40 @@ expression are in place so that turning PR plans on is a one-line change to that
 exist today. Until then the plan role is inert, and the transition-safe
 `|| secrets.AWS_ROLE_ARN` fallback means an unset `AWS_PLAN_ROLE_ARN` degrades to
 the deploy role rather than to a broken job.
+
+### Publishing artifacts off main
+
+The deploy role's `main`-only trust is correct, and it has one consequence worth
+naming: **the AAC release workflows cannot use it.** They run from feature
+branches (`workflow_dispatch`) and from `v*` tags, whose OIDC subjects are
+`…:ref:refs/heads/<branch>` and `…:ref:refs/tags/v…` — neither matches
+`StringEquals … refs/heads/main`. The symptom is
+`Not authorized to perform sts:AssumeRoleWithWebIdentity` at the "Configure AWS
+credentials" step. This bit the iOS build first (2026-09-06), but it applies
+equally to `release-aac.yml` on a tag push.
+
+The fix is NOT to add those refs to the deploy role. That role carries `<ns>:*`
+across most of the account, and widening its trust would hand it to anyone who
+can push an unprotected branch — undoing the narrowing this section documents.
+
+Instead: `aws_iam_role.github_actions_publish` (`terraform/iam.tf`, output
+`github_actions_publish_role_arn`, repo secret `AWS_PUBLISH_ROLE_ARN`). Trust is
+wider — `main`, `staging`, `refs/tags/v*` — because the permission behind it is
+a single `s3:PutObject` on the AAC update bucket, whose `DataClass` is `public`.
+No delete, no read, no bucket-level actions, no KMS (the bucket is SSE-S3). The
+bucket is versioned, so a re-publish adds a version rather than destroying a
+shipped artifact — which is what makes one write action safe to give a branch
+build.
+
+`pull_request` is deliberately **not** trusted. That subject is produced by PRs
+including ones from forks, and this role writes the artifacts the desktop
+auto-updater installs.
+
+The four AAC publish workflows (`release-aac.yml`, `release-aac-staging.yml`,
+`build-aac-ios-unsigned.yml`, `publish-aac-backend.yml`) use
+`${{ secrets.AWS_PUBLISH_ROLE_ARN || secrets.AWS_ROLE_ARN }}`, so the apply and
+the secret are independent steps. `deploy.yml` and `deploy-lambda.yml` are
+untouched and stay on the deploy role.
 
 ### Before the next apply: one blocked resource
 

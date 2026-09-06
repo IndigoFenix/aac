@@ -1030,6 +1030,41 @@ const RECIPES: Record<string, Recipe> = {
     );
   },
 
+  /** THE HAND CART (user, 2026-09-05) — the third portable container and the
+   *  only one a body can make. A plank BED with a low rim, two spoked wheels on
+   *  a visible axle and two long handles reaching forward: read as a thing you
+   *  PUSH, in one silhouette, at prop scale. Wood is the tintable body (it is
+   *  cut from blocks); the ironwork and tyres stay their own colour, the same
+   *  convention the car's wheels keep. Forward is +X, so the handles lead. */
+  cart: (ctx) => {
+    const { r } = ctx;
+    const wood = mat(ctx, "#a9762f", { roughness: 0.85, tint: true });
+    const iron = mat(ctx, "#3f3f46", { roughness: 0.6, metalness: 0.4 });
+    const tyre = mat(ctx, "#27221c", { roughness: 0.8 });
+    // The bed — a shallow open box: floor, two sides, a tail and a head board.
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 0.12, r * 1.0), wood, [-r * 0.1, -r * 0.05, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 0.42, r * 0.09), wood, [-r * 0.1, r * 0.2, r * 0.46]);
+    part(ctx, new THREE.BoxGeometry(r * 1.5, r * 0.42, r * 0.09), wood, [-r * 0.1, r * 0.2, -r * 0.46]);
+    part(ctx, new THREE.BoxGeometry(r * 0.09, r * 0.42, r * 1.0), wood, [-r * 0.82, r * 0.2, 0]);
+    part(ctx, new THREE.BoxGeometry(r * 0.09, r * 0.3, r * 1.0), wood, [r * 0.62, r * 0.14, 0]);
+    // The axle, straight through under the bed, and the two wheels on it.
+    part(ctx, new THREE.CylinderGeometry(r * 0.06, r * 0.06, r * 1.3, 8), iron, [-r * 0.15, -r * 0.34, 0], [Math.PI / 2, 0, 0]);
+    for (const wz of [-r * 0.6, r * 0.6]) {
+      part(ctx, new THREE.CylinderGeometry(r * 0.46, r * 0.46, r * 0.11, 16), tyre, [-r * 0.15, -r * 0.34, wz], [Math.PI / 2, 0, 0]);
+      part(ctx, new THREE.TorusGeometry(r * 0.3, r * 0.045, 6, 12), wood, [-r * 0.15, -r * 0.34, wz]);
+      // Two crossed spokes read as a wheel without a wheel's worth of triangles.
+      part(ctx, new THREE.BoxGeometry(r * 0.62, r * 0.05, r * 0.05), wood, [-r * 0.15, -r * 0.34, wz]);
+      part(ctx, new THREE.BoxGeometry(r * 0.05, r * 0.62, r * 0.05), wood, [-r * 0.15, -r * 0.34, wz]);
+    }
+    // Two handles, angled up out of the bed towards whoever is pushing.
+    for (const hz of [-r * 0.38, r * 0.38]) {
+      part(ctx, new THREE.BoxGeometry(r * 0.95, r * 0.08, r * 0.08), wood, [r * 1.05, r * 0.12, hz], [0, 0, 0.22]);
+      part(ctx, new THREE.CylinderGeometry(r * 0.07, r * 0.07, r * 0.22, 8), iron, [r * 1.48, r * 0.22, hz], [Math.PI / 2, 0, 0]);
+    }
+    // A single leg at the head, so a parked cart stands level instead of tipping.
+    part(ctx, new THREE.BoxGeometry(r * 0.09, r * 0.55, r * 0.09), wood, [-r * 0.78, -r * 0.38, 0]);
+  },
+
   boat: (ctx) => {
     const { r } = ctx;
     part(ctx, new THREE.BoxGeometry(r * 1.8, r * 0.7, r * 0.9), mat(ctx, "#b45309", { roughness: 0.6, tint: true }), [0, -r * 0.5, 0]);
@@ -1205,6 +1240,10 @@ const EMOJI_TO_KEY: Record<string, string> = {
   // its own — a placeholder for the ICON, never for the model: the recipe is a
   // real satchel, so it reads as one in the world whatever the board shows.
   "🎒": "satchel", "👜": "satchel",
+  // The hand cart. Unicode has no barrow, so 🛒 (a shopping trolley) is the
+  // closest there is — a stand-in for the ICON only: the recipe below builds a
+  // real plank-and-wheels cart, exactly as 🎒 stands in over a real satchel.
+  "🛒": "cart",
   "⛵": "boat", "🚤": "boat", "🛶": "boat",
 };
 
@@ -1215,7 +1254,7 @@ const SYMBOL_TO_KEY: Record<string, string> = {
   // the plural toy `blocks` above it. Listed so the stack head resolves
   // directly, without ever depending on the icon.
   block: "block",
-  basket: "basket", satchel: "satchel", boat: "boat",
+  basket: "basket", satchel: "satchel", cart: "cart", boat: "boat",
   // `teddy` is gone as a WORD (a teddy bear is `bear.toy` now); the plush body it
   // named lives on as the generic `doll` recipe, which the bare word also uses.
   doll: "doll", puzzle: "puzzle",

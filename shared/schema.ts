@@ -394,6 +394,16 @@ export const licenses = pgTable("licenses", {
   // indistinguishable at the point where we have to call an API with it.
   paddleCustomerId: text("paddle_customer_id"),
   paddleSubscriptionId: text("paddle_subscription_id"),
+  // Per-license pricing (organisations are quoted individually; catalog tiers
+  // via subscriptionPlans.paddlePriceId come later for self-serve). The amount
+  // is in the currency's minor unit (cents/agorot) as Paddle expects; the
+  // interval is `subscriptionType` above. Null amount = not purchasable online
+  // (invoice-paid or admin-granted).
+  priceAmount: integer("price_amount"),
+  priceCurrency: text("price_currency").default("USD"),
+  // The most recent checkout transaction created for this license (pending or
+  // completed); fulfillment matches transaction.completed against it.
+  paddleTransactionId: text("paddle_transaction_id"),
 
   // Permissions
   permissions: jsonb("permissions").$type<LicensePermissions>(),

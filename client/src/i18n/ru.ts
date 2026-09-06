@@ -3166,6 +3166,9 @@ export const ru = {
     SCOPE_MALFORMED: "Не удалось определить владельца этого фото.",
     SCOPE_REQUIRED: "Сначала выберите {{student}} или организацию.",
     UNAUTHORIZED: "Пожалуйста, войдите снова.",
+    LICENSE_ALREADY_PAID: "Эта лицензия уже оплачена.",
+    LICENSE_NOT_PURCHASABLE: "Эту лицензию нельзя оплатить онлайн. Пожалуйста, свяжитесь с нами.",
+    PADDLE_NOT_CONFIGURED: "Онлайн-оплата сейчас недоступна. Повторите попытку позже или свяжитесь с нами.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const ru = {
       isTrial: "Пробная лицензия",
       trialExpiresAt: "Пробный период истекает",
       trialExpired: "Пробный период истёк",
+      price: "Цена",
+      pricePlaceholder: "например 49,90",
+      priceHint: "Оставьте пустым для клиентов по счёту — кнопка онлайн-оплаты им не показывается.",
+      currency: "Валюта",
+      paidUntil: "Оплачено до",
+      expires: "Истекает",
+      expired: "Истекла",
       // Recipient
       recipient: "Получатель",
       email: "Эл. почта",
@@ -4936,5 +4946,34 @@ export const ru = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "Активировать лицензию",
+    adminOnly: "Управлять этой лицензией может только администратор организации.",
+    banner: {
+      dismiss: "Скрыть",
+      expired: "Срок действия лицензии истёк. Часть функций недоступна.",
+      trialEndsIn: "Пробный период закончится через {{days}} дн.",
+      trialEndsToday: "Пробный период заканчивается сегодня.",
+      trialEndsTomorrow: "Пробный период закончится завтра.",
+      viewBilling: "Открыть оплату",
+    },
+    checkoutFailed: "Не удалось начать оплату",
+    expiredOn: "Истекла {{date}}",
+    invoiceOnly: "Эта лицензия оплачивается по счёту. Свяжитесь с нами для продления или изменения.",
+    notReady: "Онлайн-оплата сейчас недоступна.",
+    paidUntil: "Оплачено до {{date}}",
+    paymentComplete: "Платёж получен",
+    paymentCompleteDesc: "Ваша лицензия обновлена. Спасибо!",
+    planMonthly: "Ежемесячно",
+    planYearly: "Ежегодно",
+    renew: "Продлить",
+    statusActive: "Активна",
+    statusExpired: "Истекла",
+    statusNone: "Нет лицензии",
+    statusTrial: "Пробная",
+    subtitle: "Ваш тариф, его стоимость и дата окончания.",
+    title: "Лицензия и оплата",
+    trialEnds: "Пробный период заканчивается {{date}}",
   },
 };

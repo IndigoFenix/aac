@@ -411,6 +411,44 @@ export const CORE_PEOPLE: readonly string[] = [
   "mom", "dad", "teacher", "friend", "baby", "girl", "boy",
 ];
 
+/**
+ * THE FRAME NOUNS A CHILD PRESSES (2026-09-06) — `CORE_PEOPLE`'s sibling for
+ * the core concepts that are BUTTONS rather than grammar or chip labels.
+ *
+ * Same law one row up: these are frame words, no registry will ever define one,
+ * and the sentence board's spec walk therefore cannot find them. Named as their
+ * own group because most core concepts are NOT buttons — `place`, `room`,
+ * `outside` and `person` are what a CHIP is called, `house` is the dwelling the
+ * house program already speaks as `home`, and `area` is a LEXICON word on the
+ * Actions tab. These four are words a child says.
+ *
+ * ⚖️ ONE WORD BANK (user law, 2026-09-06: "the word bank in the sentence
+ * builder should always be the same with a default world-spec lexicon, even
+ * outside the game — the context is irrelevant. The only exception is the
+ * individual people list."). All four used to reach a board ONLY through the
+ * quest host's `pushKnownNouns`, gated on being inside a dollhouse or at a
+ * town — so "yard" and "clothes" existed in one session and not the next. They
+ * are default vocabulary now; the host pushes names only.
+ *
+ * `kind` decides how the board FILES the word (a place clusters by
+ * `placeGroupOf`, an item by its properties), which is the one thing that
+ * cannot be read off a registry for a word no registry defines.
+ */
+export const CORE_BOARD_NOUNS: readonly { readonly head: string; readonly kind: "place" | "item" }[] = [
+  // The ground beside the house — where a build order's materials are stacked
+  // ("bring wood to the yard"). ⚠️ NO REAL ARTWORK: it has no glyph-registry row
+  // and no place art, so it draws the compositor's emoji fallback (🏡, added to
+  // `emoji-registry` with this list). A `places/yard` icon is an art-queue item.
+  { head: "yard", kind: "place" },
+  // The settlement itself, and the generic structure — both are speakable
+  // goals ("go to town", "build a building"), and both carry art.
+  { head: "town", kind: "place" },
+  { head: "building", kind: "place" },
+  // The garment UMBRELLA. The individual garments are spec'd (pool rows and
+  // `CLOTHING_HEADS`); the category word that means all of them is not.
+  { head: "clothing", kind: "item" },
+];
+
 export const CORE_CONCEPTS: ReadonlySet<string> = new Set([
   // Places / territory (the named STRUCTURES — market, farm — are spec'd, and
   // carry `structure`; these are the frame words the engine itself owns).

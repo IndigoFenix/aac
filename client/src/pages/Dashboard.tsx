@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { TopHeader } from '@/components/layout/TopHeader';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { GlobalAuthModals } from '@/components/GlobalAuthModals';
+import { LicensePaywallBanner } from '@/components/billing/LicensePaywallBanner';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
@@ -98,6 +99,9 @@ export default function Dashboard() {
         )}
       >
         <TopHeader onToggleSidebar={handleToggleSidebar} />
+        {/* Renders nothing unless the license is expired or a trial is nearly
+            up; never blocks the UI (the server owns entitlement). */}
+        <LicensePaywallBanner />
         <MainLayout />
         <GlobalAuthModals />
       </div>

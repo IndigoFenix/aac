@@ -228,6 +228,10 @@ function makeFixture(opts?: { pullOn?: boolean; withSiteBill?: boolean }): Fixtu
     bagCeilingOf: () => 0,
     orderSiteId: (ord) => `o:${ord}`,
     buildworkSiteAt: () => null,
+    // 🔁 MOVED (Stage 2): the seat seam is a required dep now. A MARK's seat is
+    // not a construction row's — it is minted from the mark's own site id — so
+    // this fixture offers no ORDER seats and the fell pins below still stand.
+    seatsOf: () => [],
     siteMaterialSources: () => [
       { id: CRATE, stack: crateStock, d: 10 },
       { id: OAK, stack: { wood: 8 }, d: 40 },
@@ -308,7 +312,12 @@ describe("② a MARK is a bill", () => {
     expect(l.objId).toBe(OAK);
     expect(l.to).toBeUndefined(); // the trunk lies where it falls
     expect(l.units).toBeUndefined(); // a chop moves nothing
-    expect(l.seats).toBe(1);
+    // 🔁 MOVED PIN (Stage 2, S2): "one tree, one chopper" is now a real SEAT on
+    // the mark's own site id rather than the integer 1 — same law, claimed on
+    // the ledger instead of counted over `session.pursuits`.
+    expect(l.seats).toEqual([
+      { siteId: "fell:wild:oak_3", link: "fell", key: "fell:wild:oak_3#seat0", at: OAK_AT, index: 0 },
+    ]);
     expect(l.urgency).toBe(1); // a thing is up, or it is down
     expect(l.word).toBe("plants");
     expect(l.siteId).toBe("fell:wild:oak_3");

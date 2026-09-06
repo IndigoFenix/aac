@@ -48,6 +48,7 @@ one row to the matrix in `detect.ts` and fixing the resulting type errors.
 | `capacitor.config.ts` | The iOS shell config. Counterpart to `electron-builder.yml`. |
 | `scripts/ios-configure.mjs` | Everything we change about the generated project: `Info.plist` keys, the app icon, the localized permission strings, and the Xcode build settings (iPad-only). Idempotent; `--check` verifies without writing. |
 | `scripts/ios-permission-strings.mjs` | The camera/mic/local-network prompt text in all 11 languages. iOS renders these before any JS runs, so they cannot live in `client-aac/src/i18n`. |
+| `scripts/verify-ios-ipa.mjs` | Reads a built `.ipa` (or the workflow's artifact zip) and asserts what the store and the student depend on — SDK, device family, export compliance, the 12 localizations. Run it on every artifact before uploading. |
 | `client-aac/.env.ios` | Backend baked into the build. Mirrors `.env.electron`. |
 | `.github/workflows/release-aac-ios.yml` | macOS-runner build → TestFlight. |
 | `shared/native-update.ts` | The `UpdateStatus` contract shared by both shells. |
@@ -103,8 +104,18 @@ With the workflow's `publish` input left on (the default), it ALSO uploads the
 Windows auto-updater feeds from, fronted by
 `https://updates.aivota.ai/aac/ios/`. That is what the clinician dashboard's
 **Downloads** page serves, so clinicians fetch the current build themselves
-instead of it being emailed around. Publishing needs the `AWS_ROLE_ARN` secret
-(already present for `release-aac.yml`); uncheck `publish` to build without it.
+instead of it being emailed around. Publishing needs the `AWS_PUBLISH_ROLE_ARN`
+secret; uncheck `publish` to build without it.
+
+**If that step fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`,
+your build is fine.** Publishing is the only AWS step, and it runs *after* the
+artifact upload — the `.ipa` is already attached to the run, so download it from
+there rather than re-running. The cause is the ref you dispatched from: the
+deploy role behind `AWS_ROLE_ARN` trusts `refs/heads/main` only, by design. The
+fix is the dedicated publish role (`terraform/iam.tf`, output
+`github_actions_publish_role_arn`), which trusts `main`, `staging` and `v*` tags
+and can do nothing but `s3:PutObject` into the AAC update bucket. Until that
+secret is set, run from a branch with `publish` off.
 The uploader is `scripts/publish-aac-ios.mjs` — the iOS counterpart to
 `publish-aac-release.mjs`. Note there is still **no auto-update**: an `.ipa`
 cannot replace itself, so a new version means sideloading again.
@@ -204,11 +215,18 @@ build, which is the whole reason it exists.
 When Apple raises the floor (historically each spring), bump `XCODE_VERSION`
 and `MIN_IOS_SDK` together, in both files.
 
-> Not verifiable from Windows: whether `Xcode_26*.app` is actually on the
-> `macos-15` image. If it is not, the *unsigned* workflow fails in ~30 seconds
-> with the installed list printed — run that one first and set the pin from its
-> output. That failure mode is the point: the alternative is a silent SDK
-> downgrade discovered at upload.
+> Whether `Xcode_26*.app` is on the `macos-15` image cannot be checked from
+> Windows, only from a run. If it is not there the *unsigned* workflow fails in
+> ~30 seconds with the installed list printed — run that one first and set the
+> pin from its output. That failure mode is the point: the alternative is a
+> silent SDK downgrade discovered at upload.
+>
+> **A green run is not proof the pin took effect** — only that the step did not
+> fail. The proof is in the artifact: `verify-ios-ipa.mjs` (below) reads
+> `DTSDKName` out of the built bundle and compares it to `MIN_IOS_SDK`. A July
+> 2026 artifact, built before the pin, reads `iphoneos17.5` / Xcode `1540` —
+> which is exactly the rejection this pin exists to prevent, and confirms the
+> `macos-14` default really was too old.
 
 ### Open items before the first submission
 
@@ -395,17 +413,44 @@ Verified on Windows:
   object ids), idempotency, and `--check`
   (`npm run test:unit -- ios-configure`).
 
+### Check the artifact — `verify-ios-ipa.mjs`
+
+The jest suite proves `ios-configure.mjs` produces the right Xcode *project*.
+Nothing proved that project produces the right *app*, and `ios/` is discarded
+after the build, so there was no way to tell from Windows. This closes it:
+
+```
+node scripts/verify-ios-ipa.mjs "path/to/aivota-aac-ipad-unsigned-ipa.zip"
+```
+
+It takes the artifact zip straight from the run (it unwraps the `.ipa` inside),
+or an `.ipa`, or an extracted directory. It reads the shipped bundle and fails
+on: wrong bundle id; an SDK below the workflow's `MIN_IOS_SDK` (read from
+`release-aac-ios.yml`, so the two cannot drift); `UIDeviceFamily` ≠ `[2]`;
+a missing `ITSAppUsesNonExemptEncryption`; missing or short usage descriptions;
+any of the 12 `InfoPlist.strings` absent from the bundle; a localization
+byte-identical to English. **Run it on every artifact before uploading.**
+
+The one that most needed catching is the localization check. The `.lproj` files
+can be written correctly, registered correctly, and still be absent from the
+`.app` if a build phase does not reference them — the build goes green and a
+Hebrew family gets an English camera prompt. Only the shipped bundle shows that.
+
+It also warns (rather than fails) when `UIRequiresFullScreen` is set on an
+iOS 26+ SDK build, which needs a device to settle.
+
+Verified by running it against a real July 2026 artifact, which correctly fails
+on exactly the four things fixed since (SDK 17.5, `UIDeviceFamily [1,2]`, no
+encryption key, 0/12 localizations) and against a synthesized compliant bundle,
+which passes.
+
 **Not verified — no Mac, no iPad:**
 
 - `npx cap add ios`, `cap sync`, CocoaPods.
 - The entire workflow: `xcodebuild archive`, export, signing, `altool` upload.
-- **The toolchain pin** — whether `Xcode_26*.app` exists on `macos-15` at all.
-  The selection and SDK-comparison logic was exercised locally against a
-  synthetic `/Applications` (highest-version wins, `26.10` > `26.2`, missing
-  pin fails legibly under `bash -eo pipefail`), but the image contents cannot
-  be. See "Toolchain pin" above.
 - Whether the app actually runs, and whether camera/microphone/audio behave in
   WKWebView.
+- Whether iPadOS still honours `UIRequiresFullScreen` on the pinned SDK.
 
 Expect several CI iterations before the first green build. The first build
 should be checked by someone technical before it reaches a student.

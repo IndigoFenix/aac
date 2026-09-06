@@ -54,6 +54,11 @@ import {
 } from "@shared/world-engine/creatures/physio";
 import { convexHull2D } from "@shared/world-engine/creatures/balance";
 import {
+  ageGrowth,
+  ageGrowths,
+  agePlantBody,
+  growthHeightFactor,
+  growthLevelsAt,
   FRUIT_PLACEMENTS,
   GROWTH_ATTACH,
   GROWTH_BRANCHING_RANGES,
@@ -166,6 +171,13 @@ let statusIsError = false;
 let built: BuiltCreature | null = null;
 let skeletonHelper: THREE.SkeletonHelper | null = null;
 let seed = 1;
+// 🌱 PLANT AGE — 0 a shoot .. 1 the authored adult (growth.ts `ageGrowth`).
+// A VIEW, never an edit: the sliders and the JSON box keep writing/showing
+// the ADULT blueprint, and the scrub only changes the body drawn from it,
+// exactly as the world will (the sim's size class decides the age, the
+// render reads it). 1 is identity, so a fresh lab session is byte-identical
+// to the lab before this existed.
+let plantAge = 1;
 let autoFrame = true;
 let wireframe = false;
 let showSkeleton = false;
@@ -903,18 +915,25 @@ function disposeLodPreview(): void {
 function rebuildGeometry(): CreatureSkeleton {
   disposeBuilt();
   disposeLodPreview();
+  // The BODY the age scrub asks for. `agePlantBody` returns the authored
+  // object itself at age 1, so every path below is untouched at rest.
+  // 🌱 It is the WORLD's ager too (creature-model.ts `dressedBlueprint`), so
+  // the lab and the live twin draw the same plant at the same age — including
+  // the nub: it shrinks the 0.1 m torso with the plant and compensates the
+  // stem ratio, so the stem length is exactly `ageGrowths`' own.
+  const bp = agePlantBody(blueprint, plantAge);
   // Show the soil plane when a root vegetable is present (its body grows
   // down through it). The plant nub grounds at y≈0, so the soil sits there.
   soilPlane.visible = blueprint.growths.some((gr) => gr.type === "root");
   if (lodPreview !== "off") {
     // Static-kind preview: what a scattered instance of this blueprint
     // would render as at mid range (LOD1) or far range (impostor).
-    const skel = buildSkeleton(blueprint, undefined, undefined, undefined, physEnv());
+    const skel = buildSkeleton(bp, undefined, undefined, undefined, physEnv());
     publishSupport(skel);
-    const lods = buildPlantLods(blueprint);
+    const lods = buildPlantLods(bp);
     lodDisposers.push(() => lods.dispose());
     if (lodPreview === "stick") {
-      const fig = creatureSticks(skel, blueprint);
+      const fig = creatureSticks(skel, bp);
       const geom = buildStickGeometry(fig);
       const mat = stickMaterial(); // unlit tier — `celShading` has no effect here
       const mesh = new THREE.Mesh(geom, mat);
@@ -924,7 +943,7 @@ function rebuildGeometry(): CreatureSkeleton {
         `stick · ${fig.segments.length} capsules · ${geom.getAttribute("position").count} verts · ` +
         `${geom.getIndex()!.count / 3} tris (LOD1: ${lods.lod1.vertices} verts)`;
     } else if (lodPreview === "impostor") {
-      const imp = bakePlantImpostor(renderer, lods, blueprint);
+      const imp = bakePlantImpostor(renderer, lods, bp);
       const mesh = makeImpostorMesh(imp);
       lodDisposers.push(() => imp.dispose(), () => mesh.geometry.dispose(), () => (mesh.material as THREE.Material).dispose());
       lodObject = mesh;
@@ -940,16 +959,16 @@ function rebuildGeometry(): CreatureSkeleton {
     return skel;
   }
   const skel = animOn
-    ? buildSkeleton(blueprint, animFrame?.gait, animFrame?.pose, undefined, physEnv())
+    ? buildSkeleton(bp, animFrame?.gait, animFrame?.pose, undefined, physEnv())
     : buildSkeleton(
-        blueprint,
+        bp,
         walking ? gaitParams : undefined,
         mouthMisc.gape > 0 ? { gape: mouthMisc.gape } : undefined,
         undefined,
         physEnv(),
       );
   publishSupport(skel);
-  built = buildCreatureMesh(skel, blueprint, { bareSkull, toon: celShading, debugTags: true });
+  built = buildCreatureMesh(skel, bp, { bareSkull, toon: celShading, debugTags: true });
   (built.mesh.material as THREE.MeshStandardMaterial).wireframe = wireframe;
   if (colorBySection) applySectionColors();
   else sectionLegendEl.style.display = "none";
@@ -1731,6 +1750,44 @@ function buildPanel(): void {
         rebuild();
       });
     }
+  }
+
+  // 🌱 Plant age — the growth scrub (growth.ts `ageGrowth`). Above the
+  // growths section because it READS every field below it: a shoot is the
+  // same blueprint with fewer branch levels, a slenderer stem and sparser
+  // leaves, never a scaled-down copy of the adult. The readout names the
+  // stage the scrub derives, so what you see can be checked against the
+  // numbers without opening the JSON box.
+  if (blueprint.growths.length > 0) {
+    const s = section("plant age (view only)", true);
+    const row = el("div", "lab-row", s);
+    el("label", undefined, row).textContent = "age";
+    const input = el("input", undefined, row);
+    input.type = "range";
+    input.min = "0";
+    input.max = "1";
+    input.step = "0.01";
+    input.value = String(plantAge);
+    const val = el("span", "val", row);
+    const stage = el("div", "lab-age", s);
+    const readout = (): void => {
+      val.textContent = plantAge.toFixed(2);
+      const g0 = blueprint.growths[0];
+      const aged = ageGrowth(g0, plantAge);
+      const h = plantAge >= 1 ? 1 : growthHeightFactor(plantAge);
+      const heightM = aged.stem.lengthFrac * blueprint.spine.torsoLengthM;
+      stage.textContent =
+        `levels ${growthLevelsAt(g0.branching.levels, plantAge)}/${g0.branching.levels}` +
+        ` · leaves ${aged.foliage.leafDensity.toFixed(2)}/${g0.foliage.leafDensity}` +
+        ` · stem ×${h.toFixed(3)} (${fmtLenM(heightM)})` +
+        ` · girth ${aged.stem.girth.toFixed(4)} · start ${aged.branching.branchStart.toFixed(2)}`;
+    };
+    readout();
+    input.addEventListener("input", () => {
+      plantAge = Number(input.value);
+      readout();
+      rebuild();
+    });
   }
 
   // Growths — the branching/spiral grammar (growth.ts): horns, antlers,

@@ -152,9 +152,13 @@ import {
 import {
   CHOP_DWELL_S,
   CONTRIBUTE_TPL_KEY,
+  cidOfPullHolder,
+  claimSeat,
   fellSiteId,
+  heldSeats,
   isContributePursuit,
   pullLaborOn,
+  releaseSeats,
   type ContributeBill,
   type FellRow,
 } from "@shared/world-engine/kernel/town/pull-labor.js";
@@ -285,7 +289,6 @@ import {
   abandonSite,
   depositSiteStock,
   foundSite,
-  isSiteMaterial,
   noteSiteBuilding,
   siteAbandonRadius,
   siteIsEmpty,
@@ -306,6 +309,7 @@ import {
   wildFeatureEmbodied,
   wildFeatureRadiusOf,
   wildFeatureStandsAsBody,
+  wildFloraBodyId,
   wildSourceWord,
   type WildernessContent,
   type WildernessCreature,
@@ -436,10 +440,17 @@ import {
   TIER_BANDS,
   TIER_RANK,
   seedTier,
+  seedTierForProjected,
   steppedTier,
   detailForTier,
+  projectedFraction,
+  tierDistanceM,
+  tierForProjected,
   type CreatureTier,
+  type TierPoint,
+  type ViewPoint,
 } from "../../creatures/view-tiers.js";
+import { growthHeightFactor } from "../../creatures/growth.js";
 import {
   outfitPresetFor,
   outfitIndexOf,
@@ -451,12 +462,11 @@ import {
 } from "../../creatures/clothing.js";
 import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, listSpecies, requireSpecies, speciesBodyRadius, speciesCanSpeak } from "../../creatures/species.js";
 import {
-  drinkGlyphs, foodPlants, glyphTakeableFrom, growthClassYield, isBodyProduct, naturalSourceOf, sourceIsConsumable,
+  drinkGlyphs, foodPlants, glyphTakeableFrom, growthAgeOf, growthClassYield, isBodyProduct, naturalSourceOf, sourceIsConsumable,
   sourceIsCuttable, sourceIsSubstantial,
   sourceSpent, sourceSuitabilityAt, sourcesForGood, takeUnitsOf,
   type ClimateSample, type NaturalSource,
 } from "../../products.js";
-import { libraryNouns } from "@shared/world-engine/interaction/content/pools.js";
 import { hashSeed, mulberry32 } from "@shared/prng.js";
 import { buildConcepts } from "@shared/world-engine/interaction/content/concepts.js";
 import { isPlant, propertiesOf } from "@shared/world-engine/interaction/content/properties.js";
@@ -518,6 +528,7 @@ import {
   type VerbCost,
 } from "@shared/world-engine/kernel/town/scope-shape.js";
 import {
+  FLORA_BODY_PREFIX,
   SHELF_PREFIX,
   auditScopeTree,
   lotScopeId,
@@ -584,7 +595,7 @@ import {
   type WorldState,
   type AvatarState,
 } from "../../engine.js";
-import { idlePadOf, routeIndoorAware } from "./floor-route.js";
+import { idlePadOf, routeIndoorAware, standableVia } from "./floor-route.js";
 // STAND-POINT PLANNING (stand-points.ts — pure, extracted so tests can pin it):
 // where a body stands to use a fixture, same-room-gated so a probe past a
 // wall-hugging chest never lands on clear ground OUTSIDE the room (the
@@ -592,6 +603,7 @@ import { idlePadOf, routeIndoorAware } from "./floor-route.js";
 import {
   nearestClearSpot,
   playRingSpot,
+  propSpotClearOfRect,
   standClear,
   standPointFor,
   type BodyAvoidance,
@@ -2097,12 +2109,24 @@ export interface QuestPresenter {
   score?(value: number): void;
   /** Gameplay beats a platform may want to relay (e.g. "demonstration_shown"). */
   action?(action: string, meta?: Record<string, unknown>): void;
-  /** The player's speakable nouns for the sentence builder — the known-by-
-   *  default library + learned things. `symbol` is the composable glyph,
-   *  `label` a short display name; `kind`/`affords` carry each noun's world
-   *  semantics (concepts.ts) so the builder's SURFACER (surface-next.ts) can
-   *  rank meaningful continuations. */
-  nouns?(list: { symbol: string; label: string; kind?: "place" | "item" | "creature" | "unknown"; affords?: string[]; properties?: string[] }[]): void;
+  /**
+   * THE INDIVIDUAL PEOPLE this session knows, for the sentence builder.
+   *
+   * ⚖️ ONE WORD BANK (user law, 2026-09-06): the builder's vocabulary is the
+   * default world-spec lexicon (`defaultBuilderNouns`), the same in every
+   * session and out of a game entirely — "the context is irrelevant. The only
+   * exception is the individual people list." So this channel carries NAMES:
+   * household members and pets, `individual: true`, which files them on the
+   * builder's [contacts] chip beside a child's real directory. It is a MERGE,
+   * never a replacement — a receiver must hand these to `builderSurfaceFor`
+   * with the defaults on (which is its default), or it shows a board of four
+   * names.
+   *
+   * `symbol` is the composable token a sentence carries, `label` the name as
+   * written; `kind`/`affords`/`properties` carry the world semantics the
+   * SURFACER (surface-next.ts) ranks by, exactly as a spec-side noun does.
+   */
+  nouns?(list: { symbol: string; label: string; kind?: "place" | "item" | "creature" | "unknown"; affords?: string[]; properties?: string[]; individual?: boolean }[]): void;
   /** ⑫ — WHO IS STANDING IN THIS CONVERSATION, as the words the child would
    *  press (conversation-in-motion.md law ②). Two or more of them means a crowd,
    *  where a request has to say WHOM it is for — so the builder opens its
@@ -2792,8 +2816,22 @@ export interface QuestHost3D {
    *  per-body tier bands measure from THIS point when set — the parked
    *  gaze-walker / plaza spawn the fallback measures from can sit across town
    *  from the camera, which inverts LOD (full detail far, sticks near). null
-   *  (or never called — every standalone host) = the old fallback chain. */
-  setViewPoint(pt: { x: number; y: number } | null): void;
+   *  (or never called — every standalone host) = the old fallback chain.
+   *
+   *  ⚖️ FEED THE FULL CAMERA POSE, HEIGHT INCLUDED (user ruling 2026-09-06,
+   *  "use true 3D camera distance"): `z` is metres ABOVE THE SIM GROUND PLANE
+   *  (`TierPoint`) — the driver reads it straight off the same anchor-local
+   *  transform that gives x/y. Omit it and the band measures the sim-plane
+   *  projection, which is what an orbit camera 41 m up was doing wrong.
+   *
+   *  ⚖️ …AND ITS FOV + VIEWPORT (user ruling C4, 2026-09-06). THIS IS THE ONE
+   *  SEAM: nothing in the host reads a camera from a global. With `fovRad` and
+   *  `viewportH` set, the per-body tier is picked by the body's PROJECTED
+   *  HEIGHT on screen instead of by metres, so any camera scheme — walker,
+   *  district orbit, dollhouse, a future one — gets the right detail without
+   *  re-anchoring the bands per scheme. Omit them (or feed a driverless host
+   *  nothing at all) and the metre pick runs exactly as before. */
+  setViewPoint(pt: ViewPoint | null): void;
   /** SPIRIT LADDER: the cursor target the view computed on its last render
    *  while the external-cursor opt-out is on — WORLD coords into `out`, null
    *  when there is none (no gaze, opt-out off, or no 3D view yet). */
@@ -3465,9 +3503,17 @@ function bodySpeciesOf(
 /** NATURAL-SOURCE BODIES (fauna/flora): one lazy factory per SPECIES (ids
  *  carry it — `fauna:<species>:…` / `flora:<species>:…`), each standing its
  *  registry height. Never a species-name special case. Shared by the town
- *  factory (herds, orchards) and the puzzle factory (wild product animals). */
+ *  factory (herds, orchards) and the puzzle factory (wild product animals).
+ *
+ *  🌱 THE GROWTH STAGE DOES NOT SPLIT THIS CACHE, and must not: the factory is
+ *  per SPECIES, and `createCreatureAvatarFactory` samples `ageFor` PER BODY at
+ *  model-build time (exactly as it samples `detailFor`). The stage reaches the
+ *  bake through `assetKey` instead, which is the only place it can live —
+ *  a `flora:<species>:<featureId>` id is also the feature's CONTAINER KEY and
+ *  may never move, so the stage can never be written into the id. */
 function makeNaturalBodyFactory(
   detailFor?: (id: string) => CreatureDetail,
+  ageFor?: (id: string) => number,
 ): (species: string) => ReturnType<typeof createCreatureAvatarFactory> {
   const cache = new Map<string, ReturnType<typeof createCreatureAvatarFactory>>();
   return (species: string) => {
@@ -3477,6 +3523,12 @@ function makeNaturalBodyFactory(
       f = createCreatureAvatarFactory({
         speciesFor: () => species,
         heightM: src?.bodyHeightM ?? 0.95,
+        // ⚖️ `heightM` STAYS THE REGISTRY'S ADULT NUMBER at every stage — it is
+        // measured against the ADULT body (`resolveScale`/`adultHeight`), so a
+        // sapling shares the adult's world scale and stands however tall its own
+        // aged geometry is. Scaling `bodyHeightM` here instead would be exactly
+        // the uniform scale the user rejected.
+        ...(ageFor ? { ageFor } : {}),
         // Plants tier like animals ([LOD per-camera]; round-2 GL defects):
         // the animal-only guard built every orchard `flora:` body FULL —
         // a 4254-vert oak bake per species inside the mount frame, at
@@ -3528,13 +3580,16 @@ export function isCreatedPersonBodyId(id: string): boolean {
 function makePuzzleCharacterFactory(
   npcIcons: Map<string, string>,
   npcSpecies: Map<string, string>,
+  // The SIM's growth stage for a `flora:` body (`plantAgeOfBody`), read per id
+  // at every model build. Absent = every body adult, as before growth stages.
+  ageFor?: (id: string) => number,
 ): AvatarModelFactory {
   const emoji = makeNpcModelFactory(npcIcons);
   const animal = createCreatureAvatarFactory({
     speciesFor: (id) => bodySpeciesOf(id, npcIcons, npcSpecies) ?? "human",
     heightM: 1.7,
   });
-  const naturalBody = makeNaturalBodyFactory();
+  const naturalBody = makeNaturalBodyFactory(undefined, ageFor);
   return (id, isLocal) => {
     if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpeciesOf(id))(id, isLocal);
     // A DECLARED SPECIES (a wilderness local's fauna body) stands at its OWN
@@ -3581,12 +3636,20 @@ function dealGood(dress: DressPalette, goodKey: string, n: number, salt: number)
  *  this is the module every game already reaches for them through. */
 export {
   TIER_BANDS,
+  TOWN_TIER_BANDS,
+  SCREEN_TIER_BANDS,
   TIER_RANK,
   seedTier,
+  seedTierForProjected,
   steppedTier,
   detailForTier,
+  projectedFraction,
+  tierDistanceM,
+  tierForProjected,
   type CreatureTier,
   type TierBand,
+  type TierPoint,
+  type ViewPoint,
 } from "../../creatures/view-tiers.js";
 
 function makeTownModelFactory(
@@ -3605,6 +3668,9 @@ function makeTownModelFactory(
   // per-body since the dollhouse fix — a camera inside its town needs its
   // far bodies cheap while its near ones stay full). Absent = full.
   tierFor?: (id: string) => CreatureTier,
+  // The SIM's growth stage for a `flora:` body (`plantAgeOfBody`) — the mirror
+  // of `tierFor`: one is the camera's answer, this one is the world's.
+  ageFor?: (id: string) => number,
 ): AvatarModelFactory {
   // Warm the shared bakes STAGGERED off the critical path — ALL of them now
   // (round-2 GL defects): the FULL-detail wardrobe used to warm synchronously
@@ -3665,7 +3731,7 @@ function makeTownModelFactory(
   // goods chains name — grazing herds by their producer, orchard plants by
   // the farms (makeNaturalBodyFactory — the same bodies wild product
   // animals stand in the open country).
-  const naturalBody = makeNaturalBodyFactory(detailFor);
+  const naturalBody = makeNaturalBodyFactory(detailFor, ageFor);
   const idSpecies = idSpeciesOf;
   // Household PETS: family members of a non-person species (world-doc authored;
   // species rides the same overrides map, keyed by pet cid). No outfit.
@@ -3674,7 +3740,7 @@ function makeTownModelFactory(
     heightM: 0.75,
     detailFor,
   });
-  const puzzle = makePuzzleCharacterFactory(npcIcons, npcSpecies);
+  const puzzle = makePuzzleCharacterFactory(npcIcons, npcSpecies, ageFor);
   return (id, isLocal) => {
     // SETTLERS (city-founding ②) are the town's founding PEOPLE — real
     // creature-builder bodies, never emoji capsules. Their creature-scoped
@@ -3698,7 +3764,15 @@ function makeTownModelFactory(
     // Membership is `retieringBodyId` — the ONE ladder list (⑤): a streamed
     // body outside it built as a full skinned model at stick detail, the
     // "ghost" look, and could never rebuild out of it.
-    if (!isLocal && retieringBodyId(id) && tierFor?.(id) === "capsule") {
+    // 🚫 …and a TREE is never a capsule, whatever band it is in (landscape, not
+    // cast — `makeNaturalBodyFactory`'s own note). That exclusion used to be
+    // spelled by leaving `flora:` OUT of the ladder list, which also took trees
+    // out of the RE-BAND SWEEP and the town-clamp requeue: a tree's detail was
+    // sampled once at its spawn moment and never rebuilt, so a stand dealt in
+    // batches (mount, one annulus per building event, a re-stand after regrow)
+    // drew full and stick trees side by side at the same distance forever.
+    // Said here instead, where the capsule swap actually is.
+    if (!isLocal && retieringBodyId(id) && !id.startsWith("flora:") && tierFor?.(id) === "capsule") {
       return defaultAvatarModelFactory(id, isLocal);
     }
     if (id.startsWith("fauna:") || id.startsWith("flora:")) return naturalBody(idSpecies(id))(id, isLocal);
@@ -3718,11 +3792,25 @@ function makeTownModelFactory(
  *  to it changed nothing. Every streamed AMBIENT body belongs here; the
  *  local walker, quest bodies and the settler family keep their own model
  *  paths (an `npc_*` body routes to `puzzle`/`people` before the capsule
- *  swap ever asks). */
+ *  swap ever asks).
+ *
+ *  🌳 `flora:` RIDES IT TOO (2026-09-06, "the tree LOD is kind of random"), and
+ *  it is the same defect one prefix later: trees were left out because a tree
+ *  must never become a CAPSULE, but this list is not only the capsule swap —
+ *  omitting them also skipped the re-band sweep and the town-clamp requeue, so
+ *  `tierOf` seeded a tree's tier at its first model build and nothing ever
+ *  changed it (`createCreatureAvatarFactory`: "Detail is sampled ONCE per model
+ *  build"). A stand is dealt in batches at different moments (`seedWilderness`
+ *  at the mount, one annulus per building event in `growNearStand`, a re-stand
+ *  after a re-seed in `standWildFeature`), each freezing the tier of ITS
+ *  moment — full and stick trees side by side at the same distance, with no
+ *  distance that fixes it. The capsule exclusion now lives at the capsule swap
+ *  itself, which is the only consumer that ever wanted it. */
 function retieringBodyId(id: string): boolean {
   return (
     id.startsWith("resident_") ||
     id.startsWith("fauna:") ||
+    id.startsWith("flora:") ||
     id.startsWith("pet_") ||
     id.startsWith("caravan_") ||
     id.startsWith("hauler_") ||
@@ -4642,8 +4730,64 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** The LOCAL CAMERA's sim-coords position, when an embedding driver feeds it
    *  (setViewPoint, per frame — the planet client does on every rung). This is
    *  the [LOD per-camera] law made literal: with it set, per-body tiers measure
-   *  from the ACTUAL camera, not a proxy. */
-  let viewPoint: { x: number; y: number } | null = null;
+   *  from the ACTUAL camera, not a proxy — INCLUDING its height (`z`, metres
+   *  above the sim ground plane; see `TierPoint`) and, since the camera round,
+   *  its fov + viewport (see `ViewPoint`). */
+  let viewPoint: ViewPoint | null = null;
+  /** ⚖️ IS THE PICK BY PROJECTED SIZE THIS FRAME (user ruling C3, 2026-09-06)?
+   *  ONLY when a driver actually handed over a camera: a finite `fovRad > 0`
+   *  AND a `viewportH > 0`. Absent — headless, text mode, every driverless test,
+   *  and any driver that has not been taught the seam — this is null and the
+   *  metre pick below runs exactly as it did, which is the transcript pin. */
+  const projectingFov = (): number | null => {
+    const v = viewPoint;
+    if (!v) return null;
+    const f = v.fovRad;
+    const h = v.viewportH;
+    if (typeof f !== "number" || !Number.isFinite(f) || f <= 0 || f >= Math.PI) return null;
+    if (typeof h !== "number" || !Number.isFinite(h) || h <= 0) return null;
+    return f;
+  };
+  /** HOW TALL THE BODY IS, in metres — the second half of a projected size.
+   *
+   *  The same answer the MODEL FACTORY gives (`makeTownModelFactory` /
+   *  `makeNaturalBodyFactory`), read off the id the same way, because a tier is
+   *  a claim about the thing the factory will build: people 1.7 m, pets 0.75 m,
+   *  a `fauna:`/`flora:` body its registry `bodyHeightM`, and a STAGED plant its
+   *  own stage's share of that (`growthHeightFactor` over `plantAgeOfBody` — the
+   *  sim's stage, never a viewer-side guess). Anything unknown is a person.
+   *
+   *  CACHED PER ID, and pruned by the same loop that prunes `bodyTiers`: a
+   *  flora stage lookup is a scan of the wilderness's features, which per body
+   *  per frame would be quadratic. The cached value is exactly as stale as the
+   *  body's MODEL, which samples the same stage once at build and is only ever
+   *  replaced by a re-stand — so the two can never disagree. */
+  const bodyHeights = new Map<string, number>();
+  const PERSON_HEIGHT_M = 1.7;
+  const bodyHeightM = (id: string): number => {
+    const hit = bodyHeights.get(id);
+    if (hit !== undefined) return hit;
+    let h = PERSON_HEIGHT_M;
+    if (id.startsWith("fauna:") || id.startsWith(FLORA_BODY_PREFIX)) {
+      const src = naturalSourceOf(idSpeciesOf(id));
+      h = src?.bodyHeightM ?? 0.95; // the natural-body factory's own fallback
+      if (id.startsWith(FLORA_BODY_PREFIX) && sess) h *= growthHeightFactor(plantAgeOfBody(sess, id));
+    } else if (id.startsWith("pet_")) {
+      h = 0.75;
+    }
+    bodyHeights.set(id, h);
+    return h;
+  };
+  /** THE PER-BODY PICK, both coordinates in one place. With a camera the rung
+   *  comes from the body's projected height; without one, from metres. */
+  const seedBodyTierAt = (id: string, d: number, fovRad: number | null): CreatureTier =>
+    fovRad === null
+      ? seedBodyTier(d)
+      : seedTierForProjected(projectedFraction(bodyHeightM(id), d, fovRad));
+  const bandedBodyTierAt = (id: string, prev: CreatureTier, d: number, fovRad: number | null): CreatureTier =>
+    fovRad === null
+      ? bandedBodyTier(prev, d)
+      : tierForProjected(projectedFraction(bodyHeightM(id), d, fovRad), prev, BODY_TIER_HYST_M);
   /** The LOCAL CAMERA focus the per-body LOD measures from ([LOD per-camera]
    *  LAW: render chrome from the camera, NEVER a sim body). The driver-fed
    *  viewPoint wins outright — it IS the camera. Failing that, in spirit /
@@ -4652,8 +4796,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  from THAT rect's centre. Keying off PLAYER_ID instead demoted the very
    *  residents the camera watches to the capsule tier (no animator, no activity
    *  anchor), so they posed on the floor in front of their beds/chairs instead
-   *  of sitting/sleeping on them. Off the dollhouse the walker IS the focus. */
-  const cameraFocus = (): { x: number; y: number } | null => {
+   *  of sitting/sleeping on them. Off the dollhouse the walker IS the focus.
+   *
+   *  ⚖️ HEIGHT RIDES ALONG, AND ONLY THE DRIVER HAS IT (2026-09-06): a fed
+   *  viewPoint carries the camera's altitude (`z`); the two fallbacks are
+   *  GROUND things — a spirit frame is a rect on the sim plane and a walker is
+   *  a body standing on it — so they have no height and never invent one. A
+   *  host with no driver (text mode, every headless test) therefore bands on
+   *  exactly the arithmetic it always did. */
+  const cameraFocus = (): TierPoint | null => {
     if (viewPoint) return viewPoint;
     if (spiritFrame) return { x: spiritFrame.x + spiritFrame.w / 2, y: spiritFrame.y + spiritFrame.h / 2 };
     return playerBody() ?? null;
@@ -4666,7 +4817,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (b === undefined) {
       const focus = cameraFocus();
       const bd = world?.state.avatars[id];
-      b = focus && bd ? seedBodyTier(Math.hypot(bd.x - focus.x, bd.y - focus.y)) : "full";
+      b = focus && bd ? seedBodyTierAt(id, tierDistanceM(focus, bd), projectingFov()) : "full";
       bodyTiers.set(id, b);
     }
     return TIER_RANK[b] > TIER_RANK[creatureTier] ? b : creatureTier;
@@ -6927,17 +7078,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /** The static concept library (pools × categories × species) — pure data,
-   *  shared by every noun push. */
+   *  read wherever a board or a rule needs a symbol's affordances. */
   const CONCEPT_LIBRARY = buildConcepts();
 
-  /** Push the player's speakable nouns to the Speak menu. LEARNED things: every
-   *  item they now KNOW about (monotone knowledge — during a conversation
-   *  `presentCreatureTurn` has already `seeItem`'d the creature's holdings), what
-   *  they carry, and the current creature's need. In the DOLLHOUSE, home is NOT
-   *  hidden information: the family (by NAME), the furniture, and every loose
-   *  thing in the house are speakable from the first frame — without them the
-   *  builder can't even compose "you get the apple". Diff-gated (re-pushed only
-   *  when the list changes), so the tick may call it every frame. */
   /** ⑫ — push the LOCAL author's roster to the board, diff-gated like the nouns.
    *  Two or more fellow members is a crowd, and a crowd is the only shape where
    *  a name is load-bearing (law ④). */
@@ -6950,223 +7093,82 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     presenter.addressees(words);
   }
 
+  /**
+   * Push the player's INDIVIDUAL PEOPLE to the sentence builder.
+   *
+   * ⚖️ ONE WORD BANK (user law, 2026-09-06): *"the word bank in the sentence
+   * builder should always be the same with a default world-spec lexicon, even
+   * outside the game — the context is irrelevant. The only exception is the
+   * individual people list."*
+   *
+   * So this push carries NAMES and nothing else. It used to carry the whole
+   * scene's vocabulary — every station kind the registry defines (but only
+   * inside a dollhouse), the build catalog and the site's materials (but only at
+   * a town), the wardrobe, the loose things in the house, everything the player
+   * had learned, and the pool library. That scoping WAS the bug the user
+   * reported on the frontier board: `session.dollhouse !== null` wrapped the
+   * furniture block, so a founding settlement could name a `box` and a `bin`
+   * (pool members, pushed on a different line) and not a bed, a table, a chair
+   * or a workbench. `orderCraft` had always accepted all four houseless — only
+   * the buttons were missing.
+   *
+   * Every word that push contributed is DEFAULT VOCABULARY now
+   * (`builder-surface.ts defaultBuilderNouns`, which `builderSurfaceFor` merges
+   * for every caller), so nothing was lost and nothing moves with the session. A
+   * word the game needs is added SPEC-SIDE — a registry row, `PLACE_STUBS`,
+   * `ITEM_STUBS`, `CORE_BOARD_NOUNS` — never pushed from inside a scope. Scope
+   * and affordability may still DE-RANK, and must refuse ALOUD (`orderBuild`'s
+   * `deadBillHeads` arm); they may never hide a word.
+   *
+   * A NAME is the one thing no lexicon and no spec can hold: `mara` is this
+   * household's daughter, not a word. Names ride `individual: true`, so the
+   * builder files them on the [contacts] chip — the same slot a child's real
+   * people directory fills outside a game (`noun-clusters.ts ClusterableNoun`,
+   * "carried in, never looked up").
+   *
+   * Diff-gated (re-pushed only when the list changes), so the tick may call it
+   * every frame.
+   */
   function pushKnownNouns(session: QuestSession) {
     if (!presenter.nouns) return;
-    type NounKind = "place" | "item" | "creature" | "unknown";
-    // THE WORD LIST IS READ, SO IT IS WRITTEN IN THE PLAYER'S LANGUAGE. Every
-    // caller below hands in an English label because the glyph key IS an English
-    // word — which is invisible until the board is Hebrew and every button but
-    // these ones reads Hebrew. The lexicon answers for anything that is a word;
-    // a NAME (a family member's, a pet's) has no lexeme and stays itself.
-    const nounLang = languageFor(session.meta.locale);
-    const seen = new Set<string>();
-    const out: { symbol: string; label: string; kind: NounKind; affords: string[]; properties: string[] }[] = [];
-    // A STATION's OWN act verbs — the ones its need template satisfies
-    // (needs.ts), which no property implies: you SLEEP in a bed, WASH in a
-    // bath, COOK at an oven. The generic handling verbs (open/shut/put) are
-    // DERIVED from the thing's properties below, so a new container never has
-    // to be listed here at all.
-    const STATION_ACTS: Record<string, string[]> = {
-      bed: ["sleep", "rest"],
-      table: ["eat"],
-      bath: ["wash"],
-      barrel: ["drink", "fill"],
-      bin: ["throw"],
-      bowl: ["fill"],
-      oven: ["cook", "heat"],
-      workbench: ["make", "fix", "build"],
-    };
-    // CORE ENGINE CONCEPTS (user law): nouns the engine itself owns — places,
-    // substances — have no spec and no object properties, so their semantics
-    // are hard-coded HERE and nowhere else. Every other noun is spec-derived.
-    const CORE_NOUNS: Record<string, { kind: NounKind; affords: string[] }> = {
-      home: { kind: "place", affords: ["go", "clean"] },
-      house: { kind: "place", affords: ["go", "build", "clean"] },
-      yard: { kind: "place", affords: ["go"] },
-      bathroom: { kind: "place", affords: ["go"] },
-      water: { kind: "item", affords: ["drink", "get", "give", "fill", "want"] },
-    };
     const CREATURE_AFFORDS = ["talk", "ask", "help", "hug", "give", "follow", "go"];
-    /** The verbs a thing's PROPERTIES imply — the §4 tag vocabulary read for
-     *  affordances, so mechanics and board agree by construction. */
-    const propertyAffords = (props: readonly string[]): string[] => {
-      const v: string[] = [];
-      if (props.includes("openable")) v.push("open", "shut");
-      if (props.includes("container")) v.push("put");
-      if (props.includes("food")) v.push("eat", "want", "get", "give");
-      if (props.includes("clothing")) v.push("wear", "wash", "want", "get", "give");
-      if (props.includes("toy")) v.push("play", "want", "get", "give");
-      return v;
-    };
-    const conceptMeta = (symbol: string): { kind: NounKind; affords: string[]; properties: string[] } => {
-      const properties = propertiesOf(symbol);
-      const c = CONCEPT_LIBRARY.get(symbol);
-      if (c) {
-        const kind: NounKind =
-          c.species?.kind === "creature" || c.pools.some((p) => p.affordance === "receptive-npc")
-            ? "creature"
-            : c.pools.some((p) => p.affordance === "container")
-              ? "place"
-              : "item";
-        return { kind, affords: c.affords, properties };
-      }
-      const core = CORE_NOUNS[symbol];
-      if (core) return { ...core, properties };
-      const acts = STATION_ACTS[symbol];
-      if (acts || properties.includes("furniture")) {
-        // A placed thing: go there, do its act, plus whatever its properties
-        // afford. `furniture` decides PLACE-ness — a bowl (tableware) is an
-        // item you pick up, a cupboard is somewhere you stand.
-        const affords = ["go", ...(acts ?? []), ...propertyAffords(properties)];
-        return { kind: "place", affords: [...new Set(affords)], properties };
-      }
-      const affords = [...new Set(["want", "get", "give", ...(acts ?? []), ...propertyAffords(properties)])];
-      return { kind: properties.length ? "item" : "unknown", affords, properties };
-    };
-    const addRaw = (
-      symbol: string,
-      label: string,
-      meta?: { kind: NounKind; affords: string[]; properties?: string[] },
-    ) => {
+    const seen = new Set<string>();
+    const out: {
+      symbol: string;
+      label: string;
+      kind?: "place" | "item" | "creature" | "unknown";
+      affords?: string[];
+      properties?: string[];
+      individual?: boolean;
+    }[] = [];
+    /** One named body. The LABEL is the name as written; the SYMBOL is its
+     *  lower-case form, because that is the token a composed sentence carries
+     *  and the parser matches. No lexeme answers for either — a name stays
+     *  itself in every language. */
+    const addPerson = (symbol: string, label: string) => {
       if (!symbol || seen.has(symbol)) return;
       seen.add(symbol);
-      // The SPOKEN head — a `furn.<kind>` symbol is a chair, and `furn` is a
-      // concept nothing has ever registered (no affordances, no properties, no
-      // art), so the head lookup has to see through the storage prefix too.
-      const head = spokenWord(symbol);
-      const m = meta ?? conceptMeta(head);
       out.push({
         symbol,
-        label: nounLang.lexicon[head]?.w ?? label,
-        kind: m.kind,
-        affords: m.affords,
-        properties: m.properties ?? propertiesOf(head),
+        label,
+        kind: "creature",
+        affords: CREATURE_AFFORDS,
+        properties: [],
+        individual: true,
       });
     };
-    const add = (id: string | undefined) => {
-      if (!id) return;
-      const glyph = session.entities.get(id)?.glyph;
-      if (glyph) addRaw(drawnGlyph(glyph), spokenWord(glyph));
-    };
-    const creature = { kind: "creature" as NounKind, affords: CREATURE_AFFORDS };
     // KNOWN PEOPLE are speakable TARGETS wherever a family exists — not only
     // inside the dollhouse (the clinician-side "known people" pattern: people
     // the student knows belong on the board, so "where + mara" composes from
     // the street too).
     const famPeople = familyOf(session);
     if (famPeople) {
-      for (const m of famPeople.members) if (m.name) addRaw(m.name.toLowerCase(), m.name, creature);
-      for (const { pet } of petsOf(session)) {
-        if (pet.name) addRaw(pet.name.toLowerCase(), pet.name, creature);
-        else addRaw("dog", "dog", creature);
-      }
+      for (const m of famPeople.members) if (m.name) addPerson(m.name.toLowerCase(), m.name);
+      // A pet WITH a name is one of the household. An unnamed one is just a dog,
+      // and `dog` is default vocabulary already — pushing it here would put a
+      // generic word on the chip that means "the people this child knows".
+      for (const { pet } of petsOf(session)) if (pet.name) addPerson(pet.name.toLowerCase(), pet.name);
     }
-    if (session.dollhouse !== null && world) {
-      // R1 — REGISTRY-SOURCED, CONTEXT-BLIND (world-engine-board-organization
-      // §2, user law): every furniture kind the STATION REGISTRY defines is
-      // speakable inside a home, whether or not one stands in this particular
-      // house. The builder must be predictable — a student composes
-      // "refrigerator" the same way in every house, and a new station kind
-      // reaches the board by being registered, not by being listed here.
-      // (Which pieces are actually NEARBY is the CONTEXT board's job.)
-      for (const kind of Object.keys(STATION_PROPERTIES) as StationKind[]) {
-        // The toilet answers to the BOARD's word ("bathroom" — the resolver
-        // aliases it back to the toilet object).
-        if (kind === "toilet") {
-          addRaw("bathroom", "bathroom");
-          continue;
-        }
-        // EVERY OTHER KIND SPEAKS THE VOCABULARY'S WORD (`fixtureWord`), never
-        // its own name: the sim tells a goods `chest` from the toy `box` and
-        // calls a cabinet a `cupboard`, but the board carries neither word —
-        // so those two shipped as labelled buttons with NO ICON.
-        const word = fixtureWord(kind);
-        // A kind that folds onto a word ANOTHER kind owns gets no button of its
-        // own — `chest` speaks "box", and the toy `box` is the box, so it adds
-        // itself with its own properties (a chest's lid opens, a toy box's does
-        // not; whichever came first must not decide that).
-        if (word !== kind && STATION_PROPERTIES[word as StationKind]) continue;
-        // Meta from the KIND — the spec side — so the renamed `cabinet` button
-        // keeps the cupboard's container/openable affordances.
-        addRaw(word, word, conceptMeta(kind));
-      }
-      addRaw("home", "home");
-      addRaw("water", "water");
-      // The wardrobe's garments: "you wear the shirt", "give dress to mara".
-      // Seed the bare HEADS as nouns; colour rides as a separate `color_*`
-      // modifier word ("wear + shirt + red"), already in the lexicon.
-      addRaw("clothing", "clothing");
-      for (const k of CLOTHING_HEADS) addRaw(k, k);
-      for (const [, rec] of looseEntries(session)) addRaw(drawnGlyph(rec.glyph!), spokenWord(rec.glyph!));
-    }
-    // BUILDABLE STRUCTURES (①b): at a town / founded site, the catalog's
-    // nouns are speakable — the sentence builder can compose "build house"
-    // ("build" is already in the LEXICON; these are its objects).
-    if (session.town || session.foundedSite) {
-      // ⚖️ AFFORDABILITY DEMOTES, IT NEVER HIDES (user law ③, 2026-08-12:
-      // "unaffordable build words can be demoted from the board, but should
-      // not be removed from the sentence builder — the builder is unaware of
-      // the world state; unfulfillable orders must therefore be refused
-      // vocally"). This list IS the sentence builder's noun feed, so an
-      // affordability FILTER here was the world state reaching into a layer
-      // that must not see it: a poor town silently lost building words off the
-      // child's board (recorded divergence, GL closing sweep item 5) while the
-      // same sentence, spoken, still posted a designation.
-      //
-      // Both halves moved. Every catalog structure is speakable at a town or a
-      // site, always; the unaffordable ones are DE-RANKED — appended after the
-      // affordable ones, which is the only rank this push carries (the lead
-      // block keeps insertion order; the surfacer reads it as its noun-library
-      // order). And the ORDER now refuses what cannot be built, aloud, with the
-      // reason — `orderBuild`'s `deadBillHeads` arm.
-      //
-      // Affordability reads FREE haul-able availability (pipeline ②), not
-      // the yard alone — wood in a chest or a standing tree counts.
-      const center = session.town ? session.town.stage.center : session.foundedSite!.at;
-      const structureMeta = { kind: "place" as NounKind, affords: ["build", "go"], properties: ["structure"] };
-      const shortStructures: { glyph: string; label: string }[] = [];
-      for (const spec of structureCatalogOf(session)) {
-        if (Object.keys(buildMissingMaterials(session, spec, center)).length) {
-          shortStructures.push({ glyph: spec.glyph, label: spec.label });
-        } else {
-          addRaw(spec.glyph, spec.label, structureMeta);
-        }
-      }
-      for (const s of shortStructures) addRaw(s.glyph, s.label, structureMeta);
-      // TRANSFER surface (②): the yard is a speakable destination, houses
-      // are endpoints, and any building MATERIAL on hand (yard/site stock or
-      // the pocket) is a speakable object — "bring wood to the yard".
-      addRaw("yard", "yard");
-      if (session.town) addRaw("house", "house");
-      // THE AREA WORDS (nations P2 §3c — user law: "area" is a broad
-      // territory, grid icon; "place" is a point): laws scope by them —
-      // "no + fight + in + town", "no + build + in + area" (the district
-      // under your feet, else a focus disc).
-      addRaw("town", "town", { kind: "place", affords: ["go"] });
-      addRaw("area", "area", { kind: "place", affords: ["go", "area"] });
-      const buildStock = session.town ? session.town.deltas.stock : session.foundedSite?.stock;
-      const onMe = bodyCarryView(bodyCarryOf(session, session.handsCid));
-      for (const g of Object.keys({ ...(buildStock ?? {}), ...onMe })) {
-        const head = headOf(g);
-        if (isSiteMaterial(head)) {
-          addRaw(head, head, { kind: "item", affords: ["get", "give", "bring", "want"], properties: ["material"] });
-        }
-      }
-    }
-    const lead = out.length; // family + house stay first; learned things sort after
-    if (session.creatures) {
-      const w = session.creatures.world;
-      const player = w.creatures[LOCAL_PLAYER_CID];
-      if (player) for (const id of Object.keys(player.knowledge)) add(id);
-      for (const [id, it] of Object.entries(w.items)) if (it.ownerId === LOCAL_PLAYER_CID) add(id);
-      if (convo) add(session.creatures.nodeByCreature.get(convo.nodeId)?.needItemEntityId);
-    }
-    // THE LIBRARY IS KNOWN BY DEFAULT (language-expansion.md): every pool
-    // CONCEPT is speakable from frame 1 — only specific CHARACTERS stay
-    // encounter-added (they arrive via the family/knowledge sections above).
-    for (const n of libraryNouns()) addRaw(n.symbol, n.label);
-    const tail = out.splice(lead).sort((a, b) => a.symbol.localeCompare(b.symbol));
-    out.push(...tail);
     const sig = out.map((n) => n.symbol).join("|");
     if (sig === session.nounsSig) return;
     session.nounsSig = sig;
@@ -8153,6 +8155,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * There is no honest capsule fallback left to keep for these ids: a creature
    * factory can always be built, so one always is.
    */
+  /**
+   * ⚖️ HOW OLD IS THE TREE THIS BODY IS — the render's ONE read of the sim's
+   * growth state (R3/R5, user 2026-09-06: trees *"should grow in the manner of
+   * real plants"*). The answer is `growthAgeOf(species, sizeClass)` — the sim
+   * decides, the render reads — and the render is never allowed a notion of
+   * its own (LOD-per-camera: a sim entity must not depend on who is looking).
+   *
+   * A `flora:` body id IS the feature's container key (`flora:<species>:<id>`,
+   * wilderness.ts) and may never move, so the stage cannot be written into the
+   * id: it is looked up here, from the live wilderness, at every model build.
+   * 1 for a town orchard plant, a fauna body, or anything the wilderness does
+   * not know — which is the same 1 an unset `sizeClass` means (UNSET = MATURE).
+   */
+  function plantAgeOfBody(session: QuestSession, id: string): number {
+    if (!id.startsWith(FLORA_BODY_PREFIX)) return 1;
+    const w = session.wilderness;
+    if (!w?.features.length) return 1;
+    const f = w.features.find((x) => wildFloraBodyId(x) === id);
+    return f ? growthAgeOf(f.species, f.sizeClass) : 1;
+  }
+
   function sessionModelFactory(
     session: QuestSession,
     tierFor: (id: string) => CreatureTier,
@@ -8160,6 +8183,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // ALWAYS seeded, town or not — this is the map `spawnAttachedAvatar` writes
     // its species row into before it calls `addNpc`.
     const overrides = modelOverridesFor(session);
+    const ageFor = (id: string): number => plantAgeOfBody(session, id);
     if (session.town) {
       return makeTownModelFactory(
         session.npcIcons,
@@ -8168,9 +8192,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         overrides, // authored rows + the live avatar rows
         session.dress, // the town's culture palette
         tierFor, // Phase 3 view tier — PER BODY, read at every model build
+        ageFor, // the SIM's growth stage — PER BODY, same seam, opposite owner
       );
     }
-    const rest = makePuzzleCharacterFactory(session.npcIcons, session.npcSpecies);
+    const rest = makePuzzleCharacterFactory(session.npcIcons, session.npcSpecies, ageFor);
     // No town ⇒ no culture palette to bound an outfit, so a created person
     // wears only what an override row explicitly names (an authored member);
     // otherwise the bare species body, exactly as a pet or a wild animal does.
@@ -9387,6 +9412,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // units nobody is walking toward: the pile would read as covered and
         // the bill would stall behind a trip that is not being made.
         if (isContributePursuit(pur)) releaseContributeSlice(session, pur.bill);
+        // ⚖️ …AND SO DOES THE SEAT (task #51 Stage 2, S4). Released by HOLDER,
+        // UNCONDITIONALLY: `pull:<cid>` holds nothing but this body's seats, the
+        // pursuit is already deleted above, and `release` on an empty holder is
+        // a no-op that does not even tick `releaseEpoch`. Reasoning about which
+        // door a pursuit left by is how a seat leaks; not reasoning about it is
+        // one line.
+        releaseSeats(session.reservations, cid);
       };
       // GIVE-UP GUARD: a pursuit that keeps ACTING without ever completing (hands
       // already full so `pick` no-ops, an un-grabbable target) would crouch on the
@@ -10106,6 +10138,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         idleBagsFor(s, cid).reduce((best, bag) => Math.max(best, bag.room), 0),
       orderSiteId: (ord) => director.orderSiteId(ord),
       buildworkSiteAt: (s, siteId) => buildworkSiteAt(s, siteId),
+      // ⚖️ SEATS, NOT CAPS (Stage 2) — the PLACES this site's work has, read
+      // from the bookkeeper. The clock arm clamps on the same list, so "how
+      // fast may this site bank" and "may I stand here" cannot disagree.
+      seatsOf: (s, siteId) => director.seatsOf(s, siteId),
       // ⚖️ REACH IS THE BODY'S, NOT THE ISSUER'S (the design's own correction):
       // a body serves what IT can reach, so the `mayUse` subject is the puller.
       siteMaterialSources: (s, at, viewer) => director.siteMaterialSources(s, at, viewer),
@@ -10124,6 +10160,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // run the ONE kill draw. Never a second felling.
       chopAt,
       fellRowsOf: fellRows,
+      // ⚖️ A SPOKEN `make` IS A BILL (Stage 2d) — the standing craft jobs, read
+      // from the bookkeeper exactly as the construction rows are. `[]` off the
+      // capability and for every automated job.
+      craftRowsOf: (s) => director.craftBillsOf(s),
       // 🔭 THE HOVER (item 1e) — where a loose good belongs, and what one has
       // to give. Both read the bookkeeper's own answers.
       collectDestOf: (s) => {
@@ -10222,8 +10262,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // way an arc transcript can answer "did the streamed cast ever decide?",
     // which is the round's own acceptance question.
     const b = session.pursuits.get(cid)?.bill;
+    // ⚖️ …AND THE LINE NAMES THE SEAT (Stage 2, S6). "Who decided, what they
+    // took" is not enough once many bodies may work one site: the acceptance
+    // question is whether two of them ever stood in the same place, and only
+    // the seat key can answer it from a transcript.
+    if (b?.seatKey) seatHolders.add(cid);
     console.log(
       `[pull] ${cid} took ${b?.link}${b?.head ? ` ${b.units} ${b.head}` : ""} for ${b?.siteId}` +
+        `${b?.seatKey ? ` @${b.seatKey}` : ""}` +
         ` (beat ${Number.isFinite(beatS) ? beatS.toFixed(1) : "nothing"})`,
     );
     return true;
@@ -10284,8 +10330,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if ((session.npcTasks.get(npcId)?.length ?? 0) > 0 || world?.npcErrandActive(npcId)) return true;
     const at = buildworkSiteAt(session, bill.siteId);
     if (!at) return false; // the work is done, or the row is gone — free the body
-    contributeDeps().standAndWork(session, cid, at); // stay at the seat
+    contributeDeps().standAndWork(session, cid, reseat(session, cid, bill) ?? at); // stay at the seat
     return true;
+  }
+
+  /**
+   * ⚖️ THE BAY MAY HAVE RISEN UNDER THE BODY (task #51 Stage 2, S2) — so the
+   * standing dwell RE-CLAIMS at every re-issue.
+   *
+   * There is no per-bay build record anywhere: a shell rises as a scalar
+   * fraction, so the offered set is derived from `labor / buildDays` and MOVES
+   * as labour banks. A body that claimed bay 3 will one day find bay 3 already
+   * raised — and the honest answer is not "keep standing on a wall that is up",
+   * it is "take the next unbuilt one and stand there". Claiming by INDEX (never
+   * by point) is what makes that a one-line re-read rather than a search.
+   *
+   * Returns where the body should now stand, or null when the row has no seats
+   * at all (every place filled, or the geometry is gone) — the caller then
+   * falls back to the site anchor, which is where Stage 1 always stood.
+   */
+  function reseat(session: QuestSession, cid: string, bill: ContributeBill): { x: number; y: number } | null {
+    if (bill.link !== "build" && bill.link !== "refine") return null;
+    const seats = contributeDeps().seatsOf(session, bill.siteId);
+    if (!seats.length) return null;
+    // Still offered AND still ours (or free again) ⇒ nothing to do. `claimSeat`
+    // is idempotent for its own holder, so this is one call, not two.
+    if (bill.seatKey) {
+      const mine = seats.find((q) => q.key === bill.seatKey);
+      if (mine && claimSeat(session.reservations, cid, mine.key)) return mine.at;
+    }
+    releaseSeats(session.reservations, cid); // whatever it held is stale
+    for (const seat of seats) {
+      if (!claimSeat(session.reservations, cid, seat.key)) continue;
+      bill.seatKey = seat.key;
+      seatHolders.add(cid);
+      return seat.at;
+    }
+    bill.seatKey = undefined; // every place taken — the presence count still has it
+    return null;
   }
 
   function releaseContributeSlice(session: QuestSession, bill: ContributeBill): void {
@@ -10316,12 +10398,53 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * unload/tidy/drop rows put the load away.
    */
   function releasePullSlice(session: QuestSession, id: string): void {
+    const cid = pullSlices.get(id);
     pullSlices.delete(id);
+    // ⚖️ THE SEAT GOES WITH THE SLICE (S4) — but only if the body is not
+    // standing on one RIGHT NOW. A haul carries no seat, so this is a belt for
+    // the ordering that CAN happen: a body finishes a haul, re-decides, takes a
+    // build bay, and only then does the sweep reach the stale agreement. A
+    // blanket release there would drop a live builder's bay out from under it
+    // and let a second body claim the same one.
+    if (cid) dropSeatsUnlessSeated(session, cid);
     const a = session.transfers.get(id);
     if (!a || a.status === "done" || a.status === "failed") return;
     session.reservations.release(agrHolder(id));
     session.reservations.release(bagHolder(id));
     session.transfers.fail(id, "no-executor");
+  }
+
+  /**
+   * ⚖️ EVERY BODY THIS HOST HAS SEEN TAKE A SEAT (task #51 Stage 2) — the seat
+   * sweep's domain, and the exact same idiom as `pullSlices`: a closure set,
+   * session-lived, never serialized, written where the seat is ISSUED rather
+   * than at the dozen places a pursuit can be replaced.
+   *
+   * 🚨 WHY A SWEEP AT ALL. `sweepPullSlices` keys on AGREEMENT ids, and a dwell
+   * seat has no agreement — so the press, the spoken order, the eviction and the
+   * bag-fetch install, every one of which overwrites `session.pursuits` without
+   * ever calling `clear()`, would strand a `pull:` ledger row FOREVER. Stage 1
+   * survived those doors because `seatedOn` re-derived occupancy from the
+   * pursuit map; a ledger row does not re-derive.
+   */
+  const seatHolders = new Set<string>();
+  /** Has this host reconciled the ledger's `pull:` rows against the restored
+   *  pursuits yet? A reload brings the rows back and the closure set back
+   *  EMPTY, so the first sweep seeds itself from the ledger (once) and the
+   *  ordinary arm then retires whatever no live pursuit is standing on. */
+  let seatsReconciled = false;
+
+  /** Drop this body's seats unless its LIVE pursuit is still standing on one. */
+  function dropSeatsUnlessSeated(session: QuestSession, cid: string): void {
+    const p = session.pursuits.get(cid);
+    const held = heldSeats(session.reservations, cid);
+    if (!held.length) {
+      seatHolders.delete(cid);
+      return;
+    }
+    if (isContributePursuit(p) && p.bill.seatKey && held.includes(p.bill.seatKey)) return;
+    releaseSeats(session.reservations, cid);
+    seatHolders.delete(cid);
   }
 
   /**
@@ -10463,7 +10586,6 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   function sweepPullSlices(session: QuestSession): void {
-    if (!pullSlices.size) return;
     for (const [agrId, cid] of [...pullSlices]) {
       const a = session.transfers.get(agrId);
       if (!a || a.status === "done" || a.status === "failed") {
@@ -10474,6 +10596,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (isContributePursuit(p) && p.bill.agreementId === agrId) continue; // still being walked
       releasePullSlice(session, agrId);
     }
+    sweepSeats(session);
+  }
+
+  /**
+   * ⚖️ S4 — THE SEAT ARM OF THE SWEEP. Every `pull:` holder whose body has no
+   * live contribute pursuit STANDING ON THAT SEAT is released, unconditionally.
+   * That is the belt for door 5 (a press, a command, an eviction, a bag-fetch
+   * install — anything that overwrites `session.pursuits` without calling
+   * `clear()`), and it catches a body whose pursuit moved to a DIFFERENT seat
+   * as surely as one whose pursuit vanished.
+   *
+   * 🚫 OFF THE CAPABILITY IT DOES NOTHING — no seat can exist there, and the
+   * dollhouse must not pay a scan (nor a `toJSON` copy) per tick to be told so.
+   */
+  function sweepSeats(session: QuestSession): void {
+    if (!pullLaborOn(session)) return;
+    if (!seatsReconciled) {
+      // RELOAD: the rows persisted, the closure set did not. Seed it from the
+      // ledger ONCE; the ordinary arm below then reconciles every row against
+      // whatever pursuits the restored session actually has.
+      seatsReconciled = true;
+      for (const r of session.reservations.toJSON().rows) {
+        const cid = cidOfPullHolder(r.holder);
+        if (cid) seatHolders.add(cid);
+      }
+    }
+    if (!seatHolders.size) return;
+    for (const cid of [...seatHolders]) dropSeatsUnlessSeated(session, cid);
   }
 
   function stepNeeds(session: QuestSession, state: WorldState, dt: number, houseLoaded: (hi: number) => boolean) {
@@ -15515,8 +15665,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  fire where the caller intended. Off-town (no street net) it's a no-op. */
   function roadLeg(
     session: QuestSession,
+    state: WorldState,
     a: { x: number; y: number },
     b: { x: number; y: number },
+    /** The MOVER's girth — a street vertex has to be standable for THIS body. */
+    bodyR?: number,
   ): Array<{ x: number; y: number }> {
     const ROAD_LEG_MIN = 8;
     const town = session.town;
@@ -15529,7 +15682,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     );
     if (local.length < 2) return [b];
     // Drop the route's own endpoints (≈a, ≈b) — keep the street waypoints between.
-    return [...local.slice(1, -1).map((p) => ({ x: p.x + c.x, y: p.y + c.y })), b];
+    // ⚖️ …AND ONLY THE ONES A BODY CAN STAND ON (floor-route `standableVia`): a
+    // centreline vertex is where the road RUNS, not necessarily where a walker
+    // can be, and the plaza well stands on exactly such a junction. `b` itself
+    // is untouched — the caller's endpoint keeps its exact spot.
+    const via: Array<{ x: number; y: number }> = [];
+    for (const p of local.slice(1, -1)) {
+      const q = standableVia(state, { x: p.x + c.x, y: p.y + c.y }, a, bodyR);
+      if (q) via.push(q);
+    }
+    return [...via, b];
   }
 
   function doorRouteErrand(
@@ -15557,7 +15719,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const hA = bA ? houseIndexOfBuildingId(bA.id) : null;
       const indoorLeg =
         !!bA && !!bB && (bA.id === bB.id || (hA !== null && hA === houseIndexOfBuildingId(bB.id)));
-      const via = sess && !indoorLeg ? roadLeg(sess, prev, pt) : [pt];
+      const via = sess && !indoorLeg ? roadLeg(sess, state, prev, pt, bodyR) : [pt];
       via.forEach((q, vi) => {
         const isFinal = vi === via.length - 1;
         // THE INDOOR LEG PLANNER (floor-route.ts routeIndoorAware): door
@@ -18100,6 +18262,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   // contents visibly.
 
   const STORE_DISPLAY_CAP = 4; // items a market box shows at once (keep pulling per day)
+  /** A market shelf's collision half-extent — a SOLID box, so its keep-out for
+   *  a walker is this + the walker's own radius. Named because the placement
+   *  rule below has to reason with it (a shelf in a doorway seals a building). */
+  const MARKET_SHELF_R = 0.6;
 
   /** Split a signature glyph into its facets: head kind, descriptor mods, state
    *  mods. Delegates to the canonical `facetsOf` (variations.ts) — one splitter. */
@@ -19608,12 +19774,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // A gate pile is registered below with the other producer boxes — one
         // endpoint per real place, never two.
         if (!objId || !objId.startsWith(SHELF_PREFIX)) return;
+        // ⚖️ THE STALL STANDS BESIDE THE DOORSTEP, NEVER IN THE DOORWAY.
+        // `src` is `workDoorstep` — 1.5 m out from the seller's DOOR edge along
+        // that door's outward normal — so a blind `+1.4` in x walks the shelf
+        // BACK THROUGH the door of any WEST-facing seller. MEASURED on the
+        // frontier (seed 11): `store:food:0` + `store:clothing:0` landed 0.1 m
+        // from `w_1_west_d0`, and two 0.6 m solids across a 2.0 m opening SEAL
+        // the building — `w_1`'s only door, 1 clear lane in 41, its two workers
+        // wedged inside it for the whole arc. The offset is the placer's own
+        // intent (1.4 m aside, one 0.2 m lane per good); `propSpotClearOfRect`
+        // only mirrors it out of the seller's OWN footprint when it lands
+        // inside, so every stall that already stands clear does not move.
+        const wk = src.work !== undefined ? town.plan.works[src.work] : undefined;
+        const spot = propSpotClearOfRect(
+          src,
+          { x: 1.4, y: -0.2 + gi * 0.2 },
+          wk
+            ? { x: town.stage.center.x + wk.dx, y: town.stage.center.y + wk.dy, w: wk.w, h: wk.h }
+            : null,
+          MARKET_SHELF_R + DEFAULT_BODY_RADIUS_M,
+        );
         world!.addObject({
           id: objId,
-          x: src.x + 1.4, // off to the side of the shopper's spot so it never blocks the stall
-          y: src.y - 0.2 + gi * 0.2, // …and one lane per GOOD, for a work that sells two
+          x: spot.x, // off to the side of the shopper's spot so it never blocks the stall
+          y: spot.y, // …and one lane per GOOD, for a work that sells two
           shape: "box",
-          radius: 0.6,
+          radius: MARKET_SHELF_R,
           fixture: "chest",
           openable: true,
           facing: 0,
@@ -22184,11 +22370,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (!src) continue;
       if (f.species !== head && !(generic && src.kind === "plant")) continue;
       const standing = !f.downed && sourceIsCuttable(f.species, f.sizeClass);
-      // Two keys, most significant first: CAN THE ACT BE DONE TO IT AT ALL, and
-      // then IS IT THE SHAPE THE WORD NAMES. Both are ranks rather than
-      // filters, so "cut the tree" in a world of nothing but bushes still
-      // reaches a bush rather than answering "there is no tree here".
-      const rank = (standing ? 0 : 2) + (wantTreeShape && !sourceIsConsumable(src) ? 1 : 0);
+      // THREE keys, most significant first: CAN THE ACT BE DONE TO IT AT ALL,
+      // IS IT THE SHAPE THE WORD NAMES, and HAS IT ANYTHING TO GIVE. All three
+      // are ranks rather than filters, so "cut the tree" in a world of nothing
+      // but bushes still reaches a bush rather than answering "there is no tree
+      // here", and in a world of nothing but saplings it still reaches one.
+      //
+      // ⚖️ THE THIRD KEY IS R6's OTHER HALF (user 2026-09-06): a sapling may be
+      // cut, and *"they'll just be deprioritized by automatic designation
+      // because they produce less wood"*. This IS that deprioritisation, and it
+      // is the whole of it — a spoken "cut the tree" is the automatic chooser.
+      //
+      // 🚨 THE YIELD TEST IS THE LADDER'S OWN BEARING FLOOR
+      // (`sourceIsSubstantial` → `obstructingGrowthClass`, the first class with
+      // `yieldMul > 0`), never a summed `growthClassYield`. A raw sum is zero
+      // for every pure-HARVEST plant too (a berry bush has no body product at
+      // all), so it would silently demote every bush and vine as well and
+      // re-rank "cut the plants" — a change nobody asked for. Same number for
+      // the case at hand, no collateral.
+      const rank = (standing ? 0 : 4)
+        + (wantTreeShape && !sourceIsConsumable(src) ? 2 : 0)
+        + (standing && !sourceIsSubstantial(f.species, f.sizeClass) ? 1 : 0);
       const d = at ? Math.hypot(f.x - at.x, f.y - at.y) : 0;
       if (rank < bestRank || (rank === bestRank && d < bestD)) {
         bestRank = rank;
@@ -22269,11 +22471,30 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // ① THE TREE COMES DOWN. Everything it holds — timber and any fruit that
     // was on it when it fell — is in the heap, where a hand or a haul can now
     // reach the half that was out of reach a moment ago.
-    if (src && sourceIsConsumable(src)) {
+    //
+    // ⚖️ …AND THE HEAP HAS TO BE A HEAP OF SOMETHING (R6, 2026-09-06). The
+    // species question (`sourceIsConsumable` — "could this kind of plant become
+    // timber") is not the same as THIS plant's: a class-0 sapling's kill stock
+    // is 0 by its own ladder (`growthClassYield` at `yieldMul` 0), so downing it
+    // would leave a heap of nothing standing where the shoot was — and it could
+    // never retire, because the ending it would need (`depleteWildSource`, the
+    // last unit hauled away) is reached only by a take, and there is nothing
+    // there to take. So the outcome is read off what this plant actually HAS.
+    const leaves = src && sourceIsConsumable(src)
+      && (src.products ?? []).some((p) => isBodyProduct(p) && (stock[p.glyph] ?? 0) > 0);
+    if (leaves) {
       f.downed = true;
       standWildFeature(session, f); // the body goes, the heap stands under the same key
       bumpStockEpoch(session); // ⏸️ stock that was unreachable is reachable — wake parked rows
       return true;
+    }
+    // ⚖️ CUT, WITH NOTHING TO GIVE — said out loud, by KIND WORD. The child
+    // pressed a real button and something real happened, so the silence would
+    // be a lie; and the word is `wildSourceWord`'s (`tree`/`plants`), never the
+    // species id — `oak` has a lexeme in no shipped ruleset, so naming it here
+    // would put English on a Hebrew board while looking perfect in English.
+    if (src && sourceIsConsumable(src)) {
+      saySystem(session, ORDER_OK, `🪓 the ${wildSourceWord(f.species)} — too small to give any wood`);
     }
     // ② NOTHING TO BECOME. Shed what it bears, then it is gone.
     let shed = false;
@@ -22521,6 +22742,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
+   * ⚖️ R7 — IS THIS PLANT'S GROUND UNDER A BUILDING? (user 2026-09-06: a
+   * re-seeded tree appeared *"inside the building before it's completed"*.)
+   *
+   * 🚨 THE BUILDER'S OWN OCCUPANCY, never a second notion of taken ground —
+   * `standingFootprints` + `rectsCoverDisc`, exactly the pair the growth clock
+   * (`growWildFeature`), the mount filter and the unfold's `blocked` seat read,
+   * measured with `wildFeatureRadiusOf` so a class-0 sapling is asked about at
+   * SAPLING size rather than at the grown tree's.
+   *
+   * It gates the BODY only. The record, the stock and every reservation stay
+   * where they are: a tree that cannot be seen has not been removed, and the
+   * growth clock is separately suppressed on the same ground, so a suppressed
+   * sapling stays exactly the sapling it was until the ground is free again.
+   */
+  function wildBodyOnBuiltGround(
+    session: QuestSession,
+    f: WildernessFeature,
+    stock?: Record<string, number>,
+  ): boolean {
+    return rectsCoverDisc(
+      director.standingFootprints(session),
+      f.x, f.y,
+      wildFeatureRadiusOf(f, stock),
+    );
+  }
+
+  /**
    * ⚖️ RE-STAND a feature as whatever it is NOW — the body↔heap swap the cut
    * needs, and the ONE place that swap happens.
    *
@@ -22542,13 +22790,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (wildFeatureStandsAsBody(f)) {
       // Back on its feet: a re-seeded sapling is a living plant again, and it
       // stands the way `spawnWildFeature` stands one.
-      world.addNpc({
-        id: key,
-        x: f.x,
-        y: f.y,
-        species: f.species,
-        behavior: { movement: "wander", wanderRadius: 0, home: { x: f.x, y: f.y }, speed: 0, conversationRadius: 3 },
-      });
+      // …EXCEPT UNDER A BUILDING (R7, user 2026-09-06: a re-seed appeared
+      // *"inside the building before it's completed"*). The RECORD stays — the
+      // growth clock is already suppressed on built ground, and taking the row
+      // away would be a removal nobody performed — but nothing STANDS in the
+      // shell. It stands again when the ground is free (`restandOrphanedWildBodies`).
+      if (!wildBodyOnBuiltGround(session, f, session.containerRecords.get(key)?.stock)) {
+        world.addNpc({
+          id: key,
+          x: f.x,
+          y: f.y,
+          species: f.species,
+          behavior: { movement: "wander", wanderRadius: 0, home: { x: f.x, y: f.y }, speed: 0, conversationRadius: 3 },
+        });
+      }
       return;
     }
     const src = naturalSourceOf(f.species);
@@ -22575,6 +22830,36 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       iconRef: icon,
       glyph,
     });
+  }
+
+  /**
+   * ⚖️ R7's OTHER HALF — A PLANT WHOSE GROUND CAME FREE STANDS AGAIN.
+   *
+   * The suppression above is a fact about the GROUND, not about the plant, so
+   * it has to be able to stop being true: a room is demolished, a staked lot
+   * is abandoned, and the sapling that was inside the walls is out in the open
+   * with nothing standing there.
+   *
+   * 🚨 IT CANNOT RIDE THE GROWTH CLOCK. `growWildFeature` is only ever reached
+   * by OPENING the feature's container (`regrowWildStock`: "ripen before the
+   * board is drawn"), and a feature with no body has no anchor to open — the
+   * one state that can never re-check itself. So the check lives on the sweep
+   * the task pool already runs (and the clock warp replays per day bucket).
+   *
+   * CHEAP BY CONSTRUCTION: the outer test is a map lookup per feature, and the
+   * occupancy geometry runs only for the (normally zero) features that have no
+   * entity at all. A world with no wilderness does no work whatsoever.
+   */
+  function restandOrphanedWildBodies(session: QuestSession) {
+    const w = session.wilderness;
+    if (!world || !w?.features.length) return;
+    for (const f of w.features) {
+      if (!wildFeatureStandsAsBody(f)) continue;
+      const key = wildFeatureContainerId(f);
+      if (world.state.avatars[key] || world.state.objects[key]) continue;
+      if (wildBodyOnBuiltGround(session, f, session.containerRecords.get(key)?.stock)) continue;
+      standWildFeature(session, f);
+    }
   }
 
   /** THE RE-SEED (S3 H2): sapling stock (kill glyphs) + a fresh growth clock,
@@ -22681,7 +22966,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // the shelf — its own regrow ledger, untouched here — must survive.
     const stock = session.containerRecords.get(objId)?.stock ?? {};
     setContainerStock(session, objId, { ...stock, ...advance.stock });
-    resizeWildFeature(session, f, objId); // depletion-visible (box features only)
+    // 🌱 THE TREE HAS ACTUALLY GROWN, SO THE BODY HAS TO CHANGE (R5). An
+    // embodied plant's size is its BLUEPRINT's business, which is why
+    // `resizeWildFeature` refuses it outright — the stage is baked into the
+    // body, so the only way to draw the new one is to STAND IT AGAIN. That
+    // goes through `standWildFeature`, the ONE body↔heap swap, under the same
+    // container key: the record, the stock and every reservation aimed at this
+    // endpoint are untouched, exactly as they are when a cut tree comes down.
+    // Only on a REAL advance (`dueGrowthAdvance` returned one), so this is a
+    // once-a-growth-period event, not a per-checkpoint rebuild.
+    if (wildFeatureStandsAsBody(f)) standWildFeature(session, f);
+    else resizeWildFeature(session, f, objId); // depletion-visible (box features only)
   }
 
   /** ⚖️ S&D S3 H2 acceptance seam: `/probe` names every growth-bearing
@@ -22692,6 +22987,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function wildGrowthProbe(w: WildernessContent | null | undefined): string {
     if (!w?.features.length) return "";
     const bySpecies = new Map<string, number[]>();
+    // 🚨 …AND WHICH OF THEM ARE ALREADY DOWN (2026-09-06). A felling's ordinary
+    // ending (`cutWildFeature` ①) sets `f.downed` and leaves the record exactly
+    // where it was — the heap stands under the same container key until the last
+    // unit is hauled off — so a census that counted rows alone read a felled oak
+    // as a standing mature one. That cost a lane a false regression report ("no
+    // oak felled" off an unchanged `oak[… mature:7]`, while the chop had in fact
+    // completed): the two instruments a text driver has for the wild were both
+    // blind to the one bit that says the act landed. Reported beside the ladder,
+    // never folded into it — the size class of a downed trunk is still its size
+    // class, and the growth arc's own readings must not shift under it.
+    const downed = new Map<string, number>();
     for (const f of w.features) {
       const g = naturalSourceOf(f.species)?.growth;
       if (!g) continue;
@@ -22699,11 +23005,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const counts = bySpecies.get(f.species) ?? g.classes.map(() => 0);
       counts[cls] = (counts[cls] ?? 0) + 1;
       bySpecies.set(f.species, counts);
+      if (f.downed) downed.set(f.species, (downed.get(f.species) ?? 0) + 1);
     }
     const rows: string[] = [];
     for (const [species, counts] of bySpecies) {
       const g = naturalSourceOf(species)!.growth!;
-      rows.push(`${species}[${g.classes.map((c, i) => `${c.name}:${counts[i] ?? 0}`).join(" ")}]`);
+      const down = downed.get(species) ?? 0;
+      rows.push(
+        `${species}[${g.classes.map((c, i) => `${c.name}:${counts[i] ?? 0}`).join(" ")}` +
+          `${down > 0 ? ` down:${down}` : ""}]`,
+      );
     }
     return rows.join(" ");
   }
@@ -26313,19 +26624,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // hysteretic, so a pacing body on a band edge never flaps — and queue
         // crossings for the staggered rebuild below. Entries for despawned
         // bodies are pruned so a later respawn re-seeds from live distance.
+        //
+        // ⚖️ THE DISTANCE IS TRUE 3-D (user ruling 2026-09-06): `tierDistanceM`
+        // — camera→body including the camera's HEIGHT. This line used to be
+        // `hypot(dx, dy)`, the sim-plane projection, so an orbit camera 41 m up
+        // and 76 m out banded its subject at 76 m; overhead it banded a whole
+        // crowd at ~0 m. Residents and flora bodies read the SAME measure (one
+        // sweep, one list). No band moved; a driverless host feeds no height,
+        // `dz` is 0, and the arithmetic is byte-identical to what it was.
         {
           const focus = cameraFocus(); // the LOCAL camera, never PLAYER_ID ([LOD per-camera])
+          // ⚖️ …AND ITS FOV (user ruling C3): with a real camera the rung comes
+          // from how much of the SCREEN the body fills, so a 23.8 m oak and a
+          // 1.7 m settler at one distance no longer get one answer, and an orbit
+          // at a different fov no longer reads a walker's metre table. Null
+          // (no driver) ⇒ the metre pick, verbatim.
+          const fovRad = projectingFov();
           if (focus) {
             for (const id in state.avatars) {
               if (!retieringBodyId(id)) continue; // the ONE ladder list (⑤)
               const bd = state.avatars[id];
               const prev = bodyTiers.get(id);
-              const d = Math.hypot(bd.x - focus.x, bd.y - focus.y);
+              const d = tierDistanceM(focus, bd);
               if (prev === undefined) {
-                bodyTiers.set(id, seedBodyTier(d)); // first sight — builds right, no rebuild
+                bodyTiers.set(id, seedBodyTierAt(id, d, fovRad)); // first sight — builds right, no rebuild
                 continue;
               }
-              const t = bandedBodyTier(prev, d);
+              const t = bandedBodyTierAt(id, prev, d, fovRad);
               if (t !== prev) {
                 bodyTiers.set(id, t);
                 if (!retierQueue.includes(id)) {
@@ -26336,6 +26661,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             }
             for (const id of bodyTiers.keys()) {
               if (!state.avatars[id]) bodyTiers.delete(id);
+            }
+            // The height cache rides the SAME prune (see `bodyHeightM`): a
+            // respawned body re-reads its species/stage from scratch.
+            for (const id of bodyHeights.keys()) {
+              if (!state.avatars[id]) bodyHeights.delete(id);
             }
           }
           // TEMP retier probe: ≤1 line/2s, only when bodies crossed bands —
@@ -26872,10 +27202,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const key = wildFeatureContainerId(f);
     let stood: boolean;
     if (wildFeatureStandsAsBody(f)) {
+      // R7 — NO BODY UNDER A BUILDING (`wildBodyOnBuiltGround`). This reports
+      // TRUE: nothing was REFUSED, there is simply nothing to stand in a shell,
+      // so the container is registered exactly as it would have been and no
+      // caller mistakes a suppressed body for a spawn that failed and eats the
+      // tree (`addWildFeature`, `growNearStand` — a false return means "keep
+      // your scenery instance", which is a different fact).
       // A refused addNpc (body budget) means NOTHING stands here — report it,
       // so a flora-twin caller keeps its scenery instance visible instead of
       // hiding a tree that has no body anywhere.
-      stood = world.addNpc({
+      stood = wildBodyOnBuiltGround(session, f) || world.addNpc({
         id: key,
         x: f.x,
         y: f.y,
@@ -31882,6 +32218,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   /** THE LEDGER SWEEPS the task pool runs every sweep. Order is load-bearing
    *  and documented at each arm; a warp runs this block per day bucket. */
   function stepLedgerSweeps(session: QuestSession) {
+    // 🌱 R7's OTHER HALF — a plant whose ground came free stands again.
+    restandOrphanedWildBodies(session);
     // ⚖️ #49 — THE RECORD CLOCKS FIRST, all of them, once. This was the head of
     // `stepFarmSource` (advance then ripen) and keeps its place in the order
     // exactly: every offloaded region grows and pulses before the field's haul

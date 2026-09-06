@@ -3166,6 +3166,9 @@ export const zh = {
     SCOPE_MALFORMED: "无法确定这张照片的归属。",
     SCOPE_REQUIRED: "请先选择一位{{student}}或机构。",
     UNAUTHORIZED: "请重新登录。",
+    LICENSE_ALREADY_PAID: "此许可证已经付款。",
+    LICENSE_NOT_PURCHASABLE: "此许可证无法在线支付，请与我们联系。",
+    PADDLE_NOT_CONFIGURED: "目前无法在线支付，请稍后再试或与我们联系。",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const zh = {
       isTrial: "试用许可证",
       trialExpiresAt: "试用到期时间",
       trialExpired: "试用已过期",
+      price: "价格",
+      pricePlaceholder: "例如 49.90",
+      priceHint: "开票客户请留空——他们不会看到在线支付按钮。",
+      currency: "货币",
+      paidUntil: "已付款至",
+      expires: "到期",
+      expired: "已过期",
       // Recipient
       recipient: "接收者",
       email: "邮箱",
@@ -4936,5 +4946,34 @@ export const zh = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "激活许可证",
+    adminOnly: "只有组织管理员才能管理此许可证。",
+    banner: {
+      dismiss: "关闭",
+      expired: "您的许可证已过期，部分功能不可用。",
+      trialEndsIn: "您的试用将在 {{days}} 天后结束。",
+      trialEndsToday: "您的试用将于今天结束。",
+      trialEndsTomorrow: "您的试用将于明天结束。",
+      viewBilling: "查看账单",
+    },
+    checkoutFailed: "无法开始付款",
+    expiredOn: "已于 {{date}} 到期",
+    invoiceOnly: "此许可证以发票方式计费。如需续费或变更，请与我们联系。",
+    notReady: "目前无法在线支付。",
+    paidUntil: "已付款至 {{date}}",
+    paymentComplete: "已收到付款",
+    paymentCompleteDesc: "您的许可证已更新，谢谢！",
+    planMonthly: "每月",
+    planYearly: "每年",
+    renew: "续费",
+    statusActive: "有效",
+    statusExpired: "已过期",
+    statusNone: "无许可证",
+    statusTrial: "试用",
+    subtitle: "您的方案、价格以及到期时间。",
+    title: "许可证与账单",
+    trialEnds: "试用于 {{date}} 结束",
   },
 };

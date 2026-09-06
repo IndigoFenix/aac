@@ -32,6 +32,15 @@
  *     that is not strictly newer is ignored as stale. One-time transactions are
  *     exempt — each is its own fact, and the event-id primary key already stops
  *     a replay.
+ *
+ *  4. A PER-LICENSE PURCHASE IS RECOGNISED BY IDENTITY, NOT BY PRICE.
+ *     Organisations are quoted individually and bought with a NON-CATALOG
+ *     price, so there is no price id to look up — `customData.licenseId` (which
+ *     we attach when we create the transaction) and, for later renewals,
+ *     `licenses.paddle_subscription_id` are the whole recognition. That path
+ *     runs BEFORE the catalog lookup on a transaction, and INSTEAD of it on a
+ *     subscription whose price matches no plan. It grants no credits: credits
+ *     are a separate product.
  */
 
 import type { CreditPackage, License, SubscriptionPlan } from "@shared/schema";
@@ -68,12 +77,20 @@ interface ItemLike {
   quantity?: number | null;
 }
 
+interface TotalsLike {
+  subtotal?: string | null;
+  total?: string | null;
+}
+
 interface TransactionDataLike {
   id?: string;
   customerId?: string | null;
   subscriptionId?: string | null;
   customData?: CustomDataLike | null;
   items?: ItemLike[] | null;
+  currencyCode?: string | null;
+  billingPeriod?: { startsAt?: string; endsAt?: string } | null;
+  details?: { totals?: TotalsLike | null } | null;
 }
 
 interface SubscriptionDataLike {
@@ -118,6 +135,7 @@ export interface FulfillmentDeps {
   licenses: {
     getLicenseById(id: string): Promise<License | undefined>;
     getLicenseByUserId(userId: string): Promise<License | undefined>;
+    getLicenseByPaddleSubscriptionId(subscriptionId: string): Promise<License | undefined>;
     getLicensesByInstituteId(instituteId: string): Promise<License[]>;
     updateLicense(id: string, updates: Record<string, unknown>): Promise<License | undefined>;
   };
@@ -200,6 +218,23 @@ export class PaddleFulfillmentService {
     event: PaddleEventLike,
   ): Promise<FulfillmentOutcome> {
     const transactionId = asString(txn?.id) ?? event.eventId;
+
+    // PER-LICENSE FIRST. An individually-quoted license is bought with a
+    // non-catalog price, so there is no priceId to recognise below — the
+    // `customData.licenseId` we put on the transaction when we created it IS
+    // the recognition. Credit packages and catalog plans never carry one.
+    const boundLicenseId = asString(txn?.customData?.licenseId);
+    if (boundLicenseId) {
+      const license = await this.deps.licenses.getLicenseById(boundLicenseId);
+      if (license) {
+        return this.activateLicenseFromTransaction(license, txn, transactionId, event);
+      }
+      paddleLog("fulfillment: transaction customData.licenseId did not resolve", {
+        licenseId: boundLicenseId,
+        transactionId,
+      });
+    }
+
     const userId = asString(txn?.customData?.userId);
     if (!userId) {
       return ignored(`transaction ${transactionId} has no customData.userId`);
@@ -249,6 +284,68 @@ export class PaddleFulfillmentService {
     return { status: "processed", actions };
   }
 
+  /**
+   * A per-license purchase completed: the license stops being a trial and
+   * becomes paid through the end of the period.
+   *
+   * NO CREDITS. Credits are a separate product bought with a credit package;
+   * paying for a license buys the license.
+   *
+   * A price MISMATCH is logged, never rejected. The money has already moved —
+   * refusing the event would only make Paddle retry forever while the customer
+   * who paid stays locked out. What we want is a record an operator can read.
+   */
+  private async activateLicenseFromTransaction(
+    license: License,
+    txn: TransactionDataLike | null | undefined,
+    transactionId: string,
+    event: PaddleEventLike,
+  ): Promise<FulfillmentOutcome> {
+    const occurredAt = toDate(event.occurredAt) ?? new Date();
+    const yearly = license.subscriptionType === "yearly";
+    const expiresAt =
+      toDate(txn?.billingPeriod?.endsAt) ??
+      new Date(occurredAt.getTime() + (yearly ? 365 : 30) * DAY_MS);
+
+    const paid = asString(txn?.details?.totals?.subtotal ?? txn?.details?.totals?.total);
+    const paidCurrency = asString(txn?.currencyCode);
+    if (license.priceAmount != null && paid && Number(paid) !== license.priceAmount) {
+      paddleLog("fulfillment: PRICE MISMATCH on per-license transaction", {
+        licenseId: license.id,
+        transactionId,
+        quoted: license.priceAmount,
+        paid,
+      });
+    }
+    if (license.priceCurrency && paidCurrency && paidCurrency !== license.priceCurrency) {
+      paddleLog("fulfillment: CURRENCY MISMATCH on per-license transaction", {
+        licenseId: license.id,
+        transactionId,
+        quoted: license.priceCurrency,
+        paid: paidCurrency,
+      });
+    }
+
+    await this.deps.licenses.updateLicense(license.id, {
+      isTrial: false,
+      trialExpiresAt: null,
+      isActive: true,
+      paddleCustomerId: asString(txn?.customerId) ?? license.paddleCustomerId ?? null,
+      paddleSubscriptionId: asString(txn?.subscriptionId) ?? license.paddleSubscriptionId ?? null,
+      paddleTransactionId: transactionId,
+      subscriptionExpiresAt: expiresAt,
+      updatedAt: new Date(),
+    });
+
+    return {
+      status: "processed",
+      actions: [
+        `license ${license.id} paid via transaction ${transactionId}, ` +
+          `expires ${expiresAt.toISOString()}`,
+      ],
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Subscriptions
   // -------------------------------------------------------------------------
@@ -271,21 +368,24 @@ export class PaddleFulfillmentService {
       );
     }
 
-    const userId = asString(sub?.customData?.userId);
-    if (!userId) return ignored(`subscription ${subscriptionId} has no customData.userId`);
-
     const priceIds = priceIdsOf(sub?.items);
     let plan: SubscriptionPlan | undefined;
     for (const priceId of priceIds) {
       plan = await this.deps.plans.getSubscriptionPlanByPaddlePriceId(priceId);
       if (plan) break;
     }
+
+    // A per-license subscription is sold at a NON-CATALOG price, so no plan
+    // will ever match its price id. That is the signal to take the
+    // license-bound path rather than to give up. (Order deliberately: a
+    // recognised catalog price keeps the catalog behaviour, including its own
+    // customData.licenseId handling, unchanged.)
     if (!plan) {
-      paddleLog(`fulfillment: no plan for subscription ${subscriptionId}`, { priceIds });
-      return ignored(
-        `subscription ${subscriptionId}: no subscription plan for price ids [${priceIds.join(", ")}]`,
-      );
+      return this.handleLicenseSubscription(sub, subscriptionId, eventType, occurredAt, priceIds);
     }
+
+    const userId = asString(sub?.customData?.userId);
+    if (!userId) return ignored(`subscription ${subscriptionId} has no customData.userId`);
 
     const license = await this.resolveLicense(userId, asString(sub?.customData?.licenseId));
     if (!license) {
@@ -334,6 +434,76 @@ export class PaddleFulfillmentService {
     }
 
     return { status: "processed", actions };
+  }
+
+  /**
+   * Subscription lifecycle for an INDIVIDUALLY-QUOTED license.
+   *
+   * Resolution is by identity, not by price: `customData.licenseId` if the
+   * checkout named one, else the license already carrying this
+   * `paddleSubscriptionId` — which is how a renewal or a cancellation months
+   * later still finds its row, since Paddle's own events carry no customData
+   * we did not put there at checkout.
+   *
+   * Like the catalog path, this makes the TIMESTAMP truthful and never clears
+   * `isActive` (law 2); expiry enforcement lives in licenseService.
+   */
+  private async handleLicenseSubscription(
+    sub: SubscriptionDataLike | null | undefined,
+    subscriptionId: string,
+    eventType: string,
+    occurredAt: Date,
+    priceIds: string[],
+  ): Promise<FulfillmentOutcome> {
+    const boundLicenseId = asString(sub?.customData?.licenseId);
+    let license: License | undefined;
+    if (boundLicenseId) license = await this.deps.licenses.getLicenseById(boundLicenseId);
+    if (!license) {
+      license = await this.deps.licenses.getLicenseByPaddleSubscriptionId(subscriptionId);
+    }
+    if (!license) {
+      paddleLog(`fulfillment: no plan and no license for subscription ${subscriptionId}`, {
+        priceIds,
+        boundLicenseId,
+      });
+      return ignored(
+        `subscription ${subscriptionId}: no subscription plan for price ids ` +
+          `[${priceIds.join(", ")}] and no license bound to it`,
+      );
+    }
+
+    const yearly = license.subscriptionType === "yearly";
+    const expiresAt =
+      (eventType === "subscription.canceled"
+        ? toDate(sub?.scheduledChange?.effectiveAt)
+        : undefined) ??
+      toDate(sub?.currentBillingPeriod?.endsAt) ??
+      new Date(occurredAt.getTime() + (yearly ? 365 : 30) * DAY_MS);
+
+    const updates: Record<string, unknown> = {
+      paddleCustomerId: asString(sub?.customerId) ?? license.paddleCustomerId ?? null,
+      paddleSubscriptionId: subscriptionId,
+      subscriptionExpiresAt: expiresAt,
+      updatedAt: new Date(),
+    };
+    if (
+      eventType === "subscription.activated" ||
+      eventType === "subscription.resumed" ||
+      eventType === "subscription.updated"
+    ) {
+      updates.isActive = true;
+      updates.isTrial = false;
+      updates.trialExpiresAt = null;
+    }
+
+    await this.deps.licenses.updateLicense(license.id, updates);
+    return {
+      status: "processed",
+      actions: [
+        `license ${license.id} (per-license price) ${eventType}, ` +
+          `expires ${expiresAt.toISOString()}`,
+      ],
+    };
   }
 
   /**
@@ -439,6 +609,8 @@ export async function getPaddleFulfillmentService(): Promise<PaddleFulfillmentSe
     licenses: {
       getLicenseById: (id) => licenseRepository.getLicenseById(id),
       getLicenseByUserId: (userId) => licenseRepository.getLicenseByUserId(userId),
+      getLicenseByPaddleSubscriptionId: (subscriptionId) =>
+        licenseRepository.getLicenseByPaddleSubscriptionId(subscriptionId),
       getLicensesByInstituteId: (instituteId) =>
         licenseRepository.getLicensesByInstituteId(instituteId),
       updateLicense: (id, updates) => licenseRepository.updateLicense(id, updates as never),

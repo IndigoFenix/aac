@@ -639,6 +639,13 @@ export interface AdminLicense {
   subscriptionType: string | null;
   isTrial: boolean;
   trialExpiresAt: string | null;
+  /** Paid-until date. Null = perpetual (every pre-billing license). */
+  subscriptionExpiresAt: string | null;
+  /** Integer MINOR units (cents/agorot) — organisations are quoted
+   *  individually, so the price lives on the license row, not a plan table. */
+  priceAmount: number | null;
+  /** ISO 4217, e.g. 'USD'. */
+  priceCurrency: string | null;
   permissions: any | null;
   /** Operator-granted marketing entitlement (a real column, not a permissions key). */
   allowSessionRecording?: boolean;
@@ -663,6 +670,9 @@ export interface CreateLicenseData {
   subscriptionType?: string;
   isTrial?: boolean;
   trialExpiresAt?: string;
+  subscriptionExpiresAt?: string;
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
   permissions?: any;
   allowSessionRecording?: boolean;
   inviteEmail: string;
@@ -691,6 +701,9 @@ export interface UpdateLicenseData {
   subscriptionType?: string;
   isTrial?: boolean;
   trialExpiresAt?: string | null;
+  subscriptionExpiresAt?: string | null;
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
   permissions?: any | null;
   allowSessionRecording?: boolean;
   isActive?: boolean;

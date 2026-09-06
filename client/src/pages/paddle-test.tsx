@@ -1,9 +1,4 @@
 import { useEffect, useState } from "react";
-import {
-  initializePaddle,
-  CheckoutEventNames,
-  type Paddle,
-} from "@paddle/paddle-js";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
+import { usePaddle } from "@/hooks/usePaddle";
 
 interface PaddlePrice {
   id: string;
@@ -41,56 +37,31 @@ function formatAmount(price: PaddlePrice): string {
 export default function PaddleTest() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const [paddle, setPaddle] = useState<Paddle | null>(null);
-  const [environment, setEnvironment] = useState<string>("");
   const [prices, setPrices] = useState<PaddlePrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  // Initialize paddle-js from server-provided config.
+  // paddle-js is initialised once for the whole app; this page just subscribes.
+  const { paddle, ready, reason, environment, openCheckoutForPrice } = usePaddle();
+
+  // Debug page — deliberately NOT translated (see CLAUDE.md: debug features are
+  // exempt from the i18n rule).
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiRequest("GET", "/api/paddle/config");
-        const cfg = await res.json();
-        if (cancelled) return;
-        setEnvironment(cfg.environment);
-        if (!cfg.clientToken) {
-          toast({
-            title: "No client token",
-            description:
-              "Set PADDLE_CLIENT_TOKEN_TEST (sandbox) or PADDLE_CLIENT_TOKEN (live).",
-            variant: "destructive",
-          });
-          return;
-        }
-        const instance = await initializePaddle({
-          environment: cfg.environment === "production" ? "production" : "sandbox",
-          token: cfg.clientToken,
-          eventCallback: (event) => {
-            if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) {
-              toast({
-                title: "Checkout completed ✅",
-                description: `Transaction ${event.data?.transaction_id ?? ""}`,
-              });
-            }
-          },
-        });
-        if (!cancelled && instance) setPaddle(instance);
-      } catch (err) {
-        console.error("Paddle init error:", err);
-        toast({
-          title: "Failed to initialize Paddle",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [toast]);
+    if (reason === "no-client-token") {
+      toast({
+        title: "No client token",
+        description:
+          "Set PADDLE_CLIENT_TOKEN_TEST (sandbox) or PADDLE_CLIENT_TOKEN (live).",
+        variant: "destructive",
+      });
+    } else if (reason) {
+      toast({
+        title: "Failed to initialize Paddle",
+        description: reason,
+        variant: "destructive",
+      });
+    }
+  }, [reason, toast]);
 
   // Load catalog prices.
   const loadPrices = async () => {
@@ -135,7 +106,7 @@ export default function PaddleTest() {
   };
 
   const openCheckout = (priceId: string) => {
-    if (!paddle) {
+    if (!ready) {
       toast({
         title: "Paddle not ready",
         description: "Client token missing or still initializing.",
@@ -155,9 +126,13 @@ export default function PaddleTest() {
     // webhook arrives server-to-server with no session, and reads userId from
     // here to decide who gets the credits. Omit it and the event is recorded as
     // `ignored` — the payment succeeds and nothing is granted.
-    paddle.Checkout.open({
-      items: [{ priceId, quantity: 1 }],
-      customData: { userId: user.id },
+    openCheckoutForPrice(priceId, { userId: user.id }, {
+      onCompleted: (transactionId) => {
+        toast({
+          title: "Checkout completed ✅",
+          description: `Transaction ${transactionId ?? ""}`,
+        });
+      },
     });
   };
 

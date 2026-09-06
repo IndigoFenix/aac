@@ -408,6 +408,103 @@ resource "aws_iam_role_policy" "github_actions_plan" {
 }
 
 # =============================================================================
+# GitHub Actions — AAC artifact PUBLISH role
+# =============================================================================
+# Uploading a build artifact is not a deploy, and it should not need the deploy
+# role. `aws_iam_role.github_actions` above trusts `refs/heads/main` ONLY and
+# carries `<ns>:*` across most of the account; the AAC release workflows run
+# from feature branches and from `v*` tags, so they could not assume it (an
+# `sts:AssumeRoleWithWebIdentity` denial at the "Configure AWS credentials"
+# step). The tempting fix — adding those refs to the deploy role's trust — would
+# hand a broad role to anyone who can push an unprotected branch, undoing the
+# narrowing documented at the top of this file.
+#
+# So: a second role that can do exactly ONE thing.
+#
+# TRUST is wider than the deploy role's (main, staging, and v* tags) but the
+# permission behind it is a single S3 action on a single bucket whose
+# DataClass is "public" — signed installers and a manifest, no PHI.
+#
+# NOT trusted: `repo:IndigoFenix/aac:pull_request`. That subject is produced by
+# pull requests INCLUDING ONES FROM FORKS, and this role can write the artifacts
+# the desktop auto-updater installs. A PR must never be able to publish to the
+# update feed.
+#
+# Counterpart secret: AWS_PUBLISH_ROLE_ARN. The AAC publish workflows fall back
+# to AWS_ROLE_ARN when it is unset, so applying this and setting the secret are
+# independent steps and neither breaks the other.
+resource "aws_iam_role" "github_actions_publish" {
+  # The only thing this role may write is the AAC update bucket, which exists
+  # only under this flag. Without it the role would grant access to nothing.
+  count = var.enable_aac_auto_update ? 1 : 0
+
+  name = "${local.name_prefix}-github-actions-publish"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = data.aws_iam_openid_connect_provider.github.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          # `aud` stays an exact match; only `sub` needs the wildcard, and only
+          # for the tag pattern.
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:IndigoFenix/aac:ref:refs/heads/main",
+              "repo:IndigoFenix/aac:ref:refs/heads/staging",
+              "repo:IndigoFenix/aac:ref:refs/tags/v*",
+            ]
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-github-actions-publish"
+  }
+}
+
+# s3:PutObject and nothing else. Every AAC publisher
+# (scripts/publish-aac-{ios,release,backend}.mjs) issues PutObjectCommand and
+# no other AWS call — verified against the sources, not assumed.
+#
+# Deliberately absent:
+#   - s3:DeleteObject       — a publish must not be able to remove a shipped build.
+#   - s3:GetObject / List*  — writing the feed does not require reading it.
+#   - bucket-level actions  — policy, ACL, versioning and lifecycle stay with Terraform.
+#   - kms:*                 — the bucket is SSE-S3 (AES256), so there is no CMK to grant.
+#
+# The bucket is versioned, so re-publishing an existing key adds a version
+# rather than destroying the previous artifact. That is what makes PutObject
+# alone safe to hand to a branch build.
+resource "aws_iam_role_policy" "github_actions_publish" {
+  count = var.enable_aac_auto_update ? 1 : 0
+
+  name = "${local.name_prefix}-github-actions-publish-policy"
+  role = aws_iam_role.github_actions_publish[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "PublishAacArtifacts"
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.aac_updates[0].arn}/*"
+      }
+    ]
+  })
+}
+
+# =============================================================================
 # ECS Task Execution Role (for pulling images, accessing secrets)
 # =============================================================================
 resource "aws_iam_role" "ecs_task_execution" {

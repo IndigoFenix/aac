@@ -739,6 +739,7 @@ export const en = {
       barrel: "Barrel",
       basket: "Basket",
       satchel: "Satchel",
+      cart: "Cart",
       lamp: "Lamp",
       window: "Window",
       heater: "Heater",

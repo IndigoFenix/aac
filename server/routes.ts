@@ -1536,6 +1536,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     paddleController.handleWebhook(req, res)
   );
 
+  // Pay for one license. Deliberately NOT under /api/admin: the customer pays
+  // for their own license. The controller decides who may (owner, institute
+  // admin, system admin).
+  app.post("/api/licenses/:id/checkout", requireAuth, (req, res) =>
+    licenseController.createCheckout(req, res)
+  );
+
   // ============= CHAT ROUTES =============
   // Chat endpoint with optional image upload for multimodal context
   app.post("/api/chat", requireAuth, aacUpload.single("image"), (req, res) =>

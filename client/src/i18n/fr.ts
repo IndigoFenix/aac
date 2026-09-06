@@ -3166,6 +3166,9 @@ export const fr = {
     SCOPE_MALFORMED: "Le propriétaire de cette photo n'a pu être déterminé.",
     SCOPE_REQUIRED: "Choisissez d'abord un {{student}} ou une organisation.",
     UNAUTHORIZED: "Veuillez vous reconnecter.",
+    LICENSE_ALREADY_PAID: "Cette licence est déjà payée.",
+    LICENSE_NOT_PURCHASABLE: "Cette licence ne peut pas être payée en ligne. Veuillez nous contacter.",
+    PADDLE_NOT_CONFIGURED: "Le paiement en ligne n'est pas disponible pour le moment. Réessayez plus tard ou contactez-nous.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const fr = {
       isTrial: "Licence d'essai",
       trialExpiresAt: "L'essai expire",
       trialExpired: "Essai expiré",
+      price: "Prix",
+      pricePlaceholder: "p. ex. 49,90",
+      priceHint: "Laissez vide pour les clients facturés : ils n'auront pas de bouton de paiement en ligne.",
+      currency: "Devise",
+      paidUntil: "Payé jusqu'au",
+      expires: "Expire",
+      expired: "Expirée",
       // Recipient
       recipient: "Destinataire",
       email: "E-mail",
@@ -4936,5 +4946,34 @@ export const fr = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "Activer la licence",
+    adminOnly: "Seul un administrateur de l'organisation peut gérer cette licence.",
+    banner: {
+      dismiss: "Ignorer",
+      expired: "Votre licence a expiré. Certaines fonctionnalités sont indisponibles.",
+      trialEndsIn: "Votre essai se termine dans {{days}} jours.",
+      trialEndsToday: "Votre essai se termine aujourd'hui.",
+      trialEndsTomorrow: "Votre essai se termine demain.",
+      viewBilling: "Voir la facturation",
+    },
+    checkoutFailed: "Impossible de démarrer le paiement",
+    expiredOn: "Expirée le {{date}}",
+    invoiceOnly: "Cette licence est facturée sur facture. Contactez-nous pour la renouveler ou la modifier.",
+    notReady: "Le paiement en ligne n'est pas disponible pour le moment.",
+    paidUntil: "Payé jusqu'au {{date}}",
+    paymentComplete: "Paiement reçu",
+    paymentCompleteDesc: "Votre licence a été mise à jour. Merci !",
+    planMonthly: "Mensuel",
+    planYearly: "Annuel",
+    renew: "Renouveler",
+    statusActive: "Active",
+    statusExpired: "Expirée",
+    statusNone: "Aucune licence",
+    statusTrial: "Essai",
+    subtitle: "Votre formule, son prix et sa date de fin.",
+    title: "Licence et facturation",
+    trialEnds: "L'essai se termine le {{date}}",
   },
 };

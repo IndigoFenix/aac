@@ -33,6 +33,7 @@ import { CreatureAnimator, type BodyActivity } from "./animation";
 import type { GaitPattern } from "./gait";
 import { requireSpecies, type Species } from "./species";
 import { activeCreatureMods, appearanceModTag, applyAppearanceMods } from "./mods";
+import { agePlantBody } from "./growth";
 import { clampOutfit, outfitPresetFor, type OutfitBlueprint } from "./clothing";
 import { buildStickGeometry, creatureSticks, stickMaterial } from "./stick-lod";
 import { getShadingMode } from "../materials";
@@ -102,6 +103,16 @@ export interface SpeciesAssets {
   clips: Map<string, BakedClip>;
   /** Natural standing height (meters) from the rest skeleton's bone AABB. */
   naturalHeight: number;
+  /** ⚖️ THE HEIGHT `heightM` IS ABOUT — the ADULT body's natural height, so a
+   *  STAGED plant (`age < 1`) is drawn at the adult's world scale and its own
+   *  height falls out of its geometry. Equal to `naturalHeight` at age ≥ 1
+   *  (every body that ever existed before staging), which is what keeps a
+   *  mature body's scale byte-identical.
+   *
+   *  🚨 `resolveScale` MUST divide by THIS, never by `naturalHeight`: dividing
+   *  a 23.8 m `bodyHeightM` by a 0.36 m shoot's own AABB stretches the shoot
+   *  back into a full-grown oak — the exact bug the stage exists to fix. */
+  adultHeight: number;
   dispose(): void;
 }
 
@@ -219,9 +230,14 @@ const STICK_WALK_FRAMES = 7;
  *  Mods run BEFORE the outfit is attached: clothing is fitted to the body it
  *  is worn on, and a garment sized against the unmodded body would hang off a
  *  chunkier one. */
-function dressedBlueprint(species: Species, outfit?: OutfitBlueprint): Blueprint {
+function dressedBlueprint(species: Species, outfit?: OutfitBlueprint, age = 1): Blueprint {
   const modded = applyAppearanceMods(species, clampBlueprint(species.blueprint), activeCreatureMods());
-  return outfit ? clampBlueprint({ ...modded, outfit }) : modded;
+  const dressed = outfit ? clampBlueprint({ ...modded, outfit }) : modded;
+  // ⚖️ THE GROWTH STAGE, and the LAST thing applied: the age is the SIM's
+  // (`growthAgeOf`, products.ts) and the render only reads it, so it may not
+  // reach back into the species row or the wardrobe. `agePlantBody` returns
+  // the SAME object at age ≥ 1, so every un-staged body is untouched.
+  return agePlantBody(dressed, age);
 }
 
 function buildSpeciesAssets(
@@ -229,6 +245,7 @@ function buildSpeciesAssets(
   look: CreatureLook,
   outfit?: OutfitBlueprint,
   detail: CreatureDetail = "full",
+  age = 1,
 ): SpeciesAssets {
   // BODILESS (the player's "spark"): there is no body to build. Its blueprint is
   // empty, and clampBlueprint fills every unset field — so building it would
@@ -255,13 +272,18 @@ function buildSpeciesAssets(
   const matRef: { mat?: THREE.Material } = {};
   const clips = new Map<string, BakedClip>();
   // Rest height from the bone AABB (feet ~0).
-  const restSkel = buildSkeleton(dressedBlueprint(species, outfit));
-  const naturalHeight = Math.max(0.1, restSkel.bounds.max.y - restSkel.bounds.min.y);
+  const restSkel = buildSkeleton(dressedBlueprint(species, outfit, age));
+  const heightOf = (s: CreatureSkeleton): number => Math.max(0.1, s.bounds.max.y - s.bounds.min.y);
+  const naturalHeight = heightOf(restSkel);
+  // The ADULT's height, which is what `heightM` names — measured ONLY when
+  // this is a staged build (one extra skeleton solve, no bake), so the
+  // un-staged path is byte-for-byte the work it always did.
+  const adultHeight = age < 1 ? heightOf(buildSkeleton(dressedBlueprint(species, outfit))) : naturalHeight;
 
   const walkFrames = detail === "simple" ? SIMPLE_WALK_FRAMES : detail === "stick" ? STICK_WALK_FRAMES : WALK_FRAMES;
-  clips.set("idle", bakeIdle(dressedBlueprint(species, outfit), toon, matRef, detail));
-  if (species.kind === "creature" && canWalk(dressedBlueprint(species, outfit))) {
-    clips.set("walk", bakeLocomotion(dressedBlueprint(species, outfit), walkFrames, WALK_SPEED01, "trot", toon, matRef, detail));
+  clips.set("idle", bakeIdle(dressedBlueprint(species, outfit, age), toon, matRef, detail));
+  if (species.kind === "creature" && canWalk(dressedBlueprint(species, outfit, age))) {
+    clips.set("walk", bakeLocomotion(dressedBlueprint(species, outfit, age), walkFrames, WALK_SPEED01, "trot", toon, matRef, detail));
   }
 
   const material = matRef.mat!;
@@ -270,6 +292,7 @@ function buildSpeciesAssets(
     material,
     clips,
     naturalHeight,
+    adultHeight,
     dispose() {
       material.dispose();
       for (const clip of clips.values()) for (const f of clip.frames) f.geometry.dispose();
@@ -313,7 +336,28 @@ function outfitForDetail(outfit: OutfitBlueprint | undefined, detail: CreatureDe
   return detail === "stick" ? undefined : outfit;
 }
 
-function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint, detail: CreatureDetail = "full"): string {
+/** ⚖️ THE GROWTH STAGE'S PIECE OF THE CACHE KEY — empty at age ≥ 1, so every
+ *  key that existed before staging is unchanged and a mature tree keeps the
+ *  bake it has always had.
+ *
+ *  🚨 THE STAGE HAS TO BE IN THE *KEY*, and this is why it cannot ride `look`:
+ *  `assetKey` puts only the EFFECTIVE `toon` of a look into the key, so an age
+ *  smuggled through `look` would hand every oak in the world whichever stage
+ *  happened to bake first — a stand of 23.8 m shoots, or of 0.36 m adults,
+ *  depending on nothing but arrival order. Quantised to 3 decimals because the
+ *  age is a class POSITION (`growthAgeOf` = cls / (classes − 1)), never a
+ *  continuous camera-side number: an oak has three keys, an apple tree two. */
+function ageTag(age: number): string {
+  return age < 1 ? `|age:${Math.max(0, age).toFixed(3)}` : "";
+}
+
+function assetKey(
+  id: string,
+  look: CreatureLook,
+  outfit?: OutfitBlueprint,
+  detail: CreatureDetail = "full",
+  age = 1,
+): string {
   // Key on the EFFECTIVE mode, not the raw field: an unset `toon` follows the
   // engine-wide mode, so keying on `look.toon` alone would hand a global-toon
   // creature the cached assets of an explicitly-standard one.
@@ -323,7 +367,7 @@ function assetKey(id: string, look: CreatureLook, outfit?: OutfitBlueprint, deta
   // cache's identity. Leaving them out would hand every viewer whichever
   // variant happened to bake first — and the creature lab, which flips the
   // mods on and off live, would show the same body forever.
-  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${lod}${appearanceModTag(activeCreatureMods())}`;
+  return `${id}|${toon ? "toon" : "std"}${outfitHash(outfit)}${lod}${ageTag(age)}${appearanceModTag(activeCreatureMods())}`;
 }
 
 /** Get (building + caching on first call) the shared assets for a species. Call
@@ -334,9 +378,10 @@ export function getSpeciesAssets(
   look: CreatureLook = {},
   rawOutfit?: OutfitBlueprint,
   detail: CreatureDetail = "full",
+  age = 1,
 ): SpeciesAssets {
   const outfit = outfitForDetail(rawOutfit, detail);
-  const key = assetKey(id, look, outfit, detail);
+  const key = assetKey(id, look, outfit, detail, age);
   let assets = ASSET_CACHE.get(key);
   if (!assets) {
     // TEMP bake probe (view-distance-lod-tiers.md Phase 3): each MISS is a
@@ -346,7 +391,7 @@ export function getSpeciesAssets(
     // of misses means the bake is shared and the cost lies elsewhere. Remove
     // with the descent probe. `__bakeCount` / `__bakeMs` readable in the console.
     const _t0 = typeof performance !== "undefined" ? performance.now() : 0;
-    assets = buildSpeciesAssets(requireSpecies(id), look, outfit, detail);
+    assets = buildSpeciesAssets(requireSpecies(id), look, outfit, detail, age);
     ASSET_CACHE.set(key, assets);
     if (probesOn() && typeof console !== "undefined") {
       const g = globalThis as unknown as { __bakeCount?: number; __bakeMs?: number };
@@ -365,8 +410,9 @@ export function disposeSpeciesAssets(
   look: CreatureLook = {},
   rawOutfit?: OutfitBlueprint,
   detail: CreatureDetail = "full",
+  age = 1,
 ): void {
-  const key = assetKey(id, look, outfitForDetail(rawOutfit, detail), detail);
+  const key = assetKey(id, look, outfitForDetail(rawOutfit, detail), detail, age);
   const assets = ASSET_CACHE.get(key);
   if (assets) {
     assets.dispose();
@@ -375,10 +421,17 @@ export function disposeSpeciesAssets(
 }
 
 /** Uniform scale so the model stands `heightM` tall (falls back to species.scale
- *  or 1). */
+ *  or 1).
+ *
+ *  ⚖️ MEASURED AGAINST THE ADULT (`adultHeight`), which for every un-staged body
+ *  IS its natural height — so nothing that existed before growth stages moves.
+ *  A STAGED plant shares the adult's world scale and stands however tall its own
+ *  geometry is; dividing `heightM` by the stage's own AABB instead would scale
+ *  every stage back up to `bodyHeightM` and draw a 23.8 m seedling, which is the
+ *  defect the stage exists to fix. */
 function resolveScale(assets: SpeciesAssets, opts?: { scale?: number; heightM?: number }): number {
   if (opts?.scale !== undefined) return opts.scale;
-  if (opts?.heightM !== undefined) return opts.heightM / assets.naturalHeight;
+  if (opts?.heightM !== undefined) return opts.heightM / assets.adultHeight;
   return assets.species.scale ?? 1;
 }
 
@@ -545,8 +598,8 @@ class DynamicCreatureModel implements CreatureModel {
    *  rather than silently lofting at full fidelity. */
   private readonly sides: number | undefined;
 
-  constructor(species: Species, look: CreatureLook, scale: number, outfit?: OutfitBlueprint, detail: CreatureDetail = "full") {
-    this.bp = dressedBlueprint(species, outfit);
+  constructor(species: Species, look: CreatureLook, scale: number, outfit?: OutfitBlueprint, detail: CreatureDetail = "full", age = 1) {
+    this.bp = dressedBlueprint(species, outfit, age);
     this.toon = look.toon;
     this.sides = detail === "full" ? undefined : SIMPLE_SIDES;
     this.animator = new CreatureAnimator(this.bp);
@@ -648,12 +701,19 @@ export interface CreateCreatureOptions {
   /** Loft fidelity (Phase 3 view tiers). Default "full"; "simple" lofts fewer
    *  sides and bakes fewer walk frames — the mid-distance body. */
   detail?: CreatureDetail;
+  /** ⚖️ GROWTH STAGE, 0 (a shoot) .. 1 (the authored adult). Default 1 — every
+   *  body that is not a staged plant. NOT a render choice: the age is the SIM's
+   *  (`growthAgeOf(species, sizeClass)`, products.ts), read here and never
+   *  decided here (the LOD-per-camera law — a sim entity may not depend on who
+   *  is looking). It is part of the asset-cache key, so each stage bakes once
+   *  and every tree at that stage shares it. */
+  age?: number;
 }
 
 /** A cheap preloaded creature (baked clips). Use for residents, distant
  *  creatures, plants and fruit — anything that doesn't need per-frame fidelity. */
 export function createBakedCreature(id: string, opts: CreateCreatureOptions = {}): CreatureModel {
-  const assets = getSpeciesAssets(id, opts.look ?? {}, opts.outfit, opts.detail);
+  const assets = getSpeciesAssets(id, opts.look ?? {}, opts.outfit, opts.detail, opts.age);
   return new BakedCreatureModel(assets, resolveScale(assets, opts));
 }
 
@@ -665,8 +725,10 @@ export function createDynamicCreature(id: string, opts: CreateCreatureOptions = 
   // naturalHeight for scaling still comes from the (cached) BARE assets —
   // clothes must not change a creature's height, and a dynamic model should
   // never trigger a dressed bake just to measure one.
+  // …and the ADULT's, for the same reason: `adultHeight` is what `heightM`
+  // names, so a staged body is not measured against its own stage.
   const assets = getSpeciesAssets(id, opts.look ?? {});
-  return new DynamicCreatureModel(species, opts.look ?? {}, resolveScale(assets, opts), opts.outfit, opts.detail);
+  return new DynamicCreatureModel(species, opts.look ?? {}, resolveScale(assets, opts), opts.outfit, opts.detail, opts.age);
 }
 
 export type { DynamicCreatureModel };
@@ -705,6 +767,16 @@ export interface CreatureAvatarFactoryOptions {
    *  `resetAvatarModel`, which rebuilds it through this factory at the
    *  then-current answer. */
   detailFor?: (avatarId: string) => CreatureDetail;
+  /** ⚖️ THE GROWTH STAGE this body stands at, read PER ID at model-build time —
+   *  the same per-body seam `detailFor` uses, and for the opposite reason: the
+   *  detail is the CAMERA's answer and the age is the SIM's
+   *  (`growthAgeOf(species, sizeClass)`). Absent = 1 (adult), which is every
+   *  body that is not a staged plant.
+   *
+   *  A stage change is a BODY SWAP, not a mutation: the host re-stands the tree
+   *  (remove + add under the SAME container key — `standWildFeature`), which
+   *  re-enters this factory and re-reads the answer. */
+  ageFor?: (avatarId: string) => number;
 }
 
 /** A gesture's WORLD target, rotated into the body-local frame (+Z forward, +X
@@ -779,7 +851,10 @@ export function createCreatureAvatarFactory(opts: CreatureAvatarFactoryOptions):
     // Detail is sampled ONCE per model build (the local player is always full);
     // a tier change re-enters here through resetAvatarModel.
     const detail = isLocal ? "full" : (opts.detailFor?.(id) ?? "full");
-    const mopts = { look: opts.look, heightM, outfit: opts.outfitFor?.(id), detail };
+    // The stage is sampled ONCE per model build too — a class advance comes
+    // back through here as a re-stand, never as a live mutation.
+    const age = opts.ageFor?.(id) ?? 1;
+    const mopts = { look: opts.look, heightM, outfit: opts.outfitFor?.(id), detail, age };
     const container = new THREE.Group();
     // The local player is always dynamic; NPCs are baked until they gesture.
     let baked: CreatureModel | null = isLocal && dynamicLocal ? null : createBakedCreature(speciesId, mopts);

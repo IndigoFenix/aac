@@ -171,9 +171,13 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         {currentInstitute?.licenseType && currentInstitute.licenseType !== 'none' && (
           <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
             <span className="font-medium text-foreground capitalize">{currentInstitute.licenseType}</span>
-            {currentInstitute.isTrial && (
+            {/* Expired outranks trial: an expired TRIAL must read as expired,
+                not as a trial that is still running. */}
+            {currentInstitute.licenseStatus === 'expired' ? (
+              <span className="text-destructive font-medium">({t('admin.licenses.expired')})</span>
+            ) : currentInstitute.isTrial ? (
               <span className="text-amber-600 font-medium">({t('admin.licenses.trial')})</span>
-            )}
+            ) : null}
           </div>
         )}
 

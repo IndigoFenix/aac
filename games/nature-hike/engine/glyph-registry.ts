@@ -1123,6 +1123,16 @@ const VOCAB: VocabularyItem[] = [
   // the world already draws it as a real satchel (object-models `satchel`).
   { key: "satchel", tKey: "aac.glyph.satchel", pos: "noun", categories: ["what"],
     modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🎒" },
+  // The CART — the carried container you can actually MAKE (user, 2026-09-05:
+  // "carts … more associated with carrying large numbers of heavy objects, were
+  // one of the earliest technologies, can be made from wood"). Files with the
+  // basket and the satchel under `things`, not `vehicles`: it is a thing you
+  // put things in, and the vehicles chip is car/bus/train/plane/bike/boat — the
+  // things that carry YOU. 🛒 is a stand-in for the ICON only (no hand-cart
+  // emoji exists); the world already draws a real hand cart (object-models
+  // `cart`), exactly as the satchel's 🎒 stands in over a real satchel.
+  { key: "cart", tKey: "aac.glyph.cart", pos: "noun", categories: ["what"],
+    modeChips: { what: ["all", "things"] }, tone: "comment", emoji: "🛒" },
   // THE TOGGLEABLE DEVICES the world already speaks about. They pair with the
   // `on`/`off` state poles and the turn_on/turn_off verbs, all of which already
   // ship — these were the only missing half, so "turn on the lamp" had a verb, a

@@ -739,6 +739,7 @@ export const yue: Translations = {
       barrel: "木桶",
       basket: "籃",
       satchel: "袋",
+      cart: "手推車",
       lamp: "燈",
       window: "窗",
       heater: "暖爐",

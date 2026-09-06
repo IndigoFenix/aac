@@ -5,7 +5,14 @@ import {
   type CreatePriceRequestBody,
   type CreateCustomerRequestBody,
   type CreateTransactionRequestBody,
+  type CurrencyCode,
+  type TaxCategory,
 } from "@paddle/paddle-node-sdk";
+
+/** The one product every individually-quoted license checkout hangs off. */
+const LICENSE_PRODUCT_NAME = "Aivota License";
+/** Software-as-a-service; the closest Paddle tax category to what we sell. */
+const LICENSE_TAX_CATEGORY: TaxCategory = "saas";
 
 /**
  * Thin wrapper around the Paddle Node SDK.
@@ -26,6 +33,7 @@ import {
 
 class PaddleService {
   private client: Paddle | null = null;
+  private licenseProductId: string | null = null;
 
   /**
    * Active environment, read lazily so it reflects env vars loaded after this
@@ -92,6 +100,100 @@ class PaddleService {
 
   async createPrice(body: CreatePriceRequestBody) {
     return this.paddle.prices.create(body);
+  }
+
+  /**
+   * The single Paddle product every per-license checkout hangs off.
+   *
+   * A non-catalog price still needs a product, and minting one per checkout
+   * would litter the catalog with a product per customer per renewal. One
+   * shared product with the price supplied inline is the shape Paddle
+   * documents for individually-quoted deals.
+   *
+   * Memoised per process, and looked up by NAME before creating: a redeploy
+   * must not create a second "Aivota License".
+   */
+  async ensureLicenseProduct(): Promise<string> {
+    if (this.licenseProductId) return this.licenseProductId;
+
+    const collection = this.paddle.products.list({ status: ["active"] });
+    let page = await collection.next();
+    while (page.length > 0) {
+      const found = page.find((p) => p.name === LICENSE_PRODUCT_NAME);
+      if (found) {
+        this.licenseProductId = found.id;
+        return found.id;
+      }
+      if (!collection.hasMore) break;
+      page = await collection.next();
+    }
+
+    const created = await this.paddle.products.create({
+      name: LICENSE_PRODUCT_NAME,
+      taxCategory: LICENSE_TAX_CATEGORY,
+      description: "Aivota platform license, priced per organisation.",
+    });
+    this.licenseProductId = created.id;
+    return created.id;
+  }
+
+  /**
+   * Create a checkout transaction for ONE license at its quoted price.
+   *
+   * The price is passed INLINE (`items[0].price`, no `priceId`) — Paddle's
+   * non-catalog price shape, verified against
+   * `types/price/non-catalog-price-request.d.ts` and
+   * `types/transaction/transaction-item.d.ts` in the SDK. `billingCycle` turns
+   * the transaction into a subscription: Paddle creates the subscription on
+   * payment and thereafter sends us subscription.* events for it.
+   *
+   * Returns the transaction id; the browser opens it with
+   * `Paddle.Checkout.open({ transactionId })`.
+   */
+  async createLicenseTransaction(input: {
+    licenseId: string;
+    userId: string | null;
+    name: string;
+    priceAmount: number;
+    priceCurrency: string;
+    subscriptionType: "monthly" | "yearly";
+    paddleCustomerId: string | null;
+  }): Promise<string> {
+    const productId = await this.ensureLicenseProduct();
+    const currencyCode = input.priceCurrency.toUpperCase() as CurrencyCode;
+
+    const body: CreateTransactionRequestBody = {
+      items: [
+        {
+          quantity: 1,
+          price: {
+            name: input.name.slice(0, 200),
+            description: `Aivota license — ${input.name} (${input.subscriptionType})`.slice(0, 200),
+            productId,
+            unitPrice: { amount: String(input.priceAmount), currencyCode },
+            billingCycle: {
+              interval: input.subscriptionType === "yearly" ? "year" : "month",
+              frequency: 1,
+            },
+            taxMode: "account_setting",
+            quantity: { minimum: 1, maximum: 1 },
+          },
+        },
+      ],
+      customData: {
+        licenseId: input.licenseId,
+        ...(input.userId ? { userId: input.userId } : {}),
+      },
+      ...(input.paddleCustomerId ? { customerId: input.paddleCustomerId } : {}),
+    };
+
+    const transaction = await this.paddle.transactions.create(body);
+    return transaction.id;
+  }
+
+  /** Test seam: forget the memoised license product. */
+  resetLicenseProduct(): void {
+    this.licenseProductId = null;
   }
 
   // ---- Customers ---------------------------------------------------------

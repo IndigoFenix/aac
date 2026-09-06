@@ -59,13 +59,57 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/hooks/useAuth';
 import { apiRequest } from '@/lib/queryClient';
 import { useLocation } from 'wouter';
+import { computeLicenseStatus, licenseExpiryDate } from '@shared/license-status';
 
-function getStatusInfo(license: AdminLicense): { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } {
-  if (license.suspendedAt) return { label: 'Suspended', variant: 'destructive' };
-  if (!license.isActive) return { label: 'Inactive', variant: 'secondary' };
-  if (!license.userId && license.inviteEmail) return { label: 'Pending Invite', variant: 'outline' };
-  if (license.activatedAt) return { label: 'Active', variant: 'default' };
-  return { label: 'Active', variant: 'default' };
+type StatusVariant = 'default' | 'secondary' | 'destructive' | 'outline';
+type Translate = (key: string, params?: Record<string, string | number>) => string;
+
+/**
+ * The badge for one license row.
+ *
+ * Expiry comes from `computeLicenseStatus` — the SAME function the server
+ * resolves permissions with — rather than a second copy of the rule here. A
+ * local reimplementation would drift (it already has a grace period and a
+ * "null expiry is perpetual" clause that are easy to forget), and a row shown
+ * as Active while the server treats it as expired is the worst possible bug in
+ * an admin console.
+ *
+ * The two states above it are NOT license-status states: suspension and a
+ * never-accepted invite are operator/lifecycle facts that the status function
+ * has no opinion about, so they are checked first.
+ */
+function getStatusInfo(license: AdminLicense, t: Translate): { label: string; variant: StatusVariant } {
+  if (license.suspendedAt) return { label: t('admin.licenses.suspended'), variant: 'destructive' };
+  if (!license.isActive) return { label: t('admin.licenses.inactive'), variant: 'secondary' };
+  if (!license.userId && license.inviteEmail) {
+    return { label: t('admin.licenses.pendingInvite'), variant: 'outline' };
+  }
+  const status = computeLicenseStatus(license);
+  switch (status) {
+    case 'expired':
+      return { label: t('admin.licenses.expired'), variant: 'destructive' };
+    case 'trial':
+      return { label: t('admin.licenses.trial'), variant: 'secondary' };
+    case 'none':
+      return { label: t('admin.licenses.inactive'), variant: 'secondary' };
+    default:
+      return { label: t('admin.licenses.active'), variant: 'default' };
+  }
+}
+
+/** Price in the ADMIN's UI locale, from minor units. Blank price = invoice
+ *  customer, rendered as a dash rather than a zero. */
+function formatPrice(license: AdminLicense, locale: string): string {
+  if (license.priceAmount === null || license.priceAmount === undefined) return '—';
+  const currency = license.priceCurrency || 'USD';
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(
+      license.priceAmount / 100,
+    );
+  } catch {
+    // An unknown/invalid ISO code makes Intl throw rather than fall back.
+    return `${(license.priceAmount / 100).toFixed(2)} ${currency}`;
+  }
 }
 
 function getPermissionsSummary(permissions: any): string {
@@ -83,7 +127,7 @@ function getPermissionsSummary(permissions: any): string {
 
 export function LicenseList() {
   const { toast } = useToast();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [, navigate] = useLocation();
   const { user, refetchUser } = useAuth();
   const { data: licenses, isLoading, error } = useLicenses();
@@ -233,13 +277,16 @@ export function LicenseList() {
                 <TableHead>{t('admin.licenses.owner')}</TableHead>
                 <TableHead>{t('admin.licenses.type')}</TableHead>
                 <TableHead>{t('admin.licenses.status')}</TableHead>
+                <TableHead>{t('admin.licenses.price')}</TableHead>
+                <TableHead>{t('admin.licenses.expires')}</TableHead>
                 <TableHead>{t('admin.licenses.permissions')}</TableHead>
                 <TableHead className="w-[70px]">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {licenses.map((license) => {
-                const status = getStatusInfo(license);
+                const status = getStatusInfo(license, t);
+                const expiry = licenseExpiryDate(license);
                 const ownerDisplay = license.instituteName
                   ? license.instituteName
                   : license.userEmail || license.inviteEmail || '-';
@@ -279,6 +326,18 @@ export function LicenseList() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={status.variant}>{status.label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm whitespace-nowrap" dir="ltr">
+                        {formatPrice(license, language)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm whitespace-nowrap text-muted-foreground">
+                        {expiry
+                          ? new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(expiry)
+                          : '—'}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">

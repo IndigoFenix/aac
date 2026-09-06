@@ -170,6 +170,11 @@ const EXTRA_EMOJIS: Record<string, string> = {
   playground: "🛝",
   restaurant: "🍽️",
   store: "🏬",
+  // The ground beside the house, where a build order's materials are stacked
+  // ("bring wood to the yard"). The house-with-garden glyph is the yard, not the
+  // dwelling: `home`/`house` draw their own place art (`building(family)`),
+  // which wins in the compositor, so the two never collide.
+  yard: "🏡",
   zoo: "🦁",
 
   // ─── Things / objects ───────────────────────────────────────────────

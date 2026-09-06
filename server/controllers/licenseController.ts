@@ -4,7 +4,8 @@
 import type { Request, Response } from "express";
 import { licenseService } from "../services/licenseService";
 import { studentService } from "../services/studentService";
-import { studentRepository } from "../repositories";
+import { studentRepository, instituteRepository } from "../repositories";
+import { paddleService } from "../services/paddleService";
 import { activityLogService } from "../services/activityLogService";
 import type { License } from "@shared/schema";
 import { licensePermissionsSchema } from "@shared/license-permissions";
@@ -37,7 +38,26 @@ const updateBudgetSchema = z.object({
   allowFacilitatorControl: z.boolean().optional(),
 });
 
+/**
+ * Per-license pricing, shared by create and update.
+ *
+ * `priceAmount` is in the currency's MINOR unit (cents/agorot) because that is
+ * what Paddle's API takes and a second representation is a second bug. Null
+ * means "not purchasable online" — an invoice or bank-transfer customer, whom
+ * an admin activates by setting `isTrial: false` and a `subscriptionExpiresAt`
+ * by hand.
+ */
+const priceAmountSchema = z.number().int().min(0).nullable().optional();
+const priceCurrencySchema = z
+  .string()
+  .regex(/^[A-Za-z]{3}$/, "ISO 4217 currency code")
+  .transform((c) => c.toUpperCase())
+  .optional();
+
 const createLicenseSchema = z.object({
+  priceAmount: priceAmountSchema,
+  priceCurrency: priceCurrencySchema,
+  subscriptionExpiresAt: z.string().nullable().optional(),
   name: z.string().optional(),
   licenseType: z.string().optional(),
   subscriptionType: z.string().optional(),
@@ -73,6 +93,11 @@ const updateLicenseSchema = z.object({
   isTrial: z.boolean().optional(),
   trialExpiresAt: z.string().nullable().optional(),
   inviteEmail: z.string().email().optional().nullable(),
+  // Marking an invoice/bank-transfer customer as paid is exactly this pair:
+  // isTrial → false and a subscriptionExpiresAt in the future.
+  priceAmount: priceAmountSchema,
+  priceCurrency: priceCurrencySchema,
+  subscriptionExpiresAt: z.string().nullable().optional(),
 });
 
 function getBaseUrl(req: Request): string {
@@ -144,6 +169,24 @@ function auditSessionRecordingGrant(
   });
 }
 
+/**
+ * May this caller pay for this license?
+ *
+ * Institute admin-ness is asked of `instituteRepository.isUserAdminOfInstitute`
+ * rather than recomputed — it already folds in customer-support mode and the
+ * `isActive` membership check, and two answers to one question is how they
+ * drift apart.
+ */
+async function callerMayPayFor(license: License, user: any): Promise<boolean> {
+  if (!user?.id) return false;
+  if (user.isSystemAdmin) return true;
+  if (license.userId && license.userId === user.id) return true;
+  if (license.instituteId) {
+    return instituteRepository.isUserAdminOfInstitute(license.instituteId, user.id);
+  }
+  return false;
+}
+
 /** Parse multipart form body where JSON fields arrive as strings */
 function parseMultipartBody(body: Record<string, any>): Record<string, any> {
   const parsed = { ...body };
@@ -152,6 +195,13 @@ function parseMultipartBody(body: Record<string, any>): Record<string, any> {
   if (typeof parsed.createInstitute === "string") parsed.createInstitute = parsed.createInstitute === "true";
   if (typeof parsed.allowSessionRecording === "string") {
     parsed.allowSessionRecording = parsed.allowSessionRecording === "true";
+  }
+  // Numeric fields sent as strings from FormData. An empty string means the
+  // admin cleared the field, which is null (not purchasable), not 0 (free).
+  if (typeof parsed.priceAmount === "string") {
+    const trimmed = parsed.priceAmount.trim();
+    parsed.priceAmount = trimmed === "" ? null : Number(trimmed);
+    if (Number.isNaN(parsed.priceAmount)) delete parsed.priceAmount;
   }
   // JSON fields
   if (typeof parsed.permissions === "string") {
@@ -236,10 +286,15 @@ class LicenseController {
         return;
       }
 
-      const { trialExpiresAt, ...rest } = parsed.data;
+      const { trialExpiresAt, subscriptionExpiresAt, ...rest } = parsed.data;
       const updates = {
         ...rest,
         trialExpiresAt: trialExpiresAt ? new Date(trialExpiresAt) : trialExpiresAt === null ? null : undefined,
+        subscriptionExpiresAt: subscriptionExpiresAt
+          ? new Date(subscriptionExpiresAt)
+          : subscriptionExpiresAt === null
+            ? null
+            : undefined,
       };
       const license = await licenseService.updateLicense(req.params.id, updates);
       if (!license) {
@@ -272,6 +327,53 @@ class LicenseController {
     } catch (error: any) {
       console.error("Error deleting license:", error);
       res.status(500).json({ message: "Failed to delete license" });
+    }
+  }
+
+  /**
+   * POST /api/licenses/:id/checkout — start paying for THIS license.
+   *
+   * NOT an admin route: the whole point is that the customer pays for
+   * themselves. Who may: the user the license is assigned to, an admin of the
+   * license's institute, or a system admin. Anyone else gets a 403 — including
+   * a plain member of the institute, because a licence purchase is a financial
+   * commitment on the organisation's behalf.
+   *
+   * Refusals carry an `error:` CODE, not prose: the client renders a
+   * translated `errors.<CODE>` string, so an English sentence here would be an
+   * untranslatable one on a Hebrew screen.
+   */
+  async createCheckout(req: Request, res: Response): Promise<void> {
+    try {
+      const license = await licenseService.getLicenseById(req.params.id);
+      if (!license) {
+        res.status(404).json({ message: "License not found", error: "LICENSE_NOT_FOUND" });
+        return;
+      }
+
+      const currentUser = req.user as any;
+      const allowed = await callerMayPayFor(license, currentUser);
+      if (!allowed) {
+        res.status(403).json({ message: "Not allowed to pay for this license", error: "FORBIDDEN" });
+        return;
+      }
+
+      if (!paddleService.isConfigured()) {
+        res
+          .status(503)
+          .json({ message: "Paddle is not configured", error: "PADDLE_NOT_CONFIGURED" });
+        return;
+      }
+
+      const result = await licenseService.createCheckout(license.id);
+      if (!result.ok) {
+        res.status(409).json({ message: "License cannot be purchased", error: result.code });
+        return;
+      }
+      res.json({ transactionId: result.transactionId });
+    } catch (error: any) {
+      console.error("Error creating license checkout:", error);
+      res.status(500).json({ message: "Failed to start checkout", error: "CHECKOUT_FAILED" });
     }
   }
 

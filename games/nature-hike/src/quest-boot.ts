@@ -62,7 +62,7 @@ import type { RenderHost } from "@shared/world-engine/render3d";
 import { PLAYER_ID } from "@shared/world-engine/solver/space3d";
 import type { NpcVoice } from "@shared/world-engine/npc-voice";
 import { gameImageResolver } from "./glyph-resolver";
-import type { BoardIsland } from "./board-island";
+import type { BoardIsland, NounEntry } from "./board-island";
 import { faunaForBiome, mulberry, WILD_SIDE, wildMixForBiome } from "./wilderness";
 
 // ── SESSION-HANDOVER VIEWS (stage N6c-g) ────────────────────────────────────
@@ -829,7 +829,11 @@ export function bootPlanetHike(
       winEl.hidden = true;
     },
     board(view: QuestBoardView) { board.set(view); },
-    nouns(list: { symbol: string; label: string }[]) { board.setNouns(list); },
+    // ⚖️ ONE WORD BANK: the host pushes the INDIVIDUAL PEOPLE (household
+    // members, pets — `individual: true`), and the island merges them under the
+    // default world-spec lexicon. Typed as the island's own entry so the
+    // contacts flag survives the seam instead of being widened away.
+    nouns(list: NounEntry[]) { board.setNouns(list); },
     /** ⑫ — who is standing in the player's conversation, for the builder's
      *  addressee slot. Captured by the bridge in main.ts. */
     addressees(list: string[]) { board.setAddressees?.(list); },

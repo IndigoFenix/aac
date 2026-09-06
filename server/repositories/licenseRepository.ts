@@ -64,6 +64,23 @@ export class LicenseRepository {
       .orderBy(desc(licenses.createdAt));
   }
 
+  /**
+   * The license carrying this Paddle subscription id.
+   *
+   * How a renewal or a cancellation months after checkout finds its row:
+   * Paddle's later subscription.* events carry only the customData we attached
+   * at checkout, and a subscription created outside our checkout carries none
+   * at all — the stored id is the durable link.
+   */
+  async getLicenseByPaddleSubscriptionId(subscriptionId: string): Promise<License | undefined> {
+    const [license] = await db
+      .select()
+      .from(licenses)
+      .where(eq(licenses.paddleSubscriptionId, subscriptionId))
+      .orderBy(desc(licenses.createdAt));
+    return license || undefined;
+  }
+
   async getLicenseByUserId(userId: string): Promise<License | undefined> {
     const [license] = await db
       .select()

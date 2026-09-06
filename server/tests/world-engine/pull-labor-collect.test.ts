@@ -168,6 +168,9 @@ function makeFixture(opts?: { pullOn?: boolean; wantsWood?: boolean }): Fixture 
     bagCeilingOf: () => 0,
     orderSiteId: (ord) => `o:${ord}`,
     buildworkSiteAt: () => null,
+    // 🔁 MOVED (Stage 2): the seat seam is a required dep now. This fixture has
+    // no build row at all, so its work rows offer no seats.
+    seatsOf: () => [],
     siteMaterialSources: () => [
       { id: CRATE, stack: crateStock, d: 10 },
       { id: TRUNK, stack: trunkStock, d: 60 },
@@ -211,7 +214,10 @@ const link = (from: string): BillLink => ({
   urgency: 1,
   spoken: false,
   issuer: "player",
-  seats: Number.POSITIVE_INFINITY,
+  // 🔁 MOVED PIN (Stage 2, S1): `seats` was a NUMBER and a haul's was
+  // `+Infinity` — "no bound but the reservation", said with an integer. It is
+  // now the FREE SEATS of the link, and a haul simply has none, so the field is
+  // ABSENT. The law is unchanged; only its spelling moved.
 });
 
 // ═══ ① THE WEIGHT ═════════════════════════════════════════════════════════

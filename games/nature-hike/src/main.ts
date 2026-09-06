@@ -257,10 +257,19 @@ function mountIsland(): BoardIsland {
     setFamily: (members) => { familyMembers = members; pushWorldHud(); refreshPortraits(); },
     setCity: (chips) => { cityChips = chips; pushWorldHud(); },
     setAddressees: (list) => { convoAddressees = list; },
+    // EMBEDDED has no in-iframe Speak menu to localize; the platform's builder
+    // is answered from `initLocale` on the `builder_state` path instead.
+    setLocale: () => {},
     dispose: () => {},
   };
 }
 const island: BoardIsland = mountIsland();
+// ⚖️ THE SENTENCE BUILDER'S BANK READS IN THE PLAYER'S LANGUAGE. Standalone,
+// the world document's own locale IS the player's ruleset (the host stamps the
+// same value onto `meta.locale`); embedded, the bridge's `init` overrides it
+// below. Without this the in-iframe Speak menu would draw an English bank over
+// a Hebrew world — which is what it did while it rendered raw glyph keys.
+island.setLocale((specJson as { game?: { world?: { locale?: string } } }).game?.world?.locale);
 
 // A finished portrait has to reach the board it belongs to. EMBEDDED: the
 // platform's builder holds the buttons — the pictures go up as `word_images`,
@@ -632,6 +641,7 @@ onPlatformMessage((msg: PlatformMessage) => {
       // dwellMs: the engine's dwell timings are host constants (quest-host.ts
       // SHORT/LONG_DWELL_MS) — no per-session input to hand it to yet.
       if (typeof msg.locale === "string" && msg.locale) initLocale = msg.locale;
+      island.setLocale(initLocale);
       resolveInit?.();
       resolveInit = null;
       break;

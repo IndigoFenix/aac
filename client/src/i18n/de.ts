@@ -3166,6 +3166,9 @@ export const de = {
     SCOPE_MALFORMED: "Der Eigentümer dieses Fotos konnte nicht bestimmt werden.",
     SCOPE_REQUIRED: "Wählen Sie zuerst einen {{student}} oder eine Organisation.",
     UNAUTHORIZED: "Bitte melden Sie sich erneut an.",
+    LICENSE_ALREADY_PAID: "Diese Lizenz ist bereits bezahlt.",
+    LICENSE_NOT_PURCHASABLE: "Diese Lizenz kann nicht online bezahlt werden. Bitte kontaktieren Sie uns.",
+    PADDLE_NOT_CONFIGURED: "Online-Zahlung ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut oder kontaktieren Sie uns.",
   },
 
   consent: {
@@ -3576,6 +3579,13 @@ export const de = {
       isTrial: "Testlizenz",
       trialExpiresAt: "Testversion läuft ab",
       trialExpired: "Testversion abgelaufen",
+      price: "Preis",
+      pricePlaceholder: "z. B. 49,90",
+      priceHint: "Für Rechnungskunden leer lassen – sie erhalten keine Online-Zahlungsschaltfläche.",
+      currency: "Währung",
+      paidUntil: "Bezahlt bis",
+      expires: "Läuft ab",
+      expired: "Abgelaufen",
       // Recipient
       recipient: "Empfänger",
       email: "E-Mail",
@@ -4936,5 +4946,34 @@ export const de = {
     },
     loopLabel: "The loop", // TODO-i18n
     skipToContent: "Skip to content", // TODO-i18n
+  },
+  billing: {
+    activate: "Lizenz aktivieren",
+    adminOnly: "Nur eine Administratorin oder ein Administrator der Organisation kann diese Lizenz verwalten.",
+    banner: {
+      dismiss: "Schließen",
+      expired: "Ihre Lizenz ist abgelaufen. Einige Funktionen sind nicht verfügbar.",
+      trialEndsIn: "Ihre Testphase endet in {{days}} Tagen.",
+      trialEndsToday: "Ihre Testphase endet heute.",
+      trialEndsTomorrow: "Ihre Testphase endet morgen.",
+      viewBilling: "Abrechnung anzeigen",
+    },
+    checkoutFailed: "Bezahlvorgang konnte nicht gestartet werden",
+    expiredOn: "Abgelaufen am {{date}}",
+    invoiceOnly: "Diese Lizenz wird per Rechnung abgerechnet. Kontaktieren Sie uns zur Verlängerung oder Änderung.",
+    notReady: "Online-Zahlung ist derzeit nicht verfügbar.",
+    paidUntil: "Bezahlt bis {{date}}",
+    paymentComplete: "Zahlung erhalten",
+    paymentCompleteDesc: "Ihre Lizenz wurde aktualisiert. Vielen Dank!",
+    planMonthly: "Monatlich",
+    planYearly: "Jährlich",
+    renew: "Verlängern",
+    statusActive: "Aktiv",
+    statusExpired: "Abgelaufen",
+    statusNone: "Keine Lizenz",
+    statusTrial: "Testphase",
+    subtitle: "Ihr Tarif, sein Preis und wann er endet.",
+    title: "Lizenz & Abrechnung",
+    trialEnds: "Testphase endet am {{date}}",
   },
 };

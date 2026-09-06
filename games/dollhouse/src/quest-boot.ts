@@ -44,7 +44,7 @@ import type { GoalTreeGame } from "@shared/world-engine/solver/types";
 import type { ObjectiveSummary } from "@shared/world-engine/solver/space";
 import type { GoalNode } from "@shared/world-engine/solver/types";
 import { gameImageResolver } from "./glyph-resolver";
-import type { BoardIsland } from "./board-island";
+import type { BoardIsland, NounEntry } from "./board-island";
 
 export interface QuestBoot {
   /** Feed a FORWARDED aim point (iframe-local client px) into the same
@@ -226,7 +226,11 @@ function bootQuestGame(
       board.setCity([]);
     },
     board(view: QuestBoardView) { board.set(view); },
-    nouns(list: { symbol: string; label: string }[]) { board.setNouns(list); },
+    // ⚖️ ONE WORD BANK: the host pushes the INDIVIDUAL PEOPLE (household
+    // members, pets — `individual: true`), and the island merges them under the
+    // default world-spec lexicon. Typed as the island's own entry so the
+    // contacts flag survives the seam instead of being widened away.
+    nouns(list: NounEntry[]) { board.setNouns(list); },
     /** ⑫ — who is standing in the child's conversation, for the builder's
      *  addressee slot. Captured by the bridge in main.ts; the local board has
      *  no use for it on its own. */
@@ -286,6 +290,23 @@ function bootQuestGame(
     // The spirit ladder is a GUEST of the host's own frame: sim ticks, then
     // the ladder poses the camera (setExternalCamera), then the view draws.
     onFrame: (dt) => {
+      // PER-BODY LOD ANCHOR ([LOD per-camera] law), the ONE seam — user rulings
+      // 2026-09-06 (true 3-D camera distance) and C4 (the drivers hand the host
+      // the FULL camera: position, height, fov, viewport). This boot never fed
+      // one, so every per-body tier measured from `cameraFocus()`'s fallback —
+      // the dollhouse's focus RECT, which is a rect on the sim plane with no
+      // height and no lens — and the dollhouse rig's own 40° fov never reached
+      // the ladder at all. The host owns this scene, so its camera is already in
+      // sim coords: (x, z) is the sim's (x, y) and `y` is the height above the
+      // sim ground plane. Pushed on EVERY rung, ladder or possessed: whoever
+      // poses the camera, LOD measures from it. One frame of latency by
+      // construction (this hook runs before the ladder re-poses), which the
+      // bands' own hysteresis absorbs.
+      const cam = host?.camera;
+      if (cam) host?.setViewPoint({
+        x: cam.position.x, y: cam.position.z, z: cam.position.y,
+        fovRad: (cam.fov * Math.PI) / 180, viewportH: canvas.clientHeight || 1,
+      });
       if (!ladder) return;
       // INTERIORS FOLLOW WHETHER A REAL BODY IS IN THE HOUSE — never the rung
       // alone, and never the glide's parked stand-in. A formless spirit in the
