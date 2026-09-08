@@ -94,6 +94,24 @@ export interface IntentFrame {
   bound?: Array<{ relation: string; ref: Ref }>;
   /** Predicate adjectives / leftover attribute symbols ("sad", "big"). */
   modifiers: string[];
+  /**
+   * ⚖️ WHICH of those attributes carried a `.not` — "mara + nice.not",
+   * "i_me + hungry.not". Present only when at least one did.
+   *
+   * 🚨 NEGATION IS HALF THE SENTENCE, AND A VERBLESS SENTENCE HAS NO VERB TO
+   * CARRY IT. `negated` was computed from the VERB tokens alone, so an
+   * attribute predicate — the whole regard channel ("nice"/"mean"/"leader")
+   * and every condition word ("hungry") — parsed POSITIVE with its `.not`
+   * discarded: "Mara isn't nice" asserted that she is, and the shipped
+   * invitation-decline "i_me + hungry.not" read as a confession of hunger.
+   *
+   * `negated` is now also set for a verbless frame whose predicate is negated
+   * (the frame-level reading every existing consumer already has), and this
+   * field says WHICH attribute it was, so a reader with several — or one that
+   * must flip a sentiment rather than refuse — can tell them apart. A frame
+   * WITH a main verb is unchanged: its negation still comes from the verb.
+   */
+  attrNot?: string[];
   quantity?: string;
   question?: QuestionWord;
   /** A yes/no question (the `#question` operator with no wh-word). */
@@ -414,7 +432,26 @@ export const LEXICON: Record<string, Lex> = {
   goodbye: { cat: "social", act: "farewell" },
   yes: { cat: "social", act: "affirm" }, no: { cat: "social", act: "decline" },
   ok: { cat: "social", act: "acknowledge" },
-  thanks: { cat: "social", act: "thank" }, sorry: { cat: "social", act: "apologize" },
+  // 🚨 `thank_you` REPLACES `thanks` — one key per act, and this table IS the
+  // social TAB (2026-09-08).
+  //
+  // 🙏 `thank_you` is the only registry row the concept has and the spelling
+  // this engine SAYS everywhere (`responseGlyph: "thank_you"`, `STAY_DONE_LINE`,
+  // the host's speakNpc lines). The lexicon knew only `thanks`, so pressing 🙏
+  // parsed as a REQUEST for a "thank_you" THING (an unknown noun) — a child
+  // asking politely got a hunt for an object.
+  //
+  // ⚠️ AND `thanks` COULD NOT STAY AS A "PARSE-ONLY ALIAS", however tempting
+  // that reading is: `builderReachableHeads` gives every LEXICON key of a
+  // category a `tab:` surface, so a category tab lists its WHOLE category and a
+  // second row here IS a second button. Keeping both put two buttons meaning
+  // "thank you" on the child's board — in Hebrew both literally reading תודה,
+  // which `npm run validate-builder-lexicon` caught as a twin. This is the same
+  // call, for the same reason, as the one recorded above `front`/`above` in
+  // `lexicon-registry-sync.test.ts`: *"the old note here said 'neither is a
+  // button', but a category tab lists its WHOLE category… Deleting them made
+  // the comment true."*
+  thank_you: { cat: "social", act: "thank" }, sorry: { cat: "social", act: "apologize" },
   mine: { cat: "social", act: "claim" }, again: { cat: "social", act: "again" },
   dont_understand: { cat: "social", act: "unclear" }, confused: { cat: "social", act: "unclear" },
 
@@ -445,6 +482,19 @@ export const LEXICON: Record<string, Lex> = {
   angry: { cat: "attribute" }, scared: { cat: "attribute" }, excited: { cat: "attribute" },
   hurt: { cat: "attribute" }, surprised: { cat: "attribute" }, proud: { cat: "attribute" },
   calm: { cat: "attribute" },
+  // ⚖️ THE POLITICS WORDS (interpersonal-politics.md §4b). Attributes, not
+  // socials, and the reason is what they DO: a social act key is a whole
+  // utterance ("hi", "sorry") with no subject slot, and every one of these
+  // three has to say WHO — "you nice" praises the person in front of me,
+  // "mara nice" tells the room what I think of somebody else, "who leader"
+  // asks. Riding the attribute path gives them that slot (and, through
+  // `CAT_POS`, a predicate reading in all four rulesets) for free; the
+  // dialogue layer reads the head to tell a regard from a condition.
+  //
+  // ⚠️ NO SYNONYMS: `boss`/`first` are `leader`, `promise`/`deal` belong to the
+  // contracts round, and there is no `yield` word at all — a child says "yes",
+  // or "you leader".
+  nice: { cat: "attribute" }, mean: { cat: "attribute" }, leader: { cat: "attribute" },
   // THE COLOURS (user decision 2026-09-04) — the glyph registry's own eleven
   // `color_*` keys, exactly (`colorModifiersFor`).
   //
@@ -646,6 +696,8 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
   let quantity: string | undefined;
   let manner = false; // an explicit `together`
   const attrs: string[] = [];
+  /** The subset of `attrs` whose token carried `.not` — see `IntentFrame.attrNot`. */
+  const attrNot: string[] = [];
   const socials: IntentKind[] = [];
   const persons: { ref: Ref; deixis: Deixis; index: number }[] = []; // animate agents (i_me/you/we/they)
   const entities: { ref: Ref; index: number }[] = []; // things (fringe nouns + this/that)
@@ -699,6 +751,10 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
         break;
       case "attribute":
         attrs.push(tok.head);
+        // 🚨 THE `.not` LIVES ON THE TOKEN, AND THIS ARM USED TO THROW IT AWAY.
+        // `tok.mods` is where a `.`-modifier lands; pushing only `tok.head` lost
+        // the negation of every verbless predicate (see `IntentFrame.attrNot`).
+        if (tok.mods.includes("not")) attrNot.push(tok.head);
         break;
       case "quantity":
         quantity = lex.q;
@@ -746,6 +802,14 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     implied = main.implied;
     verbIndex = main.index;
     negated = verbEntries.some((e) => e.not); // "want.not + play" negates the frame
+  } else if (attrNot.length) {
+    // ⚖️ A VERBLESS PREDICATE CARRIES THE NEGATION ITSELF. With no verb there is
+    // nothing else that could: "mara + nice.not" and "i_me + hungry.not" are
+    // negative sentences, and reading them positive says the opposite of what
+    // the child said. Deliberately gated on there being NO main verb, so a frame
+    // that has one keeps taking its negation from the verb exactly as before
+    // ("i_me + want.not + hungry" is a refusal, not a denial of hunger).
+    negated = true;
   }
 
   // Subject resolution, in priority order:
@@ -965,6 +1029,7 @@ function parseClause(lexed: Lexed[], ops: Set<string>, ctx: ParseContext, raw: s
     relation,
     ...(bound.length ? { bound } : {}),
     modifiers: attrs,
+    ...(attrNot.length ? { attrNot } : {}),
     quantity,
     question,
     polar: isQuestionOp && !question ? true : undefined,

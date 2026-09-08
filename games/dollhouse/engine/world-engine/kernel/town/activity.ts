@@ -53,6 +53,36 @@ export function scheduledHunger(mealOff: number, t: number): number {
   return u < MEAL_SEC ? 0 : Math.min(1, (u - MEAL_SEC) / (MEAL_PERIOD_SEC - MEAL_SEC));
 }
 
+/**
+ * ⚖️ ENERGY HAS A SCHEDULE PHASE TOO (politics-substrate ⚖️ 0-3) — the twin of
+ * `scheduledHunger`, and for exactly its reason.
+ *
+ * A body loaded into the world has to arrive with a PLAUSIBLE PAST, or the
+ * engine is asserting that everybody woke up the instant somebody looked. The
+ * hunger seed has said so since the crowd first streamed; tiredness was seeded
+ * from a per-body CONSTANT instead (`mealOffset/period × 0.7`), which is a
+ * hash — deterministic, stable, and completely uncorrelated with the time of
+ * day. A resident promoted at dusk was as fresh as one promoted at dawn, so
+ * the demote-home-to-rest that IS a dark household's sleep (U4) almost never
+ * fired: measured ONCE in a 2.54-day frontier arc.
+ *
+ * The shape is the honest one and needs no constant of its own: tiredness
+ * accrues across the waking day and the night clears it, so the seed is the
+ * DAY FRACTION since this body's own phase-dawn — 0 just after the night,
+ * approaching the firing threshold just before the next one. `mealOff` is the
+ * same per-(house, member) hash `scheduledHunger` rides, so a household's
+ * members still go to bed staggered rather than in one frame.
+ *
+ * ⚠️ A PROJECTION, NOT THE LIVE RATE. Like the hunger seed it says "where on
+ * its own cycle this body would be if it had been living its life off-screen",
+ * which is a statement about the SCHEDULE; the live meter then advances at
+ * `needRate(scale, "energy")` from there, exactly as hunger does.
+ */
+export function scheduledEnergy(mealOff: number, t: number): number {
+  const u = (((t + mealOff) % MEAL_PERIOD_SEC) + MEAL_PERIOD_SEC) % MEAL_PERIOD_SEC;
+  return u / MEAL_PERIOD_SEC;
+}
+
 export type CreatureTask = "shop" | "work" | "eat" | "idle";
 
 export interface CreatureActivity {

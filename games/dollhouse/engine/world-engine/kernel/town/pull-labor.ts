@@ -66,6 +66,42 @@ export const CONTRIBUTE_TPL_KEY = "contribute";
 export const CONTRIBUTE_PRIORITY = 2;
 
 /**
+ * 🧺 HOW LONG A PORTER MAY GO ON HOLDING ITS EMPTY BASKET before the put-down
+ * row is allowed to want it — main's ruling on the basket (2026-09-06).
+ *
+ * 🚨 THE DEFECT THIS ANSWERS. Measured on the frontier arc at both dts: every
+ * porter ended the run holding an empty basket, 278–296 s after its last haul
+ * landed, and six were still holding one when the run stopped. The unload's own
+ * comment calls that the design (*"the basket rides on until this body's own
+ * relieve row sets it down"*) — but on a founded site NO body carries a relieve
+ * row at all (`residentNeedTemplates` pushed it only inside the dollhouse
+ * gate), so the emergent put-back had nothing to emerge from. The row is now
+ * carried wherever `pullLaborOn` holds, and this is the pause in front of it.
+ *
+ * ⚖️ WHY THERE IS A GRACE AT ALL. A porter that has just delivered re-decides
+ * on the next tick and, with a bill still standing, takes another slice — and
+ * the basket is the TOOL for that next trip (`haulBagLeg` prices a trip with
+ * one against a trip without). Set the grace to zero and the body puts the
+ * basket down and picks the same basket straight back up: the take-out/put-in
+ * flap `TIDY_GRACE_S` exists to stop, one motive over.
+ *
+ * ⚖️ WHY 20. It is half of `NEED_PRESSURE_S` (40 s — the seconds one rung of
+ * the need ladder buys; its ONE definition stays in needs.ts and is never
+ * mirrored here). So waiting costs the put-down row half a rung of hesitation
+ * and no more, which is the right order of magnitude for a row that is itself
+ * worth 0.8 rungs. It is comfortably longer than a decide (a body re-decides
+ * every tick once its pursuit clears) and two orders shorter than the 296 s
+ * observed. A porter that takes another slice inside 20 s keeps its basket for
+ * the whole shift, exactly as intended; one that has genuinely run out of work
+ * puts it down and walks away with its hands free.
+ *
+ * Not a second put-down PATH: the act is the shipped `relieve` row's own drop
+ * (which already knows how to set a held bag down), and this is only how long
+ * that row waits before it is allowed to look.
+ */
+export const BAG_RETURN_GRACE_S = 20;
+
+/**
  * ⚖️ HOW LONG ONE FELLING TAKES A BODY — the chop, as a work beat (task #51
  * item 1d).
  *
@@ -311,6 +347,40 @@ export interface ContributeBill {
   seatKey?: string;
 }
 
+/**
+ * ⚖️ M1 AT THE SLICE (politics-substrate, round-lead ruling on P-S3-1) — DID
+ * THIS SLICE'S WORK LAND? The unit-grain answer to "they acted on your word AND
+ * the need dropped", asked at the moment a contribute pursuit dies.
+ *
+ * 🚨 IT MIRRORS `contributeStillWorking`'s BRANCH ORDER EXACTLY, because it is
+ * the same question asked one tick later — chop, then agreement, then site. Two
+ * different orderings would price a slice the retirement test never retired.
+ *
+ * `null` means UNKNOWABLE, and unknowable never earns or costs anybody
+ * authority (⚖️ the whole point of M1 is that the evidence is real):
+ *  • A CHOP retires when the ERRAND ends, and the mark retires whether the tree
+ *    came down or could not be cut at all — the host has nothing to read.
+ *  • A DWELL at something that is not an order row (a craft bench) stops
+ *    offering work when its raw stock runs out exactly as it does when the
+ *    batch is milled. The caller passes `siteLanded: null` and this says
+ *    nothing rather than guessing.
+ */
+export function sliceOutcome(
+  bill: Pick<ContributeBill, "objId" | "units" | "agreementId">,
+  ctx: {
+    /** The transfer agreement's status is `done` — the units landed. */
+    agreementDone?: boolean;
+    /** The dwell site banked its labour (true), stopped without it (false), or
+     *  cannot be asked (null/undefined). */
+    siteLanded?: boolean | null;
+  },
+): "order-done" | "order-failed" | null {
+  if (bill.objId !== undefined && bill.units === undefined) return null; // the chop
+  if (bill.agreementId) return ctx.agreementDone ? "order-done" : "order-failed";
+  if (ctx.siteLanded === null || ctx.siteLanded === undefined) return null;
+  return ctx.siteLanded ? "order-done" : "order-failed";
+}
+
 /** The reservation-ledger HOLDER a puller books its slice under. One holder
  *  per body — a body works one slice at a time (`session.pursuits` is one
  *  slot per cid), so releasing the holder releases the slice. GC'd like
@@ -506,4 +576,39 @@ export function pullLaborOn(s: {
   // invisible until a dollhouse pin moved. (1a hit this and wrapped it
   // locally; the wrapper belongs here, at the ONE derivation.)
   return s.foundedSite != null || (s.town != null && s.wilderness != null);
+}
+
+/**
+ * ⚖️ THE `bodyNeeds` CAPABILITY — HOUSEHOLDS AS SATISFIERS
+ * (body-needs-round.md D4). ONE derivation, fail-closed, and DELIBERATELY the
+ * same one `pullLaborOn` answers with, spelled as its own name so every use
+ * site says what it is asking about.
+ *
+ * WHY THE SAME QUESTION. The three things this gates — a non-dollhouse
+ * resident carrying an `energy` row, a live-but-dark body's meters ticking
+ * instead of freezing, and a housed body going HOME when its satisfier is a
+ * dark household — are all consequences of ONE fact about a world: that bodies
+ * outside the observed household are being SIMULATED as bodies rather than
+ * played by the schedule. That is exactly what pull-model labour asserts when
+ * it lets a body off the clock's leash to take a piece of a bill. A world where
+ * nobody self-issues work has no dark body worth ticking: its residents ARE
+ * their schedule, and giving them a tiredness meter nobody would ever satisfy
+ * is the "ungroundable need" the affordance law forbids.
+ *
+ * 🚫 THE DOLLHOUSE READS FALSE (town, no wilderness scatter, no founded site —
+ * the jx-doll-bench world), so every D4 hunk is UNTAKEN there and the bench
+ * holds byte-identical BY CONSTRUCTION, not by measurement. Nature-hike (no
+ * town, no site) reads false too.
+ *
+ * ⚠️ AN ALIAS, NOT A COPY. It delegates rather than restating the predicate:
+ * the two must never be able to drift, and when the session's SCOPE STACK
+ * lands, both become a question the containing scope answers — at which point
+ * they may legitimately diverge, and this is the one line that has to change.
+ */
+export function bodyNeedsOn(s: {
+  foundedSite?: unknown | null;
+  town?: unknown | null;
+  wilderness?: unknown | null;
+}): boolean {
+  return pullLaborOn(s);
 }

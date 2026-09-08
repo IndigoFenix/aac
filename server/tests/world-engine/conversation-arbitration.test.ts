@@ -231,7 +231,7 @@ describe("responseUrge — total and clamped", () => {
       utterance: said({ addresseeIds: ["ben"] }),
       tick: 10,
       personality: { ...NEUTRAL_PERSONALITY, expressiveness: 9 },
-      relation: { affinity: 9, trust: 9, authority: 9 },
+      relation: { affinity: 9, trust: 9, authority: 9, fear: 9 },
       relevance: 9,
     });
     expect(u).toBe(1);
@@ -243,7 +243,7 @@ describe("responseUrge — total and clamped", () => {
       utterance: said({ addresseeIds: ["cal"] }),
       tick: 10,
       personality: { ...NEUTRAL_PERSONALITY, expressiveness: -5 },
-      relation: { affinity: -5, trust: -5, authority: -5 },
+      relation: { affinity: -5, trust: -5, authority: -5, fear: -5 },
       relevance: -5,
     });
     expect(u).toBeGreaterThanOrEqual(0);

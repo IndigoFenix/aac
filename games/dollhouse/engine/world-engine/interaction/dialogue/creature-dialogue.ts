@@ -69,13 +69,16 @@ import type { Relation } from "@shared/world-engine/interaction/behavior/relatio
 import type { Personality } from "@shared/world-engine/interaction/behavior/personality.js";
 import {
   knowsFact,
+  regardFacts,
+  regardSentimentOf,
   tellFact,
   type Fact,
   type FactQuery,
+  type RegardFact,
 } from "@shared/world-engine/interaction/behavior/facts.js";
 import { canonicalVerb } from "@shared/world-engine/interaction/intent/parse-intent.js";
 // The SHARED half of a conversation's state (conversation.ts). Value imports —
-// this layer MUTATES the record in place (the RelationBook convention), it does
+// this layer MUTATES the record in place (the live-store convention), it does
 // not hand a new one back. conversation.ts imports only TYPES from here, so the
 // cycle is erased at build and there is no runtime import loop.
 import {
@@ -119,6 +122,44 @@ export type DialogueActKind =
   | "tell-fact" // ASSERT a generic Fact (itemState/condition/presence) — inform
   | "where-going" // ask a MOVING creature where it's headed (answered from its errand)
   | "what-doing" // ask what a creature is DOING ("what dog eat?") — answered from the live world
+  /**
+   * ⚖️ THE THREE POLITICS ACTS (interpersonal-politics.md §4b/§5, S-6).
+   *
+   * `praise` / `insult` — "you nice" / "you mean": an evaluation said TO the
+   * person it is about. They are not `tell-fact`s: a regard told about a THIRD
+   * party is information the room may relay, while one said to your face is an
+   * ACT with consequences (the addressee's standing moves, the actor earns or
+   * loses affinity), and the host applies those through `applySocialEvent`.
+   *
+   * `yield` — "you leader": giving somebody the right to direct you. Never a
+   * board WORD of its own (§5: "a child says ok/yes, or 'you leader'"), and
+   * never NPC-initiated this round — all three are in `NON_SPEAKER_ACTS`.
+   *
+   * 🚨 THIS LAYER ONLY PRODUCES THEM. No relation is nudged, no need credited
+   * and no fact written here: the pure dialogue layer emits acts, the host
+   * applies them (S-4/S-7). The one exception is the regard TELL, which rides
+   * the existing `tell-fact` door exactly as every other fact does.
+   */
+  | "praise"
+  | "insult"
+  | "yield"
+  /**
+   * 🙏 — THANK YOU, SAID ON PURPOSE.
+   *
+   * `thank_you` is the only 🙏 registry row and the word this engine SAYS at
+   * every information exchange, but there was no act for HEARING one: the
+   * button parsed as a request for a "thank_you" THING (a noun nobody owns), so
+   * a child pressing the one politeness glyph on the board got a shrug or a
+   * hunt for an object. It is the reply half of the tell convention, arriving
+   * from the other side, and it deserves the same acknowledgement any other
+   * courtesy gets — nothing more: no relation is moved here (the host books it
+   * through `applySpokenSocialAct`, like every other social act).
+   *
+   * NON_SPEAKER this round: an NPC thanking unprompted would be thanking for
+   * nothing, and the engine already says `thank_you` at the moments that earn
+   * it (a tell answered, an offer accepted).
+   */
+  | "thank"
   | "dont-understand" // the LISTENER can't interpret the utterance — honest floor, never silence
   | "deny-doing" // asked "why are you X-ing" while verifiably NOT X-ing — "I don't X"
   | "confused" // re-model one level down (presentation-level)
@@ -188,6 +229,17 @@ export interface DialogueAct {
   /** what-doing: WHO the question is about — the spoken symbol plus the
    *  resolved creature. An absent `id` = no such creature ("there is no dog"). */
   about?: { symbol: string; id?: CreatureId };
+  /**
+   * ⚖️ THIS AGREEMENT IS A CLIMB-DOWN (interpersonal-politics.md §5, the
+   * player-side `yield`): the speaker REFUSED this same request earlier in the
+   * conversation and is now granting it. Set by `speakInConversation`, which is
+   * the only place that can see the history the pair makes; read by the host,
+   * which turns it into a `yield` social act with route L.
+   *
+   * Additive and absent by default — an ordinary "yes" is not a surrender, and
+   * every caller that never looks at it behaves exactly as it did.
+   */
+  yielded?: boolean;
   glyph: string;
 }
 
@@ -395,6 +447,46 @@ export interface ProjectionOpts {
   /** A creature's intrinsic dials (personality.ts) — warmth is the disposition to
    *  give. Absent = the neutral midpoint. */
   personalityOf?: (creatureId: CreatureId) => Personality;
+  /**
+   * ⚖️ WOULD DEFIANCE BE SEEN — 0..1 (interpersonal-politics.md S-1/S-5). The
+   * COERCED half of `willingnessToGive`'s last rung (`yieldGate`): a creature
+   * gives way to somebody it fears only while that somebody could find out it
+   * had not. A world question, so the host answers it. 🚨 Absent ⇒ 0, and
+   * `fear: 0` (every relation shipped today) makes the coerced term vanish, so
+   * every existing willingness pin is unmoved either way.
+   */
+  certaintyOf?: (owner: CreatureId, requester: CreatureId) => number;
+  /**
+   * ⚖️ WHAT JUST HAPPENED SOCIALLY, handed BACK to the host (S-4). This module
+   * decides whether a thing is given and WHY; only the host owns the relation
+   * book, the witness geometry and the need meters, so a verdict that carries
+   * social weight is REPORTED rather than applied here.
+   *
+   * 🚨 THE PURITY LINE. Nothing in this file nudges a relation, credits a need
+   * or invents a fact — the same discipline `tell-fact` keeps. Absent ⇒ the
+   * verdicts are silent, which is exactly what they were before this hook.
+   *
+   * ⚠️ DECLARED AS A PROPERTY, DELIBERATELY — and that is a CHOICE, not an
+   * oversight. Method syntax would be bivariant and would let `kind` grow while
+   * every host kept compiling; that sounds like the "absent ⇒ silent" promise
+   * above, but it is not the same thing. Absent means the host never asked for
+   * these verdicts; a host that DID ask and then silently receives a kind it has
+   * never seen is a book move going unbooked with nobody told. Property syntax
+   * makes the strict (contravariant) check do the telling: the moment a kind is
+   * added here, every host annotation that restates the narrower union stops
+   * compiling, and the host owner has to decide what the new kind means to the
+   * book. So widening this union is a TWO-FILE edit by design — grow it here,
+   * then widen (and handle) it at the host seat. Hosts therefore RESTATE this
+   * union rather than importing it; the restatement is the tripwire.
+   */
+  onSocialAct?: (act: {
+    /** `thank` (🙏) is the courtesy half — the ONE of these whose ACTOR is the
+     *  person who SPOKE rather than the person who answered. */
+    kind: "yield" | "request-granted" | "request-refused" | "thank";
+    actor: CreatureId;
+    addressee: CreatureId;
+    route?: "L" | "C";
+  }) => void;
   /** Resolve a spoken symbol/NAME to a creature id ("mara" → its resident cid) —
    *  the household name book. Drives the third-party fact questions. */
   creatureOf?: (symbol: string) => CreatureId | undefined;
@@ -773,7 +865,68 @@ function factLine(
         tail: { join: "in", symbol: fact.place },
         key: fact.place,
       });
+    case "regard":
+      return regardLine(fact, whoSym);
   }
+}
+
+/**
+ * ⚖️ HOW A REGARD IS SAID (interpersonal-politics.md §4b, S-6).
+ *
+ * Three of the four sentiments are a judgment ABOUT THE SUBJECT and are spoken
+ * as one — "Mara is nice", "Bo is mean", "Pip is the leader". The OBSERVER is
+ * deliberately dropped from those: a child's board has no "X thinks that Y is
+ * Z" construction in any of the four rulesets, and inventing one would be a new
+ * sentence form for a line whose whole job is to be repeatable by a five-word
+ * speaker. What is lost is attribution, and it is not lost from the MODEL — the
+ * fact still carries its observer, `overhear` still fans it out per observer,
+ * and `priorFromRegard` still damps by trust in whoever holds it. Only the
+ * SENTENCE is simplified, which is what a sentence on a board is.
+ *
+ * FEAR is the exception, and it has to be: "Pip is scary" is a claim about Pip
+ * that anybody could make, while "I am scared of Pip" is a confession — the
+ * observer IS the news. So fear alone keeps both parties, through the existing
+ * `scared` feeling and the `regard` frame's object slot.
+ *
+ * Every string here is a legal board line: it parses back through `classify`
+ * into the same frame it was rendered from, so the NPC's bubble shows glyphs a
+ * child could have pressed.
+ */
+function regardLine(fact: RegardFact, whoSym: (id: CreatureId) => string): LeveledGlyphs {
+  if (fact.sentiment === "fear") {
+    const who = whoSym(fact.observer);
+    const of = whoSym(fact.subject);
+    const g = `${who} + scared + ${of}`;
+    // Level a is the FEELING alone — the one-symbol reader's whole answer.
+    return { a: "scared", b: g, c: g };
+  }
+  const word = fact.sentiment === "like" ? "nice" : fact.sentiment === "dislike" ? "mean" : "leader";
+  const g = `${whoSym(fact.subject)} + ${word}`;
+  return { a: word, b: g, c: g };
+}
+
+/**
+ * ⚖️ W2-2/W2-3/W2-4 — THE ONE PHRASING OF A REGARD, LENT OUT.
+ *
+ * `regardLine` is the only place that knows how the four sentiments are said,
+ * and three callers outside this file now need exactly that sentence and no
+ * other: an NPC's gossip about an absent third party, an NPC's praise to the
+ * person in front of it ("you + nice"), and the YIELD reply ("you + leader" —
+ * the child's own yield sentence spoken back). Each one is a line the player
+ * can already press, which is the whole point: anything a player can say, a
+ * creature can say, IN THE SAME WORDS. A second copy of the phrasing anywhere
+ * would be a second dialect the moment either one is edited.
+ *
+ * `whoSym` decides the deixis, so the SAME fact reads "you + nice" said to its
+ * subject and "mara + nice" said about her — the caller's perspective, not a
+ * flag here.
+ */
+export function regardGlyph(
+  fact: RegardFact,
+  whoSym: (id: CreatureId) => string,
+  level: SyntaxLevel,
+): string {
+  return at(regardLine(fact, whoSym), level);
 }
 
 /** Creature declines an OFFERED item ("no thanks, I don't want the sock"). */
@@ -1230,6 +1383,44 @@ export function projectDialogue(
     push("directions-menu", WHERE_MENU);
   }
 
+  // ⚖️ GOSSIP — TELLING SOMEBODY WHAT YOU MAKE OF A THIRD PERSON (politics §4b,
+  // M3). A regard the speaker HOLDS about somebody ELSE IN THIS CIRCLE, offered
+  // as an ordinary `tell-fact` so it travels the one knowledge channel and
+  // `overhear` fans it to the rest of the room for free.
+  //
+  // 🚨 THE GUARDS, and each one is why this stays a turn worth taking:
+  //   • the speaker must HOLD the belief — nobody invents an opinion to have
+  //     something to say, and the dollhouse residents hold none, so this list is
+  //     byte-identical there and the speaker roulette's weight vector with it;
+  //   • the SUBJECT is somebody ELSE: not the speaker, not the listener. A
+  //     regard about the person you are talking TO is a praise or an insult, not
+  //     a tell, and one about yourself is the self-appointment §2e forbids;
+  //   • the ADDRESSEE must not already know it — old news is not a turn;
+  //   • the subject must have a NAME in this speaker's mouth. `whoSym` falls
+  //     back to "there", and "there + nice" is not a sentence in any ruleset.
+  //
+  // ⚖️ W2-2 — GOSSIP IS ABOUT PEOPLE WHO ARE NOT THERE. There used to be a
+  // fifth guard: the subject had to be a third party STANDING IN THE CIRCLE.
+  // That was a bench-preserving choice, not a law, and it was the wrong way
+  // round — the natural regard tell is precisely about the person who is NOT in
+  // earshot ("Mara is nice", said to Pip). Worse, every dollhouse circle is a
+  // DYAD, so the presence test rejected every gossip in the game regardless of
+  // what anybody believed. Presence is no longer required; the four guards above
+  // are the whole rule, and they are the same on BOTH boards (the player's and
+  // an NPC speaker's role-swapped one).
+  const regardHeld = ctx?.convo ? regardFacts(world, playerId) : [];
+  if (regardHeld.length) {
+    for (const f of regardHeld) {
+      if (f.subject === creatureId || f.subject === playerId) continue;
+      if (f.observer === creatureId) continue;
+      if (whoSym(f.subject) === "there") continue;
+      if (knowsFact(world, creatureId, { kind: "regard", observer: f.observer, subject: f.subject })) {
+        continue;
+      }
+      acts.push({ kind: "tell-fact", fact: f, glyph: at(regardLine(f, whoSym), level) });
+    }
+  }
+
   push("confused", { a: "confused", b: "confused", c: "confused" });
   push("bye", BYE);
 
@@ -1313,7 +1504,7 @@ export interface ActResult {
    *
    * The SHARED effects of an act — a need revealed, a price quoted — are not
    * here: `selectAct` writes those straight into `ctx.convo` in place, the same
-   * mutate-the-record convention `RelationBook` uses. Handing them back would
+   * mutate-the-record convention every live store here uses. Handing them back would
    * mean every caller re-merges them by hand, and one caller forgetting to is
    * the whole class of bug the split exists to end.
    */
@@ -1496,6 +1687,8 @@ export function selectAct(
         // several draws from the same turn's stream, in the fixed id order the
         // sort above pins: reproducible, and never a source of cross-turn drift.
         rng: ctx?.rng,
+        // ⚖️ S-5 — the yield rung's `certainty`. See `certaintyOf`.
+        ...(opts.certaintyOf ? { certainty: opts.certaintyOf(creatureId, playerId) } : {}),
       };
       let best: { item: ItemState; verdict: GiveResponse } = {
         item: candidates[0]!,
@@ -1513,8 +1706,40 @@ export function selectAct(
       // settle later even after a no.
       const out = requestItem(world, playerId, creatureId, best.item.id);
       if (out.kind === "accept") return { events: out.events, responseGlyph: "yes" };
+      // ⚖️ S-5 — A REFUSED REQUEST THAT BECAME A GRANT IS A YIELD, and it is the
+      // one give that costs the giver standing publicly. Reported before the
+      // grant so the host sees it whichever arm below actually hands the thing
+      // over. `actor` is the YIELDER (the owner), `addressee` the winner.
+      if (best.verdict.kind === "give" && best.verdict.reason === "yield") {
+        opts.onSocialAct?.({
+          kind: "yield",
+          actor: creatureId,
+          addressee: playerId,
+          route: best.verdict.route,
+        });
+      }
+      // ⚖️ W2-4 — AND A YIELD SAYS SO OUT LOUD: "you + leader".
+      //
+      // It used to sound EXACTLY like handing over a spare ("yes"), which made
+      // the one give that costs the giver standing publicly indistinguishable
+      // from the one that costs it nothing — the climb-down was in the events
+      // and nowhere in the room. The words are the child's OWN yield sentence
+      // (`intentToAct`: "you + leader" → `{kind:"yield"}`) spoken back, so the
+      // two directions of the same move are one sentence, and route L and route
+      // C say the same thing ("fine, you're the boss" is not a different
+      // concession because a different rung reached it). No new word: `leader`
+      // is the `respect` regard word, rendered by the one `regardLine`.
+      const yieldLine =
+        best.verdict.kind === "give" && best.verdict.reason === "yield"
+          ? regardGlyph(
+              { kind: "regard", observer: creatureId, subject: playerId, sentiment: "respect" },
+              whoSym,
+              level,
+            )
+          : undefined;
       // Friendship beats commerce: a warm owner gifts a liked asker outright.
       if (best.verdict.kind === "give" && best.verdict.reason === "affinity") {
+        opts.onSocialAct?.({ kind: "request-granted", actor: creatureId, addressee: playerId });
         return { events: grantItem(world, creatureId, playerId, best.item.id), responseGlyph: "yes" };
       }
       // Commerce beats charity: an owner with something to ask for TRADES (the
@@ -1529,8 +1754,13 @@ export function selectAct(
         return { events: [] };
       }
       if (best.verdict.kind === "give") {
-        // surplus — nothing to ask in return, so the spare is simply given.
-        return { events: grantItem(world, creatureId, playerId, best.item.id), responseGlyph: "yes" };
+        // surplus (or the yield above) — nothing to ask in return, so the spare
+        // is simply given. A YIELD says which it was (W2-4); a surplus is "yes".
+        opts.onSocialAct?.({ kind: "request-granted", actor: creatureId, addressee: playerId });
+        return {
+          events: grantItem(world, creatureId, playerId, best.item.id),
+          responseGlyph: yieldLine ?? "yes",
+        };
       }
       if (best.verdict.kind === "redirect" && provider) {
         return { events: [], askedDirections: provider };
@@ -1538,6 +1768,12 @@ export function selectAct(
       // A plain decline, with the honest reason: a keepsake ("my X"), its own
       // need ("I want X"), or simple unwillingness ("I won't give X") — never a
       // false "have.not" while visibly holding the thing.
+      // ⚖️ S-4 — being told no in front of people costs the ASKER standing, and
+      // only then (`request-refused` credits nothing when nobody saw it). A
+      // REDIRECT is not a refusal — it is an answer with an address in it.
+      if (best.verdict.kind === "decline") {
+        opts.onSocialAct?.({ kind: "request-refused", actor: creatureId, addressee: playerId });
+      }
       const refusal =
         best.verdict.kind === "decline" && best.verdict.reason === "bound"
           ? mineDecline(syms.now(best.item.id))
@@ -2004,6 +2240,32 @@ export function selectAct(
           return { events: learned, responseGlyph: at(factLine(known, whoSym, syms), level) };
         }
       }
+      // ⚖️ "WHO IS THE LEADER?" IS ANSWERED FROM THE BOOK FIRST (politics §4c —
+      // standing must be ASKABLE). `knowsFact`'s regard arm deliberately has no
+      // truth shortcut: it can only report what this body was TOLD, because the
+      // fact store is not where a creature's own attitude lives. Its own
+      // attitude lives in the host's directed book, reachable here through
+      // `relationOf` — so a body asked who it respects answers about the people
+      // in front of it, and falls back to hearsay only when it respects nobody
+      // present. Circle order is the roster's (deterministic); the speaker is a
+      // candidate like anyone else, which is how "you are the leader" gets said.
+      if (q.kind === "regard" && q.sentiment && opts.relationOf) {
+        const circle = ctx?.convo?.members.map((m) => m.id) ?? [playerId];
+        for (const other of circle) {
+          if (other === creatureId) continue;
+          if (regardSentimentOf(opts.relationOf(creatureId, other)) !== q.sentiment) continue;
+          if (q.subject !== undefined && q.subject !== other) continue;
+          const held: Fact = {
+            kind: "regard",
+            observer: creatureId,
+            subject: other,
+            sentiment: q.sentiment,
+          };
+          // The answer TEACHES, exactly as every other fact answer does.
+          const taught = playerId !== creatureId ? tellFact(world, playerId, held) : [];
+          return { events: taught, responseGlyph: at(factLine(held, whoSym, syms), level) };
+        }
+      }
       const known = knowsFact(world, creatureId, q);
       if (!known) return { events: [], responseGlyph: at(DONT_KNOW, level) };
       // POLAR ask ("apple hot?" / "Mara hungry?"): yes/no against the claim.
@@ -2046,6 +2308,35 @@ export function selectAct(
       // Information received is THANKED (the tell convention, phase ①a §1).
       return { events, responseGlyph: "thank_you" };
     }
+    // ⚖️ THE THREE POLITICS ACTS (§4b/§5) — the ANSWER only. Everything that
+    // makes them matter (the affinity the actor earns, the standing the
+    // addressee gains or loses, the authority a yield hands over) is the host's
+    // `applySocialEvent`, because a relation book is not a thing this pure layer
+    // has or may grow. What it owes is a reply, and an honest one.
+    case "praise":
+      // Being told you are kind is a gift; the tell convention already has the
+      // word for receiving one.
+      return { events: [], responseGlyph: "thank_you" };
+    case "insult":
+      // NOT a counter-insult and NOT silence. Silence reads as the game being
+      // broken (the `dont-understand` law), and answering in kind would put a
+      // move on the board that §6 says NPCs do not initiate. The honest answer
+      // is what it costs: "I'm sad."
+      return { events: [], responseGlyph: at(SAD_GREET, level) };
+    case "yield":
+      // Somebody just made this creature their leader. It accepts — the plain
+      // acknowledgement, which is the one word the board already reserves for
+      // "an order taken on" (phase ①a §1).
+      return { events: [], responseGlyph: "ok" };
+    case "thank":
+      // 🙏 RECEIVED. The honest answer to being thanked is what it does to you:
+      // the same `i_me + happy` line a problem-free creature answers "how are
+      // you?" with — no new string, and a warm one rather than a mirrored
+      // "thank_you" (thanking somebody for thanking you is a loop, not a turn).
+      // The BOOK move rides `onSocialAct`, exactly as praise/insult/yield do:
+      // this layer emits, the host applies (S-4/S-7).
+      opts.onSocialAct?.({ kind: "thank", actor: playerId, addressee: creatureId });
+      return { events: [], responseGlyph: at(CONTENT_LINE, level) };
     case "dont-understand":
       // The utterance had no honest interpretation — say so (never silence,
       // never a misleading small-talk answer). No world effect, no close.

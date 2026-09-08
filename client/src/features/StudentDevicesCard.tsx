@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2, MonitorSmartphone, Trash2 } from 'lucide-react';
+import { MonitorSmartphone, Trash2 } from 'lucide-react';
 
 interface StudentDeviceRow {
   id: string;
@@ -92,9 +93,11 @@ export function StudentDevicesCard({ studentId }: { studentId: string }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {devicesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            {t('common.loading')}
+          /* Shaped like the loaded body (count line + a row) rather than a
+             spinner, so the card does not change height when it lands. */
+          <div className="space-y-3" aria-hidden="true">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-9 w-full rounded-md" />
           </div>
         ) : devicesQuery.isError ? (
           <p className="text-sm text-destructive">{t('student.devices.loadFailed')}</p>

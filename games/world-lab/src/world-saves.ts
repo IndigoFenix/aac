@@ -75,7 +75,12 @@ export interface FoundedSitePayload {
  *  (Infinity is not JSON — the null spelling is the envelope's law). */
 export interface FelledMarksPayload {
   bodyId: string;
-  marks: Array<{ key: string; remainS: number | null }>;
+  /** `spanS` = the FULL regrow span the mark was stamped with, so a restored
+   *  mark can still say WHICH RUNG the new tree has climbed to (elapsed =
+   *  span − remaining). Optional: a save written before the field could draw a
+   *  stump's growth carries none, and such a mark simply hides its tree until
+   *  it expires, exactly as it did when it was written. */
+  marks: Array<{ key: string; remainS: number | null; spanS?: number }>;
 }
 
 const openDb = (): Promise<IDBDatabase | null> =>

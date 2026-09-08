@@ -32,6 +32,12 @@
 
 import { resolveStructure, type StructureSpec } from "./structures.js";
 import { zoneAt, type TownGrowthSignals, type ZoneCharter } from "./zoning.js";
+// TYPE-ONLY (both erased at build): the regard payload's shapes. `regard-prior.ts`
+// is inside kernel/town; `Relation` is the behavior layer's, and a type import of
+// it adds no runtime edge, so the layering note above still holds.
+import type { RegardPrior } from "./regard-prior.js";
+import type { Relation } from "../../interaction/behavior/relations.js";
+import type { CreatureId } from "../../interaction/behavior/creatures.js";
 import { stackTotal, stackUnits, type StockEndpoint } from "./transfer.js";
 import { headOf } from "../../variations.js";
 import type { FoundedBuilding, TownDeltas } from "./construction.js";
@@ -136,6 +142,68 @@ export interface CohortHouse {
   index: number;
   /** Souls this household pooled (HOUSEHOLD, minus authored exclusions). */
   members: number;
+  /**
+   * ⚖️ COHORT-FOLD RECONCILIATION (body-anchored-needs round, D5) — the
+   * household MEAN body-need level per template key at the moment of the
+   * fold (threshold units, 1 = firing), over the members that HAD the row.
+   *
+   * A body meter is neither a soul nor a unit, so it rides neither of the
+   * two things this tier conserves — but it must not simply vanish either
+   * (before this field a promoted household woke with a four-day-old hunger
+   * left over in the session map, or with none at all after a reload).
+   * What crosses the fold is the STATISTIC: one mean per need. The unfold
+   * arithmetic — mean plus whatever the pool failed to feed — is
+   * `cohort-needs.ts`, pure and shared by both doors.
+   *
+   * OPTIONAL: every existing constructor of a `CohortHouse` stays valid,
+   * and a payload from an older save simply carries no meters (the promote
+   * then re-seeds from the meal schedule, exactly as it always did).
+   */
+  needs?: Record<string, number>;
+  /**
+   * The town STREET-DAY the `needs` means were quoted at — the same unit
+   * and the same conversion `ratesDay` uses (`session.townClock /
+   * FOOD_DAY_SEC` at the live door).
+   *
+   * 🚨 IT IS A CLOCK, and this row's codec declares no `rest`/`wake`. That
+   * is a recorded debt, not an oversight: `ratesDay` is ALREADY an absolute
+   * street-day on the same row (see `CohortFoldCtx.day`), the registered
+   * cohort codec has no live caller at all, and inventing a second clock
+   * unit for this field would make the two doors disagree about what a day
+   * is. So it inherits `ratesDay`'s unit — and `ratesDay`'s debt — verbatim.
+   */
+  foldedDay?: number;
+  /**
+   * ⚖️ REGARD FOLD (politics-substrate round, F-2) — what this household,
+   * collectively, thought of each SUBJECT at the moment of the fold: one
+   * folded prior per subject (`regard-prior.ts`, pure and shared by both
+   * doors, the `needs`/`cohort-needs.ts` precedent exactly).
+   *
+   * Before this field a pooled household's live relation rows LEAKED: nothing
+   * cleared `session.relations` at demote, so the books of five people who no
+   * longer existed sat in the map forever and came back stale (or, after a
+   * reload, not at all — the same accident `needs` was added to close).
+   *
+   * Only the OUTGOING half folds. `x|resident_<h>_m` — what the rest of the
+   * town thinks of this family — belongs to those observers' books and is
+   * neither folded nor deleted.
+   *
+   * OPTIONAL, like `needs`: every existing constructor stays valid and an
+   * older payload simply carries no books.
+   */
+  regard?: Record<CreatureId, RegardPrior>;
+  /**
+   * ⚖️ THE MEMBERS THE PRIOR CANNOT REBUILD (F-3) — observer → its VERBATIM
+   * book. A member whose rows deviate from the household prior by more than
+   * `PIN_EPS` on any axis, or that the player has actually spoken to, keeps
+   * its book instead of being re-projected from the statistic; the next demote
+   * re-tests, so a pin is RELEASED once the deviation has faded.
+   *
+   * This IS ruling ④'s "pin when they deviate — no scope is special" at the
+   * household rung. A pinned soul is still one of `members`, never a second
+   * population row: `Σpops + pinned = const` by construction.
+   */
+  pinned?: Record<CreatureId, Record<CreatureId, Relation>>;
 }
 
 /** One district's cohort pool — a serializable row (TownDeltas pattern,
@@ -219,7 +287,25 @@ export function demoteHousehold(
   const row = ensureCohortRow(rows, district, day);
   const prevPop = row.pop;
   row.pop += house.members;
-  row.houses.push({ index: house.index, members: house.members });
+  // The pooled household row: souls, and — when the caller measured them —
+  // the folded body-need means with the street-day they were quoted at
+  // (D5). Copied, never aliased: the caller's `CohortHouse` is its own.
+  row.houses.push({
+    index: house.index,
+    members: house.members,
+    ...(house.needs ? { needs: { ...house.needs } } : {}),
+    ...(house.foldedDay !== undefined ? { foldedDay: house.foldedDay } : {}),
+    // The regard payload copies the same way (F-2): one level for the priors,
+    // two for the pinned books, so the caller's maps stay its own.
+    ...(house.regard ? { regard: { ...house.regard } } : {}),
+    ...(house.pinned
+      ? {
+          pinned: Object.fromEntries(
+            Object.entries(house.pinned).map(([cid, book]) => [cid, { ...book }]),
+          ),
+        }
+      : {}),
+  });
   for (const [g, n] of Object.entries(carried)) {
     if (n > 0) row.stack[g] = (row.stack[g] ?? 0) + n;
   }
@@ -234,6 +320,13 @@ export function demoteHousehold(
  * — a demoted hand's stack became district property (transferable via ②);
  * promoted souls re-embody empty-handed, so no unit is ever minted or
  * lost across any demote/promote cycle. A fully-drained row is dropped.
+ *
+ * ⚖️ THE POPPED HOUSEHOLD COMES BACK WHOLE (D5): the returned `CohortHouse`
+ * is the row that was pushed, `needs`/`foldedDay` included, so the live door
+ * can hand its members their meters back (`cohort-needs.ts`). Empty-handed
+ * still means empty-handed — a meter is a record, not a unit, and nothing
+ * about the stack contract moves. Existing callers that read only
+ * `{district, house.index, house.members}` are untouched.
  */
 export function promoteHousehold(
   rows: CohortRow[],
@@ -630,7 +723,10 @@ function cloneCohortRow(row: CohortRow): CohortRow {
     wellbeing: row.wellbeing,
     needs: { ...row.needs },
     stack: { ...row.stack },
-    houses: row.houses.map((h) => ({ ...h })),
+    // `needs` is a map, so the spread alone would ALIAS it into the copy —
+    // the one nested field on a CohortHouse, and the defensive-copy
+    // contract above is what stops condense/expand mutating a live row.
+    houses: row.houses.map((h) => ({ ...h, ...(h.needs ? { needs: { ...h.needs } } : {}) })),
     ratesDay: row.ratesDay,
   };
 }

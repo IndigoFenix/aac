@@ -51,11 +51,12 @@ import { useRegimes } from '@/hooks/useRegimes';
 import { LicenseBillingCard } from '@/components/billing/LicenseBillingCard';
 
 // The CLINICIAN's own workflow/locale preference — deliberately NOT
-// ProgramFramework. It is unpersisted local state whose only effect is picking
-// an app language, so it has no "personal" member: a learner outside a school
-// system has no jurisdiction to switch the UI language to. A student's actual
-// framework is set per-student in StudentInfoPanel.
-type SystemType = 'tala' | 'us_iep';
+// ProgramFramework, but it must still offer the same three values a
+// student's framework can take (`shared/program-framework.ts`), including
+// "personal" for a learner outside any school system. A student's actual
+// framework is set per-student in StudentInfoPanel; this only picks a
+// default workflow/language for the clinician's own UI.
+type SystemType = 'tala' | 'us_iep' | 'personal';
 
 export function SettingsPanel() {
   const { language, setLanguage, isRTL } = useLanguage();
@@ -196,6 +197,7 @@ export function SettingsPanel() {
     }
   };
 
+
   const { t } = useLanguage();
   const isDark = theme === 'dark';
 
@@ -294,9 +296,11 @@ export function SettingsPanel() {
                     {t('settings.workflowSystem')}
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    {systemType === 'tala' 
+                    {systemType === 'tala'
                       ? t('settings.talaDescription')
-                      : t('settings.usIepDescription')
+                      : systemType === 'us_iep'
+                      ? t('settings.usIepDescription')
+                      : t('student.frameworkHintPersonal')
                     }
                   </p>
                 </div>
@@ -315,6 +319,11 @@ export function SettingsPanel() {
                       <div className={cn("flex items-center gap-2", isRTL && "flex-row-reverse")}>
                         <span>🇺🇸</span>
                         <span>{t('settings.systemUs')}</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="personal">
+                      <div className={cn("flex items-center gap-2", isRTL && "flex-row-reverse")}>
+                        <span>{t('student.frameworkPersonal')}</span>
                       </div>
                     </SelectItem>
                   </SelectContent>

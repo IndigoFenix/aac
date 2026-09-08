@@ -686,6 +686,13 @@ export const LEXICAL_TAB_CHIPS: Readonly<
     tab: "attribute",
     keys: ["hot", "cold", "warm", "dirty", "broken", "new", "old", "full", "good", "bad"],
   },
+  // ⚖️ WORDS ABOUT PEOPLE (interpersonal-politics.md §4b, 2026-09-07). The
+  // politics vocabulary describes a PERSON, and none of the four chips above
+  // could hold it: [feelings] is what somebody feels (and answers "how are
+  // you?", which "leader" does not), [condition] is what state a THING is in,
+  // and `good`/`bad` sitting there judge an object, not how somebody treats
+  // you. It is a fifth slice of Descriptions, not a stretch of a fourth.
+  people: { tab: "attribute", keys: ["nice", "mean", "leader"] },
 
   // ── ACTIONS (`verb`) ──────────────────────────────────────────────────────
   // Going and staying — every verb whose whole content is where a body is.
@@ -741,7 +748,7 @@ export const lexicalTabChipIds = (tab: string): readonly string[] =>
  * ruleset — and the two lexical tabs' set-shaped chips (`colors`, `feelings`)
  * are authored plural outright.
  */
-const PLURAL_LABEL_CHIPS: ReadonlySet<string> = new Set(["creatures", "animals", "plants"]);
+const PLURAL_LABEL_CHIPS: ReadonlySet<string> = new Set(["creatures", "animals", "plants", "people"]);
 
 /**
  * CHIPS WHOSE LABEL IS A VERB, and therefore must be the INFINITIVE (user,
@@ -1048,6 +1055,10 @@ export const GROUP_LABEL_HEAD: Record<string, string> = {
   feelings: "feelings",
   size: "size",
   condition: "condition",
+  // The politics slice wears the PERSON head, pluralised — the chip names the
+  // set of words you use ABOUT people, and "person" singular would read as one
+  // word the child is about to press (the same rule `creatures`/`animals` obey).
+  people: "person",
   // The ACTION chips deliberately DO wear verb heads where one already names
   // the family exactly (`go`, `make`, `want`) or is already an adverbial
   // (`together`): "go" is the name of the going family, not a stray conjugation

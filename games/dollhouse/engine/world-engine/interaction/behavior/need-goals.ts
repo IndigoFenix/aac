@@ -41,6 +41,16 @@ export const NEED_PURSUIT_MOTIVES: ReadonlySet<string> = new Set([
   "waste",
   "hygiene",
   "social",
+  // ⚖️ THE SOCIAL THIRD (interpersonal-politics.md S-3). `standing` and
+  // `security` are the SAME shape as `social` — `satisfy: {kind:"social"}`, the
+  // partner IS the station, the walker's own social arm decides which one — and
+  // they differ only in WHICH partner is worth going to (`StationCandidate.
+  // value`, computed by the host). So they ride the same `converse` goal, and
+  // leaving them off this list would have made the two rows resolve a partner,
+  // return NO candidate goal, and fall through to a legacy walker that has no
+  // arm for them: a want that decides and then does nothing.
+  "standing",
+  "security",
   // ⑫⑧ — STOPPING TO FACE SOMEBODY, the conversation-in-motion duty row. It
   // rides the pursuit for the same reason `attend` does: the price the chapter
   // is about (`ADDRESS_DWELL_S`) is a PLAN price, and only the pursuit path

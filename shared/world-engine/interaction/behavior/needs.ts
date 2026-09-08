@@ -100,7 +100,25 @@ export type SatisfySpec =
    *  the general escape hatch for the unload row. */
   | { kind: "deposit"; container: string; upTo: number; orDrop?: boolean }
   | { kind: "rest"; at?: readonly string[]; requireStation?: boolean }
-  | { kind: "social" }
+  /**
+   * ⚖️ THE ACT-BY-ANOTHER SLOT (`planning-docs/games/world-engine/
+   * interpersonal-politics.md`; declared by the body-needs round, D1).
+   *
+   * A social row's SATISFIER is another creature (the caller lists partners as
+   * stations), and today its credit is simply "we talked". The two needs that
+   * round owns — STANDING and SECURITY — are satisfied by a specific ACT of
+   * that other creature rather than by its presence: being deferred to, being
+   * defended. `good` NAMES which, so the credit door (`creditNeed`) can be
+   * told what was actually given.
+   *
+   * 🚨 TYPE ONLY, DELIBERATELY. Nothing reads it, no template sets it, and no
+   * behaviour depends on it — the walker's social arm is byte-identical with
+   * or without the field. It is here so the primitive can EXPRESS the need
+   * that round will build, which is what "designed for, not built here" means;
+   * a round that has to widen this union first would be a round that discovers
+   * the need primitive cannot say what it needs to say.
+   */
+  | { kind: "social"; good?: string }
   | { kind: "equip" }
   | { kind: "use" }
   | { kind: "transform"; at: readonly string[]; drop?: string; add?: string };
@@ -213,6 +231,25 @@ export interface StationCandidate {
   waiting: number;
   /** METRES from the deciding body — see `StockCandidate.d`. */
   d?: number;
+  /**
+   * ⚖️ WHAT THIS CANDIDATE IS WORTH TO THE ROW THAT IS DECIDING, 0..1 and
+   * ALREADY NET OF COST (interpersonal-politics.md §8.5, the partner-choice
+   * seat). The propriety-flag pattern one level up: the CALLER answers it,
+   * because only the caller can ask "does this particular body defer to me / do
+   * I trust it at my back / how far away is it", and this module only compares.
+   *
+   * Introduced for the SOCIAL arm — "which housemate do I seek out?" is the one
+   * decision in the ladder where the candidates are PEOPLE and distance is not
+   * the whole story. A stranger who happens to be two metres away is not better
+   * company than the friend across the room.
+   *
+   * 🚨 ABSENT = 0, AND THE COMPARISON IS STRICTLY GREATER. A caller that models
+   * no social value (the dollhouse, which never sets it) leaves every candidate
+   * at 0, no candidate ever beats the first, and the arm returns `stations[0]`
+   * — the SAME OBJECT it returned before this field existed. That identity is
+   * the bench guarantee, and it is why the tie-break is `>` and not `>=`.
+   */
+  value?: number;
 }
 
 /** THE PRICE BOARD (scope-behaviors.md §3, step ④) — the four numbers a row
@@ -930,10 +967,22 @@ export function decideNeed(tpl: NeedTemplate, ctx: NeedCtx, opts?: NeedDecideOpt
     if (st) return { kind: "restAt", station: st };
     return tpl.satisfy.requireStation ? { kind: "blocked" } : { kind: "restHere" };
   }
-  // Social: seek the nearest PARTNER (the caller lists housemates as stations);
-  // alone, the want just surfaces (blocked) until someone is around.
+  // Social: seek a PARTNER (the caller lists housemates as stations); alone,
+  // the want just surfaces (blocked) until someone is around.
+  //
+  // ⚖️ PARTNER CHOICE IS `value − cost`, and the caller has already done the
+  // subtraction (`StationCandidate.value`). All this arm does is take the
+  // argmax with a STRICT `>`, which makes the no-value case an exact identity:
+  // every candidate at 0 ⇒ nothing beats the first ⇒ `stations[0]`, the same
+  // object, in the same order the caller listed them (nearest first).
   if (tpl.satisfy.kind === "social") {
-    const st = ctx.stations[0];
+    let st = ctx.stations[0];
+    if (st) {
+      for (let i = 1; i < ctx.stations.length; i++) {
+        const c = ctx.stations[i]!;
+        if ((c.value ?? 0) > (st.value ?? 0)) st = c;
+      }
+    }
     return st ? { kind: "socialize", station: st } : { kind: "blocked" };
   }
   // Equip: a unit in hand goes ON where you stand (the change of clothes);
@@ -1401,6 +1450,52 @@ export function socialTemplate(rate: number): NeedTemplate {
     item: {},
     drive: { kind: "meter", rate, threshold: 1 },
     satisfy: { kind: "social" },
+    acquire: [],
+    priority: 2,
+  };
+}
+
+/**
+ * STANDING (interpersonal-politics.md §2a; owner's ruling ①) — the want to be
+ * LOOKED UP TO, and the first of the two needs whose satisfier is a specific ACT
+ * BY ANOTHER rather than that other's mere presence. Company clears `social`;
+ * only being DEFERRED TO clears this. `satisfy.good` is what tells the credit
+ * door which of the two a social encounter actually supplied.
+ *
+ * Same priority as `social` (2) on purpose: this is the social third of the day,
+ * not a new tier. Bodies still eat, sleep and work first.
+ *
+ * ⚠️ The RATE is where personality enters (`bodyNeedTemplates` scales it by
+ * assertiveness) — never a second meter, never a per-character branch. An
+ * assertive body simply wants this more often.
+ */
+export function standingTemplate(rate: number): NeedTemplate {
+  return {
+    key: "standing",
+    item: {},
+    drive: { kind: "meter", rate, threshold: 1 },
+    satisfy: { kind: "social", good: "standing" },
+    acquire: [],
+    priority: 2,
+  };
+}
+
+/**
+ * SECURITY (interpersonal-politics.md §2a) — the want to have SOMEONE AT YOUR
+ * BACK. The other act-by-another need: satisfied by being defended, or by time
+ * with a body that likes you and that you do not fear.
+ *
+ * Its rate scales with EXPOSURE (the body's highest `fear` toward anyone in its
+ * book), which is the whole reason `fear` is an axis rather than a mood: living
+ * near someone you are afraid of is what makes you need an ally, and that is a
+ * fact about a RELATION, not about a temperament.
+ */
+export function securityTemplate(rate: number): NeedTemplate {
+  return {
+    key: "security",
+    item: {},
+    drive: { kind: "meter", rate, threshold: 1 },
+    satisfy: { kind: "social", good: "security" },
     acquire: [],
     priority: 2,
   };

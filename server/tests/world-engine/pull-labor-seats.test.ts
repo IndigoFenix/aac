@@ -715,14 +715,31 @@ describe("⑤ every release door drops the holder (S4)", () => {
     const s = run.session;
     run.speak("build + house");
     let cid: string | null = null;
-    for (let i = 0; i < 1200 && !cid; i++) {
+    // ⏱️ THE FIXTURE'S PATIENCE, and only that. A BUILD seat cannot be claimed
+    // until the house's 120 blocks are staged, so this loop is waiting on the
+    // ARC, not on the decider — and the arc's honest length changed on
+    // 2026-09-06. Stage 2a measured staging at t ∈ (467.5, 477.5]; the teleport
+    // and carry rounds then stopped the skip-ahead recovery from firing a
+    // haul's pickup/load/unload from up to 25 m away (npc-controller
+    // `NpcErrandPoint.effect` + `onAbandon`), and the porters now WALK the legs
+    // those effects used to be fired across. Measured on this very fixture
+    // (seed 11, dt 1/2): staging 471 s before, 955 s after, with the same 15
+    // bodies delivering the same 120 blocks. So the 1 200-frame (600 s) bound
+    // this loop shipped with had become shorter than one staging.
+    //
+    // 🚨 NOTHING BELOW MOVED. Every assertion in this pin — the seat is held,
+    // the warp refuses, the overwrite releases the holder — is unchanged; what
+    // changed is how long the fixture waits for its premise. 2 400 frames
+    // (1 200 s) is staging plus ~250 s of headroom, and the loop still EXITS on
+    // the first seat, so a fast arc costs nothing.
+    for (let i = 0; i < 2400 && !cid; i++) {
       run.stepFrame();
       cid = seatedBody(s);
     }
     if (!cid) {
-      // Say so rather than pass vacuously — a seat that is never taken in ten
-      // sim-minutes is a decider or fixture fact, not a green door.
-      throw new Error("no body took a SEAT in 600 sim-s — decider or fixture, not a pass");
+      // Say so rather than pass vacuously — a seat that is never taken in
+      // twenty sim-minutes is a decider or fixture fact, not a green door.
+      throw new Error("no body took a SEAT in 1200 sim-s — decider or fixture, not a pass");
     }
     const key = s.pursuits.get(cid)!.bill!.seatKey!;
     expect(seatHeldBy(s.reservations, cid, key)).toBe(true);
@@ -738,8 +755,27 @@ describe("⑤ every release door drops the holder (S4)", () => {
     // on the contribute pursuit — this is precisely the door that leaked.
     s.pursuits.set(cid, { source: "command", goal: { kind: "goTo", place: { kind: "home" } }, glyph: "go" } as never);
     run.advance(4);
+    // ⚖️ THE DOOR IS HOLDER-SCOPED, and this is the whole of it: the overwritten
+    // body let go of every seat it held.
     expect(heldSeats(s.reservations, cid)).toEqual([]);
-    expect(s.reservations.reservedUnits(key, SEAT_CLAIM_GLYPH)).toBe(0);
+    // 🚨 THE KEY-SCOPED PIN MOVED (2026-09-06, body-anchored needs round). This
+    // line used to read `reservedUnits(key, SEAT_CLAIM_GLYPH) === 0`, which is
+    // not what the door promises: now that residents on the frontier get hungry
+    // and tired, the arc is BUSIER, and the bay this body vacated is legitimately
+    // RE-CLAIMED by another hand inside the four ticks — a hand-off, not a leak
+    // (`sweepSeats` runs every tick, so four ticks would have swept a real one).
+    // So the honest key-scoped law is: whoever holds this seat now, if anybody,
+    // is NOT the overwritten body, and IS a body standing a live contribute
+    // pursuit on this very seat key.
+    const heirHolder = s.reservations
+      .toJSON()
+      .rows.find((r) => r.endpoint === key && r.glyph === SEAT_CLAIM_GLYPH && r.qty > 0)?.holder;
+    if (heirHolder !== undefined) {
+      expect(heirHolder).not.toBe(pullHolder(cid));
+      const heir = heirHolder.slice("pull:".length);
+      const hp = s.pursuits.get(heir);
+      expect(isContributePursuit(hp) && hp.bill.seatKey === key).toBe(true);
+    }
   }, 600_000);
 
   it("🚨 NO TWO BODIES EVER HOLD ONE SEAT KEY — swept over the live ledger", () => {

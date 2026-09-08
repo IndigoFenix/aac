@@ -66,6 +66,15 @@ function reportedAccuracy(gps: GpsReading | GeoPoint): number | undefined {
 /** How far around "now" an event counts as happening, in milliseconds (±2h). */
 export const EVENT_WINDOW_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Beyond this distance from EVERY place registered for the student, they are
+ * somewhere their routine does not reach — a trip, a hospital in another city,
+ * a relative's town. Not a matching radius: nothing is "matched" at this scale.
+ * It only separates "the usual area" from "not the usual area", so it is
+ * deliberately generous — a big city plus its suburbs, not a neighbourhood.
+ */
+export const AWAY_FROM_USUAL_M = 25_000;
+
 const EARTH_RADIUS_M = 6_371_000;
 
 function toRadians(deg: number): number {

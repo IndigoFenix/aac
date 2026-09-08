@@ -44,6 +44,7 @@ import {
   NEAR_STAND_STEP_M,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
 import { standDensityPerHa } from "@shared/world-engine/planet/ecology.js";
+import { effectiveInPerOut, standYieldFraction } from "@shared/world-engine/products.js";
 import { resolveWorldScale, serviceRadiusM, REAL_SCALE } from "@shared/world-engine/scale.js";
 
 /** The shipped frontier homestead's world (worlds.ts `frontier-planet`). */
@@ -286,6 +287,17 @@ describe("⑥ the age-0 stand, measured", () => {
   it("…and the timber that comes with it", () => {
     // The other half of the mount's note: ~867 wood on the rect (seven houses'
     // worth on untouched ground), ~81 inside the age-0 disc.
+    //
+    // ⚖️ MOVED 2026-09-06 — THE NEW-GROWTH AUTHORITY (products.ts
+    // `standGrowthClass`), and this is the round's headline economy number.
+    // The COUNT is untouched (54 oaks on every seed, pinned above — the density
+    // law is the only authority on how many), but the stand is no longer
+    // ALL-MATURE: ~1/12 of it is sapling (yieldMul 0) and ~1/12 young (0.25),
+    // so the standing timber is `standYieldFraction("oak")` of what it was.
+    // MEASURED over the same 400 seeds: 867.0 → 747.7 on the rect (×0.862),
+    // 81 → 70 inside the age-0 disc. Nothing was tuned to hit these; they are
+    // the ladder's own arithmetic, and the ratio is asserted below against the
+    // authority so the two can never drift apart.
     const woodIn = (r?: number): number => {
       let total = 0;
       for (let s = 0; s < N; s++) {
@@ -298,10 +310,17 @@ describe("⑥ the age-0 stand, measured", () => {
       }
       return total / N;
     };
-    expect(woodIn()).toBeGreaterThan(820);
-    expect(woodIn()).toBeLessThan(910);
-    expect(woodIn(nearStandRadiusM(STREET_CLOCK, 0))).toBeGreaterThan(70);
-    expect(woodIn(nearStandRadiusM(STREET_CLOCK, 0))).toBeLessThan(95);
+    expect(woodIn()).toBeGreaterThan(710);
+    expect(woodIn()).toBeLessThan(790);
+    expect(woodIn(nearStandRadiusM(STREET_CLOCK, 0))).toBeGreaterThan(60);
+    expect(woodIn(nearStandRadiusM(STREET_CLOCK, 0))).toBeLessThan(85);
+    // 🚨 THE RATIO IS THE AUTHORITY'S OWN, not a re-baselined constant: the
+    // measured rect total divided by the all-mature 867.0 must land on
+    // `standYieldFraction("oak")` (0.854) to within the roll's rounding.
+    expect(woodIn() / 867.0).toBeCloseTo(standYieldFraction("oak"), 1);
+    // …and the 120-block house stays FUNDABLE off one rect of untouched
+    // frontier: 747 wood ÷ `effectiveInPerOut(2, dial)` = 373 blocks ≥ 120.
+    expect(Math.floor(woodIn() / effectiveInPerOut(2, 1))).toBeGreaterThanOrEqual(120);
   });
 });
 

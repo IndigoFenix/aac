@@ -113,6 +113,7 @@ import {
   isInteriorCandidate,
   markPieceSetUp,
   nextPlacedSerial,
+  orderDone,
   pendingRoomKindOf,
   pileEntries,
   placeFurniture,
@@ -150,8 +151,10 @@ import {
 // THE DECIDER (contribute.ts). The import direction is host → contribute,
 // never back: every closure below reaches the decider through `contributeDeps`.
 import {
+  BAG_RETURN_GRACE_S,
   CHOP_DWELL_S,
   CONTRIBUTE_TPL_KEY,
+  bodyNeedsOn,
   cidOfPullHolder,
   claimSeat,
   fellSiteId,
@@ -159,6 +162,7 @@ import {
   isContributePursuit,
   pullLaborOn,
   releaseSeats,
+  sliceOutcome,
   type ContributeBill,
   type FellRow,
 } from "@shared/world-engine/kernel/town/pull-labor.js";
@@ -166,8 +170,10 @@ import {
   decideCollect,
   decideContribution,
   hoverSalience,
+  visibleBills,
   type ContributeDeps,
 } from "./contribute.js";
+import { conservationBreach, graduationPlan, graduationSouls } from "./graduation.js";
 import {
   ANNEX_ORDER,
   resolveStructureFocus,
@@ -264,10 +270,15 @@ import {
 import {
   CANT_HERE,
   cutFirstLine,
+  NO_BOND,
+  NOBODY_HERE,
+  notDoingLine,
   ORDER_OK,
   WHO_DO_YOU_MEAN,
+  WONT_HELP_YOU,
 } from "@shared/world-engine/interaction/dialogue/host-lines.js";
 import { noStock, type LeveledGlyphs } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
+import { loadSetDownLine } from "@shared/world-engine/interaction/dialogue/construction-lines.js";
 import type { BuildingSpec } from "@shared/world-engine/index.js";
 import {
   buildingIdOfRoomId,
@@ -348,7 +359,7 @@ import {
 // ⚖️ #49 — THE NEIGHBOURING STANDS: the record tier for never-loaded ground.
 // The mint is PURE (see its own header); the host owns only where it is called
 // and which keys it installs.
-import { mintNeighborStands, NEIGHBOR_TILE_M } from "./neighbor-stands.js";
+import { mintNeighborStands, neighborTileIndex, NEIGHBOR_TILE_M } from "./neighbor-stands.js";
 // ⚖️ F1 (fold-round.md) — the ONE fold's generic accounting: `foldedStock`
 // sums a registered kind's own `stockOf` over a set of folded payloads, so
 // `sessionStockAudit` below no longer hand-rolls the wild-only formula
@@ -386,6 +397,7 @@ import {
 import {
   mealOffset,
   scheduledHunger,
+  scheduledEnergy,
   MEAL_PERIOD_SEC,
 } from "@shared/world-engine/kernel/town/activity.js";
 import type {
@@ -450,6 +462,9 @@ import {
   type TierPoint,
   type ViewPoint,
 } from "../../creatures/view-tiers.js";
+// 🌳 The occluder record's shape (pure — spirit/occluders.ts holds the geometry
+// the DRIVER runs; the host only publishes candidates and consumes the answer).
+import type { OccluderBody } from "../../spirit/occluders.js";
 import { growthHeightFactor } from "../../creatures/growth.js";
 import {
   outfitPresetFor,
@@ -463,6 +478,7 @@ import {
 import { DEFAULT_BODY_RADIUS_M, SPARK_SPECIES_ID, listSpecies, requireSpecies, speciesBodyRadius, speciesCanSpeak } from "../../creatures/species.js";
 import {
   drinkGlyphs, foodPlants, glyphTakeableFrom, growthAgeOf, growthClassYield, isBodyProduct, naturalSourceOf, sourceIsConsumable,
+  wildFoodPlants,
   sourceIsCuttable, sourceIsSubstantial,
   sourceSpent, sourceSuitabilityAt, sourcesForGood, takeUnitsOf,
   type ClimateSample, type NaturalSource,
@@ -501,6 +517,9 @@ import {
   looseIds,
   looseCount,
   wornBagOf,
+  setFoldedCarry,
+  clearFoldedCarry,
+  foldedCarryOf,
 } from "@shared/world-engine/kernel/town/containers.js";
 // WHAT BAGS THE WORLD STARTS WITH (step ③, the seeding half). Pure data — the
 // glyph, the spot and the owner. Minting them is this host's business.
@@ -541,6 +560,7 @@ import {
   type ScopeId,
   type ScopeNode,
   type ScopeStockInput,
+  WILD_PREFIX,
 } from "@shared/world-engine/kernel/town/scope.js";
 import { genderFor } from "@shared/world-engine/interaction/behavior/gender.js";
 import { createGlyphImageSource } from "../../glyph-images.js";
@@ -665,6 +685,10 @@ import {
   type IntentLineSyms,
   defaultBinder,
   parseSentence,
+  // W2-5/gap 6 — the verb FAMILY collapse ("eat"/"drink"/"bite" are one act), so
+  // a precondition asked about the child's word is answered by the body's.
+  canonicalVerb,
+  type Precondition,
   type IntentFrame,
   type Ref,
   intentToAct,
@@ -715,6 +739,12 @@ import {
   preferredOf,
   provisionTemplate,
   socialTemplate,
+  // ⚖️ THE SOCIAL THIRD (S-3) — standing and security as body needs.
+  standingTemplate,
+  securityTemplate,
+  deference,
+  regardFacts,
+  priorFromRegard,
   thirstTemplate,
   wasteTemplate,
   hygieneTemplate,
@@ -798,6 +828,34 @@ import { needPursuitGoals, tasteBonusS } from "@shared/world-engine/interaction/
 // barrel: the barrel exports the decision, not its arithmetic, and widening it
 // for one caller would invite a second pricing seat.
 import { intentCost, rowValueS } from "@shared/world-engine/interaction/behavior/needs.js";
+// ⚖️ BODY-ANCHORED NEEDS (body-needs-round.md D1) — the lazy per-body meter and
+// the homeless body's row set. Imported from the module, like the pricing pair
+// above and for the same reason: the barrel exports decisions, not storage.
+// ⚖️ THE POLITICS SUBSTRATE (interpersonal-politics.md S-4). Imported from the
+// module rather than the `interaction` barrel because the barrel does not carry
+// it — and deliberately so: `applySocialAct` (this file, the hug/play door) and
+// `applySocialEvent` (that module, the book/belief/need door) are different
+// functions in different layers, and the explicit path is what keeps them from
+// being confused for one another at the call site.
+import {
+  SECURITY_ALLY_AT,
+  STANDING_DEFER_AT,
+  WITNESS_CAP,
+  applySocialEvent,
+  orderOutcomeParties,
+  orderWindowOutcome,
+  type SocialAct,
+  type SocialOutcome,
+} from "@shared/world-engine/interaction/behavior/social-acts.js";
+import {
+  REST_QUALITY,
+  bodyNeedCrossingAt,
+  bodyNeedLevel,
+  bodyNeedSatisfy,
+  bodyNeedTemplates,
+  restClear,
+  type BodyNeedRow,
+} from "@shared/world-engine/interaction/behavior/body-needs.js";
 import {
   driveValueS,
   goodsValueS,
@@ -847,6 +905,15 @@ import {
   type CohortHouseCandidate,
   type CohortRates,
 } from "@shared/world-engine/kernel/town/population.js";
+import {
+  foldNeedMeans,
+  needGoodKeyOf,
+  unfoldNeedLevel,
+} from "@shared/world-engine/kernel/town/cohort-needs.js";
+import {
+  foldHouseRegard,
+  projectHouseRegard,
+} from "@shared/world-engine/kernel/town/regard-prior.js";
 import { cityHudView, type CityHudChip } from "@shared/world-engine/interaction/quest/city-hud.js";
 export type { CityHudChip } from "@shared/world-engine/interaction/quest/city-hud.js";
 import { familyStateOf, type FamilyHudEntry } from "@shared/world-engine/interaction/quest/family-hud.js";
@@ -964,7 +1031,7 @@ const TRANSFER_MAX_SOURCES = 3;
 const NOT_UNDERSTOOD_LINE = "i_me + understand.not";
 /** A household member's standing toward its GUIDING SPIRIT — real authority
  *  (shared by the placement gate and the task pool's volunteer gate). */
-const FAMILY_RELATION: Relation = { affinity: 0.5, trust: 0.8, authority: 0.8 };
+const FAMILY_RELATION: Relation = { affinity: 0.5, trust: 0.8, authority: 0.8, fear: 0 };
 
 /**
  * THE AUTHORED PLAYER STANDING (multi-entity-conversations.md §2 decision 2) —
@@ -1024,8 +1091,9 @@ import {
   mealDrawPlan,
   ingestMeterAfter,
 } from "@shared/world-engine/kernel/town/goods-kinds.js";
-import { designatedContainerId, livesOnTheFloor } from "@shared/world-engine/kernel/town/container-home.js";
+import { BAG_HOME_REACH_M, designatedContainerId, livesOnTheFloor } from "@shared/world-engine/kernel/town/container-home.js";
 import {
+  forageRadiusM,
   needFillS,
   needRate,
   restDwellS,
@@ -1486,6 +1554,11 @@ export interface QuestSession {
    *  re-spawns the prop under the SAME object id so its stock is never
    *  orphaned. */
   wornBagIndex: Map<string, string>;
+  /** cid → the prop that folded out of its HANDS when the streamer condensed
+   *  that body (mount `"folded"`; `containers.ts setFoldedCarry`). The hands'
+   *  twin of `wornBagIndex`, and the one legal home for a load whose carrier
+   *  has left the streamed world — see `foldBodyCarry`/`unfoldBodyCarry`. */
+  foldedCarryIndex: Map<string, string>;
   /** Containers PINNED open by an explicit "open the chest" command — they stay
    *  open with nobody near (the auto-close sweep skips them), until "shut". An
    *  access-opened lid (a creature reaching in) is NOT pinned: it shuts when the
@@ -1520,6 +1593,31 @@ export interface QuestSession {
    *  LOAD (seed chests from the schedule) and UNLOAD (re-anchor the schedule from the
    *  chests), the §13a.3 handoff. */
   needMeters: Map<string, number>;
+  /** ⚖️ BODY-ANCHORED NEEDS (body-needs-round.md D2) — the OTHER storage
+   *  discipline, for bodies `needMeters` cannot represent.
+   *
+   *  `needMeters` above is a per-frame accumulator that exists only while a
+   *  HOUSEHOLD is on show and is DELETED when it is not, because the schedule's
+   *  closed form stands in off-screen. A settler has no household and no
+   *  schedule, so under that discipline it can only be needless — which is
+   *  exactly the artifact this map removes: `cid → tplKey → { level, at }`, a
+   *  level stamped with the sim second it was true at, read as a closed form
+   *  whenever anybody asks (`bodyNeedLevel`) and never ticked. Idle is idle,
+   *  shown or not.
+   *
+   *  🚨 ONE ROW PER BODY PER KEY, AND NEVER BOTH. `needLevelOf`/`creditNeed`
+   *  are the one door: a key that exists in `needMeters` resolves THERE and
+   *  this map is not consulted, so every dollhouse read and write is byte-
+   *  identical to the day before this field existed. Rows live here for
+   *  settlers only this round (U3 — residents keep the accumulator, and the
+   *  accessor makes migrating them a mechanical swap later).
+   *
+   *  `bodyNeedDorm` (cid → sim second) is the settlers' half of
+   *  `needDecideDorm`: because a lazy row's crossing is CLOSED FORM
+   *  (`bodyNeedCrossingAt`), a settler sleeps until the second its own earliest
+   *  need can fire instead of re-deciding on a cap. */
+  bodyNeeds: Map<string, Map<string, BodyNeedRow>>;
+  bodyNeedDorm: Map<string, number>;
   /** HOUSEHOLD ERRAND CLAIMS ("<houseIndex>|<tplKey>" → the member on it).
    *  An `exclusive` need template (restocking) is a job the HOME wants done
    *  once, not once per body: it is OPEN to every member, but the first to act
@@ -2832,6 +2930,31 @@ export interface QuestHost3D {
    *  re-anchoring the bands per scheme. Omit them (or feed a driverless host
    *  nothing at all) and the metre pick runs exactly as before. */
   setViewPoint(pt: ViewPoint | null): void;
+  /** 🌳 OCCLUDERS — RENDER-ONLY, PER-VIEWER (user, 2026-09-06: *"nearby trees
+   *  can block the view. Maybe render them as outlines if they're blocking the
+   *  camera"*).
+   *
+   *  `occluderCandidates` publishes the bodies that COULD stand in the way (the
+   *  session's standing `flora:` bodies, with the same stage-aware height the
+   *  LOD ladder and the model factory read); the DRIVER owns the camera, the
+   *  focus and the geometry (`spirit/occluders.ts`), and pushes back the ids it
+   *  found in the way. The host then holds those bodies at the `stick`
+   *  SILHOUETTE rung through its ordinary re-tier drain and asks the view to
+   *  draw that silhouette hollowed out.
+   *
+   *  ⚖️ THE SIM NEVER HEARS ABOUT IT. Nothing here writes session state, moves a
+   *  body or changes what is selectable — a forced tier is a fidelity, and
+   *  which bodies are in the way depends entirely on where THIS viewer's camera
+   *  is ([LOD per-camera]). `null`/empty releases every outline. */
+  occluderCandidates(): OccluderBody[];
+  setOccluders(ids: readonly string[] | null): void;
+  /** The BODY the local gaze is resting on right now, or null. The host's own
+   *  settled hover (`world.getGaze().hover`), published so the driver can spare
+   *  it from the occluder rule — a tree the player is pointing at has to stay
+   *  fully drawn and selectable. 🚫 A driver must NOT re-pick this itself:
+   *  exactly one engine may compute a hover, or two of them will disagree about
+   *  what is lit (the external-cursor law). Cheap — a stored read, no raycast. */
+  hoveredBodyId(): string | null;
   /** SPIRIT LADDER: the cursor target the view computed on its last render
    *  while the external-cursor opt-out is on — WORLD coords into `out`, null
    *  when there is none (no gaze, opt-out off, or no 3D view yet). */
@@ -3806,6 +3929,10 @@ function makeTownModelFactory(
  *  moment — full and stick trees side by side at the same distance, with no
  *  distance that fixes it. The capsule exclusion now lives at the capsule swap
  *  itself, which is the only consumer that ever wanted it. */
+/** The shared empty occluder set — a host with no driver (text mode, every
+ *  headless test) never allocates one, and `setOccluders(null)` is free. */
+const EMPTY_OCCLUDERS: ReadonlySet<string> = new Set<string>();
+
 function retieringBodyId(id: string): boolean {
   return (
     id.startsWith("resident_") ||
@@ -4069,6 +4196,7 @@ export function makeQuestSession(
     selectedPocketGlyph: null,
     containerRecords: new Map(),
     wornBagIndex: new Map(),
+    foldedCarryIndex: new Map(),
     containerPinned: new Set(),
     marketStore: new Map(),
     marketConsumed: new Map(),
@@ -4076,6 +4204,8 @@ export function makeQuestSession(
     chatClock: 0,
     chatCooldown: new Map(),
     needMeters: new Map(),
+    bodyNeeds: new Map(),
+    bodyNeedDorm: new Map(),
     errandClaims: new Map(),
     needClaims: createReservationLedger(),
     needStep: new Map(),
@@ -4809,6 +4939,47 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (spiritFrame) return { x: spiritFrame.x + spiritFrame.w / 2, y: spiritFrame.y + spiritFrame.h / 2 };
     return playerBody() ?? null;
   };
+  /** 🌳 OCCLUDERS — the bodies the LOCAL viewer has to see past (user,
+   *  2026-09-06: *"nearby trees can block the view. Maybe render them as
+   *  outlines if they're blocking the camera"*). Pushed per frame by the driver,
+   *  which owns the camera and the focus and runs the geometry
+   *  (`spirit/occluders.ts`); the host's only job is to make them the SILHOUETTE
+   *  rung, which is what an outline is drawn from.
+   *
+   *  ⚖️ A FORCED TIER, NOT A WRITTEN ONE. `bodyTiers` is deliberately left
+   *  alone: the projected-size band keeps tracking underneath, so when a tree
+   *  stops occluding it returns to whatever rung its size on screen earns, with
+   *  no re-seed and no flap. Render-only, per-viewer, never sim ([LOD
+   *  per-camera]). */
+  let occluders: ReadonlySet<string> = EMPTY_OCCLUDERS;
+  /** The rung an occluder is held at. `stick` IS the unlit silhouette tier, and
+   *  the outline is that silhouette hollowed out in the fragment shader — one
+   *  geometry, one bake cache, no second model path. */
+  const OCCLUDER_TIER: CreatureTier = "stick";
+  /** The EFFECTIVE tier of a body: the coarsest of the three claims on it — its
+   *  own projected band, the town clamp, and the occluder force. Written once
+   *  here so `tierOf` and `setOccluders`'s "did this body actually change?"
+   *  filter can never disagree about what a body is wearing. */
+  const effectiveTier = (id: string, band: CreatureTier, town: CreatureTier): CreatureTier => {
+    let t = TIER_RANK[band] > TIER_RANK[town] ? band : town;
+    if (occluders.has(id) && TIER_RANK[OCCLUDER_TIER] > TIER_RANK[t]) t = OCCLUDER_TIER;
+    return t;
+  };
+  /** One body's occluder state changed: queue the model rebuild ONLY if that
+   *  actually moves its effective tier (a tree already at `stick` for distance
+   *  needs no rebuild — just the material), and tell the view either way. The
+   *  rebuild rides the SAME 2-per-frame `retierQueue` drain everything else
+   *  does, so a camera sweeping past a row of trunks can never rebuild a stand
+   *  in one frame. */
+  const requeueOccluder = (id: string, on: boolean): void => {
+    const band = bodyTiers.get(id) ?? "full";
+    // `effectiveTier` reads the LIVE `occluders`, which has already been swapped
+    // — so compute the other side by hand rather than by mutating it back.
+    const without = TIER_RANK[band] > TIER_RANK[creatureTier] ? band : creatureTier;
+    const withForce = TIER_RANK[OCCLUDER_TIER] > TIER_RANK[without] ? OCCLUDER_TIER : without;
+    if (without !== withForce && !retierQueue.includes(id)) retierQueue.push(id);
+    questView?.setAvatarOutline?.(id, on);
+  };
   /** The tier a body BUILDS at — read by the model factory per id. A first
    *  query seeds from live distance (no hysteresis) so a far spawn builds
    *  cheap immediately instead of full-then-rebuilt. */
@@ -4820,7 +4991,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       b = focus && bd ? seedBodyTierAt(id, tierDistanceM(focus, bd), projectingFov()) : "full";
       bodyTiers.set(id, b);
     }
-    return TIER_RANK[b] > TIER_RANK[creatureTier] ? b : creatureTier;
+    return effectiveTier(id, b, creatureTier);
   };
   /** CLOCK-ERRAND ROUTE QUEUE (view-distance-lod-tiers.md): trips emitted by
    *  the stage streamer wait here (per body — a fresh trip replaces a stale
@@ -6149,6 +6320,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Directed relations, warmed by exchanges and gifts (neutral until then).
       relationOf: (observer: string, subject: string) =>
         session.relations.get(`${observer}|${subject}`) ?? DEFAULT_RELATION,
+      // ⚖️ S-5 — the yield rung's exposure term. `witnessedBy` asks whether the
+      // REQUESTER could see the owner refuse; nothing else about a threat is a
+      // dialogue question.
+      certaintyOf: (owner: string, requester: string) => witnessedBy(session, requester, owner),
+      // ⚖️ S-4 — the request path's social verdicts, applied HERE because only
+      // the host owns the book, the eyes and the meters.
+      onSocialAct: (a: {
+        // 🙏 `thank` is DELIBERATELY ABSENT, and the absence is load-bearing.
+        // The dialogue layer widened this union so its `thank` arm could emit
+        // (creature-dialogue.ts) — but a thank is the SPEAKER's act, and the
+        // speaker's acts are booked once, at `applySpokenSocialAct`, off the
+        // RECORDED utterance. Booking here as well would fire `[social] thank`
+        // twice for one 🙏 (measured), and this seat is the RESPONDER's: it
+        // never runs when a floor utterance goes unanswered, so it would also
+        // silently drop the ones nobody replies to. One act, one seat.
+        kind: "yield" | "request-granted" | "request-refused" | "thank";
+        actor: string;
+        addressee: string;
+        route?: "L" | "C";
+      }) => {
+        if (a.kind === "thank") return; // booked by applySpokenSocialAct — see above
+        emitSocial(session, {
+          kind: a.kind,
+          actor: a.actor,
+          addressee: a.addressee,
+          ...(a.route ? { route: a.route } : {}),
+          witnesses: witnessesOf(session, a.actor, a.addressee),
+        });
+      },
     };
   }
 
@@ -6308,6 +6508,332 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const key = `${x}|${y}`;
       session.relations.set(key, nudgeRelation(session.relations.get(key) ?? DEFAULT_RELATION, delta));
     }
+  }
+
+  // ── ⚖️ THE SOCIAL SUBSTRATE'S HOST DOOR (interpersonal-politics.md S-7) ────
+  //
+  // `warmRelations` above is SYMMETRIC by construction, which is exactly right
+  // for the six exchanges that call it and exactly wrong for politics: being
+  // obeyed and obeying are not the same edge, and an audience's edge is neither.
+  // So the substrate gets its own four functions, and `warmRelations` is not
+  // touched — its eight sites, and the dollhouse bench that runs through them,
+  // stay byte-identical.
+
+  /** ⚖️ HOW MANY TIMES A `fear` EDGE HAS BEEN WRITTEN. The security row's rate
+   *  is scaled by the body's EXPOSURE (its highest fear toward anyone), which is
+   *  a fold over `session.relations` — too expensive to walk per body per frame
+   *  and far too cheap to walk when nothing has changed. Bumped by
+   *  `nudgeDirected` on any delta that carries fear; read as a memo key. */
+  let fearEpoch = 0;
+
+  /** ONE DIRECTION ONLY: `observer`'s attitude toward `subject` moves, and
+   *  nothing else does. The seed is `relationToward` rather than
+   *  `DEFAULT_RELATION` (which is what `warmRelations` uses) for one reason: a
+   *  household member's book row does not EXIST until something writes it, and
+   *  seeding from the default would silently DEMOTE a family bond — or an
+   *  authored `meta.playerRelation` — to a stranger's on the first nudge. What
+   *  the fallback chain says the relation IS today is what a delta must apply
+   *  to. */
+  function nudgeDirected(
+    session: QuestSession,
+    observer: string,
+    subject: string,
+    delta: Partial<Relation>,
+  ): void {
+    if (!observer || !subject || observer === subject) return;
+    const key = `${observer}|${subject}`;
+    session.relations.set(key, nudgeRelation(relationToward(session, observer, subject), delta));
+    if (delta.fear) fearEpoch++;
+  }
+
+  /** Where a body stands, by creature id — `null` when it is not embodied (the
+   *  spirit, a streamed-out resident). The one geometry read the witness
+   *  functions make. */
+  function socialBodyAt(cid: string): { x: number; y: number } | null {
+    const av = world?.state.avatars[avatarIdOf(cid)];
+    return av ? { x: av.x, y: av.y } : null;
+  }
+
+  /**
+   * ⚖️ WOULD DEFIANCE BE SEEN — the ONE thing `deference` asks the host about a
+   * threat (relations.ts): not how frightening the issuer is (that is already in
+   * `fear`), but whether it is WATCHING. 1 or 0, never a probability.
+   *
+   * The PLAYER/spirit is answered by `viewNear` — the session's own "is this on
+   * screen" predicate, which deliberately answers TRUE when no camera focus is
+   * known (a body with no view is assumed watched, never blindly unwatched). A
+   * creature issuer is answered by ordinary body-to-body distance.
+   *
+   * 🚨 IDENTITY GUARD: every relation in the shipped worlds carries `fear: 0`,
+   * so `deference(rel, p, { certainty: witnessedBy(...) })` returns exactly
+   * `compliance(rel, p)` whatever this answers. Migrating a gate to it can
+   * therefore not move a number until something has actually frightened somebody.
+   */
+  function witnessedBy(session: QuestSession, issuer: string, cid: string): 0 | 1 {
+    const a = socialBodyAt(cid);
+    if (!a) return 0;
+    if (isPlayerCid(issuer)) return viewNear(session, a, a) ? 1 : 0;
+    const b = socialBodyAt(issuer);
+    if (!b) return 0;
+    return Math.hypot(a.x - b.x, a.y - b.y) <= VIEW_RADIUS ? 1 : 0;
+  }
+
+  /**
+   * WHO SAW IT — the witness list `applySocialEvent` prices its bystander column
+   * over. TWO sources, unioned, because eyes are not the only way a room learns
+   * something: everybody in EITHER party's conversation circle (they are
+   * listening, wall or no wall) plus every body standing within `VIEW_RADIUS` of
+   * the ACTOR (they are looking).
+   *
+   * Parties are removed here as well as in the pure module (a party that also
+   * counted as a witness would collect its edge twice), the list is NEAREST
+   * FIRST — the cap drops the people at the back, who genuinely did not see it —
+   * and ties break on the id, so a replay of the same seed produces the same
+   * list. 🚨 No `Math.random`, and no set-iteration order reaches the output.
+   */
+  function witnessesOf(
+    session: QuestSession,
+    actor: string,
+    addressee: string,
+    cap: number = WITNESS_CAP,
+  ): string[] {
+    const from = socialBodyAt(actor);
+    const seen = new Map<string, number>(); // cid → distance from the actor
+    const consider = (cid: string): void => {
+      if (!cid || cid === actor || cid === addressee) return;
+      if (seen.has(cid)) return;
+      const at = socialBodyAt(cid);
+      // A circle member with no body (the spirit) still HEARD it — it sorts
+      // last rather than being dropped, because a bodiless listener is exactly
+      // the guiding spirit and it is the one witness that is always present.
+      seen.set(cid, at && from ? Math.hypot(at.x - from.x, at.y - from.y) : Number.POSITIVE_INFINITY);
+    };
+    for (const party of [actor, addressee]) {
+      const c = conversationOf(party);
+      if (!c) continue;
+      for (const m of c.convo.members) consider(m.id);
+    }
+    if (from && world) {
+      for (const [bodyId, av] of Object.entries(world.state.avatars)) {
+        if (bodyId === PLAYER_ID) continue; // the spirit joins as a circle member, never as a body
+        if (Math.hypot(av.x - from.x, av.y - from.y) > VIEW_RADIUS) continue;
+        consider(creatureOfAvatar(bodyId) ?? bodyId);
+      }
+    }
+    return [...seen.entries()]
+      .sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, Math.max(0, cap))
+      .map(([cid]) => cid);
+  }
+
+  /**
+   * APPLY what the pure module decided — the three lists, through the three
+   * doors the host already owns: `nudgeDirected` for the book, `perceiveFact`
+   * for what people believe, `creditNeed` for whose need was met.
+   *
+   * ⚠️ A CREDIT WITH NO ROW IS A NO-OP, deliberately, and that is inherited
+   * rather than re-decided here: `creditNeed`'s own law is that a body without
+   * a meter is not GIVEN one by being satisfied. So the dollhouse — which
+   * carries no standing/security row — silently ignores those two credits even
+   * if an act ever reached it.
+   */
+  function applySocialOutcome(session: QuestSession, outcome: SocialOutcome): void {
+    for (const n of outcome.nudges) nudgeDirected(session, n.observer, n.subject, n.delta);
+    const cworld = session.creatures?.world;
+    if (cworld) {
+      for (const f of outcome.facts) {
+        // The same conditional ensure the show/give/converse paths make — a
+        // resident or pet that has never been spoken to has no mind row yet.
+        if (f.viewer.startsWith("resident_")) ensureResidentCreature(session, f.viewer);
+        else if (isPetCid(f.viewer)) ensurePetCreature(session, f.viewer);
+        if (!cworld.creatures[f.viewer]) continue; // the spirit, a bare body — nothing to write into
+        perceiveFact(cworld, f.viewer, f.fact);
+      }
+    }
+    for (const c of outcome.credits) {
+      creditNeed(
+        session,
+        c.cid,
+        c.key,
+        c.delta !== undefined ? needLevelOf(session, c.cid, c.key) + c.delta : (c.levelAfter ?? 0),
+      );
+    }
+  }
+
+  /**
+   * THE ONE SEAT a social act passes through. Reads the book, prices the act
+   * (pure), applies the result, and says ONE line about it.
+   *
+   * ⚖️ THE FIRST BOND STEP (Stage 2): when the ACTOR is the body the player is
+   * possessing, the act's AUTHOR is the player — the hands that moved earn the
+   * affinity, the spirit that moved them earns the trust and the authority.
+   * `applySocialEvent` refuses to write a self-edge, so a possessed body acting
+   * on its own behalf still costs nothing.
+   */
+  function emitSocial(session: QuestSession, act: SocialAct): void {
+    const author =
+      act.author ??
+      (possession.creatureId && act.actor === possession.creatureId ? LOCAL_PLAYER_CID : undefined);
+    const full: SocialAct = { ...act, ...(author ? { author } : {}) };
+    applySocialOutcome(
+      session,
+      applySocialEvent(full, (o, s) => relationToward(session, o, s), { mood: creatureMood }),
+    );
+    console.log(
+      `[social] ${full.kind} ${full.actor}→${full.addressee} by=${full.author ?? "-"} route=${full.route ?? "-"} wit=${full.witnesses.length}`,
+    );
+  }
+
+  /** ⚖️ WHICH ROUTE ADMITTED EACH LIVE POOL CLAIM — `taskId → "L" | "C"`, written
+   *  when the volunteer gate passed and read (and reaped) at the completion.
+   *  Host-local rather than session state on purpose: it is meaningless outside
+   *  the window between a claim and its outcome, and nothing serialises it. */
+  const taskRoutes = new Map<string, "L" | "C">();
+
+  /** ⚖️ IS THERE A PERSON BEHIND THIS ISSUER STRING (M1 skip ③)? A player cid,
+   *  a creature row, or a body on the ground. `"world"` and every synthetic
+   *  site/bill id answer no. */
+  function issuerIsPerson(session: QuestSession, issuer: string): boolean {
+    return isPlayerCid(issuer) || !!session.creatures?.world.creatures[issuer] || !!socialBodyAt(issuer);
+  }
+
+  /** ⚖️ WHICH ROUTE ADMITTED A CLAIM — route "C" when the coerced term (fear,
+   *  and only where defiance would be SEEN) outweighs the earned one. Law ③
+   *  then makes the completion earn no authority at all. ONE expression, read
+   *  by the pooled gate that records it and by the slice seat that has no task
+   *  row to record it on. */
+  function claimRoute(session: QuestSession, actor: string, issuer: string): "L" | "C" {
+    const rel = relationToward(session, actor, issuer);
+    const coerced = Math.min(1, Math.max(0, rel.fear)) * witnessedBy(session, issuer, actor);
+    return coerced > compliance(rel, creatureMood(actor)) ? "C" : "L";
+  }
+
+  /**
+   * ⚖️ M1 — AUTHORITY IS EARNED BY OUTCOME (influence-and-authority.md M1). The
+   * seat is any moment the engine knows WHO asked, WHO did it, and WHETHER it
+   * happened: a pooled task retiring, and — since the round lead's ruling on
+   * P-S3-1 — a spoken pull SLICE dying with its agreement done or released.
+   *
+   * The three skips are `orderOutcomeParties` (social-acts.ts) and are shared
+   * with every other seat rather than re-argued here.
+   *
+   * `routeHint` is for a caller with no task row to have recorded a route on
+   * (the slice seat): `taskRoutes` still wins where it has an entry, so the
+   * route recorded when the gate PASSED is never overwritten by a recomputation
+   * at the completion, by which time the relation may have moved.
+   */
+  function emitOrderOutcome(
+    session: QuestSession,
+    task: { id: string; issuer: string; claimedBy?: string | null; spoken?: boolean },
+    kind: "order-done" | "order-failed",
+    routeHint?: "L" | "C",
+  ): void {
+    const route = taskRoutes.get(task.id) ?? routeHint ?? "L";
+    taskRoutes.delete(task.id);
+    const parties = orderOutcomeParties(task, issuerIsPerson(session, task.issuer));
+    if (!parties) return;
+    emitSocial(session, {
+      kind,
+      actor: parties.actor,
+      author: parties.author,
+      addressee: parties.author, // the order's other party IS the one who asked for it
+      route,
+      witnesses: witnessesOf(session, parties.actor, parties.author),
+    });
+  }
+
+  /**
+   * ⚖️ S-6/S-5 — A SPOKEN ACT THAT IS ALSO A SOCIAL EVENT. S2 produces the four
+   * act kinds (`praise`, `insult`, `yield`, 🙏 `thank`) and tags the climb-down
+   * (`agree` + `yielded`); this is the ONE place the host turns them into book
+   * movement, because a sentence is not an event until somebody it was said to
+   * heard it.
+   *
+   * 🙏 `thank` joined them when the board learned to say it (wave 2): it is a
+   * SPEAKER's act like the other three — the child thanks somebody — so it is
+   * booked from the recorded utterance here, on the same path the player's
+   * praise takes and the same path an NPC's would if `thank` ever left
+   * `NON_SPEAKER_ACTS`. The dialogue layer's `onSocialAct` deliberately does NOT
+   * re-emit it (see `creatureProjectionOpts`): that seat is the RESPONDER's and
+   * would both double-book and drop the unanswered ones.
+   *
+   * 🚨 NEVER GUESS A VOCATIVE. An utterance with no resolved addressee produces
+   * NO act — not a quieter one, not one aimed at the nearest body. S2's own
+   * parse refuses to invent one and so does this.
+   *
+   * ⚖️ THE TABOO GATE IS THE VERB GATE (ruling ②, S-7). `insult` is spoken with
+   * the word `mean`, so it passes through exactly the `governingLaw` check a
+   * forbidden VERB passes through — same book, same area specificity, same
+   * `tabooRefusalLine`. No second mechanism, and a world whose
+   * `culture.absolutes` names `mean` refuses it in every language for free.
+   */
+  function applySpokenSocialAct(
+    session: QuestSession,
+    speakerCid: string,
+    act: DialogueAct,
+    addresseeIds: readonly string[] | undefined,
+  ): void {
+    const kind = act.kind;
+    const yielded = kind === "agree" && (act as { yielded?: boolean }).yielded === true;
+    if (kind !== "praise" && kind !== "insult" && kind !== "yield" && kind !== "thank" && !yielded) {
+      return;
+    }
+    // The resolved partner, and nothing else. A floor utterance (no addressee)
+    // in a circle of three names nobody, so there is nobody to praise.
+    const addressee = addresseeIds && addresseeIds.length === 1 ? addresseeIds[0]! : undefined;
+    if (!addressee || addressee === speakerCid) return;
+    if (kind === "insult") {
+      const law = governingLaw(lawsInForce(session), "mean", lawAreaTest(session, speakerCid));
+      if (law) {
+        const line = tabooRefusalLine("mean")[session.meta.syntax];
+        if (session.creatures?.nodeByCreature.has(speakerCid) && !isPlayerCid(speakerCid)) {
+          npcChatBubble(session, speakerCid, line);
+        } else {
+          presenter.toast(`💬 ${npcStatement(line)}`, "feedback");
+        }
+        return;
+      }
+    }
+    emitSocial(session, {
+      // ⚖️ S-5 — a YIELD's route: the player yielding by SAYING so ("you leader",
+      // or agreeing after refusing) is the EARNED route by construction. Nobody
+      // was threatened; giving way in words is recognition, which is what "L"
+      // means. The coerced route is only ever reached through the request path,
+      // where `yieldRoute` weighs a real fear against a real earned claim.
+      kind:
+        kind === "praise" || kind === "insult" || kind === "thank" ? kind : "yield",
+      actor: speakerCid,
+      addressee,
+      ...(kind === "yield" || yielded ? { route: "L" as const } : {}),
+      witnesses: witnessesOf(session, speakerCid, addressee),
+    });
+  }
+
+  /**
+   * WHAT PART OF A SOCIAL ACT THE SITE DID NOT ALREADY WRITE. Gifts and helps
+   * already warm both party edges at their own sites (`giftResidentGood`,
+   * `applySocialAct`), and those sites are BENCH-PINNED — so re-emitting the
+   * whole act would double the party nudge.
+   *
+   * This applies the act MINUS the two party edges: the witness fan-out and the
+   * author edge (law ②: the leader who called for the help is trusted for it),
+   * which is exactly the half no site writes today. Facts and credits pass
+   * through untouched — no site writes those either.
+   */
+  function emitSocialWitnessesOnly(session: QuestSession, act: SocialAct): void {
+    const author =
+      act.author ??
+      (possession.creatureId && act.actor === possession.creatureId ? LOCAL_PLAYER_CID : undefined);
+    const full: SocialAct = { ...act, ...(author ? { author } : {}) };
+    const outcome = applySocialEvent(full, (o, s) => relationToward(session, o, s), { mood: creatureMood });
+    const parties = new Set([full.actor, full.addressee]);
+    applySocialOutcome(session, {
+      ...outcome,
+      nudges: outcome.nudges.filter((n) => !(parties.has(n.observer) && parties.has(n.subject))),
+    });
+    console.log(
+      `[social] ${full.kind} ${full.actor}→${full.addressee} by=${full.author ?? "-"} route=${full.route ?? "-"} wit=${full.witnesses.length}`,
+    );
   }
 
   /**
@@ -6912,6 +7438,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (need) need.fulfilled = true;
     // Kindness is remembered — the receiver warms toward the giver.
     warmRelations(session, cid, giver, { affinity: 0.1, trust: 0.05 });
+    // ⚖️ S-4 — …AND EVERYONE WHO SAW IT LEARNED SOMETHING. The line above is
+    // BENCH-PINNED and stays exactly as it is; what it cannot write is the half
+    // that is not about the two of them — the bystanders' smaller edge toward
+    // the giver, and (law ②) the AUTHOR's when the hands that gave were somebody
+    // else's. `emitSocialWitnessesOnly` applies the act MINUS the party edges,
+    // so the 0.1/0.05 above is never doubled.
+    //
+    // Skipped entirely when there is nothing new to say — nobody watched and the
+    // giver acted for itself — so the common private gift costs one array build
+    // and writes nothing.
+    {
+      const witnesses = witnessesOf(session, giver, cid);
+      const authored = !!possession.creatureId && giver === possession.creatureId;
+      if (witnesses.length > 0 || authored) {
+        emitSocialWitnessesOnly(session, { kind: "gift", actor: giver, addressee: cid, witnesses });
+      }
+    }
     return true;
   }
 
@@ -8061,13 +8604,39 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     creatures.nodeByCreature.set(petCid, node);
   }
 
+  /** SOULS A GRADUATED HOUSEHOLD HOLDS, by house index (D6) — written once by
+   *  `graduateSettlers`, read by `familyExcludedMembers` below.
+   *
+   *  A CLOSURE MAP on the `seatHolders` / `pullSlices` precedent: session-lived,
+   *  never serialized, never a `QuestSession` field. The durable half of the
+   *  same fact is `config.family.house`, which graduation pins for an AUTHORED
+   *  family and which a rebuild re-reads — a family-less founding (the
+   *  homestead) has no authored row to pin, so its census falls back to
+   *  `HOUSEHOLD` after a reload. Recorded, not hidden: closing it wants a soul
+   *  count on the founded house row, which lives in `town-play.ts`. */
+  const graduatedSouls = new Map<number, number>();
+
   /** Member indices a mode-"all" family EXCLUDES in its house (roster parity
-   *  with the resident model's exclusion set). */
+   *  with the resident model's exclusion set).
+   *
+   *  ⚖️ …AND A GRADUATED FOUNDING GROUP EXCLUDES ITS OWN TAIL (D6). A house
+   *  the settlers moved into holds THE SETTLERS — three campers make a
+   *  three-soul household, not five. Answering `HOUSEHOLD` there is scout B's
+   *  double-count ③ in its purest form (five minted mouths beside the group
+   *  that actually walked in), and it is the same shape a mode-"all" family
+   *  already states, so it is stated the same way: the members past the group
+   *  were never generated. An AUTHORED family answers from `config.family`
+   *  above and never reaches this arm — its house is pinned durably at
+   *  graduation (`config.family.house`), which a rebuild re-reads. */
   function familyExcludedMembers(session: QuestSession, houseIndex: number): Set<number> | undefined {
     const fam = familyOf(session);
-    if (!fam || fam.house !== houseIndex || fam.mode !== "all") return undefined;
+    const n =
+      fam && fam.house === houseIndex && fam.mode === "all"
+        ? fam.members.length
+        : graduatedSouls.get(houseIndex);
+    if (n === undefined || n >= HOUSEHOLD) return undefined;
     const ex = new Set<number>();
-    for (let m = fam.members.length; m < HOUSEHOLD; m++) ex.add(m);
+    for (let m = n; m < HOUSEHOLD; m++) ex.add(m);
     return ex;
   }
 
@@ -8512,6 +9081,26 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     const town = session.town;
     if (!session.creatures || !town) return;
     for (const cid of session.creatures.nodeByCreature.keys()) {
+      // ⚖️ A SETTLER MIRRORS ITS BODY ROWS AND NOTHING ELSE (body-needs D3.8).
+      // The rest of this loop is HOUSEHOLD surface — a shopping duty, a chest,
+      // a roster — and a founding-group body has none of it, which is exactly
+      // why it fell out of the prefix test above and had no condition at all.
+      // Its condition is the same condition every other body's is (the firing
+      // meter, highest first); it is the household half it does not have.
+      // Without this, "how are you?" and "why?" answer nothing about a settler
+      // that is visibly asleep on the ground.
+      if (isSettlerCid(cid)) {
+        const c = session.creatures.world.creatures[cid];
+        if (!c) continue;
+        const motiveS = needFiring(session, cid, "hunger:food")
+          ? "hungry"
+          : needFiring(session, cid, "energy")
+            ? "tired"
+            : undefined;
+        if (motiveS) c.condition = motiveS;
+        else if (c.condition && MOTIVE_CONDITIONS.has(c.condition)) c.condition = undefined;
+        continue;
+      }
       if (!cid.startsWith("resident_") && !cid.startsWith("pet_")) continue;
       const houseIdx = Number(cid.split("_")[1]);
       const house = residentTownCtx(session, houseIdx)?.house; // neighbor-aware
@@ -8524,7 +9113,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // live episode. HUNGER (any member): condition "hungry" + a want-food need with a
       // because-fact ("I want food because I'm hungry") — homebodies gain the need here,
       // which also makes them giftable through the normal offer path.
-      const hungry = (session.needMeters.get(`${cid}|hunger:food`) ?? 0) >= 1;
+      const hungry = needFiring(session, cid, "hunger:food");
       let foodNeed = creature.needs.find((n) => n.target?.category === "food");
       if (hungry && !foodNeed) {
         foodNeed = { itemId: "good:food", value: 2, target: { category: "food" }, fulfilled: false };
@@ -8540,7 +9129,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // condition ONLY, no causal fact: the dialogue layer's condition+want path
       // already answers why with "I want food because I'm hungry". A quest-
       // authored condition outside this set is never touched.
-      const firing = (key: string) => (session.needMeters.get(`${cid}|${key}`) ?? 0) >= 1;
+      const firing = (key: string) => needFiring(session, cid, key);
       const motive = hungry
         ? "hungry"
         : firing("thirst:water")
@@ -9455,7 +10044,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the body re-decides on the next need tick (it keeps working while the
       // bill stands).
       if (isContributePursuit(pur)) {
-        if (!contributeStillWorking(session, cid, pur.bill)) clear();
+        // 🧺 THE HEARTBEAT (`lastPullWorkAt`): this body is working RIGHT NOW,
+        // so the basket in its hands is a tool, not clutter. Stamped here
+        // rather than at any of the dozen doors a slice can end by — one
+        // writer, and every exit is covered by simply no longer arriving.
+        lastPullWorkAt.set(cid, session.townClock);
+        bagReturnTries.delete(cid); // …and the bag-return budget refills with the work
+        if (!contributeStillWorking(session, cid, pur.bill)) {
+          // ⚖️ M1 AT THE SLICE (round-lead ruling on P-S3-1). This is the one
+          // moment a SPOKEN piece of work ends with an answer: the agreement
+          // landed its units, or the site banked its labour, or neither did.
+          // Read BEFORE `clear()`, which fails the agreement on its way out.
+          emitSliceOrderOutcome(session, cid, pur.bill);
+          clear();
+        }
         continue;
       }
       const body = state.avatars[avatarIdOf(cid)];
@@ -9613,8 +10215,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // theirs inside their own effects — rest is the one dwell whose effect
         // IS the time spent, so the completion owns the clear; a process row's
         // drive is stock/mess-shaped, no meter to clear).
+        // ⚖️ …AND WHAT IT CLEARS DEPENDS ON WHERE THE BODY LAY DOWN
+        // (body-needs D1 ④). The satisfier has a QUALITY: a named station is
+        // the proper fixture and answers the whole need (`REST_QUALITY.bed`
+        // = 1 ⇒ `restClear` returns 0 ⇒ byte-identical to the unconditional
+        // clear this line has always written), while a rest at a bare POINT is
+        // the GROUND — an affordance, not a missing bed — and leaves half the
+        // deficit behind. Bad rest is more of the day spent sleeping, not a
+        // longer nap: the dwell is world physics and is untouched.
         if (step.kind === "rest" && pur.source === "need" && pur.tplKey) {
-          session.needMeters.set(`${cid}|${pur.tplKey}`, 0);
+          const quality = restPlaceQualityOf(pur.goal);
+          // ⚖️ 0-1 — A SLEEP EPISODE IS COUNTED (politics-substrate STAGE 0).
+          // "Nobody sleeps" was measurable ONLY as an absence: this completion
+          // has always been silent, so a settler dozing on the ground and a
+          // resident going to bed left the same trace as a body that never
+          // rested at all — nothing. ONE console line, at the ONE credit door
+          // every rung already shares (a settler's ground doze and a shown
+          // resident's `rest:energy` both land here), so text mode can count
+          // episodes per body-day. Console only: no toast, no bubble, no
+          // transcript line, no HUD — the world does not change because the
+          // engine started keeping score.
+          const before = needLevelOf(session, cid, pur.tplKey);
+          const after = restClear(before, quality);
+          creditNeed(session, cid, pur.tplKey, after);
+          console.log(
+            `[needs] ${cid} slept ${quality >= REST_QUALITY.bed ? "bed" : "ground"} ` +
+              `e ${before.toFixed(2)} → ${after.toFixed(2)}`,
+          );
         }
       } else {
         beginAction(session, cid, pur.goal.kind, () => applyGoalStep(session, cid, step));
@@ -10147,6 +10774,13 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       siteMaterialSources: (s, at, viewer) => director.siteMaterialSources(s, at, viewer),
       freeHeadStockWithinReach: (s, at, head, viewer) =>
         director.freeHeadStockWithinReach(s, at, head, viewer),
+      // 🪚 …AND WHAT A SHELF IS BEING FILLED AT (politics-substrate ⚖️ 0-6) —
+      // the producing-rate seam, read for the same reason the reach stock is:
+      // a body pricing a one-block trip out of a mill's own shelf must read
+      // the BOOKKEEPER's "another one is being cut right now" rather than
+      // guess it. Non-reserving, like every read on this object.
+      refineRateAt: (s, endpointId, head) =>
+        director.refineProductionUnitsPerS(s, endpointId, head),
       agrHolder,
       billIssuer: () => LOCAL_PLAYER_CID,
       drawSourceShelf,
@@ -10219,7 +10853,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // asked"). Never a weight on the issuer alone — every civic sweep posts
       // as the local player, so an ambient row would read as family warmth.
       motiveWeight: (s, cid, link) =>
-        link.spoken ? 1 + compliance(relationToward(s, cid, link.issuer), creatureMood(cid)) : 1,
+        // ⚖️ MIGRATED TO `deference` (interpersonal-politics.md S-7): the SECOND
+        // route to obedience — fear × "would defiance be seen" — noisy-OR'd onto
+        // the earned one. 🚨 Identity at `fear: 0`, which every relation in every
+        // shipped world carries, so this weight is unmoved until somebody has
+        // actually been frightened.
+        link.spoken
+          ? 1 +
+            deference(relationToward(s, cid, link.issuer), creatureMood(cid), {
+              certainty: witnessedBy(s, link.issuer, cid),
+            })
+          : 1,
       forgoneS: claimForgoneS,
     };
     return contributeDepsMemo;
@@ -10252,6 +10896,172 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     );
   }
 
+  // ═══ THE ONE DOOR TO A BODY'S NEED LEVEL (body-needs-round.md D2) ═════════
+  //
+  // Two storage disciplines now exist — the resident per-frame accumulator
+  // (`needMeters`, live only while the household is shown) and the settler's
+  // lazily-stamped body row (`bodyNeeds`) — and NOTHING outside these three
+  // functions may know which a body uses. That is the whole design: every
+  // display, every decide and every satisfy asks the same question, so
+  // migrating residents onto the lazy row later is a change to these bodies
+  // and to nobody's call site.
+  //
+  // 🚨 `needMeters` WINS WHEN THE KEY IS THERE, always. A dollhouse row exists
+  // in `needMeters` from its first ticked frame, so every read below resolves
+  // exactly where it resolved before this door existed — the byte-identity the
+  // bench pin rests on is by CONSTRUCTION, not by measurement.
+
+  /** The rate this row's meter rises at, from the ONE rate source
+   *  (`needRate` over the scale's `NEED_FILL_DAYS`) — never a constant here.
+   *
+   *  ⚖️ …EXCEPT WHERE THE BODY'S OWN TEMPLATE SAYS OTHERWISE, which is exactly
+   *  the two SOCIAL-THIRD rows and nothing else (interpersonal-politics.md S-3).
+   *  Their rates are PERSONALITY-SCALED at template time (`standing ×
+   *  (0.5 + assertiveness)`, `security × (0.5 + maxFear)`), so reading the flat
+   *  table here would make the level a body ACCUMULATES disagree with the
+   *  crossing its own dorm computes from `tpl.drive.rate` — an assertive settler
+   *  would wake at a crossing its meter has not reached and re-decide every
+   *  `NEED_DECIDE_CAP_S` (1.5 s) until it did. One rate per row, and the
+   *  template owns it.
+   *
+   *  🚨 NARROWED TO THE TWO NEW KEYS ON PURPOSE. Every other settler row is
+   *  built from `needRate(scale, <its own key>)` and `needClockKeyOf` maps that
+   *  key to itself, so the two expressions are the same float — this branch
+   *  cannot move a number that existed before it. */
+  function bodyNeedRateOf(session: QuestSession, tplKey: string, cid?: string): number {
+    if (cid && (tplKey === "standing" || tplKey === "security") && isSettlerCid(cid)) {
+      const tpl = settlerNeedTemplates(session, cid).find((t) => t.key === tplKey);
+      if (tpl?.drive.kind === "meter" && tpl.drive.rate > 0) return tpl.drive.rate;
+    }
+    return needRate(session.scale, needClockKeyOf(tplKey));
+  }
+
+  /** LEVEL, in threshold units, of `cid`'s `tplKey` row as of `now`.
+   *  `needMeters` when the key lives there; else the lazy body row; else 0 —
+   *  a body with no row for a need does not have that need, and asking is not
+   *  what gives it one. */
+  function needLevelOf(
+    session: QuestSession,
+    cid: string,
+    tplKey: string,
+    now: number = session.townClock,
+  ): number {
+    const k = `${cid}|${tplKey}`;
+    const ticked = session.needMeters.get(k);
+    if (ticked !== undefined) return ticked;
+    const row = session.bodyNeeds.get(cid)?.get(tplKey);
+    return row ? bodyNeedLevel(row, bodyNeedRateOf(session, tplKey, cid), now) : 0;
+  }
+
+  /** SATISFY: write `levelAfter` wherever this body's row actually lives.
+   *
+   *  ⚠️ NO ROW ⇒ NO-OP, deliberately. A creature with neither a ticked meter
+   *  nor a body row (a puzzle creature, the spirit, a wild animal) is not
+   *  given one by being fed: seeding it here would put a hungry ghost in the
+   *  need loops, which is the very failure `ensurePlayerCreature`'s own law
+   *  names one screen away. */
+  function creditNeed(session: QuestSession, cid: string, tplKey: string, levelAfter: number): void {
+    const k = `${cid}|${tplKey}`;
+    if (session.needMeters.has(k)) {
+      session.needMeters.set(k, Math.max(0, levelAfter));
+      return;
+    }
+    const rows = session.bodyNeeds.get(cid);
+    const row = rows?.get(tplKey);
+    if (!rows || !row) return;
+    rows.set(tplKey, bodyNeedSatisfy(row, bodyNeedRateOf(session, tplKey, cid), session.townClock, levelAfter));
+  }
+
+  /** Is this row AT ITS THRESHOLD right now? The threshold of every meter row
+   *  the engine ships is 1 (needs.ts), which is what "level in THRESHOLD
+   *  units" means — so the HUD and the condition mirror can ask without
+   *  holding a template. */
+  function needFiring(session: QuestSession, cid: string, tplKey: string): boolean {
+    return needLevelOf(session, cid, tplKey) >= 1;
+  }
+
+  /** ⏸️ THE DEFER PREDICATE, shared by every decide (`NeedDecideOpts.parked`).
+   *
+   *  A row whose last plan failed on a condition that has not moved is skipped
+   *  BEFORE its ctx is resolved — that is where the saving is, the ctx being
+   *  the expensive half. It still surfaces as the blocked want, so adoption and
+   *  the beg bubble see it.
+   *
+   *  ⚠️ A METER ROW THAT IS NO LONGER FIRING IS NOT PARKED — it is SATISFIED.
+   *  Cheap to tell (the level is on the session, no ctx involved), and without
+   *  the check a body whose hunger was fed by some other door would keep
+   *  begging for food it no longer wants. Lifted out of `stepNeeds`' inline
+   *  closure verbatim so the settlers' decide cannot grow a second opinion
+   *  about what "parked" means. */
+  /** ⚖️ HOW GOOD A REST THIS IS (body-needs D1 ④) — read off WHERE the body
+   *  lay down, never off who it is.
+   *
+   *  A `named` place is a real fixture the resolver found (a bed, a bath, a
+   *  toilet) and answers the whole need — `REST_QUALITY.bed = 1`, so
+   *  `restClear` returns 0 and every satisfy that had one is byte-identical.
+   *  A bare `point` is a doze on the GROUND, which is a satisfier of quality
+   *  0.5: the body wakes half-rested and its need fires again in half the fill
+   *  time. `restHere` is the intent that produces a point (needs.ts's rest arm
+   *  when no station resolved and the row does not `requireStation`), so this
+   *  is the same distinction the walker already drew, priced instead of
+   *  ignored. */
+  function restPlaceQualityOf(goal: PursuitGoal | undefined): number {
+    if (!goal || goal.kind !== "rest") return REST_QUALITY.bed;
+    return goal.place.kind === "point" ? REST_QUALITY.ground : REST_QUALITY.bed;
+  }
+
+  function needRowParked(session: QuestSession, cid: string, tpl: NeedTemplate): boolean {
+    if (!needParked(session, cid, tpl.key, "row")) return false;
+    if (tpl.drive.kind !== "meter") return true;
+    if (needLevelOf(session, cid, tpl.key) >= tpl.drive.threshold) return true;
+    session.needParks.delete(`row|${cid}|${tpl.key}`);
+    return false;
+  }
+
+  /**
+   * ⚖️ HOW FAR THIS BODY'S NEEDS MAY REACH — THE SCOPE WALK, not a radius
+   * (`feedback_context_via_scope_walk`: "feed it the smallest containing
+   * object; then it can walk its way up the tree").
+   *
+   * A settler at a camp has no house, so the household AABB every resident
+   * candidate list is clipped to would clip it to nothing. The honest question
+   * is what SCOPE it is standing in, and how far that scope extends: the
+   * building it is inside, else the community lot it is standing on, else the
+   * founded site / town stage it belongs to. `ScopeExtent.reachM`
+   * (scope-shape.ts) is the vocabulary — "a body's reach, a building's
+   * footprint, a district's service radius, a town's recruit radius" are five
+   * names for this one quantity.
+   *
+   * 🚨 NO NEW CONSTANT. Both arms read an extent something already declares:
+   * the house's OWN RECT for a body inside walls, and `forageRadiusM(scale)`
+   * — *"the one-way radius a band can work from camp and still sleep there"*,
+   * scale.ts's own derivation, the very quantity the civ tier prices a band's
+   * foraging with — for a body in the open. The FLOOR is `NEED_SCOPE_REACH_M`,
+   * the arm's reach the need resolver has always used, so a camp with no
+   * charter and no town still finds what is under the settlers' noses.
+   *
+   * ⚖️ DEVIATION FROM THE LEDGER'S LETTER (D3.4), argued: the walk stops at
+   * the smallest scope that BOUNDS the body, and a designated lot does not.
+   * Taking a lot's charter radius would SHRINK a camper's world the moment
+   * somebody painted build-ground under its feet — the berries 30 m away would
+   * leave reach because a house was ordered. Walls bound a body; painted
+   * ground designates land. A homeless body therefore answers at the
+   * settlement rung, which is what "the camp is its scope" means.
+   */
+  function needReachOf(session: QuestSession, cid: string): number {
+    const body = world?.state.avatars[avatarIdOf(cid)];
+    if (!body) return NEED_SCOPE_REACH_M;
+    // ① INSIDE WALLS — the containing building's own footprint.
+    const scope = scopeOfPoint(session, body.x, body.y);
+    if (scope && parseScopeId(scope).kind === "building") {
+      const hi = houseIndexOfBuildingId(scope);
+      const rect = hi !== null ? houseRectOf(session, hi) : undefined;
+      return rect ? Math.max(NEED_SCOPE_REACH_M, Math.hypot(rect.w, rect.h) / 2) : NEED_SCOPE_REACH_M;
+    }
+    // ② IN THE OPEN — the camp's own working radius.
+    return Math.max(NEED_SCOPE_REACH_M, forageRadiusM(session.scale));
+  }
+
   /** Ask `cid` whether an open bill beats `beatS`; true ⇒ a contribute pursuit
    *  was installed and the caller stops deciding for this body. */
   function tryContribute(session: QuestSession, cid: string, beatS: number): boolean {
@@ -10272,6 +11082,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         `${b?.seatKey ? ` @${b.seatKey}` : ""}` +
         ` (beat ${Number.isFinite(beatS) ? beatS.toFixed(1) : "nothing"})`,
     );
+    // ⚖️ L-4, THE CLOSING HALF — a claim IS the answer to a point. This is the
+    // ONE door every slice is taken by (the settler gate, the idle-dorm arm and
+    // the resident step all reach the work through here), so an order is closed
+    // however the follower came to claim, and never by a second predicate that
+    // could disagree with this one about what "took the work" means.
+    closeOpenOrder(session, cid);
     return true;
   }
 
@@ -10370,6 +11186,63 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return null;
   }
 
+  /**
+   * ⚖️ DID THE DWELL SITE BANK ITS LABOUR? `buildworkSiteAt` answering null is
+   * the retirement test, and it is NOT the same question — it also answers null
+   * for a row that was cancelled under the builder's feet and for one whose
+   * materials were pulled back out. So the outcome asks the ORDER:
+   *
+   *  • the row is still there ⇒ `orderDone` (the one done-check over every
+   *    order kind — the commit bar itself, never a second copy of it);
+   *  • the row is GONE ⇒ TRUE. Only the four commit paths and an explicit
+   *    cancel remove a row, and a `found` order is never removed at all
+   *    (completion stamps `completed`), so a vanished annex/interior/refine/
+   *    demolish row is a finished one far more often than not. Stated as the
+   *    reading it is: a cancelled row credits the author with an order-done.
+   *  • not an `o:<ord>` site at all (a `craft:<hi>` bench) ⇒ NULL, unknowable:
+   *    a bench stops offering work when its raw stock runs out exactly as it
+   *    does when the batch is milled, and M1 never guesses.
+   */
+  function buildSliceLanded(session: QuestSession, siteId: string): boolean | null {
+    const m = /^o:(\d+)$/.exec(siteId);
+    if (!m) return null;
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return null;
+    const o = deltas.orders().find((q) => q.ord === Number(m[1]));
+    if (!o) return true;
+    return orderDone(o, session.townClock / FOOD_DAY_SEC);
+  }
+
+  /**
+   * ⚖️ M1 AT THE SLICE — the pursuit-death seat (round-lead ruling on P-S3-1).
+   *
+   * A spoken order does not retire through quest-host's pooled sweep: a build
+   * order is retired by the construction director's own `pool.complete` sites,
+   * which is why M1 was wired, reached and SILENT on every world we have. But
+   * the SLICE is the better estimator anyway — it is unit-grain ("they acted on
+   * your word AND the need dropped"), it fires per delivery rather than once per
+   * task, and it is in this file.
+   *
+   * The route is RECOMPUTED here (there is no task row to have recorded one on)
+   * and every gate — spoken, self-issued, a person at the other end — is
+   * `emitOrderOutcome`'s, unchanged.
+   */
+  function emitSliceOrderOutcome(session: QuestSession, cid: string, bill: ContributeBill): void {
+    const kind = sliceOutcome(bill, {
+      agreementDone: bill.agreementId
+        ? session.transfers.get(bill.agreementId)?.status === "done"
+        : undefined,
+      siteLanded: buildSliceLanded(session, bill.siteId),
+    });
+    if (!kind) return;
+    emitOrderOutcome(
+      session,
+      { id: `pull:${bill.agreementId ?? bill.siteId}|${cid}`, issuer: bill.issuer, claimedBy: cid, spoken: bill.spoken },
+      kind,
+      claimRoute(session, cid, bill.issuer),
+    );
+  }
+
   function releaseContributeSlice(session: QuestSession, bill: ContributeBill): void {
     // 🚨 A CHOP NEVER TOOK THE GOODS (task #51 item 1d). A lot-clearing bill's
     // FELL link carries the agreement id so the bookkeeper's liveness sweep can
@@ -10465,6 +11338,78 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   const pullSlices = new Map<string, string>();
 
   /**
+   * 🧺 WHEN EACH BODY LAST DID CONTRIBUTE WORK — `cid → townClock`. A closure
+   * map, session-lived and never serialized, exactly like `pullSlices`.
+   *
+   * A HEARTBEAT, not an event: it is stamped every tick a body has a live
+   * contribute pursuit, so it survives every door a slice can leave by (the
+   * haul landing, an abandon, a press, a command, the sweep) without any of
+   * them having to remember. `BAG_RETURN_GRACE_S` is read off it in
+   * `heldIdleObject` — the pause before the put-down row may want the porter's
+   * basket back.
+   */
+  const lastPullWorkAt = new Map<string, number>();
+
+  /** Is this body still inside the grace after its last slice — i.e. is the bag
+   *  in its hands plausibly the tool for the next trip rather than clutter? */
+  function withinBagReturnGrace(session: QuestSession, cid: string): boolean {
+    const last = lastPullWorkAt.get(cid);
+    return last !== undefined && session.townClock - last < BAG_RETURN_GRACE_S;
+  }
+
+  /**
+   * 🧺 WHERE A PORTABLE CONTAINER WAS TAKEN FROM — `objId → {x,y}`. Another
+   * closure map, session-lived and never serialized (the `pullSlices` idiom).
+   *
+   * ⚖️ THE BASKET DEPOSIT IS THE CONTAINER'S HOME (main's ruling, 2026-09-06).
+   * `container-home.ts` already says a portable container *"lives ON THE FLOOR,
+   * wherever it was last set down"* — it just had nowhere to write that down,
+   * so the put-down row could only ask `dropKeepsItem` about the ground the
+   * porter happened to be standing on. On a founded site that is open ground:
+   * `scopeOfPoint` is null, the drop would lose the bag out of every ledger,
+   * the row blocks and the porter keeps the bag (measured: 217–220 s of idle
+   * empty-bag holding, 2 bags still in hand at the end of the arc).
+   *
+   * ONE WRITER — `takeIntoHands`, the single door a body's hands go through —
+   * so the home is by construction the place the bag was standing before this
+   * pair of hands lifted it (a house bag seed, the yard basket, a market bag,
+   * or wherever some earlier porter set it down). Returning a thing to exactly
+   * where it came from cannot lose it, which is why `dropKeepsItem`'s ledger
+   * question is ANSWERED (not bypassed) at this point: the bag was already in
+   * that scope's books a moment ago.
+   */
+  const bagHomeAt = new Map<string, { x: number; y: number }>();
+
+  /**
+   * 🧺 …AND HOW MANY TIMES A BODY MAY BE SENT BACK — `cid → tries`.
+   *
+   * The homecoming below is re-issuable (a walk cut short must be re-issued or
+   * the porter holds the bag forever), and re-issuable means BOUNDED or it is
+   * a livelock: a body that can never reach the home would stay live, blocked
+   * and walking for the rest of the session. Three attempts, and then it
+   * DEMOTES holding the bag — exactly the behaviour before the ruling, so this
+   * arm is strictly an improvement over it and never a new way to hang.
+   * The budget refills the moment the body does contribute work again (one
+   * writer, beside the `lastPullWorkAt` heartbeat).
+   */
+  const bagReturnTries = new Map<string, number>();
+  const BAG_RETURN_TRIES = 3;
+
+  /** The recorded home of a portable container, if this session has seen it
+   *  picked up. Null for anything that is not a portable container. */
+  function bagHomeOf(objId: string, glyph: string): { x: number; y: number } | null {
+    return livesOnTheFloor(glyph) ? bagHomeAt.get(objId) ?? null : null;
+  }
+
+  /** Is the body standing close enough to this held container's home to set it
+   *  down there? One body-radius plus the ordinary reach — the same slack the
+   *  errand's arrival radius leaves. */
+  function atBagHome(objId: string, glyph: string, at: { x: number; y: number }): boolean {
+    const home = bagHomeOf(objId, glyph);
+    return !!home && Math.hypot(at.x - home.x, at.y - home.y) <= BAG_HOME_REACH_M;
+  }
+
+  /**
    * 🔭 WHAT THE LOCAL SPARK IS SHOWING ITS ENGAGED CREATURE (task #51 item 1e).
    *
    * USER RULING (2026-09-04): *"Hovering over loose objects (such as the wood
@@ -10498,11 +11443,29 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     cid: string,
     objId: string,
   ): { head: string; units: number; at: { x: number; y: number } } | null {
-    if (!wildFeatureDowned(session, objId)) return null;
+    // ⚖️ ANY LOOSE STACK, NOT ONLY A FELLED TREE (main's ruling, 2026-09-06:
+    // *"a set-down stack is a SOURCE"*). This asked `wildFeatureDowned` first,
+    // so the ONLY thing in the world an idle body could be shown and offered to
+    // collect was a downed wild feature — a basket somebody abandoned with a
+    // load still in it, or any other unowned heap standing on the ground, was
+    // invisible to the row (carry-integrity residual R5b).
+    //
+    // 🚨 THE ENDPOINT IS THE GATE, and it has to be, because `decideCollect`
+    // builds a HAUL whose `from` is this id: an id `stockEndpointOf` cannot
+    // resolve would begin an agreement that fails `no-endpoint` on its first
+    // frame. So the widening is exactly "anything the transfer machinery can
+    // already draw from", never "anything lying about". A STANDING wild
+    // feature is still refused by `wildGlyphTakeable` per glyph below, which is
+    // where the kill/harvest split lives.
     const rec = session.containerRecords.get(objId);
-    const at = stockEndpointOf(session, objId)?.at ?? (world ? containerStandpoint(world.state, objId) : undefined);
-    if (!rec?.stock || !at) return null;
+    const ep = stockEndpointOf(session, objId);
+    const at = ep?.at ?? (world ? containerStandpoint(world.state, objId) : undefined);
+    if (!rec?.stock || !ep || !at) return null;
     if (rec.owner) return null; // spoken for by a household — not free to collect
+    // …and never out of somebody's HANDS or off their back: a bag being
+    // carried is that body's inventory (the scope law), not a heap on the floor.
+    if (rec.mount === "worn" || rec.mount === "folded") return null;
+    if (world?.state.objects[objId]?.carriedBy) return null;
     let best: { head: string; units: number; at: { x: number; y: number } } | null = null;
     for (const glyph of Object.keys(rec.stock)) {
       if (!wildGlyphTakeable(session, objId, glyph)) continue;
@@ -10585,6 +11548,117 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     else contributeIdleDorm.set(cid, session.townClock + CONTRIBUTE_IDLE_DECIDE_S);
   }
 
+  // ── ⚖️ L-3 / L-4 — DELEGATION, AND WHETHER IT WAS ANY GOOD ──────────────────
+  //
+  // NO FOREMAN OBJECT AND NO TIMER. The trigger is a body's own frustration: a
+  // settler whose need is FIRING has just skipped a bill it could see, and the
+  // bill does not stop being worth doing because THIS pair of hands is busy. So
+  // it points somebody idle at the pile and goes to eat. That is the whole of
+  // the mechanism — `orderTo`, which is `attendTo`, which is the spark's own
+  // "draw attention to an area → move there".
+  //
+  // ⚖️ AND POINTING IS A CLAIM ABOUT THE WORLD, so M1 prices it (L-4): the
+  // follower's next `[pull]` claim inside the window is the evidence the leader
+  // was RIGHT, and a window that lapses with nothing claimed is the evidence it
+  // was not. Being right about what the town needs is the whole skill.
+
+  /** Orders issued by a body and not yet answered: follower cid → who asked,
+   *  when, and when they got there. Host-local — it is meaningless outside the
+   *  window between an order and its answer, and nothing serialises it. */
+  const openOrders = new Map<string, { author: string; at: number; arrivedAt?: number }>();
+  /** When each leader last delegated — ONE order per body per decide window, so
+   *  a body whose need fires every tick cannot fill the town with orders. */
+  const lastDelegateAt = new Map<string, number>();
+
+  /** The M1 row an order stands for. No task pool ever saw it, so the id is
+   *  synthetic and `taskRoutes` never has an entry (the route is recomputed). */
+  const orderRowOf = (follower: string, author: string) => ({
+    id: `order:${author}|${follower}`,
+    issuer: author,
+    claimedBy: follower,
+    // A delegation IS somebody asking out loud — the flag that separates
+    // "somebody asked" from "the ledger noticed", and this is the former.
+    spoken: true,
+  });
+
+  /** ⚖️ L-4, THE OPEN HALF — arrival, then the window. Called once per needs
+   *  step over the ORDERS rather than over the settlers, because a follower may
+   *  be a resident or a pet that this loop never visits. */
+  function stepOpenOrders(session: QuestSession): void {
+    for (const [cid, o] of [...openOrders]) {
+      if (o.arrivedAt === undefined) {
+        // Still on the way. The goTo pursuit (or the walk record behind it) is
+        // the only thing that says so; when both are gone the body is standing
+        // where it was sent, however that came about.
+        if (session.pursuits.has(cid) || session.walk.has(cid)) continue;
+        o.arrivedAt = session.townClock;
+        continue;
+      }
+      const kind = orderWindowOutcome(o, session.townClock, CONTRIBUTE_IDLE_DECIDE_S, "sweep");
+      if (!kind) continue;
+      openOrders.delete(cid);
+      emitOrderOutcome(session, orderRowOf(cid, o.author), kind, claimRoute(session, cid, o.author));
+    }
+  }
+
+  /** ⚖️ L-4, THE CLOSING HALF — the follower's claim. Called from
+   *  `tryContribute`, so EVERY door a slice can be taken by closes the order. */
+  function closeOpenOrder(session: QuestSession, cid: string): void {
+    const o = openOrders.get(cid);
+    if (!o) return;
+    // A claim after the window is not this order's doing — leave it for the
+    // sweep to fail rather than crediting a leader for a coincidence. Asked of
+    // `orderWindowOutcome` so the edge is ONE expression, shared with the sweep.
+    const kind = orderWindowOutcome(o, session.townClock, CONTRIBUTE_IDLE_DECIDE_S, "claim");
+    if (!kind) return;
+    openOrders.delete(cid);
+    emitOrderOutcome(session, orderRowOf(cid, o.author), kind, claimRoute(session, cid, o.author));
+  }
+
+  /**
+   * ⚖️ L-3 — THE EMERGENT TRIGGER. `leader` has just skipped work for a firing
+   * need. If it can still SEE a bill and somebody idle is standing near enough
+   * to be asked, it asks — once per `CONTRIBUTE_IDLE_DECIDE_S`.
+   *
+   * 🚨 IT POINTS AT A PLACE, NOT AT AN OBJECT. `BillLink.at` is the link's own
+   * "where the body goes first" — the source of a haul, the work point of a
+   * dwell — and it is a POINT, not necessarily a thing with a standpoint. The
+   * follower's own `idleContribute` then reads the same bill from where it is
+   * standing and claims it; the leader never installs the work (L-1).
+   *
+   * 🚨 IT NEVER GUESSES A FOLLOWER. `nearestIdleGroupCreature` RESOLVES one or
+   * answers null, and a null is simply no delegation — never an order aimed at
+   * the room.
+   */
+  function delegateBill(session: QuestSession, state: WorldState, leader: string): void {
+    if (!bodyNeedsOn(session) || !pullLaborOn(session)) return; // never inside the dollhouse
+    const last = lastDelegateAt.get(leader);
+    if (last !== undefined && session.townClock - last < CONTRIBUTE_IDLE_DECIDE_S) return;
+    const body = state.avatars[avatarIdOf(leader)];
+    if (!body) return;
+    const link = visibleBills(session, leader, contributeDeps())[0];
+    if (!link) return; // nothing this body can see — nothing to point at
+    const follower = nearestIdleGroupCreature(session, state, { x: body.x, y: body.y }, ATTEND_REACH_M, leader);
+    if (!follower || follower === leader || openOrders.has(follower)) return;
+    lastDelegateAt.set(leader, session.townClock);
+    if (!orderTo(session, leader, follower, { kind: "place", x: link.at.x, y: link.at.y })) return;
+    // 🚨 AN ORDER THAT INSTALLED NOTHING IS NOT AN ORDER — and `attendTo`'s
+    // `true` does not say one landed, only that it was understood and not
+    // refused. `directCreatureTo` deliberately no-ops a move that is under
+    // `DIRECT_MIN_M` (the body is already standing there) or past
+    // `directMaxM` (the pile is across town), and both are SILENT: the follower
+    // carries on exactly as it was. MEASURED — the very first delegation to
+    // land the gate on the homestead (`settler_0→settler_1 block`, t = 254.5 s)
+    // was one of these, and the body it "ordered" spent the window eating.
+    // Pricing that would charge the leader for a point nobody was ever sent to,
+    // which is the opposite of M1's whole claim: only a live command pursuit
+    // under this leader's name is a delegation.
+    const sent = session.pursuits.get(follower);
+    if (!sent || sent.source !== "command" || sent.author !== leader) return;
+    openOrders.set(follower, { author: leader, at: session.townClock });
+    console.log(`[social] order ${leader}→${follower} ${link.head ?? link.link}`);
+  }
+
   function sweepPullSlices(session: QuestSession): void {
     for (const [agrId, cid] of [...pullSlices]) {
       const a = session.transfers.get(agrId);
@@ -10597,6 +11671,64 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       releasePullSlice(session, agrId);
     }
     sweepSeats(session);
+  }
+
+  /**
+   * ⚖️ D4(b) — ONE BODY'S METER ROWS, ADVANCED BY `dt` (body-needs-round.md).
+   *
+   * Lifted verbatim out of `stepNeeds`' tick block so that the TWO places a
+   * body's meters may legitimately move cannot grow two opinions about the SEED
+   * — which is the whole reason it is a function and not a copied loop. It
+   * seeds lazily and exactly as a reveal does (hunger from the household's meal
+   * schedule, every other motive from the same hash spread × 0.7) and then adds
+   * `rate × dt`. A rate-0 row is a DUTY and is skipped, as three other sites in
+   * this file already spell out.
+   *
+   * The two callers: the tick block itself (`shown || live`), and the PULL gate
+   * — see the long note there for why a body working a slice has to be one of
+   * them.
+   */
+  function advanceNeedMeters(
+    session: QuestSession,
+    cid: string,
+    houseIndex: number,
+    member: number,
+    templates: readonly NeedTemplate[],
+    seed: number,
+    dt: number,
+  ): void {
+    for (const tpl of templates) {
+      if (tpl.drive.kind !== "meter") continue;
+      // A DUTY HAS NO METER (⑫⑧, and `ritualAttendTemplate` before it): a
+      // rate-0 row does not accumulate, so seeding and re-adding zero to it
+      // every frame only writes rows nobody reads — one per address target,
+      // for as long as the session lasts.
+      if (tpl.drive.rate <= 0) continue;
+      const k = `${cid}|${tpl.key}`;
+      if (!session.needMeters.has(k)) {
+        // ⚖️ 0-3 — AND ENERGY SEEDS FROM THE DAY PHASE, under the capability.
+        // The hash spread below is a stable per-body CONSTANT: it staggers the
+        // household but says nothing about the time of day, so a puller
+        // promoted at dusk arrived as rested as one promoted at dawn and the
+        // U4 demote-home almost never fired. `scheduledEnergy` is the twin of
+        // the hunger seed one line up — same offset hash, same projection, a
+        // day-phase instead of a constant.
+        //
+        // 🚫 GATED, because this function serves the DOLLHOUSE too and that
+        // world must stay byte-identical (`bodyNeedsOn` is FALSE there): the
+        // family keeps the shipped constant seed exactly as it is.
+        const phased = bodyNeedsOn(session) && tpl.key === "energy";
+        session.needMeters.set(
+          k,
+          tpl.key.startsWith("hunger")
+            ? scheduledHunger(mealOffset(seed, houseIndex, member), session.townClock)
+            : phased
+              ? scheduledEnergy(mealOffset(seed, houseIndex, member * 7 + tpl.key.length), session.townClock)
+              : (mealOffset(seed, houseIndex, member * 7 + tpl.key.length) / MEAL_PERIOD_SEC) * 0.7,
+        );
+      }
+      session.needMeters.set(k, (session.needMeters.get(k) ?? 0) + tpl.drive.rate * dt);
+    }
   }
 
   /**
@@ -10649,7 +11781,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // neither live nor embodied can never come back for the units it spoke
     // for, and units nobody will collect read as gone to every housemate.
     // (`errandClaimFor`'s precedent, one ledger over.)
-    sweepNeedClaims(session, cidSet);
+    //
+    // 🚨 …AND A SETTLER IS A BODY THAT CAN COME BACK (⚖️ 0-2). The holder set
+    // above is `liveNeedBodies` ∪ the embodied residents/pets, and a settler is
+    // in neither — so this sweep RELEASED every settler's forage claim on the
+    // very frame it was made, and the reservation that exists to stop two
+    // bodies walking to the same berry could not have stopped anything even
+    // once the claim was representable (see the whole-stand rounding in
+    // `reserveNeedUnits`, the other half of the same defect).
+    //
+    // The set is the SWEEP's own question ("could this holder still collect?"),
+    // not the decide loop's: an embodied settler answers YES. The decide loop
+    // below is untouched by the widening — its first statement rejects
+    // `isSettlerCid` outright, and `stepBodyNeeds` still owns them.
+    const claimHolders = new Set<string>(cidSet);
+    for (const s of settlersOf(session)) {
+      if (state.avatars[avatarIdOf(s)]) claimHolders.add(s);
+    }
+    sweepNeedClaims(session, claimHolders);
     for (const cid of cids) {
       // 🚨 A SETTLER IS NOT HOUSE N (Scout A's trap 6, made REACHABLE by #51).
       // This loop reads `Number(cid.split("_")[1])` as a house index a few
@@ -10706,7 +11855,46 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // …and a body still walking the slice it chose is not re-decided: it
       // keeps working while the bill stands, and `stepPursuit` hands it back
       // the moment the work is done (see `contributeStillWorking`).
-      if (pulling) continue;
+      if (pulling) {
+        // ── ⚖️ D4(b), SECOND HALF — A BODY WORKING A SLICE STILL GETS HUNGRY.
+        //
+        // 🚨 MEASURED, and it is why this arm exists at all. The ledger's letter
+        // is "the tick block runs for `shown || live`" — but THIS `continue`
+        // stands ~200 lines AHEAD of that block, so a body mid-slice never
+        // reached it. Probed on the frontier arc (seed 11, dt 1/2): a puller sat
+        // at `e=0.133 h=0.029` for 240 consecutive seconds of hauling, moved
+        // only during the handful of frames between slices, and was wiped by the
+        // dark-house delete before it could ever fire. Widening the tick block
+        // alone would therefore have satisfied the ledger word for word and left
+        // the ledger's own named defect — *"the pulling resident never gets
+        // hungry"* — exactly where it was.
+        //
+        // ⚖️ SUSPEND DUTIES, NEVER NEEDS. This is the standing law, applied at
+        // the one gate that was breaking it: a slice is a DECISION the body took
+        // and the loop rightly refuses to re-decide for it — but a decision is
+        // not a metabolism. A body that works through its dinner must be a body
+        // that is HUNGRIER at the end of the shift, or the pull model buys its
+        // labour by pausing the worker's life.
+        //
+        // ⚖️ METERS ONLY, NOT STRESS. mood.ts has exactly one writer and it
+        // stays the tick block: a body mid-slice has its pressure integrated the
+        // moment the slice ends and it comes back to the loop, and nothing in
+        // the engine reads stress for behaviour. Two writers would be a second
+        // opinion for no gain.
+        //
+        // 🚫 INERT OFF THE CAPABILITY, twice over: `bodyNeedsOn` is FALSE for
+        // the dollhouse, AND `pulling` requires a contribute pursuit, which only
+        // `pullLaborOn` can install — so this arm cannot be reached there at all.
+        if (bodyNeedsOn(session) && !isPetCid(cid)) {
+          const hi = Number(cid.split("_")[1]);
+          const mem = Number(cid.split("_")[2]);
+          const h = residentTownCtx(session, hi)?.house;
+          if (h) {
+            advanceNeedMeters(session, cid, hi, mem, residentNeedTemplates(session, hi, h, mem), seed, dt);
+          }
+        }
+        continue;
+      }
       // BUSY: crouched on a discrete action (a take from the pantry, a deposit).
       // The step already fired beginAction and cleared needStep; leave the body
       // pinned and DON'T reclaim/re-decide until the crouch lands its effect.
@@ -10859,25 +12047,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // Tick meters only while ON SHOW (off-show the schedule's drain stands in).
       // Seeds: hunger from the meal schedule; other motives from a hash spread, so
       // a freshly-revealed household isn't all at zero (or all in sync).
-      if (shown) {
-        for (const tpl of templates) {
-          if (tpl.drive.kind !== "meter") continue;
-          // A DUTY HAS NO METER (⑫⑧, and `ritualAttendTemplate` before it): a
-          // rate-0 row does not accumulate, so seeding and re-adding zero to it
-          // every frame only writes rows nobody reads — one per address target,
-          // for as long as the session lasts.
-          if (tpl.drive.rate <= 0) continue;
-          const k = `${cid}|${tpl.key}`;
-          if (!session.needMeters.has(k)) {
-            session.needMeters.set(
-              k,
-              tpl.key.startsWith("hunger")
-                ? scheduledHunger(mealOffset(seed, houseIndex, member), session.townClock)
-                : (mealOffset(seed, houseIndex, member * 7 + tpl.key.length) / MEAL_PERIOD_SEC) * 0.7,
-            );
-          }
-          session.needMeters.set(k, (session.needMeters.get(k) ?? 0) + tpl.drive.rate * dt);
-        }
+      //
+      // ── ⚖️ D4(b) — THE FREEZE (body-needs-round.md) ──────────────────────
+      //
+      // …AND A LIVE BODY TICKS WHETHER OR NOT ITS HOUSE IS LIT. There are three
+      // states, not two, and the third was unwritten: `!shown && !live` DELETES
+      // the rows (the arm above, so a re-shown household re-seeds from the
+      // schedule) and `shown` ticks them — but `!shown && live` did NEITHER.
+      // Its meters simply STOPPED, at whatever value the last lit frame left
+      // them, for as long as the body kept working. So the resident that the
+      // pull model takes off the clock's leash — the one body in the town doing
+      // something a schedule is not playing for it — was the one body that
+      // could not get hungry or tired. "Idle is idle, shown or not" cuts both
+      // ways: a body the loops are DRIVING is being simulated, and a simulated
+      // body's meters move.
+      //
+      // It SEEDS by the identical `if (!needMeters.has(k))` branch below, which
+      // is the point: promotion into the live set is a reveal as far as a meter
+      // is concerned, so a body that goes live in the dark starts from the
+      // household's own schedule phase exactly as it would have on show — never
+      // from zero, never from nothing.
+      //
+      // ⚖️ PER-FRAME, NOT THE LAZY ROW (U3). Residents keep ONE storage
+      // discipline this round; `needLevelOf`/`creditNeed` already hide which,
+      // so migrating them onto `bodyNeeds` later is a change to those two
+      // functions and to nobody's call site.
+      //
+      // ⚖️ AND THE STRESS DERIVATION COMES WITH IT, deliberately. mood.ts's one
+      // writer is this block; splitting it would leave a body whose meters are
+      // real accruing no pressure from holding them past firing — a second
+      // opinion about whether this body is being simulated. The invariant
+      // suites measure a WATCHED household, which is the `shown` arm, unmoved.
+      //
+      // 🚫 INERT OFF THE CAPABILITY: `bodyNeedsOn` is FALSE for the dollhouse,
+      // so `shown || liveTick` collapses to `shown` there, character for
+      // character.
+      const liveTick = live && bodyNeedsOn(session);
+      if (shown || liveTick) {
+        advanceNeedMeters(session, cid, houseIndex, member, templates, seed, dt);
         // DERIVED STRESS (mood.ts): needs held PAST firing exert pressure;
         // stress integrates it and bleeds off while content. Pure derivation —
         // the invariant tests lean on it (equipped house flat, stripped house
@@ -10989,7 +12196,22 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           step.dwell = (step.dwell ?? restDwellFor(step.tplKey, session.scale)) - dt;
           if (step.dwell > 0) continue; // sleeping / playing / washing
           clearNeedStep(session, cid);
-          session.needMeters.set(`${cid}|${step.tplKey}`, 0);
+          // ⚖️ THE SATISFIER'S QUALITY (body-needs D1 ④) — the legacy walker's
+          // half of the pursuit rule one screen up. `step.objId` IS the station
+          // this step arrived at; absent means the body dozed WHERE IT STOOD
+          // (`restHere`'s "in place", which this line's own log already says),
+          // and the ground is a satisfier of quality 0.5. A station is quality
+          // 1 ⇒ `restClear` returns 0 ⇒ byte-identical to the unconditional
+          // clear.
+          creditNeed(
+            session,
+            cid,
+            step.tplKey,
+            restClear(
+              needLevelOf(session, cid, step.tplKey),
+              step.objId ? REST_QUALITY.bed : REST_QUALITY.ground,
+            ),
+          );
           showWorldBubble(state, `rest:${cid}`, {
             anchor: { kind: "avatar", id: cid },
             ...restDoneBubble(step.tplKey),
@@ -11024,9 +12246,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               // may be drawn into, and that the camera can settle on.
               seedConversation(session, cid, pid);
             }
-            session.needMeters.set(`${cid}|${step.tplKey}`, 0);
-            session.needMeters.set(`${pid}|social`, 0);
-            warmRelations(session, cid, pid, { affinity: 0.05, trust: 0.02 });
+            // Both loneliness rows, through the one door — the PARTNER's by
+            // the literal key `social` exactly as before (a renamed template
+            // would break that half silently either way; recorded, not fixed
+            // here — the interpersonal-politics round owns this line).
+            // ⚖️ S-3/S-4 — the FRONTIER resident's arrival is an `attend` act,
+            // exactly as the pursuit arm's is (a resident can reach either path:
+            // the pursuit when the `converse` goal compiles, this legacy walker
+            // when it does not). 🚫 The DOLLHOUSE arm is the `else`, verbatim —
+            // `bodyNeedsOn` is FALSE there, so the bench sees the two credits
+            // and the {0.05, 0.02} warmth it has always seen.
+            if (bodyNeedsOn(session)) {
+              emitSocial(session, {
+                kind: "attend",
+                actor: cid,
+                addressee: pid,
+                witnesses: witnessesOf(session, cid, pid),
+              });
+              // 🚨 NO FORCED CREDIT FOR THE ROW THAT DECIDED THE TRIP. The act
+              // clears `social` for both parties and standing/security only when
+              // the partner's own attitude actually supplied them. A partner
+              // whose deference fell between the decide and the arrival leaves
+              // the row firing — and the next decide's affordance gate simply
+              // will not list it, so the body picks somebody else or blocks.
+              // That is the whole content of "credit is an act by ANOTHER".
+            } else {
+              creditNeed(session, cid, step.tplKey, 0);
+              creditNeed(session, pid, "social", 0);
+              warmRelations(session, cid, pid, { affinity: 0.05, trust: 0.02 });
+            }
             console.log(`[needs] ${cid} socialized with ${pid}`);
           }
           continue;
@@ -11137,14 +12385,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // SATISFIED. Cheap to tell (the meter is already on the session, no
           // ctx involved), and without the check a body whose hunger was fed by
           // some other door would keep begging for food it no longer wants.
-          parked: (tpl) => {
-            if (!needParked(session, cid, tpl.key, "row")) return false;
-            if (tpl.drive.kind !== "meter") return true;
-            const meter = session.needMeters.get(`${cid}|${tpl.key}`) ?? 0;
-            if (meter >= tpl.drive.threshold) return true;
-            session.needParks.delete(`row|${cid}|${tpl.key}`);
-            return false;
-          },
+          parked: (tpl) => needRowParked(session, cid, tpl),
         },
       );
       // ⑫⑧ — THE INTEGRAL OF THE ADDRESS ROW LOSING (law ③: "leaving is the
@@ -11264,7 +12505,109 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         releaseNeedUnits(session, cid);
         continue;
       }
+      // ── ⚖️ D4(c) / USER CALL U4 — A HOUSED BODY WHOSE SATISFIER IS ITS DARK
+      //    HOUSEHOLD GOES HOME. IT DOES NOT SLEEP IN THE STREET. ─────────────
+      //
+      // `restHere` is the walker's answer when the row does not `requireStation`
+      // and NO station resolved — and for a housed body with a dark house that
+      // is not "there is no bed", it is "the bed has not been BUILT into the
+      // world yet": `residentNeedCtx` resolves `furn_<hi>_bed_*` out of
+      // `state.objects`, and an unlit interior stands no furniture. The body
+      // owns a bed. Answering "doze on the cobbles then" would be the engine
+      // mistaking its own level-of-detail for the world's furniture.
+      //
+      // SO THE HOUSEHOLD SATISFIES IT, UNOBSERVED — which is precisely what a
+      // demoted household IS: the clock plays the night for it, the same clock
+      // that feeds and shops for every other dark house in town. This is the
+      // round's answer to *"what a body meter becomes when its person demotes to
+      // a statistic"* at the TRACKED rung: the SCHEDULE PHASE. The meter is
+      // deleted as dark by the arm at the top of this loop and re-projected from
+      // the household's own phase at the next promotion — no level is carried
+      // across, because a level is what a SIMULATED body has and this body has
+      // stopped being one.
+      //
+      // ⚖️ PLACED AFTER `tryContribute`, NOT BEFORE — the argmax IS the gate
+      // (F2). A tired body prices its rest at `energy` 4 × 40 = 160 hand-seconds
+      // against a civic bill's 2 × 40 = 80, so it goes home; a SPOKEN order at
+      // family compliance (w ≈ 2.68 ⇒ ≈ 214 s) still outbids it and the body
+      // works, exactly as a hungry one yields to nothing and a mild want yields
+      // to everything. Running this arm ahead of the bill would have made rest
+      // the one motive that wins by bypassing the ladder.
+      //
+      // ⚖️ HUNGER NEEDS NO ARM HERE. A dark-house body with a market in reach
+      // eats at the market as a live body does today (the acquire branches
+      // resolve a real source, the intent is `take`/`consumeAt`, and this arm
+      // never sees it); a dark-house body with nothing servable decides BLOCKED,
+      // and the blocked arm below ALREADY demotes and walks it home. One
+      // behaviour, reached two ways — nothing new was needed for the way back.
+      //
+      // ⚖️ NOT A PET. "Dozes in place" is the pet row's own declared satisfy
+      // (`at: []`, petNeedTemplates), not an absent bed — a dog asleep on the
+      // floor is the design, and sending it home would break it.
+      //
+      // 🚫 INERT OFF THE CAPABILITY, and doubly so: `bodyNeedsOn` is FALSE for
+      // the dollhouse, AND `!shown` here implies `live` (the `!shown && !live`
+      // arm at the top of the loop `continue`s), so this can only ever fire for
+      // the live-but-dark body D4(b) just started ticking — a body the dollhouse
+      // world has never had.
+      if (
+        bodyNeedsOn(session) &&
+        !pet &&
+        !shown &&
+        live &&
+        decided?.intent.kind === "restHere" &&
+        houseIndex >= 0
+      ) {
+        const banked = bankCarried(session, cid, houseIndex);
+        clearNeedStep(session, cid);
+        session.liveNeedBodies.delete(cid);
+        releaseErrands(session, cid);
+        // The interior is dark, so the chests are the final word on this
+        // household's stock — re-anchor now (the shown case's UNLOAD edge owns
+        // it instead, and cannot be reached from here).
+        reanchorHouseGoods(session, houseIndex);
+        walkResidentHome(session, state, cid);
+        // ⚖️ 0-1 — THIS DEMOTE *IS* THE SLEEP (U4), SO IT IS COUNTED AS ONE.
+        // The household satisfies the row unobserved, and the household owns a
+        // BED — so the credit goes through the one door (`creditNeed`) at the
+        // one quality table (`REST_QUALITY.bed`, i.e. `restClear` ⇒ 0), which
+        // is exactly what "the clock played the night for it" means in the
+        // model rather than only in the comment. Byte-neutral on the shipped
+        // path: the top-of-loop arm deletes a dark body's meters on the very
+        // next tick, so the written 0 is the same 0 the re-projection would
+        // start from — but the line, and the number in it, are now real.
+        const beforeE = needLevelOf(session, cid, decided.tpl.key);
+        creditNeed(session, cid, decided.tpl.key, restClear(beforeE, REST_QUALITY.bed));
+        console.log(
+          `[needs] ${cid} DEMOTED (dark house — ${decided.tpl.key} goes home to rest` +
+            `${banked ? `; banked ${banked} carried` : ""}; re-anchored)`,
+        );
+        console.log(
+          `[needs] ${cid} slept home e ${beforeE.toFixed(2)} → ` +
+            `${restClear(beforeE, REST_QUALITY.bed).toFixed(2)}`,
+        );
+        continue;
+      }
       if (!decided) {
+        // 🧺 …BUT NOT WHILE A BAG IN THESE HANDS IS STILL SPOKEN FOR
+        // (`BAG_RETURN_GRACE_S`, main's basket ruling 2026-09-06).
+        //
+        // The demote's own rule one screen down is *"HANDS MUST BE EMPTY on this
+        // exit"* — and `bankCarried`, which enforces it, deliberately does NOT
+        // take the BAG ("banking empties an inventory, it does not confiscate
+        // the basket"). So a porter that has just delivered and is inside the
+        // grace has nothing firing, demotes, leaves the live loop — and a
+        // demoted body never decides again, so the `relieve` row that was one
+        // grace away from wanting that basket is never asked. Measured: the
+        // basket then rides for the rest of the session (278–296 s and still
+        // counting when the arc stopped).
+        //
+        // The episode is simply not over while the hands are full, so the body
+        // stays live until the grace lapses and the put-down row can speak.
+        // BOUNDED BY CONSTRUCTION: the grace is measured from the last
+        // contribute work and cannot renew unless the body works again, so this
+        // holds a body for at most `BAG_RETURN_GRACE_S` — never a livelock.
+        if (live && bodyCarryOf(session, cid).inHand?.bag && withinBagReturnGrace(session, cid)) continue;
         if (live) {
           // DEMOTE: the disruption is neutralized — hand the household back to the
           // clock. HANDS MUST BE EMPTY on this exit (§4 fix — "nothing fires" is
@@ -11330,13 +12673,91 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const blockKey = `needs:blocked:${cid}|${tpl.key}`;
       if (intent.kind === "blocked" || intent.kind === "idle") {
         if (intent.kind === "blocked") {
-          // A blocked need can't be served — the live loop must NOT keep the
-          // body (it would suppress the clock feed forever, the "left standing
-          // in the street" bug). DEMOTE and walk home; the want keeps surfacing
-          // through dialogue and re-promotes the moment it becomes servable.
-          if (live) {
-            session.liveNeedBodies.delete(cid);
-            if (!shown) reanchorHouseGoods(session, houseIndex);
+          // 🧺 A BLOCKED PUT-DOWN IS A WALK, NOT A DEAD END (main's basket
+          // ruling, 2026-09-06).
+          //
+          // MEASURED (frontier arc, seed 11): a porter that has finished its
+          // hauls stands at the site holding an empty basket, and the put-down
+          // row blocks — not because nothing wants the basket gone, but because
+          // `dropKeepsItem` is FALSE where it is standing: `scopeOfPoint` is
+          // null on open ground, so setting the basket down there would drop it
+          // out of every ledger in the session (the drop law, working). The
+          // basket's own home is its household, and this branch ALREADY sends
+          // the body there — but it demoted it in the same breath, and a
+          // demoted body never decides again while its house is dark. So the
+          // walk home happened and the row that would have ended the carry was
+          // never asked again: the basket rode for the rest of the session
+          // (278–296 s and still counting when the arc stopped).
+          //
+          // The episode is not over while the body is walking to the one place
+          // it CAN put the thing down. Staying live for that walk is what makes
+          // the row honest, and it is bounded by the walk itself: the moment
+          // the errand ends the next decide either serves the row (home ⇒ the
+          // drop keeps it) or blocks again and demotes exactly as before.
+          // 🧺 …AND A LOADED BASKET NEVER WALKS ANYWHERE (carry-residuals round,
+          // 2026-09-06 — the other half of R-D). A basket with goods still in it
+          // is a SOURCE where it stands: `stockedEntries` lists it, so the
+          // site's own haul bills draw from it and `looseGoodOf` offers it whole.
+          // Walking it home would carry the settlement's materials away from the
+          // work that is waiting on them — the exact opposite of what setting a
+          // load down is for. A container goes home ONLY ONCE EMPTY (the goods'
+          // own rows and `bagUnitsHaveAnOutlet` empty it first); until then a
+          // collector carrying it on is the way it moves. A loaded bag that
+          // blocks falls through to the ordinary demote below — pre-ruling
+          // behaviour, and its goods stay in a stocked container either way.
+          if (
+            live &&
+            tpl.key === "relieve" &&
+            bodyCarryOf(session, cid).inHand?.bag &&
+            totalStackUnits(bodyCarryOf(session, cid).inHand!.bag!.stock) === 0
+          ) {
+            // 🧺 …AND HOME FOR A BASKET IS WHERE THE BASKET LIVES, not where
+            // the porter does (main's ruling, 2026-09-06). The bag was lifted
+            // off a floor somewhere — a house seed, the yard, a market spot —
+            // and `bagHomeAt` remembers which. Walking a TOWN basket into a
+            // private living room would put the settlement's only haul tool in
+            // somebody's front room; walking it back to its own spot is what
+            // *"returns it to where it took it"* says, and the drop predicate
+            // (`atBagHome`) then keeps it there by construction. Only when this
+            // session never saw the lift (a restored carry) does the body fall
+            // back on its own household.
+            //
+            // ⚖️ AND THE WALK IS RE-ISSUABLE. `dlogged` is a LOG gate; gating
+            // the ERRAND on it too meant a homecoming cut short — a demote, a
+            // command, a decide that took the body elsewhere — was never
+            // re-issued and the porter held the bag for the rest of the arc.
+            // Bounded by its own success: within `BAG_HOME_REACH_M` of the home
+            // the row is served instead of blocked, so this cannot spin.
+            const held = bodyCarryOf(session, cid).inHand!;
+            const home = bagHomeOf(held.objId, held.glyph);
+            const bodyAt = state.avatars[avatarIdOf(cid)];
+            const awayFromHome =
+              !home || !bodyAt || Math.hypot(bodyAt.x - home.x, bodyAt.y - home.y) > BAG_HOME_REACH_M;
+            const tries = bagReturnTries.get(cid) ?? 0;
+            if (!world?.npcErrandActive(avatarIdOf(cid)) && awayFromHome && tries < BAG_RETURN_TRIES) {
+              bagReturnTries.set(cid, tries + 1);
+              const say = !session.dlogged.has(blockKey);
+              session.dlogged.add(blockKey);
+              if (home && world && bodyAt) {
+                session.lastDrive.set(cid, "walk-home");
+                world.setNpcErrand(
+                  avatarIdOf(cid),
+                  doorRouteErrand(
+                    state,
+                    { x: bodyAt.x, y: bodyAt.y },
+                    { points: [home] },
+                    world.npcRadiusOf(avatarIdOf(cid)),
+                  ),
+                );
+                if (say) console.log(`[needs] ${cid} BLOCKED on relieve — returning ${held.glyph} to its home`);
+              } else {
+                walkResidentHome(session, state, cid);
+                if (say) {
+                  console.log(`[needs] ${cid} BLOCKED on relieve where it stands — walking home to set it down`);
+                }
+              }
+            }
+            if (world?.npcErrandActive(avatarIdOf(cid))) continue;
           }
           if (!session.dlogged.has(blockKey)) {
             session.dlogged.add(blockKey);
@@ -11352,6 +12773,46 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               });
             }
             console.log(`[needs] ${cid} BLOCKED on ${tpl.key} (no acquire branch can supply) — sent home`);
+          }
+          // A blocked need can't be served — the live loop must NOT keep the
+          // body (it would suppress the clock feed forever, the "left standing
+          // in the street" bug). DEMOTE and walk home; the want keeps surfacing
+          // through dialogue and re-promotes the moment it becomes servable.
+          //
+          // ── ⚖️ 0-5 — …BUT NOT WITH ITS HANDS STILL FULL, AND NOT MID-WALK.
+          //
+          // The empty-basket arm above is this same ruling at ONE spelling of
+          // one row; the shadow it left is the general case. MEASURED (frontier
+          // seed 11, dt 1/2): the first two console lines of the whole run are
+          // `resident_24_0/1 BLOCKED on provision:clothing … sent home` at
+          // t ≈ 0 — a row that blocks because nothing in the settlement supplies
+          // clothing, i.e. for the whole arc. Each body was demoted on the spot;
+          // the loop head then deleted its meters, and a demoted dark body is
+          // never decided again until the clock re-promotes it. So `relieve` —
+          // priority 0.8, the row that would have set the basket down, and the
+          // one row that is SERVABLE the moment the body is home — was never
+          // asked. First `SET DOWN` in that run: t ≈ 490–520 s.
+          //
+          // ⚖️ THE LADDER IS NOT THE CULPRIT AND IS NOT EDITED. `decideNeeds`
+          // already returns the top SERVABLE row and falls to the blocked one
+          // only when none is servable — the demote is what stops the next ask.
+          // So the fix is the walker's: a body that is CARRYING something has
+          // an episode still in progress (the thing has to be put down
+          // somewhere it keeps), and the walk home IS that episode. It stays
+          // live for exactly the walk.
+          //
+          // BOUNDED BY THE WALK ITSELF, which is what makes this safe against
+          // the bug the paragraph above names: the hold lasts only while
+          // `npcErrandActive` — `walkResidentHome` returns without issuing one
+          // for a body already home, and when the errand ends the next decide
+          // either SERVES the row (home ⇒ `dropKeepsItem` ⇒ `relieve` acts) or
+          // blocks again with no errand and demotes exactly as before. A body
+          // carrying nothing demotes on this very tick, as today.
+          const carryNow = bodyCarryOf(session, cid);
+          const holding = carryNow.inHand !== null || totalStackUnits(bodyCarryView(carryNow)) > 0;
+          if (live && !(holding && world?.npcErrandActive(avatarIdOf(cid)))) {
+            session.liveNeedBodies.delete(cid);
+            if (!shown) reanchorHouseGoods(session, houseIndex);
           }
         }
         continue;
@@ -11653,39 +13114,841 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         ),
       });
     }
-    stepSettlerContribution(session, state);
+    stepBodyNeeds(session, state);
+  }
+
+  /** ⏸️ THE SETTLERS' DORM EPOCH — the world-version their sleep was armed
+   *  under. Closure-local, exactly like `contributeIdleDorm`: a change to the
+   *  props or the stock (a bush regrew, somebody set food down) must wake a
+   *  body whose closed-form crossing is still hours away. */
+  const bodyNeedEpoch = new Map<string, number>();
+
+  /**
+   * ⚖️ THE HOMELESS BODY'S ROWS (body-needs-round.md D1/D3) — memoized per
+   * (scale, capability), because they are pure DATA and a settler's decide asks
+   * for them several times a second.
+   *
+   * ONE BEHAVIOR MODEL: these are the very template factories a resident
+   * carries, at the very priorities the LIVELOCK invariant and the F2 pin are
+   * written on. What is different is the absence of a household, not a second
+   * kind of creature — hunger eats where it stands because there is no dining
+   * table, and rest lies on the ground because there is no bed.
+   */
+  /**
+   * ⚖️ EXPOSURE — the body's HIGHEST `fear` toward anyone in its book, 0..1
+   * (interpersonal-politics.md S-3). It is what scales the security row's rate:
+   * living among people you are afraid of is what makes you need somebody at
+   * your back. A fold over `session.relations`, so it is walked only when a
+   * `fear` edge has actually been written since the last walk (`fearEpoch`) —
+   * and until something frightens somebody, that is NEVER, which is why the
+   * whole social third lands at its base rate on a peaceful world.
+   */
+  function maxFearOf(session: QuestSession, cid: string): number {
+    if (fearEpoch === 0) return 0; // nothing has ever frightened anybody — no walk to make
+    let m = 0;
+    const prefix = `${cid}|`;
+    for (const [key, rel] of session.relations) {
+      if (!key.startsWith(prefix)) continue;
+      if (rel.fear > m) m = rel.fear;
+    }
+    return m > 1 ? 1 : m;
   }
 
   /**
-   * ⚖️ PULL-MODEL LABOR (task #51) — THE SETTLERS' OWN DECIDE.
-   *
-   * A founding group's people never enter the loop above: they have no house
-   * row (`residentTownCtx` answers nothing) and no need meters at all — the
-   * `clear()` note one screen up says so in the code. So the "no urgent
-   * personal need" gate is VACUOUSLY TRUE for them, exactly as the round's
-   * plan says, and the whole decide is: is this body IDLE, and is there a bill?
-   *
-   * 🚨 `isSettlerCid` FIRST, and never a house parse. The loop above reads
-   * `Number(cid.split("_")[1])` as a house index — `settler_3` yields HOUSE 3,
-   * whose goods clock, chest and members belong to somebody else. Settlers are
-   * kept out of that arithmetic by construction here rather than by luck.
-   *
-   * IDLE is `idleForDirect`'s own shape (no pursuit, not in the party, no
-   * queued errand, not mid-walk) — the same verdict a player's direct order
-   * asks for, so a body the player could aim is a body a bill may claim, and
-   * one the player HAS aimed is left alone.
+   * ⚖️ PER BODY, because the SOCIAL THIRD is per body: standing's rate carries
+   * this settler's assertiveness and security's carries its exposure, and a
+   * shared array cannot hold two different numbers. Memoised on the two things
+   * that can move it — the labour capability and the fear epoch — so the common
+   * case is still one map lookup per ask, and a world where nobody is afraid of
+   * anybody rebuilds nothing, ever.
    */
-  function stepSettlerContribution(session: QuestSession, state: WorldState): void {
-    if (!pullLaborOn(session)) return;
-    // SORTED, like the walker above: the visit order IS the reservation order,
-    // so every peer over the same clock slices the same bill the same way.
-    for (const cid of settlersOf(session).sort()) {
+  const settlerRowsMemo = new Map<string, { pullOn: boolean; social: boolean; fearEpoch: number; rows: NeedTemplate[] }>();
+  function settlerNeedTemplates(session: QuestSession, cid?: string): NeedTemplate[] {
+    const pullOn = pullLaborOn(session);
+    // 🚫 INERT OFF THE CAPABILITY: `bodyNeedsOn` is FALSE for the dollhouse and
+    // for nature-hike, so those worlds' settler row sets (there are none) and
+    // every existing frontier row stay exactly as they were — the social third
+    // is opt-in at the ONE seat that can turn it on.
+    const social = bodyNeedsOn(session) && !!cid;
+    const key = cid ?? "";
+    const memo = settlerRowsMemo.get(key);
+    if (memo && memo.pullOn === pullOn && memo.social === social && (!social || memo.fearEpoch === fearEpoch)) {
+      return memo.rows;
+    }
+    const rows = bodyNeedTemplates(session.scale, {
+      pullOn,
+      ...(social
+        ? { social: true, personality: creatureMood(cid!), maxFear: maxFearOf(session, cid!) }
+        : {}),
+    });
+    settlerRowsMemo.set(key, { pullOn, social, fearEpoch, rows });
+    return rows;
+  }
+
+  /**
+   * THE ROW SET FOR ONE SETTLER, SEEDED ON FIRST ASK (D3.2).
+   *
+   * ⚖️ A BODY ARRIVES WITH A METER PHASE, exactly as a revealed resident is
+   * seeded with one — the same `mealOffset` hash spread, so five settlers do
+   * not all get hungry in the same frame and nothing appears out of nothing
+   * later. The settler's "house" in that hash is `-1` (what `houseIndexOfCid`
+   * now answers for it), so its spread can never collide with a real
+   * household's, and its "member" is its own index.
+   *
+   * Seeded HERE and only here — a level is never written during ctx
+   * resolution, so the visit order is the whole of the determinism story.
+   */
+  function bodyNeedRowsFor(session: QuestSession, cid: string, i: number): Map<string, BodyNeedRow> {
+    let rows = session.bodyNeeds.get(cid);
+    if (!rows) {
+      rows = new Map();
+      session.bodyNeeds.set(cid, rows);
+    }
+    const seed = session.town?.config.seed ?? 0;
+    for (const tpl of settlerNeedTemplates(session, cid)) {
+      if (tpl.drive.kind !== "meter" || tpl.drive.rate <= 0) continue;
+      if (rows.has(tpl.key)) continue;
+      rows.set(tpl.key, {
+        // ⚖️ 0-3 — the settler's energy seed is the same day phase the
+        // residents' is (`scheduledEnergy`). UNGATED here, and honestly so: a
+        // settler exists only on a founding site, which is the capability's
+        // own truth (`bodyNeedsOn` = `pullLaborOn`), so there is no dollhouse
+        // reading of this line to keep still.
+        level: tpl.key.startsWith("hunger")
+          ? scheduledHunger(mealOffset(seed, -1, i), session.townClock)
+          : tpl.key === "energy"
+            ? scheduledEnergy(mealOffset(seed, -1, i * 7 + tpl.key.length), session.townClock)
+            : (mealOffset(seed, -1, i * 7 + tpl.key.length) / MEAL_PERIOD_SEC) * 0.7,
+        at: session.townClock,
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * ═══ THE HOMELESS BODY'S NEED CONTEXT — THE SCOPE WALK, NOT A HOUSE ═══
+   * (body-needs-round.md D3.4; `feedback_context_via_scope_walk`,
+   *  `feedback_needs_bind_to_affordances`)
+   *
+   * `residentNeedCtx` beside this one answers every world question with the
+   * HOUSE: `furn_<hi>_chest_food` for the larder, `furn_<hi>_bed_0..2` for the
+   * bed, an AABB clip on the house rect for anything loose. A settler has no
+   * house index, so under that resolution its every candidate list is empty and
+   * the honest verdict is "this body cannot want anything" — which is precisely
+   * the needlessness this round is removing.
+   *
+   * So the questions are asked of the GROUND instead, inside `needReachOf`:
+   *   • SOURCES  = the wild food the land is bearing (`wildFoodPlants()` species
+   *     whose live container still holds food). "Forage = expensive food" needs
+   *     no branch of its own: its price is the WALK and the yield, which
+   *     `acquireFrom`'s argmax already subtracts, so a body with a market in
+   *     reach buys and a body with only bushes forages.
+   *   • STORAGE  = any container in reach this body may use that holds food (the
+   *     camp's basket, a crate somebody filled) — the makeshift branch, exactly
+   *     the role it plays in a house.
+   *   • LOOSE    = matching props lying on the ground in reach.
+   *   • STATIONS = bed-kind fixtures in reach; NONE at a camp, and the rest row
+   *     does not `requireStation`, so the walker answers `restHere` and the
+   *     GROUND is the satisfier (quality 0.5 — `restClear`).
+   *
+   * 🚨 NO HOUSEHOLD ROLE IS FAKED. `containers.home` is absent, not zeroed: a
+   * settler has no larder, and inventing one would give it a provisioning
+   * errand for a box that does not exist.
+   */
+  /**
+   * ⚖️ 0-2 — WHAT A TAKE FROM THIS ENDPOINT WOULD ACTUALLY YIELD, RIGHT NOW.
+   *
+   * `rationTotalOf`/`stackTotalOf` answer "what is on the shelf", which is the
+   * right question for a chest and the WRONG one for a standing thing: the
+   * kill/harvest split means a plant can hold units no ordinary take may move
+   * (`glyphTakeableFrom` — a tree's timber is on the far side of a cut), and
+   * the ONE gate the spoken `get berry` honours is `wildGlyphTakeable`. Listing
+   * a source on raw stock is how a body walks to a stand that can give it
+   * nothing.
+   *
+   * IDENTICAL for every non-wild container (`wildGlyphTakeable` answers true
+   * for a chest, a shelf and a basket alike) — so this is a widening of the
+   * predicate, not a new one, and no pantry read moves.
+   */
+  /**
+   * ⚖️ 0-2 — THE STANDS SOMEBODY ELSE IS ALREADY WALKING TO.
+   *
+   * 🚨 MEASURED, and the reason the claim ledger could not answer this: a
+   * ration-denominated forage claim is a FRACTION (one onion = 0.2 rations) and
+   * `ReservationLedger.reserve` opens with `const n = Math.floor(qty); if (n <=
+   * 0) return null;` — whole units only, by design, because it is the same
+   * ledger the seats and the haul agreements are written in. So a settler
+   * "reserving" a berry reserved NOTHING, `freeNeedUnits` answered the raw
+   * stock to the next body, and four settlers spoke for the same onion in one
+   * frame (traced on the homestead: four `RESERVE … 0.2` rows on
+   * `wild_onion_4`, `free=99` at every arrival, `claims=[]`). 52.5 % of takes
+   * moved zero rations.
+   *
+   * The honest fix at THIS rung is not to teach the ledger fractions — it is
+   * `residentNeedCtx`'s own STAMPEDE GUARD, one scope out: a housemate already
+   * in flight on a row is subtracted from what the station appears to hold. A
+   * wild stand is a snack, not a shelf — a bush that one body is already
+   * walking to has nothing left for a second — so the whole stand drops off
+   * the list rather than being discounted. No constant, no ledger change, and
+   * the shipped market/pantry paths (whole-ration endpoints, where the claim
+   * ledger works exactly as written) never see this at all.
+   */
+  function needEndpointsInFlight(session: QuestSession, exceptCid: string): Set<string> {
+    const out = new Set<string>();
+    for (const [other, st] of session.needStep) {
+      if (other !== exceptCid && st.objId) out.add(st.objId);
+    }
+    for (const [other, p] of session.pursuits) {
+      if (other === exceptCid) continue;
+      const g = p.goal as { kind?: string; from?: { kind?: string; id?: string } };
+      if (g?.kind === "fetch" && g.from?.kind === "named" && g.from.id) out.add(g.from.id);
+    }
+    return out;
+  }
+
+  function takeableNeedUnits(
+    session: QuestSession,
+    objId: string,
+    goodKey: string,
+    inRations: boolean,
+  ): number {
+    const stock = session.containerRecords.get(objId)?.stock;
+    if (!stock || !goodKey) return 0;
+    const kinds = kindsOf(goodKey);
+    let n = 0;
+    for (const [g, u] of Object.entries(stock)) {
+      if (!(u > 0) || !kinds.includes(g)) continue;
+      if (!wildGlyphTakeable(session, objId, g)) continue;
+      n += inRations ? u * satiationDaysOf(g) : u;
+    }
+    return n;
+  }
+
+  /**
+   * ⚖️ HOW FAR OUT THE FORAGE LIST MAY REACH FOR A TILE — ring 1, the eight
+   * tiles around the site's own ground.
+   *
+   * 🚫 NOT A DISTANCE, AND THAT IS THE POINT. The walk budget
+   * (`needReachOf` → `forageRadiusM`) already prices HOW FAR; this bounds WHICH
+   * RECORDS EXIST to be priced, so a forage list can never grow past the ground
+   * the mint has actually described. Ring 1 is the ring whose rects TOUCH the
+   * session's own manifold, so every one of its shelf points clamps to a place
+   * feet can really stand; ring 2 lies wholly outside and is reachable only as
+   * a scheduled haul (the construction path), which is exactly the split #49
+   * drew. Widening this is a design call, not a tuning knob: it would put a
+   * body on a walk whose far half no frame ever renders.
+   */
+  const FORAGE_TILE_RING = 1;
+
+  /**
+   * ⚖️ WHAT A FORAGE TAKE FROM AN OFFLOADED REGION WOULD YIELD — the record-tier
+   * twin of `takeableNeedUnits`, asking the same two questions of a stand
+   * instead of a container.
+   *
+   *   ① THE KILL/HARVEST SPLIT. `wildGlyphTakeable` is the feature-side gate
+   *      ("a tree's timber is on the far side of a cut"); a record has no
+   *      container to ask, so the question goes to the catalogue row directly —
+   *      a PICK (`method: "harvest"`) is forage, a body product is a felling and
+   *      no hunger row may order one.
+   *   ② WHAT IS ALREADY CUT. `wildSourceEndpoint`'s own law is that the boundary
+   *      shelf OUTLIVES the record, so units a previous draw left at the road
+   *      are units this body can lift — the same sum `sourceCanYield` takes for
+   *      a haul, restricted to the good.
+   */
+  function areaTakeableUnits(
+    session: QuestSession,
+    rec: WildAreaRecord,
+    goodKey: string,
+    inRations: boolean,
+  ): number {
+    if (!goodKey) return 0;
+    const kinds = new Set(kindsOf(goodKey));
+    const shelf = session.partnerStock[wildAreaId(rec.key)] ?? {};
+    let n = 0;
+    for (const st of rec.stands) {
+      const src = naturalSourceOf(st.species);
+      if (!src) continue;
+      for (const [g, u] of Object.entries(st.stock)) {
+        if (!(u > 0) || !kinds.has(g)) continue;
+        if (!src.products.some((p) => p.glyph === g && p.method === "harvest")) continue;
+        n += inRations ? u * satiationDaysOf(g) : u;
+      }
+    }
+    for (const g of kinds) {
+      const u = shelf[g] ?? 0;
+      if (u > 0) n += inRations ? u * satiationDaysOf(g) : u;
+    }
+    return n;
+  }
+
+  /**
+   * ⚖️ REACH FOR FOOD IS THE WALK BUDGET, NEVER THE OWNERSHIP DISC
+   * (user ruling 2026-09-08 — plant-growth-render-round.md PART 5).
+   *
+   * 🚨 THE DEFECT THIS CLOSES, MEASURED. A hunger row's forage arm iterated
+   * `session.wilderness.features` and nothing else. On a PLANET world those
+   * features are post-filtered by the NEAR-STAND DISC — `nearStandRadiusM` =
+   * 30 m at zero buildings, 0.28 ha — which is the site's OWNERSHIP answer
+   * ("what may I fell, what may I designate"), not a walk. So five settlers on
+   * `frontier-planet` seed 11 had ONE food plant in reach and drew 0.18
+   * rations/day against the 5.00 they eat, while 318 food units stood in the
+   * eight `wild:area:tile-<i>-<j>` records the neighbouring-stands round minted
+   * as *"what the site REACHES FOR"* — read by construction hauls only, never
+   * by a hunger row. `forageRadiusM` (182.4 m, `needReachOf`'s own answer) never
+   * bound, because the disc had already deleted everything outside 30 m.
+   *
+   * THE LIST IS THEREFORE THE UNION, both halves priced by the SAME distance:
+   *   ① the LOADED STAND — every standing food feature inside the budget
+   *      (unchanged: the takeability gate ⚖️ 0-2, the claim, the in-flight
+   *      stampede guard, nearest-first);
+   *   ② the NEIGHBOURING TILES — every ring-1 record inside the budget, read
+   *      through the haul's own machinery (`wildRectPointToward` ranks,
+   *      `wildShelfPointOf` walks, `drawSourceShelf` takes). No second notion
+   *      of where a forest is, and no second draw path.
+   *
+   * ⚖️ THE DISC IS UNTOUCHED. `nearStandRadiusM` still says what the site OWNS,
+   * `buildWilderness`'s `keep` still lays only that ground, and the far country
+   * is still not materialised — a tile is drawn from as a RECORD, exactly as a
+   * timber haul draws from it, so relevance-vs-visibility holds ("near stand =
+   * SELECTABLE; distant trees still RENDER").
+   *
+   * 🚫 THE IN-FLIGHT GUARD DOES NOT APPLY TO A TILE, deliberately. Its own
+   * argument is that *"a wild stand is a SNACK, not a shelf — a bush that one
+   * body is already walking to has nothing left for a second"*. A 4 ha tile
+   * holding forty rations is the shelf case: dropping it the moment one settler
+   * set out would send the other four back to the empty clearing, which is the
+   * defect wearing a different hat. The CLAIM still applies (`freeNeedUnits`),
+   * which is the honest instrument at that size.
+   */
+  function forageCandidates(
+    session: QuestSession,
+    cid: string,
+    goodKey: string,
+    inRations: boolean,
+    from: { x: number; y: number } | null | undefined,
+    reach: number,
+  ): StockCandidate[] {
+    const P = (id: string) => ({ kind: "named" as const, id });
+    const dTo = (p: { x: number; y: number } | null | undefined): number | undefined =>
+      from && p ? Math.hypot(p.x - from.x, p.y - from.y) : undefined;
+    const cands: { c: StockCandidate; d: number }[] = [];
+    // ── ① THE LOADED STAND ────────────────────────────────────────────────
+    const edible = new Set(wildFoodPlants().map((s) => s.species));
+    const busy = needEndpointsInFlight(session, cid);
+    for (const f of session.wilderness?.features ?? []) {
+      if (!edible.has(f.species)) continue;
+      const objId = wildFeatureContainerId(f);
+      if (busy.has(objId)) continue; // ⚖️ 0-2 — somebody is already on it
+      // ⚖️ 0-2 — LISTED ONLY IF A TAKE WOULD YIELD. Two gates, both already
+      // owned elsewhere and neither a new number:
+      //  ① TAKEABILITY — the stand's own kill/harvest split, the very gate
+      //    the spoken take asks (`wildGlyphTakeable`, via `takeableNeedUnits`).
+      //  ② THE CLAIM — a stand a sibling has already spoken dry is not a
+      //    stand that holds a berry for you. `looseGoodOf`'s precedent, and
+      //    the discipline the STORAGE arm has always applied: this arm computed
+      //    `free` and then listed the source anyway, which (with the settler
+      //    claims being swept away every frame, fixed at the sweep) is why
+      //    52.5 % of homestead takes moved ZERO rations — three bodies walking
+      //    to one onion.
+      const units = takeableNeedUnits(session, objId, goodKey, inRations);
+      if (units <= 0) continue;
+      const free = freeNeedUnits(session, cid, objId, goodKey, units);
+      if (free <= 0) continue;
+      const at = containerAnchor(session, objId);
+      const d = dTo(at);
+      if (d === undefined || d > reach) continue;
+      cands.push({ c: { id: objId, place: P(objId), units, free, d }, d });
+    }
+    // ── ② THE NEIGHBOURING TILES ──────────────────────────────────────────
+    // Sorted keys: a Map's insertion order is a mint history, not a fact about
+    // the world (`sourcesByLeg`'s own argument).
+    for (const key of [...session.areaRecords.keys()].sort()) {
+      const idx = neighborTileIndex(key);
+      if (!idx || Math.max(Math.abs(idx.i), Math.abs(idx.j)) > FORAGE_TILE_RING) continue;
+      const rec = session.areaRecords.get(key);
+      if (!rec) continue;
+      const objId = wildAreaId(key);
+      const units = areaTakeableUnits(session, rec, goodKey, inRations);
+      if (units <= 0) continue;
+      const free = freeNeedUnits(session, cid, objId, goodKey, units);
+      if (free <= 0) continue;
+      // ⚖️ RANKED ON THE RECORD'S TRUE GEOMETRY, WALKED TO THE CLAMPED SHELF —
+      // #49's delicate seam, read from the needs side. The PRICE is the
+      // unclamped rect-edge distance (`wildRectPointToward`, the director's
+      // answer), so a tile really is as far away as it is; the FEET go to
+      // `wildShelfPointOf`, inside the walkable manifold, and the unwalked
+      // remainder rides the price. Measuring the price at the clamped point
+      // would make every record beyond the edge equidistant and collapse the
+      // very ordering nearest-first exists to provide.
+      const d = dTo(wildRectPointToward(rec, from ?? null));
+      if (d === undefined || d > reach) continue;
+      cands.push({ c: { id: objId, place: P(objId), units, free, d }, d });
+    }
+    // Nearest-first (the NeedCtx contract), id as the deterministic tie.
+    cands.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+    return cands.map((c) => c.c);
+  }
+
+  /** The area key a forage endpoint names, or null when the id is an ordinary
+   *  container. The ONE reader of the `wild:area:` spelling on the needs side —
+   *  never a `startsWith` written out again at a call site. */
+  function foragedAreaKeyOf(objId: string): string | null {
+    const ref = parseScopeId(objId);
+    return ref.kind === "wild" && ref.form === "area" ? ref.tag : null;
+  }
+
+  function bodyNeedCtx(
+    session: QuestSession,
+    state: WorldState,
+    cid: string,
+    tpl: NeedTemplate,
+    allTemplates: readonly NeedTemplate[],
+  ): NeedCtx {
+    const goodKey = tpl.item.category ?? "";
+    const P = (id: string) => ({ kind: "named" as const, id });
+    const me = state.avatars[avatarIdOf(cid)];
+    const reach = needReachOf(session, cid);
+    const dTo = (p: { x: number; y: number } | null | undefined): number | undefined =>
+      me && p ? Math.hypot(p.x - me.x, p.y - me.y) : undefined;
+    const inReach = (p: { x: number; y: number } | null | undefined): boolean => {
+      const d = dTo(p);
+      return d !== undefined && d <= reach;
+    };
+    const inRations = rationDenominated(tpl.key);
+    const unitsIn = (stock: Record<string, number> | undefined): number =>
+      inRations ? rationTotalOf(stock, goodKey) : stackTotalOf(stock, goodKey);
+    // The PUT-DOWN row's subject, resolved once (the drop law) — `-1` is this
+    // body's household, which is to say none, and `heldIdleObject` reads it as
+    // "no household row claims this thing", which is the truth.
+    const idleHeld = tpl.key === "relieve" ? heldIdleObject(session, cid, -1, allTemplates) : null;
+
+    // ── STORAGE: the MAKESHIFT DRAW — a container in reach holding the type ──
+    //
+    // 🚨 THE DEPOSIT SIDE IS DELIBERATELY ABSENT. `relieve`'s storage role is
+    // the household's DESIGNATED box for the thing in hand
+    // (`designatedContainerFor`), and a camper has no designated anything —
+    // offering it the nearest crate would post a settlement's haul basket into
+    // whatever box happened to be nearest. With no storage role the row's own
+    // `orDrop` sets the thing down where the body stands, which is exactly
+    // what putting a thing down at a camp looks like.
+    const containers: Record<string, StockCandidate> = {};
+    if (tpl.acquire.some((a) => a.kind === "container" && a.role === "storage")) {
+      const boxes: { c: StockCandidate; d: number }[] = [];
+      for (const [objId, rec] of stockedEntries(session)) {
+        // A STAND IS A SOURCE, NEVER A SHELF — and an EMBODIED one is a stand
+        // too (⚖️ 0-2). `WILD_PREFIX` only catches the placeholder-BOX spelling
+        // (`wild:<species>_<i>`); a plant tall enough to stand as a body is
+        // keyed by its BODY id (`flora:hazel:wild:hazel_3`), so every bush and
+        // hazel on the homestead was slipping through this guard and being
+        // offered to hunger as a makeshift larder — with none of the source
+        // arm's takeability or claim discipline applied to it.
+        if (objId.startsWith(WILD_PREFIX) || isNaturalSourceBodyId(objId)) continue;
+        if (!mayUse(cid, -1, rec.owner)) continue;
+        const units = unitsIn(rec.stock);
+        if (units <= 0) continue;
+        const free = freeNeedUnits(session, cid, objId, goodKey, units);
+        if (free <= 0) continue; // a box a housemate has spoken dry is no box
+        const at = containerAnchor(session, objId);
+        if (!inReach(at)) continue;
+        boxes.push({
+          c: {
+            id: objId,
+            place: P(objId),
+            units,
+            free,
+            ...(dTo(at) !== undefined ? { d: dTo(at)! } : {}),
+          },
+          d: dTo(at) ?? 0,
+        });
+      }
+      boxes.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+      if (boxes[0]) containers.storage = boxes[0].c;
+    }
+
+    // ── SOURCES: THE WILD LARDER (forage) ────────────────────────────────────
+    // ⚖️ ONE LIST, TWO TIERS (PART 5) — the standing scatter AND the ring-1
+    // records, both inside this body's walk budget. See `forageCandidates`.
+    let sources: StockCandidate[] = [];
+    if (goodKey === "food" && tpl.acquire.some((a) => a.kind === "source")) {
+      sources = forageCandidates(
+        session,
+        cid,
+        goodKey,
+        inRations,
+        me ? { x: me.x, y: me.y } : null,
+        reach,
+      );
+    }
+
+    // ── STATIONS: the satisfy's own affordance, found by REACH ───────────────
+    let stations: StationCandidate[] = [];
+    if (tpl.satisfy.kind === "rest") {
+      const kinds = tpl.satisfy.at ?? ["bed"];
+      const cands: { c: StationCandidate; d: number }[] = [];
+      for (const [objId, o] of Object.entries(state.objects)) {
+        const kind = fixtureKindOf(state, objId);
+        if (!kind || !kinds.includes(kind)) continue;
+        if (!mayUse(cid, -1, session.containerRecords.get(objId)?.owner)) continue;
+        if (!inReach(o)) continue;
+        cands.push({ c: { id: objId, place: P(objId), kind, waiting: 0, d: dTo(o)! }, d: dTo(o)! });
+      }
+      cands.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+      stations = cands.map((c) => c.c);
+    } else if (tpl.satisfy.kind === "social" && bodyNeedsOn(session)) {
+      // ── ⚖️ S-3 — THE SETTLER'S PARTNERS: A STATION IS A PERSON ─────────────
+      //
+      // 🚨 THE MISSING HALF, MEASURED. A settler carrying a `social` row before
+      // this arm existed resolved NO stations at all — `bodyNeedCtx` answered
+      // the rest/loose/source questions and simply had no answer for "who is
+      // around", so `decideNeed`'s social arm saw an empty list and BLOCKED,
+      // every time, forever. A row that can only ever block is a want the
+      // engine simulates and can never serve, which is exactly what the
+      // resident set's own comment forbids.
+      //
+      // The scope walk, not a town gate (⚖️ context via scope walk): every
+      // OTHER embodied body inside this body's own `needReachOf` circle, whoever
+      // it belongs to — a fellow settler at the camp, a resident whose street
+      // the camp grew into, a pet. The player/spirit is not a partner (it has
+      // no meters and cannot be walked to as a body); the party is excluded for
+      // the same reason the residents' list excludes it (they are already with
+      // you).
+      const cands: { c: StationCandidate; d: number }[] = [];
+      for (const [bodyId, o] of Object.entries(state.avatars)) {
+        if (bodyId === PLAYER_ID) continue;
+        const pid = creatureOfAvatar(bodyId) ?? bodyId;
+        if (pid === cid || session.party.has(pid)) continue;
+        if (!isSettlerCid(pid) && !pid.startsWith("resident_") && !isPetCid(pid)) continue;
+        if (!inReach(o)) continue;
+        if (!socialPartnerSupplies(session, cid, pid, tpl.key)) continue; // the affordance gate
+        const d = dTo(o)!;
+        cands.push({
+          c: {
+            id: pid,
+            place: P(pid),
+            kind: "partner",
+            waiting: 0,
+            d,
+            value: socialStationValue(session, cid, pid, tpl.key, d),
+          },
+          d,
+        });
+      }
+      // Nearest-first (the NeedCtx contract) with the id as the deterministic
+      // tie — the VALUE argmax happens in `decideNeed`, not here, so the order
+      // this list arrives in is still the one every other station arm uses.
+      cands.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+      stations = cands.map((c) => c.c);
+    }
+
+    // ── LOOSE: matching props on the ground in reach ─────────────────────────
+    let loose: StockCandidate[] | undefined;
+    if (tpl.acquire.some((a) => a.kind === "loose")) {
+      const kinds = goodKey ? kindsOf(goodKey) : [];
+      const cands: { c: StockCandidate; d: number }[] = [];
+      for (const [objId, rec] of looseEntries(session)) {
+        if (!rec.glyph) continue;
+        if (kinds.length ? !kinds.includes(rec.glyph) : !matchesNeedItem(rec.glyph, tpl.item)) continue;
+        const o = state.objects[objId];
+        if (!o || o.carriedBy || o.containedIn) continue;
+        if (!inReach(o)) continue;
+        cands.push({
+          c: {
+            id: objId,
+            place: P(objId),
+            units: inRations ? satiationDaysOf(rec.glyph) : 1,
+            d: dTo(o)!,
+          },
+          d: dTo(o)!,
+        });
+      }
+      cands.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+      loose = cands.map((c) => c.c);
+    }
+
+    const carry = bodyCarryOf(session, cid);
+    const onMe = bodyCarryView(carry);
+    return {
+      meter: needLevelOf(session, cid, tpl.key),
+      carried:
+        tpl.key === "relieve"
+          ? idleHeld
+            ? 1
+            : 0
+          : inRations
+            ? carryRationTotalOf(onMe, goodKey) +
+              (tpl.satisfy.kind === "consume" && goodKey === "food" ? carryRationTotalOf(onMe, "meal") : 0)
+            : carryTotalOf(onMe, goodKey) +
+              (tpl.satisfy.kind === "consume" && goodKey === "food" ? carryTotalOf(onMe, "meal") : 0),
+      containers,
+      sources,
+      stations,
+      ...(loose ? { loose } : {}),
+      room: inRations ? stackRoom(carry) * grainSatiationDaysOf(goodKey) : stackRoom(carry),
+      ...(idleHeld && me
+        ? {
+            dropKeepsItem:
+              atBagHome(idleHeld.objId, idleHeld.glyph, { x: me.x, y: me.y }) ||
+              dropKeepsItem(session, cid, idleHeld.glyph, { x: me.x, y: me.y }),
+          }
+        : {}),
+      price: needPriceOf(
+        session,
+        tpl,
+        containers,
+        allTemplates,
+        idleHeld ? freedHandsValueS(session, cid, allTemplates) : 0,
+      ),
+    };
+  }
+
+  /**
+   * ⚖️ THE SETTLERS' DECIDE — A BODY, NOT A VOLUNTEER (body-needs-round.md D3;
+   * replaces `stepSettlerContribution`, whose whole content was the bill).
+   *
+   * What this used to be, verbatim in its own words: *"they have no house row
+   * and no need meters at all … so the 'no urgent personal need' gate is
+   * VACUOUSLY TRUE for them"*, and the entire decide was `tryContribute(cid,
+   * -Infinity)`. That gate was vacuous because the METER ARCHITECTURE could not
+   * represent a person without a household — not because a founding settler has
+   * no body. Now it has rows, so it runs the residents' decide with the
+   * residents' walker over its own scope, and the bill competes against its
+   * hunger in the one seconds currency (F2), which is what the ladder was for.
+   *
+   * 🚨 STILL `isSettlerCid` FIRST, AND STILL NO HOUSE PARSE. Everything below
+   * addresses the body by cid; the only "house" anywhere in it is `-1`.
+   *
+   * ⚖️ DEATHLESS. A hunger with nothing in reach BLOCKS — the want surfaces
+   * (`blockedNeeds`, the beg bubble) and the body goes back to work. There is
+   * no starvation mechanic here and there must not be one: the want is SPOKEN,
+   * which is what a diegetic need means.
+   */
+  function stepBodyNeeds(session: QuestSession, state: WorldState): void {
+    // ⚖️ L-4, THE OPEN HALF — ONCE PER NEEDS STEP, OVER THE ORDERS. Deliberately
+    // ABOVE the settler early-out and outside the loop: an order's follower may
+    // be a resident or a pet that this loop never visits, and a window that
+    // lapsed after the last settler graduated must still fail rather than sit
+    // open forever. A no-op on an empty map, which is every dollhouse frame.
+    stepOpenOrders(session);
+    const settlers = settlersOf(session);
+    if (!settlers.length) return;
+    // ⚖️ PER BODY (the social third is personality-scaled) — resolved inside the
+    // loop below, where the cid is known.
+    // SORTED: the visit order IS the reservation order, so every peer over the
+    // same clock slices the same bill and claims the same berry.
+    const ordered = [...settlers].sort();
+    for (let i = 0; i < ordered.length; i++) {
+      const cid = ordered[i]!;
       if (!isSettlerCid(cid)) continue; // belt and braces — never a house parse
-      if (!state.avatars[avatarIdOf(cid)]) continue; // not embodied: no body, no slice
+      const templates = settlerNeedTemplates(session, cid);
+      const body = state.avatars[avatarIdOf(cid)];
+      if (!body) continue; // not embodied: no body, no needs and no slice
+      // A PURSUIT (a need it is already serving, a bill it took, a spoken
+      // order) OWNS the body until it ends — the residents' `pulling` exemption
+      // and the direct-order verdict in one predicate.
+      // 🚨 …AND A WALK RECORD NOTHING IS WALKING IS ABANDONED, NOT BUSY.
+      // `session.walk` is the committed-leg watchdog, and `idleForDirect`
+      // reads it as "mid-walk (heading home / escort)" — so a record left
+      // behind by a leg that ended latches the body out of EVERY decide it
+      // has, its needs and the bill alike, for the rest of the session.
+      // MEASURED (homestead seed 11): `settler_1` carried one from t≈40 s and
+      // never ate, never slept and never took a slice again — its need rows
+      // still sat at their seed values 600 s later, while its four siblings
+      // foraged. This is the walk twin of the stale-PURSUIT reap
+      // `idleForDirect` already performs one screen down, and it is guarded by
+      // exactly the conditions that make the claim meaningless: no pursuit, no
+      // queued task and no live errand ⇒ nothing is driving this body, so
+      // nothing can be walking it.
+      if (
+        session.walk.has(cid) &&
+        !session.pursuits.has(cid) &&
+        (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) === 0 &&
+        !world?.npcErrandActive(avatarIdOf(cid))
+      ) {
+        session.walk.delete(cid);
+      }
       if (!idleForDirect(session, cid)) continue;
-      // Nothing personal can outrank a bill for a body with no meters, so the
-      // rival is `-Infinity` — the vacuous gate, spelled rather than assumed.
-      tryContribute(session, cid, Number.NEGATIVE_INFINITY);
+
+      // ── ① DORM: sleep until this body's own earliest CROSSING ─────────────
+      // Closed form, because a lazy row HAS one (`bodyNeedCrossingAt`) — the
+      // residents' 1.5 s cap is the price of an accumulator that cannot say
+      // when it will fire. A world change (props, stock) wakes it early.
+      //
+      // 🚨 AND A DORMANT BODY STILL ASKS ABOUT THE BILL. The dorm is armed on
+      // exactly one path — "nothing of mine fires that I can serve" — so a
+      // dormant settler is by construction a body with NO rival, which is the
+      // old vacuous gate spelled honestly. Skipping the whole visit made the
+      // dorm a work stoppage instead of a saving: MEASURED on the homestead
+      // (seed 11, 4 200 s), five settlers whose hunger was permanently BLOCKED
+      // slept to their ENERGY crossing between decides and took 32 slices
+      // where the meterless build took 177 — the house stalled at 84 blocks
+      // while the crew stood around, which is precisely the failure U10 forbids.
+      // The decide is the expensive half and it is what the dorm may skip; the
+      // bill is one argmax over open links and it is what a free body is FOR.
+      const rows = bodyNeedRowsFor(session, cid, i);
+      const epochNow = session.needsPropsEpoch + session.needsStockEpoch;
+      const dorm = session.bodyNeedDorm.get(cid);
+      if (dorm !== undefined && session.townClock < dorm && epochNow === bodyNeedEpoch.get(cid)) {
+        tryContribute(session, cid, Number.NEGATIVE_INFINITY);
+        continue;
+      }
+
+      // ── ② DECIDE, over the body's own scope ───────────────────────────────
+      const ctxSeen = new Map<string, NeedCtx>();
+      const decided = decideNeeds(
+        templates,
+        (tpl) => {
+          const c = bodyNeedCtx(session, state, cid, tpl, templates);
+          ctxSeen.set(tpl.key, c);
+          return c;
+        },
+        { parked: (tpl) => needRowParked(session, cid, tpl) },
+      );
+
+      // ── ③ SURFACE the unmet want (adoption / the beg bubble) ──────────────
+      const blockedRow = decided?.blocked;
+      if (blockedRow) {
+        session.blockedNeeds.set(cid, {
+          tplKey: blockedRow.tpl.key,
+          goodKey: blockedRow.tpl.item.category ?? "",
+          at: blockedRow.tpl.satisfy.kind === "consume" ? (blockedRow.tpl.satisfy.at ?? []) : [],
+          priority: blockedRow.tpl.priority,
+        });
+      } else {
+        session.blockedNeeds.delete(cid);
+      }
+
+      // ── ④ THE GATE (F2): the bill against what this body was going to do ──
+      // A firing SERVABLE need prices itself in hand-seconds; a blocked or
+      // parked one is a want, not an activity, and `needRivalNetS` answers
+      // `-Infinity` so the bill wins — the vacuous gate is now the real one,
+      // spelled with the same two functions that ranked the row.
+      const rivalS = needRivalNetS(decided, ctxSeen);
+      if (tryContribute(session, cid, rivalS)) {
+        releaseNeedUnits(session, cid);
+        session.bodyNeedDorm.delete(cid);
+        bodyNeedEpoch.delete(cid);
+        continue;
+      }
+      // ⚖️ L-3 — …AND THE BILL DOES NOT STOP BEING WORTH DOING BECAUSE THIS PAIR
+      // OF HANDS IS BUSY. The trigger is this exact branch and nothing else: the
+      // body priced a need, the need BEAT the work it could see, and it is about
+      // to walk off and eat. That is the one moment pointing somebody else at the
+      // pile is a claim about the world rather than an idle gesture.
+      //
+      // 🚨 FINITE, NOT MERELY FALSE. `needRivalNetS` answers −∞ for a BLOCKED or
+      // IDLE row — a want, not an activity — and a false gate under −∞ means the
+      // bill was never takeable at all (no link, no carry, no free seat), which
+      // is nothing to delegate: the leader skipped nothing. A finite rival is the
+      // literal reading of "the need won".
+      if (Number.isFinite(rivalS)) delegateBill(session, state, cid);
+
+      // ── ⑤ INSTALL: the residents' pursuit path, verbatim ──────────────────
+      if (!decided || decided.intent.kind === "blocked" || decided.intent.kind === "idle") {
+        // Nothing to do: sleep until the earliest row can newly fire.
+        //
+        // ⚠️ …AND A ROW THAT IS ALREADY FIRING RE-ASKS THE WORLD, NOT THE
+        // CLOCK. Its own crossing is in the PAST, so a "next crossing" sleep
+        // would skip straight over it to the next row's — a settler with a
+        // blocked hunger sleeping until it also got tired. What such a row is
+        // waiting for is the WORLD (a bush regrowing, somebody setting food
+        // down), and the epoch bump above catches most of that; the residents'
+        // `NEED_DECIDE_CAP_S` is the safety net under the rest, used here for
+        // the reason they use it.
+        let due = Number.POSITIVE_INFINITY;
+        let firing = false;
+        for (const tpl of templates) {
+          if (tpl.drive.kind !== "meter") continue;
+          const row = rows.get(tpl.key);
+          if (!row) continue;
+          if (bodyNeedLevel(row, tpl.drive.rate, session.townClock) >= tpl.drive.threshold) firing = true;
+          const at = bodyNeedCrossingAt(row, tpl.drive.rate, tpl.drive.threshold);
+          if (at > session.townClock && at < due) due = at;
+        }
+        const capped = session.townClock + NEED_DECIDE_CAP_S;
+        session.bodyNeedDorm.set(cid, firing || !Number.isFinite(due) ? capped : due);
+        bodyNeedEpoch.set(cid, epochNow);
+        releaseNeedUnits(session, cid);
+        continue;
+      }
+      session.bodyNeedDorm.delete(cid);
+      bodyNeedEpoch.delete(cid);
+      const { tpl, intent } = decided;
+      // THE UNIT CLAIM, on ACT and never on ctx resolution — two settlers
+      // reading the same three berries is the same race as two housemates at
+      // one chest, one scope further out.
+      if (intent.kind === "take") {
+        reserveNeedUnits(session, cid, intent.from.id, tpl.item.category ?? "", intent.units);
+      } else {
+        releaseNeedUnits(session, cid);
+      }
+      if (intent.kind === "consumeHere") {
+        applyNeedStepEffect(session, state, cid, {
+          tplKey: tpl.key,
+          kind: "consume",
+          goodKey: tpl.item.category ?? "",
+          units: 1,
+        });
+        continue;
+      }
+      if (intent.kind === "dropHere") {
+        applyNeedStepEffect(session, state, cid, {
+          tplKey: tpl.key,
+          kind: "drop",
+          goodKey: tpl.item.category ?? "",
+          units: intent.units,
+        });
+        continue;
+      }
+      // ── ④ ENABLE: FETCH THE BASKET FIRST, when it pays (the residents' own
+      //    step, ahead of the pursuit install for the same reason — it REPLACES
+      //    the trip rather than decorating it).
+      //
+      // 🚨 THIS IS NOT AN OPTIMISATION AT THIS RUNG, IT IS WHETHER THE BODY CAN
+      // EAT AT ALL. A ration row's take is capped by `ctx.room`, and a
+      // bare-handed body's room is ONE ITEM — 0.2 rations of fruit. MEASURED
+      // (homestead rich, seed 11): five settlers foraging bare-handed made a
+      // trip per berry and fell 15 RATIONS behind over 4 200 s, which is not a
+      // hungry crew, it is a crew that can never finish a meal. With a basket
+      // the same trip brings back a meal's worth, which is what the resident
+      // path has always done and why it has this step.
+      if (intent.kind === "take" && NEED_PURSUITS_ENABLED) {
+        const fetchBag = bagFetchGoal(session, cid, tpl, ctxSeen.get(tpl.key), intent);
+        if (fetchBag && compileGoal(fetchBag, cid, makeGoalResolver(session, cid))) {
+          session.walk.delete(cid);
+          session.pursuits.set(cid, { source: "need", tplKey: tpl.key, goal: fetchBag, glyph: tpl.key });
+          if (probesOn()) console.log(`[needs] ${cid} fetching a bag first for ${tpl.key} (${intent.units} → bag)`);
+          continue;
+        }
+      }
+      const onMe = bodyCarryView(bodyCarryOf(session, cid));
+      const carriedMatching =
+        tpl.satisfy.kind === "consume" && tpl.item.category
+          ? [
+              ...(tpl.item.category === "food" ? carryKindsOf("meal") : []),
+              ...carryKindsOf(tpl.item.category),
+            ].reduce((s, k) => s + (onMe[k] ?? 0), 0)
+          : 0;
+      const candidates = needPursuitGoals(tpl, intent, {
+        carriedMatching,
+        restDwellS: restDwellFor(tpl.key, session.scale),
+        body: { x: body.x, y: body.y },
+      });
+      if (!candidates.length) {
+        releaseNeedUnits(session, cid);
+        continue;
+      }
+      const goal = chooseNeedGoal(session, cid, tpl.key, candidates, makeGoalResolver(session, cid));
+      if (!goal) {
+        // No plan COMPILES for this row right now (the bush streamed out, the
+        // route is gone). Park the ROUTE on the world, not on a stopwatch, and
+        // let the next epoch bump ask again — the residents' own §2.5 DEFER.
+        parkNeed(session, cid, tpl.key, { scope: "pursuit", why: "no plan" });
+        releaseNeedUnits(session, cid);
+        continue;
+      }
+      session.walk.delete(cid);
+      session.pursuits.set(cid, { source: "need", tplKey: tpl.key, goal, glyph: tpl.key });
+      if (probesOn()) console.log(`[needs] ${cid} pursuit: ${goal.kind} (${tpl.key})`);
     }
   }
 
@@ -11799,8 +14062,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               ? { kind: "sit", objId } // the crouch — scrubbing at the tub
               : { kind: "sleep", objId };
       } else {
-        const eat = session.needEatShow.get(id);
-        const pose = session.needPoseShow.get(id);
+        // 🚨 …BY CID OR BY BODY ID, because for a SETTLER they differ. Every
+        // writer of these two shows keys them by CID (`applyGoalStep`'s rest
+        // arm, the eat effect), and for a resident the cid IS the avatar id —
+        // so this lookup was right for everybody it had ever been asked about.
+        // A settler's body is `npc_settler_0` and its cid is `settler_0`, so
+        // the show it had just written was invisible here and a settler that
+        // lay down to sleep never POSED: the sim slept, the picture stood.
+        // (`cidForHold` is the same resolution the action-hold lookup one
+        // screen up already performs, for the same reason.)
+        const eat = session.needEatShow.get(id) ?? session.needEatShow.get(cidForHold);
+        const pose = session.needPoseShow.get(id) ?? session.needPoseShow.get(cidForHold);
         // A meal eaten from a claimed chair (§3.3) shows as a SIT anchored on
         // the seat — resolveActivityAnchor slides the body onto it, facing the
         // table the chair faces. A standing meal keeps the eat rig. The seat
@@ -12050,6 +14322,75 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // creature that cannot afford to turn toward the person talking to it is
     // the whole subject of this chapter wherever it stands.
     out.push(...addressRowsFor(session, `resident_${houseIndex}_${member}`));
+    // 🧺 …AND THE PUT-DOWN ROW WHEREVER THERE IS LABOUR TO PICK THINGS UP FOR
+    // (main's ruling on the basket, 2026-09-06). `relieveTemplate` was pushed
+    // ONLY inside the dollhouse gate above, so on a founded site no body had a
+    // put-down row at all — and the unload's own promise that *"the basket
+    // rides on until this body's own relieve row sets it down"* was written
+    // against a row that did not exist there. Measured: every porter ended the
+    // frontier arc holding an empty basket, 278–296 s after its last haul.
+    //
+    // Gated on `pullLaborOn` rather than pushed unconditionally, because that
+    // is exactly the world where a body is handed a basket by the labour
+    // system: it is FALSE for the dollhouse and nature-hike by construction
+    // (`foundedSite === null && (town === null || wilderness === null)`), so
+    // the shipped games' rows are byte-identical. The dollhouse arm is
+    // untouched and cannot double-push — `session.dollhouse === houseIndex`
+    // and `pullLaborOn` are never both true for one house.
+    if (session.dollhouse !== houseIndex && pullLaborOn(session)) out.push(relieveTemplate());
+    // ── ⚖️ D4(a) — THE FRONTIER'S PULLERS GET TIRED (body-needs-round.md) ────
+    //
+    // Sleep already exists as a need — `energyTemplate`, the bed fixture, the
+    // recline pose, the `tired`/`sleep` lexemes in all four shipped rulesets.
+    // What did not exist is any body OUTSIDE the observed household carrying
+    // it: the gate above hands the whole Sims-mode motive set to the dollhouse
+    // and nothing to anyone else, so on a founded frontier site the very bodies
+    // that spend their day hauling blocks never got tired. That is the
+    // settler-needlessness artifact in its RESIDENT form — an artifact of the
+    // household-anchored meter architecture, not a design decision (the round's
+    // own reading of the user's *"creatures should have needs whether there is
+    // a place to fulfill them or not"*).
+    //
+    // ONLY `energy`, and only here. Not thirst/waste/hygiene/social/fun: each
+    // of those wants a station (`requireStation`) or a partner that a dark
+    // household does not stand, and a row that can only ever BLOCK is a want
+    // the engine simulates and can never serve. Rest is the one motive whose
+    // satisfier a body always has — the GROUND, at quality 0.5 (D1 ④) — which
+    // is exactly why the ledger names it and nothing else.
+    //
+    // 🚫 INERT OFF THE CAPABILITY: `bodyNeedsOn` is FALSE for the dollhouse
+    // (town, no scatter) and for nature-hike, so the shipped games' row sets
+    // are byte-identical. And it cannot DOUBLE-PUSH: the dollhouse household
+    // pushed `energyTemplate` inside its own gate above, and
+    // `session.dollhouse === houseIndex` and this branch are mutually
+    // exclusive by construction.
+    if (session.dollhouse !== houseIndex && bodyNeedsOn(session)) out.push(energyTemplate(rate("energy")));
+    // ── ⚖️ S-3 — THE SOCIAL THIRD FOR A FRONTIER RESIDENT ────────────────────
+    //
+    // The very argument the energy row above makes, one rung further in: a
+    // resident of a founded site is a PERSON among people, and being looked up
+    // to and having somebody at your back are wants it has whether or not the
+    // town has grown anybody to supply them. Both are satisfied by ANOTHER
+    // ENTITY'S ACT (`satisfy: {kind:"social"}`), so the partner list the social
+    // row already resolves serves all three, and the SEEKER's own attitude
+    // decides which of the three a given partner actually meets
+    // (`applySocialEvent`'s `attend` arm) — no second station kind, no second
+    // walker arm.
+    //
+    // 🚫 INERT OFF THE CAPABILITY, on the same gate and for the same reason:
+    // `bodyNeedsOn` is FALSE for the dollhouse and nature-hike, so the shipped
+    // games' row sets are byte-identical and the bench cannot see this line.
+    // The dollhouse keeps its `socialTemplate` from its own arm above and gains
+    // nothing here — `session.dollhouse === houseIndex` and this branch are
+    // mutually exclusive by construction.
+    if (session.dollhouse !== houseIndex && bodyNeedsOn(session)) {
+      const p = creatureMood(`resident_${houseIndex}_${member}`);
+      const a = Math.min(1, Math.max(0, p.assertiveness));
+      const exposure = maxFearOf(session, `resident_${houseIndex}_${member}`);
+      out.push(socialTemplate(rate("social")));
+      out.push(standingTemplate(rate("standing") * (0.5 + a)));
+      out.push(securityTemplate(rate("security") * (0.5 + exposure)));
+    }
     return out;
   }
 
@@ -12191,8 +14532,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return out;
   }
 
-  /** House index off a body id — residents AND pets share the `_<house>_<n>` shape. */
+  /** House index off a body id — residents AND pets share the `_<house>_<n>` shape.
+   *
+   *  🚨 A SETTLER IS NEVER HOUSE N (body-needs-round.md D2). `settler_3` shares
+   *  the `_`-split shape and used to parse as HOUSE 3 — somebody else's goods
+   *  clock, chest, members and dollhouse flag. Two loops guarded against it by
+   *  hand (`stepNeeds`, the settlers' own decide) and every other caller was
+   *  safe only because nothing had yet asked; giving a settler NEEDS asks. `-1`
+   *  is the answer at the ONE spelling: it matches no house row
+   *  (`residentTownCtx` returns null) and no dollhouse index, so every
+   *  household question about a settler now answers "none" instead of "somebody
+   *  else's".
+   *
+   *  ⚖️ AND TWO SETTLERS THEREFORE SHARE A HOUSEHOLD (both `-1`), where they
+   *  used to read as strangers from houses 0 and 1. That is the truthful
+   *  reading of a founding group camped around one crate — it is what lets one
+   *  settler explain another's "why" and name it aloud (`reasonChainOf`,
+   *  `mayNameCreature`) — and it is a CONSEQUENCE, not a special case. */
   function houseIndexOfCid(cid: string): number {
+    if (isSettlerCid(cid)) return -1;
     return Number(cid.split("_")[1]);
   }
 
@@ -12538,6 +14896,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (wantedByLiveRow(session, cid, held.glyph, all)) return null;
     if (bankedByOwnRow(session, houseIndex, held.glyph, all)) return null;
     if (stepWantsGlyph(session, cid, held.objId, held.glyph)) return null;
+    // 🧺 A PORTER BETWEEN SLICES IS STILL A PORTER (`BAG_RETURN_GRACE_S`). A
+    // body that has just landed a haul re-decides at once and, with the bill
+    // still standing, takes the next slice — and the bag in its hands is the
+    // TOOL for that trip (`haulBagLeg` prices the trip with one against the
+    // trip without). Letting the put-down row have it inside the grace makes
+    // the body set the same basket down and pick it straight back up. Past the
+    // grace the work has genuinely stopped and the basket is clutter.
+    if (held.bag && withinBagReturnGrace(session, cid)) return null;
     if (held.bag && bagUnitsHaveAnOutlet(session, cid, houseIndex, held.bag, all)) return null;
     return { objId: held.objId, glyph: held.glyph, bag: !!held.bag };
   }
@@ -12800,7 +15166,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     releaseNeedUnits(session, cid);
     if (!goodKey || qty <= 0) return;
     if (isWellId(endpoint) || endpoint.startsWith("small:")) return;
-    session.needClaims.reserve(needClaimHolder(cid), endpoint, goodKey, qty);
+    // ── ⚖️ 0-2 — YOU CANNOT HALF-CLAIM A BUSH ────────────────────────────────
+    //
+    // 🚨 THE DEFECT, MEASURED. `ReservationLedger.reserve` opens with
+    // `const n = Math.floor(qty); if (n <= 0) return null;` — WHOLE units, and
+    // rightly so: it is the same ledger the seats and the haul agreements are
+    // written in. A ration-denominated forage claim is a FRACTION (one onion is
+    // 0.2 rations, one berry 0.2), so every forage claim floored to zero and
+    // was never made at all. Traced on the homestead (seed 11, dt 1/2): FOUR
+    // settlers "reserved" `wild_onion_4` in one frame, every arrival read
+    // `free=99 claims=[]`, and 52.5 % of all takes moved ZERO rations — the
+    // wasted half of every forage walk, and the reason hunger never cleared.
+    //
+    // ⚖️ THE STAND IS THE UNIT. A wild source is a snack, not a shelf: what a
+    // body speaks for when it sets off for a bush is THE BUSH. So a claim on a
+    // wild stand is rounded up to the ledger's own grain — one whole unit of
+    // the good, which is ≥ anything the stand holds — and the next body's
+    // `freeNeedUnits` reads 0 and walks to a different bush. Nothing is minted:
+    // a claim is a promise about attention, and the take still moves only what
+    // is really there.
+    //
+    // 🚫 SCOPED TO WILD STANDS BY CONSTRUCTION, so no shipped path moves: a
+    // market shelf, a pantry and a barrel are whole-ration endpoints where the
+    // ledger already works as written, and a dollhouse session has no
+    // wilderness at all (`wildSourceOf` ⇒ undefined ⇒ this line is the identity).
+    const claimQty = wildSourceOf(session, endpoint) ? Math.max(1, Math.ceil(qty)) : qty;
+    session.needClaims.reserve(needClaimHolder(cid), endpoint, goodKey, claimQty);
   }
 
   /** Units of `goodKey` on `endpoint` this body may honestly plan against:
@@ -13005,12 +15396,113 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // row runs at — 2…3 × 40 s against a 192 s clock — which is the right
       // shape: the row is decided by the ladder, not by the cap.)
       case "address": return "social";
+      // ⚖️ THE SOCIAL THIRD (interpersonal-politics.md S-3, round-lead ruling on
+      // S1 residual 1). Standing and security are ceilinged by the SOCIAL clock
+      // for exactly the reason an address is: they are the same kind of want —
+      // something only another person can give you — and the price board should
+      // not let a slower row buy a longer trip than loneliness can.
+      //
+      // ⚠️ THE ROW'S OWN FILL RATE IS **NOT** THIS NUMBER. `NEED_FILL_DAYS`
+      // carries `standing: 1.5` / `security: 2` and the templates are built from
+      // them (scaled by personality), so the two would DISAGREE if the level
+      // also read this map — see `bodyNeedRateOf`, which is where that split is
+      // made and argued.
+      case "standing": return "social";
+      case "security": return "social";
       case "fun": return "fun";
       case "waste": return "waste";
       case "hygiene": return "hygiene";
       case "dress": return "dirt"; // the worn garment's own wear clock
       default: return "hunger";
     }
+  }
+
+  /**
+   * ⚖️ WHAT THIS PARTNER IS WORTH TO THIS ROW, 0..1 and ALREADY NET OF COST —
+   * the PROPRIETY SEAT for people (interpersonal-politics.md S-3,
+   * `StationCandidate.value`). `decideNeed`'s social arm only takes the argmax;
+   * the judgement is here, because only the host can ask "does this particular
+   * body defer to me, do I trust it at my back, how far away is it".
+   *
+   * THE THREE ROWS WANT DIFFERENT PEOPLE, and that is the whole point of there
+   * being three:
+   *   • `social`   — company. Who do I LIKE (`affinity01(me→p)`).
+   *   • `standing` — being looked up to. Who DEFERS to me: `deference(p→me)` at
+   *     certainty 1, because a partner standing in front of me can see whether
+   *     I am obeyed. (Not `affinity` — being liked is not being respected, and
+   *     conflating them is what makes a popularity number instead of politics.)
+   *   • `security` — somebody at my back. An ally I do NOT fear:
+   *     `affinity01(p→me) · (1 − fear(me→p))`, so the person who protects me by
+   *     frightening me is worth nothing to this row.
+   *
+   * COST is the walk, in the METER'S OWN UNIT: `walkS / needFillS(key)` — the
+   * fraction of a whole fill cycle the trip spends. That is what makes value and
+   * cost the same currency without a second price board.
+   *
+   * 🚨 CALLED ONLY UNDER `bodyNeedsOn`. The dollhouse leaves every candidate's
+   * `value` ABSENT, the arm's comparison is strictly `>`, and it therefore
+   * returns `stations[0]` — the same object, in the same nearest-first order —
+   * exactly as it did before the field existed. That identity is the bench.
+   */
+  /**
+   * ⚖️ CAN THIS PARTNER SUPPLY THIS ROW AT ALL — the affordance gate in front of
+   * the value (⚖️ needs bind to affordances). `social` is answered by anybody
+   * (company is company); `standing` needs somebody who actually defers to me
+   * and `security` somebody who actually likes me, which are the very two
+   * conditions `applySocialEvent`'s `attend` arm checks before it credits.
+   *
+   * 🚨 WITHOUT THIS THE ROW SPINS. The credit is conditional by design ("an act
+   * that was not what you needed does not count"), so a body whose standing row
+   * is firing in a camp of people who do not defer to it would walk over, hold a
+   * conversation, collect nothing, and immediately decide to do it again. Asking
+   * the question one step earlier turns that into an honest BLOCK — the want
+   * surfaces through `blockedNeeds` (the beg bubble) and the body goes back to
+   * work, which is what every other unservable row in this engine does.
+   */
+  function socialPartnerSupplies(
+    session: QuestSession,
+    seeker: string,
+    partner: string,
+    tplKey: string,
+  ): boolean {
+    const motive = tplKey.split(":")[0];
+    if (motive === "standing") {
+      return (
+        deference(relationToward(session, partner, seeker), creatureMood(partner)) >= STANDING_DEFER_AT
+      );
+    }
+    if (motive === "security") return relationToward(session, partner, seeker).affinity >= SECURITY_ALLY_AT;
+    return true;
+  }
+
+  function socialStationValue(
+    session: QuestSession,
+    seeker: string,
+    partner: string,
+    tplKey: string,
+    d: number,
+  ): number {
+    const motive = tplKey.split(":")[0];
+    const mps = walkSpeedMps(session.scale);
+    const fillS = needFillS(
+      session.scale,
+      motive === "standing" || motive === "security" || motive === "social"
+        ? motive
+        : needClockKeyOf(tplKey),
+    );
+    const cost = fillS > 0 && mps > 0 ? d / mps / fillS : 0;
+    const affinity01 = (v: number): number => (v + 1) / 2;
+    let value: number;
+    if (motive === "standing") {
+      value = deference(relationToward(session, partner, seeker), creatureMood(partner), { certainty: 1 });
+    } else if (motive === "security") {
+      const theirs = relationToward(session, partner, seeker);
+      const mine = relationToward(session, seeker, partner);
+      value = affinity01(theirs.affinity) * (1 - Math.min(1, Math.max(0, mine.fear)));
+    } else {
+      value = affinity01(relationToward(session, seeker, partner).affinity);
+    }
+    return value - cost;
   }
 
   /** WHAT ONE UNIT OF THIS ROW'S GOOD IS WORTH, in hand-seconds — the value of
@@ -13159,7 +15651,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     let weight = 0;
     for (const t of all ?? []) {
       if (t.drive.kind !== "meter" || !(t.drive.threshold > 0)) continue;
-      if ((session.needMeters.get(`${cid}|${t.key}`) ?? 0) < t.drive.threshold) continue;
+      if (needLevelOf(session, cid, t.key) < t.drive.threshold) continue;
       if (t.priority > weight) weight = t.priority;
     }
     return weight * NEED_PRESSURE_S;
@@ -13460,6 +15952,33 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       me && p ? Math.hypot(p.x - me.x, p.y - me.y) : undefined;
     const distToObj = (objId: string): number | undefined =>
       distTo(needObjectPos(session, state, houseIndex, objId));
+    // ── ⚖️ 0-4 — …AND THE SCOPE WALK, for a body whose HOUSE cannot answer ──
+    //
+    // Every candidate list above and below asks the HOUSE: `furn_<hi>_*` by
+    // literal id, an AABB clip on the house rect, one market endpoint reached
+    // through the household's own goods clock. That resolution is exactly right
+    // for a lit dollhouse interior and blind everywhere else — a frontier
+    // puller whose house is dark stands no furniture, so it has no bed, no
+    // larder and (a cluster house being `neighbor: true`) no source at all,
+    // which is why its energy could only ever answer `restHere`.
+    //
+    // `bodyNeedCtx` beside this one already asks the GROUND instead
+    // (`needReachOf` — the smallest containing scope's extent, never a new
+    // radius). The arms below mirror it, and every one of them is ADDITIVE and
+    // gated: house candidates are resolved FIRST and kept, so a lit house
+    // orders identically to the day before, and `bodyNeedsOn` is FALSE for the
+    // dollhouse so none of it runs there at all.
+    //
+    // LAZY: `needReachOf` walks the scope tree, and a ctx that never asks a
+    // reach question (every dollhouse ctx, every row whose house answered)
+    // must not pay for one.
+    const scoped = bodyNeedsOn(session);
+    let reachM: number | null = null;
+    const reachOf = (): number => (reachM ??= needReachOf(session, cid));
+    const inReach = (p: { x: number; y: number } | null | undefined): boolean => {
+      const d = distTo(p);
+      return d !== undefined && d <= reachOf();
+    };
     // ⚖️ THE PUT-DOWN ROW'S SUBJECT, RESOLVED ONCE PER CTX (§3 the drop law).
     // Three blocks below ask for it — the storage role, `carried`, and the price
     // board's freed-hands term — and they must be deciding about the SAME
@@ -13599,6 +16118,51 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           break;
         }
       }
+      // ── ⚖️ 0-4 STORAGE, WIDENED TO THE SCOPE — only when the HOUSE had no
+      // answer. The sweep above is the house's own boxes and the props standing
+      // on its floor; for a dark interior both lists are empty, and "there is
+      // nothing to draw from" is then a statement about the level of detail
+      // rather than about the world. `bodyNeedCtx`'s makeshift draw asks the
+      // ground the same question, and this is that arm, lifted: any stocked
+      // container in reach this body may use.
+      //
+      // 🚨 STRICTLY A FALLBACK (`!containers.storage`), which is what keeps a
+      // lit house byte-identical: the furniture/floor first-match still wins
+      // wherever it resolved anything at all.
+      if (scoped && !containers.storage) {
+        const boxes: { c: StockCandidate; d: number }[] = [];
+        for (const [objId, rec] of stockedEntries(session)) {
+          // A STAND IS A SOURCE, NEVER A SHELF (the forage arm below lists it).
+          if (objId.startsWith(WILD_PREFIX) || isNaturalSourceBodyId(objId)) continue;
+          if (objId === homeId) continue;
+          if (!mayUse(cid, houseIndex, rec.owner)) continue;
+          if (objId.startsWith("small:") && !containerAccessible(session, objId, grasp)) continue;
+          const units = Object.entries(rec.stock ?? {})
+            .filter(([g, n]) => n > 0 && matchesNeedItem(g, tpl.item))
+            .reduce((s, [g, n]) => s + n * (inRations ? satiationDaysOf(g) : 1), 0);
+          if (units <= 0) continue;
+          const free = freeNeedUnits(session, cid, objId, goodKey, units);
+          if (free <= 0) continue;
+          const at = containerAnchor(session, objId);
+          if (!inReach(at)) continue;
+          boxes.push({
+            c: {
+              id: objId,
+              place: P(objId),
+              units,
+              free,
+              ...(distTo(at) !== undefined ? { d: distTo(at)! } : {}),
+              ...(properDrawFor(session, cid, houseIndex, tpl, homeId, objId) ? {} : { improper: true }),
+            },
+            d: distTo(at) ?? 0,
+          });
+        }
+        // Nearest-first (the NeedCtx contract), id as the deterministic tie —
+        // `bodyNeedCtx`'s own ordering, not the house index's insertion order,
+        // because out here there is no insertion order to honour.
+        boxes.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+        if (boxes[0]) containers.storage = boxes[0].c;
+      }
     }
     // RITUAL role (rituals.ts): the live event's PLACE — the table dinner is
     // being laid on, the floor the game is set out on. The prep row deposits
@@ -13710,7 +16274,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // shelf: `units: 0` is not an offer, `acquireFrom` passes it over, and
         // the row that already wasted a walk on it is PARKED on the shelf
         // restocking instead (see the take effect).
-        if (!rc.neighbor && storeId && state.objects[storeId]) {
+        // ── ⚖️ 0-4 SOURCES — AND A CLUSTER HOUSE IS NOT A HOUSE WITH NO SHOPS.
+        //
+        // `residentTownCtx` stamps `neighbor: true` on any house resolved
+        // through the CLUSTER (qh `residentTownCtx`), and this clause read that
+        // as "offer it nothing" — so every frontier body that is not the
+        // primary household had no source for any good, ever: not the market,
+        // not (one branch up) the well. That is not a statement about the
+        // world, it is the clause standing in for a reach test it could not
+        // perform. Now it performs one: the endpoint is offered if it is inside
+        // this body's own scope (`needReachOf`).
+        //
+        // ⚖️ ADDITIVE, DELIBERATELY. The `!rc.neighbor` arm is kept exactly as
+        // it stands, so every household that had a source keeps it at the same
+        // distance and the same order — no lit house, and no dollhouse, moves
+        // one row. The reach arm only ADMITS endpoints the clause used to
+        // refuse outright, and only under the capability.
+        const storeAt = storeId ? needObjectPos(session, state, houseIndex, storeId) : null;
+        if (storeId && state.objects[storeId] && (!rc.neighbor || (scoped && inReach(storeAt)))) {
           const units = sourceEndpointUnits(session, storeId);
           const d = distToObj(storeId);
           sources = [{
@@ -13727,6 +16308,32 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           }];
         }
       }
+    }
+    // ── ⚖️ 0-4 / D4(d) — THE FORAGE ARM, for a body no market can feed ───────
+    //
+    // The land itself is the source of last resort, and it was listed for the
+    // homeless body (`bodyNeedCtx`) and nobody else — so a housed body whose
+    // market is out of reach (or whose town has none) starved beside a berry
+    // bush. Same sweep, same gates, same predicate `⚖️ 0-2` put on it: a stand
+    // is listed only if a take would YIELD (takeable glyphs, free of claims).
+    //
+    // 🚨 LAST, AND ONLY WHEN NOTHING ELSE ANSWERED. Forage is expensive food —
+    // its price is the walk and the yield — so a body with a shelf in reach
+    // must still buy. Guarding on `!sources.length` rather than pricing the
+    // two against each other keeps the shipped market path bit-identical.
+    //
+    // ⚖️ AND ITS REACH IS THE WALK BUDGET, NOT THE OWNERSHIP DISC (PART 5) —
+    // the same one list `bodyNeedCtx` builds, so a housed body and a camper
+    // cannot disagree about what the land is bearing (`forageCandidates`).
+    if (scoped && goodKey === "food" && !sources.length && tpl.acquire.some((a) => a.kind === "source")) {
+      sources = forageCandidates(
+        session,
+        cid,
+        goodKey,
+        inRations,
+        me ? { x: me.x, y: me.y } : null,
+        reachOf(),
+      );
     }
     // Stations by the template's SATISFY, generalized by KIND: consume at the
     // named surface containers (table / the pet's bowl — `waiting` counts the
@@ -13826,6 +16433,37 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           const d = distToObj(sid);
           stations.push({ id: sid, place: P(sid), kind, waiting: 0, ...(d !== undefined ? { d } : {}) });
         }
+        // ── ⚖️ 0-4 — A BED THE HOUSE COULD NOT NAME (the D4(d) asymmetry) ────
+        //
+        // The list above is three LITERAL ids filtered by `state.objects`, and
+        // an unlit interior stands no furniture — so a dark house has no bed by
+        // construction. Compare `needObjectPos`, whose virtual fallback exists
+        // for `furn_<hi>_chest_<good>` AND NOTHING ELSE: a dark house can be
+        // EATEN FROM but never SLEPT IN. That asymmetry is what forced `restHere`
+        // on every dark-house body and made the U4 demote the only sleep it
+        // could ever have.
+        //
+        // So when the house names nothing, ask the scope: any fixture of the
+        // right kind, in reach, this body may use. `mayUse` is the same
+        // ownership gate the own-bed filter above applies — a stranger's bed is
+        // still a stranger's.
+        //
+        // 🚨 A FALLBACK, NOT A WIDENING: only when `cands` came back empty, so
+        // a house that stands its own beds is untouched, ordering included. And
+        // when nothing answers here either, the U4 demote-home still catches the
+        // body — that IS its sleep, and it is kept.
+        if (scoped && !cands.length) {
+          const found: { c: StationCandidate; d: number }[] = [];
+          for (const [objId, o] of Object.entries(state.objects)) {
+            if (fixtureKindOf(state, objId) !== kind) continue;
+            if (!mayUse(cid, houseIndex, session.containerRecords.get(objId)?.owner)) continue;
+            if (!inReach(o)) continue;
+            const d = distTo(o)!;
+            found.push({ c: { id: objId, place: P(objId), kind, waiting: 0, d }, d });
+          }
+          found.sort((a, b) => a.d - b.d || (a.c.id < b.c.id ? -1 : 1));
+          for (const f of found) stations.push(f.c);
+        }
       }
     } else if (tpl.satisfy.kind === "use") {
       // PLAY AREAS as stations. A toy SET OUT on the floor and currently in use
@@ -13865,10 +16503,28 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         if (pid === cid || session.party.has(pid)) continue;
         const pav = state.avatars[pid];
         if (!pav) continue;
+        // 🚫 THE AFFORDANCE GATE, UNDER THE CAPABILITY ONLY. `socialPartnerSupplies`
+        // answers TRUE for every `social` row, and the dollhouse carries no other
+        // kind — so this line cannot filter a single dollhouse candidate, and the
+        // frontier's standing/security rows get an honest block instead of a spin.
+        if (bodyNeedsOn(session) && !socialPartnerSupplies(session, cid, pid, tpl.key)) continue;
         partners.push({ id: pid, d: body ? Math.hypot(pav.x - body.x, pav.y - body.y) : 0 });
       }
       partners.sort((a, b) => a.d - b.d);
-      stations = partners.map((pt) => ({ id: pt.id, place: P(pt.id), kind: "partner", waiting: 0, d: pt.d }));
+      // ⚖️ THE PARTNER'S WORTH, under the capability ONLY (S-3). The list, its
+      // membership and its nearest-first order are UNTOUCHED — this adds one
+      // optional field, and the dollhouse (where `bodyNeedsOn` is false) never
+      // gets it, so `decideNeed`'s strict `>` returns `stations[0]` there by
+      // identity. The bench cannot see this line.
+      const valued = bodyNeedsOn(session);
+      stations = partners.map((pt) => ({
+        id: pt.id,
+        place: P(pt.id),
+        kind: "partner",
+        waiting: 0,
+        d: pt.d,
+        ...(valued ? { value: socialStationValue(session, cid, pt.id, tpl.key, pt.d) } : {}),
+      }));
     }
     // LOOSE units. Two flavors by the template's item type:
     //   • ITEM-TYPED (laundry / stow — `goodKey` set): floor props MATCHING
@@ -14112,7 +16768,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // a directed act targets the SPECIFIC indicated instance through
       // performAttentionAction (a category-matched need here would send the
       // body to the nearest "food", not the pointed apple). Raw meter only.
-      meter: meterOverride ?? session.needMeters.get(`${cid}|${tpl.key}`) ?? 0,
+      // ⚖️ THROUGH THE ONE DOOR (body-needs D2): `needLevelOf` resolves a
+      // ticked `needMeters` row exactly where this line always read it, and a
+      // homeless body's lazily-stamped row when there is no ticked one — so
+      // the decide is the same decide for a resident and for a settler.
+      meter: meterOverride ?? needLevelOf(session, cid, tpl.key),
       // The CARRY projection (carryTotalOf, not stackTotalOf): a food row must
       // see a carried TREAT, or a gifted cookie projects to 0 for every row
       // the creature owns and rides the hands forever (§4).
@@ -14196,8 +16856,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // scope tree answers it (`dropKeepsItem`), never an interior test.
       // Absent for every other row, which is what keeps `orDrop` byte-identical
       // everywhere else.
+      // 🧺 …AND A CONTAINER AT ITS OWN HOME IS ALWAYS KEPT (main's basket
+      // ruling, 2026-09-06). `bagHomeAt` records the spot a portable container
+      // was lifted from; setting it back down there returns it to a ledger it
+      // was in one lift ago, so the scope walk cannot be the thing that
+      // refuses it. This is the SAME predicate for every other row and every
+      // other glyph — only a bag standing on its own doorstep short-circuits.
       ...(idleHeld && me
-        ? { dropKeepsItem: dropKeepsItem(session, cid, idleHeld.glyph, { x: me.x, y: me.y }) }
+        ? {
+            dropKeepsItem:
+              atBagHome(idleHeld.objId, idleHeld.glyph, { x: me.x, y: me.y }) ||
+              dropKeepsItem(session, cid, idleHeld.glyph, { x: me.x, y: me.y }),
+          }
         : {}),
       // THE PRICE BOARD (step ④): the gait, the clock, what a unit is worth and
       // how badly the shelf wants it — which is everything `decideNeeds` and
@@ -14267,14 +16937,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  path, once per hand-fed unit on the command path (waste tracks meals, not
    *  items — see the meal loop's single call). */
   function applyIngestEffect(session: QuestSession, cid: string, tplKey: string, satiationDays = 1) {
-    const key = `${cid}|${tplKey}`;
     if (tplKey.startsWith("hunger")) {
       // The subtraction has ONE owner (goods-kinds `ingestMeterAfter`): a
       // covering amount full-clears (overshoot included), less subtracts its
       // ration fraction — divisor NEED_FILL_DAYS.hunger, never the scale's.
-      session.needMeters.set(key, ingestMeterAfter(session.needMeters.get(key) ?? 0, satiationDays));
+      // Read and written through the one need door (body-needs D2), so a
+      // settler eating a berry off a bush is credited exactly as a resident
+      // eating an apple off the table is.
+      creditNeed(session, cid, tplKey, ingestMeterAfter(needLevelOf(session, cid, tplKey), satiationDays));
     } else {
-      session.needMeters.set(key, 0);
+      creditNeed(session, cid, tplKey, 0);
     }
     if (session.dollhouse === houseIndexOfCid(cid) && !isPetCid(cid)) {
       const wk = `${cid}|waste`;
@@ -14434,7 +17106,51 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // bare-shelf park, same per-endpoint charge (the player's own take path
       // has priced both since the produce boxes landed; only this one had not).
       const marketKey = sourceEndpointGood(session, step.objId);
-      if (marketKey) {
+      // ⚖️ FORAGE FROM AN OFFLOADED REGION (`wild:area:<key>` — PART 5, the far
+      // half of the walk budget). The body is standing at the record's road-side
+      // shelf; the units come OUT OF THE RECORD through the haul's own door and
+      // are lifted off the shelf by the same `giveUnitsToBody` every other take
+      // uses. THREE things this must not do, and does not:
+      //
+      //  ① IT MINTS NOTHING. `drawSourceShelf` → `drawWildArea` is the ONLY
+      //     writer here, and its contract is that Σ`taken` equals the record's
+      //     stock drop to the unit; every one of those units lands on the shelf,
+      //     which `sessionStockAudit` already counts. A picked stand is not a
+      //     felled one — a food glyph is a HARVEST product (`areaTakeableUnits`
+      //     admits nothing else), so the population never moves and the stand
+      //     re-arms its own regrow clock at `stepAreaRecordClocks`.
+      //  ② IT CUTS ONLY WHAT THE BODY CAN CARRY. The draw is sized per unit
+      //     inside the loop, so a body that runs out of hands leaves the rest
+      //     STANDING rather than felling a shelf-load nobody collects.
+      //  ③ IT BOOKS THE DIRECTION. `drawSourceShelf` passes `sourceDrawOrigin`,
+      //     so the harvest-gradient histogram thins the tile on the side facing
+      //     the camp — the near ring thins first, which is the conservation half
+      //     of the ruling and the same instrument a timber haul uses.
+      const areaKey = foragedAreaKeyOf(step.objId);
+      if (areaKey !== null) {
+        const shelf = sourceShelf(session, areaKey);
+        for (const k of kindOrder(step.goodKey)) {
+          const w = inRations ? satiationDaysOf(k) : 1;
+          while (take < units - 1e-9) {
+            if (!((shelf[k] ?? 0) > 0)) {
+              // Cut exactly the shortfall, in ITEMS (the shelf is item-keyed;
+              // a ration row's remaining want converts at the glyph's own
+              // satiation, the same seam the container branch reads).
+              drawSourceShelf(session, areaKey, { [k]: Math.max(1, Math.ceil((units - take) / w)) });
+            }
+            if (!((shelf[k] ?? 0) > 0)) break; // the stand cannot answer this glyph
+            // TAKE-FIRST-ACCOUNT-SECOND, exactly as the container branch: the
+            // body is asked before the shelf is debited, so a body that runs out
+            // of room mid-draw leaves the rest at the road instead of dropping
+            // it on the floor.
+            if (giveUnitsToBody(session, cid, k, 1, reach ? { at: reach } : {}) < 1) break;
+            shelf[k] = (shelf[k] ?? 0) - 1;
+            if (!((shelf[k] ?? 0) > 0)) delete shelf[k];
+            take += w;
+          }
+        }
+        if (take > 0) bumpStockEpoch(session);
+      } else if (marketKey) {
         const offered = Math.min(units, sourceEndpointUnits(session, step.objId));
         if (offered === 0) {
           // ⏸️ ARRIVED TO AN EMPTY SHELF — PARK, don't cool off (§2.5 DEFER).
@@ -14479,6 +17195,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const order = step.affords
           ? Object.keys(stock).filter((g) => (stock[g] ?? 0) > 0 && matchesNeedItem(g, { affords: step.affords }))
           : kindOrder(step.goodKey);
+        const drawn = new Set<string>();
         for (const k of order) {
           // A ration row counts each drawn item at its own satiation (step ⑧
           // — a 1-ration pantry take lifts five apples); item rows count 1.
@@ -14490,10 +17207,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             if (giveUnitsToBody(session, cid, k, 1, reach ? { at: reach } : {}) < 1) break;
             stock[k]! -= 1;
             if (stock[k]! <= 0) delete stock[k];
+            drawn.add(k);
             take += w;
           }
         }
-        if (take > 0) setContainerStock(session, step.objId, stock);
+        if (take > 0) {
+          setContainerStock(session, step.objId, stock);
+          // 🌿 A LIVE TAKE OFF A STANDING SOURCE ARMS ITS REGROW CLOCK — the
+          // player's own take path has done this since live harvest landed
+          // (`takeFromContainer`: "A LIVE take off a standing source arms its
+          // regrow clock"), and this third taker did not.
+          //
+          // 🚨 THAT IS WHY THE FRONTIER STARVED (2026-09-07). Body-anchored
+          // needs made a settler forage off wild plants as SOURCES, but a
+          // foraged bush never armed `regrowAt`, so `dueHarvestRegrowth` had
+          // nothing pending to mature and the plant never bore again: measured
+          // on `frontier-planet.spec.json` seed 11, all 19 food features stood
+          // at `live={} regrowAt={}` by t=960 s (4 play-days) and stayed there.
+          // The wild larder was a one-off pantry, not a renewing countryside.
+          //
+          // No-op for kill glyphs (`armHarvestRegrow` only knows harvest
+          // products) and for non-wild containers (`wildSourceOf` is
+          // undefined), so a pantry box and a market stall are untouched — and
+          // it never rewinds an already-armed clock, so takes during regrowth
+          // keep the standing cadence.
+          const ws = wildSourceOf(session, step.objId);
+          if (ws) {
+            for (const k of drawn) armHarvestRegrow(ws, k, session.taskClock, FOOD_DAY_SEC);
+          }
+        }
       }
       // THE CLAIM CLOSES HERE (scope-behaviors.md §2.6: "reserve at
       // resolution, consume as units actually leave, release on
@@ -14893,6 +17635,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   ): { x: number; y: number } | null {
     const o = state.objects[objId];
     if (o) return { x: o.x, y: o.y };
+    // ⚖️ A REGION SOURCE IS WALKED TO AT ITS EDGE (#44, read from the needs
+    // side): a forage row may now list a ring-1 tile record, and a body cannot
+    // walk INTO a region — it walks to the road-side shelf where the cut goods
+    // wait. The SAME point a construction haul stands at, from the SAME
+    // derivation, clamped into the walkable manifold (`wildShelfPointOf`).
+    const areaKey = foragedAreaKeyOf(objId);
+    if (areaKey !== null) {
+      const rec = session.areaRecords.get(areaKey);
+      return rec ? wildShelfPointOf(session, rec) : null;
+    }
     const m = objId.match(/^furn_(\d+)_chest_(.+)$/);
     if (!m) return null;
     const rc = residentTownCtx(session, Number(m[1])); // neighbor-aware
@@ -15203,6 +17955,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       },
       { ui: view.ui },
     );
+    // ⚖️ S-6 — the spoken act's SOCIAL half (praise / insult / the yield), read
+    // off the RECORDED utterance so the addressee is the normalized one every
+    // later turn will see.
+    applySpokenSocialAct(session, speakerCid, spoken.utterance.act, spoken.utterance.addresseeIds);
     // WHO ANSWERED — or nobody. Every branch below reads the answerer's result
     // exactly as it read `selectAct`'s before; what is new is that there may not
     // be one.
@@ -15621,6 +18377,28 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   }
 
   /**
+   * ⏱️ THE LIVE ERRAND'S RE-PLAN DOOR — the watched-body stall ladder
+   * (2026-09-07). One entry per body, written by `enqueueNpcErrand.start` and
+   * read by `stepErrandStall`:
+   *   • `plan` is the ROUTED point array handed to the controller, kept for
+   *     IDENTITY: `errandPath().points` is that same array by reference, so the
+   *     watch acts only on the errand it actually issued and lets go the moment
+   *     anything else (a `walkTo` leg, a fresh command) takes the body over.
+   *   • `done` is how many of the CALLER'S OWN waypoints this errand has
+   *     already arrived at — a re-route re-plans the rest, never the whole trip.
+   *   • `tries` is the re-route budget, and it is spent PER CALLER WAYPOINT: it
+   *     refunds when the body actually ARRIVES at one of the errand's own
+   *     points, and at nothing weaker. Refunding on a routing corner instead
+   *     would let a body that can never reach its source cycle re-route → pass
+   *     one nearby corner → re-route for ever, which is a livelock wearing a
+   *     budget. TERMINATION OVER FIDELITY: two repairs per leg, then it ends.
+   */
+  const errandWatch = new Map<
+    string,
+    { errand: NpcErrand; plan: readonly unknown[]; done: number; tries: number; replan: () => void }
+  >();
+
+  /**
    * Queue an errand for an NPC — ONE task at a time (a creature carries one
    * carry-item at a time, so a trade becomes a SEQUENCE: take the payment, stow
    * it, fetch the requested item, bring it over). Every errand ends by walking
@@ -15636,21 +18414,204 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // doorway, not cut straight through a wall (npc-controller only slides on
     // walls, it never re-paths). Routing happens at start time so the live
     // position seeds it (a queued errand starts wherever the last one ended).
+    //
+    // ⏱️ …AND THAT IS ALSO THE RE-ROUTE (2026-09-07). Because `start` plans from
+    // the LIVE position, calling it again IS the honest re-route the stall watch
+    // needs — same `doorRouteErrand`, same `standableVia` street pass, same
+    // detour rules, no new planner. One thing is added: the waypoints this
+    // errand has ALREADY ARRIVED AT are dropped, because a porter holding the
+    // basket must not be sent back for it. The callbacks shift by the same
+    // amount, so every index the caller ever sees is an index into its OWN
+    // points array and `issueTransferHaul`'s `i === 0` bag test still means the
+    // bag leg and nothing else.
     const start = (e: NpcErrand) => {
+      const prev = errandWatch.get(npcId);
+      const same = prev?.errand === e;
+      // …never past the LAST waypoint: a re-route with nothing left to walk to
+      // is an errand that finishes the instant it is issued.
+      const done = Math.min(same ? prev!.done : 0, Math.max(0, e.points.length - 1));
+      const rest: NpcErrand =
+        done <= 0
+          ? e
+          : {
+              ...e,
+              points: e.points.slice(done),
+              ...(e.onArrive ? { onArrive: (i: number) => e.onArrive!(i + done) } : {}),
+              ...(e.onAbandon ? { onAbandon: (i: number) => e.onAbandon!(i + done) } : {}),
+            };
       const at = host.state.avatars[npcId];
-      host.setNpcErrand(npcId, at ? doorRouteErrand(host.state, { x: at.x, y: at.y }, e, host.npcRadiusOf(npcId)) : e);
+      const routed = at
+        ? doorRouteErrand(host.state, { x: at.x, y: at.y }, rest, host.npcRadiusOf(npcId))
+        : rest;
+      errandWatch.set(npcId, {
+        errand: e,
+        plan: routed.points,
+        done,
+        tries: same ? prev!.tries : 0,
+        replan: () => start(e),
+      });
+      host.setNpcErrand(npcId, routed);
+    };
+    /** Retire this queue entry and start whatever was behind it. */
+    const shiftOn = () => {
+      const retired = queue[0];
+      queue.shift();
+      const next = queue[0];
+      if (next) start(next);
+      // ⏱️ …and drop the stall watch ONLY if this queue's errand is still the
+      // one the body is running. A haul that abandons RE-ISSUES itself from
+      // inside its own `onAbandon` (a fresh `npcTasks` array and a fresh
+      // errand, already started) before this line runs; deleting blindly would
+      // strip the watch off a trip that has only just begun.
+      else if (errandWatch.get(npcId)?.errand === retired) errandWatch.delete(npcId);
     };
     const wrapped: NpcErrand = {
       ...errand,
+      // ⏱️ REMEMBER HOW FAR THIS ERRAND GOT. `i` is an index into the caller's
+      // own points (doorRouteErrand remaps, and `start` un-shifts), so `i + 1`
+      // is exactly what a re-route must skip. Only wrapped when the caller has
+      // an `onArrive` of its own: an errand with none is one the controller's
+      // skip-ahead recovery treats differently (`effectLimit`), and adding a
+      // callback would silently change how it walks.
+      ...(errand.onArrive
+        ? {
+            onArrive: (i: number) => {
+              const rec = errandWatch.get(npcId);
+              // …and a REAL arrival refunds the re-route budget: the repairs
+              // were bought to reach THIS waypoint, and it has been reached.
+              if (rec && rec.errand === wrapped) { rec.done = i + 1; rec.tries = 0; }
+              errand.onArrive!(i);
+            },
+          }
+        : {}),
       onDone: () => {
         errand.onDone?.();
-        queue.shift();
-        const next = queue[0];
-        if (next) start(next);
+        shiftOn();
       },
+      // An ABANDONED errand leaves the queue exactly as a finished one does —
+      // it is over either way, and a queue entry nobody retires would strand
+      // every trip behind it (`npcTasks` non-empty is "somebody is spending
+      // this body" to the needs walker).
+      ...(errand.onAbandon
+        ? {
+            onAbandon: (i: number) => {
+              errand.onAbandon!(i);
+              shiftOn();
+            },
+          }
+        : {}),
     };
     queue.push(wrapped);
     if (queue.length === 1) start(wrapped);
+  }
+
+  // ── ⏱️ THE WATCHED-BODY STALL LADDER (2026-09-07) ─────────────────────────
+  //
+  // 🚨 THE DEFECT. The controller's own recovery — the FLOW force-pass — is
+  // VIEW-GATED on purpose: skipping a routing corner the body could not reach
+  // jumps the aim to the next waypoint, whose straight may cross furniture, and
+  // that is an impossible move to anyone looking (CLOCK OWNS MOTION; DISRUPTION
+  // DISRUPTS). So the ONE case a player actually watches is the one that never
+  // recovered: measured on the carry-residuals rock-ring harness, a loaded
+  // porter wedged IN SIGHT sat motionless for 110 s with its agreement still
+  // `moving` and never abandoned its haul; measured on the plain frontier arc
+  // (seed 11, dt 0.5, 1 400 s, no harness at all) the worst single stall was
+  // 1 098.8 s and the worst that ended an errand 121.2 s.
+  //
+  // ⚖️ THE RULING. A watched wedge must still RESOLVE, visibly and honestly,
+  // WITHOUT the force-pass: the body first tries an honest re-route from where
+  // it is standing, and if that fails it ABANDONS — the load set down where it
+  // stands, spoken (`abandonHaul`). Never a teleport, never a snap, never a
+  // minted load. Out of sight the force-pass stays exactly as it was.
+  //
+  // 📏 THE BOUNDS ARE MEASURED, NOT PAINTED. `probe-stall` sampled every body's
+  // published `stalledS` (arc progress along its own plan, npc-controller) on
+  // the frontier arc: of 6 127 stall episodes a body got out of BY ITSELF,
+  // 99.46% peaked at ≤ 2 s, p99.9 was 4.90 s, and the honest tail ran out at
+  // 5 s — after which the next episode of any kind was at 121 s. Honest pauses
+  // and wedges are separated by two orders of magnitude, and every bound below
+  // sits in that gap.
+  /** Seconds pinned before a WATCHED body stalled on a ROUTING CORNER is
+   *  re-routed from where it stands. One second past both the honest-recovery
+   *  tail (5 s) and the controller's own `STALL_S` (5 s), so nothing that was
+   *  about to get going is re-planned, and out of sight the force-pass — which
+   *  for a corner is a real recovery, and a cheap one — always fires FIRST. */
+  const ERRAND_REROUTE_S = 6;
+  /**
+   * ⚖️ REPAIR BEFORE GIVE-UP — the EFFECT-vertex bound (user ruling 2026-09-07).
+   *
+   * 🚨 WHY A CORNER AND AN EFFECT VERTEX CANNOT SHARE A BOUND. When the
+   * force-pass fires on a routing corner it SKIPS it and the errand walks on:
+   * a recovery. When it fires on a vertex that does something in the world it
+   * runs `onAbandon` instead (npc-controller, carry round 2026-09-06) — the
+   * haul is dropped. That is not a recovery, it is the give-up, and letting it
+   * beat the re-route is what made `EFFECT_PASS_R` unaffordable: with the
+   * honest 2.19 m bound and this ordering the wrong way round, the frontier
+   * arc staged at 1 095 s and never finished the house.
+   *
+   * So an effect vertex is re-planned BEFORE `STALL_S` (5 s) can end it, and —
+   * unlike the corner arm — **not gated on view**: a re-route re-plans, it
+   * never moves a body, so the no-snap-while-visible law that gates the
+   * force-pass has nothing to say about it, and an off-screen porter deserves
+   * the repair exactly as much as an on-screen one. 4 s is above the p99 of a
+   * self-recovered stall (1.40 s) and above 99.5 % of all stall episodes on
+   * both shipped worlds; the 4–5 s band it catches is precisely the band the
+   * force-pass was about to take anyway.
+   *
+   * Bounded by the same `ERRAND_MAX_REROUTES`, so the worst case off-screen is
+   * 4 + 4 + 5 = 13 s from the first lost metre to the load on the ground.
+   */
+  const EFFECT_REROUTE_S = 4;
+  /** Re-routes a pinned errand gets before the controller's own bound ends it —
+   *  the same budget `walkTo` spends on a pinned WALK (`WALK_MAX_REROUTES`), for
+   *  the same reason: a third plan from the same spot is the same plan. */
+  const ERRAND_MAX_REROUTES = 2;
+
+  /**
+   * ⏱️ RUNG ONE OF THE LADDER — re-plan a body a person can see.
+   *
+   * Reads the controller's own progress clock (`NpcErrandPath.stalledS`: arc
+   * along the PLAN, so circling furniture counts as progress and shuffling
+   * against a solid does not) and, past the bound, calls the errand's own issue
+   * path again from the live position. That is a re-route and nothing else: the
+   * body does not move, the plan is rebuilt by `doorRouteErrand` (street pass
+   * through `standableVia`, doorways, furniture doglegs), the waypoints already
+   * arrived at are dropped, and the agreement, the reservation and the load in
+   * the porter's hands are untouched.
+   *
+   * ⚠️ IT NEVER FIRES OUT OF SIGHT. The force-pass beats it by a second there
+   * and costs nothing; running both would be two recoveries racing over one
+   * body. RUNG TWO is the controller's, not here: once the budget is spent the
+   * stall clock runs on to `WATCHED_STALL_S` and the errand abandons through
+   * `onAbandon` — for a haul, `abandonHaul`.
+   */
+  function stepErrandStall(session: QuestSession): void {
+    if (!world) return;
+    for (const [npcId, rec] of [...errandWatch]) {
+      const path = world.npcErrandPath(npcId);
+      const body = world.state.avatars[npcId];
+      // Gone, finished, or taken over by something that is not this queue —
+      // `points` is the array we handed the controller, so identity settles it.
+      if (!path || !body || path.points !== rec.plan) {
+        errandWatch.delete(npcId);
+        continue;
+      }
+      // ⚖️ WHICH BOUND — and it turns on what the force-pass would DO here (see
+      // EFFECT_REROUTE_S). On a vertex that does something in the world the
+      // force-pass is the give-up, so the repair goes first and everywhere; on
+      // a routing corner it is a real recovery, so out of sight it keeps it.
+      const live = path.points[path.index];
+      const onEffect = !!live && live.effect !== false;
+      if (path.dwelling || path.stalledS < (onEffect ? EFFECT_REROUTE_S : ERRAND_REROUTE_S)) continue;
+      if (rec.tries >= ERRAND_MAX_REROUTES) continue; // budget spent — rung two takes it
+      const last = path.points[path.points.length - 1] ?? body;
+      if (!onEffect && !viewNear(session, body, last)) continue; // a corner out of sight: the force-pass owns it
+      rec.tries += 1;
+      console.log(
+        `[stall] ${npcId} pinned ${path.stalledS.toFixed(1)}s at ${onEffect ? "an effect" : "a corner"} vertex ${path.index}/${path.points.length} — re-route ${rec.tries}/${ERRAND_MAX_REROUTES}`,
+      );
+      rec.replan();
+    }
   }
 
   /** Expand an errand's waypoints so every leg that crosses a room boundary
@@ -15746,6 +18707,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // the live waypoint the body declares the crossing, which is what
             // opens the door (engine: AvatarState.crossingDoorId).
             ...(p.doorId ? { doorId: p.doorId } : {}),
+            // ⚖️ A ROUTING CORNER IS NOT A WORLD EFFECT (NpcErrandPoint
+            // `effect`). This point exists because a street bends or a wall has
+            // a door in it — the follower's skip-ahead recovery may drop it.
+            // The CALLER'S OWN endpoint stays unmarked (⇒ effect), because that
+            // is where the game loads goods and takes things into hands, and
+            // firing one of those from across the block is the 2026-09-06
+            // teleport.
+            ...(isEndpoint ? {} : { effect: false }),
           });
           origIndexAt.push(isEndpoint ? origIdx : -1);
         });
@@ -15753,6 +18722,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       });
     });
     const onArrive = errand.onArrive;
+    const onAbandon = errand.onAbandon;
     return {
       points,
       ...(onArrive
@@ -15763,8 +18733,38 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             },
           }
         : {}),
+      // ⚖️ THE ABANDON RIDES THE SAME REMAP as the arrival (2026-09-06 carry
+      // round). Every haul in the game is routed, so an `onAbandon` that did
+      // not survive this rewrite would exist only on the unrouted errands
+      // nobody hauls with — the force-passed unload would go on landing.
+      ...(onAbandon
+        ? {
+            onAbandon: (i: number) => {
+              const o = origIndexAt[i];
+              // A ROUTING CORNER CANNOT ABANDON (it carries no effect, so the
+              // controller never offers it) — but if one somehow arrives here,
+              // the errand has still ended and the caller must hear about it,
+              // so it is reported against the waypoint it was heading for.
+              onAbandon(o !== undefined && o >= 0 ? o : nextOrigIndex(origIndexAt, i));
+            },
+          }
+        : {}),
       ...(errand.onDone ? { onDone: errand.onDone } : {}),
     };
+  }
+
+  /** The first ORIGINAL waypoint index at or after routed index `i` (the leg
+   *  the body was walking), or the last one when the route ends in corners. */
+  function nextOrigIndex(origIndexAt: readonly number[], i: number): number {
+    for (let k = i; k < origIndexAt.length; k++) {
+      const o = origIndexAt[k];
+      if (o !== undefined && o >= 0) return o;
+    }
+    for (let k = origIndexAt.length - 1; k >= 0; k--) {
+      const o = origIndexAt[k];
+      if (o !== undefined && o >= 0) return o;
+    }
+    return 0;
   }
 
   /** Does this NPC's body currently hold an object? (One at a time.) */
@@ -16217,7 +19217,16 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         objId = spawnLooseProp(session, src.glyph, at.x, at.y);
       }
     }
+    // 🧺 WHERE THIS CAME FROM, read BEFORE the carry moves it (an object
+    // follows its carrier from the very next tick). Portable containers only —
+    // `bagHomeOf` is the reader and it asks `livesOnTheFloor` again, so a
+    // glyph that is not one never gets a home and the map stays tiny.
+    const cameFrom =
+      src.kind === "object" && objId && state.objects[objId]
+        ? { x: state.objects[objId]!.x, y: state.objects[objId]!.y }
+        : null;
     if (!objId || !carryObject(state, objId, bodyId)) return null;
+    if (cameFrom && livesOnTheFloor(loosePropOf(session, objId)?.glyph ?? "")) bagHomeAt.set(objId, cameFrom);
     // THE HOLD IS A FRESH EVENT. `rec.at` paces the grace period a thing gets
     // before any chore may act on it, and taking something up is exactly the
     // moment that clock should restart: a commanded "pick up the basket" has to
@@ -16619,6 +19628,66 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     session.wornBagIndex.delete(cid);
     fireCarryGesture(avatarIdOf(cid), "putdown", at);
     return objId;
+  }
+
+  /**
+   * ⚖️ A FOLDED CARRIER'S LOAD FOLDS WITH IT — main's ruling B (2026-09-06).
+   *
+   * The streamer condenses a body out of the world (`f.remove` → `removeNpc`).
+   * Its carried prop used to be left behind pointing at an avatar that no
+   * longer existed: a fifth, illegal location — invisible to tidy, to drop, to
+   * every collect row, frozen where it stood — which then SNAPPED up to 54 m
+   * onto whichever body next held that id, because `simulateObject` keeps a
+   * carried object a step ahead of its carrier. Four props converging on one
+   * house door in a single frame is what the user saw as "logs teleporting".
+   *
+   * The LOD-fold law already said what should happen (*"a body condensed out of
+   * the streamed world BANKS its carried stock"* — and the fold, unlike an
+   * interrupted errand, is legal precisely because the body CEASES TO EXIST).
+   * This is that law spelled for the HANDS: the prop leaves the world together
+   * with the body and its row stays on the body's own record, stock and all, so
+   * the unfold hands it back at the body's NEW position. The worn satchel has
+   * worked exactly this way since `donWornBag`; this is its twin.
+   *
+   * Whatever this does NOT fold — a possessed body, a prop the world refuses —
+   * falls through to `removeAvatar`'s release (engine.ts): the load is set down
+   * at the fold point. Never lost, never dangling, either way.
+   */
+  function foldBodyCarry(session: QuestSession, npcId: string): void {
+    if (!world) return;
+    const cid = creatureOfAvatar(npcId);
+    if (session.foldedCarryIndex.has(cid)) return; // already folded — never a second
+    const held = bodyCarryOf(session, cid).inHand;
+    if (!held) return;
+    // The prop leaves the world under the SAME object id, so its stock (the
+    // basket's goods) is never orphaned — the water-in-the-barrel law.
+    const rec = session.containerRecords.get(held.objId);
+    const entityId = rec?.entityId;
+    world.removeObject(held.objId);
+    if (entityId && session.creatures) delete session.creatures.world.items[entityId];
+    setFoldedCarry(session, held.objId, cid);
+    session.containerRecords.get(held.objId)!.glyph = held.glyph;
+  }
+
+  /** …and the other half: the body is back, so its load is back IN ITS HANDS at
+   *  wherever it now stands. A refusal (hands somehow full) leaves the prop
+   *  loose at the body's feet rather than folded forever — the same "never
+   *  lost" floor `removeAvatar` provides. */
+  function unfoldBodyCarry(session: QuestSession, npcId: string): void {
+    if (!world) return;
+    const cid = creatureOfAvatar(npcId);
+    const folded = foldedCarryOf(session, cid);
+    const body = world.state.avatars[npcId];
+    if (!folded || !body) return;
+    clearFoldedCarry(session, cid);
+    const glyph = folded.glyph || session.containerRecords.get(folded.objId)?.glyph || "";
+    if (!glyph) return;
+    const entityId = materialize(session, glyph, null);
+    world.addObject(itemObjectSpec(glyph, folded.objId, { x: body.x, y: body.y }));
+    setLooseProp(session, folded.objId, { entityId, glyph, at: session.townClock });
+    if (!takeIntoHands(session, npcId, { kind: "object", objId: folded.objId })) {
+      session.needsPropsEpoch++; // it lies at their feet — wake the tidy decides
+    }
   }
 
   /** The registered TRANSFORM station whose `applies` IS `state` (fire → hot,
@@ -17319,12 +20388,40 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // sets exactly this `converse` pursuit).
         seedConversation(session, cid, pid);
       }
-      // Both loneliness meters ease IF the body runs one (a commanded NPC may not).
-      for (const c of [cid, pid]) {
-        const k = [...session.needMeters.keys()].find((m) => m.startsWith(`${c}|social`));
-        if (k) session.needMeters.set(k, 0);
+      // ── ⚖️ S-3/S-4 — THE ARRIVAL IS AN `attend` ACT ───────────────────────
+      //
+      // 🚨 CREDIT IS AN ACT BY ANOTHER, and this is the seat that makes it true.
+      // Under the capability the arrival stops being a hard-coded double zero
+      // plus a symmetric warmth and becomes a SOCIAL EVENT priced by the pure
+      // module: both `social` meters still clear (the company IS the satisfier),
+      // but STANDING clears only if the partner actually defers to the seeker
+      // and SECURITY only if the partner actually likes it — an act that was not
+      // what you needed does not count. The relation move becomes the module's
+      // ±0.03 mutual, and every bystander who saw the two of them stop and talk
+      // gets its own (smaller) edge.
+      //
+      // 🚫 OFF THE CAPABILITY THIS LINE DOES NOT EXIST. `bodyNeedsOn` is FALSE
+      // for the dollhouse, so its "you two, talk" command and its residents'
+      // own social rows keep the exact two writes and the exact
+      // `{0.05, 0.02}` warmth they have always had — the bench's guarantee.
+      // ⚠️ THE ASYMMETRY IS A KNOWN SEAM, recorded rather than smoothed: the
+      // dollhouse warms 0.05/0.02 both ways and the frontier warms 0.03 both
+      // ways, and the fold (Stage 3) is where the two become one number.
+      if (bodyNeedsOn(session)) {
+        emitSocial(session, {
+          kind: "attend",
+          actor: cid,
+          addressee: pid,
+          witnesses: witnessesOf(session, cid, pid),
+        });
+      } else {
+        // Both loneliness meters ease IF the body runs one (a commanded NPC may not).
+        for (const c of [cid, pid]) {
+          const k = [...session.needMeters.keys()].find((m) => m.startsWith(`${c}|social`));
+          if (k) session.needMeters.set(k, 0);
+        }
+        warmRelations(session, cid, pid, { affinity: 0.05, trust: 0.02 });
       }
-      warmRelations(session, cid, pid, { affinity: 0.05, trust: 0.02 });
       console.log(`[command] ${cid} conversed with ${pid}`);
       return;
     }
@@ -17539,11 +20636,23 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // sweep sent every hungry resident with a streamed-in interior marching to
     // the SAME visible food box. Commands stay unscoped — "get the cloth" may
     // legitimately cross town; a self-assigned meal may not.
+    // ⚖️ …AND A HOMELESS BODY IS BOUNDED BY ITS SCOPE, NOT BY A HOUSE
+    // (body-needs D3.5). The `furn_` rule above says "your own household's
+    // furniture, wherever it stands" — a rule about MEMBERSHIP, and a settler
+    // is a member of nothing, so under it every piece of furniture in the world
+    // is refused (`houseIndexOfCid` is -1) AND its own camp is only ever 8 m
+    // wide. The reach it actually has is the extent of the scope it stands in
+    // (`needReachOf` — the walk, not a constant), and inside that reach a thing
+    // is a thing: a crate at the camp is no more forbidden to a camper than a
+    // bush is. One rule, chosen by whether this body HAS a household.
     const scopeOk = (objId: string, pos: { x: number; y: number }): boolean => {
       if (!needScopeCid) return true;
+      const b = host.state.avatars[avatarIdOf(needScopeCid)];
+      if (isSettlerCid(needScopeCid)) {
+        return !!b && Math.hypot(pos.x - b.x, pos.y - b.y) <= needReachOf(session, needScopeCid);
+      }
       const fm = /^furn_(\d+)_/.exec(objId);
       if (fm) return Number(fm[1]) === houseIndexOfCid(needScopeCid); // furniture: OWN house only
-      const b = host.state.avatars[avatarIdOf(needScopeCid)];
       return !!b && Math.hypot(pos.x - b.x, pos.y - b.y) <= NEED_SCOPE_REACH_M; // else: within reach
     };
     /** Facets of an embodied entity: the creature-world instance when it has
@@ -17590,6 +20699,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           // to be a destination — "go to bed" walks to the bed).
           const direct = host.state.objects[p.id];
           if (direct) return { x: direct.x, y: direct.y };
+          // ⚖️ …AND A STANDING NATURAL SOURCE IS AN AVATAR, NOT AN OBJECT —
+          // `containerAnchor`'s law, one layer up (body-needs round). A
+          // materialized wild feature (a berry bush, a hazel) is a BODY that
+          // carries `bodyHeightM`, and its container id is that body's id, so
+          // this lookup missed it and the id fell through to the spoken-word
+          // search below — which answers about the nearest thing whose GLYPH
+          // matches a word, not about the bush the decide chose. Measured on
+          // the homestead: five settlers decided `hunger:food/take` at a bush
+          // 50 m away, every frame, and NO plan compiled, because the one
+          // question the plan asks — "where is `flora:bush:wild:bush_3`?" —
+          // had no answer. `containerAnchor` states the same fallback in its
+          // own words ("without it every NPC sourcing path is blind to a
+          // standing oak and a homestead build starves in silence").
+          const standing = host.state.avatars[p.id];
+          if (standing) return { x: standing.x, y: standing.y };
+          // ⚖️ …AND A REGION SOURCE IS NEITHER (PART 5). A forage row may name a
+          // ring-1 tile record (`wild:area:tile-<i>-<j>`), which has no object
+          // and no body — its walk-to point is the road-side shelf at the
+          // record's own edge. Answered HERE, before the nearest-token search,
+          // for exactly the reason `furn_` is: `tile-1-0` shares no token with
+          // anything, so the fallback would answer null and the plan would
+          // never compile — the same silent block the standing-body line above
+          // was written to fix.
+          const areaKey = foragedAreaKeyOf(p.id);
+          if (areaKey !== null) {
+            const rec = session.areaRecords.get(areaKey);
+            return rec ? wildShelfPointOf(session, rec) : null;
+          }
           // A house endpoint ("house:<hi>", the ② transfer vocabulary) —
           // its doorstep ("go to house.red" walks there too).
           const hm = /^house:(\d+)$/.exec(p.id);
@@ -17909,11 +21046,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * own basket and the town's yard one; a stall's merchandise only if ownership
    * says so), not already spoken for by another trip, and with room left in it.
    */
-  function idleBagsFor(session: QuestSession, cid: string): IdleBag[] {
+  function idleBagsFor(
+    session: QuestSession,
+    cid: string,
+    /** 🧺 BASKETS THIS BODY HAS ALREADY TRIED AND FAILED TO REACH on this trip
+     *  (carry-residuals round R-B). Empty for every ordinary caller. */
+    avoid?: ReadonlySet<string>,
+  ): IdleBag[] {
     if (!world) return [];
     const houseIndex = houseIndexOfCid(cid);
     const out: IdleBag[] = [];
     for (const [objId, rec] of looseEntries(session)) {
+      if (avoid?.has(objId)) continue;
       if (!rec.glyph || !rec.entityId) continue;
       const glyph = rec.glyph;
       if (!livesOnTheFloor(glyph)) continue;
@@ -18368,15 +21512,46 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // the player's family — a chip each, addressable like any member.
       const settlers = settlersOf(session);
       if (!settlers.length) return null;
-      return settlers.map((cid, i) => ({
-        id: cid,
-        label: settlerMemberOf(session, cid)?.name ?? `${i + 1}`,
-        emoji: (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0 ? "🏃" : "⛺",
-        state: "guest" as const,
-        selected: session.addressedFamily === cid,
-        present: !!world!.state.avatars[avatarIdOf(cid)],
-        ...bodyLookOf(session, cid),
-      }));
+      // ⚖️ A SETTLER'S CHIP NOW SAYS WHAT IT FEELS (body-needs D3.8). It used
+      // to be hardcoded `guest`/⛺ *because there were no meters to read* — the
+      // needlessness artifact showing through the UI. Now the body has rows,
+      // so it goes down the SAME ladder every member goes down
+      // (`familyStateOf`), and the founding ⛺ is what is left when nothing
+      // fires: a camper is a camper only when it is neither hungry nor tired.
+      // No new string — `hungry`/`tired`/`asleep` are the ladder's own states
+      // and their lexemes ship in all four rulesets.
+      return settlers.map((cid, i) => {
+        const step = session.needStep.get(cid) ?? null;
+        const { emoji, state } = familyStateOf({
+          commanded: (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0,
+          step: step
+            ? { tplKey: step.tplKey, resting: step.kind === "rest" && step.dwell !== undefined }
+            : null,
+          hungry: needFiring(session, cid, "hunger:food"),
+          thirsty: false,
+          toilet: false,
+          tired: needFiring(session, cid, "energy"),
+          lonely: false,
+          dirty: false,
+          scruffy: false,
+          bored: false,
+          // A settler carries no stress row (`session.stress` is written only
+          // in the shown-household arm of `stepNeeds`, which settlers never
+          // enter) — so the honest signal is false, not a 0 dressed as calm.
+          stressed: false,
+          away: null,
+        });
+        const camping = state === "content";
+        return {
+          id: cid,
+          label: settlerMemberOf(session, cid)?.name ?? `${i + 1}`,
+          emoji: camping ? "⛺" : emoji,
+          state: camping ? ("guest" as const) : state,
+          selected: session.addressedFamily === cid,
+          present: !!world!.state.avatars[avatarIdOf(cid)],
+          ...bodyLookOf(session, cid),
+        };
+      });
     }
     const h = session.dollhouse;
     const houseCtx = residentTownCtx(session, h);
@@ -18419,7 +21594,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         continue;
       }
       const step = session.needStep.get(cid) ?? null;
-      const firing = (key: string) => (session.needMeters.get(`${cid}|${key}`) ?? 0) >= 1;
+      const firing = (key: string) => needFiring(session, cid, key);
       const { emoji, state } = familyStateOf({
         commanded: (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0,
         step: step
@@ -18451,7 +21626,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (ph !== h) continue;
       const present = !!world.state.avatars[cid];
       const step = session.needStep.get(cid) ?? null;
-      const firing = (key: string) => (session.needMeters.get(`${cid}|${key}`) ?? 0) >= 1;
+      const firing = (key: string) => needFiring(session, cid, key);
       const { emoji, state } = familyStateOf({
         commanded: (session.npcTasks.get(avatarIdOf(cid))?.length ?? 0) > 0,
         step: step
@@ -18705,6 +21880,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** The need rows a body runs — residents by household member, pets by species. */
   function residentNeedRowsOf(session: QuestSession, cid: string): readonly NeedTemplate[] {
+    // A HOMELESS BODY'S ROWS ARE ITS OWN (body-needs D1). Without this a
+    // settler fell through to the PET set here — which is why-chain and
+    // source-probe surface, so its "because I am hungry" would have been
+    // answered off a dog's row list.
+    if (isSettlerCid(cid)) return settlerNeedTemplates(session, cid);
     const houseIndex = houseIndexOfCid(cid);
     const house = residentTownCtx(session, houseIndex)?.house;
     if (isPetCid(cid) || !house) return petNeedTemplates(session);
@@ -21108,8 +24288,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // written into that author's row, so a peer's instruction gates that peer's
     // creature and never rewrites the owner's engaged body.
     opts: { by?: string | null; command?: boolean; author?: string } = {},
-  ): void {
-    if (!world) return;
+  ): boolean {
+    if (!world) return false;
     // WHERE the attention is pointed — it decides who is near enough to take it.
     const at =
       subject.kind === "place"
@@ -21120,7 +24300,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             ? world.state.avatars[avatarIdOf(subject.cid)]
             : subject.at;
     const point = at ? { x: at.x, y: at.y } : (playerWorldPos(session) ?? null);
-    if (!point) return;
+    if (!point) return false;
     const author = opts.author ?? LOCAL_PLAYER_CID;
     const cid = opts.by ?? attentionAddressee(session, point, author);
     if (!cid) {
@@ -21148,7 +24328,31 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
                 : "here";
         saySystem(session, CANT_HERE, `💬 "${named}" — nobody is near enough`);
       }
-      return;
+      return false;
+    }
+    // ⚖️ L-2 — THE GATE IS THE BOND, AND THERE IS NO SPECIAL CASE FOR THE
+    // SPIRIT. A COMMAND is the one arm that may override what a body is already
+    // doing, so it is the one arm that has to ask whether this body takes orders
+    // from this author at all. A settled gaze asks nobody for anything and is
+    // deliberately NOT gated (it already waits for an idle body).
+    //
+    // "Foreman by being right about needs, never by fiat": a townsperson outside
+    // the household refuses the spirit until M1's outcomes have earned it the
+    // authority, and the refusal is VOCAL and WITNESSED — the follower says why,
+    // and the author's standing pays for it in front of whoever saw.
+    if (opts.command && bondStrength(session, author, cid) < VOLUNTEER_COMPLIANCE) {
+      saySystem(session, WONT_HELP_YOU, `💬 ${cid} — won't take that order`, cid);
+      emitSocial(session, {
+        kind: "order-refused",
+        actor: cid,
+        // The leader is BOTH the other party and the author: it is their
+        // standing the refusal costs (`applySocialEvent` charges `author`, so
+        // an omitted one would make the whole act inert).
+        author,
+        addressee: author,
+        witnesses: witnessesOf(session, cid, author),
+      });
+      return false;
     }
     const command = { ...(opts.command ? { command: true } : {}), author };
     switch (subject.kind) {
@@ -21165,6 +24369,58 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         directCreatureTo(session, cid, point, null, command);
         break;
     }
+    return true;
+  }
+
+  /**
+   * ⚖️ L-2 — HOW STRONGLY `actor` IS BOUND TO `author`, 0..1, and the ONE
+   * question every order is gated on.
+   *
+   * TWO answers, because the player is not a body in a book:
+   *  • THE AVATAR IS THE BOND PINNED AT MAXIMUM (influence-and-authority §4b).
+   *    A member of `playerGroup` — the ridden body, the party, the bonded, the
+   *    household this spirit is keeping — is bound to its player by
+   *    construction, and no accumulated book row is going to say otherwise.
+   *  • EVERYBODY ELSE is `deference`: the earned route (authority + trust,
+   *    gated by affinity) noisy-OR'd with the coerced one, with `certainty`
+   *    answering the only thing a threat needs the host for — could the author
+   *    SEE this body refuse.
+   *
+   * 🚨 NOTE WHAT IS NOT HERE: no bonus for being the player, no floor for being
+   * a settler, no exemption for a pet. A pet of the family house passes because
+   * `playerGroup` and `relationToward` both already know it is family — if one
+   * of them ever stops knowing, the fix is in the RELATION, never a clause here.
+   */
+  function bondStrength(session: QuestSession, author: string, actor: string): number {
+    if (isPlayerCid(author) && playerGroup(session).includes(actor)) return 1;
+    return deference(relationToward(session, actor, author), creatureMood(actor), {
+      certainty: witnessedBy(session, author, actor),
+    });
+  }
+
+  /**
+   * ⚖️ L-1 — DELEGATION IS DIRECTED ATTENTION, NOT A SECOND PUSH. A leader never
+   * installs work on a follower: it POINTS (the spark's own design — "draw
+   * attention to an area → move there") and the follower's own pull loop does
+   * the rest, which is why this is `attendTo` with the two opts already threaded
+   * for it and NOT a new pursuit source.
+   *
+   * 🚨 NEVER GUESS A VOCATIVE. `follower` is a RESOLVED body; `attendTo`'s own
+   * `attentionAddressee` fallback ("whoever is nearest") is exactly what an
+   * order must not do, so it is passed as `by` and never left to the room.
+   *
+   * Returns whether the order LANDED — the gate lives in `attendTo` (one owner,
+   * so a press and a delegation cannot be gated differently), so a false here is
+   * the follower having refused out loud.
+   */
+  function orderTo(
+    session: QuestSession,
+    leader: string,
+    follower: string,
+    subject: Parameters<typeof attendTo>[1],
+  ): boolean {
+    if (!follower || follower === leader) return false;
+    return attendTo(session, subject, { by: follower, command: true, author: leader });
   }
 
   /** A thing named by its WORD rather than pointed at: the glyph's own motive
@@ -21395,12 +24651,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
 
   /** The nearest idle creature to a point (within reach), preferring the player's
    *  own group — the body a board press falls back to when no creature is engaged.
-   *  Close radius only, so a press never pulls someone in from across town. */
+   *  Close radius only, so a press never pulls someone in from across town.
+   *
+   *  ⚖️ `exclude` — THE ASKER IS NOT ITS OWN ANSWER (L-3). A press comes from a
+   *  spirit with no body, so this never mattered until a BODY started asking:
+   *  a delegating settler stands at distance 0 from itself and is idle by the
+   *  same test the loop that reached here just passed, so it wins its own argmax
+   *  every time and no order is ever aimed at anyone else. Filtered here rather
+   *  than at the call site because the caller only ever sees the winner, and
+   *  ABOVE `idleForDirect` because that predicate REAPS a stale pursuit as a
+   *  side effect — the asker's own pursuit is not this query's business.
+   *  Undefined for both press callers, and `cid` is always a string, so their
+   *  answer is unmoved by construction. */
   function nearestIdleGroupCreature(
     session: QuestSession,
     state: WorldState,
     point: { x: number; y: number },
     maxDist: number,
+    exclude?: string,
   ): string | null {
     let best: string | null = null;
     let bestScore = Infinity;
@@ -21415,6 +24683,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // to a body. `cidOfAvatar` is the documented inverse and makes both ends
       // speak the same id space.
       const cid = cidOfAvatar(bodyId);
+      if (cid === exclude) continue;
       if (!idleForDirect(session, cid)) continue;
       // ANOTHER PLAYER'S BODY IS NOT UP FOR GRABS. Attached avatars became
       // directable above, which is right for our OWN — but a fallback that can
@@ -22862,6 +26131,49 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     }
   }
 
+  /**
+   * 🌿 THE WILD CLOCKS' LIVE TICK — the third arm of the SAME defect
+   * `restandOrphanedWildBodies` above was written for, and its docblock states
+   * the whole argument already: *"`growWildFeature` is only ever reached by
+   * OPENING the feature's container … the one state that can never re-check
+   * itself."*
+   *
+   * 🚨 THE HOLE THAT LEFT (measured 2026-09-07, `frontier-planet.spec.json`
+   * seed 11). `regrowWildStock` — the ripen — hangs off exactly three
+   * checkpoints: the PLAYER opening a container, the PLAYER taking from one,
+   * and a clock WARP's `settleLazyClocks`. A settler foraging a berry bush is
+   * none of the three, and the deadlock is closed: an emptied plant drops off
+   * the forage list (a source is offered only if a take would yield), so
+   * nobody walks to it, so nothing ever ripens it, so it is never offered
+   * again. Lazy ripening needs a reader; a countryside nobody reads has none.
+   *
+   * So the clocks tick on the sweep the task pool already runs, exactly where
+   * the re-stand check lives, and the lazy checkpoints stay as they are (they
+   * are idempotent, and a warp still settles the whole span closed-form).
+   *
+   * ⚖️ IT MINTS NOTHING NEW. `regrowWildStock` is the ONE stock writer for
+   * this — matured units come out of `dueHarvestRegrowth`, capped at the
+   * stand's own rolled `harvestCap`, off absolute `taskClock` deadlines the
+   * take armed. This only makes the reading happen on time.
+   *
+   * CHEAP BY CONSTRUCTION, in the same shape as its neighbour: a feature with
+   * nothing DUE costs one property read and a comparison, so the normal sweep
+   * over a whole countryside does no work at all. A world with no wilderness
+   * does none whatsoever.
+   */
+  function stepWildClocks(session: QuestSession) {
+    const w = session.wilderness;
+    if (!w?.features.length) return;
+    const now = session.taskClock;
+    for (const f of w.features) {
+      const due =
+        (f.growAt !== undefined && f.growAt <= now) ||
+        (f.regrowAt !== undefined && Object.values(f.regrowAt).some((at) => at <= now));
+      if (!due) continue;
+      regrowWildStock(session, wildFeatureContainerId(f));
+    }
+  }
+
   /** THE RE-SEED (S3 H2): sapling stock (kill glyphs) + a fresh growth clock,
    *  armed from THIS moment. IDEMPOTENT — a feature already standing as an
    *  un-grown sapling (`sizeClass 0` with a clock still running) is left
@@ -22936,6 +26248,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (!w) return;
     const f = w.features.find((x) => wildFeatureContainerId(x) === objId);
     if (!f?.growAt) return;
+    // 🚨 A FELLED TRUNK DOES NOT GROW (2026-09-06; the fell-regression probe
+    // left this unexamined). It is not "probably harmless": the advance below
+    // MERGES `advance.stock` — the new class's kill yield — into the live
+    // container, so a heap that is being hauled away would silently REFILL
+    // with the timber of a tree that is lying on the ground. Item conservation
+    // forbids it. Reachable exactly when a re-seeded sapling is cut again
+    // while its clock is still armed (`reseedWildFeature` arms `growAt` and
+    // clears `downed`; the next cut sets `downed` and leaves the clock).
+    // The clock is NOT advanced and NOT retired — same shape as the built-
+    // ground suppression below: the heap simply does not tick, and if it ever
+    // stands again as a sapling (`reseedWildFeature`) it resumes where it was.
+    if (f.downed) return;
     const src = naturalSourceOf(f.species);
     if (!src?.growth) return;
     // TREES DON'T GROW WHERE A BUILDING ALREADY IS (user ruling 2026-09-02).
@@ -23237,6 +26561,27 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       return;
     }
     presenter.toast(`💬 "${sentence}" — ${npcStatement(NOT_UNDERSTOOD_LINE)}`, "feedback");
+  }
+
+  /**
+   * ⚖️ P-3 — THE EMPTY ROOM IS NOT A GRAMMAR MISTAKE.
+   *
+   * A conversational sentence that MAPS to a real act and finds no listener in
+   * reach used to get `speakNotUnderstood` — the identical answer a malformed
+   * sentence gets, delivered as the identical toast. In a room with nobody in
+   * it that answer teaches a child their sentence was wrong when it was right,
+   * which is the one lesson this system must never teach by accident.
+   *
+   * The missing thing is a PRECONDITION of every addressed act — somebody to
+   * address — and a failed precondition IS the response (semantic-behavior §6),
+   * so it is named: `NOBODY_HERE`. Same channel as the fallback it replaces,
+   * because it has to be: there is nobody to speak it. Deliberately NOT
+   * `saySystem`, whose speaker ladder would find a body somewhere across the
+   * map and have it announce that nobody is here.
+   */
+  function speakNobodyHere(session: QuestSession, sentence: string) {
+    const line = NOBODY_HERE[session.meta.syntax];
+    presenter.toast(`💬 "${sentence}" — ${npcStatement(line)}`, "feedback");
   }
 
   /** THE ANSWER CHANNEL (outstanding-bugs-family-mode: "no direct question
@@ -24006,7 +27351,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // rolled. It changes no other weight and draws no extra number.
         busy: headingSpokenFor(cid),
         rng,
-      });
+      },
+      // ⚖️ W2-1 — THE ONE ARGUMENT THAT WAS MISSING. `projectDialogue`'s regard
+      // arm is gated `ctx?.convo ? regardFacts(...) : []`, so an opener chosen
+      // with no `ctx` could never be a regard tell — an NPC could only ever open
+      // with the state-2 small talk ("Are you okay?", "where are you going?"),
+      // which is precisely the whole audible surface S5 measured. The REPLY path
+      // (creature-converse.ts) and the PLAYER's board already pass this exact
+      // argument; the NPC opener was the one seat that did not, and passing it
+      // makes gossip REACHABLE by the one engine rather than by a new act or a
+      // second path. Byte-identical wherever no regard is held.
+      { convo: c.convo });
       if (!move) continue;
       // ★ ⑫④ — WHICH CHANNEL, AND WHAT IT COSTS. ★
       //
@@ -24086,6 +27441,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         relationOf: (observer: string, subject: string) => relationToward(session, observer, subject),
       },
     );
+    // ⚖️ S-6 — an NPC speaker's act carries the same social half. (`praise`,
+    // `insult` and `yield` are in `NON_SPEAKER_ACTS` this round, so nothing
+    // reaches here yet; the seat is wired so it cannot be forgotten when they
+    // become initiable.)
+    applySpokenSocialAct(session, speakerCid, spoken.utterance.act, spoken.utterance.addresseeIds);
     // THE ADDRESSEE CUE IS THE FACING (§3f): the speaker turns to whoever it is
     // talking to, everyone else turns to the speaker, and the whole stance is
     // re-asserted every frame from here until the next turn.
@@ -25436,6 +28796,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
               if (n.id.startsWith("resident_")) {
                 townHost.setNpcWanderRect(n.id, houseIdlePad(session, townHost.state, Number(n.id.split("_")[1])));
               }
+              // …AND ITS LOAD COMES BACK WITH IT (ruling B): a body that folded
+              // holding something unfolds holding it, HERE, at the position it
+              // has now. A prop that stayed in the world instead would be
+              // teleported to this spot by the carry solver on the next tick —
+              // the measured 20–54 m snap.
+              unfoldBodyCarry(session, n.id);
             }
             // REMOVAL NEEDS NO OWNERSHIP GUARD HERE, and this is deliberate
             // (checked 2026-08-07, stocking-offload-and-carry.md §1): the guard
@@ -25445,7 +28811,19 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             // reservations, drops its step/pursuit and leaves `liveNeedBodies`.
             // A watched house's members never reach `f.remove` at all (see the
             // VERDICT note in kernel/town/residents.ts).
-            for (const id of f.remove) townHost.removeNpc(id);
+            //
+            // 🚨 …AND THAT BRANCH CANNOT REACH A PORTER (2026-09-06 carry
+            // round). `stepNeeds` short-circuits a body with a live contribute
+            // pursuit — `if (pulling) continue;` — several screens BEFORE it
+            // looks at `state.avatars[cid]`, so a pull-labour hauler folded
+            // mid-carry never met the evicted arm at all and its prop was left
+            // dangling off a deleted avatar. THE CARRY FOLDS HERE, with the
+            // body, on the body's own record — the ruling's own words — so it
+            // no longer depends on which decide loop happens to own the body.
+            for (const id of f.remove) {
+              foldBodyCarry(session, id);
+              townHost.removeNpc(id);
+            }
             simMark("s.bodies", descendNow() - _sbT); _sbT = descendNow(); // TEMP
             // CLOCK ERRANDS ARE ROUTE-BUDGETED (view-distance-lod-tiers.md): door-
             // routing a trip is the streamer's one remaining per-item lump (~3 ms
@@ -26271,6 +29649,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           stepActionHolds(session, dt); // advance discrete-action crouches; land effects at mid-beat
           stepSpokenTails(session); // ⛓️ heads that finished last frame hand over to their tails
           stepPursuit(session, state, dt); // per-tick goal pursuits (owns its bodies before needs sweep)
+          stepErrandStall(session); // ⏱️ a body a person can SEE, pinned on its plan → re-route it honestly
           stepContainerLids(session, state); // auto-close access-opened lids once the taker has left
           stepContainerBoardReach(state); // …and release the BOARD (and the camera) the same way
           _sp.pursuit = descendNow() - _sm;
@@ -28370,6 +31749,226 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     });
   }
 
+  /**
+   * ⚖️ GRADUATION — THE FOUNDING GROUP SETTLES IN (body-needs-round.md D6:
+   * "GRADUATION = A CONSERVATION HANDOVER"). The seam the settlers block's own
+   * header has been naming since it was written: *"the first move-in is,
+   * narratively, this group settling in (resident-model identity transfer is
+   * the open seam)"*.
+   *
+   * 🚨 WHAT THIS REPLACES. Nothing transferred before. `settlersOf` returned
+   * `[]` the instant `plan.houses.length > 0` and `stepTownMoveIn` pushed a
+   * brand-new ANONYMOUS household of `HOUSEHOLD` souls beside the still-
+   * standing `npc_settler_<i>` bodies — five people minted, five people
+   * abandoned, and the town's books counting both sets of mouths. This is the
+   * ONE migration in the engine that HAS the named origin `population.ts:74-82`
+   * says a conserving one needs: the souls are debited from the founding group
+   * and credited to the household, in one synchronous step.
+   *
+   * WHAT MOVES, and through which existing door:
+   *  · CARRIED STOCK → `bankCarried` (the conserving door), then any container
+   *    still on the body is DOFFED WHOLE (demote's ③ — nothing may point at a
+   *    body about to cease to exist). Units MOVE; none are minted or lost.
+   *  · BODY METERS → `needMeters[resident|key] = needLevelOf(settler, key)` at
+   *    `townClock`. The hunger a settler earned walking to the site is the
+   *    hunger the resident sits down with — a meter does not appear from
+   *    nothing, and it does not vanish either.
+   *  · RELATIONS → re-keyed on BOTH sides, so the FAMILY standing toward the
+   *    guiding spirit (what makes this group obey) survives the move, and so
+   *    does whatever warmed between two campers.
+   *  · THE CREATURE ROW → the settler's `wild_face:` row is RETIRED and
+   *    `ensureResidentCreature` builds the household one. Its LIKES ride
+   *    across: a person's taste is not re-rolled by moving indoors.
+   *  · EVERYTHING IN FLIGHT → released through the pursuit-death path
+   *    (`releaseContributeSlice` + `releaseSeats`, exactly the `clear()` a
+   *    dropped pursuit takes), never a bare `pursuits.delete` that would strand
+   *    a phantom agreement holding units nobody is walking toward.
+   *  · THE BODY → `removeNpc`. The resident streamer stands
+   *    `resident_<h>_<m>` when the house is shown, and U5 has just made this
+   *    house the dollhouse, so it is shown.
+   *
+   * 🚨 THE TOWN BOOKS ARE NOT WRITTEN. `reanchorHouseGoods` starts the
+   * household's pantry sawtooth at what the family actually holds (never at a
+   * full box); the aggregate's food loop closes itself and *"drawn units exit
+   * the world as eaten food, the one legal sink"*.
+   *
+   * `settlerCids` is passed IN because the caller reads it BEFORE pushing the
+   * house row — `settlersOf` answers `[]` from the push onward, by design.
+   */
+  function graduateSettlers(
+    session: QuestSession,
+    settlerCids: readonly string[],
+    houseIndex: number,
+  ): void {
+    const t = session.town;
+    if (!t || !world) return;
+    const plan = graduationPlan(settlerCids, houseIndex);
+    if (!plan.length) return;
+
+    // ── U5 · THE FOUNDED HOUSE IS THE OBSERVED HOUSEHOLD ─────────────────
+    // The family the player has been guiding across the site is the family
+    // that moves in; with no dollhouse set, this is the one the camera and the
+    // family HUD have been about all along.
+    if (session.dollhouse === null) session.dollhouse = houseIndex;
+    const fam = t.config.family;
+    if (fam && t.familyHouse === null) {
+      // DURABLE on purpose: `familyPlan` re-reads `config.family.house` on
+      // every rebuild, so the authored family does not wander off to the
+      // "roomiest house" the next time the town is built.
+      fam.house = houseIndex;
+      t.familyHouse = houseIndex;
+    }
+    // THE CENSUS, for a group that is not five (scout B's double-count ③).
+    graduatedSouls.set(houseIndex, graduationSouls(settlerCids));
+
+    const now = session.townClock;
+    for (const step of plan) {
+      const { from, to } = step;
+      const body = avatarIdOf(from);
+      const av = world!.state.avatars[body];
+      const where = av ? { x: av.x, y: av.y } : null;
+
+      // ① IN FLIGHT — the slice dies with the body, through the same doors a
+      //   dropped pursuit takes. Order is load-bearing: the pursuit is deleted
+      //   BEFORE the seats are released (`dropSeatsUnlessSeated` would keep a
+      //   seat for a pursuit that is still standing on one).
+      const pur = session.pursuits.get(from);
+      session.pursuits.delete(from);
+      session.walk.delete(from);
+      session.needGoalPick.delete(from);
+      releaseErrands(session, from);
+      clearNeedStep(session, from); // the pending step AND its unit claims
+      session.liveNeedBodies.delete(from);
+      session.needDecideDorm.delete(from);
+      session.bodyNeedDorm.delete(from);
+      session.liveTripAt.delete(from);
+      session.npcTasks.delete(body);
+      // …and the WANT BOOKS this cid wrote, so a retired body cannot go on
+      // begging (`blockedNeeds` is what the beg bubble and adoption read) or
+      // leave a park behind that nobody will ever un-park.
+      session.blockedNeeds.delete(from); // keyed by cid
+      session.needEatShow.delete(from); // keyed by cid
+      for (const k of [...session.needDepositFail.keys()]) {
+        if (k.startsWith(`${from}|`)) session.needDepositFail.delete(k); // `<cid>|<tplKey>`
+      }
+      for (const k of [...session.needParks.keys()]) {
+        if (k.includes(`|${from}|`)) session.needParks.delete(k); // `<scope>|<cid>|<tplKey>`
+      }
+      if (isContributePursuit(pur)) releaseContributeSlice(session, pur.bill);
+      releaseSeats(session.reservations, from);
+      seatHolders.delete(from);
+
+      // ② CARRIED STOCK — units move into the household's own boxes.
+      const held: Record<string, number> = { ...bodyCarryView(bodyCarryOf(session, from)) };
+      // MEASURED ON BOTH SIDES, per body, in the transcript (`conservationBreach`
+      // — graduation.ts law ③): what the household's designated boxes hold for
+      // exactly the glyphs this body was carrying, before and after. Zero is the
+      // only legal reading; a signed number says minted (+) or lost (−) and says
+      // it at the moment it happened rather than in a session-wide `/stock`
+      // delta that a meal eaten in the same second would mask.
+      const boxUnits = (): number => {
+        let n = 0;
+        for (const glyph of Object.keys(held)) {
+          const box = designatedContainerFor(session, glyph, houseIndex, from);
+          n += session.containerRecords.get(box)?.stock?.[glyph] ?? 0;
+        }
+        return n;
+      };
+      const chestBefore = boxUnits();
+      const banked = bankCarried(session, from, houseIndex);
+      const breach = conservationBreach({ banked, chestBefore, chestAfter: boxUnits() });
+      // …AND THE CONTAINER ITSELF COMES INDOORS WITH THEM. `bankCarried`
+      // empties an inventory and deliberately does NOT confiscate the basket —
+      // its own note says so — but this body is about to STOP EXISTING, which
+      // is exactly the case where banking is legal ("a body condensed out of
+      // the streamed world BANKS its carried stock … legal precisely because
+      // the body CEASES TO EXIST"). Leaving the basket in the mud where the
+      // camper stood while its CONTENTS went into the family's chest would be
+      // the same journey ruled two different ways — and, measured, it also
+      // leaves the unit where the conservation audit cannot see it (a loose
+      // prop on unscoped ground has no parent in the scope tree, so `/stock`
+      // reads it as destroyed; see the landing note's REQUEST FOR MAIN).
+      // So: the household's designated box for the bag's own glyph, falling
+      // back to the floor of the house it now lives in.
+      const home = houseRectOf(session, houseIndex);
+      const homePoint = home ? { x: home.x + home.w / 2, y: home.y + home.h / 2 } : where;
+      if (homePoint) {
+        doffWornBag(session, from, homePoint);
+        const stillHeld = bodyCarryOf(session, from).inHand;
+        if (stillHeld) {
+          const box = designatedContainerFor(session, stillHeld.glyph, houseIndex, from);
+          const stowed =
+            isContainerId(session, box) && box !== stillHeld.objId
+              ? setDownFromHands(session, body, { kind: "container", id: box }, { objId: stillHeld.objId })
+              : null;
+          if (!stowed) {
+            setDownFromHands(
+              session,
+              body,
+              { kind: "ground", x: homePoint.x, y: homePoint.y },
+              { objId: stillHeld.objId },
+            );
+          }
+        }
+      }
+
+      // ③ THE BODY METERS HAND OVER into the household view. `needLevelOf` is
+      //   the ONE door (D2): for a settler it resolves to the lazy row's
+      //   closed form at `now`, which is exactly the level the decide loop was
+      //   reading one frame ago. Sorted, so the log and the write order do not
+      //   depend on the map's insertion history.
+      const rows = session.bodyNeeds.get(from);
+      const handed: string[] = [];
+      if (rows) {
+        for (const tplKey of [...rows.keys()].sort()) {
+          const level = Math.max(0, needLevelOf(session, from, tplKey, now));
+          session.needMeters.set(`${to}|${tplKey}`, level);
+          handed.push(`${tplKey}=${level.toFixed(2)}`);
+        }
+      }
+      session.bodyNeeds.delete(from);
+
+      // ④ IDENTITY — relations both ways, then the creature row.
+      for (const [k, v] of [...session.relations]) {
+        const bar = k.indexOf("|");
+        if (bar <= 0) continue;
+        const a = k.slice(0, bar);
+        const b = k.slice(bar + 1);
+        if (a !== from && b !== from) continue;
+        session.relations.delete(k);
+        session.relations.set(`${a === from ? to : a}|${b === from ? to : b}`, v);
+      }
+      const cr = session.creatures;
+      const likes = cr?.world.creatures[from]?.likes?.slice();
+      if (cr) {
+        delete cr.world.creatures[from];
+        cr.creatureByNode.delete(from);
+        cr.nodeByCreature.delete(from);
+      }
+      ensureResidentCreature(session, to);
+      const grown = session.creatures?.world.creatures[to];
+      if (grown && likes?.length) grown.likes = likes;
+
+      // ⑤ THE BODY IS RETIRED — the streamer stands the resident.
+      world!.removeNpc(body);
+
+      const carriedText = Object.entries(held)
+        .filter(([, n]) => n > 0)
+        .map(([g, n]) => `${g}×${n}`)
+        .join(" ");
+      console.log(
+        `[graduate] ${from} → ${to} (house ${houseIndex}): banked ${banked} unit(s)` +
+          ` [${carriedText || "empty-handed"}] (box ${chestBefore}→${chestBefore + banked + breach},` +
+          ` conservation ${breach === 0 ? "OK" : `BREACH ${breach > 0 ? "+" : ""}${breach}`});` +
+          ` meters ${handed.length ? handed.join(" ") : "(none)"}`,
+      );
+    }
+
+    // ⑥ THE PANTRY STARTS AT WHAT THE FAMILY HOLDS — after the banking, never
+    //   at a full box, and the TOWN BOOKS are not touched.
+    reanchorHouseGoods(session, houseIndex);
+  }
+
   // ── ATTACHED AVATARS (avatarMode "creature") ─────────────────────────────
   // The body a session CREATES for a player, which then follows that player's
   // spark through the ordinary creature machinery. Everything here is inert
@@ -28814,6 +32413,35 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       return authoredRelation(session.meta, fallback);
     }
+    // ── ⚖️ M3 — WHAT I'VE HEARD ABOUT YOU, when I have never met you ─────────
+    //
+    // The LAST fallback, and only for a CREATURE issuer: the player arm above
+    // already answers with the household bond / the authored knob, and putting
+    // hearsay in front of an AUTHORED relation would let a rumour overwrite the
+    // game's own statement about where the player stands. So the smaller take —
+    // unmet NON-PLAYER issuers only — and it is recorded as the narrowing it is.
+    //
+    // The prior is derived, never stored: `regard` facts this body holds ABOUT
+    // the issuer, each damped by how much it trusts the body that told it
+    // (`priorFromRegard`, which moves affinity/trust/fear and pointedly NEVER
+    // authority — 🚨 hearsay cannot make somebody your chief).
+    //
+    // 🚨 RECURSION GUARD. The damping needs "how much do I trust the OBSERVER",
+    // and asking `relationToward` for it would re-enter this very arm — a body
+    // that heard about A from B and about B from A would recurse forever. The
+    // lookup therefore reads the RAW book row (or the neutral default): an
+    // opinion you were TOLD about the teller is not evidence about the teller.
+    const cworld = session.creatures?.world;
+    if (cworld?.creatures[cid]) {
+      const facts = regardFacts(cworld, cid, { subject: issuer });
+      if (facts.length) {
+        return priorFromRegard(
+          DEFAULT_RELATION,
+          facts,
+          (observer) => (session.relations.get(`${cid}|${observer}`) ?? DEFAULT_RELATION).trust,
+        );
+      }
+    }
     return DEFAULT_RELATION;
   }
 
@@ -29213,7 +32841,14 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (t.goal.kind === "build" || t.goal.kind === "buildwork") continue; // the sweep retires these off REAL construction state
       if (t.goal.kind === "transfer") {
         const st = session.transfers.get(t.goal.agreementId)?.status;
-        if (st === undefined || st === "done" || st === "failed") pool.complete(t.id);
+        if (st === undefined || st === "done" || st === "failed") {
+          // ⚖️ M1 — AN ORDER THAT WORKED IS THE EVIDENCE. A failed agreement is
+          // an order-FAILED (the hands were there and the thing did not happen);
+          // `undefined` is a retired row nobody can speak to, so it lands with
+          // the done arm exactly as the completion below does.
+          emitOrderOutcome(session, t, st === "failed" ? "order-failed" : "order-done");
+          pool.complete(t.id);
+        }
         continue;
       }
       // A PURSUIT-driven claim (S5) is done when its pursuit is gone — the
@@ -29224,7 +32859,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       if (session.pursuits.get(t.claimedBy!)?.source === "command") continue;
       const body = avatarIdOf(t.claimedBy!);
       const queued = (session.npcTasks.get(body)?.length ?? 0) > 0;
-      if (!queued && !world.npcErrandActive(body)) pool.complete(t.id);
+      if (!queued && !world.npcErrandActive(body)) {
+        emitOrderOutcome(session, t, "order-done");
+        pool.complete(t.id);
+      }
     }
     const openTasks = pool.open();
     if (!openTasks.length) return;
@@ -29365,8 +33003,12 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         const body = world.state.avatars[avatarIdOf(cid)];
         if (!body) continue;
         const compliant =
-          compliance(relationToward(session, cid, task.issuer), creatureMood(cid)) >=
-          VOLUNTEER_COMPLIANCE;
+          // ⚖️ `deference`, not `compliance` (S-7) — both routes, one gate.
+          // Identity at `fear: 0`; `witnessedBy` answers whether the issuer could
+          // SEE this body refuse, which is the only thing the coerced route asks.
+          deference(relationToward(session, cid, task.issuer), creatureMood(cid), {
+            certainty: witnessedBy(session, task.issuer, cid),
+          }) >= VOLUNTEER_COMPLIANCE;
         // ⚖️ THE PLAN IS COMPILED ONCE AND ITS PRICE IS KEPT (batch 2, L1).
         // This call used to be spent on a `!== null` and the `cost` it carries
         // — the whole point of `compileGoal` being a wrapper over the step
@@ -29437,6 +33079,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       }
       const winner = chooseClaimant(task, candidates);
       if (!winner) continue; // stays open — someone may wander into focus before expiry
+      // ⚖️ WHICH ROUTE ADMITTED THE CLAIM (S-7 / owner's ruling ③). Recorded at
+      // the moment the gate passed, because by the time the task COMPLETES the
+      // relation may have moved and the answer would be a different one. Route
+      // "C" when the coerced term outweighs the earned one — and law ③ then
+      // makes the completion earn no authority at all.
+      //
+      // 🚨 KEYED ON THE TASK, NOT THE PURSUIT. A pooled claim may be driven by
+      // an `npcTasks` errand queue with no `session.pursuits` entry at all (the
+      // build and transfer arms below both are), so the pursuit is not a carrier
+      // that exists for every claim; the task id is. Session-local and reaped at
+      // the completion that reads it.
+      taskRoutes.set(task.id, claimRoute(session, winner, task.issuer));
       // A recruited ambient volunteer becomes a REAL creature the moment it
       // steps up (mind + node — the same registration a conversation does).
       if (winner.startsWith("resident_") && !session.creatures.nodeByCreature.has(winner)) {
@@ -29828,6 +33482,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       for (let hop = 0; hop < 8; hop++) {
         const wornRec = session.containerRecords.get(id);
         if (wornRec?.mount === "worn") return `${POCKET_EP}${wornRec.wearer}`;
+        // …and a FOLDED carry hangs off its holder's pocket exactly as a worn
+        // one does: the body left the streamed world holding it, so that is
+        // still where it is. Without this arm a fold would read to the audit
+        // as destruction and the unfold as a mint.
+        if (wornRec?.mount === "folded") return `${POCKET_EP}${wornRec.holder}`;
         const o = world?.state.objects[id];
         if (!o || !world) return null;
         if (o.carriedBy) return `${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`;
@@ -29876,6 +33535,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // +1 minted from nowhere the moment somebody doffed it.
         if (rec.mount === "worn") {
           if (rec.glyph && rec.wearer) add(`${POCKET_EP}${rec.wearer}`, rec.glyph);
+          continue;
+        }
+        // ③c A FOLDED carry — the same shape, one mount over (`foldBodyCarry`).
+        // A body condensed out of the streamed world takes what it was holding
+        // with it; the prop has no world object either, so its holder's pocket
+        // answers for it. Omit this and every fold reads as an item destroyed
+        // and every unfold as one created.
+        if (rec.mount === "folded") {
+          if (rec.glyph && rec.holder) add(`${POCKET_EP}${rec.holder}`, rec.glyph);
           continue;
         }
         if (rec.mount !== "loose") continue;
@@ -29985,6 +33653,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // member keeps its node — its shirt did not stop existing when the
         // camera looked away; only DEMOTE retires the row.)
         for (const cid of session.worn.keys()) out.add(`${POCKET_EP}${cid}`);
+        // …and a body whose CARRY folded with it (ruling B). Same reason again:
+        // the census banks the folded prop under `pocket:<holder>`, so without
+        // the node the fold would read as an item destroyed.
+        for (const cid of session.foldedCarryIndex.keys()) out.add(`${POCKET_EP}${cid}`);
         for (const o of Object.values(world?.state.objects ?? {})) {
           if (o.carriedBy) out.add(`${POCKET_EP}${creatureOfAvatar(o.carriedBy)}`);
         }
@@ -30530,8 +34202,9 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       const willing =
         explicitHauler.startsWith("resident_") ||
         session.bondedCreatures.has(explicitHauler) ||
-        compliance(relationToward(session, explicitHauler, issuer), creatureMood(explicitHauler)) >=
-          VOLUNTEER_COMPLIANCE;
+        deference(relationToward(session, explicitHauler, issuer), creatureMood(explicitHauler), {
+          certainty: witnessedBy(session, issuer, explicitHauler),
+        }) >= VOLUNTEER_COMPLIANCE;
       if (!willing) {
         for (const a of posted) session.transfers.fail(a.id, "no-executor");
         // 🚨 REFUSE VOCALLY OR NOT AT ALL — the build order's twin arm, fixed
@@ -30599,6 +34272,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     units: number,
     srcAt: { x: number; y: number },
     destAt: { x: number; y: number },
+    /** 🧺 Baskets this trip already gave up on (carry-residuals R-B). */
+    avoid?: ReadonlySet<string>,
   ): IdleBag | null {
     if (!world || !NEED_COST_SELECTION) return null; // the kill-switch
     const carry = bodyCarryOf(session, cid);
@@ -30619,7 +34294,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         ? (leg(body, srcAt) + leg(srcAt, destAt) + acts) / carriedBare
         : Number.POSITIVE_INFINITY; // no hands at all: any bag is better than none
     let best: { bag: IdleBag; per: number } | null = null;
-    for (const bag of idleBagsFor(session, cid)) {
+    for (const bag of idleBagsFor(session, cid, avoid)) {
       const carried = Math.min(units, bag.room);
       if (carried <= carriedBare) continue;
       const per =
@@ -30656,6 +34331,192 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     return null;
   }
 
+  /**
+   * ⚖️ THE HAUL IS ABANDONED, ALOUD — main's ruling C (2026-09-06 carry round).
+   *
+   * The stall watchdog force-passed one of this haul's own effect vertices: the
+   * body never reached the basket, the source or the destination, and the
+   * controller has ended the errand instead of firing the effect from wherever
+   * it was standing (npc-controller `onAbandon`). Before this, the STOP arm of
+   * the force-pass ran the UNLOAD with no arrival test at all — the mechanism
+   * behind *"blocks placed in houses from a distance"*. Under the lag
+   * compensator the 5-sim-second stall trips about ten times sooner in REAL
+   * time, which is the design working and the reason this arm had to become
+   * honest rather than merely rare.
+   *
+   * FOUR THINGS HAPPEN, and the order is the conservation law:
+   *
+   *  1. THE LOAD COMES OFF THE BODY AND ONTO THE GROUND, where the body stands
+   *     — one unit at a time, each an atomic MOVE (`setDownFromHands` for the
+   *     hands instance, `dropFromStack` for a bagged unit; a refusal leaves the
+   *     unit exactly where it was). Loose stacks are a LEGAL location, visible,
+   *     and collectable by the machinery that already exists (hover-collect /
+   *     `decideCollect`, and the pull haul bills a loose heap as a source). The
+   *     one thing that must NOT happen is the units riding on forever — that is
+   *     the user's other complaint, and it is why refusing the far unload alone
+   *     was not a fix.
+   *  2. THE AGREEMENT FAILS through `releasePullSlice`: goods claim and `@tool`
+   *     basket claim released, a stale seat dropped, `transfers.fail`. The
+   *     bookkeeper re-issues the bill by the ordinary path on its next sweep —
+   *     no special re-post here, because a bill that has to be re-posted by
+   *     hand is a bill with two owners.
+   *  3. THE WALK STOPS ANSWERING for a destination it is not going to.
+   *  4. IT SAYS SO, with the KIND WORD — the load is lying in the open and
+   *     somebody has to come for it. Only when something actually landed: with
+   *     nothing set down (the bag or the load leg gave up before the goods were
+   *     taken) "block + here" would be a false locative, so the banner alone
+   *     carries it.
+   *
+   * THE BASKET IS NOT SET DOWN HERE. It is the porter's, exactly as it is after
+   * a delivered haul, and the `relieve` row is what returns it.
+   */
+  function abandonHaul(
+    session: QuestSession,
+    cid: string,
+    agreementId: string,
+    /** The bill's kind word (`stackHead` of its first good) — what gets said. */
+    head: string,
+  ): void {
+    const agr = session.transfers.get(agreementId);
+    const npcId = avatarIdOf(cid);
+    const av = world?.state.avatars[npcId];
+    let dropped = 0;
+    /** The BASKET this abandon set down with its load still inside, if any. */
+    let basketDown: string | null = null;
+    if (agr && av) {
+      // ⚖️ A BAGGED ABANDON SETS THE BASKET DOWN WITH THE LOAD IN IT (main's
+      // ruling, carry-residuals round 2026-09-06 — residual R-D).
+      //
+      // 🚨 THE DEFECT IT CLOSES. The loop below sets bagged units down as BARE
+      // LOOSE PROPS (`dropFromStack` → `spawnLooseProp`), one per unit — and a
+      // bare prop is not a container: `spawnLooseProp` stamps `relation` only
+      // for a container glyph, so `stockEndpointOf` answers NULL for a
+      // `small:block` on the ground. No endpoint means no source for
+      // `siteMaterialSources` and nothing `decideCollect` can build a haul
+      // from (its `from` would fail `no-endpoint` on the first frame). The
+      // units were conserved and visible and NOBODY COULD EVER COME FOR THEM.
+      //
+      // ⚖️ THE CHEAP HONEST FIX, and it needs no new machinery at all: put the
+      // BASKET down instead of unpacking it. A portable container IS a
+      // registered container wherever it is (`spawnLooseProp` step ②), so a
+      // loaded basket standing on the ground is:
+      //   • a SOURCE — `siteMaterialSources` iterates `stockedEntries`, which
+      //     is every row that has ever been written to, so the site's own haul
+      //     bills can draw from it exactly as from the yard (read, not
+      //     assumed); and
+      //   • COLLECTABLE WHOLE — `looseGoodOf` answers for any unowned,
+      //     uncarried, endpoint-resolvable stack, so the next body to be shown
+      //     it takes the WHOLE haul on, basket and all.
+      // The `@tool` claim dies with the agreement two lines below, so the
+      // basket is a free tool again the moment it lands.
+      //
+      // ONLY WHEN THE BAG IS THE LOAD. A basket also holding the porter's own
+      // groceries is not the site's to set down (the manifest rule below), so
+      // that trip unpacks unit-by-unit exactly as before. Off `pullLabor`
+      // nothing changes anywhere — the dollhouse never reaches this arm.
+      const hand = bodyCarryOf(session, cid).inHand;
+      const bagLoad = hand?.bag ? totalStackUnits(hand.bag.stock) : 0;
+      const bagIsTheLoad =
+        !!hand?.bag &&
+        bagLoad > 0 &&
+        Object.entries(hand.bag.stock).every(([g, n]) => n <= 0 || (agr.carried?.[g] ?? 0) >= n);
+      if (pullLaborOn(session) && hand && bagIsTheLoad) {
+        if (setDownFromHands(session, npcId, { kind: "ground", x: av.x, y: av.y }, { objId: hand.objId })) {
+          basketDown = hand.objId;
+          dropped = bagLoad;
+        }
+      }
+      // THE MANIFEST, intersected with what is REALLY on the body: a haul sets
+      // down what it was carrying for the haul and nothing else (the porter's
+      // own groceries are not the site's).
+      const onMe = bodyCarryView(bodyCarryOf(session, cid));
+      for (const [glyph, n] of basketDown ? [] : Object.entries(agr.carried ?? {})) {
+        let left = Math.min(n, onMe[glyph] ?? 0);
+        while (left > 0) {
+          // The drop step's own deterministic scatter (qh `step.kind === "drop"`)
+          // so a multi-unit load doesn't stack into one invisible pile.
+          const ang = (dropped * 2.399) % (Math.PI * 2);
+          const spot = { x: av.x + Math.cos(ang) * 0.35, y: av.y + Math.sin(ang) * 0.35 };
+          const carry = bodyCarryOf(session, cid);
+          if (carry.inHand && !carry.inHand.bag && carry.inHand.glyph === glyph) {
+            if (!setDownFromHands(session, npcId, { kind: "ground", ...spot }, { objId: carry.inHand.objId })) break;
+          } else {
+            const src = bagHolding(carry, glyph);
+            if (!src || !dropFromStack(session, src.stock, glyph, spot.x, spot.y)) break;
+          }
+          dropped++;
+          left--;
+        }
+      }
+    }
+    if (av) fireCarryGesture(npcId, "putdown", { x: av.x, y: av.y });
+    releasePullSlice(session, agreementId);
+    session.npcGoing.delete(cid);
+    clearNeedStep(session, cid);
+    if (dropped > 0) {
+      bumpStockEpoch(session); // ⏸️ goods exist somewhere new — wake parked rows
+      saySystem(session, loadSetDownLine(head), `📦 ${head} — set down where the carrier stopped`, cid);
+    } else {
+      presenter.toast(`📦 ${head} — the trip was given up`, "feedback");
+    }
+    console.log(
+      `[haul] ${cid} ABANDONED ${agreementId} — set down ${dropped}× ${head}${basketDown ? ` (in ${basketDown})` : ""}`,
+    );
+  }
+
+  /**
+   * ⚖️ TRIM A HAUL TO WHAT THE BODY CAN ACTUALLY CARRY, and hand the rest back
+   * (carry-residuals round, 2026-09-06 — residual R-B).
+   *
+   * The one caller is the BAG-LEG abandon: a porter that could not reach its
+   * basket goes on bare-handed, and a bare-handed body moves ONE WHOLE THING
+   * per trip (`giveUnitsToBody` — the law of a body without a container). The
+   * row it is walking still promised eight, so the load took one, shelved the
+   * other seven, and the landing announced *"bring 8 block — delivered 1 of
+   * 8"*. Nothing was lost; the PROMISE was simply not this trip's to make.
+   *
+   * TWO THINGS MOVE, and neither is a new mechanism:
+   *  1. `goods` (and the row's own spoken `sourceGlyph`, which is what the
+   *     delivered toast reads) shrink to the carriable slice — so the trip
+   *     promises one and delivers one.
+   *  2. THE SURPLUS IS RELEASED, not merely forgotten: the agreement's unit
+   *     reservation is re-taken at the smaller number, so the seven units are
+   *     free supply again THIS tick and the bookkeeper's next sweep can post
+   *     them to a porter that still has a basket — instead of their sitting
+   *     spoken-for behind a one-block trip.
+   *
+   * A no-op when the row already fits (`room` ≥ the promise), so an ordinary
+   * haul is untouched. `session.transfers.get` hands back the live row; the
+   * ledger has no amend door and this is the only place that needs one — a
+   * bill being re-cut at the moment its executor's capacity changed.
+   */
+  function narrowHaulTo(session: QuestSession, agreementId: string, room: number): void {
+    const a = session.transfers.get(agreementId);
+    if (!a || room <= 0) return;
+    const promised = Object.values(a.goods).reduce((s, n) => s + n, 0);
+    if (promised <= room) return;
+    const goods: Record<string, number> = {};
+    let left = room;
+    for (const [g, n] of Object.entries(a.goods)) {
+      const take = Math.min(n, left);
+      if (take > 0) goods[g] = take;
+      left -= take;
+      if (left <= 0) break;
+    }
+    a.goods = goods;
+    // The spoken promise says the same number the row does — the poster's own
+    // spelling (`bring <n> <head>`, contribute.ts `takeHaulSlice`), never a new
+    // sentence shape.
+    if (a.sourceGlyph && /^bring \d+ /.test(a.sourceGlyph)) {
+      a.sourceGlyph = `bring ${room} ${stackHead(Object.keys(goods)[0] ?? "thing")}`;
+    }
+    session.reservations.release(agrHolder(agreementId));
+    for (const [g, n] of Object.entries(goods)) {
+      session.reservations.reserve(agrHolder(agreementId), a.from, stackHead(g), n);
+    }
+    bumpStockEpoch(session); // ⏸️ the surplus is free supply again — wake parked rows
+  }
+
   /** Walk `cid` through one agreement's HAUL: LOAD at the source (stock
    *  leaves the real map into the hauler's hands — a visible carried prop),
    *  UNLOAD at the destination (hands → the real map; capacity overflow
@@ -30672,6 +34533,17 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
      *  pooled goal's own `to`), so "where are you going?" answers the place
      *  and not the deictic "there". */
     destWord?: string,
+    /** ⚖️ RE-ISSUE WITHOUT THE BAG LEG. Set only by the bag-leg abandon arm
+     *  below: this trip already tried to fetch a basket and could not reach
+     *  it, so it goes bare rather than trying the same detour forever. With
+     *  no bag leg there is no index 0 to abandon, so the retry is bounded at
+     *  one by construction. */
+    noBag?: boolean,
+    /** 🧺 R-B VARIANT — baskets THIS trip already gave up on, so the re-issue
+     *  prices the NEXT-best one instead of the same unreachable one forever.
+     *  Present ⇒ this is already a second attempt, and the next abandon goes
+     *  bare (the two-step bound). */
+    avoidBags?: ReadonlySet<string>,
   ) {
     if (!world) return;
     const a = session.transfers.get(agreementId);
@@ -30732,11 +34604,62 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     // count it a third time — and the claim dies with the agreement, through
     // the release calls below and the staging sweep's holder GC.
     const bagUnits = Object.values(a.goods).reduce((s, n) => s + n, 0);
-    const bag = haulBagLeg(session, cid, bagUnits, from.at, to.at);
+    const bag = noBag ? null : haulBagLeg(session, cid, bagUnits, from.at, to.at, avoidBags);
     if (bag) session.reservations.reserve(bagHolder(agreementId), bag.objId, TOOL_CLAIM_GLYPH, 1);
     const LOAD = bag ? 1 : 0;
     enqueueNpcErrand(session, npcId, {
       points: bag ? [{ x: bag.at.x, y: bag.at.y }, pickAt, destAt] : [pickAt, destAt],
+      // ⚖️ A FORCE-PASSED HAUL NEVER LANDS FAR (main's ruling, 2026-09-06).
+      // The stall watchdog gave up on this leg; the effect it was walking to
+      // does NOT run. See `abandonHaul`.
+      //
+      // 🚨 …EXCEPT THE BAG LEG, WHICH IS A TOOL AND NOT THE CARGO (2026-09-06
+      // closer). Index 0 of a bagged haul carries NOTHING: nothing to set
+      // down, no goods to be honest about, and the arrival's own doctrine two
+      // dozen lines below already says what an unreachable basket means —
+      // *"a refusal here is not a failure: this trip simply proceeds at bare
+      // capacity"*. Failing the whole agreement because a porter could not
+      // reach a basket re-posts the bill, drops the pull slice and drops the
+      // seat — measured on the frontier arc (seed 11, dt 1/2), FOUR bills lost
+      // that way per 1 200 s. So a bag-leg abandon RE-ISSUES this same haul,
+      // bare-handed, from where the body now stands: the agreement, the
+      // reservation and the slice all survive. The load and the unload legs
+      // abandon exactly as ruled.
+      //
+      // ⚖️ …AND THE RE-ISSUE PROMISES WHAT A PAIR OF HANDS CAN CARRY
+      // (carry-residuals round, 2026-09-06 — residual R-B). The bare re-issue
+      // kept the bill's full 8 units, so the load took ONE (the law of a body
+      // with no container), put SEVEN straight back on the shelf and the trip
+      // announced *"bring 8 block — delivered 1 of 8"* — measured 4 such lines
+      // per 1 400 s. The promise was the lie, not the delivery: `narrowHaulTo`
+      // trims the row to the body's real capacity and hands the surplus BACK,
+      // reservation and all, so the bookkeeper can re-post it to a porter that
+      // still has a basket instead of it sitting spoken-for behind this trip.
+      onAbandon: (i) => {
+        if (bag && i === 0) {
+          session.reservations.release(bagHolder(agreementId));
+          // ⚖️ …AND IT ASKS FOR ANOTHER BASKET BEFORE IT GIVES UP ON THE WHOLE
+          // BILL. The trip is worth eight units and the arithmetic that chose
+          // this basket (`haulBagLeg`) never knew it could not be reached; the
+          // honest second question is the SAME question with that basket struck
+          // off. Bounded at TWO trips by construction: `avoidBags` is set only
+          // here, so a second bag-leg abandon has it and falls through to the
+          // bare arm below — no chain, no livelock.
+          if (!avoidBags) {
+            const avoid = new Set<string>([bag.objId]);
+            console.log(`[haul] ${cid} RE-ISSUED ${agreementId} with another basket — ${bag.objId} unreachable`);
+            issueTransferHaul(session, cid, agreementId, destWord, false, avoid);
+            return;
+          }
+          narrowHaulTo(session, agreementId, Math.max(1, stackRoom(bodyCarryOf(session, cid))));
+          console.log(
+            `[haul] ${cid} RE-ISSUED ${agreementId} bare-handed — promises ${Object.values(session.transfers.get(agreementId)?.goods ?? {}).reduce((s, n) => s + n, 0)}× ${head}`,
+          );
+          issueTransferHaul(session, cid, agreementId, destWord, true);
+          return;
+        }
+        abandonHaul(session, cid, agreementId, head);
+      },
       onArrive: (i) => {
         const agr = session.transfers.get(agreementId);
         if (!agr || agr.status !== "moving" || !world) return;
@@ -32220,6 +36143,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stepLedgerSweeps(session: QuestSession) {
     // 🌱 R7's OTHER HALF — a plant whose ground came free stands again.
     restandOrphanedWildBodies(session);
+    // 🌿 …AND THE WILD CLOCKS TICK (2026-09-07). Same argument, same sweep:
+    // ripening that only ever happened when a PLAYER looked left a foraged
+    // countryside empty forever. Gated on a due deadline, so it is free until
+    // something is actually owed.
+    stepWildClocks(session);
     // ⚖️ #49 — THE RECORD CLOCKS FIRST, all of them, once. This was the head of
     // `stepFarmSource` (advance then ripen) and keeps its place in the order
     // exactly: every offloaded region grows and pulses before the field's haul
@@ -33467,20 +37395,67 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
   function stepTownMoveIn(session: QuestSession) {
     const t = session.town;
     if (!t) return;
+    // 🚨 READ THE FOUNDING GROUP FIRST (D6). `settlersOf` answers `[]` from the
+    // moment `plan.houses.length > 0`, so the census has to be taken BEFORE the
+    // push below or the group this move-in is ABOUT is already invisible.
+    const settlers = settlersOf(session);
+    // ⚖️ D6 — A FOUNDING GROUP MOVING INTO ITS OWN HOUSE IS NOT AN IMMIGRATION,
+    // and NEITHER IMMIGRATION GATE IS ABOUT IT.
+    //
+    // Both of `moveInStep`'s gates ask questions about a household that does
+    // not exist yet. The PULL asks "can this town feed one MORE household?" and
+    // the PUSH asks "does that household have somewhere it is leaving?". For
+    // the settlers the answers are not "yes" — they are "there is no more
+    // household" and "they are already here". Five campers who have been
+    // hauling the blocks that raised this house are five mouths the land is
+    // ALREADY feeding (badly or well, and identically either way): giving them
+    // a roof changes the town's food by exactly nothing, and `graduateSettlers`
+    // DEBITS them — bodies retired, stock banked, meters carried across — which
+    // is the named origin `MoveInInput.push`'s own note says a conserving
+    // migration needs and no other move-in in this engine has.
+    //
+    // 🚨 MEASURED, because the ledger assumed this rule would fire on its own
+    // and it does not: on a founding site (`$S/homestead-fast.spec.json`, seed
+    // 11) the house is finished at ~330 s and `townShortage("food")` reads
+    // **1.000** at every subsequent day edge — an age-0 town has no compiled
+    // production at all, so the famine gate refuses forever and D6 would have
+    // been dead code on every world it was written for. (The push read 0.89
+    // there, so only the pull was actually biting; the push arm below is the
+    // same argument applied to the other gate, and it is what a LONE site — no
+    // trade partners, push 0 — needs.)
+    //
+    // The selection rule itself is untouched: the kernel still picks the oldest
+    // completed, still-empty house and writes the serialized `admitHousehold`
+    // fact, so a rebuild materializes the same home. Only the two questions the
+    // HOST composes are answered for what this actually is.
+    const founding = settlers.length > 0;
     const admitted = moveInStep({
       deltas: t.deltas,
       catalog: structureCatalogOf(session),
-      signals: { crowding: 0, shortage: (g) => townShortage(session, g) },
-      // ⚖️ THE PUSH (S&D S1): a migrant needs somewhere to be leaving.
-      push: migrationPush(session),
+      signals: {
+        crowding: 0,
+        // 0 = "this admission adds no mouths", NOT "the larder is full".
+        shortage: (g) => (founding ? 0 : townShortage(session, g)),
+      },
+      // ⚖️ THE PUSH (S&D S1): a migrant needs somewhere to be leaving — and the
+      // founding group's origin is the camp it is standing in.
+      push: founding ? 1 : migrationPush(session),
     });
     if (!admitted) return;
     const spec = resolveStructure(structureCatalogOf(session), admitted.type);
     if (!spec) return;
     const wi = t.plan.works.findIndex((w) => w.foundedOrd === admitted.ord);
     if (wi >= 0) t.plan.works[wi]!.vacated = true;
-    t.plan.houses.push(foundedHouseRow(t.plan, admitted, spec));
+    const row = foundedHouseRow(t.plan, admitted, spec);
+    t.plan.houses.push(row);
     townJobsMemo = null; // the roster re-deals around the new household
+    // ⚖️ D6 — THE HOUSEHOLD THAT MOVES IN IS THE FOUNDING GROUP. Runs BEFORE
+    // the toast so the family the toast announces already exists (its chips,
+    // its meters and its stock are in place the moment the line is read), and
+    // AFTER the row is pushed so every door it uses — the pantry boxes, the
+    // resident context, `ensureResidentCreature`'s roster — can resolve the
+    // house it is handing them into.
+    if (founding) graduateSettlers(session, settlers, row.index);
     presenter.toast(`🏠 a family moves into the new ${spec.label}`, "feedback");
     // Their water follows them in (needs-aware districts): a household
     // landing past the thirst radius accrues founding mass NOW, not at
@@ -33661,26 +37636,201 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       session.liveNeedBodies.delete(cid);
       session.npcTasks.delete(avatarIdOf(cid));
     }
+    // ⑤ THE BODY METERS (D5 — cohort-fold reconciliation). Two things were
+    // wrong here before this block, and they were the same bug twice:
+    // `session.needMeters` was the ONE piece of per-body state demote never
+    // cleared (the `!shown && !live` delete arm at the top of `stepNeeds` is
+    // unreachable for a pooled house, which is in neither set), so a promoted
+    // household woke up wearing a stale hunger from before the fold — and
+    // that survival was an ACCIDENT of a live map, so a reload lost it
+    // entirely. Now the rows are MEASURED into one household mean per need,
+    // stamped with the fold day, and then DELETED: the meter becomes a
+    // statistic exactly as the body became a soul in `pop`, and
+    // `promoteHouse` hands it back through the same pure door
+    // (`cohort-needs.ts`). Sorted by cid — the fold arithmetic must not
+    // depend on the map's insertion history (the multiplayer law).
+    const housePrefix = `resident_${houseIndex}_`;
+    const perMember = new Map<string, Record<string, number>>();
+    const foldedMeterKeys: string[] = [];
+    for (const mapKey of session.needMeters.keys()) {
+      const bar = mapKey.indexOf("|");
+      if (bar <= 0) continue;
+      const cid = mapKey.slice(0, bar);
+      if (!cid.startsWith(housePrefix)) continue;
+      const m = Number(cid.slice(housePrefix.length));
+      if (!Number.isInteger(m) || m < 0 || m >= HOUSEHOLD) continue;
+      const row = perMember.get(cid) ?? {};
+      row[mapKey.slice(bar + 1)] = session.needMeters.get(mapKey) ?? 0;
+      perMember.set(cid, row);
+      foldedMeterKeys.push(mapKey);
+    }
+    for (const mapKey of foldedMeterKeys) session.needMeters.delete(mapKey);
+    const needs = foldNeedMeans(
+      [...perMember.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, row]) => row),
+    );
+    const foldedDay = session.townClock / FOOD_DAY_SEC;
+    // ⑥ THE RELATION BOOK (F-2 — the household-rung regard fold). The same bug
+    // ⑤ closed for meters was open one map over: NOTHING cleared
+    // `session.relations` at demote, so the outgoing books of five people who
+    // no longer exist leaked forever and came back stale. They now fold the
+    // same way — one prior per SUBJECT (`regard-prior.ts`, pure, both doors in
+    // one module) — and the rows are DELETED.
+    //
+    // 🚨 ONLY THE OUTGOING HALF. Rows keyed `x|resident_<h>_m` are what the
+    // REST OF THE TOWN thinks of this family; they live in those observers'
+    // books, those observers did not demote, and swallowing them here would
+    // erase the town's memory of a family every time it stepped off screen.
+    const houseMembers: string[] = [];
+    for (let m = 0; m < HOUSEHOLD; m++) houseMembers.push(`${housePrefix}${m}`);
+    const regardFold = foldHouseRegard(
+      session.relations,
+      houseMembers,
+      playerSpokenToAmong(houseMembers),
+    );
+    for (const relKey of regardFold.keys) session.relations.delete(relKey);
+    const regardSubjects = Object.keys(regardFold.regard).length;
+    const regardPins = Object.keys(regardFold.pinned).length;
+    if (regardFold.keys.length > 0) {
+      console.log(`[regard] fold h_${houseIndex} subjects=${regardSubjects} pinned=${regardPins}`);
+    }
     const wellbeing = Math.max(0.2, Math.min(0.9, 0.75 - (stressSum / HOUSEHOLD) * 0.5));
     demoteHousehold(
       t.deltas.cohorts,
       houseDistrictOf(session, h),
-      { index: houseIndex, members: membersOfHouse(session, houseIndex) },
+      {
+        index: houseIndex,
+        members: membersOfHouse(session, houseIndex),
+        // A household nobody ever ticked folds with no meters at all — and
+        // promotes re-seeded from the meal schedule, byte-identical to the
+        // shipped behaviour. Only a MEASURED household carries the field.
+        ...(Object.keys(needs).length > 0 ? { needs, foldedDay } : {}),
+        // Same discipline for the books: a household that never had an opinion
+        // carries no payload, and `promoteHouse` then writes no relation row.
+        ...(regardSubjects > 0 ? { regard: regardFold.regard } : {}),
+        ...(regardPins > 0 ? { pinned: regardFold.pinned } : {}),
+      },
       carried,
       wellbeing,
-      session.townClock / FOOD_DAY_SEC,
+      foldedDay,
     );
     session.pooledHouses.add(houseIndex);
   }
 
+  /**
+   * F-3's OTHER pin reason — "the player has SPOKEN TO this member" — DERIVED
+   * from the conversation records at fold time rather than recorded at the
+   * utterance seat.
+   *
+   * ⚠️ RESIDUAL, stated where it bites: the honest signal would be a
+   * `session.spokenTo` set written once where a player utterance is recorded
+   * into a conversation (`speakInConversation`'s caller, ~qh:37990 `const
+   * spokenTo = vocativeCid ?? …`). That seat is in another builder's region
+   * this round, so it was NOT edited. This derivation is therefore LOSSY in
+   * two known ways: `ConversationState.history` is a ring capped at
+   * `HISTORY_CAP = 16`, and a dispersed conversation is deleted from the map
+   * outright — so a member the player spoke to long ago, in a conversation
+   * that has since ended, is not recognised here. It never OVER-pins (every
+   * hit is a real player exchange), and the deviation test catches most of
+   * what it misses, because a body the player actually moved deviates.
+   */
+  function playerSpokenToAmong(members: readonly string[]): Set<string> {
+    const want = new Set(members);
+    const out = new Set<string>();
+    if (want.size === 0) return out;
+    for (const c of conversations.values()) {
+      // Sharing a circle with an author IS being spoken to: the roster is the
+      // mutual-attention record (conversation.ts, "joining IS engagement").
+      const withAuthor = c.convo.members.some((mm) => isPlayerCid(mm.id));
+      if (withAuthor) {
+        for (const mm of c.convo.members) if (want.has(mm.id)) out.add(mm.id);
+      }
+      for (const u of c.convo.history) {
+        const addressees = u.addresseeIds ?? [];
+        if (isPlayerCid(u.speakerId)) {
+          for (const a of addressees) if (want.has(a)) out.add(a);
+        } else if (want.has(u.speakerId) && addressees.some((a) => isPlayerCid(a))) {
+          out.add(u.speakerId);
+        }
+      }
+    }
+    return out;
+  }
+
   /** PROMOTE one household back to the tracked tier — exactly the pooled
    *  members return; the resident model streams them in on its own rules
-   *  (through doors and view edges, never a visible pop). */
+   *  (through doors and view edges, never a visible pop).
+   *
+   *  ⚖️ AND THEIR NEEDS COME BACK WITH THEM (D5). A household that folded
+   *  hungry does not wake content, and a household that folded content does
+   *  not wake starving: each member is seeded at the FOLD MEAN plus exactly
+   *  what the pool failed to feed it while it was a statistic
+   *  (`cohort-needs.ts` — the pool's own `row.needs` satisfaction is the only
+   *  honest record that the folded souls ate). No meter is invented: an
+   *  unmeasured household (nobody ever ticked it) carries no `needs` payload
+   *  at all and re-seeds off the meal schedule exactly as it always did. */
   function promoteHouse(session: QuestSession, houseIndex: number) {
     const t = session.town;
     if (!t) return;
-    if (!promoteHousehold(t.deltas.cohorts, houseIndex)) return;
+    // READ THE POOL FIRST: `promoteHousehold` drops a fully-drained row, and
+    // `row.needs` (the served fraction `cohortRatesStep` books each window)
+    // is the satisfaction the unfold prices the unfed time against.
+    const pool = t.deltas.cohorts.find((r) => r.houses.some((x) => x.index === houseIndex));
+    const sat: Record<string, number> = pool ? { ...pool.needs } : {};
+    const promoted = promoteHousehold(t.deltas.cohorts, houseIndex);
+    if (!promoted) return;
     session.pooledHouses.delete(houseIndex);
+    // ⑥ THE BOOKS COME BACK (F-2). Before the `needs` early return below,
+    // because a household can have folded opinions without ever having been
+    // ticked for meters. A PINNED member gets its rows VERBATIM; everyone else
+    // is re-projected from the household prior, staggered by the SAME seeded
+    // hash the meter stagger uses — so a frozen prior re-projects
+    // byte-identically on every replay (the field is the memory; people do not
+    // flicker).
+    const regardRows = projectHouseRegard(
+      promoted.house,
+      Array.from({ length: HOUSEHOLD }, (_, m) => `resident_${houseIndex}_${m}`),
+      (_cid, subject, m) =>
+        Math.max(
+          0,
+          Math.min(1, mealOffset(t.config.seed, houseIndex, m * 7 + subject.length) / MEAL_PERIOD_SEC),
+        ),
+    );
+    for (const row of regardRows) session.relations.set(row.key, row.rel);
+    if (regardRows.length > 0) {
+      const pins = regardRows.reduce((s, row) => s + (row.pinned ? 1 : 0), 0);
+      console.log(`[regard] unfold h_${houseIndex} rows=${regardRows.length} pinned=${pins}`);
+    }
+    const folded = promoted.house.needs;
+    if (!folded) return;
+    const elapsedDays = Math.max(
+      0,
+      session.townClock / FOOD_DAY_SEC - (promoted.house.foldedDay ?? session.townClock / FOOD_DAY_SEC),
+    );
+    const seed = t.config.seed;
+    // THE SAME HASH THE REVEAL SEED SPREADS BY, so a promoted household wakes
+    // as staggered as a revealed one — five bodies must not cross the
+    // threshold in one frame (and then all walk to the same larder). It only
+    // ever REDUCES: the fold mean is a CEILING, nothing above it may appear
+    // except unfed time. The 0.7 is the tick block's own seed factor, reused.
+    const SEED_SPREAD = 0.7;
+    for (let m = 0; m < HOUSEHOLD; m++) {
+      const cid = `resident_${houseIndex}_${m}`;
+      for (const [key, mean] of Object.entries(folded)) {
+        const good = needGoodKeyOf(key);
+        const level = unfoldNeedLevel({
+          mean,
+          key,
+          sat: (good !== null ? sat[good] : undefined) ?? 1,
+          elapsedDays,
+          metabolism: session.scale.metabolism,
+        });
+        const frac = Math.max(
+          0,
+          Math.min(1, mealOffset(seed, houseIndex, m * 7 + key.length) / MEAL_PERIOD_SEC),
+        );
+        session.needMeters.set(`${cid}|${key}`, Math.max(0, level * (1 - (1 - SEED_SPREAD) * frac)));
+      }
+    }
   }
 
   /**
@@ -33871,7 +38021,11 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf,
     playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage, townSurplus,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
-    relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
+    relationToward,
+    // ⚖️ M1 (P-6) — spoken BUILD orders retire in the DIRECTOR, so the M1 door
+    // goes with them. Same function, same three skips, same `taskRoutes` reap.
+    emitOrderOutcome,
+    pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, depleteWildSource, cutWildFeature, cutForDraw, dropFromStack,
     takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
     creatureMood,
@@ -34746,8 +38900,18 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
             withConversationTurn(target, speaker, () => runCreatureAct(act, speaker, target));
             return;
           }
+          // A LIVE LISTENER that the mapper could make nothing of: that IS the
+          // not-understood case, and the creature standing there says so.
+          speakNotUnderstood(s, target, sentence);
+          return;
         }
-        speakNotUnderstood(s, target ?? null, sentence);
+        // ⚖️ P-3 — NO LISTENER IN REACH. The frame is conversational; there is
+        // simply nobody to have the conversation with. A different failure, so
+        // a different answer (see `speakNobodyHere`). This is also where the
+        // pure layer's "an act aimed at nobody" verdicts land — a bare `nice` /
+        // `mean` / `leader` with no addressee — since `intentToAct` is never
+        // reached without a registered target.
+        speakNobodyHere(s, sentence);
         return;
       }
       // ── ⛓️ A SEQUENCE — "A then B" / "A and B" (build order S1) ──────────
@@ -34838,6 +39002,71 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // not ambush the child with a nap ten seconds later. Placed at the top of
       // the goal ladder so EVERY arm supersedes, not only the member loop.
       dropSpokenTail(actor);
+
+      // ── ⚖️ W2-5 — THE SPOKEN ORDER GETS THE SAME GATE AS THE PRESS ───────
+      //
+      // `attendTo` has asked "does this body take orders from this author?"
+      // since politics L-2 (`bondStrength < VOLUNTEER_COMPLIANCE`); the SPOKEN
+      // path — the one the sentence builder reaches — asked nobody. A stranger
+      // settler answered "okay" and walked, which is the misleading echo the
+      // named-refusal discipline exists to forbid, and it made the whole
+      // authority economy invisible to the child: nothing they said could ever
+      // be refused, so nothing they did could ever earn compliance.
+      //
+      // The refusal is SPOKEN BY THE MEMBER, in its own bubble — it has a body,
+      // so `saySystem`'s who-should-say-this ladder (which would happily find a
+      // creature across the map) is not merely unnecessary, it would put the
+      // words in the wrong mouth. 🚨 NEVER GUESS A VOCATIVE: the refuser is
+      // resolved, and it speaks for itself.
+      //
+      // ⚖️ THE LINE NAMES THE PRECONDITION, not the consequence (W2-4): "You are
+      // not the leader" is the exact inverse of the yield sentence the child
+      // already builds, so the refusal teaches the rule that would lift it.
+      //
+      // Household / party / possessed bodies are `playerGroup` ⇒ `bondStrength`
+      // 1 ⇒ the dollhouse is byte-identical BY CONSTRUCTION.
+      const orderRefusedBy = (m: string): boolean => {
+        if (bondStrength(s, speaker, m) >= VOLUNTEER_COMPLIANCE) return false;
+        npcChatBubble(s, m, NO_BOND[s.meta.syntax]);
+        emitSocial(s, {
+          kind: "order-refused",
+          actor: m,
+          // The author is BOTH the other party and the author — it is their
+          // standing the refusal costs (`applySocialEvent` charges `author`, so
+          // an omitted one would make the whole act inert). Mirrors `attendTo`.
+          author: speaker,
+          addressee: speaker,
+          witnesses: witnessesOf(s, m, speaker),
+        });
+        return true;
+      };
+
+      // ── ⚖️ GAP 6 — A FAILED PRECONDITION IS THE REPLY ────────────────────
+      //
+      // B5a's compiler records what a reading ASSUMED (`Precondition`), and
+      // today exactly one row asserts anything: `stop + {V}` assumes the body is
+      // doing V. When it is not, the shipped behaviour was a halt that landed on
+      // nothing and an adult-facing banner — the child's sentence was fine and
+      // the world simply was not in the state it named. So the assumption is
+      // CHECKED and its failure SPOKEN, in the child's own verb.
+      //
+      // 🚨 UNDEFINED IS NOT FALSE. `creatureActivity` returns undefined for "I
+      // cannot see what this body is doing" (its own docblock: "never a false
+      // denial"), and denying an order on an unverifiable reading would be a lie
+      // the child cannot argue with. Unverifiable ⇒ the order lands as it always
+      // has. Verbs are compared through `canonicalVerb` so the FAMILY the child
+      // said ("drink") answers for the act the body is doing ("eat" family).
+      const preconditionRefusedBy = (m: string, preconds?: readonly Precondition[]): boolean => {
+        for (const p of preconds ?? []) {
+          if (p.kind !== "doing") continue;
+          const live = creatureActivity(s, m)?.verb;
+          if (live === undefined) continue; // can't verify — never a false denial
+          if (canonicalVerb(live) === canonicalVerb(p.verb)) continue;
+          npcChatBubble(s, m, notDoingLine(p.verb)[s.meta.syntax]);
+          return true;
+        }
+        return false;
+      };
 
       // "you eat" / "you sleep" / "you play" / "you talk" → drive the member's
       // own need machinery (commandSatisfy): the body walks to the table/bed/
@@ -34982,6 +39211,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // else the addressed/named member, else the whole party.
       if (goal.kind === "stay") {
         const stopper = actor !== speaker ? actor : target;
+        // ⚖️ GAP 6 — "STOP EATING" TO A BODY THAT IS NOT EATING. The one live
+        // precondition today lands HERE, because `stop + {V}` compiles to the
+        // plain halt and the halt arm is above the member loop. The body the
+        // sentence named answers with the truth ("I don't eat") and NOTHING is
+        // halted — the alternative was a dismissal aimed at an activity that was
+        // never running, reported to the adult in English and to the child not
+        // at all.
+        if (
+          stopper &&
+          s.creatures?.nodeByCreature.has(stopper) &&
+          preconditionRefusedBy(stopper, compiled.preconditions)
+        ) {
+          return;
+        }
         // Dismissing the ridden body is the LOCAL speaker's move — a peer's
         // "stop" must never unseat this device's possession.
         if (speakerIsLocal && possession.creatureId && (!stopper || stopper === possession.creatureId)) {
@@ -35224,12 +39467,34 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       // someone to do X" should drive that someone, not silently pool the order.
       // A truly UNADDRESSED order still falls to the task pool below.
       const addressed = localChip ?? localGazed ?? localConvo ?? localPossessed ?? null;
-      const members =
+      const heads =
         explicit ? [actor]
         : s.party.size ? [...s.party]
         : dollTarget.length ? dollTarget
         : addressed && s.creatures?.nodeByCreature.has(addressed) ? [addressed]
         : [];
+      // ── ⚖️ THE GENERAL COMPANION RULE (semantic-gaps 9) ──────────────────
+      //
+      // "get the ball WITH Pip", "go to the kitchen WITH Mara". B5a's compiler
+      // now carries the company for EVERY goal kind (`CompiledIntent.companions`)
+      // instead of dropping it on the floor for everything but `satisfy`; this is
+      // the one seat that spends it. The order is issued to the companions
+      // party-style — the same per-member path, the same gate, the same echo —
+      // because "do X with Y" is two bodies doing X, and a second mechanism per
+      // verb is exactly the drift this rule exists to prevent.
+      //
+      // `satisfy` is NOT here: a shared need is one PERFORMANCE two bodies
+      // attend, and it keeps `goal.with` → `commandSatisfy`/`askToGather`
+      // untouched (its arm returns long before this line).
+      //
+      // The SPEAKER is dropped from a `{group}` fan-out — a spirit has no body
+      // to send, and a ridden one is already the head where the sentence put it.
+      const companions =
+        compiled.companions ? resolveCompanions(s, compiled.companions) : [];
+      const members = [...heads];
+      for (const c of companions) {
+        if (c !== speaker && !members.includes(c) && s.creatures?.nodeByCreature.has(c)) members.push(c);
+      }
       if (!members.length) {
         // ⛓️ A TAIL NEEDS A BODY TO WAIT ON. A pooled task is claimed later by
         // whoever is willing and free, so there is nobody here to hand "…and
@@ -35261,7 +39526,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         return;
       }
       let moved = 0;
+      // Bodies that ANSWERED ALOUD and did nothing — a refusal is not a failure
+      // to understand, and the adult banner must not read "▶ party (1)" for a
+      // sentence that was turned down out loud.
+      let refused = 0;
       for (const m of members) {
+        // ⚖️ W2-5 — WHO TAKES ORDERS FROM THIS AUTHOR, asked once per body and
+        // BEFORE anything is installed. A refuser says why in its own bubble and
+        // the refusal is witnessed (the author's standing pays for it); it is
+        // then SKIPPED — never a silent drop, never the misleading echo.
+        if (orderRefusedBy(m)) {
+          refused++;
+          continue;
+        }
+        // …and what the reading ASSUMED about this body, for the same reason.
+        if (preconditionRefusedBy(m, compiled.preconditions)) {
+          refused++;
+          continue;
+        }
         dropSpokenTail(m); // ⛓️ this body's old tail dies with the order it followed
         // "Go home" DISMISSES a party guest — otherwise the follow loop would
         // drag it right back. Dismiss BEFORE issuing (leaveParty clears errands).
@@ -35309,7 +39591,15 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           moved++; // answered aloud — never the silent toast
         }
       }
-      presenter.toast(moved ? `▶ party (${moved}): ${sentence}` : `💬 "${sentence}" — can't do that here`, "feedback");
+      presenter.toast(
+        moved ? `▶ party (${moved}): ${sentence}`
+        // ANSWERED, AND THE ANSWER WAS NO. Byte-identical to the shipped banner
+        // whenever nothing refused; when something did, the adult reads the same
+        // fact the child just heard instead of a "▶" that never happened.
+        : refused ? `✋ ${sentence} — refused (${refused})`
+        : `💬 "${sentence}" — can't do that here`,
+        "feedback",
+      );
     },
     setPointer(clientX, clientY) {
       lastClient = { x: clientX, y: clientY };
@@ -35382,6 +39672,44 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     setViewPoint(pt) {
       viewPoint = pt;
     },
+    occluderCandidates() {
+      // Standing FLORA bodies only: a tree is the only landscape this session
+      // stands as a BODY, and it is the thing the user named. Position off
+      // `state.avatars` (sim plane), height off the SAME `bodyHeightM` the tier
+      // ladder and the model factory read — the driver must never re-derive a
+      // stage-aware height, or a sapling's outline and its model would disagree
+      // about how tall it is.
+      const out: OccluderBody[] = [];
+      const avs = world?.state.avatars;
+      if (!avs) return out;
+      for (const id in avs) {
+        if (!id.startsWith(FLORA_BODY_PREFIX)) continue;
+        const bd = avs[id];
+        if (!bd) continue;
+        out.push({ id, x: bd.x, y: bd.y, heightM: bodyHeightM(id) });
+      }
+      return out;
+    },
+    hoveredBodyId() {
+      const hv = world?.getGaze?.().hover;
+      return hv && hv.kind === "avatar" ? hv.id : null;
+    },
+    setOccluders(ids) {
+      const next: ReadonlySet<string> = ids && ids.length ? new Set(ids) : EMPTY_OCCLUDERS;
+      if (next === occluders) return;
+      const prev = occluders;
+      if (prev.size === next.size) {
+        let same = true;
+        for (const id of prev) if (!next.has(id)) { same = false; break; }
+        if (same) return;
+      }
+      occluders = next;
+      // Only the bodies whose FORCE actually changed, and only where that force
+      // changes their EFFECTIVE tier — the same filter the town clamp uses, for
+      // the same reason (an unfiltered flood rebuilds the whole crowd both ways).
+      for (const id of prev) if (!next.has(id)) requeueOccluder(id, false);
+      for (const id of next) if (!prev.has(id)) requeueOccluder(id, true);
+    },
     setCreatureTier(t) {
       if (t === creatureTier) return;
       const prevTown = creatureTier;
@@ -35395,8 +39723,8 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
       for (const id of Object.keys(world?.state.avatars ?? {})) {
         if (!retieringBodyId(id)) continue; // the ONE ladder list (⑤)
         const b = bodyTiers.get(id) ?? "full";
-        const oldEff = TIER_RANK[b] > TIER_RANK[prevTown] ? b : prevTown;
-        const newEff = TIER_RANK[b] > TIER_RANK[t] ? b : t;
+        const oldEff = effectiveTier(id, b, prevTown);
+        const newEff = effectiveTier(id, b, t);
         if (oldEff === newEff) continue;
         if (!retierQueue.includes(id)) {
           retierQueue.push(id);

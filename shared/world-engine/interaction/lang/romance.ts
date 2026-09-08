@@ -17,6 +17,7 @@ import {
   isIntentVerb,
   isPronoun,
   isQuality,
+  ROLE_WORDS,
   NO_NAMES,
   stripEnd,
   type DirProximity,
@@ -72,9 +73,24 @@ export interface RomanceConfig {
    *  the head is the OBJECT of like ("i_me like you" arrives as "you"). */
   likePron(head: PronounHead): string;
   /** estar (states) + ser (qualities) forms. `v1p` is the collective "we are"
-   *  ("estamos") — optional, falling back to the 3rd-plural form. */
+   *  ("estamos") — optional, falling back to the 3rd-plural form.
+   *
+   *  `ser.v1`/`ser.v2` arrived with the regard ROLE line ("soy el líder", "eres
+   *  el líder"): an identity clause about the speaker or the addressee is the
+   *  commonest thing the politics vocabulary says, and only `estar` had person
+   *  forms. Optional so an existing ruleset keeps compiling; absent ⇒ the
+   *  3rd-person form, which is right for Brazilian "você é" anyway. */
   estar: { v1: string; v2: string; v3: string; v3p: string; v1p?: string };
-  ser: { v3: string; v3p: string };
+  ser: { v3: string; v3p: string; v1?: string; v2?: string };
+  /**
+   * ⚖️ THE OBJECT MARKER A FEELING TAKES (politics §4b) — "asustado DE Pip",
+   * "assustado COM Pip". Deliberately NOT `of` and NOT `withWord`: Spanish's
+   * feeling marker is *de* and Portuguese's is *com*, and neither language's
+   * other uses of those words line up with the other's, so a shared choice
+   * would put one ruleset's grammar in the other's mouth. `np` arrives
+   * articled, so a ruleset that contracts (de + o → do) does it here.
+   */
+  feelingToward(np: string, gen: Gender, plural: boolean): string;
   /** Prepositions over an already-articled definite NP (handle contractions). */
   to(np: string, g: Gender, pl: boolean): string;
   inside(np: string, g: Gender, pl: boolean): string;
@@ -246,6 +262,16 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
     return cfg.estar.v3p;
   }
 
+  /** `ser` (IDENTITY — "es el líder", never "está el líder") agreeing with any
+   *  subject, pronoun or noun. Falls back to the third person where a ruleset
+   *  supplies no person form, which is what Brazilian "você é" wants. */
+  function serFor(t: Token): string {
+    if (t.head === "i_me") return cfg.ser.v1 ?? cfg.ser.v3;
+    if (t.head === "you") return cfg.youIsThird ? cfg.ser.v3 : (cfg.ser.v2 ?? cfg.ser.v3);
+    if (t.head === "we" || t.head === "they") return cfg.ser.v3p;
+    return pl(t) ? cfg.ser.v3p : cfg.ser.v3;
+  }
+
   function subjText(t: Token): string {
     if (isPronoun(t.head)) return cfg.pronoun(t.head as PronounHead);
     return npText({ noun: t }, true);
@@ -385,14 +411,18 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
         case "here": {
           const at = frame.where === "here" ? lex("here").w : lex("there").w;
           // Pronoun subject: "Estoy aquí." / "Você está aqui."
+          // "La persona no está aquí." / "A pessoa não está aqui." — the
+          // negated presence (P-3's empty-room line); the negator precedes the
+          // verb in both languages.
+          const no = frame.neg ? `${cfg.notWord} ` : "";
           if (isPronoun(frame.np.noun.head)) {
             const h = frame.np.noun.head as PronounHead;
             const subj = cfg.pronoun(h);
-            return `${cap(`${subj ? `${subj} ` : ""}${pronBe(h)} ${at}`)}.`;
+            return `${cap(`${subj ? `${subj} ` : ""}${no}${pronBe(h)} ${at}`)}.`;
           }
           const isPl = pl(frame.np.noun);
           const be = isPl ? cfg.estar.v3p : cfg.estar.v3;
-          return `${cap(npText(frame.np, true))} ${be} ${at}.`;
+          return `${cap(npText(frame.np, true))} ${no}${be} ${at}.`;
         }
         case "mine":
           return frame.no ? `${cap(cfg.notWord)} — ${npText(frame.np, false)}!` : npText(frame.np, false);
@@ -452,6 +482,34 @@ export function makeRomance(cfg: RomanceConfig): GlyphLanguage {
               : cfg.estar.v3;
           const subj = subjText(s);
           const body = `${subj ? `${subj} ` : ""}${frame.neg ? `${cfg.notWord} ` : ""}${be} ${adj}`;
+          return frame.question ? cfg.q(cap(body)) : `${cap(body)}.`;
+        }
+        // ⚖️ THE REGARD LINES (politics §4b). A ROLE is an IDENTITY clause, so
+        // it is `ser` plus the definite article ("Pip es el líder."), not the
+        // `estar` + bare-adjective shape the copula frame builds; a FEELING
+        // WITH AN OBJECT keeps `estar` and takes the ruleset's own marker
+        // ("asustado de Pip" · "assustado com Pip").
+        case "regard": {
+          const s = frame.subject;
+          const gen = s.head === "i_me" ? opts.speaker : s.head === "you" ? opts.addressee : g(s);
+          const plural = isPronoun(s.head) ? s.head === "we" || s.head === "they" : pl(s);
+          const word = adjForm(frame.word.head, gen, plural);
+          const subj = subjText(s);
+          const lead = subj ? `${subj} ` : "";
+          if (frame.toward) {
+            const t = frame.toward;
+            const be = isPronoun(s.head) ? pronBe(s.head as PronounHead) : plural ? cfg.estar.v3p : cfg.estar.v3;
+            const toward = cfg.feelingToward(npText({ noun: t }, true), g(t), pl(t));
+            const body = `${lead}${be} ${word} ${toward}`;
+            return frame.question ? cfg.q(cap(body)) : `${cap(body)}.`;
+          }
+          // A trait is `ser` with NO article ("Mara es amable"); a role is `ser`
+          // with the definite one ("Mara es la líder").
+          const art = ROLE_WORDS.has(frame.word.head) ? cfg.art(true, gen, plural, false) : "";
+          // ⚖️ A ROLE DENIED — "Mara no es la líder." / "Mara não é a líder."
+          // The negator precedes the verb in both languages.
+          const no = frame.neg ? `${cfg.notWord} ` : "";
+          const body = `${lead}${no}${serFor(s)} ${art ? `${art} ` : ""}${word}`;
           return frame.question ? cfg.q(cap(body)) : `${cap(body)}.`;
         }
         case "svo":

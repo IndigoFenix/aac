@@ -1,8 +1,8 @@
 // src/App.tsx
-import React, { useEffect } from "react";
+import React from "react";
 import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
@@ -11,7 +11,7 @@ import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
 import { CookieConsent } from "@/components/CookieConsent";
 import { SoundProvider } from "@/contexts/SoundContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import { StudentProvider, useStudent } from "@/hooks/useStudent";
+import { StudentProvider } from "@/hooks/useStudent";
 import { StudentLabelSync } from "@/hooks/useStudentLabel";
 import NotFound from "@/pages/not-found";
 import SttTestPanel from "@/features/sttTest/SttTestPanel";
@@ -21,13 +21,13 @@ import CookiePolicy from "@/pages/cookie-policy";
 import ConsentSignPage from "@/pages/ConsentSignPage";
 import AccessibilityStatement from "@/pages/accessibility-statement";
 import AIPolicy from "@/pages/ai-policy";
-import OnboardingFlow from "@/pages/OnboardingFlow";
 import LoginPage from "@/pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
+import { GuidedSetupProvider } from "./features/guided-setup/useGuidedSetup";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
 import { PersonChatProvider } from "./features/personChat/PersonChatContext";
@@ -82,52 +82,11 @@ function InviteRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function OnboardingGuard({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  const { students, isLoading: isStudentLoading } = useStudent();
-  const [location, setLocation] = useLocation();
-
-  const { data: onboardingStatus } = useQuery({
-    queryKey: ["/api/onboarding/status"],
-    enabled: !!user,
-  });
-
-  useEffect(() => {
-    // Don't decide anything until we know:
-    // - user is loaded
-    // - onboarding status is loaded
-    // - students have finished loading
-    if (!user || !onboardingStatus || isStudentLoading) {
-      return;
-    }
-
-    const onboardingStep = (onboardingStatus as any)?.onboardingStep ?? 0;
-    const hasStudents = Array.isArray(students) && students.length > 0;
-
-    return;
-    // Ignore onboarding process for now, not important
-
-    // Only redirect to onboarding if user hasn't completed it AND has no students
-    if (onboardingStep < 3 && !hasStudents && location !== "/onboarding") {
-      setLocation("/onboarding");
-    }
-
-    // If user has completed onboarding or has students, and is on onboarding page, redirect to home
-    if ((onboardingStep === 3 || hasStudents) && location === "/onboarding") {
-      setLocation("/home");
-    }
-  }, [user, onboardingStatus, isStudentLoading, students, location, setLocation]);
-
-  return <>{children}</>;
-}
-
 // Wrapper for protected dashboard routes
 function ProtectedDashboard() {
   return (
     <ProtectedRoute>
-      <OnboardingGuard>
-        <Dashboard />
-      </OnboardingGuard>
+      <Dashboard />
     </ProtectedRoute>
   );
 }
@@ -223,12 +182,6 @@ function Router() {
       </Route>
 
       {/* Protected routes - require authentication */}
-      <Route path="/onboarding">
-        <ProtectedRoute>
-          <OnboardingFlow />
-        </ProtectedRoute>
-      </Route>
-      
       <Route path="/stt-test">
         <ProtectedRoute>
           <SttTestPanel />
@@ -431,6 +384,9 @@ function App() {
                   <CallProvider>
                   <FeaturePanelProvider>
                     <ChatProvider>
+                      {/* Guided Setup needs useChat + useFeaturePanel + useStudent
+                          + useInstitute, so it sits just inside ChatProvider. */}
+                      <GuidedSetupProvider>
                       <ThemeProvider defaultTheme="light">
                         <AccessibilityProvider>
                           <TooltipProvider>
@@ -442,6 +398,7 @@ function App() {
                           </TooltipProvider>
                         </AccessibilityProvider>
                       </ThemeProvider>
+                      </GuidedSetupProvider>
                     </ChatProvider>
                   </FeaturePanelProvider>
                   </CallProvider>

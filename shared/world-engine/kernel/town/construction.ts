@@ -264,10 +264,25 @@ export interface RefineOrder {
   kind: "refine";
   /** The faceted stack the commit mints ("block.material_wood"). */
   produces: string;
-  /** Units the commit mints. */
+  /** Units the batch mints in total — the posted size, NEVER decremented.
+   *  What is already cut is `minted`; what is left to cut is the difference. */
   count: number;
-  /** The raw bill (head → count × inPerOut) — the one costed-order shape,
-   *  shared verbatim with the staging/pile machinery. */
+  /**
+   * 🪚 UNITS ALREADY CUT (block-cadence round, 2026-09-06 — user: *"Are blocks
+   * cut one at a time, or in groups? One at a time would make more sense"*).
+   * The mill mints as its LABOUR banks, one unit at a time, so a bench visibly
+   * accumulates its output instead of dropping a whole batch at retirement.
+   * Absent = 0, which is every pre-patch save and every row that has not yet
+   * been worked; `minted === count` is what lets the row retire.
+   *
+   * ⚖️ Its partner is `costs`, which is decremented BY WHAT WAS PAID as each
+   * unit is cut, so `stagingMissing` (run over every order, laboring ones
+   * included) still reads "nothing missing" for a mill that is working.
+   */
+  minted?: number;
+  /** The raw bill STILL OWED (head → units), posted as `count × inPerOut` and
+   *  drawn down one unit's share at a time as the mill cuts — the one costed-
+   *  order shape, shared verbatim with the staging/pile machinery. */
   costs: Record<string, number>;
   /** The mill-spot heap (live stack map, the `stock` pattern). */
   pile: Record<string, number>;

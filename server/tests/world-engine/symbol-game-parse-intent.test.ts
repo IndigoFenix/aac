@@ -11,11 +11,29 @@ describe("social acts — self-contained moves", () => {
     expect(p("hi").kind).toBe("greet");
     expect(p("yes").kind).toBe("affirm");
     expect(p("no").kind).toBe("decline");
-    expect(p("thanks").kind).toBe("thank");
+    expect(p("thank_you").kind).toBe("thank");
     expect(p("mine").kind).toBe("claim");
-    // `goodbye`, not `bye`: the duplicate alias was deleted under the NO
-    // SYNONYMS law (2026-08-20) — one key per social act.
+    // `goodbye`, not `bye`, and `thank_you`, not `thanks`: the duplicate alias
+    // was deleted under the NO SYNONYMS law (`bye` 2026-08-20, `thanks`
+    // 2026-09-08) — one key per social act, because a category tab lists its
+    // WHOLE category and a second key is a second BUTTON.
     expect(p("goodbye").kind).toBe("farewell");
+  });
+
+  it("🚨 🙏 `thank_you` IS the button — pressing it is a THANK, never a request", () => {
+    // THE BUG THIS PINS (found 2026-09-08): `thank_you` is the only registry row
+    // the concept has and the spelling this engine SAYS everywhere, but the
+    // lexicon only knew `thanks`. So the child pressing the one politeness glyph
+    // parsed as a STATE frame whose object was an unknown noun called
+    // "thank_you" — an ask for a thing nobody owns.
+    const t = p("thank_you");
+    expect(t.kind).toBe("thank");
+    expect(t.object).toBeUndefined();
+    // 🚨 AND `thanks` IS GONE, not kept as a "parse-only alias": every LEXICON
+    // key of a category gets a `tab:` surface (`builderReachableHeads`), so the
+    // second row was a second BUTTON — in Hebrew both reading תודה.
+    // `validate-builder-lexicon` catches it as a twin.
+    expect(p("thanks").kind).not.toBe("thank");
   });
 });
 
@@ -94,7 +112,7 @@ describe("vocatives — a social act that NAMES someone addresses them", () => {
     const f = p("yes + mara");
     expect(f.kind).toBe("greet");
     expect(f.vocative).toEqual({ kind: "entity", symbol: "mara", modifiers: [] });
-    expect(p("thanks").vocative).toBeUndefined(); // no name, nobody addressed
+    expect(p("thank_you").vocative).toBeUndefined(); // no name, nobody addressed
   });
 
   it("the slot is ADDITIVE — raw and every other field keep today's values", () => {
@@ -546,5 +564,68 @@ describe("verb composition — several verbs compose, never silently last-win", 
     expect(f.question).toBe("what");
     expect(f.verb).toBe("do");
     expect(f.subject).toEqual({ kind: "listener" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚖️ A2 — NEGATION ON AN ATTRIBUTE (semantic-engine-round §A2)
+// ---------------------------------------------------------------------------
+//
+// The `attribute` arm did `attrs.push(tok.head)` and threw `tok.mods` away —
+// the only place a `.not` can live — and `negated` was computed from the VERB
+// tokens alone. So a VERBLESS frame could never be negated: the whole regard
+// channel ("mara + nice.not") and every condition word ("i_me + hungry.not",
+// the shipped invitation-decline) parsed POSITIVE with the negation gone.
+// A dropped `.not` is the one error that says the OPPOSITE of the sentence.
+//
+// `attrNot` names WHICH attribute carried it, so a reader with several — or one
+// that must flip a sentiment rather than refuse — can tell them apart. A frame
+// WITH a main verb is untouched: its negation still comes from the verb.
+describe("A2 — a verbless predicate carries its own negation", () => {
+  const classifyEntity = (sym: string): "place" | "item" | "creature" | "unknown" =>
+    ["mara", "pip"].includes(sym) ? "creature" : "item";
+  const p = (s: string) => parseSentence(s, { classifyEntity });
+
+  it("a negated REGARD word negates the frame and names itself", () => {
+    expect(p("mara + nice.not")).toMatchObject({ kind: "state", negated: true, attrNot: ["nice"] });
+    expect(p("you + leader.not")).toMatchObject({ kind: "state", negated: true, attrNot: ["leader"] });
+    expect(p("who + nice.not")).toMatchObject({ kind: "ask", question: "who", negated: true, attrNot: ["nice"] });
+  });
+
+  it("a negated CONDITION negates the frame — the invitation-decline shape", () => {
+    expect(p("i_me + hungry.not")).toMatchObject({
+      kind: "state",
+      negated: true,
+      attrNot: ["hungry"],
+      subject: { kind: "player" },
+    });
+    expect(p("mara + hungry.not")).toMatchObject({ negated: true, attrNot: ["hungry"] });
+  });
+
+  it("🚨 every POSITIVE twin is byte-identical — no `attrNot`, no `negated`", () => {
+    for (const g of ["mara + nice", "you + leader", "who + nice", "i_me + hungry", "mara + hungry"]) {
+      const f = p(g);
+      expect(f.negated).toBeUndefined();
+      expect(f.attrNot).toBeUndefined();
+      // The attribute itself still rides `modifiers`, exactly as before.
+      expect(f.modifiers.length).toBe(1);
+    }
+  });
+
+  it("the attribute is still the modifier — the `.not` is carried BESIDE it", () => {
+    const f = p("mara + nice.not");
+    expect(f.modifiers).toEqual(["nice"]);
+  });
+
+  it("a frame WITH a verb still takes its negation from the verb", () => {
+    // "want.not" negates; the attribute in the same clause does not double-count.
+    expect(p("i_me + want.not + play")).toMatchObject({ negated: true });
+    expect(p("i_me + want.not + play").attrNot).toBeUndefined();
+    // …and an attribute's `.not` beside a verb does NOT set `negated`: the verb
+    // is what the frame is about ("i_me + want + hungry.not" is a want).
+    const f = p("i_me + want + hungry.not");
+    expect(f.verb).toBe("want");
+    expect(f.negated).toBeUndefined();
+    expect(f.attrNot).toEqual(["hungry"]);
   });
 });

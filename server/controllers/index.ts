@@ -1,6 +1,7 @@
 export { authController, AuthController } from "./authController";
 export { profileController, ProfileController } from "./profileController";
 export { studentController, StudentController } from "./studentController";
+export { guidedSetupController, GuidedSetupController } from "./guidedSetupController";
 export { inviteCodeController, InviteCodeController } from "./inviteCodeController";
 export { savedLocationController, SavedLocationController } from "./savedLocationController";
 export { adminController, AdminController } from "./adminController";

@@ -194,7 +194,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Clear sensitive cached data to prevent cross-user exposure
       queryClient.removeQueries({ queryKey: ['/api/interpretations'] });
       queryClient.removeQueries({ queryKey: ['/api/students'] });
-      queryClient.removeQueries({ queryKey: ['/api/onboarding/status'] });
       queryClient.removeQueries({ queryKey: ['/api/invite-codes'] });
 
       // Clear all queries to be safe

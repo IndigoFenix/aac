@@ -12,6 +12,7 @@ import {
 import { activityLogService } from "../services/activityLogService";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 import { studentService } from "../services/studentService";
+import { requireConsentForResponse, ConsentGateError } from "../services/consent/consentGate";
 
 const createSchema = z.object({
   studentId: z.string().min(1),
@@ -31,6 +32,13 @@ export class DeepAnalysisController {
       const access = await studentService.verifyStudentAccess(body.studentId, userId);
       if (!access.hasAccess) {
         res.status(403).json({ error: "error:FORBIDDEN_STUDENT" });
+        return;
+      }
+
+      // A run reads the student's whole record and sends it to Anthropic, so
+      // it needs an active informed-consent record. 412 + consent_required,
+      // matching the report-finalize and program-activate paths.
+      if (!(await requireConsentForResponse(req, res, body.studentId))) {
         return;
       }
 
@@ -57,6 +65,17 @@ export class DeepAnalysisController {
         details: { studentId: body.studentId },
       });
     } catch (error: any) {
+      // The service re-checks consent as a backstop; if that is what threw,
+      // answer 412 like requireConsentForResponse would rather than a generic 400.
+      if (error instanceof ConsentGateError) {
+        res.status(412).json({
+          success: false,
+          code: "consent_required",
+          message: "Active student consent record required for this operation",
+          studentId: error.studentId,
+        });
+        return;
+      }
       res.status(400).json({ error: error.message });
     }
   }

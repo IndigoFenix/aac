@@ -70,6 +70,23 @@
 // permission would be a vocabulary board that switches itself off indoors.
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// TWELVE BUTTONS, THEN A PAGE
+//
+// The renderer sizes buttons to fill the board area, so the grid shape IS the
+// button size — which means a grid built to hold everything shrinks its buttons
+// without limit. Twenty-five pizza places nearby came out as a 4 × 7 wall of
+// tiles too small to read, let alone aim an eye tracker at. Three rows, four
+// columns, and the rest is behind Previous/Next (user, 2026-09-07); the
+// arithmetic and the reasons are in lib/board-paging.ts. The controls are BOARD
+// BUTTONS, so they are the same size as the food and reachable by the same
+// selection method — and each of them costs a cell, which is why an overflowing
+// page shows one fewer place rather than one smaller one.
+//
+// This is the shape the SERVER already builds menu boards in (4 cols × 2 item
+// rows + an essentials row, menu-board-builder.ts), so the app's two halves
+// now page the same way.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // "NOWHERE NEAR US HAS THAT" IS A CLAIM ABOUT THE WORLD
 //
 // It may only be shown after a search actually ran. Not knowing where we are —
@@ -87,6 +104,7 @@ import { getCurrentGps, mayReadDeviceLocation } from "@/lib/geolocation";
 import { getHost } from "@/lib/platform";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { CUISINE_CATEGORIES } from "@shared/venue-cuisine";
+import { cellPosition, pageLayout, type PageLayout } from "@/lib/board-paging";
 import { getVocabularyItem } from "@shared/glyph-registry";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import DynamicBoard from "@/components/DynamicBoard";
@@ -182,19 +200,10 @@ function currentPosition(): Promise<{ latitude: number; longitude: number } | nu
   );
 }
 
-/**
- * Lay `count` buttons out in as square a grid as fits.
- *
- * The renderer sizes buttons to fill the board area, so the grid shape IS the
- * button size — three places should be three big buttons, not three small ones
- * in a row of four. Capped at 4 columns because past that the buttons get
- * narrow enough that a gaze cannot separate them.
- */
-function gridFor(count: number): { rows: number; cols: number } {
-  if (count <= 0) return { rows: 1, cols: 1 };
-  const cols = Math.min(4, Math.ceil(Math.sqrt(count)));
-  return { rows: Math.ceil(count / cols), cols };
-}
+/** Ids the two grids share for their paging controls. Intercepted in the press
+ *  handler below: a page turn is navigation, and navigation never speaks. */
+const PAGE_PREV_ID = "page_prev";
+const PAGE_NEXT_ID = "page_next";
 
 export function FoodBrowseLane({
   studentId,
@@ -235,6 +244,12 @@ export function FoodBrowseLane({
   const [chosenFood, setChosenFood] = useState<string | null>(initialFood ?? null);
   const [places, setPlaces] = useState<BrowsePlace[]>(initialPlaces ?? []);
   const [busy, setBusy] = useState(false);
+  /** Which page of each grid is showing. Two counters, not one: paging through
+   *  the places and then coming back must not land the student on page 3 of the
+   *  food grid. Both are reset by the effects below whenever their list is
+   *  replaced — a fresh search starts at the first page, always. */
+  const [foodPage, setFoodPage] = useState(0);
+  const [placesPage, setPlacesPage] = useState(0);
   /**
    * Did the search behind the CURRENT places view actually run?
    *
@@ -258,6 +273,11 @@ export function FoodBrowseLane({
    * press slow rather than silently empty.
    */
   const gpsPendingRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
+
+  // A new list is a new first page. `pageLayout` also CLAMPS an out-of-range
+  // page, so a shrinking list can never blank the board — but landing on the
+  // last page of a search the student did not run is its own kind of wrong.
+  useEffect(() => setPlacesPage(0), [chosenFood, places]);
 
   const post = useCallback(
     async (body: Record<string, unknown>) => {
@@ -353,11 +373,61 @@ export function FoodBrowseLane({
     () => CUISINE_CATEGORIES.filter((c) => showAll || available!.has(c.key)),
     [showAll, available],
   );
+  useEffect(() => setFoodPage(0), [categories]);
+
+  /**
+   * The two paging controls, as BOARD BUTTONS.
+   *
+   * Not a strip of chrome under the grid: a control a dwell user cannot reach
+   * is a page they cannot turn. They carry the registry's own `prev`/`next`
+   * words, so a Hebrew student reads Hebrew, and its arrows, which are marked
+   * directional and so flip with the reading order — an arrow that points
+   * "forward" must point the way the language runs.
+   *
+   * They say NOTHING. A page turn is navigation, and the press handler
+   * intercepts both ids before `onSpeak` ever sees them.
+   */
+  const pagerButtons = useCallback(
+    (layout: PageLayout): BoardButton[] => {
+      const make = (id: string, key: "prev" | "next", cell: number): BoardButton => {
+        const item = getVocabularyItem(key);
+        const { row, col } = cellPosition(cell, layout.cols);
+        return {
+          id,
+          row,
+          col,
+          label: t(`aac.glyph.${key}`),
+          glyph: key,
+          ...(item?.emoji ? { glyphFallback: item.emoji, iconRef: item.emoji } : {}),
+          action: { type: "speak" as const, text: "" },
+        } as BoardButton;
+      };
+      const out: BoardButton[] = [];
+      if (layout.prevCell >= 0) out.push(make(PAGE_PREV_ID, "prev", layout.prevCell));
+      if (layout.nextCell >= 0) out.push(make(PAGE_NEXT_ID, "next", layout.nextCell));
+      return out;
+    },
+    [t],
+  );
+
+  /** Which slice of each list is on screen, and where its controls sit. */
+  const foodLayout = useMemo(
+    () => pageLayout({ itemCount: categories.length, page: foodPage }),
+    [categories.length, foodPage],
+  );
+  // `leading: 1` — the "back to the food grid" button is pinned to cell 0 of
+  // every places page, so it never moves out from under the student.
+  const placesLayout = useMemo(
+    () => pageLayout({ itemCount: places.length, page: placesPage, leading: 1 }),
+    [places.length, placesPage],
+  );
 
   /** The food grid, as a real board. */
   const foodBoard = useMemo<ParsedBoardData>(() => {
-    const { rows, cols } = gridFor(categories.length);
-    const buttons: BoardButton[] = categories.map((category, i) => {
+    const { rows, cols } = foodLayout;
+    const page = categories.slice(foodLayout.start, foodLayout.end);
+    const buttons: BoardButton[] = page.map((category, i) => {
+      const cell = cellPosition(foodLayout.firstItemCell + i, cols);
       // The registry entry is what gives the button its picture. Every cuisine
       // key is registered; `getVocabularyItem` is how the emoji fallback is
       // found when generated art is not ready, exactly as the floor board does.
@@ -365,8 +435,8 @@ export function FoodBrowseLane({
       const emoji = item?.emoji ?? category.emoji;
       return {
         id: `food_${category.key}`,
-        row: Math.floor(i / cols),
-        col: i % cols,
+        row: cell.row,
+        col: cell.col,
         label: category.key,
         glyph: category.key,
         // The server-built floor board bakes English and lets the client
@@ -384,12 +454,16 @@ export function FoodBrowseLane({
         action: { type: "speak" as const, text: category.key },
       } as BoardButton;
     });
+    buttons.push(...pagerButtons(foodLayout));
     return {
+      // The name is deliberately the same on every page: the renderer re-arms
+      // reading mode when a board's name changes, and a page turn is not a new
+      // board.
       name: t("aac.restaurant.whatToEat"),
       grid: { rows, cols },
       pages: [{ id: "food_page_main", name: "Main", buttons }],
     };
-  }, [categories, t]);
+  }, [categories, foodLayout, pagerButtons, t]);
 
   /** The places grid, as a real board. */
   const placesBoard = useMemo<ParsedBoardData | null>(() => {
@@ -397,14 +471,13 @@ export function FoodBrowseLane({
     // The back button is a board button too, so it is the same size as
     // everything else and reachable by the same selection method. It used to be
     // a `text-base` strip under the grid.
-    const count = places.length + 1;
-    const { rows, cols } = gridFor(count);
+    const { rows, cols } = placesLayout;
     const foodItem = getVocabularyItem(chosenFood);
+    const page = places.slice(placesLayout.start, placesLayout.end);
 
-    const buttons: BoardButton[] = places.map((place, i) => ({
+    const buttons: BoardButton[] = page.map((place, i) => ({
+      ...cellPosition(placesLayout.firstItemCell + i, cols),
       id: `place_${place.venueId}`,
-      row: Math.floor(i / cols),
-      col: i % cols,
       // A place button used to be pure text — a name and a distance, no picture
       // at all, on a screen for a child who may not read. It carries the glyph
       // of the food they just asked for: it is not a picture OF this restaurant
@@ -421,6 +494,12 @@ export function FoodBrowseLane({
 
     // "Back to the food grid", drawn as FOOD rather than as an arrow.
     //
+    // CELL 0 OF EVERY PAGE. It used to be appended after the last place, which
+    // worked only while every place fit on one screen: once the list pages, a
+    // control that trails the content is a control that moves — and on the last
+    // page it would land wherever the leftovers ended. Back leads the list
+    // (user, 2026-08-27), the same rule the sentence builder's grids follow.
+    //
     // `back` is not a registry key, so it would have rendered as the raw
     // fallback — and the obvious fallback, a ◀️, is a directional emoji. Those
     // are mirrored in RTL by default in this client, so it would point the
@@ -428,12 +507,10 @@ export function FoodBrowseLane({
     // on how the mirroring rule landed. `food` is registered, translated in all
     // 11 locales, non-directional, and says what is on the other side of the
     // press, which is what the child needs to know.
-    const backIndex = places.length;
     const backItem = getVocabularyItem("food");
     buttons.push({
+      ...cellPosition(0, cols),
       id: "food_back",
-      row: Math.floor(backIndex / cols),
-      col: backIndex % cols,
       label: t("aac.restaurant.backToFood"),
       glyph: "food",
       ...(backItem?.emoji ? { glyphFallback: backItem.emoji, iconRef: backItem.emoji } : {}),
@@ -444,12 +521,14 @@ export function FoodBrowseLane({
       action: { type: "speak" as const, text: "" },
     } as BoardButton);
 
+    buttons.push(...pagerButtons(placesLayout));
+
     return {
       name: t(`aac.glyph.${chosenFood}`),
       grid: { rows, cols },
       pages: [{ id: "places_page_main", name: "Main", buttons }],
     };
-  }, [chosenFood, places, t]);
+  }, [chosenFood, places, placesLayout, pagerButtons, t]);
 
   const showingPlaces = !!chosenFood && canSearch;
 
@@ -534,6 +613,15 @@ export function FoodBrowseLane({
           // speak as well produced two voices per press.
           suppressLocalSpeech
           onButtonClick={(button: BoardButton) => {
+            // A page turn, on whichever grid is showing. Stepped off the
+            // LAYOUT's page rather than the raw counter, so a stale index can
+            // never leave the arrows needing two presses to move.
+            if (button.id === PAGE_PREV_ID || button.id === PAGE_NEXT_ID) {
+              const delta = button.id === PAGE_NEXT_ID ? 1 : -1;
+              if (showingPlaces) setPlacesPage(placesLayout.page + delta);
+              else setFoodPage(foodLayout.page + delta);
+              return;
+            }
             if (button.id === "food_back") {
               setChosenFood(null);
               setPlaces([]);

@@ -1,0 +1,77 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T08:35:19.661Z
+# ─────────────────────────────────────────
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 0.8s.
+> say nice
+OK     said: nice
+TOAST  💬 "nice" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> say i_me + want + apple
+OK     said: i_me + want + apple
+TOAST  💬 "i_me + want + apple" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> say how + you
+OK     said: how + you
+TOAST  💬 "how + you" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 45
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 45.0s.
+> approach mara
+ERR    you are a bodiless spirit here — act through a creature (family/send) or claim a body.
+> look mara
+ERR    mara is not in view.
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view there south.
+TICK   quiet after 2.6s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  talking with orrin, mara.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> say mara + nice.not
+OK     said: mara + nice.not
+TOAST  💬 "mara + nice.not" — I don't understand. (feedback)
+EXIT   orrin left view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+TICK   quiet after 0.9s.
+> say nice
+OK     said: nice
+TOAST  💬 "nice" — I don't understand. (feedback)
+EXIT   mara left view here north.
+TICK   quiet after 1.5s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=11  presses=0  screens=1  sim=54.8s
+# events: TICK 10  EXIT 8  ENTER 6  OK 5  TOAST 5  SAY 3  ERR 2  SELF 2  SCENE 1  BOARD 1  NOTE 1

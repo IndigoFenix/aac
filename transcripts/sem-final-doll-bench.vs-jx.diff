@@ -1,0 +1,90 @@
+43d42
+< ENTER  orrin came into view there west.
+45,46c44,46
+< ENTER  biscuit came into view here south.
+< SAY    pip: "I'm going to the bedroom."  [go + bedroom]
+---
+> ENTER  biscuit came into view there south.
+> ENTER  orrin came into view there west.
+> EXIT   biscuit left view there south.
+48,49d47
+< EXIT   biscuit left view here south.
+< SAY    pip: "I'm happy."  [i_me + happy]
+52,54d49
+< SAY    pip: "Are you okay?"  [you + ok#question]
+< SAY    pip: "I'm happy."  [i_me + happy]
+< ENTER  orrin came into view there west.
+56c51
+< SAY    orrin: "bye-bye"  [goodbye]
+---
+> ENTER  orrin came into view there west.
+58d52
+< EXIT   orrin left view there west.
+59a54
+> EXIT   orrin left view there west.
+111d105
+< ENTER  pip came into view here west.
+112a107,108
+> ENTER  pip came into view here west.
+> SAY    biscuit: "I'm bored."  [i_me + bored]
+118c114
+< SAY    orrin: "Are you okay?"  [you + ok#question]
+---
+> SAY    biscuit: "I'm bored."  [i_me + bored]
+120,127c116
+< SAY    pip: "I'm bored."  [i_me + bored]
+< SAY    pip: "bye-bye"  [goodbye]
+< EXIT   orrin left view here north.
+< EXIT   pip left view here north.
+< ENTER  orrin came into view here north.
+< ENTER  pip came into view here north.
+< EXIT   biscuit left view here north.
+< EXIT   orrin left view here north.
+---
+> SAY    orrin: "Why do you want food?"  [why + food]
+130,138c119,125
+< SCENE  house-1 — 8 thing(s) in view, 86 place(s) around you.
+<   pip (person), here west, get basket.
+<   table-1 (table), here south.
+<   chair-1 (chair), here south.
+<   bin-1 (bin), here east.
+<   basket-1 (basket), there south.
+<   chest-1 (chest), there south.
+<   a cupboard, there west.
+<   a bowl, there west.
+---
+> SCENE  house-1 — 6 thing(s) in view, 86 place(s) around you.
+>   orrin (person), here east, play.
+>   biscuit (person), here west, play.
+>   pip (person), here north, play.
+>   bed-1 (bed), there north.
+>   ball-2 (ball), there north.
+>   box-1 (box), there north.
+140,141c127,128
+<   house-2 (house), here south, blue, door open, you can see inside.
+<   house-3 (house), here north, blue, shut to you.
+---
+>   house-2 (house), here south, blue, shut to you.
+>   house-3 (house), here north, blue, door open, you can see inside.
+147c134,135
+< TICK   quiet after 0.8s.
+---
+> SAY    biscuit: "Because I'm hungry."  [because + i_me + hungry]
+> TICK   quiet after 1.2s.
+151a140
+>   talking with biscuit, orrin.
+153,156c142,144
+< ENTER  biscuit came into view here north.
+< ENTER  orrin came into view here north.
+< EXIT   pip left view here west.
+< TICK   quiet after 1.7s.
+---
+> EXIT   orrin left view here north.
+> EXIT   pip left view here north.
+> TICK   quiet after 1.0s.
+160,161c148,149
+< # commands=17  presses=0  screens=1  sim=238.5s
+< # events: ENTER 18  EXIT 18  TICK 16  SAY 11  NOTE 8  SCENE 7  BOARD 1  OK 1  TOAST 1  SELF 1  ERR 1
+---
+> # commands=17  presses=0  screens=1  sim=238.3s
+> # events: TICK 16  EXIT 15  ENTER 14  NOTE 8  SCENE 7  SAY 7  BOARD 1  OK 1  TOAST 1  SELF 1  ERR 1

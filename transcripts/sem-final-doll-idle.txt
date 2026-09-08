@@ -1,0 +1,310 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T12:33:12.724Z
+# ─────────────────────────────────────────
+> wait 60
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+ENTER  pip came into view here south.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+EXIT   orrin left view there south.
+EXIT   mara left view here north.
+ENTER  mara came into view here north.
+ENTER  pip came into view here west.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+EXIT   mara left view here west.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+EXIT   orrin left view there south.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> wait 60
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> wait 60
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> wait 60
+TOAST  🏗️ the people stake out a market (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, door open, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-5 (house), there east, blue, door open, shut to you.
+  house-75 (house), close east, yellow, door open, shut to you.
+  43 houses, there east, all shut.
+  37 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, gathering block 0/232, close north, 83 m
+TICK   quiet after 0.8s.
+> wait 60
+TOAST  🪚 milling 2 block for the chest (feedback)
+ENTER  pip came into view here south.
+TOAST  🪚 milling 1 block for the chest (feedback)
+SAY    pip: "🚽"
+EXIT   pip left view there west.
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  💬 no one can do that: "bring 8 wood" (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+CLOSE  the board closed.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, gathering block 0/232, close north, 83 m
+TICK   quiet after 0.8s.
+> wait 60
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 wood" (feedback)
+ENTER  pip came into view there west.
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+EXIT   pip left view here west.
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-57 (house), close south, orange, door open, shut to you.
+  house-78 (house), close west, green, door open, shut to you.
+  44 houses, there east, all shut.
+  36 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, gathering block 0/232, close north, 83 m
+TICK   quiet after 0.8s.
+> wait 60
+TOAST  💬 no one can do that: "bring 2 block" (feedback)
+TOAST  💬 no one can do that: "bring 2 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  💬 no one can do that: "bring 8 wood" (feedback)
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  💬 no one can do that: "bring 2 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  📦 block — the trip was given up (feedback)
+CLOSE  the board closed.
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+CLOSE  the board closed.
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-62 (house), close south, pink, door open, shut to you.
+  house-68 (house), close south, white, door open, shut to you.
+  44 houses, there east, all shut.
+  36 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   1 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, gathering block 0/232, close north, 83 m
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 2 block" (feedback)
+TICK   quiet after 1.2s.
+> wait 60
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here south.
+SAY    orrin: "🚽"
+EXIT   orrin left view there west.
+CLOSE  the board closed.
+ENTER  orrin came into view there west.
+TOAST  💬 no one can do that: "bring 3 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+SAY    orrin: "😴"
+CLOSE  the board closed.
+EXIT   orrin left view here north.
+ENTER  orrin came into view here north.
+EXIT   orrin left view here west.
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 8 block" (feedback)
+TOAST  💬 no one can do that: "bring 1 block" (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  biscuit came into view here west.
+ENTER  orrin came into view there west.
+SAY    biscuit: [water]
+CLOSE  the board closed.
+TOAST  🪚 milling 232 block for the site (feedback)
+TOAST  🏗️ the people stake out a market (feedback)
+SITE   2 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, gathering block 0/232, close north, 83 m
+  site-2: a market — marked ground, 0% worked, gathering block 0/232, close west, 58 m
+TOAST  🪚 milling 4 block for the workbench (feedback)
+EXIT   biscuit left view here west.
+TOAST  📦 block — the trip was given up (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    orrin: "🫧"  [shirt.color_blue]
+TICK   waited 60.0s.
+> scene
+SCENE  house-1 — 3 thing(s) in view, 86 place(s) around you.
+  orrin (person), there west, in blue, holding basket-1.
+  toilet-1 (toilet), there north.
+  bath-1 (bath), there west.
+  house-1 (house), here north, blue, door open, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-7 (house), there west, blue, door open, you can see inside.
+  house-78 (house), close west, green, door open, shut to you.
+  43 houses, there east, all shut.
+  37 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+SITE   2 thing(s) being built.
+  site-1: a market — marked ground, 0% worked, gathering block 0/232, close north, 83 m
+  site-2: a market — marked ground, 0% worked, gathering block 0/232, close west, 58 m
+TICK   quiet after 0.8s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=17  presses=0  screens=10  sim=487.3s
+# events: TOAST 92  NOTE 18  EXIT 18  ENTER 17  TICK 17  BOARD 10  CLOSE 10  SAY 8  SCENE 8  SITE 6  SELF 1

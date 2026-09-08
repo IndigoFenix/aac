@@ -61,6 +61,29 @@ describe('chatRepository — clinician own-data session methods', () => {
       expect(list[0].messageCount).toBe(2);
       expect(list[0].firstMessage).toContain('snack board');
     });
+
+    it('skips a hidden kickoff message and returns the first visible message', async () => {
+      const me = await makeUser();
+      const log: ChatMessage[] = [
+        { role: 'user', content: '[GUIDED SETUP] start', timestamp: 1, metadata: { hidden: true } },
+        { role: 'user', content: 'How is Maya doing with the snack board?', timestamp: 2 },
+        { role: 'assistant', content: 'She used it three times today.', timestamp: 3 },
+      ];
+      const id = await insertSession({ userId: me.id, log });
+
+      const list = await chatRepository.getSessionsForUser({ userId: me.id });
+      const row = list.find((s) => s.id === id);
+      expect(row?.firstMessage).toBe('How is Maya doing with the snack board?');
+    });
+
+    it('is unchanged for an all-normal session', async () => {
+      const me = await makeUser();
+      const id = await insertSession({ userId: me.id });
+
+      const list = await chatRepository.getSessionsForUser({ userId: me.id });
+      const row = list.find((s) => s.id === id);
+      expect(row?.firstMessage).toBe(LOG[0].content);
+    });
   });
 
   describe('getSessionForUser', () => {

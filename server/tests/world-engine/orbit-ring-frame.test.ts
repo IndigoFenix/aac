@@ -25,8 +25,15 @@
  * six pins (wheel-in, floor, bound, step-out reset, off-hold zoom, garbage) had
  * nothing left to describe. What replaced them is the pose RECORD (C1): the
  * four numbers the frame is made of, tuned by eye in the lab's 🎥 Camera panel
- * and then baked — pinned below as (a) byte-identical at the shipped defaults
- * and (b) each field doing exactly one thing.
+ * and then baked — pinned below as (a) the numbers the user actually chose and
+ * (b) each field doing exactly one thing.
+ *
+ * 🎯 AND THEY ARE BAKED (2026-09-06): *"constants like this look all right …
+ * pitchRad: 0.5, frameFactor: 1, liftFrac: 0, ringFrameFactor: 0.5"*. The ring
+ * is now TWICE the frame, so every ring-derived expectation below goes through
+ * `ringFrameDistFor`, which folds in `ringFrameFactor` — a re-bake moves the
+ * pins with the record instead of reddening the suite. `CITY_FRAME` is gone:
+ * after the bake nothing read that alias but this file.
  *
  * Same harness as builder-hold.test.ts: the REAL ladder over a minimal flat
  * town provider (the contract world-lab's planet provider implements), so
@@ -34,7 +41,7 @@
  */
 import * as THREE from "three";
 import {
-  CITY_FRAME, ORBIT_FRAME_FLOOR_M, createSpiritLadder, districtRadiusFor,
+  ORBIT_FRAME_FLOOR_M, createSpiritLadder, districtRadiusFor,
   type SpiritLadder, type SpiritPointer,
 } from "@shared/world-engine/spirit/ladder";
 import {
@@ -137,8 +144,20 @@ const orbitDist = (camera: THREE.PerspectiveCamera): number => camera.position.l
 const orbitOut = (camera: THREE.PerspectiveCamera): number =>
   Math.hypot(camera.position.x, camera.position.z);
 const orbitUp = (camera: THREE.PerspectiveCamera): number => camera.position.y;
-const frameDistFor = (radius: number, frameFactor = CITY_FRAME): number =>
-  (radius / Math.tan((FOV_DEG * Math.PI) / 360)) * frameFactor;
+/** The stand-off for a FRAME RADIUS — `orbitRelPose` read back. */
+const frameDistFor = (
+  radius: number,
+  frameFactor = ORBIT_POSE_DEFAULTS.frameFactor,
+): number => (radius / Math.tan((FOV_DEG * Math.PI) / 360)) * frameFactor;
+/** …and for a RELEVANCE RING, which the hold turns into a frame radius through
+ *  `ringFrameFactor` (0.5 since the 2026-09-06 bake: the ring is TWICE the
+ *  frame, so half of it sits outside the picture). Every ring-derived pin below
+ *  goes through this rather than through a literal, so re-baking the pose moves
+ *  the expectation with the record instead of reddening the suite. */
+const ringFrameDistFor = (
+  ringRadius: number,
+  frameFactor = ORBIT_POSE_DEFAULTS.frameFactor,
+): number => frameDistFor(ringRadius * ORBIT_POSE_DEFAULTS.ringFrameFactor, frameFactor);
 /** Long enough for the 4 s⁻¹ radius easing to land (e^-16 of the gap). */
 const SETTLE_S = 4;
 
@@ -155,7 +174,7 @@ describe("the held orbit's outer bound is the relevance disc", () => {
     expect(ladder.level).toBe("town");
     expect(status).toContain("[build hold]");
     // The ONE definition the whole test hangs on: the frame radius is the disc.
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING), 2);
+    expect(orbitDist(w.camera)).toBeCloseTo(ringFrameDistFor(RING_FOUNDING), 2);
     // …and it is a tighter frame than the site-derived district was.
     expect(districtRadiusFor(TOWN_RADIUS)).toBeCloseTo(66, 6);
     expect(orbitDist(w.camera)).toBeLessThan(frameDistFor(districtRadiusFor(TOWN_RADIUS)) * 0.5);
@@ -172,9 +191,9 @@ describe("the held orbit's outer bound is the relevance disc", () => {
     hover(ladder, CENTRE, DT);
     const d1 = orbitDist(w.camera);
     expect(d1).toBeGreaterThan(d0);
-    expect(d1).toBeLessThan(d0 + (frameDistFor(RING_FIRST_HOUSE) - d0) * 0.25);
+    expect(d1).toBeLessThan(d0 + (ringFrameDistFor(RING_FIRST_HOUSE) - d0) * 0.25);
     hover(ladder, CENTRE, SETTLE_S);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FIRST_HOUSE), 2);
+    expect(orbitDist(w.camera)).toBeCloseTo(ringFrameDistFor(RING_FIRST_HOUSE), 2);
   });
 
   it("WITHOUT the hold the disc is not read — a city visit frames its district exactly as before", () => {
@@ -234,19 +253,18 @@ describe("NO WHEEL ON THE EYEGAZE SURFACE (C2) — the zoom control is gone", ()
     hover(ladder, CENTRE, 1.2); // the depth-0 district pick — back down
     const status = hover(ladder, CENTRE, SETTLE_S);
     expect(status).toContain("FOCUS=DISTRICT");
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING), 2);
+    expect(orbitDist(w.camera)).toBeCloseTo(ringFrameDistFor(RING_FOUNDING), 2);
   });
 });
 
 describe("THE POSE IS ONE RECORD (C1) — tuned by eye, then baked", () => {
   it("the shipped defaults ARE the old literals, and the camera lands where they say", () => {
-    // Byte-identity, stated as the arithmetic rather than as a snapshot: pitch
-    // 0.5 rad, frame 1.35, lift 0.35 of the radius, ring→frame 1.0 — the four
-    // numbers that were spelled inline in ladder.ts before the round.
+    // 🎯 THE BAKED POSE (user, 2026-09-06): *"constants like this look all
+    // right … pitchRad: 0.5, frameFactor: 1, liftFrac: 0, ringFrameFactor:
+    // 0.5"*. Their four numbers verbatim — the reason the record exists.
     expect(ORBIT_POSE_DEFAULTS).toEqual({
-      pitchRad: 0.5, frameFactor: 1.35, liftFrac: 0.35, ringFrameFactor: 1,
+      pitchRad: 0.5, frameFactor: 1, liftFrac: 0, ringFrameFactor: 0.5,
     });
-    expect(CITY_FRAME).toBe(ORBIT_POSE_DEFAULTS.frameFactor);
     expect(orbitPose()).toEqual(ORBIT_POSE_DEFAULTS);
     expect(orbitPoseOverridden()).toBe(false);
 
@@ -254,9 +272,14 @@ describe("THE POSE IS ONE RECORD (C1) — tuned by eye, then baked", () => {
     const ladder = bootHomestead(w.provider, true);
     hover(ladder, CENTRE, SETTLE_S);
     const dist = orbitDist(w.camera);
-    expect(dist).toBeCloseTo(frameDistFor(RING_FOUNDING), 4);
+    // The ring is 30 m, the FRAME is 15 m, and the stand-off is that frame's
+    // own fov-fitting distance (frameFactor 1) split by the pitch.
+    expect(dist).toBeCloseTo(ringFrameDistFor(RING_FOUNDING), 4);
     expect(orbitUp(w.camera)).toBeCloseTo(dist * Math.sin(0.5), 6);
     expect(orbitOut(w.camera)).toBeCloseTo(dist * Math.cos(0.5), 6);
+    // …and the LOOK-AT is on the ground at the focus (lift 0): the camera
+    // looks straight down its own pitch, not above the site.
+    expect(ORBIT_POSE_DEFAULTS.liftFrac).toBe(0);
   });
 
   it("PITCH swings the camera along an arc — the distance to the focus never moves", () => {
@@ -280,7 +303,7 @@ describe("THE POSE IS ONE RECORD (C1) — tuned by eye, then baked", () => {
     hover(ladder, CENTRE, SETTLE_S);
     setOrbitPose({ frameFactor: 0.7 });
     hover(ladder, CENTRE, SETTLE_S);
-    expect(orbitDist(w.camera)).toBeCloseTo(frameDistFor(RING_FOUNDING, 0.7), 4);
+    expect(orbitDist(w.camera)).toBeCloseTo(ringFrameDistFor(RING_FOUNDING, 0.7), 4);
     // Same arc, so the up:out ratio is untouched — only the radius changed.
     expect(orbitUp(w.camera) / orbitOut(w.camera)).toBeCloseTo(Math.tan(0.5), 6);
   });

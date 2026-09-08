@@ -12,6 +12,7 @@ import { generateImage } from "./tools/image-generator";
 import { extractFrame } from "./tools/video-frame-extractor";
 import { getFile, refreshFile, storeFile } from "./tools/media-file-cache";
 import { AgentAPIEndpoint } from "@shared/schema";
+import { GUIDED_SETUP_CONTEXT_KEY, type GuidedSetupToolArgs } from "@shared/guided-setup";
 import { lookupOrangeBook, OrangeBookQuery } from "../fda/orange-book-service";
 import { findOutOfBoundsButtons, outOfBoundsKey } from "@shared/board-grid";
 import { describeOutOfBoundsButtons } from "../board-utils";
@@ -78,6 +79,7 @@ export interface ToolRegistry {
   fdaOrangeBook: (args: OrangeBookQuery) => Promise<any>;
   createQuestGame: (args: CreateQuestGameToolArgs) => Promise<any>;
   validateQuestGame: (args: {}) => Promise<any>;
+  guidedSetup: (args: GuidedSetupToolArgs) => Promise<any>;
 }
 
 // ============================================================================
@@ -283,6 +285,13 @@ export interface ToolRegistryDeps {
   onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>;
 
   /**
+   * Optional GUIDED SETUP flow control. Injected only while the flow is active
+   * (see sessionService.getMessageManager). FLOW CONTROL ONLY — the AI still
+   * writes every fact through manageMemory over the memory-schema tree.
+   */
+  onGuidedSetup?: (args: GuidedSetupToolArgs) => Promise<unknown>;
+
+  /**
    * Optional loop detection configuration.
    * If not provided, uses DEFAULT_LOOP_DETECTION_CONFIG.
    */
@@ -329,6 +338,50 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         deps.onThinkingUpdate(actionDescription);
         return { success: true };
       }
+    },
+    guidedSetup: async (args) => {
+      if (!deps.onGuidedSetup) {
+        return { success: false, reason: 'Guided setup is not active' };
+      }
+      const view = await deps.onGuidedSetup(args);
+      // The post-action view has to reach the CLIENT, not only the model: the
+      // rail renders the current step and any refusal off
+      // `contextData.guidedsetup`. Publishing it the way every memory tool
+      // does is the only route that survives the turn — ChatMessageManager
+      // deep-clones memoryValues at construction and merges ITS copy over the
+      // caller's at the end of the turn, so the write sessionService's own
+      // closure makes to the outer object is discarded. Without this the rail
+      // sits one turn behind the step the AI just advanced, and a refusal is
+      // never shown at all.
+      if (view && typeof view === 'object') {
+        deps.memoryValuesRef.current = {
+          ...deps.memoryValuesRef.current,
+          [GUIDED_SETUP_CONTEXT_KEY]: view,
+        };
+        // A roster PROPOSAL must outlive the turn: the user reviews the table
+        // in the panel over several messages, and the REST confirm endpoint —
+        // which has no chat session of its own — finds it by id in this state.
+        // Same reason as the memoryValues write above: the manager clones the
+        // outer chatState, so sessionService's own closure cannot store it.
+        const roster = (view as { roster?: unknown }).roster;
+        const flow = deps.chatStateRef.current.guidedSetup;
+        if (flow && roster !== undefined) {
+          deps.chatStateRef.current.guidedSetup = {
+            ...flow,
+            rosterProposal: (roster ?? null) as typeof flow.rosterProposal,
+          };
+          if (deps.onUpdateChatState) {
+            await deps.onUpdateChatState(deps.chatStateRef.current);
+          }
+        }
+        // Context_ fields are session-only (sessionService.onUpdateMemoryValues
+        // persists User_/Student_ prefixes only), so this notifies without
+        // writing anything to the database.
+        if (deps.onUpdateMemoryValues) {
+          await deps.onUpdateMemoryValues(deps.memoryValuesRef.current);
+        }
+      }
+      return view;
     },
     navigateToFeature: async ({ feature }) => {
       if (deps.onNavigate) {
@@ -1085,6 +1138,10 @@ export async function makeToolCalls(
                 break;
               case "validateQuestGame":
                 response = await registry.validateQuestGame(args as {});
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "guidedSetup":
+                response = await registry.guidedSetup(args as GuidedSetupToolArgs);
                 insertToolCallResponse(toolCall, response);
                 break;
               default:

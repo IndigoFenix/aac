@@ -20,6 +20,7 @@ import {
   isPluralPronoun,
   isPronoun,
   isQuality,
+  ROLE_WORDS,
   NO_NAMES,
   SENSATION,
   stripEnd,
@@ -365,7 +366,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts — each the alias of a word that already had a lexeme
   // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
   // are listed on the social tab, so both need words.
-  thanks: { w: "תודה" },
   sorry: { w: "סליחה" },
   mine: { w: "שלי" },
   again: { w: "עוד פעם" },
@@ -403,6 +403,15 @@ const CENTRAL: Record<string, Lexeme> = {
   surprised: { w: "מופתע", f: "מופתעת", mpl: "מופתעים", fpl: "מופתעות" },
   proud: { w: "גאה", f: "גאה", mpl: "גאים", fpl: "גאות" },
   calm: { w: "רגוע", f: "רגועה", mpl: "רגועים", fpl: "רגועות" },
+
+  // ── THE POLITICS WORDS (interpersonal-politics.md §4b, 2026-09-07) ───────
+  // ⚠️ `mean` is מרושע and NOT רע — רע is `bad`, the word for a THING that has
+  // gone wrong, and giving two buttons one Hebrew word is the twin-button bug
+  // the NO SYNONYMS law exists to stop. `leader` carries its feminine because
+  // the regard frame renders it as a definite predicate noun (המנהיגה).
+  nice: { w: "נחמד", f: "נחמדה", mpl: "נחמדים", fpl: "נחמדות" },
+  mean: { w: "מרושע", f: "מרושעת", mpl: "מרושעים", fpl: "מרושעות" },
+  leader: { w: "מנהיג", g: "m", f: "מנהיגה", mpl: "מנהיגים", fpl: "מנהיגות" },
 
   // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
   // Category NAMES, not words a sentence composes. Plural where the chip names
@@ -483,6 +492,17 @@ const SUBJ_PRON: Record<string, string> = { i_me: "אני", we: "אנחנו", th
 /** Dative pronoun forms (ל־ fused): "יש לנו", "אין להם". */
 const DAT_PRON: Record<string, string> = { i_me: "לי", you: "לך", we: "לנו", they: "להם", he: "לו", she: "לה" };
 
+/** Ablative pronoun forms (מ־ fused) — what a fear is OF: "מפחד ממך", "ממנה".
+ *  ⚠️ Not derivable by prefixing: מ + אני is ממני, not "מאני". */
+const ABL_PRON: Record<string, string> = {
+  i_me: "ממני",
+  you: "ממך",
+  we: "מאיתנו",
+  they: "מהם",
+  he: "ממנו",
+  she: "ממנה",
+};
+
 /** Comitative pronoun forms (עם fused): "מדבר איתו", "איתה". */
 const COM_PRON: Record<string, string> = {
   i_me: "איתי",
@@ -544,10 +564,29 @@ function npText(np: NP, def: boolean): string {
 /** "את " before a definite direct object. */
 const et = (np: NP) => `את ${npText(np, true)}`;
 
+/**
+ * 🚨 A HEBREW CLITIC NEVER WELDS ONTO LATIN SCRIPT.
+ *
+ * `nameWord` renders a proper name in the script it arrived in — the ruleset
+ * transliterates nothing — so the name in a Hebrew sentence is Latin ("Mara").
+ * Concatenating a one-letter prefix onto it produced `לMara` / `מMara` /
+ * `בMara`: two scripts welded at a bidi boundary, which renders as garbage and
+ * reads as a non-word. Hebrew orthography joins a prefix to a foreign word (or
+ * a numeral) with a MAQAF — "ל-Mara" — and that is what a reader expects.
+ *
+ * Keyed on the SCRIPT of what follows, never on "is this a name": a name is
+ * only the common case, and any Hebrew-less string behind a clitic has the
+ * same problem.
+ */
+const HEBREW_FIRST = /^[֐-׿]/u;
+function cliticJoin(prep: string, text: string): string {
+  return HEBREW_FIRST.test(text) ? prep + text : `${prep}-${text}`;
+}
+
 /** Fuse a one-letter preposition with a definite NP (ל + הדוב → לדוב). */
 function fuse(prep: string, np: NP): string {
   const d = npText(np, true);
-  return prep + (d.startsWith("ה") ? d.slice(1) : d);
+  return cliticJoin(prep, d.startsWith("ה") ? d.slice(1) : d);
 }
 
 /** A preposition before a definite NP. A one-letter CLITIC fuses and swallows
@@ -744,7 +783,10 @@ export const he: GlyphLanguage = {
         const who = isPronoun(frame.np.noun.head)
           ? subjText(frame.np.noun, opts)
           : npText(frame.np, true);
-        return `${who} ${frame.where === "here" ? "כאן" : "שם"}.`;
+        // "האדם לא כאן." — the negated presence (P-3's empty-room line). Hebrew
+        // has no present-tense copula, so the negator alone carries it.
+        const at = frame.where === "here" ? "כאן" : "שם";
+        return `${who} ${frame.neg ? "לא " : ""}${at}.`;
       }
       case "mine":
         return frame.no ? `לא — ${npText(frame.np, true)}!` : npText(frame.np, true);
@@ -774,6 +816,34 @@ export const he: GlyphLanguage = {
         const g = subjGender(s, opts);
         const adj = adjForm(frame.adj.head, g, isPronoun(s.head) ? subjPlural(s) : nounPlural(s));
         return `${subjText(s, opts)} ${frame.neg ? "לא " : ""}${adj}${frame.question ? "?" : "."}`;
+      }
+      // ⚖️ THE REGARD LINES (politics §4b). Hebrew has no present-tense copula
+      // VERB, so a TRAIT is the bare agreeing adjective ("פיפ מרושע") exactly as
+      // the copula frame builds it — but a ROLE is a noun predicate, and a noun
+      // predicate needs the third-person pronoun as a copula plus the definite
+      // ה ("פיפ הוא המנהיג"). First and second person take neither: "אני
+      // המנהיג", and "אני הוא המנהיג" would read as "I am he". The FEELING takes
+      // the ablative מ־, which — unlike the one-letter clitics `fuse` exists for
+      // — KEEPS the article ("מפחדת מהדוב").
+      case "regard": {
+        const s = frame.subject;
+        const g = subjGender(s, opts);
+        const plural = isPronoun(s.head) ? subjPlural(s) : nounPlural(s);
+        const end = frame.question ? "?" : ".";
+        const word = adjForm(frame.word.head, g, plural);
+        if (frame.toward) {
+          const t = frame.toward;
+          // The ablative KEEPS the article (`fuse` would swallow it), but it is
+          // still a one-letter clitic — "מפחד מMara" welded Hebrew to Latin.
+          const from = ABL_PRON[t.head] ?? cliticJoin("מ", npText({ noun: t }, true));
+          return `${subjText(s, opts)} ${word} ${from}${end}`;
+        }
+        if (!ROLE_WORDS.has(frame.word.head)) return `${subjText(s, opts)} ${word}${end}`;
+        const copula = isPronoun(s.head) ? "" : `${g === "f" ? "היא" : "הוא"} `;
+        // ⚖️ A ROLE DENIED — "מארה היא לא המנהיגה". The negation stands before
+        // the definite predicate noun, after the copula pronoun.
+        const no = frame.neg ? "לא " : "";
+        return `${subjText(s, opts)} ${copula}${no}ה${word}${end}`;
       }
       case "svo":
         return renderSvo(frame, opts);

@@ -48,6 +48,15 @@ if (!process.env.ALLOW_REAL_LLM_CREDENTIALS) {
   }
 }
 
+// ── No outbound geocoding from a test worker ─────────────────────────────────
+// Same reasoning one step down the severity ladder: the area lookup fires on any
+// session-startup path that has a GPS reading, and a suite exercising that path
+// would hammer a free community service (OSM's usage policy) or bill the Google
+// fallback, on every run, from every worker. A test that WANTS the behaviour
+// mocks `areaLookupService.lookup`; nothing should reach the network to get it.
+process.env.AREA_LOOKUP = 'off';
+if (!process.env.ALLOW_REAL_LLM_CREDENTIALS) delete process.env.GOOGLE_GEOCODING_API_KEY;
+
 // Force the connection at the TEST database, in every worker, BEFORE any test
 // file imports server/db.ts (setupFilesAfterEnv runs first). Configs that drop
 // `globalSetup` (jest.config.unit.js, jest.config.engine.js) never get the

@@ -2522,6 +2522,24 @@ export function removeAvatar(state: WorldState, id: string): void {
   // back to its own body — never leave a spark steering a ghost. Guarding on
   // drivenId instead would make a claimed body un-removable.
   if (state.drivenId === id) state.drivenId = state.localId;
+  // ⚖️ NOTHING IS CARRIED BY A BODY THAT DOES NOT EXIST (2026-09-06 carry
+  // round). This used to leave every object with `carriedBy === id` pointing at
+  // a deleted avatar — a fifth, illegal location: invisible to tidy, to drop,
+  // to the collect rows, frozen where it stood, and then SNAPPED onto whichever
+  // body next took that id (`simulateObject` holds a carried object a step
+  // ahead of its carrier). Measured on the frontier arc: four props converging
+  // 20–54 m in one frame when the streamer re-embodied a household.
+  //
+  // So the load is RELEASED where the body last stood: the prop stops being
+  // carried and goes on being exactly what it is, at exactly the point it was
+  // at — the fold-point put-down, and the reason no prop can ever move further
+  // than its body walked. A host that wants the load to travel WITH the body
+  // folds it onto the body's own record BEFORE calling here (quest-host
+  // `foldBodyCarry`); this is the floor under every other removal — despawn, a
+  // peer leaving, a cohort demotion with nowhere to put a pair of hands.
+  for (const obj of Object.values(state.objects)) {
+    if (obj.carriedBy === id) obj.carriedBy = null;
+  }
   delete state.avatars[id];
   delete state.bubbles[`speech:${id}`];
 }

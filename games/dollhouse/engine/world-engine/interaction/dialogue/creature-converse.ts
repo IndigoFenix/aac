@@ -36,7 +36,9 @@
 import type { CreatureId, CreatureState, CreatureWorld, ItemId, NeedTarget } from "@shared/world-engine/interaction/behavior/creatures.js";
 import { itemMatchesNeed, openNeeds, providesKey, tellAbout } from "@shared/world-engine/interaction/behavior/creatures.js";
 import {
+  makeWhoSym,
   projectDialogue,
+  regardGlyph,
   selectAct,
   type ActResult,
   type DeviceBoardState,
@@ -49,7 +51,15 @@ import { NEUTRAL_PERSONALITY, type Personality } from "@shared/world-engine/inte
 import { DEFAULT_RELATION, type Relation } from "@shared/world-engine/interaction/behavior/relations.js";
 import type { SyntaxLevel } from "@shared/world-engine/interaction/dialogue/dialogue-gen.js";
 import { canonicalVerb, type IntentFrame, type Ref } from "@shared/world-engine/interaction/intent/parse-intent.js";
-import { STATE_AXES, tellFact } from "@shared/world-engine/interaction/behavior/facts.js";
+import {
+  knowsFact,
+  regardFacts,
+  regardSentimentOf,
+  STATE_AXES,
+  tellFact,
+  type RegardFact,
+  type RegardSentiment,
+} from "@shared/world-engine/interaction/behavior/facts.js";
 import {
   memberOf,
   recordUtterance,
@@ -83,6 +93,48 @@ const WANT_THING_VERBS = new Set(["eat", "drink", "play", "get", "have", "wear"]
 /** Verbs a "what + {creature} + {verb}" question must NOT read as an activity
  *  ask: they query possession/desire ("what do you want/have?"), not doing. */
 const ACTIVITY_EXCLUDED_VERBS = new Set(["want", "need", "have", "like", "feel"]);
+
+/**
+ * ⚖️ THE THREE BOARD WORDS THAT NAME A REGARD (interpersonal-politics.md §4b),
+ * mapped to the sentiment each one asserts.
+ *
+ * They arrive through the parser's ATTRIBUTE channel (that is what gives them a
+ * subject slot — "you nice", "mara nice", "who leader"), so this table is what
+ * tells the mapper that an attribute in a person-shaped sentence is a REGARD and
+ * not a condition. `fear` is deliberately absent: it has no board word of its
+ * own and is only ever WRITTEN by a `yield` (S-4) — it can be heard and
+ * repeated ("i_me + scared + pip"), which is the `scared` feeling, but a child
+ * does not assert somebody else's fear.
+ *
+ * 🚨 ONE KEY PER SENTIMENT (the NO SYNONYMS law): no `boss`, no `kind`, no
+ * `nasty`. A second spelling is a second button meaning the first one.
+ */
+const REGARD_SENTIMENT: Record<string, RegardSentiment> = {
+  nice: "like",
+  mean: "dislike",
+  leader: "respect",
+};
+const REGARD_ATTRS: ReadonlySet<string> = new Set(Object.keys(REGARD_SENTIMENT));
+
+/**
+ * ⚖️ WHAT A REGARD WORD ASSERTS WHEN IT CARRIES A `.not` (A2).
+ *
+ * 🚨 A NEGATED ATTRIBUTE NEVER ASSERTS THE POSITIVE. "Mara isn't nice" is not a
+ * thing you may record as "Mara is nice" with a bit dropped, and it is not a
+ * `refuse` either — it is a REGARD, said in the negative.
+ *
+ * `nice` and `mean` are the two POLES OF ONE AXIS (like/dislike) and both have a
+ * board word, so denying one asserts the other: a child with only the `nice`
+ * button can still say what they think. `leader` is a ROLE, not a pole —
+ * `respect` has no opposite word and "not the leader" appoints nobody — so
+ * denying it asserts NO regard at all, and null is the honest answer the caller
+ * turns into an acknowledgment rather than a fact.
+ */
+function negatedRegard(attr: string): RegardSentiment | null {
+  if (attr === "nice") return "dislike";
+  if (attr === "mean") return "like";
+  return null; // leader.not — a role denied is not a regard
+}
 
 /**
  * Map a parsed SENTENCE (from `p.speakerId`, aimed at `p.addresseeId`) to a DialogueAct, or
@@ -237,7 +289,24 @@ export function intentToAct(
   // opposite — "i_me + give.not + apple" parses as an offer frame, and handing
   // the apple over is the one answer the speaker did not give. Every negated
   // shape lands on the words for declining, before any evaluator sees it.
-  if (frame.negated) {
+  //
+  // ⚖️ …BUT A NEGATED PREDICATE IS NOT AUTOMATICALLY A REFUSAL (A2). A verbless
+  // frame's `.not` now reaches here at all (the parser used to discard it), and
+  // two shapes mean something more specific than "no":
+  //   • a REGARD word — "mara + nice.not" is what the speaker thinks of Mara,
+  //     not a refusal to do anything, and it flips the pole (`negatedRegard`);
+  //   • "who + {regard}.not" — still a QUESTION, answered by the flipped query.
+  // Everything else negated keeps the shipped refusal, which is exactly right
+  // for the shape a child actually declines with: "i_me + hungry.not" answering
+  // an offer or an invitation. (⚠️ RESIDUAL: this mapper is history-blind by
+  // design — see `reversedARefusal` — so a STANDALONE "I'm not hungry" reads as
+  // a decline too. Separating the two needs the pending-ask the pure layer
+  // deliberately cannot see; it never asserts the positive either way.)
+  const negAttr = frame.verb ? undefined : frame.attrNot?.[0];
+  const negAttrRouted =
+    negAttr !== undefined &&
+    (REGARD_ATTRS.has(negAttr) || (frame.kind === "ask" && frame.question === "who"));
+  if (frame.negated && !negAttrRouted) {
     // "I don't have one" is a distinct answer from "I won't": what is being
     // denied is possession, not willingness.
     if (frame.verb && HAVE_VERBS.has(canonicalVerb(frame.verb))) {
@@ -320,6 +389,46 @@ export function intentToAct(
         return refCreature(s);
       };
       const attr = frame.modifiers[0];
+      // ⚖️ THE POLITICS WORDS ARE ABOUT A PERSON, NOT A CONDITION (§4b/S-6).
+      // "mara + hungry" is a condition somebody is IN; "mara + nice" is what
+      // the SPEAKER makes of her, and the difference is the whole regard
+      // channel. Read BEFORE the condition arm, or the three words would land
+      // in `cond:` as unspeakable states.
+      if (attr && !frame.verb && REGARD_ATTRS.has(attr)) {
+        // ⚖️ A2 — THE NEGATED POLE. "mara + nice.not" says she is disliked;
+        // "you + leader.not" appoints nobody and asserts nothing.
+        const attrNegated = frame.attrNot?.includes(attr) ?? false;
+        const sentiment = attrNegated ? negatedRegard(attr) : REGARD_SENTIMENT[attr]!;
+        // A ROLE DENIED IS NOT A REGARD, and it is not nothing either: the
+        // sentence is well formed, so it gets an acknowledgment (the bare
+        // `tell` — "a disclosure with no shareable payload, still a turn") and
+        // never the `dont-understand` floor. No fact is written and — the point
+        // of the arm — no `yield`: "you are not the leader" must never hand
+        // over the authority its positive twin hands over.
+        if (sentiment === null) return { kind: "tell", glyph };
+        const about = explicitCreature();
+        // Said TO the person: an evaluation to their face is an ACT. A bare
+        // "nice" with nobody named means the person being talked to — which is
+        // what a child pressing one glyph means — and with nobody addressed it
+        // means nothing at all.
+        const toAddressee = about === undefined ? listenerId : about === listenerId ? listenerId : undefined;
+        if (toAddressee !== undefined) {
+          if (attr === "leader") return { kind: "yield", glyph };
+          return { kind: sentiment === "like" ? "praise" : "insult", glyph };
+        }
+        // Said ABOUT a third party: the regard TELL, which `overhear` spreads.
+        if (about !== undefined && about !== speakerId) {
+          return {
+            kind: "tell-fact",
+            fact: { kind: "regard", observer: speakerId, subject: about, sentiment },
+            glyph,
+          };
+        }
+        // "i_me + leader" / "i_me + nice" — a claim about oneself. No act: the
+        // regard channel is what OTHERS think of you (§2e), and self-appointment
+        // is exactly the bypass ruling 🚨 forbids.
+        return { kind: "dont-understand", glyph };
+      }
       if (attr && !frame.verb) {
         const cid = explicitCreature();
         if (cid) {
@@ -429,9 +538,28 @@ export function intentToAct(
           if (itemId || target) return { kind: "where-is", itemId, ...(target ? { target } : {}), glyph };
           return { kind: "dont-understand", glyph };
         }
-        // "who + hungry" — search knowledge for a creature in that condition.
+        // ⚖️ "WHO IS THE LEADER?" (politics §4c — standing must be ASKABLE).
+        // The regard query, not a condition search: being respected is not a
+        // state anybody is IN, it is what other people hold about you, and the
+        // two live in different arms of the fact store. The same shape answers
+        // "who is nice?" and "who is mean?" for free.
         const attr = frame.modifiers[0];
+        // ⚖️ A2 — "who + nice.not" asks the SAME question "who + mean" asks:
+        // the pole flips, the query is the ordinary regard query.
+        const attrNegated = !!attr && (frame.attrNot?.includes(attr) ?? false);
+        if (!frame.verb && attr && REGARD_ATTRS.has(attr)) {
+          const sentiment = attrNegated ? negatedRegard(attr) : REGARD_SENTIMENT[attr]!;
+          // "who + leader.not" — a role has no opposite pole, so there is no
+          // query to run and no honest way to answer it from the fact store.
+          if (sentiment === null) return { kind: "dont-understand", glyph };
+          return { kind: "ask-fact", query: { kind: "regard", sentiment }, glyph };
+        }
+        // "who + hungry" — search knowledge for a creature in that condition.
+        // A NEGATED one has no query: `conditionSearch` finds creatures IN a
+        // condition and running it for "who is NOT hungry" would answer the
+        // opposite question. The honest floor, never a wrong answer.
         if (!frame.verb && attr) {
+          if (attrNegated) return { kind: "dont-understand", glyph };
           return { kind: "ask-fact", query: { kind: "conditionSearch", condition: attr }, glyph };
         }
         return { kind: "dont-understand", glyph };
@@ -501,6 +629,14 @@ export function intentToAct(
       return { kind: "refuse", glyph };
     case "farewell":
       return { kind: "bye", glyph };
+    case "thank":
+      // 🙏 — THE ONE POLITENESS GLYPH ON THE BOARD, and until now the only
+      // social act with no arm here: `thank` fell to the `default` below, came
+      // back null, and the child got the not-understood floor for pressing the
+      // word this engine itself says a dozen times a session. (Worse before the
+      // LEXICON row that routes it here — `thank_you` parsed as a REQUEST for a
+      // "thank_you" THING.) Answered by `selectAct`; booked by the host.
+      return { kind: "thank", glyph };
     case "unclear":
       return { kind: "confused", glyph };
     default:
@@ -552,6 +688,32 @@ export interface SpeakerMood {
 
 const EPS_WEIGHT = 0.05; // every act keeps a floor weight → "when all else fails, random"
 
+/**
+ * ⚖️ W2-2 — HOW MANY OPINIONS ONE TURN MAY OFFER (three).
+ *
+ * The own-book gossip candidates are drawn from EVERY named body in the world,
+ * and a town is not a dollhouse: without a cap a well-connected settler's
+ * roulette would be nine-tenths gossip and one-tenth everything else it might
+ * usefully say. Three is the number that keeps the wheel recognisably the same
+ * wheel while still letting the strongest feeling reach the top of it — the
+ * board's own `maxActs` is 8, so a third of a turn's slots is the ceiling.
+ */
+const MAX_OWN_BOOK_TELLS = 3;
+
+/**
+ * HOW STRONGLY a relation holds the sentiment it was named by — the axis
+ * `regardSentimentOf` actually read, so the ranking and the naming can never
+ * disagree. Used ONLY to order the own-book candidates before the cap; never a
+ * weight, and never spoken (the fact carries one of four words, not a number —
+ * that is the whole point of the regard channel).
+ */
+function regardStrength(rel: Relation, sentiment: RegardSentiment): number {
+  return sentiment === "fear" ? rel.fear
+    : sentiment === "respect" ? rel.authority
+    : sentiment === "like" ? rel.affinity
+    : -rel.affinity;
+}
+
 /** ⑫⑧ — what `bye` is worth to a speaker whose body is already spoken for.
  *  DOUBLE the standing 0.3 and no more: the point is a visible lean toward
  *  closing, not a busy creature that can say nothing else. Against the acts a
@@ -588,6 +750,33 @@ const NON_SPEAKER_ACTS = new Set<DialogueAct["kind"]>([
   // `why-doing` rides with it: an NPC has no board walk to follow up on.
   "what-doing",
   "why-doing",
+  // ⚖️ W2-3 — INSULT AND YIELD STAY; PRAISE LEAVES.
+  //
+  // All three used to be barred together (politics S-6), on the reasoning that
+  // the host side of them did not exist yet. It does now (`applySpokenSocialAct`
+  // books the reply's events), and the three are not one thing:
+  //
+  //   • `praise` is GONE FROM THIS SET (see `chooseSpeakerAct`, which offers it
+  //     toward an addressee the speaker actually likes or respects). "Anything a
+  //     player can say, a creature can say" — the child already builds
+  //     "you + nice" on the sentence builder, and a world where only the child
+  //     is ever kind is the wrong lesson.
+  //   • `insult` STAYS, and this is a kid-safety line rather than an engineering
+  //     one: no unprovoked meanness aimed at a child's companions on a dice
+  //     roll. The player's own insult is still gated by `governingLaw("mean")`.
+  //   • `yield` STAYS: it hands over the right to direct somebody, and an NPC
+  //     appointing a leader on the roulette is authority arriving from nowhere.
+  //     A creature still yields where a yield is EARNED (`willingnessToGive`'s
+  //     yield rung, which now says "you + leader" out loud).
+  //
+  // 🙏 `thank` joins them, for a third reason again: the engine already says
+  // `thank_you` at every moment that earns one (a tell answered, an offer
+  // accepted), so an NPC drawing it from the roulette would be thanking for
+  // nothing. It still ANSWERS one — which is the asymmetry this whole set is
+  // for. Belt and braces: `projectDialogue` emits none of these three either.
+  "insult",
+  "yield",
+  "thank",
 ]);
 
 /**
@@ -610,6 +799,13 @@ function speakerActWeight(
   personality: Personality,
   relation: Relation,
   busy = false,
+  /** ⚖️ W2-2 — the speaker's OWN BOOK, for the regard arm only. A tell built
+   *  from what this creature THINKS (rather than from a `regard:` fact it was
+   *  told) has nothing in the fact store to find, and without this the arm
+   *  dropped every one of them to the epsilon floor — the motive is real, so the
+   *  weight must be. Absent ⇒ own-book tells score EPS exactly as before, so
+   *  every existing caller keeps its weight vector byte for byte. */
+  relationTo?: (id: CreatureId) => Relation,
 ): number {
   const affinityGate = (relation.affinity + 1) / 2; // 0..1
   switch (act.kind) {
@@ -644,6 +840,47 @@ function speakerActWeight(
     // effectively never spoken NPC↔NPC.
     case "where-going":
       return EPS_WEIGHT + 0.8 * personality.openness;
+    // ⚖️ TELLING THE ROOM WHAT YOU MAKE OF SOMEBODY (politics §4b, M3). Worth a
+    // turn only when there is a belief to tell — which `projectDialogue` has
+    // already guaranteed, since it emits a regard `tell-fact` ONLY for a fact
+    // this speaker holds about a third party present. The guard is repeated
+    // here for the same reason the act list has one: this weight is the second
+    // half of the bench promise, and a fact-less speaker must reach the epsilon
+    // floor rather than a made-up motive.
+    //
+    // OPENNESS drives it, the same dial that drives asking: passing on what you
+    // think of people is the sociable half of curiosity. Weighted just under
+    // small talk — "how are you" is what you say first; what you think of the
+    // person across the room is what you say once the room is warm.
+    case "tell-fact": {
+      if (act.fact?.kind !== "regard") return EPS_WEIGHT;
+      const held = regardFacts(world, speaker.id, {
+        observer: act.fact.observer,
+        subject: act.fact.subject,
+      });
+      // ⚖️ W2-2 — …OR A BELIEF THIS SPEAKER SIMPLY HOLDS. A creature's own
+      // attitude does NOT live in its fact store (that store is what it was
+      // TOLD); it lives in the host's directed book, and `chooseSpeakerAct` now
+      // mints a tell straight from it. Same motive, same weight — the arm must
+      // recognize both or the whole own-book half sits at the epsilon floor and
+      // is never spoken.
+      const ownBook =
+        act.fact.observer === speaker.id &&
+        !!relationTo &&
+        regardSentimentOf(relationTo(act.fact.subject)) === act.fact.sentiment;
+      if (!held.length && !ownBook) return EPS_WEIGHT;
+      return EPS_WEIGHT + 1.0 * personality.openness * affinityGate;
+    }
+    // ⚖️ W2-3 — SAYING SOMETHING KIND TO SOMEBODY YOU LIKE. Warmth is the
+    // disposition to GIVE, and a compliment is the cheapest gift there is; the
+    // affinity gate is what keeps it from being said to everyone alike.
+    // Weighted just above small talk and below an outright offer: between "how
+    // are you" and "you're kind", the second is the better thing to say to a
+    // friend — but a creature with a cookie to hand over still hands it over.
+    // `chooseSpeakerAct` has already checked the BELIEF (like or respect at
+    // `REGARD_TELL_AT`); this is only how much a turn it is worth.
+    case "praise":
+      return EPS_WEIGHT + 1.2 * personality.warmth * affinityGate;
     case "bye":
       // ⑫⑧ — A BUSY SPEAKER IS LIKELIER TO CLOSE, and that is the coin half of
       // the same fact the sweep counts on a clock: a member whose body keeps
@@ -688,6 +925,11 @@ export function chooseSpeakerAct(
 ): DialogueAct | null {
   const speaker = world.creatures[speakerId];
   if (!speaker) return null;
+  // The SPEAKER's deixis (this is the one place in the file that speaks in its
+  // own voice rather than mapping somebody else's): the listener is "you",
+  // everybody else is named, and an unnamed body is "there" — which is what the
+  // no-name guard below tests, because "there + nice" is not a sentence.
+  const whoSym = makeWhoSym({ speakerId, addresseeId: listenerId }, opts.symbolOfCreature);
   // The menu expansion is pure NAVIGATION — it opens a sub-menu to read what is
   // under it, so it varies `ui` and never touches the shared record.
   const project = (ui?: DeviceBoardState) =>
@@ -721,12 +963,85 @@ export function chooseSpeakerAct(
       acts.push(a);
     }
   }
+  // ═══ WHAT THIS SPEAKER BELIEVES, added to what the BOARD offers ═══════════
+  //
+  // ⚖️ W2-2/W2-3 — THE SPEAKER'S OWN BOOK IS A SOURCE OF THINGS TO SAY, and it
+  // is a source only reachable here. `projectDialogue` is role-swapped and
+  // shared with the PLAYER's board, so it can only offer what the fact store
+  // holds; a creature's own attitude toward the people around it lives in the
+  // host's directed relation book, which arrives as `mood.relationTo` and
+  // arrives ONLY on an NPC's turn. That asymmetry is the point: the child's
+  // board must not sprout unprompted opinions about the household, and an NPC
+  // with nothing to say but "how are you?" is the reported bug.
+  //
+  // Both additions are BELIEF-GATED at the shipped `REGARD_TELL_AT` (0.3, via
+  // `regardSentimentOf`) — nobody invents a feeling to have a turn — and no fact
+  // is written HERE: a tell becomes knowledge only if it is actually spoken and
+  // answered, through the existing `tell-fact` door.
+  //
+  // 🚨 DETERMINISM. Both loops walk a SORTED roster and take no draw of their
+  // own; the roulette below still takes exactly one `rng()` call whatever the
+  // candidate set turned out to be. A speaker with no book (`relationTo`
+  // absent), or a neutral one, produces the identical list it produced before.
+  const relTo = mood.relationTo;
+  if (relTo) {
+    // PRAISE — said to the person in front of you, when you actually think it.
+    // `respect` counts as well as `like`: "you're the leader" is a compliment a
+    // five-word speaker means, and the sentence spoken is the same "you + nice"
+    // the child builds (`regardGlyph` with the addressee as subject).
+    const toward = regardSentimentOf(relTo(listenerId));
+    if (toward === "like" || toward === "respect") {
+      acts.push({
+        kind: "praise",
+        glyph: regardGlyph(
+          { kind: "regard", observer: speakerId, subject: listenerId, sentiment: "like" },
+          whoSym,
+          level,
+        ),
+      });
+    }
+    // GOSSIP FROM THE BOOK — what this speaker makes of somebody who is NOT in
+    // the conversation (W2-2 dropped the presence guard; a dyad is where almost
+    // all of these get said). Capped at the THREE STRONGEST so a speaker in a
+    // town of forty does not drown its own roulette in opinions, and sorted so
+    // the cap is a function of the world rather than of iteration order.
+    //
+    // 🚨 DEDUPED BY THE SENTENCE, NOT BY THE FACT. `regardLine` deliberately
+    // drops the OBSERVER ("Mara is nice", never "Pip thinks Mara is nice"), so
+    // two DIFFERENT facts — what I think of Mara, and what Bo told me he thinks
+    // of Mara — render as the SAME line. Keying the guard on `observer|subject`
+    // let both onto the wheel: one sentence, two buttons, double weight. The
+    // dollhouse produced exactly that within four minutes (a resident's own
+    // "spark is the leader" beside the one it had just been told), which is why
+    // the key is the glyph. Deduping the OTHER way round would be wrong — the
+    // board's held-fact tell is the one that spreads attributed knowledge.
+    const alreadySaid = new Set(acts.filter((a) => a.kind === "tell-fact").map((a) => a.glyph));
+    const ownBook: { fact: RegardFact; glyph: string; strength: number }[] = [];
+    for (const subject of Object.keys(world.creatures).sort()) {
+      if (subject === speakerId || subject === listenerId) continue;
+      if (whoSym(subject) === "there") continue; // no name → no sentence
+      const rel = relTo(subject);
+      const sentiment = regardSentimentOf(rel);
+      if (!sentiment) continue;
+      // Old news is not a turn — the same guard the board's own regard arm keeps.
+      if (knowsFact(world, listenerId, { kind: "regard", observer: speakerId, subject })) continue;
+      const fact: RegardFact = { kind: "regard", observer: speakerId, subject, sentiment };
+      const glyph = regardGlyph(fact, whoSym, level);
+      if (alreadySaid.has(glyph)) continue;
+      alreadySaid.add(glyph);
+      ownBook.push({ fact, glyph, strength: regardStrength(rel, sentiment) });
+    }
+    ownBook.sort((a, b) => b.strength - a.strength || (a.fact.subject < b.fact.subject ? -1 : 1));
+    for (const { fact, glyph } of ownBook.slice(0, MAX_OWN_BOOK_TELLS)) {
+      acts.push({ kind: "tell-fact", fact, glyph });
+    }
+  }
   if (acts.length === 0) return null;
   const personality = mood.personality ?? NEUTRAL_PERSONALITY;
   const relation = mood.relation ?? DEFAULT_RELATION;
   const rng = mood.rng;
   const weights = acts.map((a) =>
-    Math.max(0, speakerActWeight(a, world, speaker, personality, relation, mood.busy ?? false)),
+    Math.max(0, speakerActWeight(a, world, speaker, personality, relation, mood.busy ?? false, relTo)),
   );
   const total = weights.reduce((s, w) => s + w, 0);
   if (total <= 0) return acts[Math.floor(rng() * acts.length)] ?? acts[0]!;
@@ -979,11 +1294,21 @@ export function speakInConversation(
   ctx: Omit<DialogueCtx, "convo"> = {},
 ): SpokenTurn {
   // ── 1. IT WAS SAID ────────────────────────────────────────────────────────
+  //
+  // ⚖️ …AND IF IT IS A CLIMB-DOWN, THE RECORD SAYS SO (politics §5, S-6). A
+  // `yield` on the player's side is not a word — it is an AGREEMENT that
+  // reverses a REFUSAL, and only the conversation's own history can see the
+  // pair. Tagged before recording, so `SpokenTurn.utterance.act.yielded` is
+  // what the host reads and every later turn sees the same fact.
+  const spoken: DialogueAct =
+    act.kind === "agree" && addresseeId !== undefined && reversedARefusal(c, speakerId, addresseeId)
+      ? { ...act, yielded: true }
+      : act;
   const utterance = recordUtterance(c, {
     tick: deps.tick,
     speakerId,
     ...(addresseeId ? { addresseeIds: [addresseeId] } : {}),
-    act,
+    act: spoken,
   });
 
   // ── 1b. …AND IT NAMED NOBODY IT NEEDED TO NAME (⑫⑤) ──────────────────────
@@ -1000,7 +1325,7 @@ export function speakInConversation(
   //
   // `overhear` is skipped with it, which costs nothing: it only spreads `tell` /
   // `tell-fact`, and neither is in `ADDRESSEE_REQUIRED_ACTS`.
-  if (underSpecifiedTurn(c, act, addresseeId)) {
+  if (underSpecifiedTurn(c, spoken, addresseeId)) {
     return { utterance, underSpecified: true, silent: [] };
   }
 
@@ -1035,7 +1360,7 @@ export function speakInConversation(
       tick: deps.tick,
       personality: deps.personalityOf?.(m.id) ?? NEUTRAL_PERSONALITY,
       relation,
-      relevance: defaultRelevance(world, m.id, act, relevanceOpts),
+      relevance: defaultRelevance(world, m.id, spoken, relevanceOpts),
     });
     candidates.push({
       id: m.id,
@@ -1058,7 +1383,7 @@ export function speakInConversation(
       world,
       responderId,
       speakerId,
-      act,
+      spoken,
       memberOf(c, responderId)?.level ?? FALLBACK_LEVEL,
       opts,
       // The stream continues where the arbitration left it unless the caller
@@ -1086,9 +1411,53 @@ export function speakInConversation(
   // AFTER the reply, deliberately: the responder learns inside `selectAct` (and
   // emits the `knowledge-gained` event that proves it), and running the spread
   // first would silently swallow that event by making the fact old news.
-  overhear(world, c, speakerId, act);
+  overhear(world, c, speakerId, spoken);
 
   return { utterance, ...(response ? { response } : {}), silent: choice.silent };
+}
+
+/**
+ * ★ ⚖️ A YIELD IS A REFUSAL REVERSED (interpersonal-politics.md §5). ★
+ *
+ * *"The player yields by AGREEING after REFUSING… a `refuse → agree` pair in the
+ * conversation on the same subject."* There is no board word for it and there
+ * must not be one — a child says "yes" — so the surrender has to be READ off the
+ * exchange, and this is the only place that can see the exchange: the act
+ * arrives naked, the host has no history, and the pure mapper (`intentToAct`)
+ * gets one sentence at a time.
+ *
+ * THE PAIR, precisely: `other` ASKED for something (a request, an invitation, a
+ * trade), THIS speaker said no to them AFTER that ask, and now says yes. The
+ * "after the ask" ordering is what makes it the SAME request rather than two
+ * unrelated moves — a refusal from before anybody asked anything is about
+ * something else, and treating it as a climb-down would hand out authority for
+ * a conversation that never had a contest in it.
+ *
+ * A plain "yes" — the first answer, or an agreement to somebody who never asked
+ * — is not a surrender, and comes back false.
+ */
+function reversedARefusal(
+  c: ConversationState,
+  speakerId: CreatureId,
+  other: CreatureId,
+): boolean {
+  const asked = (u: Utterance) =>
+    u.speakerId === other &&
+    (u.act.kind === "request" || u.act.kind === "invite" || u.act.kind === "trade" || u.act.kind === "trade-pick");
+  let askedAt = -1;
+  for (let i = c.history.length - 1; i >= 0; i--) {
+    if (asked(c.history[i]!)) {
+      askedAt = i;
+      break;
+    }
+  }
+  if (askedAt < 0) return false;
+  for (let i = c.history.length - 1; i > askedAt; i--) {
+    const u = c.history[i]!;
+    if (u.speakerId !== speakerId) continue;
+    if (u.act.kind === "refuse") return true;
+  }
+  return false;
 }
 
 /**

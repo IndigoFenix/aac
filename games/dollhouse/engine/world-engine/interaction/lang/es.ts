@@ -307,7 +307,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts — each the alias of a word that already had a lexeme
   // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
   // are listed on the social tab, so both need words.
-  thanks: { w: "gracias" },
   sorry: { w: "perdón" },
   mine: { w: "mío" },
   again: { w: "otra vez" },
@@ -349,6 +348,16 @@ const CENTRAL: Record<string, Lexeme> = {
   surprised: { w: "sorprendido" },
   proud: { w: "orgulloso" },
   calm: { w: "tranquilo" },
+
+  // ── THE POLITICS WORDS (interpersonal-politics.md §4b, 2026-09-07) ───────
+  // ⚠️ `mean` is "antipático", NOT "malo" — "malo" is `bad`, and one Spanish
+  // word behind two buttons is the twin-button bug NO SYNONYMS forbids.
+  // `amable` and `líder` are common-gender, so their `f` is authored rather
+  // than left to `adjForm`'s -o→-a rule (which would leave them alone anyway,
+  // but the intent should be on the row, not in a rule's silence).
+  nice: { w: "amable", f: "amable", mpl: "amables", fpl: "amables" },
+  mean: { w: "antipático" },
+  leader: { w: "líder", g: "m", f: "líder", mpl: "líderes", fpl: "líderes" },
 
   // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
   // Category NAMES, not words a sentence composes. ⚠️ `colors` is "colores" and
@@ -406,7 +415,9 @@ export const es = makeRomance({
   likePron: (h) =>
     h === "i_me" ? "Te gusto." : h === "you" ? "Me gustas." : h === "we" ? "Te gustamos." : h === "he" || h === "she" ? "Me gusta." : "Me gustan.",
   estar: { v1: "estoy", v2: "estás", v3: "está", v3p: "están", v1p: "estamos" },
-  ser: { v3: "es", v3p: "son" },
+  ser: { v3: "es", v3p: "son", v1: "soy", v2: "eres" },
+  // "asustado DE Pip" / "…del oso" — the same de-contraction `of` makes.
+  feelingToward: (np) => (np.startsWith("el ") ? `del ${np.slice(3)}` : `de ${np}`),
   to: (np) => (np.startsWith("el ") ? `al ${np.slice(3)}` : `a ${np}`),
   inside: (np) => `en ${np}`,
   forTrade: (np) => `por ${np}`,

@@ -32,6 +32,7 @@ import {
 import {
   naturalSourceOf,
   nicheSuitabilityOf,
+  standAgeWeights,
   usefulPlants,
   wildFoodPlants,
   type ClimateSample,
@@ -177,7 +178,15 @@ describe("buildWilderness", () => {
     for (const f of w.features.filter((x) => x.species === "apple_tree")) {
       // A living orchard source: felling wood in the stock, ripe fruit at
       // its rolled bearing capacity, ready to regrow after a pick.
-      expect(f.stock.wood).toBeGreaterThanOrEqual(1);
+      // ⚖️ MOVED 2026-09-06 (new-growth authority, products.ts
+      // `standGrowthClass`): a stand is no longer ALL-MATURE at scatter, and
+      // at this seed one of the two apple trees draws the SAPLING rung —
+      // `yieldMul` 0, so it honestly holds no wood ("a felled sapling has no
+      // wood to give"). The pin now says what it always meant — a MATURE
+      // orchard source carries timber — and asserts the juvenile's own law
+      // beside it, rather than asserting that no juvenile can exist.
+      if (f.sizeClass === undefined) expect(f.stock.wood).toBeGreaterThanOrEqual(1);
+      else expect(f.stock.wood).toBe(0); // apple_tree's only juvenile rung is sapling
       expect(f.harvestCap!.apple).toBeGreaterThanOrEqual(1);
       expect(f.harvestCap!.apple).toBeLessThanOrEqual(3);
       expect(f.stock.apple).toBe(f.harvestCap!.apple);
@@ -236,12 +245,35 @@ describe("buildWilderness", () => {
       expect(dialed).toEqual(bare);
     });
 
-    it("a freshly-scattered tree stands MATURE — sizeClass/growAt stay unset", () => {
-      const w = buildWilderness({ seed: 3, trees: 3, rocks: 0, creatures: 0 });
+    // ⚖️ MOVED 2026-09-06 — the NEW-GROWTH AUTHORITY (products.ts
+    // `standGrowthClass`). This used to read "a freshly-scattered tree stands
+    // MATURE — sizeClass/growAt stay unset", which was the whole defect: a
+    // frontier that had never been cut was a wall of identical adult oaks, and
+    // nothing young existed anywhere until something was felled. A stand now
+    // has an AGE STRUCTURE. The two halves of the old claim came apart, and
+    // both halves are pinned here:
+    //   • `growAt` STILL stays unset on every scattered feature — a scattered
+    //     juvenile is understory, not a tree recovering from a felling, and the
+    //     sim has no mortality to hold a distribution that climbs;
+    //   • `sizeClass` is DRAWN, undefined (= mature) for the large majority.
+    it("a scattered stand has an AGE STRUCTURE — and no growth clock", () => {
+      const w = buildWilderness({ seed: 3, trees: 300, rocks: 0, creatures: 0 });
+      const seen = new Map<number | undefined, number>();
       for (const f of w.features) {
-        expect(f.sizeClass).toBeUndefined();
-        expect(f.growAt).toBeUndefined();
+        expect(f.growAt).toBeUndefined(); // 🚫 no clock at scatter, ever
+        if (f.sizeClass !== undefined) {
+          expect(Number.isInteger(f.sizeClass)).toBe(true);
+          expect(f.sizeClass).toBeGreaterThanOrEqual(0);
+          expect(f.sizeClass).toBeLessThan(2); // oak: only sapling/young are set
+        }
+        seen.set(f.sizeClass, (seen.get(f.sizeClass) ?? 0) + 1);
       }
+      // The steady state, sampled: ~1/12 sapling, ~1/12 young, ~10/12 mature.
+      const w0 = standAgeWeights("oak");
+      expect(w0.map((n) => +n.toFixed(6))).toEqual([1 / 12, 1 / 12, 10 / 12].map((n) => +n.toFixed(6)));
+      expect((seen.get(undefined) ?? 0) / 300).toBeGreaterThan(0.75);
+      expect(seen.get(0) ?? 0).toBeGreaterThan(0);
+      expect(seen.get(1) ?? 0).toBeGreaterThan(0);
     });
   });
 });

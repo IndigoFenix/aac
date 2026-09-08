@@ -44,7 +44,10 @@ import {
   type QuestViewSeam,
 } from "../interaction/quest/quest-host.js";
 import type { LedgerWarpResult } from "../interaction/quest/clock-warp.js";
-import { homesteadWildMix, type WildMixEntry } from "../interaction/quest/wilderness.js";
+import {
+  homesteadWildMix, wildMixForBiome, type WildMixEntry,
+} from "../interaction/quest/wilderness.js";
+import type { ClimateSample } from "../products.js";
 import { buildTownScope } from "../interaction/town/town-play-game.js";
 import type { SerializedTownDeltas } from "../kernel/town/construction.js";
 import { FOUNDING_AGE_DAYS } from "../kernel/town/plan.js";
@@ -56,6 +59,60 @@ import {
   type WideTickConfig,
 } from "../world-host.js";
 import { createTextWorldView, type TextFocusFrame, type TextWorldView } from "./text-world-view.js";
+
+// ── 🌍 THE PLANET ARM, HEADLESS (forage-reach round, 2026-09-08) ────────────
+//
+// 🚨 THE HARNESS USED TO MEASURE A DIFFERENT WORLD FROM THE ONE THE PLAYER
+// PLAYS, and the whole PART 4 §6 forecast rested on the gap. A browser boot of
+// the founding premise mounts a town on a REAL CELL and hands `host.start` a
+// mix built from that cell's ecology (`games/world-lab/src/quest-boot.ts`:
+// `wildMixForBiome(biome, seed, climate, eco)` — PER-HECTARE densities). This
+// harness passed nothing, so `bootTextQuest` fell to the charter arm
+// (`homesteadWildMix`, absolute COUNTS) — and `perHa` is the ONE predicate the
+// founding mount reads to decide whether the near-stand relevance disc BINDS
+// and whether the neighbouring tiles MINT (quest-host: `mix.some(e => e.perHa
+// !== undefined)`). A counts world therefore has no disc and no tiles: it is a
+// world where the reach defect this round fixes cannot even be observed, which
+// is exactly why PART 4 §3 "measured" 2.05 rations/day and ruled reach out
+// while the GL player starved at 0.098.
+//
+// The seat is `TownPlayConfig.terrain: "planet"` — a key the town schema
+// ALREADY carries and the browser founding ALREADY sets (`city-towns.ts`
+// `terrain: "planet"`). A document that says it stands on planet ground gets
+// the planet scatter; every document that does not is byte-identical (the
+// dollhouse bench included, which is why `jx-doll-bench.txt` cannot move).
+
+/**
+ * THE FOUNDING CELL, headless — the ONE sample behind every planet-arm text
+ * measurement, and deliberately a LITERAL rather than a bake.
+ *
+ * A headless boot has no `CellGrid`, so `climateSampleAt` has nothing to read;
+ * these are the measured values of the cell the founding premise seeds on
+ * (a wet temperate forest), in the substrate's own units and the same shape
+ * `climateSampleAt` builds. Cross-checked, not invented: the pair reproduces
+ * `near-stand.test.ts` ⑥'s 54 oaks on the 190 m rect and the forest-cell larder
+ * PART 4 §6 forecasts closed-form (bush×4 · apple×2 · carrot×1 · hazel×5).
+ */
+export const PLANET_CELL_CLIMATE: ClimateSample = {
+  rain: 1.0, tempC: 12, elevation: 5, fertility: 8, ore: 2,
+};
+
+/** …and its per-species abundance (`planet/ecology.ts ecoAbundanceAt`, 0..1).
+ *  `tree` 0.35 ⇒ 15.05 oak/ha — the same constant `near-stand.test.ts` pins the
+ *  measured founding cell at. */
+export const PLANET_CELL_ECO: Readonly<Record<string, number>> = {
+  tree: 0.35, grass: 0.02, horse: 0,
+};
+
+/** The founding premise seeds at a FOREST-biome cell (`main.ts
+ *  stepFoundingPremise`) — DEFAULT_BIOSPHERE order, 1 = forest. */
+export const PLANET_CELL_BIOME = 1;
+
+/** The scatter a headless boot on planet ground uses — the browser's own line
+ *  (`wildMixForBiome` with a climate AND an eco field, i.e. `perHa`). */
+export function planetCellWildMix(seed: number): WildMixEntry[] {
+  return wildMixForBiome(PLANET_CELL_BIOME, seed, PLANET_CELL_CLIMATE, PLANET_CELL_ECO);
+}
 
 /**
  * WHERE THE TEXT SESSION WATCHES FROM. A text camera is STATIC by design: it
@@ -357,7 +414,15 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
       ? {
           wilderness: {
             seed: play.config.seed,
-            mix: opts.wildMix ?? homesteadWildMix(play.plan.biome, play.config.seed),
+            // 🌍 THE PLANET ARM (see the header block at the top of this file):
+            // a document standing on planet ground scatters from a CELL, which
+            // is what makes the near-stand disc bind and the neighbouring tiles
+            // mint. Every other document keeps the charter arm, byte-identical.
+            mix:
+              opts.wildMix ??
+              (play.config.terrain === "planet"
+                ? planetCellWildMix(play.config.seed)
+                : homesteadWildMix(play.plan.biome, play.config.seed)),
           },
         }
       : {}),

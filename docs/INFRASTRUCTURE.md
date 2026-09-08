@@ -34,7 +34,7 @@ all three files.
 **Architecture:**
 ```
 Internet → CloudFront → S3 (landing, clinician SPA, /aac web build)
-              ↓ /api/* /auth/* /ws/* /health
+              ↓ /api/* /auth/* /ws/* /health /games/*
            api.aivota.ai → ALB → ECS Fargate → RDS PostgreSQL
            ↑                                 ↓
    packaged AAC clients (direct)        ElastiCache (hipaa profile)
@@ -48,6 +48,16 @@ Internet → CloudFront → S3 (landing, clinician SPA, /aac web build)
   clients bake in (their WebSockets never traverse the CDN)
 - Static frontends stay on S3 + CloudFront (`frontend_via_cloudfront = true`);
   set it to `false` to have Express serve them from the image instead
+- **The game bundles are NOT on S3.** `dist/public-games` is built on the CI
+  runner and `COPY`d into the image; only the container can serve `/games/*`.
+  So the app distribution needs an ordered behaviour pointing `/games/*` at the
+  API origin — without it the path falls through to S3, and the SPA
+  `custom_error_response` dresses the miss up as the landing page at HTTP 200,
+  so a game iframe silently shows the clinician SPA's 404 instead. That behaviour
+  forwards `Host` (unlike `/api/*`) because `buildGamesCsp()` builds the games
+  CSP from `req.get("host")`, and forwards cookies because the games gate is the
+  passport session. Browser clients only: the packaged shells address the ALB
+  directly and never traverse the CDN.
 - Secrets: the task loads the whole `app-secrets` JSON at boot
   (`server/config/aws-secrets.ts`) — add a key to the secret, redeploy, done.
   Values set in the task definition (`EMAIL_FROM`, `APP_URL`, `REALTIME_BUS`,

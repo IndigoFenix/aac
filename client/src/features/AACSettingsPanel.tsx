@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
 import { useAuth } from '@/hooks/useAuth';
+import { useChat } from '@/hooks/useChat';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { AACSettingsPackages } from '@/components/AACSettingsPackages';
 import { AACSettingsCaretakerPin } from '@/components/AACSettingsCaretakerPin';
@@ -28,9 +29,10 @@ import { normalizeVenueMenuSettings, type VenueMenuSettings } from '@shared/venu
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest, ServiceUnavailableError } from '@/lib/queryClient';
-import type { DefinedGesture, HomeAction, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType } from '@shared/schema';
+import type { DefinedGesture, HomeAction, PermittedWebsite, PermittedYoutubeItem, PermittedYoutubeItemType, Student } from '@shared/schema';
 import { resolvePermittedYoutubeItems } from '@shared/youtube-items';
 import { normalizeHomeActions } from '@shared/home-actions';
+import { appEnabledByDefault } from '@shared/app-defaults';
 import {
   DEFAULT_SESSION_RECORDING,
   IDLE_TAIL_SECONDS_MAX,
@@ -178,6 +180,10 @@ const SEIZURE_DETECTION_AVAILABLE = false;
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
+  // The AI writes AAC settings through the chat; this is the moment between
+  // the write landing and the refreshed student arriving.
+  const { aiRefreshing } = useChat();
+  const isAiRefreshing = aiRefreshing.has('aac-settings');
   // SLP MODE is the ONE setting on this panel that belongs to the logged-in
   // USER rather than the student, so it reads/writes the profile endpoint and
   // must never enter the per-student PATCH payload / AAC_SETTINGS_FIELDS.
@@ -549,10 +555,15 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     return () => window.removeEventListener('message', handler);
   }, [refetchStudent]);
 
-  // Load student data into form (AAC settings are nested under aacSettings)
-  useEffect(() => {
-    if (student) {
-      const aac = (student as any).aacSettings;
+  // Copy a student's AAC settings into the form state. The ONE place that
+  // does it: the load effect below, the Discard button and the "load the
+  // assistant's changes" button all call this, and a field that only three of
+  // the four used to set was a field that quietly survived a discard.
+  // (`Student` carries `aacSettings` as an untyped relation, hence the cast —
+  // the same one every read of it in this file uses.)
+  const seedFromStudent = useCallback((s: Student | null) => {
+    if (s) {
+      const aac = (s as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
       setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
@@ -610,7 +621,62 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAccessEnhancedFocus(acc.enhancedFocusIndicator ?? false);
       setHasChanges(false);
     }
-  }, [student]);
+  }, []);
+
+  // Load student data into the form (AAC settings are nested under aacSettings).
+  //
+  // This runs on any NEW `student` object, not only a new student id: the AI
+  // writes AAC settings through the chat, and useChat re-selects the student
+  // so a fresh object lands here. Two rules keep that from being destructive:
+  //
+  //  1. Same student, byte-identical settings → do nothing. The provider hands
+  //     out a new object on every refetch, and re-seeding on each one would
+  //     stamp on a half-typed field for no reason.
+  //  2. Same student, settings changed, and the user has UNSAVED EDITS → do
+  //     not seed. What they typed wins; the update is parked and offered as a
+  //     one-click "load the assistant's changes" next to the save bar. Saving
+  //     or discarding clears the dirty flag, and the next update seeds
+  //     normally.
+  //
+  // A different student always seeds (switching patients cannot keep the last
+  // one's half-typed voice id), and so does the refetch that follows our own
+  // save — `savedSeedOverrideRef` marks that one, because the panel is still
+  // dirty at the moment the saved student comes back.
+  const seededRef = useRef<{ id: string; settings: string } | null>(null);
+  const hasChangesRef = useRef(false);
+  const savedSeedOverrideRef = useRef(false);
+  const [pendingAiUpdate, setPendingAiUpdate] = useState(false);
+
+  useEffect(() => {
+    hasChangesRef.current = hasChanges;
+  }, [hasChanges]);
+
+  useEffect(() => {
+    if (!student) {
+      seededRef.current = null;
+      setPendingAiUpdate(false);
+      return;
+    }
+    const settings = JSON.stringify((student as any).aacSettings ?? null);
+    const seeded = seededRef.current;
+    const sameStudent = seeded?.id === student.id;
+    // Held, not consumed, until a seed actually happens: `refetchStudent`
+    // hands out the stale cached student first and the saved one second, and
+    // spending the override on that first (no-op) arrival would leave the
+    // real one looking like somebody else's edit.
+    const forced = savedSeedOverrideRef.current;
+
+    if (sameStudent && settings === seeded?.settings) return;
+    if (sameStudent && !forced && hasChangesRef.current) {
+      setPendingAiUpdate(true);
+      return;
+    }
+
+    savedSeedOverrideRef.current = false;
+    seededRef.current = { id: student.id, settings };
+    setPendingAiUpdate(false);
+    seedFromStudent(student);
+  }, [student, seedFromStudent]);
 
   // Track changes
   useEffect(() => {
@@ -789,6 +855,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       return response.json();
     },
     onSuccess: async () => {
+      // The panel is still dirty at this moment (the save is what clears it),
+      // so without this the load effect would read our own saved student as
+      // "an outside change arrived while you were editing" and park it.
+      savedSeedOverrideRef.current = true;
       await refetchStudent();
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
       toast({
@@ -796,6 +866,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         description: t('aacSettings.settingsUpdatedDesc'),
       });
       setHasChanges(false);
+      // The save round-trip is over; anything that arrives from here on is
+      // somebody else's write and must respect unsaved edits again.
+      savedSeedOverrideRef.current = false;
     },
     onError: (error: Error) => {
       // A validation rejection arrives as "400: {json}" whose body carries the
@@ -908,65 +981,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     });
   };
 
+  // Discard: put the student's stored settings back into the form. Also the
+  // "load the assistant's changes" action — the AI's write is already ON the
+  // student object by the time the banner appears, so re-seeding IS loading it.
   const handleReset = () => {
-    if (student) {
-      const aac = (student as any).aacSettings;
-      setAiName(aac?.aiName || '');
-      setChatAgentPrompt(toRuleArray(aac?.chatAgentPrompt));
-      setAutoAacPrompt(toRuleArray(aac?.autoAacPrompt));
-      setLiveAudioSpeaker(aac?.liveAudioSpeaker ?? true);
-      setFullAttentionMode(aac?.fullAttentionMode ?? false);
-      setAllowFacilitatorControl(aac?.allowFacilitatorControl ?? false);
-      setBoardManagerLiveModel(aac?.boardManagerLiveModel ?? false);
-      setBudgetTier(aac?.budgetTier || '');
-      setSeizureDetection(coerceSeizureConfig((aac as any)?.seizureDetection?.config));
-      setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
-      setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
-      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
-      setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
-      setGeminiAiVoice(aac?.geminiAiVoice || '');
-      setGeminiStudentVoice(aac?.geminiStudentVoice || '');
-      setAiVoicePitch(aac?.aiVoicePitch ?? 0);
-      setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
-      setUseLocalTts(aac?.useLocalTts ?? false);
-      setLocalNeuralVoice(aac?.localNeuralVoice ?? false);
-      setIconTextRatio(aac?.iconTextRatio ?? 3);
-      setLanguageLevel(aac?.languageLevel ?? DEFAULT_LANGUAGE_LEVEL_INT);
-      setThoroughStartup((aac?.startupMode ?? 0) === 1);
-      setSingleGlyphButtons(aac?.singleGlyphButtons ?? false);
-      setGlyphInputTranslation(aac?.glyphInputTranslation ?? false);
-      setPressResponseDelay(aac?.pressResponseDelay ?? 0);
-      setInterruptOnNewPress(aac?.interruptOnNewPress ?? false);
-      setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
-      setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
-      setEyegazeProvider(aac?.eyegazeProvider ?? 'mouse');
-      setSelectionMethod(aac?.selectionMethod ?? 'whole_button');
-      setRestSpace(aac?.restSpace ?? 'large');
-      setAutoAudioScan(aac?.autoAudioScan ?? false);
-      setAutoAudioScanDelay(aac?.autoAudioScanDelay ?? 15000);
-      setGazeSmoothing(parseSmoothingSettings(aac?.eyegazeSmoothing));
-      setAllowReadProgress(aac?.allowReadProgress ?? true);
-      setAllowReadReports(aac?.allowReadReports ?? true);
-      setAllowNotes(aac?.allowNotes ?? true);
-      setShareMonitorNotesWithInstitute(aac?.shareMonitorNotesWithInstitute ?? true);
-      setAutoAddContacts(aac?.autoAddContacts ?? true);
-      setPresenceLedger(aac?.presenceLedger ?? false);
-      setDebugMode(aac?.debugMode ?? false);
-      setDeviceLocationEnabled(aac?.deviceLocationEnabled ?? false);
-      setLaunchOnBoot(aac?.launchOnBoot ?? false);
-      setAppConfig(aac?.appConfig || {});
-      setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
-      setHomeActions(normalizeHomeActions(aac?.homeActions));
-      setVenueMenus(normalizeVenueMenuSettings(aac?.venueMenus));
-      setSessionRecording(normalizeSessionRecordingSettings(aac?.sessionRecording));
-      setDefinedGestures(Array.isArray(aac?.definedGestures) ? aac.definedGestures : []);
-      setPermittedYoutubeItems(resolvePermittedYoutubeItems(aac));
-      const accR = aac?.accessibility || {};
-      setAccessFontSize(accR.fontSize ?? 100);
-      setAccessHighContrast(accR.highContrast ?? false);
-      setAccessReduceAnimations(accR.reduceAnimations ?? false);
-      setAccessEnhancedFocus(accR.enhancedFocusIndicator ?? false);
-    }
+    if (!student) return;
+    seededRef.current = { id: student.id, settings: JSON.stringify((student as any).aacSettings ?? null) };
+    setPendingAiUpdate(false);
+    seedFromStudent(student);
   };
 
   const handleResetToDefault = () => {
@@ -1071,8 +1093,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         <div className="max-w-3xl mx-auto space-y-6">
           {/* Header */}
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1">
+            <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">
               {t('aacSettings.title')}
+              {/* The AI just wrote settings and the refreshed student is on its
+                  way — the fields below are about to change under the user. */}
+              {isAiRefreshing && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              )}
             </h1>
             <p className="text-muted-foreground">
               {t('aacSettings.subtitle').replace('{name}', student.name)}
@@ -1821,7 +1848,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.social_trainer?.enabled ?? true}
+                  checked={appConfig.social_trainer?.enabled ?? appEnabledByDefault("social_trainer")}
                   onCheckedChange={(checked) => setSocial({ enabled: checked })}
                 />
               </div>
@@ -3005,7 +3032,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
                 <Switch
                   id="aac-app-youtube"
-                  checked={appConfig.youtube?.enabled ?? false}
+                  checked={appConfig.youtube?.enabled ?? appEnabledByDefault("youtube")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, youtube: { ...prev.youtube, enabled: checked } }))
                   }
@@ -3026,7 +3053,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
                 <Switch
                   id="aac-app-spotify"
-                  checked={appConfig.spotify?.enabled ?? false}
+                  checked={appConfig.spotify?.enabled ?? appEnabledByDefault("spotify")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, spotify: { ...prev.spotify, enabled: checked } }))
                   }
@@ -3098,7 +3125,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.drawing?.enabled ?? true}
+                  checked={appConfig.drawing?.enabled ?? appEnabledByDefault("drawing")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, drawing: { ...prev.drawing, enabled: checked } }))
                   }
@@ -3115,7 +3142,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.music?.enabled ?? true}
+                  checked={appConfig.music?.enabled ?? appEnabledByDefault("music")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, music: { ...prev.music, enabled: checked } }))
                   }
@@ -3132,7 +3159,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.sandbox_game?.enabled ?? false}
+                  checked={appConfig.sandbox_game?.enabled ?? appEnabledByDefault("sandbox_game")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, sandbox_game: { ...prev.sandbox_game, enabled: checked } }))
                   }
@@ -3149,7 +3176,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.bubbles_game?.enabled ?? false}
+                  checked={appConfig.bubbles_game?.enabled ?? appEnabledByDefault("bubbles_game")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, bubbles_game: { ...prev.bubbles_game, enabled: checked } }))
                   }
@@ -3166,7 +3193,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.musical_microbes?.enabled ?? false}
+                  checked={appConfig.musical_microbes?.enabled ?? appEnabledByDefault("musical_microbes")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, musical_microbes: { ...prev.musical_microbes, enabled: checked } }))
                   }
@@ -3183,7 +3210,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.space_trader?.enabled ?? false}
+                  checked={appConfig.space_trader?.enabled ?? appEnabledByDefault("space_trader")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, space_trader: { ...prev.space_trader, enabled: checked } }))
                   }
@@ -3200,7 +3227,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.dollhouse?.enabled ?? true}
+                  checked={appConfig.dollhouse?.enabled ?? appEnabledByDefault("dollhouse")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, dollhouse: { ...prev.dollhouse, enabled: checked } }))
                   }
@@ -3221,7 +3248,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig["nature-hike"]?.enabled ?? false}
+                  checked={appConfig["nature-hike"]?.enabled ?? appEnabledByDefault("nature-hike")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, "nature-hike": { ...prev["nature-hike"], enabled: checked } }))
                   }
@@ -3247,7 +3274,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.photos?.enabled ?? false}
+                  checked={appConfig.photos?.enabled ?? appEnabledByDefault("photos")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, photos: { ...prev.photos, enabled: checked } }))
                   }
@@ -3271,7 +3298,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
                 <Switch
-                  checked={appConfig.picture_search?.enabled ?? false}
+                  checked={appConfig.picture_search?.enabled ?? appEnabledByDefault("picture_search")}
                   onCheckedChange={(checked) =>
                     setAppConfig(prev => ({ ...prev, picture_search: { ...prev.picture_search, enabled: checked } }))
                   }
@@ -3777,6 +3804,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CollapsibleSubSection>
             </CardContent>
           </CollapsibleSection>
+
+          {/* The assistant changed these settings while the user had unsaved
+              edits. Their edits are kept — the panel never overwrites typing —
+              so the incoming values are offered instead of applied. Saving
+              from here writes what is ON SCREEN over the assistant's change,
+              which is why this says so rather than sitting silent. */}
+          {pendingAiUpdate && (
+            <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                {t('aacSettings.aiUpdated')}
+              </p>
+              <Button size="sm" variant="outline" onClick={handleReset}>
+                <RotateCcw className="w-4 h-4 me-2" />
+                {t('aacSettings.aiUpdatedLoad')}
+              </Button>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex gap-3 pt-2">

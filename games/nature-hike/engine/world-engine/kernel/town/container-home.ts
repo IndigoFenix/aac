@@ -36,6 +36,21 @@ export function livesOnTheFloor(glyph: string): boolean {
   return isPortableContainer(glyph);
 }
 
+/**
+ * ⚖️ …AND "WHEREVER IT WAS LAST SET DOWN" IS A PLACE, SO IT HAS A RADIUS.
+ * (main's basket ruling, 2026-09-06.)
+ *
+ * The sentence above is the whole rule and it had no number: the put-down row
+ * needs to know when a body is standing AT a bag's home, and a home recorded
+ * as a point can never be reached exactly — a routed walk lands within its
+ * arrival radius (0.9) and the body still has arms. So 1.6 m: the errand's own
+ * arrival slack plus a reach, which is the same distance every other in-place
+ * act in the host is gated at. Bigger would let a porter drop the basket
+ * across the yard from where it found it; smaller would make the walk home
+ * fail to arrive and the row block again where it stands.
+ */
+export const BAG_HOME_REACH_M = 1.6;
+
 /** The session facts the ladder reads — quest-host wires these from the live
  *  QuestSession; a test hands in literals. */
 export interface ContainerHomeCtx {

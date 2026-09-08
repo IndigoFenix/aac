@@ -832,6 +832,94 @@ describe("activity questions — 'what is X doing / eating?' (semantic-tests §Q
     const act = intentToAct(parseSentence("what + dog + eat"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("dog + eat");
   });
+
+  // ⚖️ GAP 1 — "WHAT AM *I* DOING?" The activity ask is bound from the frame's
+  // SUBJECT through the ordinary deixis map (`aboutRef`), so the first person is
+  // not a special case: "what + i_me + do" asks about the SPEAKER and the
+  // creature answers about the person in front of it. Unpinned until now, which
+  // is why it was on the gap list — the behaviour was already right and nothing
+  // would have caught it regressing.
+  it("what + i_me + do asks about the SPEAKER, answered in the second person", () => {
+    const w = household();
+    const o: ProjectionOpts = {
+      ...factOpts(w),
+      activityOf: (cid) => (cid === "me" ? { verb: "eat", object: "apple" } : { verb: "wash" }),
+    };
+    const act = intentToAct(parseSentence("what + i_me + do"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
+    expect(act).toMatchObject({ kind: "what-doing", about: { symbol: "i_me", id: "me" } });
+    // Bob's mouth, Bob's deixis: the asker is "you".
+    expect(selectAct(w, "bob", "me", act, "c", o).responseGlyph).toBe("you + eat + apple");
+    // …and the bare "i_me + do" (no question word) is the same ask — a child on
+    // a two-glyph board can reach it.
+    const bare = intentToAct(parseSentence("i_me + do"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
+    expect(bare).toMatchObject({ kind: "what-doing", about: { symbol: "i_me", id: "me" } });
+  });
+
+  it("🚨 never a FALSE denial about the asker — no hook is don't-know, not 'you aren't'", () => {
+    const w = household();
+    // No `activityOf`, no `doingOf`: this creature cannot see what the player is
+    // up to, and "you are not doing anything" would be a claim it cannot make.
+    const blind = factOpts(w);
+    const act = intentToAct(parseSentence("what + i_me + do"), w, { speakerId: "me", addresseeId: "bob" }, blind)!;
+    expect(selectAct(w, "bob", "me", act, "c", blind).responseGlyph).toBe("i_me + think.not");
+    // Verifiably idle IS sayable — that is a different answer, and a true one.
+    const idle: ProjectionOpts = { ...factOpts(w), activityOf: () => null };
+    const act2 = intentToAct(parseSentence("what + i_me + do"), w, { speakerId: "me", addresseeId: "bob" }, idle)!;
+    expect(selectAct(w, "bob", "me", act2, "c", idle).responseGlyph).toBe("you + do.not");
+  });
+
+  // ⚠️ `we` STAYS DEFERRED (recorded 2026-09-08). The parser gives it
+  // `deixis: "companions"`, which is a SET, and `what-doing`'s `about` is one
+  // creature: answering "what are we doing?" means either picking a member
+  // (a lie about the question) or a plural answer shape no ruleset has. It
+  // falls back to the listener today — a real answer to a nearby question,
+  // which is the honest floor until the plural exists.
+  it("what + we + do falls back to the LISTENER (deferred, not silently wrong)", () => {
+    const w = household();
+    const o: ProjectionOpts = { ...factOpts(w), activityOf: () => ({ verb: "wash" }) };
+    const act = intentToAct(parseSentence("what + we + do"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
+    expect(act).toMatchObject({ kind: "what-doing", about: { symbol: "you", id: "bob" } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🙏 THANK YOU — the one politeness glyph, heard on purpose
+// ---------------------------------------------------------------------------
+
+describe("thank_you is an ACT, not a thing to be asked for", () => {
+  const w = createCreatureWorld([{ id: "me" }, { id: "bob" }], []);
+  const o = (sink?: { kind: string; actor: string; addressee: string }[]): ProjectionOpts => ({
+    symbolOf: (id) => w.items[id]?.kind ?? id,
+    symbolOfCreature: (cid) => cid,
+    ...(sink ? { onSocialAct: (a: { kind: string; actor: string; addressee: string }) => sink.push(a) } : {}),
+  });
+
+  it("pressing 🙏 maps to `thank` — it used to ask for a 'thank_you' THING", () => {
+    const act = intentToAct(parseSentence("thank_you"), w, { speakerId: "me", addresseeId: "bob" }, o())!;
+    expect(act).toMatchObject({ kind: "thank", glyph: "thank_you" });
+    expect(act.itemId).toBeUndefined();
+  });
+
+  it("the answer is the existing content line, and the book move is REPORTED", () => {
+    const sink: { kind: string; actor: string; addressee: string }[] = [];
+    const opt = o(sink);
+    const act = intentToAct(parseSentence("thank_you"), w, { speakerId: "me", addresseeId: "bob" }, opt)!;
+    // No new string: the same "I'm happy" a problem-free creature answers with.
+    expect(selectAct(w, "bob", "me", act, "c", opt).responseGlyph).toBe("i_me + happy");
+    expect(selectAct(w, "bob", "me", act, "a", opt).responseGlyph).toBe("happy");
+    // ACTOR is the THANKER — the one social act whose actor is the speaker.
+    expect(sink[0]).toMatchObject({ kind: "thank", actor: "me", addressee: "bob" });
+  });
+
+  it("🚨 an NPC never THANKS on the roulette — the engine already says it where it is earned", () => {
+    const c = pair("me", "bob");
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const a = chooseSpeakerAct(w, "bob", "me", "c", o(), { rng: () => i / 200 }, { convo: c });
+      if (a) seen.add(a.kind);
+    }
+    expect(seen.has("thank")).toBe(false);
+  });
 });
 
 describe("the source ask — 'where do we get an apple?'", () => {
@@ -872,5 +960,54 @@ describe("modal desires spoken at a creature", () => {
     const o = opts(w);
     const act = intentToAct(parseSentence("i_me + want + eat + cookie"), w, { speakerId: "me", addresseeId: "bob" }, o)!;
     expect(act).toMatchObject({ kind: "request", itemId: "cookie1" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚖️ A2 — WHAT A NEGATED PREDICATE MAPS TO (semantic-engine-round §A2)
+// ---------------------------------------------------------------------------
+//
+// The parser now carries a `.not` on a verbless predicate (`attrNot`), which
+// means this mapper sees negation on the whole ATTRIBUTE channel for the first
+// time. THE RULE: a negated attribute NEVER asserts the positive — not as a
+// fact, not as an act, and not as a query answered in reverse.
+describe("A2 — a negated attribute never asserts its positive", () => {
+  const world = createCreatureWorld([{ id: "me" }, { id: "bear" }, { id: "mara" }], []);
+  const o: ProjectionOpts = {
+    symbolOf: (id) => world.items[id]?.kind ?? id,
+    creatureOf: (sym) => (["me", "bear", "mara"].includes(sym) ? sym : undefined),
+  };
+  const say = (s: string, to?: string): DialogueAct | null =>
+    intentToAct(parseSentence(s), world, { speakerId: "me", ...(to ? { addresseeId: to } : {}) }, o);
+
+  it("a negated CONDITION declines — it never confesses the condition", () => {
+    // The shipped invitation-decline shape ("no thanks, I'm not hungry").
+    expect(say("i_me + hungry.not", "bear")).toMatchObject({ kind: "refuse" });
+    // …and the positive is still the disclosure it always was.
+    expect(say("i_me + hungry", "bear")).toMatchObject({
+      kind: "tell-fact",
+      fact: { kind: "condition", creature: "me", condition: "hungry" },
+    });
+  });
+
+  it("a negated TRAIT flips the pole rather than refusing", () => {
+    expect(say("mara + nice.not", "bear")).toMatchObject({
+      kind: "tell-fact",
+      fact: { kind: "regard", sentiment: "dislike" },
+    });
+    expect(say("mara + mean.not", "bear")).toMatchObject({ fact: { kind: "regard", sentiment: "like" } });
+  });
+
+  it("🚨 a ROLE denied yields nothing and is still acknowledged", () => {
+    // The positive HANDS OVER authority; the negation must never do that, and
+    // must never come back as the don't-understand floor either.
+    expect(say("you + leader", "bear")?.kind).toBe("yield");
+    expect(say("you + leader.not", "bear")?.kind).toBe("tell");
+    expect(say("you + leader.not", "bear")?.kind).not.toBe("dont-understand");
+  });
+
+  it("a VERB's negation is untouched — the shipped refusal and can't", () => {
+    expect(say("i_me + want.not + play", "bear")).toMatchObject({ kind: "refuse" });
+    expect(say("i_me + have.not + cookie", "bear")).toMatchObject({ kind: "cant" });
   });
 });

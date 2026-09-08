@@ -1097,6 +1097,25 @@ import {
         await instituteService.assignStudentToInstitute(instId, student.id, userId);
       }
 
+      // Same call the REST route makes (studentController.createStudent): for a
+      // family-institute admin, link a guardian contact back to the parent's
+      // user record so the consent wizard has somebody to prefill from. Guided
+      // Setup creates students through THIS path, so without it a chat-created
+      // child had no guardian and the consent gate could never open.
+      // Idempotent, and non-fatal: a student is not worth losing over a contact.
+      try {
+        const { autoCreateGuardianContactForFamilyAdmin } = await import(
+          "../consent/guardianContactAutoCreate.js"
+        );
+        await autoCreateGuardianContactForFamilyAdmin({
+          studentId: student.id,
+          creatingUserId: userId,
+          instituteIds: enrollInstituteIds,
+        });
+      } catch (err) {
+        console.error("[institute-memory] Auto-create guardian contact failed:", err);
+      }
+
       activityLogService.log({
         instituteId: ctx.all.instituteId,
         userId: getUserId(ctx),

@@ -36,6 +36,7 @@ import { DeepAnalysisPanel } from '@/features/DeepAnalysisPanel';
 import { SharesPanel } from '@/features/SharesPanel';
 import { InsuranceBridgePanel } from '@/features/InsuranceBridgePanel';
 import { DownloadsPanel } from '@/features/DownloadsPanel';
+import { GuidedSetupRail } from '@/features/guided-setup/GuidedSetupRail';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
@@ -56,7 +57,12 @@ export function MainLayout() {
     isFullScreenFeature,
     mobileChatMode,
     setMobileChatMode,
+    sharedState,
   } = useFeaturePanel();
+
+  // A Guided Setup view is parked in sharedState by useGuidedSetup / the chat's
+  // contextData channel. Its presence is what puts the rail above the panel.
+  const hasGuidedSetup = Boolean(sharedState.guidedSetup?.view);
 
   const { isRTL, t } = useLanguage();
   const isMobile = useIsMobile();
@@ -154,6 +160,21 @@ export function MainLayout() {
   }, [isResizing, handleResizeMove, handleResizeEnd]);
 
   const renderFeaturePanel = () => {
+    const panel = renderPanelBody();
+    if (!panel) return null;
+    // Guided Setup rail sits ABOVE the panel; the panel keeps its own scroll
+    // container inside the flex child. Only wraps when a flow view exists, so
+    // the normal layout is byte-identical when the flow is not running.
+    if (!hasGuidedSetup) return panel;
+    return (
+      <div className="h-full flex flex-col min-h-0">
+        <GuidedSetupRail />
+        <div className="flex-1 min-h-0">{panel}</div>
+      </div>
+    );
+  };
+
+  const renderPanelBody = () => {
     if (!activeFeature) return null;
 
     switch (activeFeature) {

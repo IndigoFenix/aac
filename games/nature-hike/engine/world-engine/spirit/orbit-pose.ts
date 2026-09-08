@@ -56,16 +56,28 @@ export interface OrbitPose {
   ringFrameFactor: number;
 }
 
-/** ⚖️ TODAY'S SHIPPED POSE. `pitchRad`/`frameFactor`/`liftFrac` are the former
- *  `CITY_PITCH` / `CITY_FRAME` / the `t.radius * 0.35` look-at lift, verbatim;
- *  `ringFrameFactor` is the 1 the disc read was multiplying by implicitly.
- *  When the user's GL tests pick a pose, THESE are the four lines to change —
- *  the panel's "print constants" button emits exactly this block. */
+/** ⚖️ THE SHIPPED POSE — BAKED FROM THE USER'S OWN GL TEST (2026-09-06):
+ *
+ *    *"Okay, so constants like this look all right … pitchRad: 0.5,
+ *      frameFactor: 1, liftFrac: 0, ringFrameFactor: 0.5."*
+ *
+ *  Their four numbers, verbatim, out of the `🎥 Camera` panel's "print
+ *  constants" and into the engine. That is the WHOLE POINT of C1: the panel
+ *  moved the pose live, the eye chose it, and the choice is now the default —
+ *  the sliders are debug-only overrides again and "reset" returns HERE.
+ *
+ *  What it puts on screen at a founding (relevance disc 30 m, 50° rig):
+ *  frame radius 30 × 0.5 = **15 m**, `dist = 15/tan25° × 1 = 32.17 m`,
+ *  **out 28.23 m / up 15.42 m**, look-at ON the ground at the focus (lift 0).
+ *  A 1.7 m settler covers 5.67 % of the viewport height ⇒ `simple`; a 23.8 m
+ *  oak covers 79.4 % ⇒ `full`. (The previous defaults — 0.5 / 1.35 / 0.35 / 1,
+ *  the inline `CITY_PITCH` / `CITY_FRAME` / `t.radius * 0.35` literals — stood
+ *  the camera 86.85 m out and left everybody `stick`.) */
 export const ORBIT_POSE_DEFAULTS: Readonly<OrbitPose> = {
   pitchRad: 0.5,
-  frameFactor: 1.35,
-  liftFrac: 0.35,
-  ringFrameFactor: 1,
+  frameFactor: 1,
+  liftFrac: 0,
+  ringFrameFactor: 0.5,
 };
 
 /** The persisted key. One origin serves every `/games/<id>/`, so this is global

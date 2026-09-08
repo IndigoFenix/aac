@@ -115,6 +115,9 @@ export interface MakeStudentOptions {
   framework?: ProgramFramework;
   primaryLanguage?: string;
   country?: string;
+  /** Nullable in the schema, so left unset by default. GUIDED SETUP step 1
+   *  needs it: `basicsStep.isComplete` requires every identity fact. */
+  gender?: string;
 }
 
 /**
@@ -136,6 +139,7 @@ export async function makeStudent(
       framework: opts.framework ?? 'us_iep',
       primaryLanguage: opts.primaryLanguage ?? 'en',
       country: opts.country ?? 'US',
+      gender: opts.gender,
     } as any,
     ownerUserId,
     opts.role ?? 'owner',

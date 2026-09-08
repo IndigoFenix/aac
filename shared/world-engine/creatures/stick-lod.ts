@@ -109,6 +109,19 @@ export const STICK_LOD = {
    *  key 0.7·N·L, so a lit surface averages a little under its albedo). Push it
    *  through `setStickTint` if a host ever dims its world. */
   tint: 0.9,
+  /** 🌳 OUTLINE VARIANT (`stickOutlineMaterial`) — the rim's width in DEVICE
+   *  PIXELS. Screen-space on purpose: a canopy blob 90 px across and a twig 3 px
+   *  across must both draw ONE line, not a line proportional to themselves. A
+   *  capsule thinner than this keeps drawing solid, which is what a twig should
+   *  do. */
+  outlinePx: 2.2,
+  /** …and how far the rim's colour is lifted toward white, so a pale line reads
+   *  against the foliage behind it instead of vanishing into it.
+   *
+   *  Both outline dials are spliced into the GLSL as literals (not uniforms):
+   *  they belong to a variant that is compiled once, and `refreshStickTunables`
+   *  — which exists for the lab's live sliders — cannot move them. */
+  outlineLift: 0.45,
 };
 
 // ── The primitive ───────────────────────────────────────────────────────────
@@ -453,7 +466,7 @@ export function refreshStickTunables(): void {
   STICK_UNIFORMS.uStickTint.value.setScalar(STICK_LOD.tint);
 }
 
-const VERT_DECLS = /* glsl */`
+const VERT_DECLS = (outline: boolean): string => /* glsl */`
 attribute vec3 aSegA;
 attribute vec3 aSegB;
 attribute vec2 aRadii;
@@ -465,14 +478,14 @@ varying vec3 vStickB;
 varying vec3 vStickPos;
 varying float vStickRA;
 varying float vStickRB;
-`;
+` + (outline ? "varying float vStickPerPx;\n" : "");
 
 /** Replaces `<project_vertex>`: billboard the capsule's quad in VIEW space and
  *  hand the standard pipeline a normal `mvPosition` / `gl_Position`, so every
  *  chunk downstream (log depth, fog, vViewPosition) keeps working untouched.
  *  The batching/instancing branches mirror the stock chunk — an instanced
  *  stick forest (flora-field) goes through the same path. */
-const VERT_BILLBOARD = /* glsl */`
+const VERT_BILLBOARD = (outline: boolean): string => /* glsl */`
 	vec4 sA = vec4( aSegA, 1.0 );
 	vec4 sB = vec4( aSegB, 1.0 );
 	vec4 sScale = vec4( aSegA + vec3( 1.0, 0.0, 0.0 ), 1.0 );
@@ -503,6 +516,7 @@ const VERT_BILLBOARD = /* glsl */`
 	float stickDepth = max( 1e-4, - stickCentre.z );
 	float unitsPerPx = 2.0 * stickDepth / max( 1.0, uStickViewportPx * projectionMatrix[ 1 ][ 1 ] );
 	float minR = 0.5 * uStickMinPx * unitsPerPx;
+${outline ? "\tvStickPerPx = unitsPerPx;" : ""}
 	vStickRA = max( aRadii.x * stickScale, minR );
 	vStickRB = max( aRadii.y * stickScale, minR );
 	vStickA = sA.xyz;
@@ -538,14 +552,14 @@ const VERT_BILLBOARD = /* glsl */`
 /** Newline for the shader-chunk splices below. */
 const NL = String.fromCharCode(10);
 
-const FRAG_DECLS = /* glsl */`
+const FRAG_DECLS = (outline: boolean): string => /* glsl */`
 uniform vec3 uStickTint;
 varying vec3 vStickA;
 varying vec3 vStickB;
 varying vec3 vStickPos;
 varying float vStickRA;
 varying float vStickRB;
-`;
+` + (outline ? "varying float vStickPerPx;\n" : "");
 
 /** Carve the padded quad down to the true tapered-capsule silhouette. The
  *  round caps fall out of the `clamp` — which is where every joint circle, and
@@ -559,6 +573,43 @@ const FRAG_SILHOUETTE = /* glsl */`
 	float stickDist = length( stickRadial );
 	float stickR = max( mix( vStickRA, vStickRB, stickH ), 1e-6 );
 	if ( stickDist > stickR ) discard;
+`;
+
+/** 🌳 THE OCCLUDER VARIANT — the SAME silhouette, hollowed out.
+ *
+ *  A tree standing between the camera and the site has to stop being a wall
+ *  (user, 2026-09-06: *"nearby trees can block the view. Maybe render them as
+ *  outlines if they're blocking the camera"*). The far tier is a SILHOUETTE
+ *  ([[feedback_far_tier_is_silhouette_only]]) — which is exactly the wrong
+ *  thing here: an oak fills 79 % of the viewport at the held orbit, and a
+ *  filled silhouette of it blocks just as much as the lofted tree did.
+ *
+ *  🚫 AND A TRANSLUCENT FILL DOES NOT FIX IT. `appendCanopy` emits ~10-20
+ *  overlapping canopy discs; at α 0.10 each they re-opacify to 1 − 0.9¹⁵ ≈ 0.79
+ *  — a green fog exactly where the site is. So the fill goes to ZERO and only
+ *  the RIM survives. Nothing is transparent, nothing sorts, nothing
+ *  accumulates: the discarded interior writes no depth, so the site simply
+ *  shows through.
+ *
+ *  The rim is a CONSTANT NUMBER OF DEVICE PIXELS (`vStickPerPx`, the same
+ *  view-units-per-pixel the vertex stage already computes for the min-width
+ *  floor), not a fraction of the capsule — a 90 px canopy blob would otherwise
+ *  draw a 30 px donut. A capsule narrower than the rim keeps drawing solid,
+ *  which is the right answer for a twig. */
+const FRAG_SILHOUETTE_OUTLINE = /* glsl */`
+	vec3 stickPA = vStickPos - vStickA;
+	vec3 stickBA = vStickB - vStickA;
+	float stickH = clamp( dot( stickPA, stickBA ) / max( dot( stickBA, stickBA ), 1e-9 ), 0.0, 1.0 );
+	vec3 stickRadial = stickPA - stickBA * stickH;
+	float stickDist = length( stickRadial );
+	float stickR = max( mix( vStickRA, vStickRB, stickH ), 1e-6 );
+	if ( stickDist > stickR ) discard;
+	if ( stickDist < stickR - ${STICK_LOD.outlinePx.toFixed(3)} * vStickPerPx ) discard;
+`;
+
+/** …and the outline's own colour lift, spliced where the tint goes. */
+const FRAG_TINT_OUTLINE = /* glsl */`
+	diffuseColor.rgb = mix( diffuseColor.rgb * uStickTint, vec3( 1.0 ), ${STICK_LOD.outlineLift.toFixed(3)} );
 `;
 
 /** THE ONLY "shading" this tier does: one multiply. `MeshBasicMaterial` has
@@ -582,6 +633,26 @@ const FRAG_TINT = /* glsl */`
  *  body's own yaw can wind one backwards — and with no lighting there is no
  *  back face to shade wrong, so it costs nothing. */
 export function stickMaterial(): THREE.MeshBasicMaterial {
+  return buildStickMaterial(false);
+}
+
+/** 🌳 THE OCCLUDER OUTLINE — the same tier, hollowed (FRAG_SILHOUETTE_OUTLINE).
+ *
+ *  ⚖️ ONE GEOMETRY, ONE TIER, TWO MATERIALS — never a second model path. A tree
+ *  the driver finds standing between the camera and the site is forced to the
+ *  `stick` rung through the ordinary re-tier drain (quest-host `setOccluders`),
+ *  and the view then hands THAT rung's meshes this material instead of the
+ *  solid one. Material assignment is per-`Mesh`, so this is per-body without
+ *  cloning or mutating anything shared; the geometry, the bake cache and the
+ *  ladder are untouched, and releasing an occluder is one assignment back.
+ *
+ *  Its `name` stays `"stick-lod"` so `__flora.audit` and every other
+ *  scene-side classifier still reads the body as the stick tier it IS. */
+export function stickOutlineMaterial(): THREE.MeshBasicMaterial {
+  return buildStickMaterial(true);
+}
+
+function buildStickMaterial(outline: boolean): THREE.MeshBasicMaterial {
   const mat = new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
@@ -591,20 +662,28 @@ export function stickMaterial(): THREE.MeshBasicMaterial {
     shader.uniforms.uStickViewportPx = STICK_UNIFORMS.uStickViewportPx;
     shader.uniforms.uStickMinPx = STICK_UNIFORMS.uStickMinPx;
     shader.uniforms.uStickTint = STICK_UNIFORMS.uStickTint;
-    shader.vertexShader = VERT_DECLS + shader.vertexShader.replace(
+    shader.vertexShader = VERT_DECLS(outline) + shader.vertexShader.replace(
       "#include <project_vertex>",
-      VERT_BILLBOARD,
+      VERT_BILLBOARD(outline),
     );
     // The silhouette discard goes as EARLY as main allows, so a culled fragment
     // does no further work; the tint lands after the vertex colour is folded in.
-    shader.fragmentShader = FRAG_DECLS + shader.fragmentShader
-      .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>" + NL + FRAG_SILHOUETTE)
-      .replace("#include <color_fragment>", "#include <color_fragment>" + NL + FRAG_TINT);
+    shader.fragmentShader = FRAG_DECLS(outline) + shader.fragmentShader
+      .replace(
+        "#include <clipping_planes_fragment>",
+        "#include <clipping_planes_fragment>" + NL + (outline ? FRAG_SILHOUETTE_OUTLINE : FRAG_SILHOUETTE),
+      )
+      .replace(
+        "#include <color_fragment>",
+        "#include <color_fragment>" + NL + (outline ? FRAG_TINT_OUTLINE : FRAG_TINT),
+      );
   };
-  // Programs are cached per shader source; ours is ONE variant, so a constant
-  // key keeps every stick material in the world sharing a single compiled
-  // program however many species are on screen.
-  mat.customProgramCacheKey = () => "stick-lod";
+  // Programs are cached per shader source; ours is TWO variants (solid and the
+  // hollowed occluder outline), so a constant key PER VARIANT keeps every stick
+  // material in the world sharing one compiled program per variant however many
+  // species are on screen. 🚨 The key must distinguish them, or three hands the
+  // second variant the first one's program and the outline silently draws solid.
+  mat.customProgramCacheKey = () => (outline ? "stick-lod-outline" : "stick-lod");
   return mat;
 }
 

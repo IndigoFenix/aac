@@ -17,6 +17,7 @@ import {
   import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall, GPTContentPart } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
   import { defaultToolRegistry, enrichToolCallMessage, CreateQuestGameToolArgs, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
+  import type { GuidedSetupToolArgs } from "@shared/guided-setup";
   import { publish } from "./events.service";
   import { getChatProvider } from "../providers/provider-factory";
   import type { ChatMessage as ProviderChatMessage, ChatTool, StreamChunk } from "../providers/streaming-provider";
@@ -155,6 +156,10 @@ import type { DisclosureContext } from "../processorDisclosure";
       captionVideoEnabled?: boolean;
       onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>;
       onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>;
+      /** GUIDED SETUP flow control; present only while the flow is active. */
+      onGuidedSetup?: (args: GuidedSetupToolArgs) => Promise<unknown>;
+      /** Text appended at the very END of the system prompt (see prompt-kit). */
+      trailingSection?: string;
       loopDetectionConfig?: LoopDetectionConfig;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
@@ -196,6 +201,8 @@ import type { DisclosureContext } from "../processorDisclosure";
           captionVideoEnabled?: boolean,
           onCreateQuestGame?: (args: CreateQuestGameToolArgs) => Promise<unknown>,
           onValidateQuestGame?: (contentPack: unknown, appId?: string) => Promise<unknown>,
+          onGuidedSetup?: (args: GuidedSetupToolArgs) => Promise<unknown>,
+          trailingSection?: string,
           memoryProcessor?: MemoryProcessor,
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
@@ -238,6 +245,8 @@ import type { DisclosureContext } from "../processorDisclosure";
           this.captionVideoEnabled = settings.captionVideoEnabled ?? false;
           this.onCreateQuestGame = settings.onCreateQuestGame;
           this.onValidateQuestGame = settings.onValidateQuestGame;
+          this.onGuidedSetup = settings.onGuidedSetup;
+          this.trailingSection = settings.trailingSection;
           this.loopDetectionConfig = settings.loopDetectionConfig;
           this.requestTimezone = settings.timezone;
           this.creditCategory = settings.creditCategory ?? 'chat';
@@ -257,6 +266,7 @@ import type { DisclosureContext } from "../processorDisclosure";
               onFilesNeeded: this.onFilesNeeded,
               onCreateQuestGame: this.onCreateQuestGame,
               onValidateQuestGame: this.onValidateQuestGame,
+              onGuidedSetup: this.onGuidedSetup,
               loopDetectionConfig: this.loopDetectionConfig,
               onPruneMessages: (forget, summary, closePaths) => this.compressHistory(forget, summary, closePaths),
           });
@@ -909,8 +919,10 @@ import type { DisclosureContext } from "../processorDisclosure";
               selectStudentEnabled: this.onSelectStudent !== undefined,
               captionVideoEnabled: this.captionVideoEnabled,
               questGameEnabled: this.onCreateQuestGame !== undefined,
+              guidedSetupEnabled: this.onGuidedSetup !== undefined,
               replyType: params?.replyType || 'text',
               timezone: this.requestTimezone,
+              trailingSection: this.trailingSection,
           });
       }
   

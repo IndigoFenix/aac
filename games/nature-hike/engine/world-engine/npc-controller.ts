@@ -115,6 +115,22 @@ export interface NpcErrandPoint extends Vec2 {
    *  door and the host declares it via `AvatarState.crossingDoorId` — which is
    *  what opens the door. */
   doorId?: string;
+  /**
+   * ⚖️ IS THIS VERTEX A WORLD EFFECT, or only a corner of the route?
+   *
+   * `false` marks a vertex a PLANNER inserted (a street waypoint, a door
+   * transit, a furniture dogleg) — geometry the body may be released from. It
+   * is the ONE thing the skip-ahead recovery below is allowed to drop.
+   *
+   * Absent ⇒ TRUE for any errand with an `onArrive`: the caller's own
+   * waypoints are where the game LOADS goods, takes a basket into hands, lays
+   * a piece. Firing one of those from across the block is not a shortcut, it
+   * is a teleport — the observed defect (2026-09-06): the recovery passed six
+   * routed vertices in one frame and ran the basket pickup from 23 m away, so
+   * the basket snapped to the porter on the next tick. Safe by DEFAULT: an
+   * unrouted errand marks nothing and keeps every waypoint.
+   */
+  effect?: boolean;
 }
 
 export interface NpcErrand {
@@ -123,6 +139,30 @@ export interface NpcErrand {
   onArrive?: (index: number) => void;
   /** Fired after the last point's onArrive; the errand then clears. */
   onDone?: () => void;
+  /**
+   * ⚖️ THE WATCHDOG FORCE-PASSED A VERTEX THAT DOES SOMETHING IN THE WORLD.
+   *
+   * The stall watchdog (`STALL_S` of no arc gain) passes a vertex the body
+   * never reached — the never-wedge-forever backstop, and it must stay. But a
+   * pass is not an arrival, and `onArrive` is where the game LOADS goods and
+   * lands them: the UNLOAD has no distance test of its own, so a force-passed
+   * final vertex delivered a haul from wherever the body was standing — the
+   * measured "blocks placed in a house from a distance" (2026-09-06).
+   *
+   * So an errand may declare what to do INSTEAD. When this is present and the
+   * force-passed vertex is an effect vertex (`NpcErrandPoint.effect !== false`),
+   * `onArrive` does NOT fire for it: this fires with that index, the errand
+   * CLEARS, and `onDone` never runs — an abandoned errand did not finish.
+   * The caller's job is then to fail honestly and put whatever it is carrying
+   * somewhere real (quest-host `issueTransferHaul`: the load is set down where
+   * the body stands, the agreement fails, the bill re-issues, a line says so).
+   *
+   * ⚠️ OPT-IN BY CALLBACK. An errand that declares none behaves exactly as it
+   * always did — the suppression is a contract between the controller and a
+   * caller that knows how to abandon, not a blanket rule the controller
+   * imposes on every effect in the host.
+   */
+  onAbandon?: (index: number) => void;
   /** CLOCK-DRIVEN (clock-path-dodging.md): the schedule is the authority. A
    *  clock ANCHOR advances along the polyline at CLOCK_SCHEDULE_RATE × the
    *  body's walk speed and the body rides it — free to dodge within
@@ -148,6 +188,25 @@ export interface NpcErrandPath {
   index: number;
   /** Standing out the current point's `dwell` rather than walking. */
   dwelling: boolean;
+  /**
+   * ⏱️ SECONDS THIS BODY HAS MADE NO PROGRESS ALONG ITS OWN PLAN — the stall
+   * watchdog's own clock, published (2026-09-07 watched-body-stall round).
+   *
+   * Not "seconds standing still": the measure is ARC position along the
+   * planned polyline, so a body circling furniture on a detour is progressing
+   * and a body shuffling on the spot against a solid is not. It resets to 0 on
+   * every vertex passed and on every re-issue (`setErrand`), so it is always
+   * "how long since this plan last got anywhere".
+   *
+   * ⚠️ WHY IT IS PUBLISHED AT ALL. The controller's own recovery — the FLOW
+   * force-pass — is view-gated on purpose (it skips a vertex, which reads as an
+   * impossible move to a watcher), so the ONE case a player actually sees is
+   * the one the controller may not fix. The host has to see the stall to
+   * re-route the body honestly instead (quest-host `stepErrandStall`), and this
+   * is the seam that lets it, without the host guessing at motion of its own.
+   * 0 before the first aim frame of an errand, and 0 while `dwelling`.
+   */
+  stalledS: number;
 }
 
 export interface NpcController {
@@ -307,6 +366,12 @@ class BaseController implements NpcController {
   /** Progress watchdog: best arc position reached + when it last improved. */
   private errandBestArc = -1;
   private errandGainAt = -1;
+  /** ⏱️ PUBLISHED stall (see NpcErrandPath.stalledS): seconds since the arc
+   *  above last improved, as of the most recent aim frame. Cached rather than
+   *  derived on demand because the reader (the host's stall watch) has no
+   *  `now` of the controller's own — and 0 is the honest answer before the
+   *  first aim frame, which a bare `now - gainAt` would not give. */
+  private errandStalledS = 0;
   /** When ≥ 0, standing at the current waypoint until this time (dwell). */
   private errandDwellUntil = -1;
   /** CLOCK MODE (clock-path-dodging.md): is this errand riding an anchor? */
@@ -408,6 +473,7 @@ class BaseController implements NpcController {
     this.errandArcBase = 0;
     this.errandBestArc = -1;
     this.errandGainAt = -1;
+    this.errandStalledS = 0;
     this.errandDwellUntil = -1;
     this.clockOn = !!e?.clocked;
     this.clockArc = 0;
@@ -427,7 +493,12 @@ class BaseController implements NpcController {
 
   errandPath(): NpcErrandPath | null {
     if (!this.errand) return null;
-    return { points: this.errand.points, index: this.errandIndex, dwelling: this.errandDwellUntil >= 0 };
+    return {
+      points: this.errand.points,
+      index: this.errandIndex,
+      dwelling: this.errandDwellUntil >= 0,
+      stalledS: this.errandStalledS,
+    };
   }
 
   /** Walk the errand's polyline by PURE PURSUIT: project the body onto the
@@ -459,9 +530,87 @@ class BaseController implements NpcController {
     const ERRAND_ARRIVE = 0.9;
     const LOOKAHEAD = 1.1; // > the mover's aim-dead-radius (0.8): mid-path aims never brake
     const STALL_S = 5;
+    /**
+     * ⏱️ RUNG TWO OF THE WATCHED-BODY LADDER (2026-09-07) — how long a body
+     * that CANNOT be force-passed may stay pinned before the errand gives up.
+     *
+     * 🚨 THE HOLE IT FILLS. The FLOW force-pass is view-gated (below), and
+     * rightly so: it skips a vertex, and skipping one on-screen is an
+     * impossible move. But suppression is not resolution — measured on the
+     * carry-residuals rock-ring harness, a loaded porter wedged IN SIGHT sat
+     * motionless for 110 s with its haul still `moving`, and the same wedge on
+     * the plain frontier arc ran to 121 s. The one case a player watches was
+     * the one case that never ended.
+     *
+     * ⚖️ SO IT ENDS — and NOT by moving the body. This fires `onAbandon`, which
+     * is the caller's own honest ending (quest-host `abandonHaul`: the load is
+     * set down where the body is standing, the agreement fails, the bill
+     * re-posts, a line says so). No vertex is passed, no effect is run from a
+     * distance, nothing teleports: the body simply stops pretending it is on
+     * its way. Opt-in by callback like every other use of `onAbandon` — an
+     * errand with no abandon door keeps waiting exactly as it always did.
+     *
+     * 📏 THE NUMBER. Twice the host's re-route bound (`ERRAND_REROUTE_S` = 6),
+     * which is itself one second past the measured honest-recovery tail: of
+     * 6 127 self-recovered stalls on the frontier arc, p99.9 was 4.9 s and the
+     * longest 5 s. A body that has been re-planned from its live position twice
+     * and is STILL pinned for twice as long as a re-plan costs is not going
+     * anywhere. Worst case first-lost-metre → load-on-the-ground: 6 + 6 + 12 =
+     * 24 s, against the 110 s and 121 s freezes measured before it.
+     */
+    const WATCHED_STALL_S = 12;
     /** How close a TIGHT flow vertex must come before proximity alone passes it
      *  (a body-radius; see the pass rule below). */
     const TIGHT_PASS = 0.2;
+    /**
+     * ⚖️ HOW FAR TO THE SIDE OF AN EFFECT VERTEX A BODY MAY BE AND STILL HAVE
+     * PASSED IT — the PROJECTION half of *"a pass that is not an arrival may
+     * not do work in the world"* (2026-09-07; the carry round closed the
+     * force-pass half on 2026-09-06 and left this one open).
+     *
+     * 🚨 THE HOLE. A flow vertex is reached by PROJECTION — `t ≥ 1`, the body
+     * crossed the perpendicular through it — and that clause has NO distance
+     * in it at all. For a routing corner that is exactly right and costs
+     * nothing: a corner does no work. For the CALLER'S OWN waypoint it is a
+     * distance-free arrival at the place the game takes a basket into hands,
+     * loads goods off a source and lays a block. Measured on the frontier arc
+     * (seed 11, dt 0.5, 1 200 s) on the tree this round OPENED with: of 939
+     * effect-vertex arrivals, 78 fired by projection alone, **six of them from
+     * more than 6 m away and the worst from 7.52 m** — a basket snapping 8.6 m
+     * onto a porter is what `carry-fold`'s one-frame prop-jump pin caught.
+     *
+     * 📏 THE NUMBER IS THE MEASURED HONEST CEILING (user ruling, 2026-09-07:
+     * *"Go with the honest 2.19 m and re-record the bench"*). Its derivation,
+     * instrumented on `errandAim` itself with this bound neutralised so the raw
+     * distribution was visible, on the BENCH world (dollhouse, seed 12, dt 0.05,
+     * 240 sim s — 1 026 effect-vertex arrivals):
+     *   • the arm this bound gates — a FLOW vertex passed by projection alone —
+     *     fired **7 times, and its worst was 2.08 m**;
+     *   • the STOP arm, which this bound does not touch (a stop is reached by
+     *     distance, never by projection), fired 22 times, worst **2.19 m**.
+     * 2.19 is therefore the ceiling of the WHOLE measured set and a conservative
+     * upper bound on the arm actually gated, which tops out 0.11 m below it. So
+     * every honest pass on the shipped bench survives, with margin, and there is
+     * no number between 2.08 and 2.19 that behaves differently.
+     *
+     * WHAT IT REFUSES: on the frontier arc (seed 11, dt 0.5, 1 200 s) the same
+     * instrumentation counts 55 flow-projection arrivals, **worst 10.11 m**, of
+     * which **6 are past 2.19 m and 5 past 5 m** — 0.6 % of 1 012 arrivals, and
+     * every one of them a basket, a load or a block changing hands across a
+     * street the body never walked.
+     *
+     * ⚠️ AND IT IS ONLY HONEST BECAUSE OF THE ORDERING BESIDE IT. Refusing the
+     * pass means the body keeps aiming at a vertex it may not be able to reach.
+     * Out of sight that used to meet `STALL_S` first — and the force-pass arm
+     * for an EFFECT vertex is not a recovery at all, it is `onAbandon`, so a
+     * refused pass became a dropped haul (measured: staging 636 → 1 095 s at
+     * this bound, with the house never finishing). quest-host's
+     * `EFFECT_REROUTE_S` (4 s, BELOW `STALL_S`, and ungated by view because a
+     * re-route never moves a body) now re-plans first, twice, and only then does
+     * the give-up arm get its turn. Repair before give-up: the two ship
+     * together or not at all.
+     */
+    const EFFECT_PASS_R = 2.19;
     const errand = this.errand!;
     const pts = errand.points;
     if (this.errandDwellUntil >= 0) {
@@ -469,6 +618,9 @@ class BaseController implements NpcController {
       // waits WITH the body (it is stop-clamped here anyway) — keeping its
       // timestamp fresh so the dwell never banks as anchor distance.
       this.clockNow = ctx.now;
+      // …and a DWELL is not a stall: the body is standing here on purpose.
+      this.errandGainAt = ctx.now;
+      this.errandStalledS = 0;
       if (ctx.now < this.errandDwellUntil) return null;
       this.errandDwellUntil = -1;
       return this.errandAdvance(errand);
@@ -495,6 +647,9 @@ class BaseController implements NpcController {
     const isStop = (i: number): boolean => i >= pts.length - 1 || !!(pts[i]!.dwell && pts[i]!.dwell! > 0);
     /** A vertex the plan says must be walked EXACTLY (see pointTight). */
     const isTight = (i: number): boolean => pointTight(pts[i]!);
+    /** A vertex whose arrival DOES something in the world (see NpcErrandPoint
+     *  `effect`) — unmarked means yes, so an unrouted errand is protected. */
+    const isEffect = (i: number): boolean => pts[i]!.effect !== false;
 
     // 0. SKIP-AHEAD RECOVERY: a cut corner can land the body alongside a
     //    LATER stretch of the path — pursuing the earlier vertex then aims
@@ -508,6 +663,21 @@ class BaseController implements NpcController {
     {
       const SKIP_NEAR = 0.8;
       let resume = this.errandIndex;
+      // ⚖️ …AND NEVER PAST A VERTEX THAT DOES SOMETHING IN THE WORLD. The
+      // skipped vertices' `onArrive`s fire below, and for a routed errand the
+      // only ones that fire are the CALLER'S OWN waypoints (doorRouteErrand
+      // remaps inserted corners to -1). So an unclamped skip runs the pickup,
+      // the load, the hand-over from wherever the body happens to stand — the
+      // measured teleport (2026-09-06: six vertices passed in one frame, the
+      // basket taken from 23 m, snapping to the porter next tick). A stop is
+      // already unskippable for the same reason; this is the same rule for the
+      // effects that are not stops. The body then walks the leg it skipped,
+      // and the stall watchdog stays the never-wedge backstop.
+      const effectLimit = (): number => {
+        for (let i = this.errandIndex; i < pts.length; i++) if (isEffect(i)) return i;
+        return pts.length;
+      };
+      const limit = errand.onArrive ? effectLimit() : pts.length;
       for (let probe = this.errandIndex; probe + 1 < pts.length && !isStop(probe) && !isTight(probe); probe++) {
         const a = pts[probe]!;
         const b = pts[probe + 1]!;
@@ -519,12 +689,14 @@ class BaseController implements NpcController {
         const qy = a.y + by * t;
         if (Math.hypot(ctx.self.x - qx, ctx.self.y - qy) <= SKIP_NEAR) resume = probe + 1;
       }
+      if (resume > limit) resume = limit;
       while (this.errandIndex < resume) {
         errand.onArrive?.(this.errandIndex);
         if (this.errand !== errand) return null; // a callback replaced/cleared it
         this.errandAdvance(errand); // skipped vertices are FLOW by construction — no dwell
         if (this.errand !== errand) return null;
         this.errandGainAt = ctx.now;
+        this.errandStalledS = 0;
         this.errandBestArc = Math.max(this.errandBestArc, this.errandArcBase);
       }
     }
@@ -568,7 +740,8 @@ class BaseController implements NpcController {
         this.errandBestArc = arc;
         this.errandGainAt = ctx.now;
       }
-      const stalled = ctx.now - this.errandGainAt > STALL_S;
+      this.errandStalledS = this.errandGainAt < 0 ? 0 : Math.max(0, ctx.now - this.errandGainAt);
+      const stalled = this.errandStalledS > STALL_S;
       // A FLOW vertex is passed by PROJECTION (`t ≥ 1` — the body crossed the
       // perpendicular through it) or by proximity. On a TIGHT vertex the
       // proximity clause is pulled in to TIGHT_PASS: releasing the corner from
@@ -579,11 +752,58 @@ class BaseController implements NpcController {
       // runs THROUGH rather than braking onto it), and the projection clause fires
       // as it goes by regardless. The stall watchdog remains the backstop.
       const flowArrive = pointTight(pt) ? Math.min(arrive, TIGHT_PASS) : arrive;
-      const passed = isStop(this.errandIndex)
-        ? d <= arrive || stalled
-        : t >= 1 || d <= flowArrive || (stalled && !watched);
+      // REACHED vs FORCED, split out: both pass the vertex, but only one of
+      // them is an ARRIVAL. The distinction is the whole of `onAbandon` —
+      // before it the two were one boolean and the unload could not tell them
+      // apart (the unload has no distance test of its own).
+      // …and a vertex that DOES SOMETHING IN THE WORLD is not passed from
+      // across the street (EFFECT_PASS_R above): the projection clause carries
+      // no distance of its own, so an effect vertex bounds it. A routing corner
+      // is untouched — a corner does no work, and flowing through one is the
+      // whole point of pure pursuit.
+      const reached = isStop(this.errandIndex)
+        ? d <= arrive
+        : (t >= 1 && (!isEffect(this.errandIndex) || d <= EFFECT_PASS_R)) || d <= flowArrive;
+      const passed =
+        reached || (isStop(this.errandIndex) ? stalled : stalled && !watched);
+      // ⏱️ RUNG TWO — THE WATCHED WEDGE STILL ENDS (see WATCHED_STALL_S above).
+      // Checked BEFORE `passed`, because the case it exists for is precisely
+      // the one `passed` refuses: a FLOW vertex the body cannot reach while a
+      // person is looking. It is not a pass — no vertex is crossed, no
+      // `onArrive` fires, no effect lands from a distance — it is the errand
+      // ADMITTING it is over, through the caller's own abandon door. Unlike the
+      // force-pass arm below it does NOT ask `isEffect`: a routing corner the
+      // body cannot get to is just as final as a source it cannot get to, and
+      // `doorRouteErrand`'s remap already reports a corner against the waypoint
+      // the body was heading for.
+      //
+      // 🚫 IT COSTS AN UNWATCHED BODY NOTHING. Out of sight the force-pass
+      // fires at STALL_S and resets this very clock on every vertex it passes,
+      // so the clock only reaches 12 s where a pass was refused.
+      if (!reached && errand.onAbandon && this.errandStalledS > WATCHED_STALL_S) {
+        const at = this.errandIndex;
+        this.errand = null;
+        this.errandIndex = 0;
+        this.errandDwellUntil = -1;
+        this.errandStalledS = 0;
+        errand.onAbandon(at);
+        return null;
+      }
       if (!passed) break;
+      // ⚖️ A FORCE-PASS MAY NOT DO WORK IN THE WORLD (2026-09-06 carry round).
+      // The body is nowhere near this vertex; firing its effect from here is a
+      // teleport wearing a watchdog. An errand that knows how to abandon says
+      // so instead, and the errand ends — no `onArrive`, no `onDone`.
+      if (!reached && errand.onAbandon && isEffect(this.errandIndex)) {
+        const at = this.errandIndex;
+        this.errand = null;
+        this.errandIndex = 0;
+        this.errandDwellUntil = -1;
+        errand.onAbandon(at);
+        return null;
+      }
       this.errandGainAt = ctx.now; // fresh budget for the next vertex
+      this.errandStalledS = 0; // …and the published clock says so THIS frame
       errand.onArrive?.(this.errandIndex);
       if (this.errand !== errand) return null; // a callback replaced/cleared it
       if (pt.dwell && pt.dwell > 0) {

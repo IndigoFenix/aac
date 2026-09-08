@@ -227,6 +227,22 @@ describe("quest-host wiring (⑦/⑧ call sites)", () => {
   });
 
   it("the hunger meter subtraction has ONE owner (ingestMeterAfter) — no inline divisor to drift", () => {
-    expect(src).toMatch(/ingestMeterAfter\(session\.needMeters\.get\(key\) \?\? 0, satiationDays\)/);
+    // ⚠️ RE-SPELLED, NOT WEAKENED (2026-09-07 build-end sweep). The politics
+    // round moved every meter read/write onto the `needLevelOf`/`creditNeed`
+    // pair (a settler's `standing`/`security` rows need the body's OWN template
+    // rate, which a bare `session.needMeters` map access cannot supply), so the
+    // old `session.needMeters.get(key) ?? 0` / `.set(key, …)` spelling this
+    // regex named no longer exists anywhere in the host — the pin was red on a
+    // tree whose LAW it was written to defend is intact. What the law actually
+    // says is unchanged and is what is matched below: the subtraction goes
+    // through `ingestMeterAfter` with the meal's `satiationDays`, and the
+    // result is handed straight to the meter owner with no arithmetic in
+    // between. An inline divisor still reds this.
+    expect(src).toMatch(
+      /creditNeed\(session, cid, tplKey, ingestMeterAfter\(needLevelOf\(session, cid, tplKey\), satiationDays\)\)/,
+    );
+    // …and there is exactly ONE such subtraction in the file (the import line
+    // is the only other mention), so no second site can drift from it.
+    expect(src.match(/ingestMeterAfter\(/g)?.length).toBe(1);
   });
 });

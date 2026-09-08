@@ -38,6 +38,7 @@ import {
   authController,
   profileController,
   studentController,
+  guidedSetupController,
   inviteCodeController,
   savedLocationController,
   adminController,
@@ -949,6 +950,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     programController.updateConsentForm(req, res)
   );
 
+  // ============= GUIDED SETUP ROUTES =============
+  // Chat-driven "add a student" onboarding. Same auth as POST /api/students;
+  // the service checks institute membership + student access per call.
+  // Routes must match GUIDED_SETUP_ROUTES in shared/guided-setup.ts.
+  app.post("/api/guided-setup/start", requireAuth, (req, res) =>
+    guidedSetupController.start(req, res)
+  );
+  app.get("/api/guided-setup", requireAuth, (req, res) =>
+    guidedSetupController.getParked(req, res)
+  );
+  app.get("/api/guided-setup/students/:studentId", requireAuth, (req, res) =>
+    guidedSetupController.getStudentView(req, res)
+  );
+  app.post("/api/guided-setup/students/:studentId/adopt", requireAuth, (req, res) =>
+    guidedSetupController.adopt(req, res)
+  );
+  app.post("/api/guided-setup/students/:studentId/skip", requireAuth, (req, res) =>
+    guidedSetupController.skip(req, res)
+  );
+  app.post("/api/guided-setup/students/:studentId/dismiss", requireAuth, (req, res) =>
+    guidedSetupController.dismiss(req, res)
+  );
+  app.post("/api/guided-setup/students/:studentId/ack-aac", requireAuth, (req, res) =>
+    guidedSetupController.ackAac(req, res)
+  );
+  // Roster import (Phase D). Both are USER clicks — the AI proposes rows and
+  // narrates the outcome, but never creates a student or sends a consent link
+  // through these routes.
+  app.post("/api/guided-setup/roster/confirm", requireAuth, (req, res) =>
+    guidedSetupController.confirmRoster(req, res)
+  );
+  app.post("/api/guided-setup/consent/request-batch", requireAuth, (req, res) =>
+    guidedSetupController.requestConsentBatch(req, res)
+  );
+
   // ============= STUDENTS ROUTES =============
   app.get("/api/students", requireAuth, (req, res) =>
     studentController.getStudents(req, res)
@@ -1500,15 +1536,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= ONBOARDING ROUTES =============
-  app.get("/api/onboarding/status", requireAuth, (req, res) =>
-    onboardingController.getStatus(req, res)
-  );
-  app.post("/api/onboarding/complete-step-1", requireAuth, (req, res) =>
-    onboardingController.completeStep1(req, res)
-  );
-  app.post("/api/onboarding/complete-step-2", requireAuth, (req, res) =>
-    onboardingController.completeStep2(req, res)
-  );
   app.post("/api/onboarding/redeem-code", requireAuth, (req, res) =>
     onboardingController.redeemCode(req, res)
   );

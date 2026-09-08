@@ -161,6 +161,12 @@ export const NEED_FILL_DAYS = {
   waste: 2.5, // base drift (meals/drinks bump it)
   hygiene: 35 / 12, // ~2.9 days — the slowest burn
   dirt: 2, // clothes last ~2 days
+  // ⚖️ THE SOCIAL THIRD (interpersonal-politics.md §2a; owner's ruling ①). Both
+  // are BODY needs on the landed primitive, satisfied by ANOTHER ENTITY'S ACT,
+  // and both sit BEHIND loneliness (0.8) on purpose: company is the daily want,
+  // being looked up to and feeling safe are the slower ones underneath it.
+  standing: 1.5, // being deferred to — wanted about every day and a half
+  security: 2, // having someone at your back — the slowest social burn
 } as const;
 
 export type NeedKey = keyof typeof NEED_FILL_DAYS;
@@ -691,6 +697,8 @@ export const NEED_FILL_S = {
   waste: needFillS(DOLLHOUSE_SCALE, "waste"), // 600
   hygiene: needFillS(DOLLHOUSE_SCALE, "hygiene"), // 700
   dirt: needFillS(DOLLHOUSE_SCALE, "dirt"), // 480
+  standing: needFillS(DOLLHOUSE_SCALE, "standing"), // 360
+  security: needFillS(DOLLHOUSE_SCALE, "security"), // 480
 } as const;
 
 /** The street-clock sleep dwell (12 s). */
@@ -1166,10 +1174,33 @@ export function dailyTravelM(scale: WorldScale, mps: number = walkSpeedMps(scale
   return mps * scale.dayLengthS * (1 - scale.sleepFraction);
 }
 
-/** The one-way radius a band can work from camp and still sleep there — half
- *  a day's travel out, half back. The forage-side twin of serviceRadiusM. */
+/**
+ * The one-way radius a band can work from camp and still sleep there — half a
+ * MEAL-INTERVAL's travel out, half back. The forage-side twin of
+ * `serviceRadiusM`.
+ *
+ * ⚖️ TWO CLOCKS (user law 2026-09-08 — space-time-compression.md
+ * `## ⚖️ RULINGS 2026-09-08`). This quantity is a FORAGE budget: it prices how
+ * far a body may walk for FOOD, so it belongs to the METABOLIC clock
+ * (`needFillS(scale,"hunger")` — the interval between meals), not to the solar
+ * day. Until 2026-09-08 it multiplied `dayLengthS` through `dailyTravelM`,
+ * which is the same number only while `NEED_FILL_DAYS.hunger / metabolism`
+ * happens to be 1 — the shipped street clock, where both read 240 s, so this
+ * re-key is BEHAVIOUR-IDENTICAL on every world that boots today. It stops being
+ * identical the moment a world declares `metabolism ≠ 1` (SEASONAL_SCALE eats
+ * three times a game-day), and there the metabolic answer is the right one: a
+ * body that must eat every 80 s cannot forage over a whole day's walk.
+ *
+ * `sleepFraction` stays in the expression for the same reason it is in
+ * `dailyTravelM` — a sleeping body is not walking — and the halving is the
+ * out-and-back, unchanged.
+ *
+ * 🚫 NOT A CLOCK REFACTOR. Only this ONE seat moved; `dailyTravelM` itself
+ * still answers "a day's travel" and every caravan/haul reader of it is
+ * untouched (that is a separate round).
+ */
 export function forageRadiusM(scale: WorldScale, mps: number = walkSpeedMps(scale)): number {
-  return dailyTravelM(scale, mps) / 2;
+  return (mps * needFillS(scale, "hunger") * (1 - scale.sleepFraction)) / 2;
 }
 
 /** Non-producing mouths per producing adult, from the growth stage alone.

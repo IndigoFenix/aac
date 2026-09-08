@@ -9,6 +9,14 @@ interface StudentContextType {
   students: Student[];
   isReady: boolean;
   isLoading: boolean;
+  /**
+   * Which institute the current `students` array describes: `undefined` =
+   * never loaded, `null` = loaded for "no institute selected", a string =
+   * loaded for that institute. `isLoading === false` only means "not
+   * fetching right now" — this is the positive signal that the list in hand
+   * actually belongs to the current institute.
+   */
+  studentsInstituteId: string | null | undefined;
   selectStudent: (studentId?: string | null) => Promise<boolean>;
   refetchStudent: () => Promise<void>;
 }
@@ -30,6 +38,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
   const [student, setStudent] = useState<Student | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [studentsInstituteId, setStudentsInstituteId] = useState<string | null | undefined>(undefined);
   const { user } = useAuth();
   const { currentInstitute } = useInstitute();
   const prevInstituteIdRef = useRef<string | null | undefined>(undefined);
@@ -41,12 +50,14 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
   const loadStudents = async (): Promise<Student[]> => {
     if (!currentInstituteId) {
       setStudents([]);
+      setStudentsInstituteId(null);
       return [];
     }
 
     const cached = queryClient.getQueryData<Student[]>(currentQueryKey);
     if (cached) {
       setStudents(cached);
+      setStudentsInstituteId(currentInstituteId);
       return cached;
     }
 
@@ -58,12 +69,14 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
         data?.success && Array.isArray(data.students) ? data.students : [];
 
       setStudents(list);
+      setStudentsInstituteId(currentInstituteId);
       queryClient.setQueryData<Student[]>(currentQueryKey, list);
 
       return list;
     } catch (error) {
       console.error('Get AAC Users failed:', error);
       setStudents([]);
+      setStudentsInstituteId(currentInstituteId);
       queryClient.setQueryData<Student[]>(currentQueryKey, []);
       return [];
     }
@@ -186,6 +199,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
       // user logged out → clear state
       setStudents([]);
       setStudent(null);
+      setStudentsInstituteId(undefined);
       prevInstituteIdRef.current = undefined;
       return;
     }
@@ -198,6 +212,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
       // No institute selected → clear students
       setStudents([]);
       setStudent(null);
+      setStudentsInstituteId(null);
       setIsLoading(false);
       return;
     }
@@ -230,6 +245,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
     student,
     students,
     isLoading,
+    studentsInstituteId,
     isReady: !isLoading && !!student,
     selectStudent,
     refetchStudent,

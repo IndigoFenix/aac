@@ -1,0 +1,375 @@
+# world-text v1   proto=1
+# world=homestead.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T01:46:31.693Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-1: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-6: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "😴"
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "Where are you going?"  [place#question + you + go]
+SAY    person-4: "I'm going to get a basket."  [go + get + basket]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "bye-bye"  [goodbye]
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: [onion]
+EXIT   person-5 left view there east.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: [nut]
+SAY    person-3: [nut]
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "😴"
+ENTER  person-5 came into view there north.
+SAY    person-6: "Where are you going?"  [place#question + you + go]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "I'm going to the yard."  [go + yard]
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-3: [nut]
+SAY    person-1: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "😴"
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-3: "😴"
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-3 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-3 came into view there east.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there north.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-5 left view there north.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there east.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there south.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-4 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there east.
+EXIT   person-3 left view there north.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "😴"
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-5 came into view there east.
+ENTER  person-6 came into view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-1 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there south.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-5 left view there north.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-3 came into view there north.
+EXIT   person-3 left view there north.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-4 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-5 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "😴"
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-3 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-1 came into view there west.
+EXIT   person-4 left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-3 left view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-5 left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-4 came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-5 came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "😴"
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-1 came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there south.
+ENTER  person-3 came into view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-4 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there south.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-3 left view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "😴"
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there west.
+ENTER  person-1 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-3 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-3: "😴"
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "Are you okay?"  [you + ok#question]
+SAY    person-3: "I'm hungry."  [i_me + hungry]
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-4 came into view there west.
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+# ─────────────────────────────────────────
+# commands=120  presses=0  screens=1  sim=1200.5s
+# events: TICK 120  SAY 65  EXIT 23  ENTER 23  BOARD 1  NOTE 1

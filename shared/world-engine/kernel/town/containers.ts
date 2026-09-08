@@ -297,7 +297,16 @@ export function mayDissolveToStack(
 // but not always — a bed is not a container (no `contains` slots) yet
 // still has one, so a row can carry `owner` alone on an otherwise-bare
 // `"standing"` record.
-export type ContainerMount = "standing" | "loose" | "worn";
+//  - `"folded"` — a prop that was IN A BODY'S HANDS when that body was
+//    condensed out of the streamed world (`glyph` + `holder`, the creature id;
+//    no world instance, so no `entityId`/`at`, exactly like `"worn"`). The
+//    LOD-fold law is that a body condensed out of the world takes its carry
+//    WITH it; the alternative — leaving the prop in the world pointing at a
+//    deleted avatar — is not a location at all, and it is the measured 20–54 m
+//    snap of 2026-09-06. The unfold puts it back into the SAME body's hands at
+//    the body's new position (quest-host `unfoldBodyCarry`); nothing else in
+//    the game may take a folded prop, exactly as nothing may take a worn one.
+export type ContainerMount = "standing" | "loose" | "worn" | "folded";
 
 export interface ContainerRecord {
   /** mount:"loose" | "worn" — the concrete instance's stack glyph. */
@@ -316,6 +325,9 @@ export interface ContainerRecord {
   at?: number;
   /** mount:"worn" — the creature wearing it (mirrors `wornBagIndex`). */
   wearer?: string;
+  /** mount:"folded" — the creature whose HANDS it folded out of (mirrors
+   *  `foldedCarryIndex`). Its unfold puts it back in those same hands. */
+  holder?: string;
   /** mount:"loose", containedIn set — the prop is a MIRROR: a visible shell
    *  of ONE unit that is banked on the CONTAINING box's stack (a table
    *  rendering its contents). The loose census must skip it or that unit
@@ -330,6 +342,10 @@ export interface ContainerRecord {
 export interface ContainerRegistry {
   containerRecords: Map<string, ContainerRecord>;
   wornBagIndex: Map<string, string>;
+  /** cid → the objId that folded out of its HANDS with it (mount `"folded"`).
+   *  The hands' twin of `wornBagIndex`, and the reason a folded carry has a
+   *  place to be rather than dangling off a deleted avatar. */
+  foldedCarryIndex: Map<string, string>;
 }
 
 // ── accessor helpers — the ONLY mutation seam for `containerRecords` /
@@ -521,6 +537,50 @@ export function looseCount(registry: ContainerRegistry): number {
   let n = 0;
   for (const rec of registry.containerRecords.values()) if (rec.mount === "loose") n++;
   return n;
+}
+
+/**
+ * FOLD the prop `id` onto `cid`'s record — the hands' twin of `donWornBag`'s
+ * bookkeeping half. The CALLER takes the object out of the world (only
+ * quest-host touches live world objects); this moves the row.
+ *
+ * The row keeps its `glyph`, its `relation`, its `owner` and — the whole point —
+ * its `stock`, so a basket that folds with eight blocks in it still holds eight
+ * blocks. `entityId`/`at` go, exactly as they do for a worn bag: there is no
+ * world instance while folded, and the unfold mints a fresh one.
+ */
+export function setFoldedCarry(registry: ContainerRegistry, id: string, cid: string): ContainerRecord {
+  const rec = recordOf(registry, id);
+  rec.mount = "folded";
+  rec.holder = cid;
+  delete rec.entityId;
+  delete rec.at;
+  delete rec.mirror;
+  registry.foldedCarryIndex.set(cid, id);
+  return rec;
+}
+
+/** UNFOLD's bookkeeping half: forget the fold (the caller re-registers the
+ *  prop as loose and puts it back in the hands). Safe to call for a cid with
+ *  nothing folded. Returns the objId that was folded, or undefined. */
+export function clearFoldedCarry(registry: ContainerRegistry, cid: string): string | undefined {
+  const objId = registry.foldedCarryIndex.get(cid);
+  if (objId === undefined) return undefined;
+  registry.foldedCarryIndex.delete(cid);
+  const rec = registry.containerRecords.get(objId);
+  if (rec?.mount === "folded") delete rec.holder;
+  return objId;
+}
+
+/** The folded-carry row for `cid`, shaped like `wornBagOf`. */
+export function foldedCarryOf(
+  registry: ContainerRegistry,
+  cid: string,
+): { objId: string; glyph: string } | undefined {
+  const objId = registry.foldedCarryIndex.get(cid);
+  if (!objId) return undefined;
+  const glyph = registry.containerRecords.get(objId)?.glyph ?? "";
+  return { objId, glyph };
 }
 
 /** The worn-bag row for `cid` (an old `wornBags.get`), shaped exactly as

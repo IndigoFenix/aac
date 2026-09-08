@@ -87,7 +87,7 @@ describe("the absolute veto in selectGoal — pruned, not outweighed", () => {
     action: { kind: "build", type: "house" } as never,
     priority: 5, enabled: true, order: 0,
   };
-  const relation = () => ({ affinity: 1, trust: 1, authority: 1 }); // maximal compliance
+  const relation = () => ({ affinity: 1, trust: 1, authority: 1, fear: 0 }); // maximal compliance
 
   it("a vetoed rule candidate never wins, whatever the author's authority", () => {
     const withVeto = selectGoal({

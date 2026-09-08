@@ -490,7 +490,7 @@ describe("the LEGACY path — no rng means the old hard thresholds, unchanged", 
 
 describe("meta.playerRelation — the authority knob a fixed game seeds (decision 2)", () => {
   /** The household bond quest-host falls back to for a family member. */
-  const FAMILY: Relation = { affinity: 0.5, trust: 0.8, authority: 0.8 };
+  const FAMILY: Relation = { affinity: 0.5, trust: 0.8, authority: 0.8, fear: 0 };
 
   /**
    * quest-host's exported `authoredRelation`, MIRRORED — the host module cannot be
@@ -528,6 +528,7 @@ describe("meta.playerRelation — the authority knob a fixed game seeds (decisio
       affinity: DEFAULT_RELATION.affinity,
       trust: DEFAULT_RELATION.trust,
       authority: 0.9,
+      fear: DEFAULT_RELATION.fear,
     });
   });
 

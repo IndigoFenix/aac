@@ -13,10 +13,13 @@ import { studentRepository, calendarRepository, settingsRepository, locationRepo
 import { calendarService } from "../calendarService";
 import {
   matchStudentLocation,
+  haversineMeters,
+  AWAY_FROM_USUAL_M,
   type GpsReading,
   type EventOccurrence,
   type LocationMatch,
 } from "@shared/location-matching";
+import { areaLookupService, formatArea, type AreaFix } from "../areaLookupService";
 import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACMuteState, AACAppDefinition } from "./types";
 import {
@@ -51,6 +54,27 @@ import {
   type PlanGroupEntry,
 } from "./session-plan";
 import type { DisclosureContext } from "../processorDisclosure";
+
+/** The closest place registered for the student, at any distance. */
+interface NearestRegistered {
+  title: string;
+  distanceM: number;
+}
+
+/**
+ * What the current GPS reading supports saying, at both scales that matter:
+ * WHICH registered place they are standing at (metres), and WHAT AREA OF THE
+ * WORLD they are in (kilometres). The second survives when the first is empty —
+ * a student on holiday matches no registered place, and the old code therefore
+ * told the AI nothing at all about where they were.
+ */
+interface LocationSignals {
+  matches: LocationMatch[];
+  /** Nearest registered place at any distance; null when none are registered. */
+  nearest: NearestRegistered | null;
+  /** City/region/country containing the fix; null when it could not be resolved. */
+  area: AreaFix | null;
+}
 
 /**
  * Monitor Agent
@@ -89,6 +113,8 @@ export class MonitorAgent {
   private lastGps?: GpsReading;
   /** Dedup key of the last location match reported to the live agents, so re-checks only inject on change. */
   private lastReportedLocationKey?: string;
+  /** Nearest registered place at any distance, from the last match resolution. */
+  private lastNearestRegistered: NearestRegistered | null = null;
 
   constructor(
     studentId: string,
@@ -117,12 +143,32 @@ export class MonitorAgent {
   }
 
   /**
+   * Everything the current GPS reading supports saying about where the student
+   * is — at two very different scales.
+   */
+  private async resolveLocationSignals(now: Date): Promise<LocationSignals> {
+    const [matches, area] = await Promise.all([
+      this.resolveLocationMatches(now),
+      // Independent of the match: the point of the area is that it still exists
+      // when nothing matched. Run it alongside so it costs no extra startup time.
+      areaLookupService.lookup(this.lastGps),
+    ]);
+    return { matches, nearest: this.lastNearestRegistered, area };
+  }
+
+  /**
    * Resolve the student's current GPS against locations registered to their
    * institutes, cross-referenced with events scheduled around `now`. Returns
    * ranked matches (at_event first), or [] when there's no GPS / no nearby
    * location. Self-contained so it can run at startup AND on monitor re-checks.
+   *
+   * Side effect: records the nearest registered place at ANY distance in
+   * `lastNearestRegistered`. The match list can only ever contain places within
+   * the radius, so it cannot answer "how far is the closest one?" — which is
+   * exactly the question that separates a trip from a normal Tuesday.
    */
   private async resolveLocationMatches(now: Date): Promise<LocationMatch[]> {
+    this.lastNearestRegistered = null;
     if (!this.lastGps || !this.studentId) return [];
 
     try {
@@ -138,6 +184,13 @@ export class MonitorAgent {
         longitude: l.longitude,
       }));
       if (candidateLocations.length === 0) return [];
+
+      for (const loc of candidateLocations) {
+        const distanceM = haversineMeters(this.lastGps, loc);
+        if (!this.lastNearestRegistered || distanceM < this.lastNearestRegistered.distanceM) {
+          this.lastNearestRegistered = { title: loc.title, distanceM };
+        }
+      }
 
       // Events around now (±3h covers the ±2h match window plus slack for
       // recurrence expansion at day boundaries).
@@ -182,12 +235,18 @@ export class MonitorAgent {
    * before landing in the system prompt. Returns "" when there's no signal.
    */
   private async buildLocationContextSection(now: Date): Promise<string> {
-    const matches = await this.resolveLocationMatches(now);
-    const top0 = matches[0];
+    const signals = await this.resolveLocationSignals(now);
+    const { matches } = signals;
     // Seed the re-check dedup key so the first gps_update doesn't re-announce
-    // the location the startup prompt already described.
-    this.lastReportedLocationKey = top0 ? `${top0.location.id}:${top0.confidence}` : "none";
-    if (matches.length === 0) return "";
+    // what the startup prompt already described.
+    this.lastReportedLocationKey = this.locationKeyFor(signals);
+
+    const areaLine = this.buildAreaLine(signals);
+    if (matches.length === 0) {
+      // No registered place matched — which is not the same as no location.
+      // When the area resolved, that coarse answer is the whole section.
+      return areaLine ? `\n\n## Current Location (from device GPS)\n${areaLine}` : "";
+    }
 
     const top = matches[0];
     const title = defangSectionContent(top.location.title);
@@ -221,8 +280,66 @@ export class MonitorAgent {
       const others = matches.slice(1, 3).map((m) => defangSectionContent(m.location.title)).join(", ");
       lines.push(`Other nearby registered places: ${others}.`);
     }
+    if (areaLine) lines.push(areaLine);
 
     return `\n\n## Current Location (from device GPS)\n${lines.join("\n")}`;
+  }
+
+  /** Metres for anything walkable, kilometres once it stops being walkable. */
+  private formatDistance(metres: number): string {
+    return metres >= 1000 ? `${Math.round(metres / 1000)}km` : `${Math.round(metres)}m`;
+  }
+
+  /** Is this fix outside the area the student's registered places sit in? */
+  private isAwayFromUsual(signals: LocationSignals): boolean {
+    return !!signals.nearest && signals.nearest.distanceM > AWAY_FROM_USUAL_M;
+  }
+
+  /**
+   * The dedup / cache key for a resolution. The registered-place half is
+   * unchanged, so a normal session at a familiar place keeps exactly the key it
+   * had before this feature existed (it also seeds `goalsHash` — see
+   * session-plan.ts — and busting that cache for every session would be a real
+   * cost for no gain).
+   *
+   * The area is appended only when it actually carries information the
+   * registered-place half does not: the student is far from every registered
+   * place, or has none registered at all.
+   */
+  private locationKeyFor(signals: LocationSignals): string {
+    const top = signals.matches[0];
+    const base = top ? `${top.location.id}:${top.confidence}` : "none";
+    const areaName = formatArea(signals.area);
+    if (this.isAwayFromUsual(signals)) return `${base}|away:${areaName || "unknown"}`;
+    // Nothing registered anywhere means there is no "usual" to be away from —
+    // the area is then the only location signal there is, so changes to it
+    // still have to move the key.
+    if (!signals.nearest && areaName) return `${base}|area:${areaName}`;
+    return base;
+  }
+
+  /**
+   * The city/country sentence for the startup prompt, or "" when the area could
+   * not be resolved. Place names come from a third party, so they are defanged
+   * exactly like clinician-entered text.
+   *
+   * The judgement it encodes: naming the area is only interesting next to
+   * whether that area is the usual one, and "usual" is knowable ONLY when the
+   * student has registered places to be far from. With none registered, the
+   * area is stated and nothing is concluded from it.
+   */
+  private buildAreaLine(signals: LocationSignals): string {
+    const areaName = defangSectionContent(formatArea(signals.area));
+    if (!areaName) return "";
+
+    const { nearest } = signals;
+    if (nearest && this.isAwayFromUsual(signals)) {
+      return `The device places them in **${areaName}** — about ${this.formatDistance(nearest.distanceM)} from the nearest place registered for them (${defangSectionContent(nearest.title)}). This is NOT their usual area: assume nothing about the usual routine, people, or activities, and let them tell you what is happening where they are.`;
+    }
+    if (nearest) {
+      return `The device places them in **${areaName}**, the area their registered places are in — an ordinary day in familiar surroundings, as far as location goes.`;
+    }
+    return `The device places them in **${areaName}**. No places are registered for this user, so there is nothing to compare that against — it is where they are now, not necessarily anywhere unusual.`;
   }
 
   /**
@@ -231,29 +348,52 @@ export class MonitorAgent {
    * IF the match has meaningfully changed since the last report; otherwise null.
    */
   async checkLocationContext(now: Date = new Date()): Promise<string | null> {
-    const matches = await this.resolveLocationMatches(now);
-    const top = matches[0];
-    const key = top ? `${top.location.id}:${top.confidence}` : "none";
+    const signals = await this.resolveLocationSignals(now);
+    const top = signals.matches[0];
+    const key = this.locationKeyFor(signals);
     if (key === this.lastReportedLocationKey) return null;
 
     // Skip the very first "none" — startup already covered the initial state.
     const firstReport = this.lastReportedLocationKey === undefined;
+    const wasAway = this.lastReportedLocationKey?.includes("|away:") ?? false;
     this.lastReportedLocationKey = key;
-    if (!top) return firstReport ? null : `[LOCATION] The user no longer appears to be at a registered place.`;
+
+    const areaName = formatArea(signals.area);
+    const away = this.isAwayFromUsual(signals);
+    // The area only earns its own announcement when it says something the
+    // registered-place line does not: a trip beginning, a trip ending, or a
+    // move between cities with no registered place anywhere to anchor to.
+    const areaNote = areaName
+      ? away
+        ? ` They are in ${areaName}, about ${this.formatDistance(signals.nearest!.distanceM)} from the nearest place registered for them (${signals.nearest!.title}) — not their usual area.`
+        : wasAway
+          ? ` They are back in ${areaName}, their usual area.`
+          : !signals.nearest
+            ? ` They are in ${areaName}.`
+            : ""
+      : "";
+
+    if (!top) {
+      if (firstReport && !areaNote) return null;
+      const head = firstReport
+        ? `[LOCATION] The user is not at any registered place.`
+        : `[LOCATION] The user no longer appears to be at a registered place.`;
+      return `${head}${areaNote}`;
+    }
 
     const title = top.location.title;
     const dist = Math.round(top.distanceM);
     if (top.confidence === "at_event" && top.nearbyEvents.length > 0) {
       const ev = top.nearbyEvents[0];
-      return `[LOCATION] The user now appears to be at ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. They are likely at this event.`;
+      return `[LOCATION] The user now appears to be at ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. They are likely at this event.${areaNote}`;
     }
     // Same hedge as the startup section: a coarse fix may not omit a real event,
     // and may not assert attendance either.
     if (top.nearbyEvents.length > 0) {
       const ev = top.nearbyEvents[0];
-      return `[LOCATION] The user may be somewhere near ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. The reading is too imprecise to be sure.`;
+      return `[LOCATION] The user may be somewhere near ${title} (~${dist}m away), where "${ev.title}" is scheduled around ${this.formatEventWhen(ev.startTime)}. The reading is too imprecise to be sure.${areaNote}`;
     }
-    return `[LOCATION] The user now appears to be ${top.coarse ? "somewhere near" : "at or near"} ${title} (~${dist}m away).`;
+    return `[LOCATION] The user now appears to be ${top.coarse ? "somewhere near" : "at or near"} ${title} (~${dist}m away).${areaNote}`;
   }
 
   /**

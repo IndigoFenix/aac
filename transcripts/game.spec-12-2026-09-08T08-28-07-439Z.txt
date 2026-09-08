@@ -1,0 +1,36 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T08:28:07.439Z
+# ─────────────────────────────────────────
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 0.8s.
+> say nice
+OK     said: nice
+TOAST  💬 "nice" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say i_me + want + apple
+OK     said: i_me + want + apple
+TOAST  💬 "i_me + want + apple" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say mara + nice.not
+OK     said: mara + nice.not
+TOAST  💬 "mara + nice.not" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say how + you
+OK     said: how + you
+TOAST  💬 "how + you" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=5  presses=0  screens=1  sim=4.0s
+# events: TICK 5  OK 4  TOAST 4  SCENE 1  BOARD 1  NOTE 1

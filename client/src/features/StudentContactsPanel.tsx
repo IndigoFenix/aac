@@ -11,6 +11,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useToast } from '@/hooks/use-toast';
+import { invalidateAfterContactChange } from '@/hooks/useConsentApi';
+import { useGuidedSetup } from '@/features/guided-setup/useGuidedSetup';
 import { cn } from '@/lib/utils';
 import type { StudentContact } from '@shared/schema';
 
@@ -49,6 +51,7 @@ export function StudentContactsPanel({ isOpen }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
+  const { refresh: refreshGuidedSetup, live: guidedLive } = useGuidedSetup();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingContact, setEditingContact] = useState<StudentContact | null>(null);
@@ -79,6 +82,24 @@ export function StudentContactsPanel({ isOpen }: Props) {
   });
 
   const contacts = contactsQuery.data?.contacts || [];
+
+  // Every write to a contact — create, edit, confirm, delete — moves data that
+  // three other surfaces read: the contacts list itself, the consent queries
+  // (the wizard's guardian, the resolved signer, pending invitations) and the
+  // guided-setup view, whose consent gate flips from `none` to `sign_required`
+  // the moment a contactable guardian exists. staleTime is Infinity app-wide,
+  // so none of them notice on their own.
+  // The guided view's own refresh — never while a flow is LIVE, since a GET
+  // stores a non-live view and would clobber the running flow's state (the
+  // provider's own resume-detection effect skips for the same reason).
+  const refreshGuidedView = useCallback(() => {
+    if (studentId && !guidedLive) void refreshGuidedSetup(studentId);
+  }, [studentId, guidedLive, refreshGuidedSetup]);
+
+  const afterContactChange = useCallback(() => {
+    invalidateAfterContactChange(queryClient, studentId);
+    refreshGuidedView();
+  }, [queryClient, studentId, refreshGuidedView]);
 
   const filteredContacts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -115,7 +136,7 @@ export function StudentContactsPanel({ isOpen }: Props) {
     },
     onSuccess: () => {
       toast({ title: t('contacts.deleted') });
-      queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', studentId, 'contacts'] });
+      afterContactChange();
     },
     onError: (err: Error) => {
       toast({ title: t('common.error'), description: err.message, variant: 'destructive' });
@@ -137,7 +158,7 @@ export function StudentContactsPanel({ isOpen }: Props) {
     },
     onSuccess: () => {
       toast({ title: t('contacts.confirmed') });
-      queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', studentId, 'contacts'] });
+      afterContactChange();
     },
     onError: (err: Error) => {
       toast({ title: t('common.error'), description: err.message, variant: 'destructive' });
@@ -423,9 +444,10 @@ export function StudentContactsPanel({ isOpen }: Props) {
             setEditingContact(null);
             setPrefillForm(null);
           }}
-          studentId={studentId}
+          studentId={student.id}
           contact={editingContact}
           initialForm={creating ? prefillForm ?? undefined : undefined}
+          onChanged={refreshGuidedView}
         />
       )}
     </div>

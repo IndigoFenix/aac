@@ -1,0 +1,713 @@
+# world-text v1   proto=1
+# world=homestead-fast.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-06T23:03:57.699Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+TICK   waited 5.0s.
+> say build house
+OK     said: build + house
+SAY    person-4: "I will build the house."  [build.will + house]
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+SAY    person-3: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SITE   2 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 0/120, there east, 12 m
+  site-2: a yard — marked ground, here east, 0 m
+TICK   quiet after 2.5s.
+> wait 10
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 8 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-3: "I will build."  [i_me + build.will]
+SAY    person-4: "I will build."  [i_me + build.will]
+SAY    person-6: "I will build."  [i_me + build.will]
+SAY    person-1: "I will build."  [i_me + build.will]
+SAY    person-5: "I will build."  [i_me + build.will]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🧱 materials staged — builders raise the house (feedback)
+SITE   2 thing(s) being built.
+  site-1: a house — floor laid, 0% worked, there east, 12 m
+  site-2: a yard — marked ground, here east, 0 m
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SITE   2 thing(s) being built.
+  site-1: a house — pillars up, 50% worked, there east, 12 m
+  site-2: a yard — marked ground, here east, 0 m
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 went into the pink house.
+EXIT   person-1 went into the pink house.
+TOAST  🏛️ the house is finished (feedback)
+SITE   1 thing(s) being built.
+  site-2: a yard — marked ground, here east, 0 m
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-1 came into view there east.
+ENTER  person-4 came into view there east.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "😴"
+SAY    person-1: "Are you okay?"  [you + ok#question]
+SAY    person-4: "I'm hungry."  [i_me + hungry]
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there north.
+EXIT   person-5 left view there north.
+EXIT   person-3 left view there north.
+EXIT   person-1 left view there east.
+EXIT   person-4 left view there east.
+TOAST  🏠 a family moves into the new house (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-21 came into view there south.
+ENTER  person-22 came into view there south.
+SAY    person-21: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-18 went into the pink house.
+SAY    person-19: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: [sit]
+EXIT   person-21 left view there east.
+EXIT   person-22 left view there east.
+EXIT   person-19 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-19 came into view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: "Where is the food?"  [place#question + food]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: "Where is the food?"  [place#question + food]
+SAY    person-19: "Help you."  [help + you]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: "Where is the food?"  [place#question + food]
+SAY    person-19: "I don't have food."  [have.not + food]
+SAY    person-19: "Where is the food?"  [place#question + food]
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-21 came into view there east.
+SAY    person-19: "Where is the food?"  [place#question + food]
+SAY    person-21: "Where is the food?"  [place#question + food]
+SAY    person-19: "Where is the food?"  [place#question + food]
+ENTER  person-22 came into view there east.
+SAY    person-22: "Why do you want food?"  [why + food]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "Because I'm hungry."  [because + i_me + hungry]
+SAY    person-21: "hi"  [hi]
+SAY    person-21: "I don't have food."  [have.not + food]
+EXIT   person-22 left view there east.
+SAY    person-21: "Thank you!"  [thank_you]
+SAY    person-20: "I don't have food."  [have.not + food]
+ENTER  person-22 came into view there east.
+ENTER  person-20 came into view there east.
+EXIT   person-22 left view there east.
+EXIT   person-20 left view there east.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: "Help you."  [help + you]
+ENTER  person-22 came into view there east.
+ENTER  person-20 came into view there east.
+SAY    person-19: "Where is the food?"  [place#question + food]
+SILENT person-21: …
+SAY    person-20: "Where is the food?"  [place#question + food]
+SAY    person-20: [sit]
+SAY    person-22: "I don't have food."  [have.not + food]
+EXIT   person-19 left view there east.
+EXIT   person-22 left view there east.
+EXIT   person-20 left view there east.
+SAY    person-21: "Where is the food?"  [place#question + food]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "Help you."  [help + you]
+ENTER  person-19 came into view there east.
+ENTER  person-22 came into view there east.
+ENTER  person-20 came into view there east.
+SAY    person-20: [sit]
+EXIT   person-22 left view there east.
+EXIT   person-20 left view there east.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-19: "bye-bye"  [goodbye]
+SAY    person-21: "I don't have food."  [have.not + food]
+SAY    person-19: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "I don't have food."  [have.not + food]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "I don't help you."  [help.not + you]
+SAY    person-21: "I don't have food."  [have.not + food]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "Where is the food?"  [place#question + food]
+ENTER  person-20 came into view there east.
+ENTER  person-22 came into view there east.
+EXIT   person-19 left view there east.
+EXIT   person-20 left view there east.
+EXIT   person-22 left view there east.
+SAY    person-21: "I don't have food."  [have.not + food]
+SAY    person-21: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "Where is the food?"  [place#question + food]
+ENTER  person-19 came into view there east.
+ENTER  person-22 came into view there east.
+ENTER  person-20 came into view there east.
+SAY    person-19: "Where is the food?"  [place#question + food]
+EXIT   person-19 left view there east.
+EXIT   person-22 left view there east.
+EXIT   person-20 left view there east.
+SAY    person-21: "I don't have food."  [have.not + food]
+SAY    person-21: "Help you."  [help + you]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-18: "hi"  [hi]
+ENTER  person-18 came into view there east.
+SAY    person-21: "bye-bye"  [goodbye]
+SAY    person-18: "bye-bye"  [goodbye]
+SAY    person-18: "Where is the food?"  [place#question + food]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-18: "Because I'm hungry."  [because + i_me + hungry]
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-20 came into view there east.
+ENTER  person-19 came into view there east.
+SAY    person-20: "bye-bye"  [goodbye]
+EXIT   person-18 left view there east.
+EXIT   person-20 left view there east.
+EXIT   person-19 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-21: "I'm going home."  [go + home]
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-19 came into view there east.
+ENTER  person-20 came into view there east.
+SAY    person-19: [sit]
+SAY    person-20: [sit]
+EXIT   person-21 left view there east.
+EXIT   person-19 left view there east.
+EXIT   person-20 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> family
+FAMILY 5 in the household.
+  person-20 (1) — hungry
+  person-19 (2) — hungry
+  person-21 (3) — hungry
+  person-18 (4) — hungry
+  person-22 (5) — hungry
+TICK   quiet after 1.0s.
+> self
+SELF   you are outdoors.
+  holding nothing.
+  looking at nothing.
+  talking with person-22, person-20.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=244  presses=0  screens=2  sim=2410.0s
+# events: TICK 244  SAY 87  TOAST 31  EXIT 31  ENTER 24  SITE 4  BOARD 2  NOTE 2  OK 1  SILENT 1  FAMILY 1  SELF 1

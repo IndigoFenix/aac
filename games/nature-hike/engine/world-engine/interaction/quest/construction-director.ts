@@ -1184,6 +1184,25 @@ export interface ConstructionDirectorCtx {
   residentTownCtx(session: QuestSession, houseIndex: number): any;
   removeLooseProp(session: QuestSession, objId: string): void;
   relationToward(session: QuestSession, cid: string, issuer: string): Relation;
+  /**
+   * ⚖️ M1 — AUTHORITY IS EARNED BY OUTCOME (influence-and-authority.md M1;
+   * politics round P-6). The host's `emitOrderOutcome`, injected — because
+   * SPOKEN BUILD ORDERS RETIRE HERE. The host's own pool sweep skips
+   * `build`/`buildwork` on purpose ("these complete off REAL construction
+   * state, never off the walk"), so the construction seats are the only
+   * places that know whether a build order actually happened.
+   *
+   * 🚨 The three skips (self-issued / nobody SPOKE it / no person behind the
+   * issuer) live in `orderOutcomeParties` and are the host's, shared — never
+   * re-argued at a call site. Skip ② is what keeps every CIVIC sweep row
+   * silent: a sweep posts as `LOCAL_PLAYER_CID` and stamps no `spoken`, so
+   * the town thinking of something can never earn the player authority.
+   */
+  emitOrderOutcome(
+    session: QuestSession,
+    task: { id: string; issuer: string; claimedBy?: string | null; spoken?: boolean },
+    kind: "order-done" | "order-failed",
+  ): void;
   pushPocket(session: QuestSession): void;
   itemLocOf(session: QuestSession): ResolveLocation;
   issueGoalPlan(session: QuestSession, cid: string, plan: GoalPlan): void;
@@ -1299,7 +1318,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf, drawSourceShelf,
     playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage, townSurplus,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
-    relationToward, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
+    relationToward, emitOrderOutcome, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, depleteWildSource, cutWildFeature, cutForDraw, dropFromStack,
     takeIntoHands, setDownFromHands, bodyCarryOf, takeUnitsFromBody,
     creatureMood, handIsFree, townHandPool,
@@ -3418,8 +3437,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       deltas.removeDemolitionSite(target.ord);
     }
     // Retire the builders: their site is gone, so the pooled work is done.
+    // ⚖️ M1 — AND IT DID NOT HAPPEN. This is the ONE construction seat where
+    // the engine knows the asked-for thing was NOT built: the row was called
+    // off and its materials banked. A leader who points at a lot and then
+    // withdraws it pays for being wrong about what the town needed, exactly as
+    // `orderWindowOutcome` charges a delegation that pointed at an empty pile.
     for (const t of session.taskPool.claimed()) {
       if (t.goal.kind === "buildwork" && !buildworkSiteAt(session, t.goal.site)) {
+        emitOrderOutcome(session, t, "order-failed");
         session.taskPool.complete(t.id);
       }
     }
@@ -6482,30 +6507,187 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     return { milling, rest };
   }
 
-  /** COMMIT a finished refine (the per-kind executor): consume the raw
-   *  bill FROM the pile, then mint — never the reverse (the craftItems
-   *  law: a mill that eats its inputs and produces nothing is the bug
-   *  class the ordering prevents). The product lands storehouse-first;
-   *  any pile remainder banks with it; the row retires. */
-  function commitRefineOrder(session: QuestSession, r: RefineOrder): void {
+  /** The container a refine row's output lands in — resolved ONCE per mint so
+   *  the per-unit path and the retirement bank cannot pick different shelves. */
+  function refineDepositStack(
+    session: QuestSession,
+    r: RefineOrder,
+  ): Record<string, number> | null {
     const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
-    if (!deltas) return;
-    if (Object.keys(stagingMissing(r)).length) return; // pile ran thin — regather
-    for (const [head, n] of Object.entries(r.costs)) takeStock(r.pile, head, n);
+    if (!deltas) return null;
     const destId = refineDepositId(session, r.scope);
-    const stack = destId
-      ? ensureContainerStock(session, destId)
-      : (deltas.stock as Record<string, number>);
-    stack[r.produces] = (stack[r.produces] ?? 0) + r.count;
-    for (const [g, n] of Object.entries(r.pile)) {
-      if (n > 0) stack[g] = (stack[g] ?? 0) + n;
-      delete r.pile[g];
+    return destId ? ensureContainerStock(session, destId) : (deltas.stock as Record<string, number>);
+  }
+
+  /**
+   * ⚖️ WHAT THE NEXT BLOCK COSTS — the REMAINING bill split over the REMAINING
+   * units, last-unit-pays-the-rest. Σ over a whole batch is exactly the posted
+   * `costs`, whatever the ratio (item conservation: 24 wood → 12 blocks, never
+   * 23 and never 25), and every instalment is a whole unit even at a fractional
+   * `inPerOut` — a stack map holds things, not fractions of them.
+   */
+  function refineUnitPay(r: RefineOrder, unitsLeft: number): Record<string, number> {
+    const pay: Record<string, number> = {};
+    if (unitsLeft <= 0) return pay;
+    for (const [g, n] of Object.entries(r.costs)) {
+      const due = n - Math.round((n * (unitsLeft - 1)) / unitsLeft);
+      if (due > 0) pay[g] = due;
+    }
+    return pay;
+  }
+
+  /**
+   * 🪚 MINT PER UNIT AS LABOUR BANKS — the block chain's own cadence (user,
+   * 2026-09-06: *"Are blocks cut one at a time, or in groups? One at a time
+   * would make more sense…"*). A mill that shows nothing for 144 s and then
+   * drops twelve blocks is a batch REACTOR, not a bench: nobody can carry what
+   * does not exist yet, so every porter in reach idles through the window and
+   * then contends for one pile. Cutting one at a time makes the bench a
+   * VISIBLY ACCUMULATING bank — blocks appear as the work is done, and the
+   * pull decider's worthwhile gate (`contribute.ts`) plus the carrier's own bag
+   * decide when a pile is worth a trip. `REFINE_BATCH_UNITS` survives as what
+   * it always described best: the GATHER/staging cadence, the slice of raw one
+   * row stages at a time.
+   *
+   * 🚨 CONSUME THEN MINT, AT UNIT GRAIN. The batch commit's ordering law
+   * ("a mill that eats its inputs and produces nothing is the bug class the
+   * ordering prevents") is kept per block: the raw for THIS block leaves the
+   * pile and the block lands in the same statement pair, so the world holds
+   * either the wood or the block at every instant a reader could look.
+   *
+   * ⚖️ …AND THE BILL SHRINKS WITH THE PILE. `costs` is decremented by exactly
+   * what was paid, so `stagingMissing(r)` — which `billRowsOf` runs over EVERY
+   * order, laboring rows included — still answers "nothing missing" for a row
+   * that is milling. Draining the pile alone would make a working mill advertise
+   * a growing wood shortfall and pull porters to feed a row that needs nothing.
+   * `count`, `buildDays` and `labor` are NOT touched: the dwell link's
+   * `left / buildDays` urgency, the book's `open` sum and the retirement toast
+   * all keep their pre-patch meaning.
+   *
+   * Returns how many units were actually cut (0 when the pile cannot pay —
+   * a partial batch never mints more than its labour banked OR than its
+   * materials cover, and an abandoned row's already-banked units stay real).
+   */
+  function mintRefineUnits(session: QuestSession, r: RefineOrder, want: number): number {
+    if (want <= 0) return 0;
+    const stack = refineDepositStack(session, r);
+    if (!stack) return 0;
+    let made = 0;
+    while (made < want && (r.minted ?? 0) < r.count) {
+      const unitsLeft = r.count - (r.minted ?? 0);
+      const pay = refineUnitPay(r, unitsLeft);
+      // HEAD-FOLDED, exactly as `stagingMissing` folds a bill — two keys of one
+      // head are one demand on the pile, never two independent ones.
+      const need = new Map<string, number>();
+      for (const [g, n] of Object.entries(pay)) {
+        const h = stackHead(g);
+        need.set(h, (need.get(h) ?? 0) + n);
+      }
+      if ([...need].some(([h, n]) => stackUnits(r.pile, h) < n)) break;
+      for (const [g, n] of Object.entries(pay)) {
+        takeStock(r.pile, g, n);
+        r.costs[g] = Math.max(0, (r.costs[g] ?? 0) - n);
+      }
+      stack[r.produces] = (stack[r.produces] ?? 0) + 1;
+      r.minted = (r.minted ?? 0) + 1;
+      made++;
     }
     // ⏸️ THE MILL DELIVERED — a container gained units. This is the wake the
     // craft job parked on a refinable bill is actually waiting for: it posted
     // the refine order, and the blocks landing here is what makes a re-gather
     // worth doing. (`destId` null ⇒ the deltas' own stock, which no park
-    // reads; bumping either way costs one re-decide and keeps one rule.)
+    // reads; bumping either way costs one re-decide and keeps one rule.) ONE
+    // bump per sweep however many blocks the sweep cut — the ④ ONE-VOICE law.
+    if (made > 0) bumpStockEpoch(session);
+    return made;
+  }
+
+  /** The units this row's BANKED LABOUR has paid for that are not yet cut.
+   *  `buildDays` is linear in `count` at post (`REFINE_UNIT_BUILD_DAYS × count`
+   *  through the one scale function), so `buildDays / count` IS the per-unit
+   *  rate however the session scales days — no second constant to keep in step. */
+  function mintDueRefineUnits(session: QuestSession, r: RefineOrder): number {
+    if (r.laborStartDay === undefined || r.count <= 0) return 0;
+    const per = r.buildDays / r.count;
+    const due =
+      per > 1e-12 ? Math.min(r.count, Math.floor(((r.labor ?? 0) + 1e-9) / per)) : r.count;
+    return mintRefineUnits(session, r, due - (r.minted ?? 0));
+  }
+
+  /**
+   * 🪚 WHAT THIS SHELF IS BEING FILLED AT, in UNITS A SECOND — the producing-rate
+   * seam (politics-substrate round, ⚖️ 0-6). Zero ⇔ no refine row is cutting
+   * `head` into `endpointId` right now, which is the whole gate: a puller only
+   * down-weights a one-block trip when the block it would leave behind is
+   * DEMONSTRABLY about to have company.
+   *
+   * ⚖️ CLOSED FORM, NO SAMPLING, NO NEW CONSTANT. A refine row IS a rate:
+   * `buildDays / count` build-days buy one unit (the identity
+   * `mintDueRefineUnits` mints on, derived from `REFINE_UNIT_BUILD_DAYS`
+   * through the one scale function), and `laborRatePerS` says what a second of
+   * a hand's time banks. Divide the second by the first and the answer is
+   * units a second, in the session's own scale, however the world is scaled.
+   *
+   * ⚖️ "PRODUCING" IS THE LABOUR PHASE, NOT A MINT HISTORY. `laborStartDay` set,
+   * labour not yet full, units left to cut — exactly the condition under which
+   * the order loop calls `mintDueRefineUnits` on this row. A `minted >= 1`
+   * reading would be blind for the whole of the first unit's window (`per` game-
+   * days — the very block the porter is standing over) and would keep answering
+   * "producing" for a row whose labour is finished and whose bench is cold; the
+   * phase is the honest reading of a RATE.
+   *
+   * WHICH CREW: the hands actually standing at this bench (`contributeCrewAt`,
+   * the same list `workSite` counts presence with), or — when nobody is there —
+   * the SCHEDULE ARM's own smallest reading, one hand at `CLOCK_SCHEDULE_RATE`,
+   * which is what an unstaffed bench falls back to. Both arms are
+   * `laborRatePerS`, so this can only ever differ from what the sweep banks by
+   * the schedule factor — the same law the two banking arms are held to.
+   */
+  function refineProductionUnitsPerS(
+    session: QuestSession,
+    endpointId: string,
+    head: string,
+  ): number {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return 0;
+    let unitsPerS = 0;
+    for (const o of deltas.orders()) {
+      if (o.kind !== "refine") continue;
+      if (stackHead(o.produces) !== head) continue;
+      if (o.laborStartDay === undefined || o.count <= 0) continue; // not milling yet
+      if ((o.labor ?? 0) >= o.buildDays - 1e-9) continue; // labour done — the row is retiring
+      if ((o.minted ?? 0) >= o.count) continue; // nothing left to cut
+      if (refineDepositId(session, o.scope) !== endpointId) continue; // fills some other shelf
+      const per = o.buildDays / o.count; // build-days a unit — `mintDueRefineUnits`' own identity
+      if (!(per > 1e-12)) continue;
+      const cap = !pullLaborOn(session) ? REFINE_CREW_CAP : Math.max(1, seatsOfOrder(session, o).length);
+      const crew = contributeCrewAt(session.pursuits, orderSiteId(o.ord)).length;
+      const daysPerS =
+        crew > 0
+          ? laborRatePerS(session, crew, cap)
+          : CLOCK_SCHEDULE_RATE * laborRatePerS(session, 1, cap);
+      unitsPerS += daysPerS / per;
+    }
+    return unitsPerS;
+  }
+
+  /** RETIRE a finished refine (the per-kind executor): the blocks themselves
+   *  were cut one at a time as the labour banked (`mintRefineUnits`), so all
+   *  this rung does is cut whatever the last tick's labour bought, bank the
+   *  pile remainder beside the output and drop the row. A row that reached
+   *  full labour with its pile short of the last block's raw does NOT retire —
+   *  the same "pile ran thin — regather" hold the batch commit had. */
+  function commitRefineOrder(session: QuestSession, r: RefineOrder): void {
+    const deltas = session.town?.deltas ?? session.foundedSite?.deltas;
+    if (!deltas) return;
+    mintRefineUnits(session, r, r.count - (r.minted ?? 0));
+    if ((r.minted ?? 0) < r.count) return; // pile ran thin — regather
+    const stack = refineDepositStack(session, r);
+    if (!stack) return;
+    for (const [g, n] of Object.entries(r.pile)) {
+      if (n > 0) stack[g] = (stack[g] ?? 0) + n;
+      delete r.pile[g];
+    }
     bumpStockEpoch(session);
     presenter.toast(`🪚 ${r.count} ${stackHead(r.produces)} milled and stored`, "feedback");
     deltas.removeOrder(r.ord);
@@ -8521,6 +8703,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
           } else {
             clockArm(r, crewCapOf(r));
           }
+          // 🪚 …AND THE BLOCKS THE TICK'S LABOUR JUST BOUGHT ARE CUT NOW. Bank
+          // then mint, one sweep: the bench accumulates its output in front of
+          // whoever is standing there instead of holding a whole batch back
+          // until the row retires.
+          mintDueRefineUnits(session, r);
           continue;
         }
         commitRefineOrder(session, r);
@@ -8630,6 +8817,13 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     for (const t of session.taskPool.claimed()) {
       if (t.goal.kind !== "buildwork") continue;
       if (!buildworkSiteAt(session, t.goal.site)) {
+        // ⚖️ M1 — THE DONE ARM. `buildworkSiteAt` answers null for a row that
+        // is WORKED THROUGH as well as one that is gone, and the cancel path
+        // above already retired the called-off rows in its own frame, so what
+        // reaches here is dominantly a finished bill. The host's transfer seat
+        // set the precedent for the unknowable half ("a retired row nobody can
+        // speak to lands with the done arm").
+        emitOrderOutcome(session, t, "order-done");
         session.taskPool.complete(t.id);
         buildClaimSeenAt.delete(t.id);
         continue;
@@ -8638,6 +8832,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const oo = m ? deltas.orders().find((q) => q.ord === Number(m[1])) : undefined;
       const rect = oo ? orderRectOf(session, oo) : null;
       if (rect && !observedRect(session, rect)) {
+        // 🚨 M1 EMITS NOTHING HERE, DELIBERATELY (P-6's fourth site). This
+        // retirement is a LEVEL-OF-DETAIL event, not an outcome: the site keeps
+        // banking labor on the clock arm and the reveal re-recruits, so the
+        // SAME order retires through this branch once per camera pan. An
+        // `order-done` would be a credit farm and an `order-failed` a debit
+        // farm, both priced by where the player is looking — the exact bug
+        // class civic-labor-and-polish §1 exists to kill. The row's real
+        // outcome is spoken by one of the other three seats.
         session.taskPool.complete(t.id);
         buildClaimSeenAt.delete(t.id);
       }
@@ -8701,7 +8903,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     let announcer: string | undefined;
     for (const [taskId, ord] of [...session.buildTaskOrds]) {
       if (ord !== b.ord) continue;
-      announcer ??= session.taskPool.get(taskId)?.claimedBy ?? undefined;
+      const row = session.taskPool.get(taskId);
+      announcer ??= row?.claimedBy ?? undefined;
+      // ⚖️ M1's LIVE BUILD SEAT (P-6). Every row in `buildTaskOrds` is a
+      // `{kind:"build"}` pool task, and the claim seat stamps `spoken` on all
+      // of them ("an untargeted order is still the player's"), so THIS is the
+      // one construction site where the M1 skips let the outcome through: a
+      // house the player asked for, finished by the hands that took the job.
+      if (row) emitOrderOutcome(session, row, "order-done");
       session.taskPool.complete(taskId);
       session.buildTaskOrds.delete(taskId);
     }
@@ -11131,6 +11340,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // exported path exposes, and the routing they decide is invisible from
     // outside until a hauler has already walked to the wrong bench.
     refineSpotOf, ensureRefineOrders,
+    // 🪚 …and WHAT A SHELF IS BEING FILLED AT (politics-substrate ⚖️ 0-6). The
+    // producing-rate seam, exported for the same reason `freeHeadStockWithinReach`
+    // is: "this bench is cutting another one right now" is the BOOKKEEPER's
+    // answer, and a body pricing a one-block trip must read it rather than
+    // guess. Nothing is reserved, drawn or posted by asking.
+    refineProductionUnitsPerS,
     // ⚖️ PULL-MODEL LABOR (task #51) — the ONE site-id spelling (`o:<ord>`,
     // founded / annex / refine rows alike) that `workSite` keys presence on.
     // A body issuing itself a slice writes it into `ContributeBill.siteId`

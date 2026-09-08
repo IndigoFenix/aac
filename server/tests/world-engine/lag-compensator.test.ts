@@ -21,6 +21,8 @@ import {
 } from "@shared/world-engine/world-host.js";
 import {
   LAG_COMP_MAX_FACTOR,
+  LAG_COMP_STORAGE_KEY,
+  lagCompOn,
   resetLagCompForTests,
   setLagComp,
 } from "@shared/world-engine/lag-comp.js";
@@ -304,5 +306,66 @@ describe("lag compensator — the headless / text-mode paths cannot move", () =>
     expect(dts.slice(0, 4)).toEqual([0.05, 0.05, 0.05, 0.05]); // untouched by 3 s frames
     expect(dts[4]).toBeCloseTo(0.5, 6); // the wide tick's own maxFrameS
     expect(host.lagProbe().on).toBe(false); // the compensator never engaged
+  });
+});
+
+// ⏩ THE DEFAULT (user ruling 2026-09-06: the compensator "is working nicely",
+// make it the default state). Two answers, and the difference between them is
+// the whole safety of the flip: a BROWSER that has never been asked compensates;
+// node — jest, text mode, the bench — never does, whatever a browser would say.
+describe("lag compensator — the DEFAULT", () => {
+  /** A minimal localStorage over a Map, installed on globalThis for one test. */
+  function withStorage(seed: Record<string, string>, body: (store: Map<string, string>) => void): void {
+    const store = new Map(Object.entries(seed));
+    const g = globalThis as unknown as { localStorage?: unknown };
+    const had = Object.prototype.hasOwnProperty.call(g, "localStorage");
+    const prev = g.localStorage;
+    g.localStorage = {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+    };
+    try {
+      resetLagCompForTests();
+      body(store);
+    } finally {
+      if (had) g.localStorage = prev;
+      else delete g.localStorage;
+      resetLagCompForTests();
+    }
+  }
+
+  beforeEach(() => resetLagCompForTests());
+  afterEach(() => resetLagCompForTests());
+
+  it("is OFF wherever there is no localStorage — node, the bench, a worker", () => {
+    expect((globalThis as unknown as { localStorage?: unknown }).localStorage).toBeUndefined();
+    expect(lagCompOn()).toBe(false);
+  });
+
+  it("is ON in a browser that has never been asked", () => {
+    withStorage({}, () => expect(lagCompOn()).toBe(true));
+  });
+
+  it("an explicit choice still wins, in BOTH directions", () => {
+    withStorage({ [LAG_COMP_STORAGE_KEY]: "0" }, () => expect(lagCompOn()).toBe(false));
+    withStorage({ [LAG_COMP_STORAGE_KEY]: "1" }, () => expect(lagCompOn()).toBe(true));
+  });
+
+  it("turning it OFF persists as a value, not as an absence", () => {
+    withStorage({}, (store) => {
+      setLagComp(false);
+      // Removing the key would hand the player back the default they just left.
+      expect(store.get(LAG_COMP_STORAGE_KEY)).toBe("0");
+      resetLagCompForTests();
+      expect(lagCompOn()).toBe(false);
+    });
+  });
+
+  it("the console override beats the default either way", () => {
+    withStorage({}, () => {
+      (globalThis as unknown as { __lagComp?: boolean }).__lagComp = false;
+      expect(lagCompOn()).toBe(false);
+    });
   });
 });

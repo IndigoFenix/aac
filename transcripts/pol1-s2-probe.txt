@@ -1,0 +1,50 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T03:04:48.988Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> say you nice
+OK     said: you + nice
+TOAST  💬 "you + nice" — I don't understand. (feedback)
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> wait 5
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 5.0s.
+> say who leader
+OK     said: who + leader
+TOAST  💬 "who + leader" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 5
+TICK   waited 5.0s.
+> say pip mean
+OK     said: pip + mean
+TOAST  💬 "pip + mean" — I don't understand. (feedback)
+TICK   quiet after 0.8s.
+> wait 5
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=8  presses=0  screens=1  sim=28.8s
+# events: TICK 8  EXIT 4  OK 3  TOAST 3  SAY 3  NOTE 2  ENTER 2  BOARD 1  SCENE 1

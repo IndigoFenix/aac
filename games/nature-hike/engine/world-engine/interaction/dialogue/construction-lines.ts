@@ -99,3 +99,27 @@ export function willMakeLine(material: string, many = false): LeveledGlyphs {
 export function structureDoneLine(place: string): LeveledGlyphs {
   return { a: "finished", b: `${place} + finished`, c: `${place} + finished` };
 }
+
+/**
+ * THE LOAD IS ON THE GROUND HERE: "the blocks are here."
+ *
+ * ⚖️ 2026-09-06 carry round. A haul whose carrier stalled is ABANDONED — the
+ * goods are set down where the body stands rather than landing at a
+ * destination it never reached (the "blocks placed from a distance" report).
+ * That has to be SAYABLE, because a load sitting in the open is the one thing
+ * a watcher can act on: somebody has to come and collect it.
+ *
+ * THE LOCATIVE ASSERTION IS THE RIGHT SHAPE HERE, and it is the exact shape
+ * the header above warns a BILL must never use — for the opposite reason. A
+ * bill says "this place wants blocks", which the verbless locative would
+ * render as "the block is in the kitchen": a claim the material has already
+ * arrived. Here the material HAS arrived, on the ground, at the speaker's
+ * feet — so "block + here" is simply true, and it is the one thing that
+ * distinguishes an abandoned haul from a delivered one.
+ *
+ * Built from `here` (core vocabulary — `clueHere`'s own word, in every shipped
+ * ruleset) and the KIND WORD of what was set down. No new lexeme.
+ */
+export function loadSetDownLine(material: string): LeveledGlyphs {
+  return { a: "here", b: `${material} + here`, c: `${material} + here` };
+}

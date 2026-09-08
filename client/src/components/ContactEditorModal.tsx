@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
+import { invalidateAfterContactChange } from '@/hooks/useConsentApi';
 import type { StudentContact, TeamMemberRole } from '@shared/schema';
 
 import {
@@ -52,6 +53,13 @@ export interface ContactEditorModalProps {
   contact?: StudentContact | null;
   /** Optional prefill values used only when creating (ignored if `contact` is set). */
   initialForm?: Partial<FormState>;
+  /**
+   * Called after a successful create/update (and after a first photo upload).
+   * The modal already refreshes the contacts list and every consent query that
+   * reads a contact; this is for anything the OWNER of the modal has to poke —
+   * the guided-setup view, whose consent gate is derived from exactly this data.
+   */
+  onChanged?: () => void;
 }
 
 interface FormState {
@@ -145,7 +153,7 @@ function currentLinkValue(form: FormState): LinkValue {
   return 'none';
 }
 
-export function ContactEditorModal({ isOpen, onClose, studentId, contact, initialForm }: ContactEditorModalProps) {
+export function ContactEditorModal({ isOpen, onClose, studentId, contact, initialForm, onChanged }: ContactEditorModalProps) {
   const { student: selectedStudent } = useStudent();
   const studentCountry = selectedStudent?.id === studentId ? selectedStudent?.country : null;
   const { t, isRTL } = useLanguage();
@@ -190,8 +198,12 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact, initia
   const errorMessage = (data: any): string =>
     data?.code === 'DUPLICATE_LINK' ? t('contacts.duplicateLink') : data?.message || t('common.error');
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', studentId, 'contacts'] });
+  // The contacts list AND every consent query derived from it — adding yourself
+  // as a guardian has to make the approval affordance appear without a reload.
+  const invalidate = () => {
+    invalidateAfterContactChange(queryClient, studentId);
+    onChanged?.();
+  };
 
   const createMut = useMutation({
     mutationFn: async () => {

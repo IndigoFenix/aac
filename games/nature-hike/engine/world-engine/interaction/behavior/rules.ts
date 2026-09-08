@@ -22,7 +22,7 @@ import type {
   ItemState,
   NeedTarget,
 } from "@shared/world-engine/interaction/behavior/creatures.js";
-import { compliance, type Relation } from "@shared/world-engine/interaction/behavior/relations.js";
+import { deference, type Relation } from "@shared/world-engine/interaction/behavior/relations.js";
 import type { Personality } from "@shared/world-engine/interaction/behavior/personality.js";
 
 // ---------------------------------------------------------------------------
@@ -363,6 +363,18 @@ export interface RuleContext {
   /** Escape hatch for conditions the pure layer can't see (presence/social live in
    *  the world/position layer). Absent ⇒ those conditions read false. */
   resolveExtra?: (cond: Condition) => boolean;
+  /**
+   * ⚖️ WOULD DEFIANCE BE SEEN — 0..1, per AUTHOR (interpersonal-politics.md S-1,
+   * `deference`'s `certainty`). The COERCED route to obedience is `fear ×
+   * certainty`: a rule you are afraid of the author for is only obeyed out of
+   * fear while the author could find out. That is a world question (who is
+   * standing where, who is watching), so the host answers it and this layer
+   * stays pure.
+   *
+   * 🚨 ABSENT ⇒ 0 ⇒ `deference` collapses EXACTLY onto `compliance`, which is
+   * why every existing rule weight is unmoved by the migration below.
+   */
+  certaintyToward?: (author: CreatureId) => number;
 }
 
 /** Does an item's facets satisfy a target predicate (kind/category/descriptors +
@@ -461,7 +473,20 @@ export function ruleCandidate(
  * by `ruleCandidate` (pure while-only) and the lifetime-aware chooser (goal-selection.ts).
  */
 export function ruleComplianceWeight(rule: Rule, ctx: RuleContext, relationToAuthor: Relation): number {
-  const c = rule.author === ctx.self.id ? 1 : compliance(relationToAuthor, ctx.personality);
+  // ⚖️ TWO ROUTES, NOT ONE (owner's ruling ③): `deference` is `compliance` with
+  // the coerced route noisy-OR'd in. Self-authored is still a flat 1 — a
+  // creature does not have to be frightened of itself, and 🚨 self-authorship is
+  // not a bypass (the possession case is the Bond round's, USER CALL C-2).
+  //
+  // 🚨 IDENTITY: `certaintyToward` absent (every caller today) or `fear: 0`
+  // (every relation shipped today) ⇒ this returns exactly what `compliance`
+  // returned, bit for bit — see `deference`'s own guarantee.
+  const c =
+    rule.author === ctx.self.id
+      ? 1
+      : deference(relationToAuthor, ctx.personality, {
+          certainty: ctx.certaintyToward?.(rule.author) ?? 0,
+        });
   return (rule.priority ?? DEFAULT_RULE_PRIORITY) * c;
 }
 

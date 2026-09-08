@@ -404,6 +404,15 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { who: ["all", "people"] }, tone: "social", emoji: "👦" },
   { key: "friend", tKey: "aac.glyph.friend", pos: "person", categories: ["who"],
     modeChips: { who: ["all", "people"] }, tone: "social", emoji: "🧑‍🤝‍🧑" },
+  // ⚖️ WHO IS IN CHARGE, AS A WORD (interpersonal-politics.md §4b/§4c). Standing
+  // has to be DIEGETIC and ASKABLE — "who is the leader?" is the question that
+  // makes it so, and without the word the only way to know would have been a
+  // hidden meter, which §4c forbids. A ROLE, so it sits with the people words
+  // rather than with the descriptions: what a child points at is a person.
+  // ⚠️ NO SYNONYMS — `boss` and `first` name the same role and are deliberately
+  // absent; one key per act is the law the social block below records.
+  { key: "leader", tKey: "aac.glyph.leader", pos: "person", categories: ["who", "chat"],
+    modeChips: { who: ["all", "people"], chat: ["all", "react"] }, tone: "social", emoji: "👑" },
   // FAMILY — the whole household as one word, beside the members it is made of.
   // Also the inner symbol of a DWELLING (`home` / `house` → `building(family)`,
   // place art): what makes a building a home is who lives in it.
@@ -1414,6 +1423,15 @@ const VOCAB: VocabularyItem[] = [
     modeChips: { what: ["all", "social"], chat: ["all", "polite"] }, tone: "social", emoji: "🙏" },
   { key: "sorry", tKey: "aac.glyph.sorry", pos: "noun", categories: ["what", "chat"],
     modeChips: { what: ["all", "social"], chat: ["all", "polite"] }, tone: "social", emoji: "😔" },
+  // ⚖️ THE TWO EVALUATIONS OF A PERSON (interpersonal-politics.md §4b) — how
+  // somebody TREATS you, which `good`/`bad` cannot say: those judge a thing
+  // ("the apple is bad"), and a child needs to praise and to complain about a
+  // PERSON. Said to the person they are a praise or an insult; said about a
+  // third party they are the regard TELL that gossip travels on.
+  { key: "nice", tKey: "aac.glyph.nice", pos: "feeling", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "react"] }, tone: "social", emoji: "🤗" },
+  { key: "mean", tKey: "aac.glyph.mean", pos: "feeling", categories: ["what", "chat"],
+    modeChips: { what: ["all", "social"], chat: ["all", "react"] }, tone: "social", emoji: "😈" },
 
   // ── WHERE ────────────────────────────────────────────────────────────────
   // `home`, `school`, `park` cross-listed in WHAT (places mode-chip).

@@ -10,6 +10,7 @@
       "days": 0,
       "population": 5,
       "wilderness": true,
+      "terrain": "planet",
       "stock": { "wood": 14, "stone": 6, "basket": 2 },
       "syntax": "b",
       "locale": "en"

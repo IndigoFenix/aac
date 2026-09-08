@@ -1,0 +1,100 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T07:13:40.302Z
+# ─────────────────────────────────────────
+> wait 12
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+TICK   waited 12.0s.
+> look orrin
+LOOK   orrin — orrin.
+  here west, 2 m away.
+  house-1.
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+BOARD  resident_face:resident_161_1: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+NOTE   4 choice(s) on this page, plus back.
+SAY    orrin: "I'm not lonely."  [i_me + lonely.not]
+SAY    pip: "hi"  [hi]
+CLOSE  the board closed.
+BOARD  resident_face:resident_161_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+TICK   quiet after 3.3s.
+> say you leader
+OK     said: you + leader
+SAY    pip: "okay"  [ok]
+BOARD  resident_face:resident_161_2: okay  [ok]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   quiet after 0.9s.
+> wait 5
+TICK   waited 5.0s.
+> say who leader
+OK     said: who + leader
+BOARD  resident_face:resident_161_2: I am the leader.  [i_me + leader]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> wait 5
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 1.5s.
+# ─────────────────────────────────────────
+# commands=7  presses=0  screens=6  sim=28.6s
+# events: SAY 20  NOTE 7  TICK 7  BOARD 6  EXIT 4  ENTER 2  CLOSE 2  OK 2  LOOK 1  SCENE 1

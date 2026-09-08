@@ -660,6 +660,30 @@ export async function foundTri(prep: TriPrep, opts: FoundTriOpts, boot: Composit
   // LEFT AS IT FALLS: `ECO_VEG_SCALE` is a unit conversion, not a balance
   // dial, and re-anchoring it to reproduce the halo would be inventing a
   // fudge factor to hide the very measurement this switch exists to expose.
+  //
+  // ⚖️ AND IT DOES **NOT** GET DRAWN DOWN BY A HARVEST (measured 2026-09-06,
+  // the new-growth authority round). The obvious next move — "a clear-cut site
+  // should stop declaring full timberland, so write the session's draws back
+  // into `eco_tree`" — was PRICED AND REJECTED, and the number is the whole
+  // argument. `charterR` is 3 CELLS. A cell is a face-arc quadrant divided by
+  // `faceN` (24 on every shipped world): ~42 km on the compressed frontier
+  // planet, ~417 km at real radius. So the charter box is 290-2900 km across,
+  // while EVERYTHING the sim can clear-cut is the near stand (<= 96 m,
+  // `nearStandRadiusM`) plus the minted neighbour tiles (<= 500 m,
+  // `NEIGHBOR_REACH_M`) — about 1e-6 of the chartered ground. A site that has
+  // felled every tree it can reach has, at cell resolution, taken nothing:
+  // "full timberland" is the ARITHMETICALLY CORRECT reading, and a write-back
+  // proportional to session draws would over-report depletion by six orders of
+  // magnitude — the one direction `wildThinFraction`'s clamp calls "the
+  // direction that lies to the player".
+  //
+  // What IS un-modelled here, stated so nobody re-derives it: this counts
+  // INDIVIDUALS' abundance, while timberland is a claim about harvestable
+  // WOOD, and a stand is no longer all-mature (products.ts `standYieldFraction`
+  // — oak 0.854). That term is a CONSTANT across every cell, so it moves no
+  // ranking and no siting decision, only the absolute number every anchor rate
+  // was calibrated against. Applying it belongs to a charter round that can
+  // re-run the civ suites, not to a forest round; it is NOT applied here.
   const ECO_VEG_SCALE = 7 / 100;
   const charter = (cell: number): TriCharter => ({
     farmland: boxSum(grid, "fertility", cell, charterR),

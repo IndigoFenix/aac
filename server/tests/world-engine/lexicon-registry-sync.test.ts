@@ -39,7 +39,10 @@ const GAME_ONLY = new Set<string>([
   // but a category tab lists its WHOLE category, so both WERE buttons —
   // duplicates of `in_front_of` and `over`. Deleting them made the comment true.
   // social — `bye` and `okay` left: exact duplicates of `goodbye` and `ok`.
-  "thanks", "mine", "dont_understand",
+  // `thanks` is GONE for the `front`/`above` reason: it was a twin button of
+  // `thank_you` (the only 🙏 registry row) reading the same word on the social
+  // tab, so the exemption was describing a duplicate rather than an unarted key.
+  "mine", "dont_understand",
   // quantity
   "three", "less",
   // attributes (`dirty` left — it now ships as a state adjective)

@@ -1,113 +1,12 @@
 import type { Request, Response } from "express";
-import { userRepository, studentRepository } from "../repositories";
+import { userRepository } from "../repositories";
 import { inviteCodeService, studentService } from "../services";
 
 export class OnboardingController {
   /**
-   * GET /api/onboarding/status
-   * Get current onboarding status
-   */
-  async getStatus(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as { id: string };
-      const user = await userRepository.getUser(currentUser.id);
-
-      if (!user) {
-        res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        onboardingStep: user.onboardingStep,
-      });
-    } catch (error: any) {
-      console.error("Error fetching onboarding status:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch onboarding status",
-      });
-    }
-  }
-
-  /**
-   * POST /api/onboarding/complete-step-1
-   * Complete Step 1: Create AAC User Profile
-   * 
-   */
-  async completeStep1(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as { id: string };
-
-      if (!req.body.name) {
-        console.error("Onboarding Step 1 - Validation failed: missing name");
-        res.status(400).json({
-          success: false,
-          message: "Name is required",
-        });
-        return;
-      }
-
-      // Create AAC user profile with link to the current user
-      console.log("Onboarding Step 1 - Creating AAC user...");
-      const { student, link } = await studentService.createStudentWithLink(
-        { ...req.body },
-        currentUser.id,
-        "owner" // The creating user is the owner
-      );
-      
-      console.log(
-        "Onboarding Step 1 - AAC user created successfully:",
-        student.id
-      );
-
-      // Update user's onboarding step to 1
-      await userRepository.updateUserOnboardingStep(currentUser.id, 1);
-      console.log("Onboarding Step 1 - Onboarding step updated to 1");
-
-      // Include calculated age in response for backwards compatibility
-      const age = studentService.calculateAge(student.birthDate);
-
-      res.json({
-        success: true,
-        message: "AAC user profile created successfully",
-        student: {
-          ...student,
-          age, // Calculated from birthDate for backwards compatibility
-        },
-        link,
-        onboardingStep: 1,
-      });
-    } catch (error: any) {
-      console.error("Error completing step 1:", {
-        message: error.message,
-        code: error.code,
-        detail: error.detail,
-        constraint: error.constraint,
-        stack: error.stack,
-      });
-      res.status(500).json({
-        success: false,
-        message: "Failed to create AAC user profile",
-      });
-    }
-  }
-
-  /**
-   * POST /api/onboarding/complete-step-2
-   * Complete Step 2: Create Schedule Entry
-   */
-  async completeStep2(req: Request, res: Response): Promise<void> {
-    // deprecated - no longer needed
-  }
-
-  /**
    * POST /api/onboarding/redeem-code
    * Redeem invite code during onboarding
-   * 
+   *
    * When a code is redeemed, it links the current user to the AAC user
    * associated with the invite code.
    */
@@ -172,31 +71,6 @@ export class OnboardingController {
         success: false,
         message: "Failed to redeem invite code",
         errorType: "server_error",
-      });
-    }
-  }
-
-  /**
-   * POST /api/onboarding/skip
-   * Skip onboarding (mark as complete without creating AAC user)
-   */
-  async skipOnboarding(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as { id: string };
-
-      // Update user's onboarding step to 3 (complete)
-      await userRepository.updateUserOnboardingStep(currentUser.id, 3);
-
-      res.json({
-        success: true,
-        message: "Onboarding skipped",
-        onboardingStep: 3,
-      });
-    } catch (error: any) {
-      console.error("Error skipping onboarding:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to skip onboarding",
       });
     }
   }

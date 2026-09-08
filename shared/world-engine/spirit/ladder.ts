@@ -29,7 +29,7 @@ import { createSpiritPose, blendPose, applyPose, type SpiritPose } from "./pose.
 import { createChaseRig, type ChaseRig } from "./chase-rig.js";
 import { createGroundGlide, type GroundGlide } from "./ground-glide.js";
 import { cornerOrbitDelta, inOrbitBand } from "./corner-orbit.js";
-import { ORBIT_POSE_DEFAULTS, orbitPose } from "./orbit-pose.js";
+import { orbitPose } from "./orbit-pose.js";
 
 // ── FLIGHT regimes (moved verbatim from world-lab main.ts spiritControl) ────
 const DEAD_XY: [number, number] = [0, -0.3];
@@ -49,13 +49,12 @@ export const CITY_FOCUS_ALT = 3_500;
 export const TOWN_ENTER_FACTOR = 2.2;
 const CITY_EXIT_S = 0.5;
 const CITY_DWELL_S = 0.6;
-/** ⚖️ THE ORBIT'S FRAME FACTOR — now a FIELD of the tunable pose record
- *  (`spirit/orbit-pose.ts`, user ruling C1 2026-09-06: the frame is tuned by
- *  eye and then baked). Still exported under its old name because it is the
- *  SHIPPED value the distance formula `dist = r / tan(fov/2) × CITY_FRAME`
- *  documents; the live pose is `orbitPose().frameFactor`, which equals this
- *  unless a debug override is set. */
-export const CITY_FRAME = ORBIT_POSE_DEFAULTS.frameFactor;
+// 🚫 `CITY_FRAME` IS RETIRED (2026-09-06, the bake). It was kept for one round
+// as an alias of the record's default so old readers would not break; after the
+// pose was baked NOTHING read it but its own two test pins, and an alias for a
+// field of a live record is precisely how a second statement of the pose starts
+// drifting from the record. `ORBIT_POSE_DEFAULTS.frameFactor` is the shipped
+// value; `orbitPose().frameFactor` is the live one.
 const CITY_BLEND_RATE = 2.6;
 const DWELL_MOVE_PX = 40;
 /** ⚖️ THE SMALLEST DISTRICT FRAME THE ORBIT WILL TAKE (user 2026-09-05: *"the
@@ -606,9 +605,10 @@ export function createSpiritLadder(opts: SpiritLadderOpts): SpiritLadder {
    *  basis. Also fills `pose` (absolute) when `origin` is given. */
   function orbitRelPose(t: TownState, chart: { east: THREE.Vector3; north: THREE.Vector3; up: THREE.Vector3 }, fovRad: number): void {
     // ⚖️ THE POSE IS A RECORD (orbit-pose.ts, user ruling C1): read live, so a
-    // debug slider moves the camera on the next frame. With no override the
-    // three fields ARE the former `CITY_FRAME` / `CITY_PITCH` / `0.35`
-    // literals, so this expression is byte-identical to what shipped.
+    // debug slider moves the camera on the next frame. Its defaults are the
+    // pose the USER chose by eye and sent back on 2026-09-06 — pitch 0.5,
+    // frame 1, lift 0, ring 0.5 — so at a founding this stands the camera
+    // 28.2 m out and 15.4 m up from a 15 m frame.
     const p = orbitPose();
     const dist = (t.radius / Math.tan(fovRad / 2)) * p.frameFactor;
     _horiz.copy(chart.east).multiplyScalar(Math.cos(t.az)).addScaledVector(chart.north, Math.sin(t.az));

@@ -1,0 +1,120 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T04:10:32.031Z
+# ─────────────────────────────────────────
+> wait 12
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+TICK   waited 12.0s.
+> look orrin
+LOOK   orrin — orrin.
+  here west, 2 m away.
+  house-1.
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+BOARD  resident_face:resident_161_1: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+NOTE   4 choice(s) on this page, plus back.
+SAY    orrin: "I'm not lonely."  [i_me + lonely.not]
+SAY    pip: "hi"  [hi]
+CLOSE  the board closed.
+BOARD  resident_face:resident_161_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+TICK   quiet after 3.3s.
+> say you nice
+OK     said: you + nice
+SAY    pip: "Thank you!"  [thank_you]
+BOARD  resident_face:resident_161_2: Thank you!  [thank_you]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   quiet after 0.9s.
+> wait 5
+TICK   waited 5.0s.
+> say who leader
+OK     said: who + leader
+BOARD  resident_face:resident_161_2: You are the leader.  [you + leader]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+TICK   quiet after 0.8s.
+> wait 5
+TICK   waited 5.0s.
+> say you leader
+OK     said: you + leader
+BOARD  resident_face:resident_161_2: okay  [ok]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. Where are the clothes?  [place#question + clothing]
+  4. I'm confused.  [confused]
+  5. bye-bye  [goodbye]
+  6. Return.  [return]
+NOTE   5 choice(s) on this page, plus back.
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   quiet after 1.5s.
+> wait 5
+TICK   waited 5.0s.
+> say give apple
+OK     said: give + apple
+TOAST  🪧 give + apple — anyone nearby may take it (feedback)
+TICK   quiet after 0.8s.
+> wait 5
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, door open, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  house-5 (house), there east, blue, door open, shut to you.
+  43 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=11  presses=0  screens=7  sim=40.1s
+# events: SAY 20  TICK 11  NOTE 8  BOARD 7  OK 4  EXIT 4  ENTER 2  CLOSE 2  LOOK 1  TOAST 1  SCENE 1

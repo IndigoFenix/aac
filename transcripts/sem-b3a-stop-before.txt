@@ -1,0 +1,115 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T09:48:27.196Z
+# ─────────────────────────────────────────
+> wait 12
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+TICK   waited 12.0s.
+> scene
+SCENE  house-1 — 14 thing(s) in view, 86 place(s) around you.
+  orrin (person), here west.
+  biscuit (person), here south.
+  pip (person), here east.
+  mara (person), here west, get food.
+  table-1 (table), here south.
+  chair-1 (chair), here south.
+  a bin, here east.
+  a ball, here south.
+  a basket, there south.
+  a box, there north.
+  a bed, there north.
+  a chest, there south.
+  a cupboard, there west.
+  a bowl, there west.
+  house-1 (house), here north, blue, door open, you can see inside.
+  house-2 (house), here south, blue, door open, you can see inside.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, door open, you can see inside.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+> look orrin
+LOOK   orrin — orrin.
+  here west, 2 m away.
+  house-1.
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    orrin: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+SAY    pip: "hi"  [hi]
+BOARD  resident_face:resident_161_2: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+NOTE   4 choice(s) on this page, plus back.
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   quiet after 4.2s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  talking with pip.
+  you are a bodiless spirit here.
+TICK   quiet after 0.8s.
+> say stop + eat
+OK     said: stop + eat
+TOAST  ✋ (no party) (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+TICK   waited 3.0s.
+> say you + eat
+OK     said: you + eat
+TOAST  ▶ you + eat (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+TICK   waited 3.0s.
+> say stop + eat
+OK     said: stop + eat
+TOAST  ✋ (no party) (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+CLOSE  the board closed.
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 3.0s.
+# ─────────────────────────────────────────
+# commands=10  presses=0  screens=3  sim=29.2s
+# events: SAY 31  TICK 10  NOTE 4  EXIT 4  BOARD 3  OK 3  TOAST 3  ENTER 2  SCENE 1  LOOK 1  SELF 1  CLOSE 1

@@ -1,0 +1,57 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T13:23:46.400Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> say mara + go + with + pip
+OK     said: mara + go + with + pip
+TOAST  🎉 resident_161_0 joined — party of 1 (feedback)
+ENTER  biscuit came into view here south.
+TICK   quiet after 1.1s.
+> wait 5
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — 12 thing(s) in view, 86 place(s) around you.
+  biscuit (person), here south.
+  orrin (person), here west.
+  mara (person), here west.
+  pip (person), here west.
+  table-1 (table), here south.
+  chair-1 (chair), here south.
+  a bin, here east.
+  a ball, here south.
+  a basket, there south.
+  a chest, there south.
+  a cupboard, there west.
+  a bowl, there west.
+  house-1 (house), here north, blue, door open, you can see inside.
+  house-2 (house), here south, blue, door open, you can see inside.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=5  presses=0  screens=1  sim=18.3s
+# events: TICK 5  SAY 4  NOTE 3  SCENE 2  ENTER 2  BOARD 1  OK 1  TOAST 1

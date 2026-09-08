@@ -13,6 +13,7 @@ import {
   isIntentVerb,
   isPronoun,
   isQuality,
+  ROLE_WORDS,
   NO_NAMES,
   stripEnd,
   type Frame,
@@ -374,7 +375,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts. Each is an alias of a word that already had a lexeme
   // (`hi`/`hello`, `goodbye`/`bye`, `ok`/`okay`, `confused`/`dont_understand`)
   // — and BOTH spellings are listed on the social tab, so both need words.
-  thanks: { w: "thanks" },
   sorry: { w: "sorry" },
   mine: { w: "mine" },
   again: { w: "again" },
@@ -407,6 +407,15 @@ const CENTRAL: Record<string, Lexeme> = {
   surprised: { w: "surprised" },
   proud: { w: "proud" },
   calm: { w: "calm" },
+
+  // ── THE POLITICS WORDS (interpersonal-politics.md §4b, 2026-09-07) ───────
+  // `nice`/`mean` are how somebody TREATS you — predicate adjectives, so the
+  // copula frame says them with no new construction. `leader` is a ROLE, a
+  // predicate NOUN, and that is why the `regard` frame exists: "Pip is leader"
+  // is not a sentence in any of the four rulesets.
+  nice: { w: "nice" },
+  mean: { w: "mean" },
+  leader: { w: "leader" },
 
   // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
   // Category NAMES, not words a sentence composes: the four Descriptions chips
@@ -683,7 +692,10 @@ export const en: GlyphLanguage = {
       case "here": {
         // Pronoun subjects read in subject case ("I am here", never "me is here").
         const who = isPronoun(frame.np.noun.head) ? subjWord(frame.np.noun) : npText(frame.np, "the");
-        return `${cap(who)} ${be(frame.np)} ${frame.where === "here" ? "here" : "over there"}.`;
+        // "The person isn't here." — the negated presence (P-3's empty-room line).
+        const at = frame.where === "here" ? "here" : "over there";
+        if (frame.neg) return `${cap(who)} ${be(frame.np)} not ${at}.`;
+        return `${cap(who)} ${be(frame.np)} ${at}.`;
       }
       case "mine":
         return frame.no ? `No — ${npText(frame.np, "the")}!` : npText(frame.np, "the");
@@ -721,6 +733,27 @@ export const en: GlyphLanguage = {
         return frame.question
           ? `${cap(be({ noun: frame.subject }))} ${s} ${adj}?`
           : `${cap(s)} ${be({ noun: frame.subject })} ${adj}.`;
+      }
+      // ⚖️ THE REGARD LINES (politics §4b) — "Mara is nice." / "Pip is the
+      // leader." / "Orrin is scared of Pip." A ROLE takes the definite article
+      // (there is one leader, and naming them is the whole point of the
+      // question); a trait is a bare predicate; a feeling takes "of". All three
+      // agree through the same `be` every other predicate uses.
+      case "regard": {
+        const s = frame.subject;
+        const subj = cap(subjWord(s));
+        const verb = be({ noun: s });
+        const word = lex(frame.word.head).w;
+        const pred = frame.toward
+          ? `${word} of ${npText({ noun: frame.toward }, "the")}`
+          : ROLE_WORDS.has(frame.word.head)
+            ? `the ${word}`
+            : word;
+        // ⚖️ A ROLE DENIED — "Mara is not the leader." The negation sits on the
+        // copula, not the noun (the corrective's "isn't {adj}" shape cannot
+        // carry an articled predicate noun).
+        const line = `${subj} ${verb}${frame.neg ? " not" : ""} ${pred}`;
+        return frame.question ? `${line}?` : `${line}.`;
       }
       case "svo":
         return renderSvo(frame, opts);

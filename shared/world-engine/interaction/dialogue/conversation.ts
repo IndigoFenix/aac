@@ -70,8 +70,9 @@
 // ═══ MUTATION IN PLACE ═══════════════════════════════════════════════════════
 // The host owns the instances (`conversations: Map<ConversationId,
 // ConversationState>`) and these functions mutate them in place, following the
-// `RelationBook` convention used everywhere else in the behavior layer rather
-// than returning fresh objects. Reducer purity would buy nothing here — nothing
+// LIVE-STORE convention used everywhere else in the behavior layer (the host's
+// own relation map is the other one) rather than returning fresh objects.
+// Reducer purity would buy nothing here — nothing
 // diffs conversations — and would cost a copy per utterance on the sim tick.
 
 import type { CreatureId, ItemId } from "@shared/world-engine/interaction/behavior/creatures.js";

@@ -23,6 +23,7 @@ import { studentRepository } from '../../repositories/studentRepository.js';
 import { instituteRepository } from '../../repositories/instituteRepository.js';
 import { reportController } from '../../controllers/reportController.js';
 import { programController } from '../../controllers/programController.js';
+import { deepAnalysisController } from '../../controllers/deepAnalysisController.js';
 import {
   consentService,
   type SignConsentInput,
@@ -166,6 +167,31 @@ describe('Consent gate — finalize wiring', () => {
     });
     const { res, capture } = makeRes();
     await programController.activateProgram(req, res);
+
+    expect(capture.statusCode).toBe(412);
+    expect((capture.jsonBody as any).code).toBe('consent_required');
+  });
+
+  // A deep-analysis run reads the student's whole record — sessions, reports,
+  // prior analyses — and sends it to Anthropic. That is the "AI processing on
+  // this student" the consent-pending block list names first, and it went
+  // ungated until now.
+  //
+  // Only the refusal is asserted. The allowed path would reach
+  // createDeepAnalysis, which schedules runDeepAnalysis in the background and
+  // would fire a LIVE model call out of the test suite; the gate returning
+  // early is precisely what keeps this test offline.
+  it('deep-analysis create returns 412 when gate is on without consent', async () => {
+    process.env[ENV_FLAG] = 'true';
+    const { owner, institute, student } = await setupClinicWithStudentAndContact();
+
+    const req = makeReq({
+      user: { id: owner.id, isSystemAdmin: false },
+      query: { instituteId: institute.id },
+      body: { studentId: student.id },
+    });
+    const { res, capture } = makeRes();
+    await deepAnalysisController.create(req, res);
 
     expect(capture.statusCode).toBe(412);
     expect((capture.jsonBody as any).code).toBe('consent_required');

@@ -49,9 +49,15 @@ const categoryKeys = (cat: string) => Object.keys(LEXICON).filter((k) => LEXICON
 const LANGS = [en, he, es, pt] as const;
 
 describe("the chip row each tab advertises", () => {
-  it("Descriptions offers colors · feelings · size · condition", () => {
+  // ⚖️ MOVED 2026-09-07 (politics-substrate-round S-6): a FIFTH Descriptions
+  // chip, [people] — `nice` · `mean` · `leader`, the words that describe a
+  // PERSON. The pin moved because the vocabulary did: none of the four existing
+  // chips could hold them ([feelings] is what somebody feels and answers "how
+  // are you?"; [condition] is what state a THING is in), and the partition test
+  // below makes an un-chipped attribute a build failure by design.
+  it("Descriptions offers colors · feelings · size · condition · people", () => {
     expect(ids(builderSurfaceFor("", { category: "attribute" }).groups)).toEqual([
-      "colors", "feelings", "size", "condition",
+      "colors", "feelings", "size", "condition", "people",
     ]);
   });
 
@@ -62,7 +68,7 @@ describe("the chip row each tab advertises", () => {
   });
 
   it("derives the row from the one membership table (never a second list)", () => {
-    expect(lexicalTabChipIds("attribute")).toEqual(["colors", "feelings", "size", "condition"]);
+    expect(lexicalTabChipIds("attribute")).toEqual(["colors", "feelings", "size", "condition", "people"]);
     expect(lexicalTabChipIds("verb")).toEqual(["go", "hands", "make", "together", "body", "want"]);
     expect(lexicalTabChipIds("quantity")).toEqual([]);
   });
@@ -71,7 +77,7 @@ describe("the chip row each tab advertises", () => {
     // A child who opened [colors] has to reach [feelings] without going back out
     // through the tab.
     expect(ids(builderSurfaceFor("", { category: "attribute", group: "colors" }).groups)).toEqual([
-      "colors", "feelings", "size", "condition",
+      "colors", "feelings", "size", "condition", "people",
     ]);
     expect(ids(builderSurfaceFor("", { category: "verb", group: "body" }).groups)).toHaveLength(6);
   });
@@ -203,19 +209,22 @@ describe("every new word is sayable in every SHIPPED ruleset", () => {
   });
 
   it("labels the Descriptions chips as NOUNS in all four", () => {
+    // ⚖️ MOVED 2026-09-07 (politics S-6): [people] joined the row. It wears the
+    // PERSON head PLURALISED — a chip names a set, and "person" singular would
+    // read as one word about to be pressed (the `creatures`/`animals` rule).
     const labels = (locale: string) =>
       new Map((builderSurfaceFor("", { category: "attribute", locale }).groups ?? []).map((g) => [g.id, g.label]));
     expect(labels("en")).toEqual(
-      new Map([["colors", "colors"], ["feelings", "feelings"], ["size", "size"], ["condition", "condition"]]),
+      new Map([["colors", "colors"], ["feelings", "feelings"], ["size", "size"], ["condition", "condition"], ["people", "people"]]),
     );
     expect(labels("he")).toEqual(
-      new Map([["colors", "צבעים"], ["feelings", "רגשות"], ["size", "גודל"], ["condition", "מצב"]]),
+      new Map([["colors", "צבעים"], ["feelings", "רגשות"], ["size", "גודל"], ["condition", "מצב"], ["people", "אנשים"]]),
     );
     expect(labels("es")).toEqual(
-      new Map([["colors", "colores"], ["feelings", "sentimientos"], ["size", "tamaño"], ["condition", "estado"]]),
+      new Map([["colors", "colores"], ["feelings", "sentimientos"], ["size", "tamaño"], ["condition", "estado"], ["people", "personas"]]),
     );
     expect(labels("pt")).toEqual(
-      new Map([["colors", "cores"], ["feelings", "sentimentos"], ["size", "tamanho"], ["condition", "estado"]]),
+      new Map([["colors", "cores"], ["feelings", "sentimentos"], ["size", "tamanho"], ["condition", "estado"], ["people", "pessoas"]]),
     );
   });
 

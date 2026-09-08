@@ -877,3 +877,91 @@ describe("MANNER — an adverbial that modifies HOW, in every frame and language
     expect(pt("we + play")).toBe("Nós brincamos.");
   });
 });
+
+// ---------------------------------------------------------------------------
+// ⚖️ P-3 / A2 — THE `here` FRAME'S SILENT NEGATION DROP
+// ---------------------------------------------------------------------------
+//
+// 🚨 "{X} + here" classified on the head alone and threw away any `.not` on
+// EITHER token, so "ball + here.not" rendered "The ball is here." — the exact
+// opposite of the sentence, in every ruleset, in silence. A dropped negation is
+// the worst class of translation bug and this frame is the one the empty-room
+// answer (P-3 `NOBODY_HERE` = "person + here.not") is built on, so it has to
+// carry it. The POSITIVE renders are untouched, byte for byte.
+describe("here — the presence frame carries its negation", () => {
+  it("the POSITIVE presence is unchanged in every ruleset", () => {
+    expect(en("ball + here")).toBe("The ball is here.");
+    expect(he("ball + here")).toBe("הכדור כאן.");
+    expect(es("ball + here")).toBe("La pelota está aquí.");
+    expect(pt("ball + here")).toBe("A bola está aqui.");
+    expect(en("i_me + here")).toBe("I am here.");
+    expect(he("you + here")).toBe("אתה כאן.");
+  });
+
+  it("a `.not` on the PREDICATE negates it, never vanishes", () => {
+    expect(en("ball + here.not")).toBe("The ball is not here.");
+    expect(he("ball + here.not")).toBe("הכדור לא כאן.");
+    expect(es("ball + here.not")).toBe("La pelota no está aquí.");
+    expect(pt("ball + here.not")).toBe("A bola não está aqui.");
+  });
+
+  it("a `.not` on the SUBJECT means the same thing — both spellings negate", () => {
+    expect(en("person.not + here")).toBe(en("person + here.not"));
+    expect(he("person.not + here")).toBe(he("person + here.not"));
+  });
+
+  it("a PRONOUN subject negates too, in the language's own shape", () => {
+    expect(en("you + here.not")).toBe("You are not here.");
+    expect(he("you + here.not")).toBe("אתה לא כאן.");
+    expect(es("you + here.not")).toBe("No estás aquí.");
+    expect(pt("you + here.not")).toBe("Você não está aqui.");
+  });
+
+  // THE P-3 LINE ITSELF. No new word: `person` and `here` are both shipped
+  // glyphs with lexemes in all four rulesets, so the empty-room answer cost the
+  // registry and the eleven locales nothing. (`host-lines.ts NOBODY_HERE`.)
+  it("🚨 the nobody-here answer speaks honestly in all four rulesets", () => {
+    expect(en("person + here.not")).toBe("The person is not here.");
+    expect(he("person + here.not")).toBe("האדם לא כאן.");
+    expect(es("person + here.not")).toBe("La persona no está aquí.");
+    expect(pt("person + here.not")).toBe("A pessoa não está aqui.");
+    // …and it is NOT the not-understood line it replaces.
+    for (const r of [en, he, es, pt]) {
+      expect(r("person + here.not")).not.toBe(r("i_me + understand.not"));
+    }
+    // No raw English head leaks into Hebrew (`baseWord` fails silently).
+    expect(/[a-z]/i.test(he("person + here.not"))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🚨 A HEBREW CLITIC NEVER WELDS ONTO LATIN SCRIPT (Task C-2)
+// ---------------------------------------------------------------------------
+//
+// The ruleset transliterates nothing, so a proper NAME inside a Hebrew sentence
+// is Latin ("Mara"). `fuse` concatenated the one-letter prefix straight onto it
+// — `לMara`, `מMara`, `בMara` — two scripts welded at a bidi boundary, which
+// renders as garbage and reads as a non-word. Hebrew joins a prefix to a
+// foreign word with a MAQAF. Keyed on the SCRIPT of what follows, so every
+// Hebrew-script NP fuses exactly as it always did.
+describe("Hebrew clitics — a prefix before a Latin-script name", () => {
+  const NAMES = new Map<string, "m" | "f">([["mara", "f"], ["pip", "m"]]);
+
+  it("takes a maqaf rather than fusing", () => {
+    expect(he("you + give + ball + to + mara", { names: NAMES })).toBe("תן את הכדור ל-Mara.");
+    expect(he("pip + scared + mara", { names: NAMES })).toContain("מ-Mara");
+  });
+
+  it("🚨 a HEBREW-script NP still fuses, article swallowed — nothing moved", () => {
+    expect(he("you + give + ball + to + bear")).toBe("תן את הכדור לדוב.");
+    expect(he("ball + in + box")).toBe("הכדור בקופסה.");
+    // The ablative keeps its article, as its own docblock says.
+    expect(he("i_me + scared + bear")).toBe("אני מפחד מהדוב.");
+  });
+
+  it("no clitic is left glued to a Latin letter anywhere in the sentence", () => {
+    for (const g of ["you + give + ball + to + mara", "pip + scared + mara"]) {
+      expect(/[\u0590-\u05FF][A-Za-z]/u.test(he(g, { names: NAMES }))).toBe(false);
+    }
+  });
+});

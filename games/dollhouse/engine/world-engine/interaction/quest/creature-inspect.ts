@@ -128,8 +128,17 @@ export interface InspectRoster {
 // Household plumbing (moved here from the panel so there is one owner)
 // ───────────────────────────────────────────────────────────────────────────
 
-/** `resident_<house>_<m>` / `pet_<house>_<n>` → the house index, else NaN. */
+/** `resident_<house>_<m>` / `pet_<house>_<n>` → the house index, else NaN.
+ *
+ *  🚨 A SETTLER IS NEVER HOUSE N (body-needs-round.md D2 — the SECOND spelling
+ *  of this function; quest-host's own answers `-1` for the same reason, and
+ *  they must not disagree). `settler_3` shares the `_`-split shape and parsed
+ *  as HOUSE 3 — a real household's rooms, doorstep and schedule. Callers here
+ *  pass the answer straight to `houseByIndex`/`houseRoomsOf`, which have no
+ *  row for `-1`, so a founding body now reads "no household" instead of
+ *  somebody else's. */
 export function houseIndexOfCid(cid: string): number {
+  if (/^settler_\d+$/.test(cid)) return -1;
   const parts = cid.split("_");
   return parts.length >= 2 ? Number(parts[1]) : NaN;
 }

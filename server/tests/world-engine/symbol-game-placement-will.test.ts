@@ -22,7 +22,7 @@ const spot = (score: number, gripe?: RatedSpot["gripe"]): RatedSpot => ({
   ...(gripe !== undefined ? { gripe } : {}),
 });
 
-const FAMILY = { affinity: 0.5, trust: 0.8, authority: 0.8 };
+const FAMILY = { affinity: 0.5, trust: 0.8, authority: 0.8, fear: 0 };
 
 describe("willingnessToPlace — the comply / can't / won't matrix", () => {
   it("no candidates ⇒ cannot, with the kernel's failure reason", () => {

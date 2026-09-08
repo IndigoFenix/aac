@@ -337,6 +337,20 @@ describe("frontier — the gaze reaches a standing tree, and a press always answ
     );
     if (!helper) throw new Error("no idle resident to address — fixture broken, not a finding");
     const at = run.state.avatars[helper]!;
+    // ⚖️ FIXTURE CONTROL, added 2026-09-08 — L-2, THE BOND GATE. Since the
+    // politics round, `attendTo`'s `command` arm asks `bondStrength(author,
+    // actor) >= VOLUNTEER_COMPLIANCE` before it installs anything, and a
+    // frontier TOWNSPERSON is a stranger to a spirit that keeps no household
+    // here: `deference` ≈ 0.07 < 0.3, so this press was refused out loud
+    // (`💬 resident_8_0 — won't take that order`) and nobody was engaged.
+    // That refusal is the politics ruling working (USER CALL P-8: on a shipped
+    // world settler→settler authority is 0 and delegations refuse vocally) —
+    // it is NOT this file's subject, which is the PRESS reaching a body at all.
+    // So the addressee is given the one thing the gate asks for, through the
+    // session's own family seat (`bondedCreatures` — the bond a ridden body
+    // carries), and every assertion below is unchanged. The refusal half of
+    // L-2 is pinned where it belongs, in the politics suites.
+    run.session.bondedCreatures.add(helper);
 
     const rock: WildernessFeature = {
       id: "probe:near_rock", species: "rock", x: at.x + 1.8, y: at.y + 1.8, stock: { stone: 4 },

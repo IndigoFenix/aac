@@ -227,6 +227,13 @@ export interface WorldView {
   /** HOST-EMBED: force an avatar body (in)visible regardless of sim state — the
    *  coordinator hides the town's local walker while it's airborne. 3D-only. */
   setAvatarHidden?(id: string, hidden: boolean): void;
+  /** 🌳 OCCLUDER OUTLINE (user, 2026-09-06): draw this body's STICK tier hollowed
+   *  out — a rim instead of a silhouette — because it is standing between the
+   *  local camera and what the camera is looking at. RENDER-ONLY and PER-VIEWER:
+   *  the host forces the `stick` rung through its ordinary re-tier drain and
+   *  calls this for the look; nothing about the body's sim state changes.
+   *  3D-only. */
+  setAvatarOutline?(id: string, on: boolean): void;
   /** POSSESSION: drop an avatar's cached body model so the next frame rebuilds
    *  it through the modelFactory (re-skin without a world rebuild). 3D-only. */
   resetAvatarModel?(id: string): void;

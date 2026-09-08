@@ -1,8 +1,58 @@
 // React Query hooks for the student informed-consent endpoints.
 // Backed by /api/consent/* routes — see server/controllers/consentController.ts.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+
+// ============================================================================
+// Cross-domain cache invalidation
+//
+// The consent surface is DERIVED from the student's contacts: the wizard's
+// guardian, the "who may consent" resolution and every pending invitation all
+// read a studentContacts row. The app's react-query default is
+// `staleTime: Infinity` (client/src/lib/queryClient.ts), so a consent query
+// that resolved before a contact existed never refetches on its own — which is
+// why adding yourself as a guardian used to need a page reload before the
+// approval affordance appeared.
+//
+// Anything that creates / edits / confirms / deletes a contact must call
+// `invalidateConsentForStudent`, and anything that signs consent (which flips
+// `isLegalGuardian` on the contact row, see consentController) must invalidate
+// the contacts list. Keep both key shapes here rather than re-typing literal
+// key arrays at each call site.
+// ============================================================================
+
+/** The contacts-list query key used by StudentContactsPanel + ContactEditorModal. */
+export const studentContactsQueryKey = (studentId: string | undefined) =>
+  ["/api/biometric/students", studentId, "contacts"] as const;
+
+/** Every consent query whose answer can change when a contact changes. */
+export function invalidateConsentForStudent(
+  qc: QueryClient,
+  studentId: string | undefined,
+): void {
+  if (!studentId) return;
+  // The wizard's guardianContact — the one that decides between "no guardian
+  // contact" and the real signing flow.
+  qc.invalidateQueries({ queryKey: ["consent-wizard-context", studentId] });
+  // Resolved signer type (a new contact can satisfy a guardian requirement).
+  qc.invalidateQueries({ queryKey: ["consent-authority", studentId] });
+  // Invitations are addressed to a contact id; deleting one retires them.
+  qc.invalidateQueries({ queryKey: ["consent-pending-invitations", studentId] });
+  // The banner's gate. Cheap, and a contact change is exactly the moment the
+  // user expects the consent card to re-evaluate.
+  qc.invalidateQueries({ queryKey: ["consent-active", studentId] });
+}
+
+/** One call for every contact create / update / confirm / delete. */
+export function invalidateAfterContactChange(
+  qc: QueryClient,
+  studentId: string | undefined,
+): void {
+  if (!studentId) return;
+  qc.invalidateQueries({ queryKey: studentContactsQueryKey(studentId) });
+  invalidateConsentForStudent(qc, studentId);
+}
 
 // ============================================================================
 // Types matching the server payloads
@@ -272,6 +322,12 @@ export function useSignConsent(studentId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["consent-active", studentId] });
       qc.invalidateQueries({ queryKey: ["consent-wizard-context", studentId] });
+      qc.invalidateQueries({ queryKey: ["consent-history", studentId] });
+      // Signing WRITES to the contact row (isLegalGuardian = true, plus the
+      // government-ID fields) — see consentController's sign handler. Without
+      // this the contacts list keeps the pre-signature copy forever
+      // (staleTime: Infinity).
+      qc.invalidateQueries({ queryKey: studentContactsQueryKey(studentId) });
     },
   });
 }

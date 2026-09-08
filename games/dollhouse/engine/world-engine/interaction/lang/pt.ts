@@ -306,7 +306,6 @@ const CENTRAL: Record<string, Lexeme> = {
   // Social acts — each the alias of a word that already had a lexeme
   // (hi/hello, goodbye/bye, ok/okay, confused/dont_understand). BOTH spellings
   // are listed on the social tab, so both need words.
-  thanks: { w: "obrigado" },
   sorry: { w: "desculpa" },
   mine: { w: "meu" },
   again: { w: "outra vez" },
@@ -341,6 +340,14 @@ const CENTRAL: Record<string, Lexeme> = {
   surprised: { w: "surpreso" },
   proud: { w: "orgulhoso" },
   calm: { w: "calmo" },
+
+  // ── THE POLITICS WORDS (interpersonal-politics.md §4b, 2026-09-07) ───────
+  // ⚠️ `mean` is "antipático", NOT "mau" — "mau" is `bad`; see the NO SYNONYMS
+  // law. `gentil` and `líder` end in a consonant, so their plurals are authored
+  // (the regular rule would produce "gentiles"/"líderes-es").
+  nice: { w: "gentil", f: "gentil", mpl: "gentis", fpl: "gentis" },
+  mean: { w: "antipático" },
+  leader: { w: "líder", g: "m", f: "líder", mpl: "líderes", fpl: "líderes" },
 
   // ── THE DESCRIPTIONS / ACTIONS CHIP LABELS (2026-09-04) ──────────────────
   // Category NAMES, not words a sentence composes. ⚠️ `colors` is "cores" and
@@ -409,7 +416,10 @@ export const pt = makeRomance({
               ? "Eu gosto dela."
               : "Eu gosto deles.",
   estar: { v1: "estou", v2: "está", v3: "está", v3p: "estão", v1p: "estamos" },
-  ser: { v3: "é", v3p: "são" },
+  ser: { v3: "é", v3p: "são", v1: "sou" },
+  // "assustado COM o urso" — Portuguese's fear marker is `com`, not `de`
+  // ("assustado de" is not the phrase), and `com` takes no contraction here.
+  feelingToward: (np) => `com ${np}`,
   to: (np) => `para ${np}`,
   inside: (np) =>
     np.startsWith("a ") ? `na ${np.slice(2)}` : np.startsWith("o ") ? `no ${np.slice(2)}` : `em ${np}`,

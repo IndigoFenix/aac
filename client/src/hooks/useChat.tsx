@@ -11,7 +11,9 @@ import { openUI } from '@/lib/uiEvents';
 import { useBoardStore } from '@/store/board-store';
 import { useCustomAppStore } from '@/store/custom-app-store';
 import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
+import type { GuidedSetupRequest, GuidedSetupView } from '@shared/guided-setup';
 import { useChatStream } from './useChatStream';
+import { invalidateConsentForStudent } from './useConsentApi';
 import { toast } from '@/hooks/use-toast';
 
 // ============================================================================
@@ -171,6 +173,12 @@ export interface ChatResponseActions {
   aacsettings?: any;
   aacprompt?: any;
   aacautoprompt?: any;
+
+  // Guided Setup — the server sets Context_GuidedSetup every turn while the
+  // student-onboarding flow is active; it lands here lower-cased. The rail
+  // renders it and the flow's panel/student follow it.
+  // (key constant: GUIDED_SETUP_CONTEXT_DATA_KEY in @shared/guided-setup)
+  guidedsetup?: GuidedSetupView;
 }
 
 interface ChatContextType {
@@ -235,6 +243,27 @@ interface ChatContextType {
 interface SendMessageOptions {
   replyType?: 'text' | 'html' | 'md';
   additionalMetadata?: Record<string, any>;
+  /**
+   * A normal `role: 'user'` turn that the user never sees: it is sent to the
+   * server and persisted with `metadata.hidden = true`, but is filtered out of
+   * the rendered history here AND on reload (see toDisplayHistory). Used for
+   * the Guided Setup kickoff, which asks the AI to open the conversation.
+   */
+  hidden?: boolean;
+  /** Guided Setup control field on the chat request body. */
+  guidedSetup?: GuidedSetupRequest;
+  /**
+   * Send the turn with NO `studentId`, whatever is selected right now.
+   *
+   * Guided Setup's "New student" kickoff needs this: clearing the selection
+   * first is not enough, because this callback closes over the `student` of the
+   * render that produced it — the caller awaits the send before React has
+   * handed it a fresh `sendMessage`, so the request would still carry the old
+   * id and the server would build the whole turn around the previous student's
+   * context. (The flow's own `ignoreStudentId` only stops the flow BINDING to
+   * them; it does not keep their data out of the prompt.)
+   */
+  withoutStudent?: boolean;
 }
 
 // ============================================================================
@@ -252,6 +281,9 @@ function toDisplayHistory(log: ChatMessage[] | null | undefined): ChatMessage[] 
   if (!Array.isArray(log)) return [];
   return log.filter((m) => {
     if (!m || m.role === 'tool') return false;
+    // Hidden turns (e.g. the Guided Setup kickoff) are real messages the server
+    // persists, but they must never reach a bubble — including after a reload.
+    if ((m.metadata as any)?.hidden) return false;
     const c = m.content;
     if (typeof c === 'string') return c.trim().length > 0;
     if (c && typeof c === 'object') return Boolean(c.md || c.html || c.text);
@@ -297,7 +329,7 @@ export const ChatProvider = ({
 
   // External hooks - need user for enabled condition on personas query
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   // Fetch selectable personas from API (only when authenticated)
   const { data: personas = [], isLoading: isPersonasLoading } = useQuery({
@@ -338,7 +370,13 @@ export const ChatProvider = ({
   const { student, selectStudent } = useStudent();
   const { currentInstitute, selectInstitute } = useInstitute();
   const { activeFeature, getFeatureMetadata, setActiveFeature } = useFeaturePanel();
-  const { setSharedState } = useSharedState();
+  const { sharedState, setSharedState } = useSharedState();
+
+  // Guided Setup: while the flow is live the conversation must survive panel
+  // switches (each step moves the panel) and reloads, so it is keyed by the
+  // institute rather than by (student, feature).
+  const guidedSetupActive = Boolean(sharedState.guidedSetup?.view?.active);
+  const guidedSetupInstituteId: string | undefined = sharedState.guidedSetup?.view?.instituteId;
 
   // DEBUG: Track activeFeature and sendMessage recreation
   useEffect(() => {
@@ -349,9 +387,12 @@ export const ChatProvider = ({
   // Storage keys
   const getStorageKey = useCallback(() => {
     const userPart = user?.id || 'anonymous';
+    if (guidedSetupActive) {
+      return `chat.session.${userPart}.guidedSetup.${guidedSetupInstituteId || 'none'}`;
+    }
     const aacPart = student?.id || 'none';
     return `chat.session.${userPart}.${aacPart}.${activeFeature}`;
-  }, [user?.id, student?.id, activeFeature]);
+  }, [user?.id, student?.id, activeFeature, guidedSetupActive, guidedSetupInstituteId]);
 
   // ============================================================================
   // SESSION MANAGEMENT
@@ -687,6 +728,16 @@ export const ChatProvider = ({
         queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'programs', 'current'] });
         // StudentInfoPanel reads the student's user+institute links
         queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'links'] });
+
+        // Same problem as aacsettings below: StudentProvider holds the
+        // selected student in useState behind a manual fetch, so the
+        // invalidations above refetch nothing the Patient Info panel reads
+        // from. Only re-select when the update is about the CURRENTLY
+        // selected student — re-selecting a different one would yank the
+        // clinician's view onto a student they didn't pick.
+        if (student?.id === updatedStudentId) {
+          void selectStudent(updatedStudentId);
+        }
       }
     }
 
@@ -702,6 +753,11 @@ export const ChatProvider = ({
       if (sid) {
         queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', sid, 'contacts'] });
         queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', sid, 'linkable-entities'] });
+        // The consent surface is derived from contacts (the wizard's guardian,
+        // the resolved signer, pending invitations) and never refetches on its
+        // own — staleTime is Infinity. An AI-created guardian has to make the
+        // approval affordance appear without a reload, same as a hand-typed one.
+        invalidateConsentForStudent(queryClient, sid);
         // Program team cards join through studentContacts for the display name
         queryClient.invalidateQueries({ queryKey: ['/api/students', sid, 'programs'] });
         queryClient.invalidateQueries({ queryKey: ['/api/students', sid, 'programs', 'current'] });
@@ -752,6 +808,32 @@ export const ChatProvider = ({
       const studentId = student?.id;
       if (studentId) {
         queryClient.invalidateQueries({ queryKey: ['/api/students', studentId] });
+        // …and the invalidations above are not enough on their own. The panel
+        // seeds every field from `useStudent().student`, which the provider
+        // holds in useState behind a manual fetch — it is not a react-query
+        // entry, so invalidating those keys refetches nothing and the panel
+        // went on showing the values from before the AI wrote. Re-selecting
+        // the SAME student re-GETs /api/students/:id and hands the provider a
+        // new object; that new identity is what re-seeds the panel.
+        void selectStudent(studentId);
+      }
+    }
+
+    // Guided Setup — the flow view the server recomputes every turn. It drives
+    // the rail, and (while active) the panel and the selected student, because
+    // the AI may create the student mid-turn. The null → value student fill-in
+    // is deliberately left to the existing student-change effect, which only
+    // clears the session on a value → value switch.
+    if (contextData.guidedsetup) {
+      const view = contextData.guidedsetup;
+      console.log('[ChatProvider] Guided Setup view received, step:', view.step);
+      setSharedState({ guidedSetup: { view, live: true } });
+
+      if (view.active && view.panel && view.panel !== activeFeature) {
+        setActiveFeature(view.panel);
+      }
+      if (view.studentId && view.studentId !== student?.id) {
+        selectStudent(view.studentId);
       }
     }
 
@@ -759,7 +841,7 @@ export const ChatProvider = ({
     setTimeout(() => {
       setAiRefreshing(new Set());
     }, 2000);
-  }, [setSharedState, student?.id, setActiveFeature, selectStudent, selectInstitute, personas]);
+  }, [setSharedState, student?.id, activeFeature, setActiveFeature, selectStudent, selectInstitute, personas]);
 
   // ============================================================================
   // MESSAGING
@@ -773,7 +855,7 @@ export const ChatProvider = ({
       return null;
     }
 
-    const { replyType = 'md', additionalMetadata } = options;
+    const { replyType = 'md', additionalMetadata, hidden, guidedSetup, withoutStudent } = options;
 
     stoppedByUserRef.current = false;
     setIsSending(true);
@@ -792,6 +874,7 @@ export const ChatProvider = ({
       ...featureMetadata,
       ...additionalMetadata,
       ...(newFileNames.length > 0 ? { files: newFileNames } : {}),
+      ...(hidden ? { hidden: true } : {}),
     };
 
     // Create user message
@@ -802,8 +885,12 @@ export const ChatProvider = ({
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     };
 
-    // Optimistically add user message
-    setHistory(prev => [...prev, userMessage]);
+    // Optimistically add user message — unless it is a hidden turn, which is
+    // sent and persisted but never rendered (the server keeps the metadata, so
+    // a reload filters it out too).
+    if (!hidden) {
+      setHistory(prev => [...prev, userMessage]);
+    }
 
     // Move pending files to context (they've been associated with this message)
     if (pendingFiles.length > 0) {
@@ -818,7 +905,14 @@ export const ChatProvider = ({
       activeFeature,
       persona,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      // The UI locale. Mirroring the user's own text is not enough for a turn
+      // the AI opens itself (the Guided Setup kickoff carries no user prose).
+      language,
     };
+
+    if (guidedSetup) {
+      requestBody.guidedSetup = guidedSetup;
+    }
 
     if (session?.id) {
       requestBody.sessionId = session.id;
@@ -826,7 +920,7 @@ export const ChatProvider = ({
     if (user?.id) {
       requestBody.userId = user.id;
     }
-    if (student?.id) {
+    if (student?.id && !withoutStudent) {
       requestBody.studentId = student.id;
     }
     if (currentInstitute?.id) {
@@ -1159,7 +1253,7 @@ export const ChatProvider = ({
       setIsThinking(false);
       setThinkingText(null);
     }
-  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId, pendingFiles, contextFiles]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId, pendingFiles, contextFiles, language]);
   
   const stopGeneration = useCallback(() => {
     stoppedByUserRef.current = true;

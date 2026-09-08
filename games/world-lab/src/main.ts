@@ -34,6 +34,10 @@ import { createSpaceHud, type SpaceHud, type HudCity } from "./space-hud";
 import { createDroneCamera, type DroneCamera } from "@shared/world-engine/spirit/drone-camera";
 import { createSpiritLadder, CITY_FOCUS_ALT, type SpiritLadder } from "@shared/world-engine/spirit/ladder";
 import type { SpiritCursorHost, SpiritLevel, SpiritStructureHost } from "@shared/world-engine/spirit/frame-provider";
+import {
+  occludingBodies, sameOccluders,
+  type OccPoint, type OccluderBody,
+} from "@shared/world-engine/spirit/occluders";
 import { createPlanetSpiritProvider } from "./spirit/planet-provider";
 import { GazeSpark } from "@shared/world-engine/render3d";
 import type { CelestialBody } from "@shared/world-engine/space/body";
@@ -44,9 +48,9 @@ import { OWNS_MATERIAL_STATE } from "@shared/world-engine/space/space-sky";
 import { bootLivingTown, bootStructure, bootTownEmbedded, bootWildernessQuest, type QuestBoot, type EmbeddedTown, type SharedBoard, type BoardHandlers } from "./quest-boot";
 import { bootWilderness, faunaForBiome, wildMixForBiome, WILD_SIDE, type WildernessGround } from "./wilderness-boot";
 import { createFloraField, floraTreesNear, FLORA_TREE_SPECIES, type FloraField } from "./flora-field";
-import { growthClassPeriodS, makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
+import { floraTwinFeatureId, growthClassPeriodS, makeFeature, wildFeatureContainerId } from "@shared/world-engine/interaction/quest/wilderness";
 import type { WildThinInstance } from "@shared/world-engine/interaction/quest/wild-area";
-import { naturalSourceOf } from "@shared/world-engine/products";
+import { naturalSourceOf, standGrowthClass } from "@shared/world-engine/products";
 import { climateSampleAt, ecoAbundanceAt, type ClimateSample } from "@shared/world-engine/planet/ecology";
 import type { FieldRect } from "@shared/world-engine/planet/field-paint";
 import { createFarmCrops, type FarmCrops } from "./farm-crops";
@@ -995,8 +999,12 @@ function assembleWorldSave(): WorldSave | null {
   }
   // The mounted field's marks, at REST (remaining seconds; null = forever).
   if (floraBodyId && wildTwinFelled.size) {
-    const marks = [...wildTwinFelled].map(([key, at]) => ({
-      key, remainS: Number.isFinite(at) ? Math.max(0, at - floraClock) : null,
+    const marks = [...wildTwinFelled].map(([key, m]) => ({
+      key,
+      remainS: Number.isFinite(m.at) ? Math.max(0, m.at - floraClock) : null,
+      // …and the span it was stamped with, so the restored stump keeps
+      // growing from the rung it had reached instead of restarting hidden.
+      ...(Number.isFinite(m.span) ? { spanS: m.span } : {}),
     }));
     records.push({
       id: `felled:${floraBodyId}`, kind: "felled-marks",
@@ -1209,7 +1217,7 @@ function disposeWilderness(): void {
   // Every live twin dies with its session — scenery again. The felled
   // MARKS survive the unmount (R2): the stumps you left stay stumps.
   wildTwins.clear();
-  flora?.setTwinHidden(aliveFelledMarks());
+  pushFloraMask(aliveFelledMarks());
   embedWild?.dispose();
   embedWild = null;
   if (wildRoot) { wildRoot.parent?.remove(wildRoot); wildRoot = null; }
@@ -2378,18 +2386,84 @@ const wildTwins = new Map<string, string>();
  *  permanent — the flux law's own arm). The ledger SURVIVES session
  *  unmounts and clears only with the field itself (body change); storage
  *  is driver-side until the persistence round. */
-const wildTwinFelled = new Map<string, number>();
+const wildTwinFelled = new Map<string, FelledMark>();
+/** One felled mark: WHEN it expires on the flora clock, and the FULL span it
+ *  was stamped with — the second number is what lets the picture say which
+ *  rung the new tree has climbed to (`felledStages`), instead of a stump
+ *  hiding for the whole span and popping back full-grown. */
+interface FelledMark { at: number; span: number }
 /** Monotonic sim-seconds for the mark clock — accrues in driveFlora across
  *  mounts and sessions (page-lifetime). */
 let floraClock = 0;
 /** Purge expired marks (their trees have regrown) and give the alive set. */
 function aliveFelledMarks(): Set<string> {
   const out = new Set<string>();
-  for (const [k, at] of wildTwinFelled) {
-    if (floraClock < at) out.add(k);
+  for (const [k, m] of wildTwinFelled) {
+    if (floraClock < m.at) out.add(k);
     else wildTwinFelled.delete(k);
   }
   return out;
+}
+
+/**
+ * ⚖️ THE RUNG A FELLED TREE HAS CLIMBED BACK TO — the mark, read as GROWTH
+ * rather than as absence.
+ *
+ * A mark used to mean "draw nothing here until the clock says a tree stands
+ * again", so the ground where a child cut a tree was bare for a whole growth
+ * span and then a 24 m oak appeared in one frame. What the SIM does in the
+ * same situation is stand a class-0 sapling and climb it
+ * (`reseedWildFeature` → `growWildFeature`), and now that the field can draw
+ * a rung, the picture can say the same thing.
+ *
+ * 🚨 IT READS THE MARK, NEVER THE SESSION. The mark is the driver's own
+ * ledger precisely because it must outlive the session that stamped it (the
+ * unmount used to forget marks — the respawning-stump bug), so the rung is
+ * derived from the two numbers the mark carries plus the tree's own STAND
+ * class: `elapsed = span − remaining`, one rung per class period, capped at
+ * the rung the stand keeps there. It therefore lands exactly on the scatter's
+ * own class at expiry — the hand-back from mark to scatter is continuous, and
+ * a stand's age structure survives being logged and regrown.
+ *
+ * A mark with no span (restored from a save written before this) keeps the
+ * old behaviour: hidden until it expires.
+ */
+function felledStages(): Map<string, number> {
+  const out = new Map<string, number>();
+  const g = naturalSourceOf(FLORA_TREE_SPECIES)?.growth;
+  if (!g) return out;
+  const top = g.classes.length - 1;
+  for (const [key, m] of wildTwinFelled) {
+    if (!(floraClock < m.at) || !Number.isFinite(m.span) || m.span <= 0) continue;
+    const home = standGrowthClass(FLORA_TREE_SPECIES, floraTwinFeatureId(FLORA_TREE_SPECIES, key)) ?? top;
+    const steps = Math.max(1, home);
+    const period = m.span / steps;
+    const elapsed = m.span - (m.at - floraClock);
+    const cls = Math.max(0, Math.min(home, Math.floor(elapsed / period)));
+    out.set(key, cls);
+  }
+  return out;
+}
+
+/** The mark a felling stamps: the tree regrows to the rung its STAND keeps
+ *  there (never blindly to mature — that would erase the age structure one
+ *  cut at a time), one class period per rung. A growth-less species stamps
+ *  Infinity: zero re-creation flux, the flux law's own arm. */
+function felledMarkFor(instKey: string, scale: WorldScale): FelledMark {
+  const growth = naturalSourceOf(FLORA_TREE_SPECIES)?.growth;
+  if (!growth) return { at: Infinity, span: Infinity };
+  const top = growth.classes.length - 1;
+  const home = standGrowthClass(FLORA_TREE_SPECIES, floraTwinFeatureId(FLORA_TREE_SPECIES, instKey)) ?? top;
+  const span = growthClassPeriodS(scale, growth) * Math.max(1, home);
+  return { at: floraClock + span, span };
+}
+
+/** The field's two declarative per-instance sets, pushed together — they are
+ *  read at the same beat and a stage change is meaningless while its tree is
+ *  the wrong one. */
+function pushFloraMask(hidden: ReadonlySet<string>): void {
+  flora?.setTwinHidden(hidden);
+  flora?.setTwinStages(felledStages());
 }
 function twinRng(instKey: string): () => number {
   let h = 2166136261 >>> 0;
@@ -2542,7 +2616,7 @@ function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world
     const hidden = aliveFelledMarks();
     for (const k of townStandHidden()) hidden.add(k);
     for (const k of depletedHidden()) hidden.add(k); // ④ the logged countryside
-    flora?.setTwinHidden(hidden);
+    pushFloraMask(hidden);
     return;
   }
   const sess = q.session;
@@ -2561,10 +2635,18 @@ function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world
   for (const t of near) {
     if (wildTwins.has(t.key)) continue;
     const mark = wildTwinFelled.get(t.key);
-    if (mark !== undefined && floraClock < mark) continue; // still a stump
+    // Still regrowing: the FIELD draws it at the rung the mark has climbed to
+    // (`felledStages`), so there is a young tree to look at — but it is not a
+    // twin, because the sim retired that source and nothing may re-mint stock
+    // for it (item conservation; scenery never materialises sim entities).
+    if (mark !== undefined && floraClock < mark.at) continue;
     if (mark !== undefined) wildTwinFelled.delete(t.key);  // regrown — twins fresh
     const local = wildAnchor.worldToLocal(t.world);
-    const id = `wild:${FLORA_TREE_SPECIES}_${t.key}`;
+    // ⚖️ ONE SPELLING of the twin's id (`floraTwinFeatureId`): `makeFeature`
+    // hashes it for the tree's growth rung, and the flora field hashes the
+    // SAME string for the instance it draws — spell it twice and a field
+    // sapling stands up as a mature twin.
+    const id = floraTwinFeatureId(FLORA_TREE_SPECIES, t.key);
     const f = makeFeature(id, FLORA_TREE_SPECIES, { x: local.x, y: local.z }, twinRng(t.key));
     if (q.addWildFeature(f)) wildTwins.set(t.key, id);
   }
@@ -2573,16 +2655,18 @@ function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world
     const f = w.features.find(g => g.id === id);
     if (!f) {
       // Gone from the session = consumed (fellIfConsumed). Stamp the mark
-      // AT FELLING (R2): scenery stays hidden until the species' growth
-      // clock would stand a new tree — sapling to the scatter's mature
-      // class at the session's own scale; a growth-less species is
-      // permanent (zero re-creation flux, the flux law's arm).
+      // AT FELLING (R2): the species' own growth clock, at the session's
+      // scale, from a shoot up to the rung THIS STAND keeps here
+      // (`felledMarkFor` — never blindly to mature, which would erase the
+      // stand's age structure one felling at a time); a growth-less species
+      // is permanent (zero re-creation flux, the flux law's arm).
+      // ⚖️ AND THE MARK IS NO LONGER A HOLE. It draws the rung the clock has
+      // reached (`felledStages`), so the ground you cleared shows a shoot
+      // that branches out over the growth span instead of nothing at all,
+      // then a full tree — which is what the sim has been doing under it
+      // since the staged twin landed.
       wildTwins.delete(instKey);
-      const growth = naturalSourceOf(FLORA_TREE_SPECIES)?.growth;
-      const span = growth
-        ? growthClassPeriodS(sess.scale, growth) * Math.max(1, growth.classes.length - 1)
-        : Infinity;
-      wildTwinFelled.set(instKey, floraClock + span);
+      wildTwinFelled.set(instKey, felledMarkFor(instKey, sess.scale));
       continue;
     }
     if (nearKeys.has(instKey)) continue;
@@ -2598,7 +2682,7 @@ function syncFloraTwins(playerWorld: THREE.Vector3, holes: ReadonlyArray<{ world
   for (const k of wildTwins.keys()) hidden.add(k);
   for (const k of townStandHidden()) hidden.add(k); // ② the town's own stand
   for (const k of depletedHidden()) hidden.add(k);  // ④ the logged countryside
-  flora.setTwinHidden(hidden);
+  pushFloraMask(hidden);
 }
 
 /**
@@ -2716,7 +2800,12 @@ function driveFlora(dt: number, playerWorld: THREE.Vector3): void {
     if (pend) {
       savedFelled.delete(body.id);
       for (const m of pend) {
-        wildTwinFelled.set(m.key, m.remainS === null ? Infinity : floraClock + m.remainS);
+        wildTwinFelled.set(m.key, {
+          at: m.remainS === null ? Infinity : floraClock + m.remainS,
+          // No span on the row = a save written before stumps could grow in
+          // the picture: it keeps the old behaviour (hidden until it expires).
+          span: m.spanS ?? Infinity,
+        });
       }
     }
   }
@@ -4168,6 +4257,11 @@ function streamGround(
       // …and the same three numbers, kept for the 🎥 Camera readout (debug only
       // — nothing reads this but the panel).
       lastViewLocal = { outM: Math.hypot(lv.x, lv.z), upM: lv.y, distM: lv.length() };
+      // 🌳 …and the SAME camera decides which trees are in the way (user,
+      // 2026-09-06). One point, two consumers: the LOD band measures FROM it and
+      // the occluder test draws its sight line FROM it, so the two can never
+      // disagree about where the viewer is standing.
+      stepTreeOccluders({ x: lv.x, y: lv.z, z: lv.y }, now);
     }
   }
   // The layer that OWNS the walker is stepped at full frame rate by the
@@ -5961,6 +6055,73 @@ function sampleSparkWatch(now: number): void {
   },
 };
 
+// ── 🌳 OCCLUDING TREES ARE OUTLINES ─────────────────────────────────────────
+//
+// User, 2026-09-06, on the baked orbit pose: *"The main issue with it is that
+// nearby trees can block the view. Maybe render them as outlines if they're
+// blocking the camera."*
+//
+// ⚖️ THIS IS THE DRIVER'S JOB, and only the driver's. It owns the camera, it
+// knows what the camera is looking AT, and the answer is true for THIS viewer
+// only ([LOD per-camera]) — so it can never be computed in the sim, ride the
+// wire, or be cached across clients. The geometry itself is pure
+// (`spirit/occluders.ts`) so it can be pinned without a browser; the host is
+// handed nothing but a list of ids and forces those bodies to the `stick`
+// SILHOUETTE rung through the ordinary re-tier drain. The sim never hears.
+//
+// SCOPE: the HELD DISTRICT ORBIT. That is the pose the complaint is about, it
+// is the only one with a stable focus POINT to draw a sight line to (a walker's
+// camera follows the walker), and every other rung pushes `null`, which
+// releases every outline at once.
+/** The ids currently outlined — also the hysteresis's only state. */
+let occluderIds: ReadonlySet<string> = new Set<string>();
+/** The candidate bodies, refreshed lazily: trees do not move, and a new stand is
+ *  a building event, not a frame event. The GEOMETRY runs every frame. */
+let occluderCands: OccluderBody[] = [];
+let occluderCandsAt = 0;
+const OCCLUDER_CANDS_MS = 250;
+function stepTreeOccluders(camSess: OccPoint, nowMs: number): void {
+  const host = embedTown?.host;
+  if (!host) {
+    // The town went away with the outlines still on it: drop the local state so
+    // the NEXT town's hysteresis does not start from a dead town's ids. There is
+    // no host left to release — its bodies went with it.
+    occluderIds = new Set<string>();
+    occluderCands = [];
+    occluderCandsAt = 0;
+    return;
+  }
+  const held = !!spirit && spirit.ladder.level === "town" && spirit.ladder.builderHold;
+  const ns = held ? host.nearStand?.() ?? null : null;
+  if (!ns || !(ns.radiusM > 0)) {
+    if (occluderIds.size) {
+      occluderIds = new Set<string>();
+      host.setOccluders(null);
+    }
+    occluderCands = [];
+    occluderCandsAt = 0;
+    return;
+  }
+  if (nowMs - occluderCandsAt >= OCCLUDER_CANDS_MS) {
+    occluderCandsAt = nowMs;
+    occluderCands = host.occluderCandidates();
+  }
+  // THE HOVERED BODY IS NEVER AN OCCLUDER — it must stay fully drawn and
+  // selectable (under the builder hold the orbit dwell IS the interaction).
+  // Read off the host's OWN settled gaze, not a second pick: two engines each
+  // computing a hover is the defect the external-cursor law exists to prevent.
+  const next = occludingBodies(
+    camSess,
+    { x: ns.at.x, y: ns.at.y, z: 0 }, // the site's centre, on the ground
+    occluderCands,
+    occluderIds,
+    { exempt: host.hoveredBodyId() },
+  );
+  if (sameOccluders(next, occluderIds)) return;
+  occluderIds = next;
+  host.setOccluders([...next]);
+}
+
 // ── 🌳 TREE-LOD AUDIT (__flora) — "the tree LOD is kind of random" ───────────
 //
 // A tree in view can be drawn by EITHER of two authorities and they band by
@@ -6044,6 +6205,11 @@ interface FloraAuditRow {
   /** The tier the ladder would seed for `dFocus` RIGHT NOW, coarsened by the
    *  town clamp — what the body SHOULD be wearing. */
   want: string;
+  /** 🌳 Is this tree currently FORCED to the silhouette rung because it stands
+   *  between the camera and the site (`stepTreeOccluders`)? `want` above is the
+   *  tier its SIZE earns; this is why the drawn form may legitimately be
+   *  coarser than that, and it is drawn hollow. */
+  occl: string;
   ring: string;
   cls: string;
   note: string;
@@ -6112,6 +6278,7 @@ function floraAuditRows(radiusM: number): FloraAuditRow[] {
       authority: both ? "BOTH DRAWN" : twin ? "twin body" : t.hidden ? "neither (field hidden)" : "field instance",
       drawn: twin ? `${drawnOf(twin)}${both ? ` + field ${fieldDrawn}` : ""}` : fieldDrawn,
       want: twin ? wantOf(d) : `field ${t.tier}`,
+      occl: twin && occluderIds.has(twin.id) ? "OUTLINE" : "",
       ring: inRing(t.world) ? "in" : "out",
       cls: twin ? (feats.get(twin.id)?.cls ?? "?") : "—",
       note: both
@@ -6139,9 +6306,12 @@ function floraAuditRows(radiusM: number): FloraAuditRow[] {
       authority: "twin body",
       drawn: `${drawn} (${b.tris}t)${b.visible ? "" : " [culled]"}`,
       want,
+      occl: occluderIds.has(b.id) ? "OUTLINE" : "",
       ring: inRing(b.world) ? "in" : "out",
       cls: feats.get(b.id)?.cls ?? "?",
-      note: want !== drawn ? `STALE — the ladder wants ${want}, GL shows ${drawn}` : "",
+      note: occluderIds.has(b.id)
+        ? "OCCLUDER — forced to the silhouette rung and drawn hollow (it stands between the camera and the site)"
+        : want !== drawn ? `STALE — the ladder wants ${want}, GL shows ${drawn}` : "",
       world: b.world,
     });
   }
@@ -6155,7 +6325,7 @@ function floraAuditRows(radiusM: number): FloraAuditRow[] {
     rows.push({
       tag: "??", key: id, dCam: w.distanceTo(cam), dFocus: dFocusOf(w),
       authority: "neither (feature, no body)",
-      drawn: "—", want: "—",
+      drawn: "—", want: "—", occl: "",
       ring: inRing(w) ? "in" : "out", cls: f.cls,
       note: "a session feature with no avatar model — refused addNpc (rooted cap) or standing as a heap",
       world: w.clone(),
@@ -6278,7 +6448,8 @@ function refreshCameraReadout(nowMs: number): void {
     const t = rows.map(r => ({
       tag: r.tag, key: r.key,
       dCam: +r.dCam.toFixed(1), dFocus: Number.isFinite(r.dFocus) ? +r.dFocus.toFixed(1) : null,
-      authority: r.authority, drawn: r.drawn, want: r.want, ring: r.ring, cls: r.cls, note: r.note,
+      authority: r.authority, drawn: r.drawn, want: r.want, occl: r.occl,
+      ring: r.ring, cls: r.cls, note: r.note,
     }));
     if (typeof console.table === "function") console.table(t);
     const mix = new Map<string, number>();
@@ -6286,6 +6457,7 @@ function refreshCameraReadout(nowMs: number): void {
     const stale = rows.filter(r => r.note.startsWith("STALE")).length;
     return `${rows.length} trees ≤${radiusM} m · ` +
       [...mix].map(([k, n]) => `${k}×${n}`).join(" ") +
+      (occluderIds.size ? ` · ${occluderIds.size} OUTLINED (occluding the site)` : "") +
       (stale ? ` · ${stale} STALE (drawn tier ≠ the tier the ladder wants)` : " · no stale tiers");
   },
   /** The on-screen tags (same as the 🌳 Tree LOD button). */

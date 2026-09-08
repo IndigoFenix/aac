@@ -1,0 +1,1717 @@
+# world-text v1   proto=1
+# world=homestead.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T01:48:17.554Z
+# ─────────────────────────────────────────
+> wait 4
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-1: "Are you okay?"  [you + ok#question]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+SAY    person-6: "Are you okay?"  [you + ok#question]
+TICK   quiet after 2.0s.
+> wait 4
+SAY    person-4: "I'm happy."  [i_me + happy]
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-4: "😴"
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — guest
+  4 (4) — guest
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: "Where are you going?"  [place#question + you + go]
+SAY    person-4: "I'm going to get a basket."  [go + get + basket]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   quiet after 2.0s.
+> wait 4
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — hungry
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — guest
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-1: [onion]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-5 left view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: [nut]
+SAY    person-3: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-1: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — guest
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-1: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-5: "😴"
+ENTER  person-5 came into view there north.
+SAY    person-6: "Where are you going?"  [place#question + you + go]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+SAY    person-3: "I'm going to the yard."  [go + yard]
+TICK   quiet after 2.0s.
+> wait 4
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+SAY    person-3: [nut]
+TICK   quiet after 1.5s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+SAY    person-3: [nut]
+SAY    person-1: [nut]
+TICK   quiet after 1.5s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-4: "😴"
+SAY    person-3: "bye-bye"  [goodbye]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-6: [nut]
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+TICK   quiet after 2.5s.
+> wait 4
+SAY    person-1: [nut]
+SAY    person-3: [nut]
+SAY    person-6: [nut]
+SAY    person-3: "😴"
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-3 left view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-3 came into view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+EXIT   person-1 left view there north.
+TICK   quiet after 2.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-5 left view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-6 left view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-4 left view there south.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-4 came into view there south.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-6 came into view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-3 left view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-6 left view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-4: "😴"
+ENTER  person-5 came into view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+ENTER  person-6 came into view there east.
+TICK   quiet after 2.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — tired
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-1 came into view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — guest
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-4 left view there south.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-5 left view there north.
+ENTER  person-3 came into view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-3 left view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-6 left view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-4 came into view there south.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-1 left view there west.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — guest
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — guest
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-5 came into view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+SAY    person-5: "😴"
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-6 came into view there east.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-3 came into view there north.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-1 came into view there west.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-4 left view there west.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-6 left view there south.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+EXIT   person-3 left view there west.
+TICK   quiet after 2.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-5 left view there west.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+ENTER  person-4 came into view there west.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+EXIT   person-1 left view there west.
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> wait 4
+TICK   waited 4.0s.
+> family
+FAMILY 5 in the household.
+  1 (1) — hungry
+  2 (2) — hungry
+  3 (3) — hungry
+  4 (4) — hungry
+  5 (5) — hungry
+TICK   quiet after 1.0s.
+> self
+SELF   you are outdoors.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=321  presses=0  screens=1  sim=810.0s
+# events: TICK 321  FAMILY 160  SAY 55  EXIT 18  ENTER 14  BOARD 1  NOTE 1  SELF 1

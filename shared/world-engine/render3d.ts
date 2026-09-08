@@ -39,7 +39,7 @@ import { bubbleAnchorDraws, exemptSpeakers, type BubbleViewpoint } from "./bubbl
 import { cornerOrbitDelta } from "./spirit/corner-orbit.js";
 import { bubbleAlpha, imageAspect, layoutBubble, paintBubble, type GlyphImage } from "./speech-bubble.js";
 import { buildObjectModel, objectModelKey, TABLE_TOP_Y, type ObjectModel } from "./object-models.js";
-import { setStickViewportPx } from "./creatures/stick-lod.js";
+import { setStickViewportPx, stickOutlineMaterial } from "./creatures/stick-lod.js";
 import { naturalSourceOf } from "./products.js";
 import { useContractFor, useAnchorWorld, type ContactPart } from "./furniture-use.js";
 import {
@@ -2103,6 +2103,17 @@ export class World3DRenderer {
   /** Avatars forced invisible regardless of sim state — the walk↔fly coordinator
    *  hides the town's local body while it's airborne (the flight shows the bird). */
   private readonly hiddenAvatars = new Set<string>();
+  /** 🌳 OCCLUDER OUTLINES (user, 2026-09-06: *"nearby trees can block the view.
+   *  Maybe render them as outlines if they're blocking the camera"*). Bodies the
+   *  local driver found standing between the camera and its focus. RENDER-ONLY
+   *  and PER-VIEWER, exactly like `hiddenAvatars` above — the host has already
+   *  forced them to the `stick` rung through the ordinary re-tier drain, and all
+   *  that is left here is to hand that rung's meshes the hollow material. */
+  private readonly outlinedAvatars = new Set<string>();
+  /** The ONE outline material, built on first use and disposed with the view.
+   *  Not a module singleton: a material belongs to the renderer whose program
+   *  cache compiled it. */
+  private outlineMat: THREE.MeshBasicMaterial | null = null;
   /** HOST mode scratch for mapping the LOCAL chase pose into the shared camera's
    *  WORLD frame (placeCamera) and the gaze ray back the other way. */
   private readonly _camPos = new THREE.Vector3();
@@ -2931,6 +2942,53 @@ export class World3DRenderer {
     if (model) model.object.visible = !hidden;
   }
 
+  /** 🌳 Draw this body's STICK tier hollowed out — an outline instead of a
+   *  silhouette (see `outlinedAvatars`). Idempotent; the swap itself happens in
+   *  `syncAvatars`, which is also where it is RE-applied after the re-tier drain
+   *  has replaced the model with a fresh (solid) one. */
+  setAvatarOutline(id: string, on: boolean): void {
+    if (on) this.outlinedAvatars.add(id);
+    else this.outlinedAvatars.delete(id);
+  }
+
+  /** Swap an outlined body's stick meshes to the hollow material, or back.
+   *
+   *  Per-`Mesh` ASSIGNMENT, never a mutation: the bake's shared material object
+   *  is untouched, so outlining one oak cannot ghost every oak of its species
+   *  and stage. Only meshes whose material is the stick tier's are touched (the
+   *  same `name === "stick-lod"` classifier `__flora.audit` reads off the
+   *  scene), so a body the host has not actually driven to `stick` yet — the
+   *  drain runs 2 per frame — simply stays solid until it arrives.
+   *
+   *  The flag lives on the model's own root, so a model REBUILT by the drain
+   *  comes back without it and is re-outlined on the next frame; and when the
+   *  state matches there is no traversal at all. */
+  private applyAvatarOutline(model: AvatarModel, on: boolean): void {
+    const ud = model.object.userData as { outlined?: boolean };
+    if (!!ud.outlined === on) return;
+    ud.outlined = on;
+    if (on && !this.outlineMat) {
+      this.outlineMat = stickOutlineMaterial();
+      this.disposables.push(this.outlineMat);
+    }
+    const ghost = this.outlineMat;
+    model.object.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!(m as unknown as { isMesh?: boolean }).isMesh) return;
+      const md = m.userData as { outlineFrom?: THREE.Material };
+      if (on) {
+        const cur = m.material as THREE.Material | undefined;
+        if (ghost && cur && !Array.isArray(m.material) && cur.name === "stick-lod" && cur !== ghost) {
+          md.outlineFrom = cur;
+          m.material = ghost;
+        }
+      } else if (md.outlineFrom) {
+        m.material = md.outlineFrom;
+        delete md.outlineFrom;
+      }
+    });
+  }
+
   /** Pointer (CSS px) → world point. The gaze STOPS at the first VISIBLE surface —
    *  a kept wall/door or an opaque roof/slab — so looking at a wall lands ON the
    *  wall, not the floor behind it; CUT walls (invisible) and LIFTED roofs (faded)
@@ -3667,6 +3725,13 @@ export class World3DRenderer {
       // Coordinator override (walk↔fly): a hidden avatar stays hidden this frame,
       // whatever the sim/cull decided above.
       if (this.hiddenAvatars.has(a.id)) model.object.visible = false;
+      // 🌳 …and the OCCLUDER OUTLINE, the same shape of override one line later:
+      // re-asserted every frame because the re-tier drain replaces the model
+      // object itself (a rebuilt body comes back solid). Early-outs on a match,
+      // so the steady state costs one Set lookup per body.
+      if (this.outlinedAvatars.size || (model.object.userData as { outlined?: boolean }).outlined) {
+        this.applyAvatarOutline(model, this.outlinedAvatars.has(a.id));
+      }
       // Feet on the ground: terrain height under the body + the storey lift +
       // any FLIGHT altitude (metres above the ground; 0 for a grounded body).
       model.object.position.set(
@@ -5108,6 +5173,7 @@ export function createWorld3DView(
     // whole stage). Directed default keeps the miss invisible; browser-verify.
     setCameraScheme: (scheme) => renderer.setCameraScheme(scheme),
     setAvatarHidden: (id, hidden) => renderer.setAvatarHidden(id, hidden),
+    setAvatarOutline: (id, on) => renderer.setAvatarOutline(id, on),
     resetAvatarModel: (id) => renderer.resetAvatarModel(id),
     rebaseLocal: (delta) => renderer.rebaseLocal(delta),
     dispose: () => renderer.dispose(),

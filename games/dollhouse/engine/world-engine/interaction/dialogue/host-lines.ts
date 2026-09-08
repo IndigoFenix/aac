@@ -14,7 +14,8 @@
  * gate, applied to the host's own verdicts.
  *
  * ⚠️ VOCABULARY DISCIPLINE: every glyph here is one the rulesets already
- * render (`place`, `good.not`, `have.not`, `understand.not`, `ok`, `no`).
+ * render (`place`, `good.not`, `have.not`, `understand.not`, `ok`, `no`,
+ * `person`, `here.not`).
  * A line built from a word no ruleset knows is WORSE than the toast it
  * replaced — it comes out as raw glyph soup in the child's ear. New words go
  * into en/es/he/pt (and core.ts's part-of-speech table) FIRST.
@@ -46,6 +47,105 @@ export const WHO_DO_YOU_MEAN: LeveledGlyphs = phrase({
   verb: "understand.not",
   key: "understand.not",
 });
+
+/**
+ * ⚖️ P-3 — "THERE IS NOBODY HERE." The sentence was well formed, it mapped to a
+ * real conversational move, and the ONE precondition every addressed act has
+ * was missing: somebody to address. That is not the same verdict as "I don't
+ * understand", and answering it with that one teaches the child their sentence
+ * was WRONG — the most expensive possible lie, because the sentence was right
+ * and the room was empty. An act aimed at nobody is a DIFFERENT act, so it gets
+ * a different answer (group-activity-syntax §7: explicit not-understood over a
+ * silent drop, a NAMED refusal over a misleading "ok").
+ *
+ * Nobody can speak it, by definition — the host puts it on the feedback surface
+ * the way `speakNotUnderstood` already does when there is no mouth for a line.
+ *
+ * ⚠️ VOCABULARY DISCIPLINE, twice over. NO NEW WORD: `person` and `here` are
+ * both shipped glyphs with lexemes in all four rulesets, so this needed nothing
+ * from the registry or the eleven locales. And the `.not` is real — the `here`
+ * frame used to DROP it in silence and render the positive ("The ball is
+ * here."), which is fixed in `lang/core.ts` alongside this line. Renders:
+ *   en "The person is not here."   he "האדם לא כאן."
+ *   es "La persona no está aquí."  pt "A pessoa não está aqui."
+ */
+export const NOBODY_HERE: LeveledGlyphs = phrase({
+  subject: "person",
+  verb: "here.not",
+  key: "no",
+});
+
+/**
+ * ⚖️ L-2 — THE UNWILLING REFUSAL ("I won't help you"). The order was UNDERSTOOD
+ * and there is nothing wrong with the place: this body simply does not take
+ * orders from that author yet. That is a different verdict from `CANT_HERE`
+ * (whose own docblock says it is "not refused out of unwillingness") and from
+ * `WHO_DO_YOU_MEAN` (a missing target), and the named-refusal discipline says
+ * the three must land differently.
+ *
+ * ⚠️ NOT A NEW FRAME. It is `creature-dialogue.ts`'s shipped `refuseGlyph(null)`
+ * — "i_me + help.not + you", key "no" — which is already render-checked in all
+ * four rulesets as the answer to a request this creature will not grant. The
+ * spec is repeated here rather than exported across the layer boundary because
+ * this module is where the HOST's own verdicts speak from; if a third caller
+ * ever appears, that is the moment to make one of them import the other.
+ */
+export const WONT_HELP_YOU: LeveledGlyphs = phrase({
+  subject: "i_me",
+  verb: "help.not",
+  object: "you",
+  key: "no",
+});
+
+/**
+ * ⚖️ W2-4/W2-5 — THE NO-BOND REFUSAL: "You are not the leader."
+ *
+ * A SPOKEN order to a body that does not take orders from this author. The
+ * verdict is the same one `attendTo`'s press gate reaches (`bondStrength <
+ * VOLUNTEER_COMPLIANCE`), but the SENTENCE names the missing precondition
+ * instead of the consequence — and it names it in the child's own vocabulary,
+ * as the EXACT INVERSE of the yield sentence the child already builds
+ * ("you + leader" makes somebody your leader; "you + leader.not" is the answer
+ * when they are not yours). One word, negated, teaches the whole rule.
+ *
+ * ⚠️ NO NEW WORD. `you` and `leader` both ship in all four rulesets, and the
+ * `.not` on a ROLE is B2's `neg` regard frame — which exists precisely because
+ * `leader` is a NOUN and the corrective frame could not dress it. Renders:
+ *   en "You are not the leader."      he "אתה לא המנהיג." / "את לא המנהיגה."
+ *   es "No eres el líder."            pt "Você não é o líder."
+ * (The Hebrew agrees with the ADDRESSEE's gender, like every other line here.)
+ *
+ * DISTINCT FROM `WONT_HELP_YOU`, which stays exactly where it is: that one is
+ * spoken by the PRESS gate and says what the body will not do; this one says
+ * WHY, which is the half a spoken sentence can carry and a press cannot.
+ */
+export const NO_BOND: LeveledGlyphs = phrase({
+  subject: "you",
+  verb: "leader.not",
+  key: "no",
+});
+
+/**
+ * ⚖️ A PRECONDITION IS THE REPLY (semantic-behavior §6) — "I don't eat."
+ *
+ * `stop + eat` COMPILES to a plain halt and ASSUMES one thing: that the body is
+ * eating. When it is not, the halt lands on nothing and the child hears either
+ * silence or a misleading confirmation. The assumption the compiler recorded
+ * (`Precondition {kind:"doing", verb}`) is exactly the sentence worth saying, so
+ * the failed precondition IS the answer rather than an error behind it.
+ *
+ * ⚠️ NO NEW WORD, TWICE OVER: `i_me` ships everywhere, and the VERB is the one
+ * the child just said — a word already on their board by construction. The shape
+ * is `ACTIVITY_REFUSAL`'s (`i_me + {state}.not`) with the ACTIVITY in the slot,
+ * because the claim being denied here is the activity, not the appetite.
+ *
+ * Renders (verb `eat`): en "I don't eat." · he "אני לא אוכל." / "אני לא אוכלת."
+ * · es "No como." · pt "Eu não como." — English alone reads habitual rather
+ * than progressive; the other three carry both readings in one form.
+ */
+export function notDoingLine(verb: string): LeveledGlyphs {
+  return phrase({ subject: "i_me", verb: `${verb}.not`, key: "no" });
+}
 
 /** A specific ITEM is missing ("nothing to give"): the vendor's shipped
  *  have-not frame, reused.

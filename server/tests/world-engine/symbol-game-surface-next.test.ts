@@ -45,7 +45,14 @@ describe("surfaceNext — continuations", () => {
     expect(askSyms).toContain("where");
     expect(askSyms).toContain("what");
     const social = surfaceNext([], ctx({ seedKind: "greet" }));
-    expect(social.buttons.every((b) => ["hi", "hello", "bye", "goodbye", "yes", "no", "ok", "okay", "thanks", "sorry", "mine", "again", "dont_understand", "confused"].includes(b.symbol))).toBe(true);
+    const socialSyms = social.buttons.map((b) => b.symbol);
+    // `thank_you`, not `thanks` (2026-09-08): 🙏 `thank_you` is the only
+    // registry row the concept has, so it is the only spelling that can BE a
+    // button; `thanks` is a parse-only alias, and `CANONICAL_SOCIALS` keeps one
+    // key per act, which is the NO SYNONYMS law asserted below.
+    expect(social.buttons.every((b) => ["hi", "hello", "bye", "goodbye", "yes", "no", "ok", "okay", "thank_you", "sorry", "mine", "again", "dont_understand", "confused"].includes(b.symbol))).toBe(true);
+    expect(socialSyms).toContain("thank_you");
+    expect(socialSyms).not.toContain("thanks"); // one BUTTON per act
   });
 
   it("after a verb, objects are ranked by AFFORDANCE (eat → apple first)", () => {

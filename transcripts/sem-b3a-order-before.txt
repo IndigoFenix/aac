@@ -1,0 +1,82 @@
+# world-text v1   proto=1
+# world=homestead.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T09:46:53.454Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 5.0s.
+> scene
+SCENE  outdoors — 20 thing(s) in view.
+  wood-1 (wood), here west.
+  stone-1 (stone), there west.
+  person-1 (person), here east.
+  basket-1 (basket), here south.
+  basket-2 (basket), here south.
+  15 people, there south.
+SITE   1 thing(s) being built.
+  site-1: a yard — marked ground, here east, 0 m
+TICK   quiet after 1.0s.
+> approach person-1
+ERR    you are a bodiless spirit here — act through a creature (family/send) or claim a body.
+> look person-1
+LOOK   person-1 — person.
+  here east, 4 m away.
+  outdoors.
+SAY    person-1: "hi"  [hi]
+SAY    person-1: "hi"  [hi]
+SAY    person-1: "hi"  [hi]
+BOARD  wild_face:settler_3: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+NOTE   4 choice(s) on this page, plus back.
+SAY    person-1: "I will go to the yard."  [go.will + yard]
+TICK   quiet after 4.5s.
+> self
+SELF   you are outdoors.
+  holding nothing.
+  looking at nothing.
+  talking with person-1.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+> say you + get + wood
+OK     said: you + get + wood
+SAY    person-1: "okay"  [ok]
+TOAST  ▶ party (1): you + get + wood (feedback)
+TICK   quiet after 1.5s.
+> wait 10
+SAY    person-1: "I will go to the yard."  [go.will + yard]
+SAY    person-1: "I will go to the yard."  [go.will + yard]
+TICK   waited 10.0s.
+> scene
+SCENE  outdoors — 19 thing(s) in view.
+  person-1 (person), there east.
+  wood-1 (wood), here west.
+  stone-1 (stone), there west.
+  basket-1 (basket), here south.
+  basket-2 (basket), here south.
+  14 people, there west.
+SITE   1 thing(s) being built.
+  site-1: a yard — marked ground, here east, 0 m
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=8  presses=0  screens=2  sim=24.5s
+# events: TICK 7  SAY 7  BOARD 2  NOTE 2  SCENE 2  SITE 2  ERR 1  LOOK 1  SELF 1  OK 1  TOAST 1

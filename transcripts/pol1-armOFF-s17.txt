@@ -1,0 +1,908 @@
+# world-text v1   proto=1
+# world=bc-mill-world.spec  seed=17  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T01:59:48.542Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 5.0s.
+> say build house
+OK     said: build + house
+SAY    person-2: "I will build the house."  [build.will + house]
+TOAST  🪧 build + house — anyone nearby may take it (feedback)
+TOAST  🪚 milling 120 block for the site (feedback)
+SAY    person-1: "I will get the wood."  [get.will + wood]
+SAY    person-5: "I will get the wood."  [get.will + wood]
+SAY    person-6: "I will get the wood."  [get.will + wood]
+SAY    person-4: "I will get the wood."  [get.will + wood]
+SITE   2 thing(s) being built.
+  site-1: a house — marked ground, 0% worked, gathering block 0/120, there east, 12 m
+  site-2: a yard — marked ground, here east, 0 m
+TICK   quiet after 2.5s.
+> wait 10
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  📦 bring 8 wood — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+TOAST  📦 bring 1 wood — delivered (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will build."  [i_me + build.will]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 milling 94 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 4 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-4: "Are you okay?"  [you + ok#question]
+SAY    person-2: "I'm hungry."  [i_me + hungry]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: [onion]
+SAY    person-5: "😴"
+SAY    person-6: [carrot]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there north.
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: [nut]
+TOAST  🪚 milling 96 block for the site (feedback)
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+SAY    person-4: [nut]
+SAY    person-4: [nut]
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 3 block — delivered (feedback)
+SAY    person-5: "I will build."  [i_me + build.will]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "Where are you going?"  [place#question + you + go]
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+SAY    person-2: "I'm going to the yard."  [go + yard]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "Are you okay?"  [you + ok#question]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-6: "I'm hungry."  [i_me + hungry]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-6: "Are you okay?"  [you + ok#question]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-2: "I'm hungry."  [i_me + hungry]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-6: "bye-bye"  [goodbye]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-2: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 7 block — delivered (feedback)
+SAY    person-6: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+ENTER  person-1 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-4: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I'm hungry."  [i_me + hungry]
+SAY    person-4: "bye-bye"  [goodbye]
+TOAST  📦 bring 3 block — delivered (feedback)
+SAY    person-5: "I will build."  [i_me + build.will]
+SAY    person-5: "😴"
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+TOAST  🪚 milling 84 block for the site (feedback)
+SAY    person-6: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: [nut]
+SAY    person-4: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: "bye-bye"  [goodbye]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [berry]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-6: [berry]
+SAY    person-2: [nut]
+SAY    person-4: [berry]
+SAY    person-2: [berry]
+SAY    person-6: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+SAY    person-4: [nut]
+SAY    person-2: [nut]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: [nut]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: [nut]
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+SAY    person-6: "Where are you going?"  [place#question + you + go]
+SAY    person-4: "I will eat the food."  [eat.will + food]
+SAY    person-6: "bye-bye"  [goodbye]
+TOAST  📦 bring 2 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "😴"
+SAY    person-6: "😴"
+TOAST  🪚 milling 72 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there north.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "😴"
+EXIT   person-5 left view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-5 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there north.
+EXIT   person-5 left view there south.
+ENTER  person-5 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there east.
+EXIT   person-2 left view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+ENTER  person-6 came into view there east.
+ENTER  person-1 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 4 block — delivered (feedback)
+SAY    person-5: "😴"
+TOAST  🪚 milling 72 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there east.
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+  15. trade block  [trade + block]  "Trade for the block?"
+NOTE   15 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-4 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-5 left view there east.
+EXIT   person-4 left view there north.
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 milling 60 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there east.
+EXIT   person-1 left view there north.
+ENTER  person-5 came into view there east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-2 came into view there south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there east.
+ENTER  person-4 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there north.
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-1 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-5: "😴"
+TOAST  🪚 milling 60 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+BOARD  __town__: Build.  [build]
+  1. build  [build]  "Build."
+  2. area house  [area + building(family)]  "Area the house."
+  3. area farm  [area + building(grain)]  "Area the farm."
+  4. area market  [area + building(money)]  "Area the market."
+  5. area carpentry  [area + building(workbench)]  "Area the workshop."
+  6. area stonecutter  [area + building(stonecutter)]  "Area the masonry."
+  7. area smithy  [area + building(anvil)]  "Area the smithy."
+  8. area weaver  [area + building(loom)]  "Area the weaver."
+  9. area library  [area + building(book)]  "Area the library."
+  10. area temple  [area + building(altar)]  "Area the temple."
+  11. area building  [area + building]  "Area the building."
+  12. area storehouse  [area + building(box)]  "Area the storehouse."
+  13. clear area  [area + none]  "Area the none."
+  14. show areas  [show + area]  "Show the area."
+NOTE   14 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will build."  [i_me + build.will]
+TOAST  📦 bring 4 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-2 left view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-6 left view there north.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+ENTER  person-4 came into view there north.
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-1 left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 milling 48 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-5 left view there west.
+ENTER  person-1 came into view there west.
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-4: "I will build."  [i_me + build.will]
+SAY    person-4: "😴"
+TICK   waited 10.0s.
+> wait 10
+ENTER  person-6 came into view there north.
+ENTER  person-2 came into view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+TOAST  📦 bring 8 block — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪚 milling 36 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "😴"
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "😴"
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 8 block — delivered 3 of 8 (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+ENTER  person-5 came into view there west.
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-1: "😴"
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 milling 17 block for the site (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will build."  [i_me + build.will]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 2 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "😴"
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I don't have the block."  [have.not + block]
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "😴"
+TICK   waited 10.0s.
+> wait 10
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "😴"
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 12 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-2: "I will build."  [i_me + build.will]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-5: "😴"
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 2 block — delivered (feedback)
+SAY    person-4: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  🪚 milling 2 block for the site (feedback)
+SAY    person-6: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 1 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-2: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🪚 12 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 7 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-1: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  📦 bring 2 block — delivered (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    person-5: "I will build."  [i_me + build.will]
+TOAST  📦 bring 3 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+TOAST  📦 bring 1 block — delivered (feedback)
+SAY    person-4: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TOAST  📦 bring 2 block — delivered (feedback)
+SAY    person-1: "I will build."  [i_me + build.will]
+SAY    person-6: "I will build."  [i_me + build.will]
+SAY    person-2: "I will build."  [i_me + build.will]
+SAY    person-4: "I will build."  [i_me + build.will]
+SAY    person-1: "😴"
+TOAST  🧱 materials staged — builders raise the house (feedback)
+SITE   2 thing(s) being built.
+  site-1: a house — floor laid, 0% worked, there east, 12 m
+  site-2: a yard — marked ground, here east, 0 m
+TICK   waited 10.0s.
+> wait 10
+SITE   2 thing(s) being built.
+  site-1: a house — pillars up, 55% worked, there east, 12 m
+  site-2: a yard — marked ground, here east, 0 m
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 7 block milled and stored (feedback)
+SAY    person-2: "The house is finished."  [house + finished]
+TOAST  🏛️ the house is finished (feedback)
+SITE   1 thing(s) being built.
+  site-2: a yard — marked ground, here east, 0 m
+EXIT   person-2 went into the pink house.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-4 left view there south.
+EXIT   person-1 left view there west.
+EXIT   person-6 left view there north.
+EXIT   person-5 left view there north.
+TOAST  🏠 a family moves into the new house (feedback)
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    person-18: "bye-bye"  [goodbye]
+SAY    person-21: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+EXIT   person-18 went into the pink house.
+SAY    person-20: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    person-20: [sit]
+EXIT   person-19 went into the pink house.
+EXIT   person-22 went into the pink house.
+EXIT   person-21 left view there east.
+EXIT   person-20 left view there east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> self
+SELF   you are outdoors.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=173  presses=0  screens=10  sim=1709.0s
+# events: SAY 238  TICK 173  TOAST 105  EXIT 27  ENTER 17  BOARD 10  NOTE 10  SITE 4  OK 1  SELF 1

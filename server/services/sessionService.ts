@@ -57,6 +57,20 @@ import {
 import { buildSessionAccessCtx } from "./sharing/sessionCtx";
 import { canAccessMonitorNotes } from "./sharing/visibility";
 import { getConsentStatus } from "./consent/consentGate";
+import {
+  GUIDED_SETUP_CONTEXT_KEY,
+  type GuidedSetupRequest,
+  type GuidedSetupToolArgs,
+  type GuidedSetupView,
+} from "@shared/guided-setup";
+import {
+  discoverFlowStudentId as discoverGuidedSetupStudentId,
+  hasUnfinishedRecord as hasUnfinishedGuidedSetup,
+  resolveFlowStudentId as resolveGuidedSetupStudentId,
+  resolveForChat as resolveGuidedSetupForChat,
+  resumeForChat as resumeGuidedSetupForChat,
+  runToolAction as runGuidedSetupAction,
+} from "./guided-setup/student-setup-service";
 import { activityLogService } from "./activityLogService";
 import { STUDENT_CHAT_MEMORY_FIELD_IDS } from "./memory-schema/student-memory-schema";
 import {
@@ -863,6 +877,58 @@ async function updateSession(
     .where(eq(chatSessions.id, sessionId));
 }
 
+/**
+ * The subject columns a chat session is scoped by. One list so the FILL-IN
+ * below and the switch test in `getMessageManager` can never disagree about
+ * what a session's subject IS.
+ */
+const SESSION_SUBJECT_FIELDS = [
+  "userId",
+  "studentId",
+  "instituteId",
+  "instituteUserId",
+  "userStudentId",
+] as const;
+
+type SessionSubjectField = (typeof SESSION_SUBJECT_FIELDS)[number];
+
+/**
+ * The null→value FILL-IN from the subject-scoped chat sessions rule
+ * (`planning-docs/student-access-permission/subject-scoped-chat-sessions-plan.md`):
+ * a session that has no value for a subject field adopts the one in hand and
+ * KEEPS its history; a session that already carries a DIFFERENT value is a
+ * subject SWITCH, which is never a patch — it opens a fresh session, and that
+ * decision belongs to `getMessageManager`.
+ *
+ * So every write here is guarded on the session's own field being null. That
+ * guard is the whole point of the helper: it is called from two places that
+ * must not be able to drift apart — the ordinary reuse path, and GUIDED SETUP
+ * binding to the student it just created. Before it existed the second path
+ * did not patch the row at all, so the setup conversation stayed
+ * `studentId: null` and never appeared under the student's chat history.
+ *
+ * Mutates `session` in place so the caller's copy stays true to the row.
+ * Returns whether anything was written.
+ */
+export async function fillInSessionSubject(
+  session: ChatSession,
+  incoming: Partial<Record<SessionSubjectField, string | null | undefined>>,
+): Promise<boolean> {
+  const updates: Partial<InsertChatSession> = {};
+  for (const field of SESSION_SUBJECT_FIELDS) {
+    const next = incoming[field] ?? null;
+    if (next == null) continue;
+    // Not null on the row → either the same value (nothing to do) or a switch
+    // (not ours to make). Either way, leave it alone.
+    if ((session[field] ?? null) != null) continue;
+    updates[field] = next;
+  }
+  if (Object.keys(updates).length === 0) return false;
+  await updateSession(session.id, updates);
+  Object.assign(session, updates);
+  return true;
+}
+
 async function updateUserMemory(userId: string, memory: Record<string, any>): Promise<void> {
   await db
     .update(users)
@@ -949,6 +1015,10 @@ interface GetMessageManagerInput {
   timezone?: string;
   /** Function-type key for the session cost_breakdown (default "chat"; the AAC Monitor passes "monitor"). */
   creditCategory?: string;
+  /** Guided Setup request flags (`{ start: true }` opens the flow). */
+  guidedSetup?: GuidedSetupRequest;
+  /** UI locale the user is working in. Used by the Guided Setup block only. */
+  language?: string;
 }
 
 interface GetMessageManagerResult {
@@ -1091,7 +1161,7 @@ function formatConsentStatusForPrompt(
     const until = consent.legacyConsentDeadline?.split("T")[0] ?? "soon";
     return `${header}\nThis student does not yet have an informed-consent record but is in a legacy grace window through ${until}. PHI operations are still permitted today, but the record needs to be collected before the deadline. If the user asks about consent or progress on signing, mention this.`;
   }
-  return `${header}\nThis student has no active informed-consent record. PHI write operations (creating/finalizing reports, sharing records, recording incidents, starting AAC sessions) WILL FAIL with a "consent_required" error until a guardian completes the consent wizard for this student. If a tool call fails for that reason, calmly explain to the user that the student is in consent-pending state and direct them to the "Sign consent" button on the Student Info panel.`;
+  return `${header}\nThis student has no active informed-consent record. PHI write operations (creating/finalizing reports, sharing records, recording incidents, starting AAC sessions, running a deep analysis) WILL FAIL with a "consent_required" error until a guardian completes the consent wizard for this student. If a tool call fails for that reason, calmly explain to the user that the student is in consent-pending state and direct them to the "Sign consent" button on the Student Info panel.`;
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
@@ -1246,16 +1316,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       session = undefined;
     } else {
       // Reuse. Fill in any subject fields the session is missing but the request provides.
-      const updates: Partial<InsertChatSession> = {};
-      if (sesIds.userId == null && reqIds.userId != null) updates.userId = reqIds.userId;
-      if (sesIds.studentId == null && reqIds.studentId != null) updates.studentId = reqIds.studentId;
-      if (sesIds.instituteId == null && reqIds.instituteId != null) updates.instituteId = reqIds.instituteId;
-      if (sesIds.instituteUserId == null && reqIds.instituteUserId != null) updates.instituteUserId = reqIds.instituteUserId;
-      if (sesIds.userStudentId == null && reqIds.userStudentId != null) updates.userStudentId = reqIds.userStudentId;
-      if (Object.keys(updates).length > 0) {
-        await updateSession(existing.id, updates);
-        Object.assign(existing, updates);
-      }
+      await fillInSessionSubject(existing, reqIds);
       session = existing;
       chatState = (session.state as ChatState) || newChatState;
       log = (session.log as ChatMessage[]) || [];
@@ -1614,6 +1675,18 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
   }
 
+  // GUIDED SETUP, mid-turn binding. Assigned by the Guided Setup block below
+  // and fired at the END of every memory write, which is the first moment a
+  // student the model created THIS turn actually exists (see the block for
+  // why the flow may not wait for `selectStudent`).
+  let bindDiscoveredGuidedSetupStudent:
+    | ((values: FlatMemoryValues) => Promise<void>)
+    | undefined;
+  // The manager deep-clones chatState at construction and it is ITS copy that
+  // is persisted, so a mid-turn write to the flow state has to land there too.
+  // Set immediately after the manager is built; null while nothing can fire.
+  const liveChatStateRef: { current: ChatState | null } = { current: null };
+
   // Create callbacks
   const onUpdateMemoryValues = async (newMemoryValues: FlatMemoryValues) => {
     // Extract and save memory values to the appropriate database objects based on prefix
@@ -1671,6 +1744,14 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     
     // Context_ fields are NOT persisted to DB - they are returned in the response
     // for the frontend to handle
+
+    // Last, because it READS what the writes above just landed: a student the
+    // model created earlier in this same turn is now a row, so an unbound
+    // GUIDED SETUP flow can find and adopt it without waiting for the model to
+    // call selectStudent.
+    if (bindDiscoveredGuidedSetupStudent) {
+      await bindDiscoveredGuidedSetupStudent(newMemoryValues);
+    }
   };
 
   const enrichCorePrompt = (context: MemoryContext, corePrompt: string, isAACFeature: boolean) => {
@@ -1772,6 +1853,252 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       if (note) template.corePrompt = `${template.corePrompt}\n\n${note}`;
     } catch (err) {
       console.warn('[getMessageManager] Failed to load consent status for prompt:', err);
+    }
+  }
+
+  // === Guided Setup ===
+  // Active when the client opened the flow, when the session is already in it,
+  // or when the selected student has an unfinished record here (resume).
+  // FLOW CONTROL ONLY — every fact is still written through manageMemory over
+  // the memory-schema tree. The rendered block goes at the very END of the
+  // system prompt (trailingSection) so the cached prefix above it is stable.
+  let guidedSetupSection: string | undefined;
+  let onGuidedSetup: ((args: GuidedSetupToolArgs) => Promise<unknown>) | undefined;
+  if (!isAACFeature && userId && instituteId) {
+    try {
+      // "Continue setup" on a parked student. Handled BEFORE `start`, and as a
+      // field of its own: `start` deliberately begins unbound, so the rail's
+      // resume button riding on it opened a fresh step-1 flow that asked a
+      // clinic for its patient list instead of resuming the patient.
+      // A refused resume (no access, no resumable record) comes back null and
+      // simply falls through to the ordinary paths below.
+      const requestedResumeId =
+        typeof input.guidedSetup?.resumeStudentId === "string" &&
+        input.guidedSetup.resumeStudentId.trim()
+          ? input.guidedSetup.resumeStudentId.trim()
+          : null;
+      const resumeRecord = requestedResumeId
+        ? await resumeGuidedSetupForChat({ userId, instituteId, studentId: requestedResumeId })
+        : null;
+      const resumedStudentId = resumeRecord ? requestedResumeId : null;
+
+      const requested = !resumedStudentId && input.guidedSetup?.start === true;
+      const sessionFlow =
+        chatState.guidedSetup?.active && chatState.guidedSetup.instituteId === instituteId
+          ? chatState.guidedSetup
+          : undefined;
+      const resumable =
+        !requested && !resumedStudentId && !sessionFlow && studentId
+          ? await hasUnfinishedGuidedSetup(studentId, instituteId)
+          : null;
+
+      if (resumedStudentId || requested || sessionFlow || resumable) {
+        // `start` ALWAYS begins unbound. The request body carries whatever
+        // student the user had selected, so taking it here is how pressing
+        // "New student" adopted the student already on screen and resumed them
+        // mid-flow. What was selected is remembered as `ignoreStudentId` — the
+        // one id that can never bind — and `startedAt` dates the flow.
+        //
+        // A resume is the opposite: the student is NAMED, so the flow binds to
+        // them immediately, keeps the date the setup originally started, and
+        // has nothing to ignore.
+        const startedAt = resumedStudentId
+          ? (resumeRecord?.startedAt ?? new Date().toISOString())
+          : requested
+            ? new Date().toISOString()
+            : (sessionFlow?.startedAt ?? resumable?.startedAt ?? new Date().toISOString());
+        const ignoreStudentId = resumedStudentId
+          ? null
+          : requested
+            ? (studentId ?? null)
+            : (sessionFlow?.ignoreStudentId ?? null);
+
+        // null→value fill-in: the AI created a student and called
+        // selectStudent, so the next turn's studentId IS the flow's student.
+        // Only a row created since the flow started qualifies (see
+        // canBindStudentToFlow); anything older is the user's own selection.
+        //
+        // That fill-in is PREFERRED but no longer relied on. `selectStudent`
+        // is a UI call the model may simply not make — observed live (clinic,
+        // 2026-09-08): the patient was created, nothing bound, the rail kept
+        // saying "No Patient Selected", and with `basics.inInstitute` false the
+        // step-1 block could not name one outstanding fact, so the turn went
+        // asking about AAC. Discovery is the fallback, off the DATA, through
+        // the same guard. `requested` (the opening turn) stays deliberately
+        // null: the flow has created nobody yet.
+        const selectedFlowStudentId: string | null = resumedStudentId
+          ? resumedStudentId
+          : requested
+            ? null
+            : resumable
+              ? (studentId ?? null)
+              : await resolveGuidedSetupStudentId({
+                  boundStudentId: sessionFlow?.studentId ?? null,
+                  inputStudentId: studentId ?? null,
+                  ignoreStudentId,
+                  startedAt,
+                });
+        const flowStudentId: string | null =
+          selectedFlowStudentId ??
+          (requested
+            ? null
+            : await discoverGuidedSetupStudentId({
+                userId,
+                instituteId,
+                startedAt,
+                ignoreStudentId,
+              }));
+
+        chatState.guidedSetup = {
+          active: true,
+          studentId: flowStudentId,
+          instituteId,
+          startedAt,
+          ignoreStudentId,
+          // A pending roster proposal lives on this state and nowhere else;
+          // rebuilding the object without it dropped the review table (and the
+          // AWAITING CONFIRMATION prompt block) on the very next turn.
+          ...(sessionFlow?.rosterProposal !== undefined
+            ? { rosterProposal: sessionFlow.rosterProposal }
+            : {}),
+        };
+
+        // The flow deliberately starts UNBOUND, and the client sends no
+        // studentId for it, so the row this conversation lives on was created
+        // with `studentId: null`. Binding is the moment that becomes wrong:
+        // without this the setup chat never appears under the student it set
+        // up. It is exactly the null→value FILL-IN the subject rule describes
+        // — same helper as the reuse path above — so a session that somehow
+        // already carries a DIFFERENT student is left alone rather than
+        // re-pointed at this one.
+        if (flowStudentId && session) {
+          await fillInSessionSubject(session, { studentId: flowStudentId });
+        }
+
+        const resolved = await resolveGuidedSetupForChat({
+          userId,
+          instituteId,
+          studentId: flowStudentId,
+          lang: input.language,
+          // A resume is a first turn too: the user pressed a button, not
+          // continued a sentence, so the assistant greets and orients — and on
+          // a consent-blocked student that greeting is the gate-aware one that
+          // asks for nothing behind the lock.
+          firstTurn: requested || !!resumedStudentId,
+          // A pending roster proposal has to ride every turn's view, or the
+          // review table in the panel disappears the moment the user speaks.
+          rosterProposal: chatState.guidedSetup?.rosterProposal ?? null,
+        });
+        guidedSetupSection = resolved.section;
+        // Reaches the client as contextData.guidedsetup. Never a memory FIELD,
+        // so the AI is never offered it as something it can write.
+        memoryValues[GUIDED_SETUP_CONTEXT_KEY] = resolved.view;
+        if (resolved.done) chatState.guidedSetup.active = false;
+
+        onGuidedSetup = async (args: GuidedSetupToolArgs) => {
+          const view = await runGuidedSetupAction({
+            userId,
+            instituteId,
+            studentId: chatState.guidedSetup?.studentId ?? flowStudentId,
+            lang: input.language,
+            // Model-supplied; the service validates the verb rather than
+            // trusting it (an unknown action comes back as a refusal).
+            action: args?.action,
+            step: args?.step,
+            value: args?.value,
+            contactId: args?.contactId,
+            channel: args?.channel,
+            rows: args?.rows,
+            rosterProposal: chatState.guidedSetup?.rosterProposal ?? null,
+          });
+          // Keeps OUR copy current for callers that read the returned
+          // memoryValues directly. The copy the CLIENT sees is published by
+          // the tool router (defaultToolRegistry.guidedSetup) — the manager
+          // clones this object at construction and merges its own version
+          // over it at the end of the turn, so a write here alone is lost.
+          memoryValues[GUIDED_SETUP_CONTEXT_KEY] = view;
+          // The flow can FINISH inside a tool call — `advance` or `skip` off
+          // the last step is exactly how it normally ends. The chat resolution
+          // above ran before the model spoke, so it deactivated nothing, and
+          // the session carried the whole GUIDED SETUP section into one more
+          // turn: a finished flow still telling the model to guide. The
+          // manager's clone is the copy that gets persisted, so both are set.
+          if ((view as GuidedSetupView | null)?.active === false) {
+            if (chatState.guidedSetup) chatState.guidedSetup.active = false;
+            const liveFlow = liveChatStateRef.current?.guidedSetup;
+            if (liveFlow) liveFlow.active = false;
+          }
+          return view;
+        };
+
+        // Mid-turn binding. The section above is rendered ONCE, before the
+        // model runs, so a student created during this turn can only reach the
+        // PROMPT on the next one. The rail must not wait that long: it would
+        // sit on "No Patient Selected" for the whole turn that created the
+        // patient. This runs at the end of every memory write — the first
+        // moment the new row exists — and republishes the view.
+        if (!flowStudentId) {
+          // The bound view, once we have one. Re-applied on every later memory
+          // write of the same turn: the memory tool republishes from its OWN
+          // ref (which sessionService cannot reach), so a second manageMemory
+          // batch would otherwise put the unbound view back on the rail.
+          let reboundView: unknown | null = null;
+          // Captured: narrowing is lost inside the closure, and this is the row
+          // the discovery path has to attach the conversation to.
+          const sessionRow = session;
+          bindDiscoveredGuidedSetupStudent = async (values: FlatMemoryValues) => {
+            const flow = chatState.guidedSetup;
+            if (!flow?.active) return;
+            if (flow.studentId) {
+              if (reboundView) values[GUIDED_SETUP_CONTEXT_KEY] = reboundView;
+              return;
+            }
+            try {
+              const discovered = await discoverGuidedSetupStudentId({
+                userId,
+                instituteId,
+                startedAt: flow.startedAt ?? null,
+                ignoreStudentId: flow.ignoreStudentId ?? null,
+              });
+              if (!discovered) return;
+              flow.studentId = discovered;
+              // The manager's own clone is the copy that gets persisted.
+              const liveFlow = liveChatStateRef.current?.guidedSetup;
+              if (liveFlow) liveFlow.studentId = discovered;
+              // Same FILL-IN as the bound path above. This is the turn that
+              // CREATED the student, so it is the only chance to attach the
+              // conversation to them before the row is written back; the
+              // guard inside the helper still refuses a session that already
+              // belongs to somebody else.
+              if (sessionRow) await fillInSessionSubject(sessionRow, { studentId: discovered });
+
+              const rebound = await resolveGuidedSetupForChat({
+                userId,
+                instituteId,
+                studentId: discovered,
+                lang: input.language,
+                // Not a first turn: the greeting already went out above.
+                firstTurn: false,
+                rosterProposal: flow.rosterProposal ?? null,
+              });
+              // `values` IS the manager's memoryValues object, so writing here
+              // is what reaches contextData.guidedsetup and the rail this turn;
+              // the outer copy is kept in step for callers that read it back.
+              reboundView = rebound.view;
+              values[GUIDED_SETUP_CONTEXT_KEY] = rebound.view;
+              memoryValues[GUIDED_SETUP_CONTEXT_KEY] = rebound.view;
+              if (rebound.done) {
+                flow.active = false;
+                if (liveFlow) liveFlow.active = false;
+              }
+            } catch (err) {
+              console.warn("[getMessageManager] Guided Setup mid-turn binding failed:", err);
+            }
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("[getMessageManager] Guided Setup resolution failed:", err);
     }
   }
 
@@ -2087,6 +2414,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     captionVideoEnabled: !isAACFeature && !!licensePerms?.videoCaptionEnabled,
     onCreateQuestGame,
     onValidateQuestGame,
+    onGuidedSetup,
+    trailingSection: guidedSetupSection,
     onFilesNeeded,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
@@ -2109,6 +2438,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     creditCategory: input.creditCategory,
   });
 
+
+  // GUIDED SETUP: the mid-turn binding writes the flow's student onto the
+  // manager's chatState, which is the copy onUpdateChatState persists.
+  liveChatStateRef.current = messageManager.chatState;
 
   // Return both manager and memoryValues reference
   // The memoryValues object is passed by reference, so changes made by the memory system
@@ -2291,6 +2624,12 @@ export interface OnMessageInput {
 
   /** Function-type key for the session cost_breakdown (default "chat"; the AAC Monitor passes "monitor"). */
   creditCategory?: string;
+
+  /** Guided Setup request flags. `{ start: true }` opens the flow this turn. */
+  guidedSetup?: GuidedSetupRequest;
+
+  /** UI locale the user is working in (e.g. "he"). Guided Setup block only. */
+  language?: string;
 }
 
 /**
@@ -2336,7 +2675,7 @@ function classifyError(error: any): string {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone, creditCategory } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone, creditCategory, guidedSetup, language } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -2353,6 +2692,8 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       systemPromptOverride,
       timezone,
       creditCategory,
+      guidedSetup,
+      language,
     });
 
     // Debug: Log what we injected
@@ -2448,6 +2789,8 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       systemPromptOverride,
       timezone,
       creditCategory: input.creditCategory,
+      guidedSetup: input.guidedSetup,
+      language: input.language,
     });
 
     // Debug: Log what we injected
@@ -2575,6 +2918,8 @@ export async function* onMessageMdStreaming(
       currentImage,
       systemPromptOverride,
       timezone,
+      guidedSetup: input.guidedSetup,
+      language: input.language,
     });
 
     // Persist any incoming messages

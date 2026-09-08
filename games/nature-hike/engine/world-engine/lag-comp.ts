@@ -28,8 +28,10 @@
  * so a single `localStorage` key IS a cross-game global.
  *
  * Every storage access is guarded: `localStorage` does not exist in node (jest,
- * text mode) or a worker, where this reads FALSE — the default, and the reason
- * the headless transcripts are untouched by this seam.
+ * text mode) or a worker, where this reads FALSE — UNCONDITIONALLY, which is the
+ * reason the headless transcripts are untouched by this seam. In a browser the
+ * default is ON since 2026-09-06 (user ruling); node is not a default, it is a
+ * floor.
  *
  * Console ergonomics, matching `__perfProbes`:
  *   globalThis.__lagComp = true      // this tab only, not persisted
@@ -44,7 +46,13 @@
 export const LAG_COMP_MAX_FACTOR = 10;
 
 /** The persisted key. One origin serves every `/games/<id>/`, so this is global
- *  across the world-engine games by construction. */
+ *  across the world-engine games by construction.
+ *
+ *  ⚖️ THREE VALUES, NOT TWO (2026-09-06). `"1"` = on, `"0"` = OFF BY CHOICE,
+ *  ABSENT = never asked. Absent used to mean off; it now means "take the
+ *  default", which is why an explicit off has to write something. Anyone
+ *  carrying the old `"1"` keeps it, and anyone with nothing gets the new
+ *  default — nobody's stored choice is reinterpreted. */
 export const LAG_COMP_STORAGE_KEY = "world-engine-lag-comp";
 
 /** Per-frame readout (world-host publishes it; the world-lab status line and
@@ -72,15 +80,27 @@ let stored: boolean | null = null;
 function readStored(): boolean {
   try {
     const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
-    return ls?.getItem(LAG_COMP_STORAGE_KEY) === "1";
+    // ⚖️ NO localStorage ⇒ NO COMPENSATION, always. This is not a default, it
+    // is the headless contract: node (jest, text mode, the bench) and workers
+    // read FALSE here, so every transcript and every suite runs the path that
+    // shipped no matter what a browser would choose.
+    if (!ls) return false;
+    const v = ls.getItem(LAG_COMP_STORAGE_KEY);
+    // ⏩ DEFAULT ON IN A BROWSER (user ruling 2026-09-06: "it is working
+    // nicely", make it the default state). A frame that renders in 16 ms is
+    // untouched by this — the compensator only ever gives back wall-clock
+    // seconds the frame cap was throwing away, and it never runs ahead of the
+    // wall clock. An explicit `"0"` (the player pressed ⏩ off) still wins.
+    return v === null ? true : v === "1";
   } catch {
-    return false; // private mode / node / worker — the default is OFF
+    return false; // private mode — nothing to read, nothing to persist
   }
 }
 
 /**
  * Is automatic lag compensation on? A console override (`globalThis.__lagComp`)
- * wins; otherwise the persisted choice; otherwise OFF.
+ * wins; otherwise the persisted choice; otherwise ON in a browser and OFF
+ * anywhere without `localStorage` (node, workers — see `readStored`).
  */
 export function lagCompOn(): boolean {
   const g = (globalThis as unknown as LagGlobal).__lagComp;
@@ -95,8 +115,9 @@ export function setLagComp(on: boolean): void {
   (globalThis as unknown as LagGlobal).__lagComp = on;
   try {
     const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
-    if (on) ls?.setItem(LAG_COMP_STORAGE_KEY, "1");
-    else ls?.removeItem(LAG_COMP_STORAGE_KEY);
+    // BOTH answers are written now that ABSENT means "the default" — removing
+    // the key would silently re-enable the thing the player just turned off.
+    ls?.setItem(LAG_COMP_STORAGE_KEY, on ? "1" : "0");
   } catch {
     /* not persistable here — the session-level override above still holds */
   }

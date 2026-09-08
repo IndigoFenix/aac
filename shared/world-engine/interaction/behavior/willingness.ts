@@ -28,7 +28,12 @@ import {
   type CreatureWorld,
   type ItemState,
 } from "@shared/world-engine/interaction/behavior/creatures.js";
-import { DEFAULT_RELATION, type Relation } from "@shared/world-engine/interaction/behavior/relations.js";
+import {
+  compliance,
+  DEFAULT_RELATION,
+  deference,
+  type Relation,
+} from "@shared/world-engine/interaction/behavior/relations.js";
 import { NEUTRAL_PERSONALITY, type Personality } from "@shared/world-engine/interaction/behavior/personality.js";
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
@@ -39,6 +44,17 @@ const clampSigned = (v: number): number => Math.min(1, Math.max(-1, v));
  *  is a plain no with a reason (nothing to point at, or the owner won't/can't). */
 export type GiveResponse =
   | { kind: "give"; reason: "debt" | "affinity" | "surplus" }
+  /**
+   * ⚖️ A YIELD — the ladder said no and the creature handed it over ANYWAY,
+   * because of who was asking (interpersonal-politics.md §8.5, S-5). A separate
+   * arm rather than a fourth `reason` string on the one above, because the host
+   * MUST be able to tell a yield from a gift: a yield emits a `yield` social
+   * act, publishes a regard fact and costs the yielder standing, and none of
+   * that happens when a spare apple changes hands. `route` says WHICH pressure
+   * carried it — "L" earned (I recognize you), "C" coerced (defying you would
+   * cost me) — and the two write opposite things into the book.
+   */
+  | { kind: "give"; reason: "yield"; route: "L" | "C" }
   | { kind: "redirect" }
   | { kind: "decline"; reason: "bound" | "own-need" | "ungenerous" };
 
@@ -60,6 +76,15 @@ export interface WillingnessInput {
    * into the fuzz by handing over a stream it can reproduce.
    */
   rng?: Rng;
+  /**
+   * WOULD REFUSING BE SEEN AND FOLLOWED THROUGH? (0..1, default 0) — the one
+   * thing the coerced route of `deference` needs from the world, fed straight
+   * to `yieldGate`. The host passes witnessed ∈ {0,1}. Default 0 means the
+   * coerced route contributes NOTHING, so an owner with `fear: 0` toward the
+   * asker (which is every relation shipped today) reaches exactly the verdict
+   * it reached before this file learned about yielding.
+   */
+  certainty?: number;
 }
 
 /**
@@ -200,7 +225,86 @@ export function willingnessToGive(
 
   if (hasSurplus(owner, item, world)) return { kind: "give", reason: "surplus" };
 
+  // 7. THE YIELD — the last arm, reached ONLY when the whole ladder refused.
+  //    Everything above is about the ITEM and the owner's disposition toward it;
+  //    this is the one rung that is purely about WHO IS ASKING. It sits at the
+  //    bottom on purpose: a creature does not yield a keepsake or the food it
+  //    needs itself (steps 1–3 are bedrock and stay hard), and it does not need
+  //    to yield what it was going to give anyway.
+  if (yieldGate(personality, relation, { certainty: input.certainty })) {
+    return { kind: "give", reason: "yield", route: yieldRoute(personality, relation, input.certainty) };
+  }
+
   return withhold("ungenerous");
+}
+
+// ---------------------------------------------------------------------------
+// YIELD — the primitive of a social contest (interpersonal-politics.md §S-5)
+// ---------------------------------------------------------------------------
+
+/** ⚖️ HOW HARD A BODY HOLDS ITS GROUND: `0.2 + 0.6 · assertiveness`, so the
+ *  least assertive creature yields to a fifth of a claim on it and the most
+ *  assertive needs four fifths. The span is wide because this is the dial that
+ *  decides whether a world has pushovers and holdouts in it at all; the base is
+ *  low because ANY resistance at all already stops a stranger (a neutral
+ *  stranger's deference is ~0.07). No new personality dial — assertiveness is
+ *  already "how much you resist being directed" (personality.ts). */
+const YIELD_RESIST_BASE = 0.2;
+const YIELD_RESIST_SPAN = 0.6;
+
+/**
+ * WILL THIS CREATURE GIVE WAY? The fifth member of the gate family:
+ * `compliance` gates DO, `generosity` gates GIVE, `sociability` gates JOIN,
+ * `attend` gates ANSWER — and this gates YIELD, which is the one that only
+ * matters after all the others have said no.
+ *
+ * `deference` (relations.ts) supplies the PRESSURE — both routes at once, the
+ * earned one and the coerced one — and assertiveness supplies the RESISTANCE.
+ * A yield is simply pressure winning.
+ *
+ * 🚨 INERT ON EVERY RELATION SHIPPED TODAY, by arithmetic rather than by a flag:
+ * a stranger's deference is ~0.07 against a resistance of at least 0.2, and
+ * `fear: 0` (universal) plus `certainty: 0` (the default) makes the coerced
+ * route contribute nothing. What DOES clear the bar is a FAMILY-strength
+ * relation (`authority 0.8` ⇒ deference ≈ 0.68 > 0.5): a household member gives
+ * way to its guiding spirit. That is the intended first case — the
+ * earned-not-constant story starting from the authored constant, until M1
+ * outcomes start moving `authority` on their own.
+ */
+export function yieldGate(
+  personality: Personality,
+  relToOther: Relation,
+  ctx: { certainty?: number } = {},
+): boolean {
+  const certainty = clamp01(ctx.certainty ?? 0);
+  // ⚠️ A YIELD NEEDS SOMETHING TO YIELD TO. `deference` folds in the intrinsic
+  // `obedience` FLOOR, which is a disposition toward COMMANDERS — and an asker
+  // with no recognized standing and nothing to threaten with is not one. Without
+  // this guard an easy-going creature (companion, obedience 0.35) would hand
+  // anything to anybody, which is not a yield at all: that conversation already
+  // happened at step 4, and it is called generosity. So the arm opens only when
+  // the OTHER PARTY holds a claim — a recognized right to ask, or a cost to
+  // refusing that would actually be seen.
+  if (!(clamp01(relToOther.authority) > 0) && !(clamp01(relToOther.fear) * certainty > 0)) return false;
+  const pressure = deference(relToOther, personality, { certainty });
+  const resistance = YIELD_RESIST_BASE + YIELD_RESIST_SPAN * clamp01(personality.assertiveness);
+  return pressure > resistance;
+}
+
+/**
+ * WHICH ROUTE CARRIED THE YIELD — and therefore what it writes into the book.
+ * "C" when the coerced term (`fear · certainty`) outweighs the earned one,
+ * else "L". ⚖️ The distinction is the whole of ruling ③: a yield that arrived
+ * by fear must never be recorded as recognition, or a bully accumulates
+ * authority by being frightening.
+ */
+export function yieldRoute(
+  personality: Personality,
+  relToOther: Relation,
+  certainty?: number,
+): "L" | "C" {
+  const coerced = clamp01(relToOther.fear) * clamp01(certainty ?? 0);
+  return coerced > compliance(relToOther, personality) ? "C" : "L";
 }
 
 // ---------------------------------------------------------------------------

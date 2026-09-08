@@ -56,6 +56,7 @@ import {
   type WildernessFeature,
 } from "@shared/world-engine/interaction/quest/wilderness.js";
 import { FOOD_KINDS, satiationDaysOf, SATIATION_DAYS } from "@shared/world-engine/kernel/town/goods-kinds.js";
+import { FOOD_DAY_SEC } from "@shared/world-engine/kernel/town/goods.js";
 import { getSpecies } from "@shared/world-engine/creatures/species.js";
 import { specWords } from "@shared/world-engine/interaction/content/words.js";
 import { getVocabularyItem } from "@shared/glyph-registry.js";
@@ -478,5 +479,122 @@ describe("frontier — a berry bush offers its berries without being cut", () =>
       const food = LARDER.find((l) => l.species === f.species)!.food;
       expect(f.stock[food]).toBeGreaterThan(0);
     }
+  }, 600_000);
+});
+
+// ── ⑥ THE LARDER RENEWS — or it is a pantry, not a countryside ─────────────
+//
+// USER REPORT, 2026-09-07: *"food plants aren't actually growing in the
+// frontier test — everyone eventually gets hungry and stops working"*.
+//
+// THE MEASURED DEFECT (frontier-planet.spec.json, seed 11, dt 1/2, 4 play-days
+// = 960 sim-seconds): every one of the 19 food features stood at `live={}`
+// with `regrowAt={}` and stayed there. The wild larder was a ONE-OFF PANTRY —
+// 57 units, 11.4 rations, and then nothing, forever.
+//
+// TWO CAUSES, one shape: nobody arms the clock, and nobody reads it.
+//
+//   ① THE ARM. `armHarvestRegrow` hangs off the PLAYER's take path
+//      (`takeFromContainer`). Body-anchored needs (2026-09-07) made a settler
+//      a THIRD taker of the same containers, and that path debited the stock
+//      without arming anything — so `dueHarvestRegrowth` had nothing pending
+//      and the bush never bore again.
+//
+//   ② THE READ. `regrowWildStock` hangs off three checkpoints, all of them a
+//      PLAYER (open a container, take from one) or a clock WARP. A settler
+//      foraging is none of the three, and the deadlock closes: an emptied
+//      plant drops off the forage list (a source is offered only if a take
+//      would yield), so nobody walks to it, so nothing ripens it, so it is
+//      never offered again. Lazy ripening needs a reader.
+//
+// Pinned as the two halves are fixed: the arm on the real settler arc (the
+// only place the third taker exists), the read on a probe stand nobody ever
+// looks at. `npm run test:engine -- wild-food`.
+
+const planetDoc = JSON.parse(
+  readFileSync(join(process.cwd(), "scripts", "worlds", "frontier-planet.spec.json"), "utf8"),
+);
+
+describe("⑥ a foraged plant bears again", () => {
+  let run: TextQuestRun;
+
+  beforeAll(() => {
+    // The age-0 founding party — five settlers with no pantry, who therefore
+    // eat off the land. `frontier.spec.json` (a 4-day-old founding) never
+    // exercises this path at all, which is exactly how the defect shipped:
+    // measured, 0 forage takes in 10 play-days there against 175 here.
+    run = bootTextQuest({ world: planetDoc, seed: 11, dt: 0.5 });
+    run.advance(20);
+  }, 600_000);
+
+  afterAll(() => run?.dispose());
+
+  it("① a settler's take ARMS the plant's regrow clock", () => {
+    const foodSpecies = new Set(foodPlants().map((r) => r.species));
+    const larder = () =>
+      run.session.wilderness!.features.filter((f) => foodSpecies.has(f.species));
+    // Nothing is armed at boot — a full stand owes nobody anything.
+    expect(larder().every((f) => f.regrowAt === undefined)).toBe(true);
+
+    // Let the settlers get hungry and forage. Bounded: the first takes land
+    // inside 120 sim-seconds at this seed (half a play-day), so 360 is slack,
+    // not a wait.
+    let armed: WildernessFeature[] = [];
+    for (let chunk = 0; chunk < 6 && armed.length === 0; chunk++) {
+      run.advance(120); // 60 sim-seconds at dt 0.5
+      armed = larder().filter((f) => f.regrowAt !== undefined);
+    }
+    if (armed.length === 0) {
+      throw new Error(
+        "no settler foraged in 360 sim-seconds — fixture broken, not a finding",
+      );
+    }
+    // 🚨 THE WHOLE POINT: the clock a take armed is a real deadline, one
+    // regrow period out, on a stand that is now BELOW its own bearing cap.
+    for (const f of armed) {
+      const food = foodPlants().find((r) => r.species === f.species)!.food;
+      const at = f.regrowAt![food]!;
+      expect(at).toBeGreaterThan(run.session.taskClock);
+      const cap = f.harvestCap![food]!;
+      const live = run.session.containerRecords.get(wildFeatureContainerId(f))?.stock ?? {};
+      expect(live[food] ?? 0).toBeLessThan(cap);
+    }
+  }, 600_000);
+
+  it("② the clock TICKS with nobody watching — and never past the stand's own cap", () => {
+    const c = run.session.town!.stage.center;
+    // The berry's own period, off its catalogue row — never a number typed here.
+    const period = naturalSourceOf("bush")!.products[0]!.regrowDays! * FOOD_DAY_SEC;
+    // A picked-clean bush whose ledger came due FOUR periods ago, standing
+    // where no board will ever open on it and no body will ever take from it.
+    const bush: WildernessFeature = {
+      id: "probe:renewing_bush",
+      species: "bush",
+      x: c.x + 170,
+      y: c.y - 150,
+      stock: {},
+      harvestCap: { berry: 3 },
+      regrowAt: { berry: run.session.taskClock - 4 * period },
+    };
+    if (!run.host.addWildFeature(bush)) {
+      throw new Error("the probe bush would not spawn — fixture broken, not a finding");
+    }
+    const ep = wildFeatureContainerId(bush);
+    expect(run.session.containerRecords.get(ep)?.stock ?? {}).toEqual({});
+
+    // Four sim-seconds — the ledger sweep's own 1 s cadence, with slack.
+    run.advance(8);
+
+    // ⚖️ ONE UNIT PER WHOLE PERIOD, CAUGHT UP TO THE CAP AND STOPPED THERE.
+    // Four periods were owed and the stand holds three, so it fills and the
+    // fourth is not minted. Item conservation: fruit appears only on a clock,
+    // and only up to what this bush can hold.
+    expect(run.session.containerRecords.get(ep)?.stock).toEqual({ berry: 3 });
+    // Full again ⇒ the ledger entry RETIRES (a bearing stand owes nothing).
+    expect(bush.regrowAt?.berry).toBeUndefined();
+
+    // …and a second sweep mints nothing more.
+    run.advance(8);
+    expect(run.session.containerRecords.get(ep)?.stock).toEqual({ berry: 3 });
   }, 600_000);
 });

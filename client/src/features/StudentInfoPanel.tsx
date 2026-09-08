@@ -15,19 +15,26 @@ import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
 import { UserStudent } from '@shared/schema';
-import { useActiveConsent } from '@/hooks/useConsentApi';
+import {
+  useActiveConsent,
+  useConsentAuthority,
+  useConsentHistory,
+  usePendingInvitations,
+} from '@/hooks/useConsentApi';
 import { ConsentWizard } from '@/features/consent/ConsentWizard';
 import { SendConsentRequestDialog } from '@/features/consent/SendConsentRequestDialog';
 import { PendingInvitationsList } from '@/features/consent/PendingInvitationsList';
 import { ConsentHistoryPanel } from '@/features/consent/ConsentHistoryPanel';
 import { ConsentAuthorityPanel } from '@/features/consent/ConsentAuthorityPanel';
 import { StudentDevicesCard } from '@/features/StudentDevicesCard';
+import { useGuidedSetup } from '@/features/guided-setup/useGuidedSetup';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -53,6 +60,7 @@ import {
   UserCircle,
   Save,
   ShieldCheck,
+  ListChecks,
 } from 'lucide-react';
 import {
   DEFAULT_PROGRAM_FRAMEWORK,
@@ -94,6 +102,33 @@ interface ProfileForm {
   verbalAbility: string;
 }
 
+/**
+ * Placeholders shaped like the real thing.
+ *
+ * This panel is fed by ~8 independent requests and every section used to
+ * render nothing until its own request landed, so opening a patient grew the
+ * page several times over. These reserve the footprint instead. They are
+ * decorative (aria-hidden) — a screen reader is told about the section by the
+ * real content once it arrives.
+ */
+/** Rows of a `p-2 rounded-md text-sm` list (institutes, members). `rowClass`
+ *  carries the real row's height — a row with a button in it is taller. */
+const SkeletonListRows = ({ count = 2, rowClass = 'h-9' }: { count?: number; rowClass?: string }) => (
+  <div className="space-y-1" aria-hidden="true">
+    {Array.from({ length: count }, (_, i) => (
+      <Skeleton key={i} className={cn('w-full rounded-md', rowClass)} />
+    ))}
+  </div>
+);
+
+/** A labelled list section (small caption above the rows). */
+const SkeletonLabelledList = ({ count = 2 }: { count?: number }) => (
+  <div className="space-y-2">
+    <Skeleton className="h-4 w-32" aria-hidden="true" />
+    <SkeletonListRows count={count} />
+  </div>
+);
+
 const instituteIcon = (type: string) => {
   if (type === 'school') return <School className="w-4 h-4 text-blue-500" />;
   if (type === 'clinic') return <Hospital className="w-4 h-4 text-green-500" />;
@@ -113,6 +148,54 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   const [sendConsentDialogOpen, setSendConsentDialogOpen] = useState(false);
   const consentQuery = useActiveConsent(student?.id);
   const consentMissing = !!student?.id && !consentQuery.isLoading && !consentQuery.data?.consent;
+
+  // ── One settle for the whole consent block ────────────────────────────────
+  // The banner, its invitation list, the authority card and the history card
+  // are four independent requests, and each one rendered NOTHING until it
+  // landed — so opening a patient grew the page four separate times, shoving
+  // everything below on each. These duplicate hook calls hit the same query
+  // keys the children use, so react-query serves them from one request; they
+  // are read here only to know when the block as a whole is decided. Nothing
+  // in the block renders until all four are, at which point it settles once.
+  const consentAuthorityQuery = useConsentAuthority(student?.id);
+  const consentHistoryQuery = useConsentHistory(student?.id);
+  const consentInvitationsQuery = usePendingInvitations(student?.id);
+  const consentBlockSettled =
+    !!student?.id &&
+    !consentQuery.isLoading &&
+    !consentAuthorityQuery.isLoading &&
+    !consentHistoryQuery.isLoading &&
+    !consentInvitationsQuery.isLoading;
+
+  // ── Guided Setup: this student's own unfinished setup ─────────────────────
+  // The rail's automatic banner honours "not now" (`dismissedAt`); this button
+  // deliberately does not. The user is looking at THIS patient and asking for
+  // their setup — that is the case the rail cannot serve, and the reason the
+  // button lives here rather than only there.
+  const {
+    view: guidedView,
+    isLaunching: guidedLaunching,
+    isBusy: guidedBusy,
+    isChatBusy: guidedChatBusy,
+    isActive: guidedActive,
+    probedStudentId: guidedProbedStudentId,
+    continueSetup,
+  } = useGuidedSetup();
+  const guidedForStudent =
+    guidedView && student?.id && guidedView.studentId === student.id ? guidedView : null;
+  const guidedResumable =
+    !!guidedForStudent?.record &&
+    !guidedForStudent.record.completedAt &&
+    guidedForStudent.step !== 'done' &&
+    // A flow already running for this student has the whole rail on screen;
+    // a second "continue" card under it would just be a second way to resend.
+    !guidedActive;
+  // The genuine "we don't know yet" window: `probedStudentId` lags one settle
+  // behind selecting a student (a GET, or a live view arriving). Holding a
+  // same-sized placeholder here — instead of nothing — is what keeps this
+  // card, which sits above everything else, from shoving the rest of the
+  // panel down after the first paint.
+  const guidedPending = !!student?.id && guidedProbedStudentId !== student.id;
   const {
     institutes,
     currentInstitute,
@@ -137,14 +220,19 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   const [availableClassrooms, setAvailableClassrooms] = useState<Classroom[]>([]);
   const [loadingClassrooms, setLoadingClassrooms] = useState(false);
   const [studentInstitutes, setStudentInstitutes] = useState<StudentInstitute[]>([]);
-  const [loadingStudentInstitutes, setLoadingStudentInstitutes] = useState(false);
+  // Starts TRUE: the fetch is kicked off from an effect, which runs after the
+  // first paint. Starting at false painted an empty (zero-height) section for
+  // one frame and then grew it — the section reserves its placeholder from the
+  // very first render instead.
+  const [loadingStudentInstitutes, setLoadingStudentInstitutes] = useState(true);
   const [showSchoolWarning, setShowSchoolWarning] = useState(false);
   const [currentActiveSchool, setCurrentActiveSchool] = useState<StudentInstitute | null>(null);
 
   // User-student link management
   const [instituteMembers, setInstituteMembers] = useState<InstituteMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
   const [linkedUserIds, setLinkedUserIds] = useState<string[]>([]);
-  const [loadingLinks, setLoadingLinks] = useState(false);
+  const [loadingLinks, setLoadingLinks] = useState(true);
   const [linkingUserId, setLinkingUserId] = useState<string | null>(null);
 
   // Reset form when student changes
@@ -170,11 +258,14 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   // Load institute members (for link management)
   useEffect(() => {
     if (student && currentInstitute?.id && (currentInstitute.type === 'school' || currentInstitute.type === 'clinic')) {
+      setLoadingMembers(true);
       getMembers(currentInstitute.id)
         .then(setInstituteMembers)
-        .catch(() => setInstituteMembers([]));
+        .catch(() => setInstituteMembers([]))
+        .finally(() => setLoadingMembers(false));
     } else {
       setInstituteMembers([]);
+      setLoadingMembers(false);
     }
   }, [student?.id, currentInstitute?.id]);
 
@@ -355,11 +446,16 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   const familyInstitutes = institutes.filter(i => i.type === 'family');
   const otherMembers = instituteMembers.filter(m => m.id !== user?.id);
   const isCurrentUserAdmin = currentInstitute?.isAdmin ?? false;
-  const showUserLinks = !!student
+  // Everything about this card except "are there other members" is known the
+  // moment the panel renders (the institute is already in context), so the card
+  // can hold its place while the member list loads instead of dropping in on
+  // top of the devices card below it.
+  const userLinksPossible = !!student
     && !!currentInstitute
     && (currentInstitute.type === 'school' || currentInstitute.type === 'clinic')
-    && isCurrentUserAdmin
-    && otherMembers.length > 0;
+    && isCurrentUserAdmin;
+  const showUserLinks = userLinksPossible && otherMembers.length > 0;
+  const userLinksPending = userLinksPossible && (loadingMembers || loadingLinks);
 
   if (!isOpen) return null;
 
@@ -395,8 +491,68 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
             </p>
           </div>
 
+          {/* Guided Setup — this patient's setup is unfinished. Unlike the
+              rail's compact banner, this one shows even after "not now": the
+              user is on this patient's page asking to continue, which is
+              exactly the deliberate choice a dismissal was not. */}
+          {guidedPending && (
+            <Card aria-hidden="true">
+              <CardHeader>
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-4 w-64 mt-2" />
+              </CardHeader>
+              <CardContent
+                className={cn(
+                  'flex items-center justify-between gap-3 flex-wrap',
+                  isRTL && 'flex-row-reverse',
+                )}
+              >
+                <Skeleton className="h-5 w-24 rounded-full" />
+                <Skeleton className="h-9 w-32 rounded-md" />
+              </CardContent>
+            </Card>
+          )}
+
+          {!guidedPending && guidedResumable && student?.id && (
+            <Card>
+              <CardHeader>
+                <CardTitle className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+                  <ListChecks className="w-5 h-5" />
+                  {t('guidedSetup.title')}
+                </CardTitle>
+                <CardDescription>{ts('guidedSetup.subtitle')}</CardDescription>
+              </CardHeader>
+              <CardContent
+                className={cn(
+                  'flex items-center justify-between gap-3 flex-wrap',
+                  isRTL && 'flex-row-reverse',
+                )}
+              >
+                <Badge variant="secondary">
+                  {t(`guidedSetup.step.${guidedForStudent?.step}`)}
+                </Badge>
+                <Button
+                  onClick={() => void continueSetup(student.id)}
+                  disabled={guidedBusy || guidedChatBusy}
+                >
+                  {guidedLaunching && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+                  {t('guidedSetup.actions.continueSetup')}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Consent block — held as one collapsed-card-sized placeholder until
+              all four of its requests are in, so it settles once instead of
+              four times (see consentBlockSettled). The card that is ALWAYS
+              here once loaded is the authority panel, and this placeholder is
+              its collapsed height. */}
+          {!consentBlockSettled && (
+            <Skeleton className="h-[74px] w-full rounded-lg" aria-hidden="true" />
+          )}
+
           {/* Consent banner — surfaces when student has no active consent record */}
-          {consentMissing && (
+          {consentBlockSettled && consentMissing && (
             <Card className="border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20">
               <CardContent className="pt-6 pb-6 flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -449,11 +605,11 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
           {/* Consent authority — who may consent for this student (guardian vs.
               self). Collapsible; lets a clinician override the age-of-majority
               default for an adult under guardianship or a self-consenting minor. */}
-          {student?.id && <ConsentAuthorityPanel studentId={student.id} />}
+          {consentBlockSettled && student?.id && <ConsentAuthorityPanel studentId={student.id} />}
 
           {/* Consent history — collapsible audit-grade timeline. Renders only
               when the student has at least one consent record (active or revoked). */}
-          {student?.id && <ConsentHistoryPanel studentId={student.id} />}
+          {consentBlockSettled && student?.id && <ConsentHistoryPanel studentId={student.id} />}
 
           {/* Profile Section */}
           <Card>
@@ -637,12 +793,9 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {loadingStudentInstitutes && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {t('common.loading') || 'Loading...'}
-                </div>
-              )}
+              {/* Same shape as the loaded list below, so the "Assign to
+                  institute" controls under it do not jump when it arrives. */}
+              {loadingStudentInstitutes && <SkeletonLabelledList count={1} />}
 
               {!loadingStudentInstitutes && studentInstitutes.length > 0 && (
                 <div className="space-y-2">
@@ -826,8 +979,11 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
             </CardContent>
           </Card>
 
-          {/* User-Student Link Management */}
-          {showUserLinks && (
+          {/* User-Student Link Management. Rendered while the member list is
+              still loading too — whether it has rows is the only thing not
+              known synchronously, and holding the place keeps it from dropping
+              in on top of the devices card below. */}
+          {(showUserLinks || userLinksPending) && (
             <Card>
               <CardHeader>
                 <CardTitle className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
@@ -839,11 +995,8 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {loadingLinks ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {t('common.loading') || 'Loading...'}
-                  </div>
+                {userLinksPending ? (
+                  <SkeletonListRows count={3} rowClass="h-[52px]" />
                 ) : (
                   <div className="space-y-1 max-h-64 overflow-y-auto">
                     {otherMembers.map((member) => {

@@ -26,7 +26,8 @@
 
 import {
   growthClassYield, harvestProductsOf, harvestStockOf, isBodyProduct, bodyStockOf, naturalSourceOf,
-  nicheSuitabilityOf, sourceIsConsumable, sourceRarityOf, usefulPlants, wildFoodPlants,
+  nicheSuitabilityOf, sourceIsConsumable, sourceRarityOf, standGrowthClass, usefulPlants,
+  wildFoodPlants,
   type ClimateSample, type GrowthSizeClass,
 } from "../../products.js";
 // `wildSourceWord` below: the spec side's word table (species rows + ITEM_WORDS,
@@ -1056,16 +1057,57 @@ export function makeFeature(
   p: { x: number; y: number },
   rng: () => number,
   conversionDial = 1,
+  ageKey?: string,
 ): WildernessFeature {
   const kill = bodyStockOf(species, rng, conversionDial);
   const cap = harvestStockOf(species, rng, conversionDial);
   const f: WildernessFeature = { id, species, x: p.x, y: p.y, stock: { ...kill, ...cap } };
   if (Object.keys(cap).length) f.harvestCap = cap;
-  // GROWTH-BEARING species stand MATURE at scatter (the last class, the
-  // catalogue's own yield.min/max above — `sizeClass`/`growAt` stay UNSET,
-  // never explicitly "last index", so a freshly-laid forest is byte-
-  // identical to every feature built before growth classes existed).
+  // ⚖️ THE STAND HAS AN AGE STRUCTURE (2026-09-06, products.ts
+  // `standGrowthClass`). A growth-bearing species no longer stands ALL-MATURE
+  // at scatter: this individual's rung is drawn from the species' own steady-
+  // state distribution.
+  //
+  // 🚨 THE DRAW TAKES NOTHING FROM `rng`. It hashes `ageKey` (the individual's
+  // own name — the caller's, so a world-fixed flora instance and the twin it
+  // materialises into draw the SAME rung), which is why every feature still
+  // stands exactly where it stood: the scatter's draw sequence is untouched.
+  //
+  // 🚨 `undefined` STAYS UNSET. `standGrowthClass` answers undefined for the
+  // mature rung and for every species with no ladder, so ~85 % of features are
+  // written exactly as they always were and only a young row carries the field.
+  //
+  // 🚫 AND NO `growAt` IS ARMED. A scattered juvenile is not a tree recovering
+  // from a felling, it is the understory of a standing forest; the sim has no
+  // mortality, so putting it on the growth clock would relax the whole stand
+  // back to all-mature within a maturity span (products.ts states the law).
+  // Only DISTURBANCE arms a clock — `reseedWildFeature`, exactly as before.
+  const cls = standGrowthClass(species, ageKey ?? id);
+  if (cls !== undefined) {
+    f.sizeClass = cls;
+    // …and it holds a juvenile's timber. The class multiplies THIS feature's
+    // OWN roll rather than re-deriving from the yield midpoint, so a young oak
+    // keeps its individual variation and — at the mature rung, which is the
+    // unset case — the stock is the rolled number, byte for byte.
+    // (`growthClassYield`'s midpoint form stays the CLOCK's answer: a tree that
+    // GREW into a rung has no roll of its own left to scale.)
+    const mul = naturalSourceOf(species)?.growth?.classes[cls]?.yieldMul ?? 1;
+    for (const g of Object.keys(kill)) f.stock[g] = Math.max(0, Math.round(kill[g]! * mul));
+  }
   return f;
+}
+
+/**
+ * ⚖️ THE FEATURE ID A STREAMED FLORA INSTANCE MATERIALISES AS — the ONE
+ * spelling of it, shared by the driver's twin pass and by the flora field.
+ *
+ * It exists because the two of them must draw the SAME AGE for the same tree:
+ * `standGrowthClass` hashes a feature's name, so the renderer and the sim only
+ * agree at the seam if they hash the same string. Spelling it twice is exactly
+ * how a field sapling would stand up as a mature twin.
+ */
+export function floraTwinFeatureId(species: string, instanceKey: string): string {
+  return `wild:${species}_${instanceKey}`;
 }
 
 /** Any wild yield-bearer — a standing FEATURE or a product ANIMAL: the
@@ -1313,7 +1355,15 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
     const n = countOf(m);
     for (let i = 0; i < n; i++) {
       if (!isAnimal) {
-        features.push(makeFeature(`wild:${m.species}_${i}`, m.species, place(), rng, dial));
+        // ⚖️ THE AGE KEY CARRIES THE SEED (products.ts `standGrowthClass`). A
+        // scatter's ids are positional (`wild:oak_3`), so hashing the id alone
+        // would give every stand on every planet the same understory at the
+        // same indices; the seed is what makes one forest's age structure its
+        // own. The POSITIONS are untouched — this is a hash, not a draw.
+        features.push(
+          makeFeature(`wild:${m.species}_${i}`, m.species, place(), rng, dial,
+            `${params.seed}:${m.species}_${i}`),
+        );
         continue;
       }
       const p = place();

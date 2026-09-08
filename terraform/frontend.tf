@@ -655,6 +655,58 @@ resource "aws_cloudfront_distribution" "app" {
     max_ttl                = 0
   }
 
+  # Game bundles - forward to the backend.
+  #
+  # The games live ONLY inside the ECS image (dist/public-games, mounted by
+  # server/games-static.ts); nothing uploads them to S3. Without this behavior
+  # /games/* fell to the default behavior, S3 had no such key, and the
+  # custom_error_response below turned that into the landing page at HTTP 200 —
+  # so a game iframe rendered the marketing SPA, whose router then drew its 404.
+  # Every browser client was affected: the web AAC client at /aac/ and the
+  # clinician client's own game embeds. The packaged Electron/iPad shells never
+  # hit this because they address the ALB directly (VITE_API_URL =
+  # https://api.<domain>), which is why it survived in production unnoticed.
+  # Found 2026-09-08, a student opening Musical Microbes in a browser.
+  #
+  # The landing distribution needs no equivalent: its viewer-request function
+  # already redirects /games/* to app.<domain>.
+  #
+  # Host IS forwarded here, unlike /api/*. buildGamesCsp() derives the games CSP
+  # from req.get("host"), and a game's own fetches are same-origin with the page
+  # — app.<domain>. Were the origin to see api.<domain> it would emit a
+  # connect-src naming a host the game never talks to, and the browser would
+  # refuse the game's own asset loads. Safe because the ALB listener forwards
+  # unconditionally (no host_header rules) and its ACM cert already covers
+  # app.<domain> (alb_cert_sans in ecs.tf).
+  ordered_cache_behavior {
+    path_pattern     = "/games/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Host", "Authorization", "Origin", "Accept", "Content-Type"]
+
+      # The /games gate IS the passport session — no cookie, no game.
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+
+    # Origin-driven caching. games-static.ts sends `no-store` on the HTML shells
+    # (a shell cached mid-rebuild is the poisoned-profile bug its comment
+    # describes) and year-long headers on hashed assets, so let those decide
+    # instead of pinning a TTL here. default_ttl applies only when the origin
+    # sends no Cache-Control at all.
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 31536000
+    compress    = true
+  }
+
   # Health check endpoint
   ordered_cache_behavior {
     path_pattern     = "/health"

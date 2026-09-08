@@ -1,0 +1,108 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T08:39:38.564Z
+# ─────────────────────────────────────────
+> wait 45
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 45.0s.
+> wait 6
+ENTER  orrin came into view there south.
+ENTER  mara came into view here south.
+ENTER  pip came into view here south.
+ENTER  biscuit came into view there south.
+TICK   waited 6.0s.
+> scene
+SCENE  house-1 — 11 thing(s) in view, 86 place(s) around you.
+  mara (person), here west, put thing, holding ball-1.
+  orrin (person), there south.
+  pip (person), here west.
+  biscuit (person), there south.
+  table-1 (table), here south.
+  chair-1 (chair), here south.
+  a bin, here east.
+  a basket, there south.
+  a chest, there south.
+  a cupboard, there west.
+  a bowl, there west.
+  house-1 (house), here north, blue, door open, you can see inside.
+  house-2 (house), here south, blue, door open, you can see inside.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+EXIT   orrin left view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+TICK   quiet after 1.5s.
+> look mara
+LOOK   mara — mara.
+  here west, 2 m away.
+  house-4.
+  put thing.
+  holding ball-1.
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+SAY    mara: "hi"  [hi]
+EXIT   mara left view here north.
+BOARD  resident_face:resident_161_0: hi  [hi]
+  1. Are you okay?  [you + ok#question]
+  2. You do?  [you + do#question]
+  3. I'm confused.  [confused]
+  4. bye-bye  [goodbye]
+  5. Return.  [return]
+NOTE   4 choice(s) on this page, plus back.
+TICK   quiet after 2.3s.
+> say mara + nice.not
+OK     said: mara + nice.not
+BOARD  resident_face:resident_161_0: Thank you!  [thank_you]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Where is the food?  [place#question + food]
+  5. I'm confused.  [confused]
+  6. bye-bye  [goodbye]
+  7. Return.  [return]
+NOTE   6 choice(s) on this page, plus back.
+ENTER  mara came into view here north.
+TICK   quiet after 1.0s.
+> say nice
+OK     said: nice
+SAY    mara: "Thank you!"  [thank_you]
+BOARD  resident_face:resident_161_0: Thank you!  [thank_you]
+  1. Are you okay?  [you + ok#question]
+  2. Where are you going?  [place#question + you + go]
+  3. You do?  [you + do#question]
+  4. Where is the food?  [place#question + food]
+  5. I'm confused.  [confused]
+  6. bye-bye  [goodbye]
+  7. Return.  [return]
+NOTE   6 choice(s) on this page, plus back.
+ENTER  pip came into view here west.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+TICK   quiet after 1.3s.
+# ─────────────────────────────────────────
+# commands=6  presses=0  screens=4  sim=57.2s
+# events: SAY 16  ENTER 10  EXIT 8  TICK 6  NOTE 5  BOARD 4  OK 2  SCENE 1  LOOK 1

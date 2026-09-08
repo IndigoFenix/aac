@@ -1970,6 +1970,14 @@ export interface ChatState {
     /** Cached values for loaded fields - avoids redundant DB queries */
     cachedValues?: Record<string, any>;
   };
+
+  /**
+   * Guided Setup (the chat-driven "add a student" flow). Present only while the
+   * flow is running; everything durable lives on
+   * `institute_students.data.onboarding`. Type-only — `state` is jsonb, so this
+   * needs no migration. See shared/guided-setup.ts.
+   */
+  guidedSetup?: import("./guided-setup").GuidedSetupSessionState;
 }
 
 export interface Topic {

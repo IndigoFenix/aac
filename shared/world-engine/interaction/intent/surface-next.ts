@@ -53,6 +53,7 @@ import {
   type NounClass,
   type ObjectProperty,
 } from "../../object-properties.js";
+import { ROLE_WORDS, TRAIT_WORDS } from "../lang/core.js";
 import { headOf } from "../../variations.js";
 import { isMakeable } from "../content/makeable.js";
 import { isAnimal, isPlant } from "../content/properties.js";
@@ -271,6 +272,19 @@ const CANONICAL_SOCIALS = (() => {
   }
   return out;
 })();
+
+/**
+ * ⚖️ THE POLITICS WORDS (interpersonal-politics.md §4b). They are `attribute`
+ * LEXICON entries, so the Descriptions tab and every attribute band already
+ * carry them; this list is for the ONE board that needs them by name — the
+ * question board after [who], where nothing else in the descriptions vocabulary
+ * belongs. Derived from the lang layer's own role/trait sets rather than
+ * re-listed here — a fourth regard word must not need two edits to reach a
+ * board — and ordered by the LEXICON so the grid matches the tab.
+ */
+const REGARD_WORDS: readonly string[] = LEX_KEYS.filter(
+  (k) => TRAIT_WORDS.has(k) || ROLE_WORDS.has(k),
+);
 
 const MOVEMENT = new Set(["go", "come", "follow", "run", "chase"]);
 /** Verbs whose object is optional (self-care / intransitives) — a bare verb
@@ -516,7 +530,10 @@ const CORE_RANK: readonly string[] = [
   "want", "go", "more", "eat", "no", "yes", "help", "play", "stop", "drink",
   "get", "give", "open", "put", "make", "i_me", "you", "this", "that", "here", "there",
   "need", "like", "have", "feel", "do", "sleep", "wash", "sit", "hug", "talk",
-  "hi", "goodbye", "thanks", "again", "mine", "ok", "sorry",
+  // `thank_you`, not `thanks`: this list ranks BUTTONS, and 🙏 `thank_you` is
+  // the only registry row the concept has — `thanks` is a parse-only alias, so
+  // its rank here was ranking a word the child can never press.
+  "hi", "goodbye", "thank_you", "again", "mine", "ok", "sorry",
   "where", "what", "who", "why", "how",
   "and", "then", "because", "but", "when", "if", "or", "so", "until",
   "to", "in", "on", "with", "for", "from", "under", "near", "next_to",
@@ -1018,6 +1035,13 @@ export function surfaceNext(tokens: string[], ctx: SurfaceContext): SurfaceSugge
     } else if (q === "how" || q === "who") {
       addNouns("question-focus", (nn) => nn.kind === "creature", 4);
       add("you", "question-focus", 4);
+      // ⚖️ "WHO IS THE LEADER?" (interpersonal-politics.md §4c). Standing has to
+      // be ASKABLE, and a question a child cannot BUILD is not askable: after
+      // [who] the board offers people, so the three words that ask ABOUT people
+      // — rather than about which person — have to be here too. Only these
+      // three: the rest of the descriptions vocabulary after [who] would be the
+      // whole Descriptions tab pasted onto the question board.
+      for (const w of REGARD_WORDS) add(w, "question-focus", 3);
     } else {
       add("want", "question-focus", 4); // "what + want + …"
       addNouns("question-focus", () => true);

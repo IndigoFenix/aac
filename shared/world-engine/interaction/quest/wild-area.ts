@@ -47,7 +47,7 @@
 // it.
 
 import {
-  foodPlants, growthClassYield, isBodyProduct, naturalSourceOf,
+  foodPlants, growthClassYield, isBodyProduct, naturalSourceOf, standYieldFraction,
   type NaturalProduct, type NaturalSource,
 } from "../../products.js";
 import {
@@ -583,6 +583,44 @@ export function wildSourceFullStock(species: string): number {
   return n;
 }
 
+/**
+ * ⚖️ WHAT ONE UNTOUCHED SOURCE OF `species` HOLDS **IN THIS RECORD'S STAND** —
+ * `wildSourceFullStock` weighted by the stand's OWN age census (2026-09-06).
+ *
+ * 🚨 THE MATURE YARDSTICK STOPPED BEING THE HONEST ONE the day a stand got an
+ * age structure (products.ts `standGrowthClass`): ~1/6 of a forest is now
+ * understory, so N drawn oaks hold measurably less than N mature oaks, and a
+ * VIRGIN tile measured 86 % standing and thinned itself on sight. The record
+ * already carries the exact census (`byClass`) — the same authority the
+ * renderer draws its instances from — so the per-source yardstick is read off
+ * that instead of off a constant, and a fresh record reads 1 EXACTLY rather
+ * than "1 up to the sampling noise of a small stand".
+ *
+ * Body products (the timber) carry the class multiplier; a bearing product
+ * (the fruit) does not — the same split `makeFeature` and `dueGrowthAdvance`
+ * both make, since a growth class is a statement about how much TREE there is.
+ *
+ * No census to read ⇒ the population mean (`standYieldFraction`), which is
+ * what a caller with counts but no classes would have meant.
+ */
+export function wildStandUnitStock(rec: WildThinnable, species: string): number {
+  const src = naturalSourceOf(species);
+  if (!src) return 0;
+  const classes = src.growth?.classes;
+  const st = rec.stands.find((s) => s.species === species);
+  const census = classes && st ? st.byClass : null;
+  const pop = census ? census.reduce((a, b) => a + b, 0) : 0;
+  if (!census || pop <= 0) return wildSourceFullStock(species) * standYieldFraction(species);
+  let total = 0;
+  for (let k = 0; k < classes!.length; k++) {
+    const n = census[k] ?? 0;
+    if (!n) continue;
+    const mul = classes![k]!.yieldMul;
+    for (const p of src.products) total += n * growthClassYield(p, isBodyProduct(p) ? mul : 1);
+  }
+  return total / pop;
+}
+
 /** Units of `species` the record holds right now — its stand's whole stock,
  *  every glyph. */
 export function wildStandStockOf(rec: WildThinnable, species: string): number {
@@ -630,9 +668,15 @@ export function wildThinFraction(
   sceneryCount: number,
 ): number {
   if (!(sceneryCount > 0)) return 1;
-  const per = wildSourceFullStock(species);
-  if (!(per > 0)) return 1;
   if (!rec.stands.some((s) => s.species === species)) return 1;
+  // ⚖️ …AT THE STAND'S OWN AGES (2026-09-06, `wildStandUnitStock`). The
+  // denominator is what THE SCENERY HOLDS, and the scenery is no longer a wall
+  // of adults: the field draws each instance at the rung `standGrowthClass`
+  // gives it. The authority feeding the picture and the authority feeding this
+  // ratio must be the SAME one, or the render bridge reports depletion nobody
+  // performed.
+  const per = wildStandUnitStock(rec, species);
+  if (!(per > 0)) return 1;
   const full = per * sceneryCount;
   return Math.max(0, Math.min(1, wildStandStockOf(rec, species) / full));
 }

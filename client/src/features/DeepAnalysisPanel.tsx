@@ -13,9 +13,10 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { marked } from "marked";
 import { renderMarkdownSafe } from "@/lib/markdown";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, ConsentRequiredError } from "@/lib/queryClient";
 import { useStudent } from "@/hooks/useStudent";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useStudentLabel } from "@/hooks/useStudentLabel";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,7 +52,11 @@ interface DeepAnalysisPanelProps {
 }
 
 export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
-  const { t, ts } = useLanguage();
+  const { t } = useLanguage();
+  // ts() lives on useStudentLabel, not the language context — it swaps
+  // "student" for "child" by institute type. Destructuring it from
+  // useLanguage yields undefined and throws on first call.
+  const { ts } = useStudentLabel();
   const { student } = useStudent();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -108,6 +113,12 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
       await queryClient.invalidateQueries({ queryKey: historyKey });
       toast({ title: t("deepAnalysis.started") });
     } catch (err: any) {
+      // The consent gate refuses a run for a student with no active record.
+      // Say so plainly instead of surfacing a bare "412: {…}".
+      if (err instanceof ConsentRequiredError) {
+        toast({ title: ts("consent.wizard.blockedAction"), variant: "destructive" });
+        return;
+      }
       toast({ title: err.message || t("deepAnalysis.error"), variant: "destructive" });
     } finally {
       setCreating(false);

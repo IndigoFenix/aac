@@ -40,7 +40,12 @@ export interface ConsentSnapshot {
   optInsForcedOff: boolean;
 }
 
-function isConsentGateEnabled(): boolean {
+/**
+ * The one switch. Read at CALL TIME (never cached at import), so a test — or a
+ * secret rotation — can toggle it without a restart. Guided Setup consults the
+ * same helper so the flow's gate cannot drift from every other gated write.
+ */
+export function isConsentGateEnabled(): boolean {
   return process.env.CONSENT_GATE_ENABLED === "true";
 }
 

@@ -4,9 +4,9 @@
 // The per-body view tier was banded on `Math.hypot(dx, dy)` — the sim-plane
 // projection of camera→body, i.e. THE CAMERA'S ALTITUDE DROPPED. Every camera
 // this engine has that is not a walker looks DOWN: the district orbit stands
-// 41.6 m up and 76.2 m out from its focus (spirit/ladder.ts: CITY_PITCH 0.5,
-// CITY_FRAME 1.35, 50° rig), and a straight-down camera has no horizontal
-// offset at all — so a crowd of 8-pixel figures banded as if it were underfoot.
+// 15.4 m up and 28.2 m out from its focus (the pose record's baked defaults on
+// the 50° rig), and a straight-down camera has no horizontal offset at all —
+// so a crowd of 8-pixel figures banded as if it were underfoot.
 //
 // The fix is one measure, `tierDistanceM`, used by BOTH ladders and by both
 // kinds of body (residents and `flora:` trees re-band through the same sweep).
@@ -39,6 +39,7 @@ import {
   tierDistanceM,
   tierForProjected,
 } from "@shared/world-engine/creatures/view-tiers.js";
+import { ORBIT_POSE_DEFAULTS } from "@shared/world-engine/spirit/orbit-pose.js";
 
 const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8");
 const HOST = read("shared", "world-engine", "interaction", "quest", "quest-host.ts");
@@ -49,17 +50,24 @@ const DOLL = read("games", "dollhouse", "src", "quest-boot.ts");
 /** The band a body lands on at first sight (no previous tier to hold). */
 const bandAt = (d: number) => seedTier(TIER_BANDS, d);
 
-// The held district orbit, derived rather than pasted: the spirit ladder poses
-// the orbit at `dist = (radius / tan(fov/2)) * CITY_FRAME`, pitched CITY_PITCH
-// above the horizon, and the builder hold frames the sim's relevance disc
-// (30 m at built 0, 96 m at the cap).
-const CITY_PITCH = 0.5;
-const CITY_FRAME = 1.35;
+// The held district orbit, READ OFF THE POSE RECORD rather than pasted (user
+// ruling C1; baked 2026-09-06 to `{ 0.5, 1, 0, 0.5 }`): the ladder poses at
+// `dist = (frameRadius / tan(fov/2)) * frameFactor`, pitched `pitchRad` above
+// the horizon, and under the builder hold the frame radius is the sim's
+// relevance disc (30 m at built 0, 96 m at the cap) times `ringFrameFactor`.
 const FOV_RAD = (50 * Math.PI) / 180;
-const orbit = (frameRadiusM: number) => {
-  const dist = (frameRadiusM / Math.tan(FOV_RAD / 2)) * CITY_FRAME;
-  return { dist, up: dist * Math.sin(CITY_PITCH), out: dist * Math.cos(CITY_PITCH) };
+/** …from a FRAME radius (what `ORBIT_FRAME_FLOOR_M` is). */
+const orbitFromFrame = (frameRadiusM: number) => {
+  const dist = (frameRadiusM / Math.tan(FOV_RAD / 2)) * ORBIT_POSE_DEFAULTS.frameFactor;
+  return {
+    dist,
+    up: dist * Math.sin(ORBIT_POSE_DEFAULTS.pitchRad),
+    out: dist * Math.cos(ORBIT_POSE_DEFAULTS.pitchRad),
+  };
 };
+/** …and from a RELEVANCE RING, which is what the builder hold actually reads. */
+const orbitFromRing = (ringM: number) =>
+  orbitFromFrame(ringM * ORBIT_POSE_DEFAULTS.ringFrameFactor);
 
 describe("tierDistanceM — the ONE distance both ladders band on", () => {
   it("counts the camera's HEIGHT: a body under a high camera is not `full`", () => {
@@ -78,7 +86,7 @@ describe("tierDistanceM — the ONE distance both ladders band on", () => {
   it("still gives `full` to a body a dozen metres from the camera", () => {
     // The near case the ruling must not break: 12 m away on the orbit, camera
     // height included, is inside the 15 m full band.
-    const o = orbit(6); // the frame floor, ORBIT_FRAME_FLOOR_M
+    const o = orbitFromFrame(6); // the frame floor, ORBIT_FRAME_FLOOR_M
     const dToOrbitFocus = tierDistanceM({ x: o.out, y: 0, z: o.up }, { x: 0, y: 0 });
     expect(dToOrbitFocus).toBeCloseTo(o.dist, 10);
     expect(tierDistanceM({ x: 0, y: 0, z: 7 }, { x: 9.75, y: 0 })).toBeCloseTo(12, 2);
@@ -122,37 +130,41 @@ describe("the held district orbit, measured both ways", () => {
   // What the ruling actually buys at the founding's held orbit — the numbers
   // that belong in the landing note, kept honest here so a later re-anchor has
   // a baseline to move.
-  it("a body at the orbit's focus: 76.2 m by the old measure, 86.9 m by the new", () => {
-    const o = orbit(30); // relevance disc at built 0 → district frame radius 30 m
-    expect(o.up).toBeCloseTo(41.6, 1);
-    expect(o.out).toBeCloseTo(76.2, 1);
-    expect(o.dist).toBeCloseTo(86.9, 1);
+  it("a body at the BAKED orbit's focus: 28.2 m by the old measure, 32.2 m by the new", () => {
+    const o = orbitFromRing(30); // relevance disc at built 0 → a 15 m frame radius
+    expect(o.up).toBeCloseTo(15.4, 1);
+    expect(o.out).toBeCloseTo(28.2, 1);
+    expect(o.dist).toBeCloseTo(32.2, 1);
     const cam = { x: o.out, y: 0, z: o.up };
     const focusBody = { x: 0, y: 0 };
-    expect(Math.hypot(focusBody.x - cam.x, focusBody.y - cam.y)).toBeCloseTo(76.2, 1);
-    expect(tierDistanceM(cam, focusBody)).toBeCloseTo(86.9, 1);
-    // BOTH land in the same rung: the 3-D measure does NOT by itself move the
-    // held orbit into `full` (or even `simple`) — it makes the number honest.
-    // Putting the orbit in `full` is a BAND re-anchor, a separate feel call.
-    expect(bandAt(76.2)).toBe("stick");
-    expect(bandAt(tierDistanceM(cam, focusBody))).toBe("stick");
+    expect(Math.hypot(focusBody.x - cam.x, focusBody.y - cam.y)).toBeCloseTo(28.2, 1);
+    expect(tierDistanceM(cam, focusBody)).toBeCloseTo(32.2, 1);
+    // BOTH land in the same rung — the 3-D measure makes the number honest, it
+    // does not move a band. What moved the tier was the POSE (C1, baked
+    // 2026-09-06): at the old 1.35 frame / 1.0 ring this same body sat 86.9 m
+    // out and every settler on the site was a `stick`.
+    expect(bandAt(28.2)).toBe("simple");
+    expect(bandAt(tierDistanceM(cam, focusBody))).toBe("simple");
   });
 
-  it("at the 96 m ring cap the orbit is capsule range either way", () => {
-    const o = orbit(96);
-    expect(o.dist).toBeCloseTo(277.9, 1);
-    expect(bandAt(o.out)).toBe("capsule");
-    expect(bandAt(tierDistanceM({ x: o.out, y: 0, z: o.up }, { x: 0, y: 0 }))).toBe("capsule");
+  it("at the 96 m ring cap the orbit is stick range either way", () => {
+    const o = orbitFromRing(96); // a 48 m frame
+    expect(o.dist).toBeCloseTo(102.9, 1);
+    expect(bandAt(o.out)).toBe("stick");
+    expect(bandAt(tierDistanceM({ x: o.out, y: 0, z: o.up }, { x: 0, y: 0 }))).toBe("stick");
   });
 
-  it("zoomed to the floor, a body at the focus keeps `full` through hysteresis", () => {
-    const o = orbit(6); // ORBIT_FRAME_FLOOR_M
+  it("at the frame floor a body at the focus is `full` — but only on FIRST sight", () => {
+    const o = orbitFromFrame(6); // ORBIT_FRAME_FLOOR_M — a degenerate ring
     const d = tierDistanceM({ x: o.out, y: 0, z: o.up }, { x: 0, y: 0 });
-    expect(d).toBeCloseTo(17.4, 1);
-    // A first sighting seeds `simple`; a body already full holds full (17.4 is
-    // inside the 15 + 10 margin), so zooming in does not flap the crowd.
-    expect(bandAt(d)).toBe("simple");
-    expect(steppedTier(TIER_BANDS, "full", d, 10)).toBe("full");
+    expect(d).toBeCloseTo(12.9, 1);
+    // A first sighting seeds `full`…
+    expect(bandAt(d)).toBe("full");
+    // …and a body already wearing `simple` HOLDS it, because refining costs a
+    // rebuild: the ladder only refines once the body is 10 m INSIDE the 15 m
+    // edge. That asymmetry is the anti-flap rule, not a miss.
+    expect(steppedTier(TIER_BANDS, "simple", d, 10)).toBe("simple");
+    expect(steppedTier(TIER_BANDS, "simple", 4.9, 10)).toBe("full");
   });
 });
 
@@ -175,11 +187,12 @@ describe("the TOWN clamp — same measure, same table, values unchanged", () => 
   });
 
   it("stays the COARSER of the two ladders (the effective tier rule)", () => {
-    const camAtOrbit = tierDistanceM({ x: 76.2, y: 0, z: 41.6 }, { x: 0, y: 0 });
-    const town = seedTier(TOWN_TIER_BANDS, camAtOrbit); // 86.9 m → full
-    const body = bandAt(camAtOrbit);                    // 86.9 m → stick
+    const o = orbitFromRing(30);
+    const camAtOrbit = tierDistanceM({ x: o.out, y: 0, z: o.up }, { x: 0, y: 0 });
+    const town = seedTier(TOWN_TIER_BANDS, camAtOrbit); // 32.2 m → full
+    const body = bandAt(camAtOrbit);                    // 32.2 m → simple
     expect(town).toBe("full");
-    expect(TIER_RANK[body] > TIER_RANK[town] ? body : town).toBe("stick");
+    expect(TIER_RANK[body] > TIER_RANK[town] ? body : town).toBe("simple");
   });
 });
 
@@ -299,15 +312,18 @@ describe("the screen bands are DERIVED from the walker's metre bands", () => {
 
   it("a TALL body earns detail a person at the same distance does not", () => {
     // The defect in one line: at the founding's held orbit a 23.8 m oak and a
-    // 1.7 m settler stand at the same 86.9 m and used to get the same rung.
-    const d = 86.9;
+    // 1.7 m settler stand at the same distance and used to get the same rung.
+    const d = orbitFromRing(30).dist; // 32.17 m at the baked pose
     const person = projectedFraction(1.7, d, TIER_REF_FOV_RAD);
     const oak = projectedFraction(23.8, d, TIER_REF_FOV_RAD);
-    expect(person).toBeCloseTo(0.020976, 6); // 2.1 % of the screen's height
-    expect(oak).toBeCloseTo(0.293667, 6);    // 29 % of it — 14× the person
-    expect(seedTierForProjected(person)).toBe("stick");
+    // Exactly `bodyM / 30`: at `frameFactor` 1 the frame radius IS half the
+    // frustum's height at the focus, so a 15 m frame makes the picture 30 m
+    // tall — which is the cleanest statement there is of what that slider does.
+    expect(person).toBeCloseTo(1.7 / 30, 12); // 5.67 % of the screen's height
+    expect(oak).toBeCloseTo(23.8 / 30, 12);   // 79.3 % of it — 14× the person
+    expect(seedTierForProjected(person)).toBe("simple");
     expect(seedTierForProjected(oak)).toBe("full");
-    expect(seedTier(TIER_BANDS, d)).toBe("stick"); // what BOTH used to get
+    expect(seedTier(TIER_BANDS, d)).toBe("simple"); // what BOTH used to get
   });
 
   it("a WIDER lens coarsens and a NARROWER one refines, at one distance", () => {

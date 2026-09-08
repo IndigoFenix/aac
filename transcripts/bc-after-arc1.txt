@@ -1,0 +1,318 @@
+# world-text v1   proto=1
+# world=frontier.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-06T20:53:20.242Z
+# ─────────────────────────────────────────
+> wait 5
+SAY    mara: "🥺"  [shirt.color_red]
+SAY    orrin: "🥺"  [shirt.color_red]
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 5.0s.
+> say make cart
+OK     said: make + cart
+SAY    mara: "I will carry the block to the house."  [carry.will + block + to + house]
+TOAST  🔨 making a cart — by hand, no workbench (feedback)
+TICK   quiet after 1.5s.
+> wait 10
+EXIT   mara went out of the orange house.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "Are you okay?"  [you + ok#question]
+ENTER  mara came into view there north.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: "I will build."  [i_me + build.will]
+TOAST  📦 bring 4 block — delivered (feedback)
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [water]
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+SAY    orrin: [meal]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [banana.hot]
+ENTER  mara came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [water]
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm happy."  [i_me + happy]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "I'm happy."  [i_me + happy]
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "okay"  [ok]
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here east.
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "Help you."  [help + you]
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "Thank you!"  [thank_you]
+SAY    orrin: "Where is the food?"  [place#question + food]
+SAY    mara: "The food is close, to the north."  [food]
+EXIT   mara went out of the orange house.
+SAY    orrin: "Where are you going?"  [place#question + you + go]
+SAY    orrin: [water]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "Where are you going?"  [place#question + you + go]
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here east.
+EXIT   orrin left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+SAY    orrin: [banana]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+EXIT   orrin went out of the orange house.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there north.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there north.
+ENTER  orrin came into view here south.
+SAY    orrin: [banana.hot]
+EXIT   mara left view there west.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view there west.
+SAY    mara: [carrot]
+TICK   waited 10.0s.
+> wait 10
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [banana]
+TICK   waited 10.0s.
+> wait 10
+EXIT   orrin left view there west.
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+SAY    orrin: [meal]
+ENTER  mara came into view here south.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [banana.hot]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+EXIT   mara left view there west.
+EXIT   orrin left view there west.
+ENTER  orrin came into view there west.
+ENTER  mara came into view there west.
+EXIT   orrin left view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: [water]
+EXIT   mara left view here east.
+TICK   waited 10.0s.
+> wait 10
+ENTER  mara came into view here east.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view there west.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "Are you okay?"  [you + ok#question]
+EXIT   orrin left view here east.
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here east.
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: [water]
+SAY    mara: "eat with I"  [eat + with + i_me]
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "I'm not hungry."  [i_me + hungry.not]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "eat with I"  [eat + with + i_me]
+SAY    orrin: "okay"  [ok]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm bored."  [i_me + bored]
+SAY    orrin: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+SAY    orrin: "eat with I"  [eat + with + i_me]
+SAY    mara: "okay"  [ok]
+SAY    orrin: "Are you okay?"  [you + ok#question]
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "I'm bored."  [i_me + bored]
+SAY    mara: "bye-bye"  [goodbye]
+SAY    mara: [sit]
+EXIT   orrin left view there west.
+SAY    mara: [sit]
+SAY    mara: [sit]
+TICK   waited 10.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  you are a bodiless spirit here.
+TICK   quiet after 1.0s.
+# ─────────────────────────────────────────
+# commands=93  presses=0  screens=1  sim=908.0s
+# events: TICK 93  SAY 59  EXIT 28  ENTER 27  TOAST 2  BOARD 1  NOTE 1  OK 1  SELF 1

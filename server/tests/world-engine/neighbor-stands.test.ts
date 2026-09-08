@@ -73,6 +73,7 @@ import {
   wildKeepChance,
   wildKeepMean,
   wildSourceFullStock,
+  wildStandUnitStock,
   wildStandStockOf,
   wildThinField,
   wildThinFraction,
@@ -245,17 +246,41 @@ describe("③ the mint", () => {
     // A `perHa` count is ROUNDED, not rolled — so every tile stands the same
     // number of oaks and the countryside is uniform at this radius (the v1
     // residual, stated as a fact rather than left to be discovered).
-    const oaks = recs.map((r) => r.stands.find((s) => s.species === "oak")!.byClass[0]);
+    // ⚖️ MOVED 2026-09-06 (new-growth authority): this read `byClass[0]` —
+    // oak's SAPLING bucket — which used to be 0 on every tile because a stand
+    // was all-mature. A stand now has an age structure, so the uniform thing
+    // is the POPULATION, which is what the pin was always about.
+    const oaks = recs.map((r) => {
+      const st = r.stands.find((s) => s.species === "oak")!;
+      return st.byClass.reduce((a, b) => a + b, 0);
+    });
     expect(new Set(oaks).size).toBe(1);
   });
 
-  it("builds the record through the CONDENSE path — fresh, mature, standing", () => {
+  it("builds the record through the CONDENSE path — fresh, standing, its stand's own ages", () => {
+    // Aggregated ACROSS the 20 tiles, per species: one tile's two banana palms
+    // are far too small a sample to carry a distribution, and pinning a
+    // per-stand ratio would be pinning sampling noise.
+    const matureOf = new Map<string, number>();
+    const popOf = new Map<string, number>();
     for (const rec of mintAt()) {
       for (const st of rec.stands) {
-        // Mature: a fresh feature leaves `sizeClass` unset, so `classOf` puts
-        // the whole population in the catalogue's LAST class.
-        expect(st.byClass.slice(0, -1).every((n) => n === 0)).toBe(true);
+        // ⚖️ MOVED 2026-09-06 (new-growth authority). This read "fresh ⇒
+        // MATURE", which was true only because `makeFeature` left `sizeClass`
+        // unset on every tree there had ever been. A minted tile is still
+        // FRESH — untouched, no clocks, no draw — but its stand carries the
+        // species' own age structure, and the record's condenser buckets that
+        // faithfully: the mature rung holds the large majority and the
+        // juveniles are a minority, never the other way round.
         expect(st.byClass[st.byClass.length - 1]).toBeGreaterThan(0);
+        matureOf.set(
+          st.species,
+          (matureOf.get(st.species) ?? 0) + (st.byClass[st.byClass.length - 1] ?? 0),
+        );
+        popOf.set(
+          st.species,
+          (popOf.get(st.species) ?? 0) + st.byClass.reduce((a, b) => a + b, 0),
+        );
         // No clocks: nothing is climbing and nothing is refilling.
         expect(st.climbAt).toEqual([]);
         expect(st.regrowAt).toEqual({});
@@ -269,6 +294,10 @@ describe("③ the mint", () => {
       // …and it is plain, serializable data (the render quote's contract).
       expect(() => JSON.stringify(wildAreaQuote(rec))).not.toThrow();
     }
+    // Oak is the only species with a stand big enough across 20 tiles to carry
+    // its own distribution: the mature rung holds the large majority.
+    expect(matureOf.get("oak")! / popOf.get("oak")!).toBeGreaterThan(0.7);
+    expect(matureOf.get("oak")! / popOf.get("oak")!).toBeLessThan(0.95);
   });
 
   it("mints NOTHING from an absolute COUNT mix — the bench-safety law", () => {
@@ -700,8 +729,13 @@ describe("⑫ⓐ the one gradient, amount half", () => {
     for (const rec of mintAt()) {
       const n = standPop(rec, "oak");
       const f = wildThinField(rec, "oak", n);
-      // The stand holds what N mature oaks hold (± the per-feature roll), so
-      // the fraction reads full and the top bucket is reached.
+      // The stand holds what N oaks OF ITS OWN AGES hold (± the per-feature
+      // roll), so the fraction reads full and the top bucket is reached.
+      // ⚖️ 2026-09-06: this is the pin that caught the new-growth authority
+      // reaching the render bridge — the denominator is one mature oak's
+      // stock × `standYieldFraction`, because that is what the scenery
+      // actually draws now. Without the age term a virgin forest measured
+      // step 7/8 and thinned itself on sight.
       expect(f.step).toBe(WILD_THIN_STEPS);
       expect(f.quantized).toBe(1);
       const insts = gridInstances(rec.area, n);
@@ -891,7 +925,11 @@ describe("⑫ⓒ quantization — the rebuild trigger", () => {
 
   it("the step moves EXACTLY on a bucket crossing", () => {
     const base = rec();
-    const per = wildSourceFullStock("oak");
+    // ⚖️ 2026-09-06: the yardstick is the stand's OWN per-source stock
+    // (`wildStandUnitStock`), not one MATURE source's — a stand has an age
+    // structure now, and the fixture has to invert the same arithmetic the
+    // engine uses or the count it derives stops naming the fraction it means.
+    const per = wildStandUnitStock(base, "oak");
     // 🚨 THE OAK STAND'S OWN WOOD, never the record's `wood` TOTAL (2026-09-04).
     // Those were the same number for as long as the oak was the only
     // wood-bearing thing a forest mix stood; the wild larder puts crab apples in

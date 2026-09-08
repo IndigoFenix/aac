@@ -313,8 +313,19 @@ export class ChatRepository {
         messageCount: sql<number>`jsonb_array_length(${chatSessions.log})`,
         // First message is the user's opening line (string content); truncate
         // for a fallback label. Objects (assistant md/html) yield their JSON
-        // text, which we never reach here since index 0 is the user's message.
-        firstMessage: sql<string | null>`left(${chatSessions.log}->0->>'content', 140)`,
+        // text — pre-existing behaviour, not fixed here. Skip the hidden
+        // Guided Setup kickoff (`GUIDED_SETUP_KICKOFF`, metadata.hidden ===
+        // true) so it never leaks into the title/history label; guarded
+        // against a NULL or non-array `log` on a legacy row so it still
+        // returns NULL instead of erroring.
+        firstMessage: sql<string | null>`(
+          CASE WHEN jsonb_typeof(${chatSessions.log}) = 'array' THEN (
+            SELECT left(e->>'content', 140)
+            FROM jsonb_array_elements(${chatSessions.log}) AS e
+            WHERE COALESCE(e->'metadata'->>'hidden', '') <> 'true'
+            LIMIT 1
+          ) ELSE NULL END
+        )`,
       })
       .from(chatSessions)
       .where(and(...conditions))

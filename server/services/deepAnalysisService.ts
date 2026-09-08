@@ -46,6 +46,7 @@ import { ANALYSIS_MEMORY_FIELDS } from "./memory-schema/analysis-memory-schema";
 import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
 import { fileDebugLoggingEnabled, safeAppend } from "./file-debug-log";
 import { recordDisclosure } from "./processorDisclosure";
+import { requireActiveConsent } from "./consent/consentGate";
 
 // ---------------------------------------------------------------------------
 // Logging — development only. Lines carry the report title + summary of a
@@ -250,6 +251,15 @@ export async function createDeepAnalysis(input: CreateDeepAnalysisInput): Promis
   const [student] = await db.select().from(students).where(eq(students.id, input.studentId)).limit(1);
   if (!student) throw new Error(`Unknown studentId: ${input.studentId}`);
 
+  // Consent gate. Deep analysis reads the student's whole record — sessions,
+  // reports, prior analyses — and ships it to Anthropic, which is exactly the
+  // "AI processing on this student" the consent-pending block list names first
+  // (planning-docs/student-access-permission/student-consent-onboarding-plan.md).
+  // The controller answers 412 for the HTTP path; this is the service-level
+  // backstop so no other caller can start a run around it. No-op when
+  // CONSENT_GATE_ENABLED is unset; honors the legacy grace window.
+  await requireActiveConsent(input.studentId);
+
   const cfg = await settingsRepository.getLLMConfig("deep_analysis");
   // AKIM §14 — deep analysis reads the WHOLE student record, so its provider
   // must be a disclosed processor. This used to be a hardcoded `!== "claude"`
@@ -390,6 +400,16 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
       if (stepCount >= MAX_STEPS) {
         throw new Error(`Exceeded MAX_STEPS=${MAX_STEPS} without submit_report. Aborting.`);
       }
+
+      // Re-check consent every turn, not just at creation. A run is long-lived,
+      // resumable across deploys, and restartable at boot by
+      // resumeStalledAnalyses() — so the record can be revoked, or its legacy
+      // grace can lapse, between the create call and any given turn. One
+      // indexed lookup against a multi-second model call, and a no-op entirely
+      // when the gate is off. Throwing here lands in the catch below, which
+      // persists status=failed with this message.
+      await requireActiveConsent(row.studentId);
+
       stepCount++;
       log(analysisId, `step ${stepCount} → calling Claude`);
 

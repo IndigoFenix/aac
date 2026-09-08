@@ -11,6 +11,7 @@ import { MonitorAgent } from "../services/dual-agent/monitor-agent";
 import { locationRepository, instituteRepository } from "../repositories";
 import { calendarService } from "../services/calendarService";
 import { calendarRepository } from "../repositories/calendarRepository";
+import { areaLookupService } from "../services/areaLookupService";
 
 const STUDENT_ID = "stu-1";
 const INSTITUTE_ID = "inst-1";
@@ -153,5 +154,128 @@ describe("MonitorAgent.checkLocationContext", () => {
 
     // First report from a fresh agent with no prior key is suppressed (null).
     expect(await agent.checkLocationContext()).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The COARSE scale: which city/country the device is in, and whether that is
+// the area the student's registered places sit in.
+//
+// This exists because an empty match list is not "nowhere". A student on
+// holiday, or in a hospital in another city, matches no registered place — and
+// before this the prompt said nothing whatsoever about where they were.
+
+describe("MonitorAgent location area context", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  /** Stub the reverse-geocode so no test touches the network (setup.ts also kills it). */
+  function mockArea(area: { city?: string; region?: string; country?: string } | null) {
+    jest
+      .spyOn(areaLookupService, "lookup")
+      .mockResolvedValue(area ? { ...area, provider: "nominatim" as const } : null);
+  }
+
+  /** ~300km north of BASE: another city entirely, by any measure. */
+  const FAR = { latitude: BASE.lat + 2.7, longitude: BASE.lng };
+
+  it("names the area and flags the trip when far from every registered place", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", latitude: BASE.lat, longitude: BASE.lng }] });
+    mockArea({ city: "Eilat", country: "Israel" });
+    const agent = makeAgent();
+    agent.setGps(FAR);
+
+    const msg = await agent.checkLocationContext();
+    expect(msg).toContain("Eilat, Israel");
+    expect(msg).toContain("not their usual area");
+    // The bearing matters as much as the name: how far from what.
+    expect(msg).toContain("Main Clinic");
+  });
+
+  it("stays quiet about the area on an ordinary day near a registered place", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", ...near(30) }] });
+    mockArea({ city: "Tel Aviv-Yafo", country: "Israel" });
+    const agent = makeAgent();
+    agent.setGps({ latitude: BASE.lat, longitude: BASE.lng });
+
+    const msg = await agent.checkLocationContext();
+    expect(msg).toContain("Main Clinic");
+    // Naming the home city on every ordinary update is noise, not signal.
+    expect(msg).not.toContain("Tel Aviv-Yafo");
+    expect(msg).not.toContain("usual area");
+  });
+
+  it("announces coming home again after a trip", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", latitude: BASE.lat, longitude: BASE.lng }] });
+    const agent = makeAgent();
+
+    mockArea({ city: "Eilat", country: "Israel" });
+    agent.setGps(FAR);
+    expect(await agent.checkLocationContext()).toContain("not their usual area");
+
+    jest.restoreAllMocks();
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", latitude: BASE.lat, longitude: BASE.lng }] });
+    mockArea({ city: "Tel Aviv-Yafo", country: "Israel" });
+    agent.setGps({ latitude: BASE.lat + 0.005, longitude: BASE.lng }); // ~550m: home area, no match
+    const msg = await agent.checkLocationContext();
+    expect(msg).toContain("back in Tel Aviv-Yafo, Israel");
+  });
+
+  it("says where they are, and concludes nothing, when no places are registered", async () => {
+    mockGeo({ locations: [] });
+    mockArea({ city: "Lisbon", country: "Portugal" });
+    const agent = makeAgent();
+    agent.setGps({ latitude: 38.72, longitude: -9.14 });
+
+    const section: string = await (agent as any).buildLocationContextSection(new Date());
+    expect(section).toContain("Lisbon, Portugal");
+    expect(section).toContain("nothing to compare");
+    expect(section).not.toContain("usual area");
+  });
+
+  it("builds a location section from the area alone when nothing matched", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", latitude: BASE.lat, longitude: BASE.lng }] });
+    mockArea({ city: "Eilat", region: "South District", country: "Israel" });
+    const agent = makeAgent();
+    agent.setGps(FAR);
+
+    const section: string = await (agent as any).buildLocationContextSection(new Date());
+    expect(section).toContain("## Current Location");
+    expect(section).toContain("Eilat, Israel");
+    expect(section).toContain("NOT their usual area");
+  });
+
+  it("says nothing when the area cannot be resolved", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", latitude: BASE.lat, longitude: BASE.lng }] });
+    mockArea(null); // provider down, or mid-ocean
+    const agent = makeAgent();
+    agent.setGps(FAR);
+
+    const section: string = await (agent as any).buildLocationContextSection(new Date());
+    expect(section).toBe("");
+    // A failed lookup is not evidence of an ordinary day either.
+    expect(await agent.checkLocationContext()).toBeNull();
+  });
+
+  it("keeps the plan cache key untouched for an ordinary session", async () => {
+    // locationKey feeds goalsHash (session-plan.ts). Adding the area to it for
+    // every session would invalidate that cache system-wide for no gain, so the
+    // area only enters the key when it says something new.
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", ...near(30) }] });
+    mockArea({ city: "Tel Aviv-Yafo", country: "Israel" });
+    const agent = makeAgent();
+    agent.setGps({ latitude: BASE.lat, longitude: BASE.lng });
+
+    await (agent as any).buildLocationContextSection(new Date());
+    expect((agent as any).lastReportedLocationKey).toBe("l1:near");
+  });
+
+  it("gives a trip its own plan cache key", async () => {
+    mockGeo({ locations: [{ id: "l1", title: "Main Clinic", latitude: BASE.lat, longitude: BASE.lng }] });
+    mockArea({ city: "Eilat", country: "Israel" });
+    const agent = makeAgent();
+    agent.setGps(FAR);
+
+    await (agent as any).buildLocationContextSection(new Date());
+    expect((agent as any).lastReportedLocationKey).toBe("none|away:Eilat, Israel");
   });
 });

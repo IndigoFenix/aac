@@ -1,0 +1,33 @@
+# world=scripts/worlds/homestead.spec.json seed=11 dt=0.5 days=10
+# center=(95.0,95.0) manifold={"kind":"flat","width":190,"height":190}
+# forageRadiusM=182.4  needFillS(hunger)=240  dayS=240
+# wilderness features=32  areaRecords=0
+# tile records=0  ring1=0
+# nearStandRadiusM=undefined
+# t=0 loaded food: inDisc plants=4 units=11 | all plants=20 units=57
+day   1 t=  240  takes=   9  rations/day=  3.00  loadedFood=  42    hungry=3/5 mean=1.04 deep=0  energy=0.87 sleeps=2
+day   2 t=  480  takes=  22  rations/day=  3.40  loadedFood=  25    hungry=5/5 mean=1.24 deep=0  energy=1.00 sleeps=7
+day   3 t=  720  takes=  38  rations/day=  4.40  loadedFood=   7    hungry=4/5 mean=1.36 deep=0  energy=1.02 sleeps=13
+day   4 t=  960  takes=  44  rations/day=  1.60  loadedFood=   6    hungry=5/5 mean=2.04 deep=2  energy=1.25 sleeps=17
+day   5 t= 1200  takes=  55  rations/day=  2.20  loadedFood=   8    hungry=5/5 mean=2.64 deep=5  energy=1.17 sleeps=24
+day   6 t= 1440  takes=  67  rations/day=  2.40  loadedFood=   6    hungry=5/5 mean=3.12 deep=5  energy=1.10 sleeps=31
+day   7 t= 1680  takes=  75  rations/day=  1.60  loadedFood=   8    hungry=5/5 mean=3.80 deep=5  energy=1.12 sleeps=37
+day   8 t= 1920  takes=  87  rations/day=  2.40  loadedFood=   6    hungry=5/5 mean=4.36 deep=5  energy=1.15 sleeps=43
+day   9 t= 2160  takes=  99  rations/day=  2.40  loadedFood=   7    hungry=5/5 mean=4.84 deep=5  energy=1.07 sleeps=50
+day  10 t= 2400  takes= 109  rations/day=  2.00  loadedFood=   5    hungry=5/5 mean=5.44 deep=5  energy=1.00 sleeps=57
+
+# takes=109 (zero-yield arrivals=76)  of which TILE takes=0
+# rations delivered total=25.40 over 10 days
+# take-distance histogram (m from site centre):
+#     10–  20 : ### 3
+#     20–  30 : #################### 20
+#     30–  45 : ####### 7
+#     45–  60 : ################ 16
+#     60–  90 : ########################################################### 59
+#     90– 120 : #### 4
+# sleep episodes=57 (5.70 per body-day over 5 bodies)
+# starvation body-days (hunger over the fire line for a whole play-day)=36
+# final hungry=5/5 mean=5.44 deep(>=2)=5
+# AVAILABLE (end of run): disc plants=4 units=1 | reach plants=20 units=5 | ring1 tiles=0 units=0
+# ring-1 per tile (food units | harvest-direction weight): 
+# RENEWAL FLOW available: loaded features in reach = 2.13 rations/day | ring-1 tile records = 0.00 rations/day (need 5.00)

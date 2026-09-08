@@ -14,7 +14,10 @@ for the AAC student client see [`ai-docs/main.md`](../ai-docs/main.md).
 
 Almost every clinician operation — creating a student, editing a goal, authoring an
 AAC board, scheduling a calendar event, updating AAC settings, generating a game — is
-reachable through a single natural-language chat. The feature panels (StudentsPanel,
+reachable through a single natural-language chat. Creating a student is additionally
+guided end to end by the **Guided Setup** flow (§10): a 4-step chat-driven onboarding
+that walks a new student through basics, medical/consent, program, and AAC setup. The
+feature panels (StudentsPanel,
 ReportsPanel, CalendarPanel, board editor, etc.) are **views over data the chat agent
 reads and writes**, not independent CRUD surfaces. Only a small set of high-security
 operations are gated behind explicit UI.
@@ -377,3 +380,39 @@ loves horses."*
 | Memory field definitions         | `server/services/memory-schema/*.ts`                        |
 | Personas                         | `server/controllers/personaController.ts`                   |
 | Session table                    | `shared/schema-private.ts` (`chat_sessions`)                |
+
+---
+
+## 10. Guided Setup (student onboarding)
+
+A chat-driven onboarding flow that walks a new student through 4 steps: basics,
+medical/consent, program, and AAC setup. The consent gate between steps follows
+`CONSENT_GATE_ENABLED` (`server/services/consent/consentGate.ts`) exactly like every
+other gated write elsewhere in the app — with it on, nothing past Step 1 proceeds
+without active consent; with it off the steps run straight through.
+
+The contract lives in `shared/guided-setup.ts` (types, `GUIDED_SETUP_ROUTES`,
+`GUIDED_SETUP_TOOL_NAME`, `GUIDED_SETUP_KICKOFF`) and is imported, never duplicated, by
+both sides. Server layout:
+- `server/services/chat/guided-flow/` — the generic step-engine (`engine.ts`,
+  `prompt-section.ts`, `tool.ts`, `types.ts`), portable to any future chat flow.
+- `server/services/guided-setup/` — the student-setup flow itself
+  (`student-setup-flow.ts`, `-queries.ts`, `-service.ts`, `-state.ts`, `terms.ts`).
+- `guidedSetupController` + the `/api/guided-setup/*` routes in `server/routes.ts`.
+
+It reaches the client the same way any other memory write does (§5): the server sets
+`Context_GuidedSetup` every turn while the flow is active, which arrives on the client
+as `contextData.guidedsetup` and is parked in `FeaturePanelContext.sharedState` as
+`guidedSetup: { view, live }`. `client/src/features/guided-setup/` holds the client
+half — `useGuidedSetup.tsx` (provider: opens the flow, sends the hidden kickoff turn,
+parks the view) and `GuidedSetupRail.tsx` (the step rail rendered above the existing
+panels). The kickoff turn is a normal chat message with `metadata.hidden = true` so it
+persists and survives reloads without rendering a user bubble; the chat request body
+also carries `language` (the client's UI language) so the AI's first, unprompted turn
+replies in the right language instead of mirroring text that was never sent.
+
+The AI drives the flow only through the `guidedSetup` host tool (flow control —
+`status` / `advance` / `skip` / `back`; never data writes, which stay on
+`manageMemory` over the memory-schema tree). Flow state persists in two places:
+per-student progress in `institute_students.data.onboarding`, and the live/session
+view in `chat_sessions.state.guidedSetup`.

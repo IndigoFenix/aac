@@ -4,6 +4,7 @@
 import type { AACAppDefinition } from "./types";
 import { COMPETENCIES } from "../social-bot/personality-and-challenge";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
+import { APP_ENABLED_BY_DEFAULT } from "@shared/app-defaults";
 
 /**
  * Per-app configuration stored in aacSettings.appConfig JSON.
@@ -26,7 +27,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     name: "Phone Call",
     description: "Opens a list of the student's callable contacts so they can place a live video call to someone who is online. Use open_app(phone_call) when the student wants to call a person but you are not sure who, or wants to browse who is available. To call a specific known person directly, prefer the call_person tool instead.",
     icon: "☎️",
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.phone_call,
   },
   {
     id: "youtube",
@@ -34,7 +35,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     description: "Opens an interactive YouTube video player on the user's screen. When permitted channels are configured (the channel list appears in the system prompt with their recent video titles), prefer calling open_app(youtube) WITHOUT `data` — this opens a channel browser where the student picks a video themselves. Only pass a `data` string when the student's request clearly matches one of the actual video titles shown; the search uses title matching, so a generic topic like 'animals' will miss and fall back to the browser anyway. When NO permitted channels are configured (unrestricted search via API key), always pass a descriptive query in `data`.",
     icon: "▶️",
     queryHint: "a video title (or search phrase when unrestricted)",
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.youtube,
   },
   {
     id: "spotify",
@@ -42,7 +43,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     description: "Opens an interactive Spotify music player on the user's screen. Use open_app to launch it when the user wants to listen to music. Pass a search query in the data parameter (e.g. 'happy kids songs').",
     icon: "🎧",
     queryHint: "what music to play",
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.spotify,
   },
   {
     id: "photos",
@@ -70,7 +71,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🖼️",
     queryHint: "caption words (optional — omit to browse)",
     // Off by default: a student with no photos loaded should not see an empty app.
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.photos,
   },
   {
     id: "picture_search",
@@ -108,7 +109,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     queryHint: "what to find a picture of, IN ENGLISH regardless of the conversation language — REQUIRED. Name a SPECIFIC, everyday object as a child would meet it.",
     // Off by default: this puts unvetted web imagery on a child's screen, so it
     // is a deliberate clinician decision, never an inherited one.
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.picture_search,
   },
   {
     id: "restaurant",
@@ -145,14 +146,14 @@ export const APP_REGISTRY: AACAppDefinition[] = [
         "AGAINST opening it, whatever food was mentioned.",
       ].join("\n"),
     },
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.restaurant,
   },
   {
     id: "drawing",
     name: "Drawing",
     description: "Opens an interactive drawing canvas on the user's screen where they can draw with colors. Use open_app to launch this when the user wants to DRAW or colour something themselves. It is a blank canvas, not a picture viewer — a student asking to SEE a picture wants the photos or picture_search app, never this. As the user draws, add context buttons related to what they seem to be drawing.",
     icon: "🎨",
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.drawing,
     supportsDetectionCapture: true,
   },
   {
@@ -160,28 +161,28 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     name: "Music Maker",
     description: "Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano.",
     icon: "🎹",
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.music,
   },
   {
     id: "bubbles_game",
     name: "Bubbles",
     description: "Opens a bubble-popping reflex game designed to train hand-eye coordination. Bubbles float around and the student pops them by tapping. Difficulty adjusts automatically. ALWAYS use open_app to launch this when the user wants to play the bubbles game, pop bubbles, or practice coordination.",
     icon: "🫧",
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.bubbles_game,
   },
   {
     id: "musical_microbes",
     name: "Musical Microbes",
     description: "Opens a calm music-making sandbox where the student places tiny organisms (pulsers, responders, harmonizers, echoers, silencers) that interact to make generative music. Works with eyegaze, touch, or mouse. ALWAYS use open_app to launch this when the user wants to make music with the circles.",
     icon: "🎶",
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.musical_microbes,
   },
   {
     id: "space_trader",
     name: "Space Trader",
     description: "Opens a space-trading puzzle game designed for eyegaze controls. The student steers a ship to mine asteroids, complete trade chains, and capture the Star across escalating difficulty levels. ALWAYS use open_app to launch this when the user wants to play the space trader game, the space game, or the trader puzzle.",
     icon: "🚀",
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.space_trader,
     startup: {
       appId: "space_trader",
       guidance:
@@ -209,7 +210,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     name: "Sandbox",
     description: "Opens an idle sandbox game on the user's screen. The user shapes the landscape and watches as a world emerges from their actions. ALWAYS use open_app to launch this when the user wants to play the sandbox game.",
     icon: "⛏️",
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.sandbox_game,
   },
   {
     id: "social_trainer",
@@ -219,7 +220,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     // Enabled by default — surfaced as the "Practice friend" button on the AAC
     // home board (not the Apps page). Its enable toggle lives in the AAC
     // Settings social-trainer section.
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.social_trainer,
     // NOTE: social_trainer is NOT client-rendered — its peer lives server-side
     // (startSocialPeerSession). These params are resolved there, NOT via the
     // client request_app_open round-trip, so its snapshot needsStartupResolution
@@ -283,7 +284,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     // with no toggle): it must be openable so the student can START a game and
     // invite friends (the game is a property of the chat, not a pre-existing
     // room they wait to be invited into).
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.social_world,
   },
   {
     id: "symbol_learning",
@@ -292,7 +293,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🔤",
     // On by default for every student — it's the platform's core learning tool,
     // not an opt-in extra. Clinicians can disable it per-student via appConfig.
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.symbol_learning,
   },
   {
     id: "dollhouse",
@@ -305,7 +306,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
       "or asks to play house.",
     icon: "🏠",
     // The first shipped world-engine game — on by default for every student.
-    enabledByDefault: true,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT.dollhouse,
   },
   {
     // NOTE: hyphenated id (unlike the snake_case ids above) — deliberately
@@ -321,7 +322,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
       "same planet together. Use open_app(\"nature-hike\") when the student wants to go for a walk, " +
       "explore nature, look at plants or animals outside, or asks for the nature hike / hiking game.",
     icon: "🥾",
-    enabledByDefault: false,
+    enabledByDefault: APP_ENABLED_BY_DEFAULT["nature-hike"],
   },
   // Note: the "browser" app is not listed here. It's launched via the dedicated
   // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.

@@ -1,0 +1,35 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-08T10:14:07.072Z
+# ─────────────────────────────────────────
+> wait 12
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+TICK   waited 12.0s.
+> say mara + get + basket
+OK     said: mara + get + basket
+SAY    mara: "I will get the basket."  [get.will + basket]
+TOAST  ▶ party (1): mara + get + basket (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view there west.
+EXIT   mara left view here south.
+EXIT   biscuit left view here south.
+TICK   waited 3.0s.
+> say mara + get + basket + with + pip
+OK     said: mara + get + basket + with + pip
+TOAST  ▶ party (2): mara + get + basket + with + pip (feedback)
+TICK   quiet after 0.8s.
+> wait 3
+TICK   waited 3.0s.
+# ─────────────────────────────────────────
+# commands=5  presses=0  screens=1  sim=19.7s
+# events: TICK 5  SAY 4  EXIT 4  ENTER 2  OK 2  TOAST 2  BOARD 1  NOTE 1

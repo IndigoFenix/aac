@@ -1030,6 +1030,166 @@ export function growthAgeOf(species: string, sizeClass?: number): number {
   return Math.min(1, Math.max(0, sizeClass / last));
 }
 
+// ── ⚖️ THE STAND'S AGE STRUCTURE — the NEW-GROWTH AUTHORITY (2026-09-06) ────
+//
+// `growthAgeOf` above answers "how old is THIS tree"; this block answers the
+// question nobody owned: **how old is a STAND** — what fraction of a species'
+// population stands at each rung of its own ladder. Until now the answer was
+// "all of it is mature", written nowhere and true everywhere: `makeFeature`
+// left `sizeClass` unset on purpose, so a freshly-laid forest was byte-
+// identical to every forest laid before growth classes existed, and only a
+// FELLING ever created a young tree. A frontier that has never been cut is a
+// wall of identical 24 m oaks, and the flora field draws the same.
+//
+// 🚫 IT IS NOT A SECOND DENSITY LAW. `standPerHa`/`ecoAbundanceAt` decide HOW
+// MANY individuals stand on a hectare; this decides WHICH RUNG each of them is
+// on. The count is untouched, every position is untouched (the draw is a hash
+// of the individual's own key, never the scatter's rng — see `standGrowthClass`),
+// and the only thing that moves is how much tree each of those individuals is.
+//
+// ⚖️ WHERE THE PROPORTIONS COME FROM, and why no clock appears in them. In a
+// stand at steady state the number standing on a rung is proportional to the
+// TIME an individual spends on it (recruitment in = mortality out). The
+// juvenile rungs' residence is `growthClassPeriodS` — which divides the
+// species' whole maturity span EVENLY across its steps — so every juvenile
+// rung holds the same share, and the maturity span itself CANCELS out of the
+// ratio. What is left is one number: how long an adult stands compared with
+// how long it took to get there (`STAND_ADULT_SPAN_MUL`). So the structure is
+// scale-free and clock-free: the same at street clock and at REAL_SCALE, and
+// a species content-edit to `maturityYears` does not silently reshape the
+// world's forests.
+//
+// 🚨 AND THE SIM ITSELF HAS NO MORTALITY. A tree that reaches `mature` stands
+// there forever unless something cuts it, so this distribution is NOT a fixed
+// point of the sim's own dynamics — it is an ecological fact about a stand,
+// injected once when the stand is laid. That is exactly why a scattered young
+// tree carries no `growAt` (see `makeFeature`): put every juvenile on the
+// growth clock and, with nothing dying, the whole stand would climb to mature
+// within one maturity span and silently restore the all-mature world this
+// authority exists to end. Disturbance — a felling — is what puts an
+// individual on the clock, and always has been.
+
+/**
+ * HOW LONG AN ADULT STANDS, in units of the time it took to become one.
+ *
+ * 🚫 NOT A BALANCE DIAL — it is the one content fact the age structure needs,
+ * and it is read off the same real-world anchor `maturityYears` is: an oak the
+ * catalogue calls mature at 40 years is a tree that then stands for something
+ * like two centuries, i.e. about five times as long again. Trees generally
+ * live several times their own age at maturity, which is why one multiplier
+ * serves every ladder rather than a per-species lifespan column nobody could
+ * calibrate.
+ *
+ * ⚠️ IT MOVES THE ECONOMY, and that is stated rather than hidden: a stand's
+ * standing timber is `standYieldFraction` of what an all-mature stand held
+ * (oak: 0.854). Raising it makes forests older and richer, lowering it younger
+ * and poorer. The measurement of what it did is in the round ledger.
+ */
+export const STAND_ADULT_SPAN_MUL = 5;
+
+/**
+ * THE AGE STRUCTURE of a species' stand — one weight per growth class,
+ * youngest first, summing to 1. A species with no ladder answers `[1]` (it has
+ * exactly one state to be in, which is the same answer `growthAgeOf` gives it).
+ *
+ * `depletion` (0..1, default 0) is the stand's own harvest history: a cut
+ * stand skews YOUNG, because the sim's own felling law takes the big ones
+ * first (`wildFeatureSizeRank` — user: *"larger trees will typically be cut
+ * first"*). It removes that fraction of the MATURE weight and hands it to the
+ * juvenile rungs in their own proportions, so at `depletion: 1` a clear-cut
+ * stand is all understory. It never invents individuals — the count is the
+ * density law's, and thinning is `wildKeepChance`'s; this only says what the
+ * survivors are.
+ */
+export function standAgeWeights(
+  species: string,
+  opts?: { depletion?: number },
+): readonly number[] {
+  const g = BY_SPECIES.get(species)?.growth;
+  const n = g?.classes.length ?? 0;
+  if (!g || n < 2) return [1];
+  const steps = n - 1;
+  // Residence ratios: each juvenile rung 1 class period, the adult
+  // STAND_ADULT_SPAN_MUL whole maturity spans = MUL × steps class periods.
+  const raw = g.classes.map((_, i) => (i < steps ? 1 : STAND_ADULT_SPAN_MUL * steps));
+  const d = Math.max(0, Math.min(1, opts?.depletion ?? 0));
+  if (d > 0) raw[steps] = raw[steps]! * (1 - d);
+  const total = raw.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) {
+    // Clear-felled to the last adult with no juvenile rung to fall back on
+    // (a 1-step ladder at depletion 1): the stand is its own sapling class.
+    const out = g.classes.map(() => 0);
+    out[0] = 1;
+    return out;
+  }
+  return raw.map((v) => v / total);
+}
+
+/**
+ * THE ONE STANDING-TIMBER READING of an age structure: what fraction of an
+ * ALL-MATURE stand's yield a stand with this structure actually holds
+ * (Σ weight × `yieldMul`). Oak's steady state = 0.854 — the number the
+ * economy moved by when the authority landed. 1 for a species with no ladder.
+ */
+export function standYieldFraction(species: string, opts?: { depletion?: number }): number {
+  const g = BY_SPECIES.get(species)?.growth;
+  if (!g || g.classes.length < 2) return 1;
+  const w = standAgeWeights(species, opts);
+  return g.classes.reduce((sum, c, i) => sum + c.yieldMul * (w[i] ?? 0), 0);
+}
+
+/** FNV-1a → mulberry32, one step: the engine's own key→roll convention
+ *  (`wildThinRoll` in wild-area.ts, `twinRng` in the flora field). Spelled
+ *  again here because products.ts is a LEAF — it may not import either. */
+function standAgeRoll(key: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let a = (h + 0x6d2b79f5) >>> 0;
+  a = Math.imul(a ^ (a >>> 15), a | 1);
+  a ^= a + Math.imul(a ^ (a >>> 7), a | 61);
+  return ((a ^ (a >>> 14)) >>> 0) / 4294967296;
+}
+
+/**
+ * ⚖️ THE CLASS ONE INDIVIDUAL STANDS AT — the authority's per-tree face, and
+ * the ONE draw every consumer makes (`makeFeature` for the sim, the flora
+ * field for the picture, so a twin that materialises replaces a field instance
+ * of the SAME stage).
+ *
+ * 🚨 IT IS A HASH OF THE INDIVIDUAL'S OWN KEY, NEVER AN RNG DRAW. A scatter's
+ * `rng()` is a sequence: taking one more number from it moves every position
+ * dealt after it, and positions are pinned by the bench, by the near-stand
+ * suite and by every world-fixed flora instance key. So the class rides a
+ * SEPARATE derived stream — same seed, same key, same class, and not one tree
+ * moves a millimetre.
+ *
+ * 🚨 UNDEFINED MEANS MATURE, deliberately, and that is not a failure return.
+ * "Unset = mature" is the wilderness's own scatter law (`standingGrowthClass`,
+ * `growthAgeOf`), and honouring it here is what keeps a mature feature's
+ * RECORD byte-identical to every feature ever written: only the young rows
+ * carry a `sizeClass` at all, so no save, no handover and no condensed area
+ * gains a field for the 85 % of trees that were always mature.
+ */
+export function standGrowthClass(
+  species: string,
+  key: string,
+  opts?: { depletion?: number },
+): number | undefined {
+  const g = BY_SPECIES.get(species)?.growth;
+  if (!g || g.classes.length < 2) return undefined;
+  const w = standAgeWeights(species, opts);
+  const u = standAgeRoll(key);
+  let acc = 0;
+  for (let i = 0; i < w.length; i++) {
+    acc += w[i]!;
+    if (u < acc) return i === g.classes.length - 1 ? undefined : i;
+  }
+  return undefined; // rounding tail ⇒ mature
+}
+
 /**
  * ⚖️ IS THIS STANDING SOURCE SUBSTANTIAL — big enough to be a THING in the
  * world rather than a seedling in the grass? The ONE answer, asked by

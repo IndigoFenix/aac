@@ -11,6 +11,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { openUI, useUIEvent } from "@/lib/uiEvents";
 import { StudentModal } from '@/components/StudentModal';
+import { ConsentWizard } from '@/features/consent/ConsentWizard';
 import {
   Save,
   X,
@@ -100,6 +101,8 @@ export function GlobalAuthModals() {
   // settings
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  // Consent wizard opened from outside a student form (Guided Setup rail).
+  const [consentStudentId, setConsentStudentId] = useState<string | null>(null);
   
   const [profileForm, setProfileForm] = useState({
     firstName: "",
@@ -156,6 +159,14 @@ export function GlobalAuthModals() {
   useUIEvent("editStudent", (studentData: Student | null) => {
     setEditingStudent(studentData);
     setShowStudentModal(true);
+  });
+
+  // Listen for consentWizard event — the Guided Setup rail's "Sign consent"
+  // button. Same wizard StudentModal chains into after a family create; it
+  // fetches its own context from the studentId.
+  useUIEvent("consentWizard", (data?: { studentId?: string }) => {
+    if (!data?.studentId) return;
+    setConsentStudentId(data.studentId);
   });
 
   // handlers (migrated from home.tsx)
@@ -1059,6 +1070,20 @@ export function GlobalAuthModals() {
         }}
         editingStudent={editingStudent}
       />
+
+      {/* Consent wizard (Guided Setup rail → openUI('consentWizard', { studentId })) */}
+      {consentStudentId && (
+        <ConsentWizard
+          studentId={consentStudentId}
+          onClose={() => {
+            const signedFor = consentStudentId;
+            setConsentStudentId(null);
+            queryClient.invalidateQueries({ queryKey: ["consent-active", signedFor] });
+            queryClient.invalidateQueries({ queryKey: ["consent-wizard-context", signedFor] });
+            queryClient.invalidateQueries({ queryKey: ["consent-history", signedFor] });
+          }}
+        />
+      )}
     </>
   );
 }

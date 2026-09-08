@@ -178,6 +178,15 @@ const POS: Record<string, SymPos> = {
   // layer still read it as a noun, so the flagship refusal came out as
   // "we not fight" instead of "we don't fight".
   fight: "verb",
+  // ⚖️ THE ROLE WORD IS A NOUN (interpersonal-politics.md §4b). `leader` is an
+  // `attribute` in the parser's LEXICON — that is what gives it a subject slot
+  // ("mara + leader", "who + leader") — and `CAT_POS` below would therefore
+  // derive `adj` for it, which is wrong twice over: `isQuality` would read a
+  // bare "leader" as a wantable property ("something leader"), and the copula
+  // frame would claim "mara + leader" and render the article-less "Mara is
+  // leader" in every ruleset. This entry WINS over the derivation (the loop
+  // below only fills gaps), so the `regard` frame gets the shape instead.
+  leader: "noun",
 };
 
 /** Device toggle states (§5): predicate adjectives ("the window is open", "the
@@ -313,6 +322,38 @@ export const SENSATION = new Set(["hot", "cold"]);
  *  sentence — "I'm cold." → "I'm cold"). */
 export const stripEnd = (s: string): string => s.replace(/[.?!¡¿]+\s*$/u, "").trim();
 
+/**
+ * ⚖️ ROLE WORDS — a predicate NOUN naming what somebody IS to a group
+ * (interpersonal-politics.md §4b). One word today; the set exists because the
+ * `regard` frame's two-token reading has to be keyed on something narrower than
+ * "the second token is a noun", which would swallow every "{X} + {Y}" pair.
+ */
+export const ROLE_WORDS: ReadonlySet<string> = new Set(["leader"]);
+
+/**
+ * ⚖️ CHARACTER TRAITS — what somebody IS to other people, as opposed to how
+ * they happen to feel today.
+ *
+ * They ride the `regard` frame rather than the shipped `copula` for one reason,
+ * and it is a grammatical one: the romance rulesets' copula is `estar`, the
+ * verb of STATES, so "Mara está amable" says she is being nice at the moment.
+ * A trait is `ser`. (Hebrew and English are indifferent — one has no copula
+ * verb at all and the other has only "to be" — so routing all three regard
+ * words through one frame costs those two nothing and buys the other two the
+ * right verb.)
+ */
+export const TRAIT_WORDS: ReadonlySet<string> = new Set(["nice", "mean"]);
+
+/** Every word the two-token regard reading accepts. */
+export const REGARD_WORDS: ReadonlySet<string> = new Set([...ROLE_WORDS, ...TRAIT_WORDS]);
+
+/**
+ * ⚖️ FEELINGS THAT TAKE AN OBJECT — "scared OF the bear". Every other feeling
+ * on the board is a state of the body alone ("tired", "happy"), and only these
+ * can name what they are ABOUT, which is what makes `fear` sayable as a regard.
+ */
+export const FEELING_OBJECT: ReadonlySet<string> = new Set(["scared"]);
+
 /** Is this symbol a bare QUALITY used as a want target ("something hot")? */
 export function isQuality(head: string): boolean {
   return posOf(head) === "adj";
@@ -353,8 +394,15 @@ export type Frame =
    *  the reading that a pocket strip and a container board do. Default false ⇒
    *  today's rendering, byte for byte. */
   | { kind: "np"; np: NP; label?: boolean }
-  /** "{X} + here/there" and the there-subject clue — X is at a place. */
-  | { kind: "here"; np: NP; where: "here" | "there" }
+  /** "{X} + here/there" and the there-subject clue — X is at a place.
+   *
+   *  🚨 `neg` = the sentence said the opposite ("person + here.not" — "the
+   *  person isn't here"). It exists because this frame used to DROP a `.not`
+   *  on either token in silence and render the POSITIVE: "ball + here.not"
+   *  came out "The ball is here." A dropped negation is the one error that
+   *  says the opposite of what the child said, and the empty-room answer
+   *  (P-3) is built on this shape. */
+  | { kind: "here"; np: NP; where: "here" | "there"; neg?: boolean }
   /** "no + {X}.my" — refusing to part with a bound possession. */
   | { kind: "mine"; np: NP; no: boolean }
   /** "{X} + {ADJ}.not" / "{ADJ}.not" — the wrong-variant corrective. */
@@ -414,6 +462,36 @@ export type Frame =
   | { kind: "takeMeTo"; dest: Token }
   /** The company ask ("[you +] stay + with + i_me" — "Stay with me"). */
   | { kind: "stayWith" }
+  /**
+   * ⚖️ A REGARD SAID OUT LOUD (interpersonal-politics.md §4b) — the two shapes
+   * the copula frame cannot carry:
+   *
+   *   • a ROLE predicate, "{X} + leader" — a predicate NOUN, which every one of
+   *     the four rulesets dresses differently (English wants an article, Hebrew
+   *     a third-person copula pronoun and a definite ה, the romance pair `ser`
+   *     rather than `estar`). Rendered through `copula` it came out as "Mara is
+   *     leader" / "Mara es líder".
+   *   • a FEELING WITH AN OBJECT, "{X} + scared + {Y}" — "scared OF Pip". The
+   *     object marker is the language's own ("of" · מ־ · "de" · "com") and is
+   *     precisely the word a shared template would leak in English.
+   *
+   * `word` is the role/feeling token; `toward` present = the second shape.
+   * Both are built by the regard fact's own line (creature-dialogue `factLine`)
+   * and both PARSE BACK here, so an NPC's bubble and a child's board sentence
+   * are one string rather than two readings of one thought.
+   */
+  | {
+      kind: "regard";
+      subject: Token;
+      word: Token;
+      toward?: Token;
+      question: boolean;
+      /** ⚖️ A ROLE DENIED ("mara + leader.not" — "Mara isn't the leader").
+       *  Only a ROLE_WORD ever sets it: a negated TRAIT is the shipped
+       *  `corrective` and stays there. Absent ⇒ every positive regard renders
+       *  byte-for-byte as before. */
+      neg?: boolean;
+    }
   /** The directions answer to "where is X?" ("{thing} is far, to the north"):
    *  proximity phrasing + a cardinal word (the cardinal is spoken only by the
    *  close/far cases). Built by the host from geometry via `directionsFrame`,
@@ -623,6 +701,41 @@ export function classify(tokens: Token[]): Frame {
     };
   }
 
+  // -- the regard shapes (politics §4b) ---------------------------------------
+  // Deliberately NARROW, and both halves of the narrowness are load-bearing:
+  //   • only `REGARD_WORDS` take the two-token reading, because "{X} + {adj}"
+  //     is the shipped copula and stealing it would re-render every
+  //     "mara + sad" — the three regard words are new, so nothing moves;
+  //   • only `FEELING_OBJECT` words take the three-token one, because
+  //     "{noun} + {adj} + {noun}" has no other reading today (it fell to the
+  //     telegraphic gloss) and a general rule would swallow real sentences.
+  {
+    const t1 = tokens[1];
+    const subjectish = (t: Token) => posOf(t.head) === "pron" || posOf(t.head) === "noun";
+    // A NEGATED regard is not a regard — "mara + nice.not" is the shipped
+    // corrective ("Mara isn't nice"), which this frame has no slot for and
+    // must not swallow: dropping a `.not` says the opposite of the sentence.
+    //
+    // 🚨 …EXCEPT A ROLE WORD, WHICH HAS NO CORRECTIVE TO FALL THROUGH TO. The
+    // corrective frame requires an ADJECTIVE second token, and `leader` is a
+    // NOUN in the POS table (deliberately — see its entry). So "mara +
+    // leader.not" matched neither frame and fell all the way to the telegraphic
+    // GLOSS: "mara not leader" · "mara לא מנהיג" · "mara no líder" · "mara não
+    // líder" — no copula, no article, no gender agreement and the name left raw
+    // in every locale. The role predicate's own frame is the only one that can
+    // dress it, so a ROLE takes the negation and the traits keep the corrective.
+    if (t1 && subjectish(t0)) {
+      const neg = t1.mods.includes("not");
+      if (tokens.length === 2 && REGARD_WORDS.has(t1.head) && (!neg || ROLE_WORDS.has(t1.head))) {
+        return { kind: "regard", subject: t0, word: t1, question, ...(neg ? { neg: true } : {}) };
+      }
+      const t2 = tokens[2];
+      if (!neg && tokens.length === 3 && FEELING_OBJECT.has(t1.head) && t2 && subjectish(t2)) {
+        return { kind: "regard", subject: t0, word: t1, toward: t2, question };
+      }
+    }
+  }
+
   // -- verbless shapes --------------------------------------------------------
   if (tokens.length === 1) {
     const pos = posOf(t0.head);
@@ -634,7 +747,13 @@ export function classify(tokens: Token[]): Frame {
     const t1 = tokens[1]!;
     if (t0.head === "no" && t1.mods.includes("my")) return { kind: "mine", np: { noun: t1 }, no: true };
     if (t1.head === "here" || t1.head === "there") {
-      return { kind: "here", np: { noun: t0 }, where: t1.head };
+      // 🚨 NEVER A SILENT DROP. Either token may carry the `.not` — "person +
+      // here.not" negates the predicate the way `good.not` and `have.not` do,
+      // "person.not + here" negates the subject — and both mean the one thing:
+      // the named body is NOT at this place. Rendering that positive said the
+      // opposite of the sentence.
+      const neg = t1.mods.includes("not") || t0.mods.includes("not");
+      return { kind: "here", np: { noun: t0 }, where: t1.head, ...(neg ? { neg: true } : {}) };
     }
     if (posOf(t1.head) === "adj" && t1.mods.includes("not") && posOf(t0.head) === "noun") {
       return { kind: "corrective", np: { noun: t0 }, adj: t1 };

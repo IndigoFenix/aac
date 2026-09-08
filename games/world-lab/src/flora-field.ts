@@ -36,7 +36,10 @@ import * as THREE from "three";
 import type { CelestialBody } from "@shared/world-engine/space/world-types";
 import { PLANET_FACES } from "@shared/world-engine/planet/chunk";
 import { ecoAbundanceAt, standCountFor } from "@shared/world-engine/planet/ecology";
+import { growthAgeOf, standGrowthClass } from "@shared/world-engine/products";
+import { floraTwinFeatureId } from "@shared/world-engine/interaction/quest/wilderness";
 import { speciesBlueprint } from "@shared/world-engine/creatures/species";
+import { agePlantBody, growthHeightFactor } from "@shared/world-engine/creatures/growth";
 import {
   buildPlantLods,
   bakePlantImpostor,
@@ -116,6 +119,62 @@ interface SpeciesAssets {
 }
 const assetsCache = new Map<string, SpeciesAssets>();
 
+/**
+ * ⚖️ ONE STAGE'S GEOMETRY — a species' body built at ONE rung of its growth
+ * ladder (`agePlantBody`, the ONE age→body map; `growthAgeOf`, the ONE
+ * class→age map — neither is forked here). Cached for the session beside the
+ * adult's, keyed `<species>|<class>`, so a stand's understory costs one extra
+ * geometry build per rung the field actually shows and nothing per instance.
+ *
+ * 🚫 NO EXTRA IMPOSTOR BAKE. The billboard rung keeps the ADULT's baked card
+ * and scales it by the stage's own height factor: past `STICK_R` (700 m) a
+ * juvenile oak is a couple of pixels tall, and a bake per stage would treble
+ * the one GPU cost this field pays up front for a difference nobody can see.
+ * The SHAPE — the thing the user asked for, a shoot that branches out — lands
+ * the moment the tile resolves to the stick rung, which is where shape starts
+ * to read at all. That is a LOD decision, not a second age authority: the age
+ * is the same per-placement number at every rung, only the representation of
+ * it changes.
+ */
+interface StageAssets {
+  realGeom: THREE.BufferGeometry;
+  realMat: THREE.Material;
+  realHeightM: number;
+  stickGeom: THREE.BufferGeometry;
+  stickMat: THREE.Material;
+}
+const stageCache = new Map<string, StageAssets>();
+
+/** The stage's drawn height as a fraction of the adult's — `growthHeightFactor`,
+ *  the ONE height curve (PART 1: *"It is exported; don't re-derive"*). 1 at the
+ *  mature rung, so an adult's matrices are byte-identical to before. */
+function stageHeightRatio(species: string, cls: number | undefined): number {
+  if (cls === undefined) return 1;
+  return growthHeightFactor(growthAgeOf(species, cls));
+}
+
+function stageAssets(
+  renderer: THREE.WebGLRenderer, species: string, cls: number | undefined,
+): StageAssets {
+  const adult = speciesAssets(renderer, species);
+  if (cls === undefined) return adult; // the mature rung IS the adult's assets
+  const key = `${species}|${cls}`;
+  let a = stageCache.get(key);
+  if (!a) {
+    const lods = buildPlantLods(agePlantBody(speciesBlueprint(species), growthAgeOf(species, cls)));
+    lods.lod0.geometry.dispose(); // same as the adult's: the field never draws LOD0
+    a = {
+      realGeom: lods.lod1.geometry,
+      realMat: adult.realMat,   // one material per species — the stage is GEOMETRY
+      realHeightM: Math.max(0.1, lods.bounds.max.y - lods.bounds.min.y),
+      stickGeom: lods.stick.geometry,
+      stickMat: adult.stickMat,
+    };
+    stageCache.set(key, a);
+  }
+  return a;
+}
+
 function speciesAssets(renderer: THREE.WebGLRenderer, species: string): SpeciesAssets {
   let a = assetsCache.get(species);
   if (!a) {
@@ -170,7 +229,19 @@ function dirOfUV(face: number, u: number, v: number, out: THREE.Vector3): THREE.
 // meshes from it, and the wilderness session derives its interactive FLORA
 // TWINS from it — the tree you see IS the entity you touch. Anything that
 // changes this function changes both in lockstep.
-interface Placement { x: number; z: number; y: number; yaw: number; v: number }
+interface Placement {
+  x: number; z: number; y: number; yaw: number; v: number;
+  /**
+   * ⚖️ THE GROWTH RUNG THIS TREE STANDS AT — `undefined` = MATURE, the
+   * wilderness's own scatter law read into the picture (products.ts
+   * `standGrowthClass`). Drawn from a HASH of the instance's own feature id,
+   * never from the tile rng: the scatter's draw sequence is untouched, so
+   * every placement is at the exact coordinate it has always been at, and the
+   * twin the wilderness materialises from this instance (`floraTwinFeatureId`
+   * — the same string, hashed the same way) stands at the same rung.
+   */
+  cls?: number;
+}
 interface TileScatter {
   /** Tile-centre body-local unit direction + ground height there. */
   dir: THREE.Vector3;
@@ -239,8 +310,20 @@ function tileScatterOf(body: CelestialBody, face: number, tx: number, ty: number
     // substrate carries no baked ecology, and the legacy tables answer.
     const eco = ecoAbundanceAt(geo.grid, cell);
     const placements = new Map<string, Placement[]>();
-    placements.set("oak", scatter(eco ? standCountFor("oak", eco, TILE_HA) : OAK_COUNT[biome]!));
-    placements.set("grass", scatter(eco ? standCountFor("grass", eco, TILE_HA) : GRASS_COUNT[biome]!));
+    // ⚖️ THE AGE STRUCTURE IS STAMPED AFTER THE SCATTER, on the OUTPUT index —
+    // which is the index the instance key (`face:tx:ty:i`) is built from, and
+    // it is NOT the draw index (a placement over water is dropped while its
+    // draws are still consumed). Getting that wrong would hand the twin a
+    // different rung than the field draws.
+    const aged = (species: string, pls: Placement[]): Placement[] => {
+      for (let i = 0; i < pls.length; i++) {
+        const cls = standGrowthClass(species, floraTwinFeatureId(species, `${face}:${tx}:${ty}:${i}`));
+        if (cls !== undefined) pls[i]!.cls = cls;
+      }
+      return pls;
+    };
+    placements.set("oak", aged("oak", scatter(eco ? standCountFor("oak", eco, TILE_HA) : OAK_COUNT[biome]!)));
+    placements.set("grass", aged("grass", scatter(eco ? standCountFor("grass", eco, TILE_HA) : GRASS_COUNT[biome]!)));
     result = { dir, h0, quat, placements };
   }
   scatterCache.set(cacheKey, result);
@@ -313,9 +396,29 @@ interface Tile {
   sticks: THREE.InstancedMesh[] | null;
   real: THREE.InstancedMesh[] | null;
   tier: FloraTier;
-  /** The TREE meshes (every rung) — the suppression rewrite targets; geomH is
-   *  each mesh's un-scaled geometry height. */
-  oak: { mesh: THREE.InstancedMesh; geomH: number }[];
+  /** The TREE meshes (every rung) — the suppression rewrite targets. */
+  oak: OakMesh[];
+}
+
+/**
+ * One instanced TREE mesh and how to write its matrices back.
+ *
+ * `idx` is the STAGE BUCKET: the global placement indices this mesh draws, in
+ * order, or `null` for "every placement in order" (the billboard rung, which
+ * is one card for the whole tile). It exists because the instance key —
+ * `face:tx:ty:<global index>` — is the address every other authority in the
+ * driver suppresses through, so a bucketed mesh must be able to say which
+ * global tree each of its instances is.
+ */
+interface OakMesh {
+  mesh: THREE.InstancedMesh;
+  geomH: number;
+  targetH: number;
+  idx: number[] | null;
+  /** TRUE on the billboard rung only: the adult card, scaled per instance by
+   *  the stage's own height factor (`stageHeightRatio`). The stick/real rungs
+   *  carry the STAGE'S geometry, which is already the right size. */
+  ageScaled: boolean;
 }
 
 export interface FloraField {
@@ -344,6 +447,16 @@ export interface FloraField {
    *  un-hide another's trees. A tile streaming in later reads the CURRENT
    *  set at build time, so it builds already-thinned. */
   setTwinHidden(hidden: ReadonlySet<string>): void;
+  /** ⚖️ STAGE OVERRIDES (instance key → growth class), the companion of the
+   *  mask above and declarative in exactly the same way: pass the full current
+   *  map, and an instance leaving it goes back to the rung the SCATTER gives
+   *  it. It is separate from the mask because it answers a different question
+   *  — the mask says whether a tree draws, this says WHAT it draws as — and a
+   *  tree can be staged and hidden at once (a felled twin's sapling standing
+   *  under the town's own stand). Today's one writer is the felled mark: the
+   *  tree you cut regrows through its rungs in the picture instead of hiding
+   *  for the whole growth span. */
+  setTwinStages(staged: ReadonlyMap<string, number>): void;
   /** 🐞 DEBUG-ONLY (`__flora.audit` in world-lab): every TREE instance the
    *  field currently holds within `r` of a world point, with the rung its TILE
    *  is drawing and whether the finer rungs are warmed. Pure read — it
@@ -375,6 +488,12 @@ export interface FloraTreeDebug {
   hidden: boolean;
   /** The per-placement scale jitter (0.85–1.35). */
   v: number;
+  /** The growth rung it is DRAWING at — `undefined` = mature. The scatter's
+   *  own (`standGrowthClass`) unless the driver has staged it (a felled tree
+   *  regrowing). */
+  cls?: number;
+  /** …and that rung's height as a fraction of the adult's (1 at mature). */
+  ageScale: number;
 }
 
 export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialBody): FloraField | null {
@@ -394,20 +513,37 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
    *  wilderness session stands the real entity there (setTwinHidden). */
   let twinHidden: ReadonlySet<string> = new Set();
 
-  /** Write a mesh's instance matrices; `hiddenAt` scales an instance to ~0. */
+  /** Per-instance STAGE OVERRIDE (`setTwinStages`) — instance key → the growth
+   *  class the driver says that tree stands at right now, which outranks the
+   *  scatter's own for as long as it is set. Today's one writer is the felled
+   *  mark: a tree that was cut regrows through its rungs in the picture. */
+  let twinStaged: ReadonlyMap<string, number> = new Map();
+
+  /** Write a mesh's instance matrices; `hiddenAt` scales an instance to ~0.
+   *  `idx` maps this mesh's instance j to a GLOBAL placement index (null =
+   *  identity); `extraAt` is the billboard rung's per-stage height factor. */
   const writeMatrices = (
     mesh: THREE.InstancedMesh,
     placements: Placement[],
     geomHeightM: number,
     targetH: number,
-    hiddenAt?: (i: number) => boolean,
+    opts?: {
+      idx?: number[] | null;
+      hiddenAt?: (gi: number) => boolean;
+      extraAt?: (gi: number) => number;
+    },
   ): void => {
-    for (let i = 0; i < placements.length; i++) {
-      const pl = placements[i]!;
-      const s = hiddenAt?.(i) ? 1e-6 : (targetH / geomHeightM) * pl.v;
+    const idx = opts?.idx ?? null;
+    const n = idx ? idx.length : placements.length;
+    for (let j = 0; j < n; j++) {
+      const gi = idx ? idx[j]! : j;
+      const pl = placements[gi]!;
+      const s = opts?.hiddenAt?.(gi)
+        ? 1e-6
+        : (targetH / geomHeightM) * pl.v * (opts?.extraAt?.(gi) ?? 1);
       _q.setFromAxisAngle(UP, pl.yaw);
       _m.compose(_p.set(pl.x, pl.y, pl.z), _q, _s.set(s, s, s));
-      mesh.setMatrixAt(i, _m);
+      mesh.setMatrixAt(j, _m);
     }
     mesh.instanceMatrix.needsUpdate = true;
   };
@@ -419,10 +555,16 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
     targetH: number,
     geometry: THREE.BufferGeometry,
     material: THREE.Material,
-    hiddenAt?: (i: number) => boolean,
+    opts?: {
+      idx?: number[] | null;
+      hiddenAt?: (gi: number) => boolean;
+      extraAt?: (gi: number) => number;
+    },
   ): THREE.InstancedMesh => {
-    const mesh = new THREE.InstancedMesh(geometry, material, placements.length);
-    writeMatrices(mesh, placements, geomHeightM, targetH, hiddenAt);
+    const mesh = new THREE.InstancedMesh(
+      geometry, material, opts?.idx ? opts.idx.length : placements.length,
+    );
+    writeMatrices(mesh, placements, geomHeightM, targetH, opts);
     // Instances spread across the tile — the geometry's own bounding sphere
     // would cull them wrongly.
     mesh.frustumCulled = false;
@@ -430,7 +572,33 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
   };
 
   /** The tile's tree-hiding mask — reads the CURRENT twin set at write time. */
-  const oakHiddenAt = (tileKey: string) => (i: number): boolean => twinHidden.has(`${tileKey}:${i}`);
+  const oakHiddenAt = (tileKey: string) => (gi: number): boolean => twinHidden.has(`${tileKey}:${gi}`);
+
+  /** ⚖️ THE RUNG ONE INSTANCE ACTUALLY DRAWS AT: the driver's override if it
+   *  has one, else the scatter's own (`Placement.cls`). ONE answer, asked by
+   *  the bucket partition and by the billboard's height factor alike. */
+  const clsAt = (tileKey: string, pls: Placement[], gi: number): number | undefined =>
+    twinStaged.get(`${tileKey}:${gi}`) ?? pls[gi]?.cls;
+
+  const oakAgeAt = (tileKey: string, pls: Placement[]) => (gi: number): number =>
+    stageHeightRatio(FLORA_TREE_SPECIES, clsAt(tileKey, pls, gi));
+
+  /** Partition a tile's tree placements into STAGE BUCKETS (mature first —
+   *  `undefined` sorts to the front so the common case is bucket 0 and a
+   *  ladder-less world produces exactly one bucket, as it always did). */
+  const stageBuckets = (tileKey: string, pls: Placement[]): Array<{ cls?: number; idx: number[] }> => {
+    const by = new Map<number, number[]>();
+    for (let gi = 0; gi < pls.length; gi++) {
+      const c = clsAt(tileKey, pls, gi);
+      const k = c ?? -1;
+      const list = by.get(k);
+      if (list) list.push(gi);
+      else by.set(k, [gi]);
+    }
+    return [...by.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([k, idx]) => (k < 0 ? { idx } : { cls: k, idx }));
+  };
 
   const buildTile = (face: number, tx: number, ty: number, key: string): void => {
     // The shared scatter authority — the exact placements a session twin
@@ -453,44 +621,68 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
       key, group, center: sc.dir.clone().multiplyScalar(R + sc.h0),
       placements: sc.placements, billboards: [], sticks: null, real: null, tier: "billboard", oak: [],
     };
-    for (const [species, pls] of sc.placements) {
+    buildBillboards(tile, sc.placements);
+    tiles.set(key, tile);
+  };
+
+  /** The FAR rung: one card per species over the whole tile. Trees at NATIVE
+   *  model size (targetH = the geometry's own height ⇒ scale is the
+   *  per-placement variation), times the STAGE's height factor; grass at its
+   *  display height — see the constants note. */
+  const buildBillboards = (tile: Tile, placements: Map<string, Placement[]>): void => {
+    for (const [species, pls] of placements) {
       if (!pls.length) continue;
       const a = speciesAssets(renderer, species);
       const isTree = species === FLORA_TREE_SPECIES;
-      // Trees at NATIVE model size (targetH = the geometry's own height ⇒
-      // scale is the per-placement variation alone); grass at its display
-      // height — see the constants note.
       const mesh = buildMesh(
         pls, a.impostor.heightM, isTree ? a.impostor.heightM : GRASS_H, a.billboardGeom, a.billboardMat,
-        isTree ? oakHiddenAt(key) : undefined,
+        isTree ? { hiddenAt: oakHiddenAt(tile.key), extraAt: oakAgeAt(tile.key, pls) } : undefined,
       );
       mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
-      group.add(mesh);
+      tile.group.add(mesh);
       tile.billboards.push(mesh);
-      if (isTree) tile.oak.push({ mesh, geomH: a.impostor.heightM });
+      if (isTree) {
+        tile.oak.push({
+          mesh, geomH: a.impostor.heightM, targetH: a.impostor.heightM, idx: null, ageScaled: true,
+        });
+      }
     }
-    tiles.set(key, tile);
   };
 
   /** Build one rung's instanced meshes for a tile. The stick and real rungs
    *  share the plant's own bounds, so both stand at the model's native height
-   *  and a rung swap never changes a tree's size. */
+   *  and a rung swap never changes a tree's size.
+   *
+   *  ⚖️ …AND THE TREE SPECIES BUILDS ONE MESH PER STAGE BUCKET. A rung is where
+   *  SHAPE starts to read, so a sapling here is the sapling's own geometry
+   *  (`stageAssets` → `agePlantBody`) rather than a shrunken adult — the user's
+   *  whole ask ("they should grow in the manner of real plants"). A stand with
+   *  no juveniles produces exactly one bucket and exactly one mesh, i.e. what
+   *  this function has always built. */
   const buildRung = (tile: Tile, tier: "stick" | "real"): THREE.InstancedMesh[] => {
     const out: THREE.InstancedMesh[] = [];
     for (const [species, pls] of tile.placements) {
       if (!pls.length) continue;
-      const a = speciesAssets(renderer, species);
       const isTree = species === FLORA_TREE_SPECIES;
-      const mesh = buildMesh(
-        pls, a.realHeightM, isTree ? a.realHeightM : GRASS_H,
-        tier === "stick" ? a.stickGeom : a.realGeom,
-        tier === "stick" ? a.stickMat : a.realMat,
-        isTree ? oakHiddenAt(tile.key) : undefined,
-      );
-      mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
-      tile.group.add(mesh);
-      out.push(mesh);
-      if (isTree) tile.oak.push({ mesh, geomH: a.realHeightM });
+      const buckets: Array<{ cls?: number; idx: number[] | null }> =
+        isTree ? stageBuckets(tile.key, pls) : [{ idx: null }];
+      for (const b of buckets) {
+        const a = stageAssets(renderer, species, b.cls);
+        const mesh = buildMesh(
+          pls, a.realHeightM, isTree ? a.realHeightM : GRASS_H,
+          tier === "stick" ? a.stickGeom : a.realGeom,
+          tier === "stick" ? a.stickMat : a.realMat,
+          isTree ? { idx: b.idx, hiddenAt: oakHiddenAt(tile.key) } : undefined,
+        );
+        mesh.name = `flora-${species}`; // gaze-pick filter (trees cast, grass doesn't)
+        tile.group.add(mesh);
+        out.push(mesh);
+        if (isTree) {
+          tile.oak.push({
+            mesh, geomH: a.realHeightM, targetH: a.realHeightM, idx: b.idx ?? null, ageScaled: false,
+          });
+        }
+      }
     }
     return out;
   };
@@ -503,6 +695,54 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
     for (const m of tile.billboards) m.visible = tier === "billboard";
     if (tile.sticks) for (const m of tile.sticks) m.visible = tier === "stick";
     if (tile.real) for (const m of tile.real) m.visible = tier === "real";
+  };
+
+  /** Repaint one tile's tree matrices in place (mask + stage height factor) —
+   *  no allocation, no rebuild. */
+  const rewriteTreeMatrices = (tKey: string): void => {
+    const tile = tiles.get(tKey);
+    if (!tile || !tile.oak.length) return;
+    const pls = tile.placements.get(FLORA_TREE_SPECIES) ?? [];
+    for (const o of tile.oak) {
+      writeMatrices(o.mesh, pls, o.geomH, o.targetH, {
+        idx: o.idx,
+        hiddenAt: oakHiddenAt(tKey),
+        ...(o.ageScaled ? { extraAt: oakAgeAt(tKey, pls) } : {}),
+      });
+    }
+  };
+
+  /** Re-partition and rebuild ONE warmed rung's tree meshes after a stage
+   *  override moved an instance between buckets. The billboard rung and the
+   *  other geometry rung are left exactly as they are. */
+  const rebuildRungTrees = (tile: Tile, tier: "stick" | "real"): THREE.InstancedMesh[] => {
+    const old = tier === "stick" ? tile.sticks : tile.real;
+    const keep: THREE.InstancedMesh[] = [];
+    const drop = new Set<THREE.InstancedMesh>();
+    for (const m of old ?? []) {
+      if (m.name === `flora-${FLORA_TREE_SPECIES}`) { drop.add(m); tile.group.remove(m); m.dispose(); }
+      else keep.push(m);
+    }
+    tile.oak = tile.oak.filter((o) => !drop.has(o.mesh));
+    const pls = tile.placements.get(FLORA_TREE_SPECIES) ?? [];
+    const out = [...keep];
+    if (pls.length) {
+      for (const b of stageBuckets(tile.key, pls)) {
+        const a = stageAssets(renderer, FLORA_TREE_SPECIES, b.cls);
+        const mesh = buildMesh(
+          pls, a.realHeightM, a.realHeightM,
+          tier === "stick" ? a.stickGeom : a.realGeom,
+          tier === "stick" ? a.stickMat : a.realMat,
+          { idx: b.idx, hiddenAt: oakHiddenAt(tile.key) },
+        );
+        mesh.name = `flora-${FLORA_TREE_SPECIES}`;
+        mesh.visible = tile.tier === tier;
+        tile.group.add(mesh);
+        out.push(mesh);
+        tile.oak.push({ mesh, geomH: a.realHeightM, targetH: a.realHeightM, idx: b.idx, ageScaled: false });
+      }
+    }
+    return out;
   };
 
   const disposeTile = (tile: Tile, key: string): void => {
@@ -597,12 +837,28 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
       for (const k of twinHidden) if (!hidden.has(k)) changedTiles.add(tileOf(k));
       for (const k of hidden) if (!twinHidden.has(k)) changedTiles.add(tileOf(k));
       twinHidden = hidden;
+      for (const tKey of changedTiles) rewriteTreeMatrices(tKey);
+    },
+    setTwinStages(staged) {
+      // Same declarative shape as `setTwinHidden`, and the same diff: an
+      // instance whose rung moved (a felled tree climbing back through its
+      // classes) repaints, everything else is untouched.
+      const changedTiles = new Set<string>();
+      const tileOf = (instKey: string): string => instKey.slice(0, instKey.lastIndexOf(":"));
+      for (const [k, v] of twinStaged) if (staged.get(k) !== v) changedTiles.add(tileOf(k));
+      for (const [k, v] of staged) if (twinStaged.get(k) !== v) changedTiles.add(tileOf(k));
+      twinStaged = staged;
       for (const tKey of changedTiles) {
         const tile = tiles.get(tKey);
         if (!tile || !tile.oak.length) continue;
-        const pls = tile.placements.get(FLORA_TREE_SPECIES) ?? [];
-        // targetH = geomH: trees render at native model size (scale = v).
-        for (const o of tile.oak) writeMatrices(o.mesh, pls, o.geomH, o.geomH, oakHiddenAt(tKey));
+        // The BILLBOARD rung is one card whose per-instance height factor
+        // moved — a matrix rewrite. The geometry rungs carry the stage IN the
+        // mesh, so their buckets have to be re-partitioned and rebuilt; that
+        // happens at most once per tree per growth-class period, and only for
+        // the handful of tiles inside `STICK_R` that have warmed a rung.
+        rewriteTreeMatrices(tKey);
+        if (tile.sticks) tile.sticks = rebuildRungTrees(tile, "stick");
+        if (tile.real) tile.real = rebuildRungTrees(tile, "real");
       }
     },
     debugTrees(nearWorld, r) {
@@ -617,10 +873,13 @@ export function createFloraField(renderer: THREE.WebGLRenderer, body: CelestialB
           w.set(pl.x, pl.y, pl.z).applyMatrix4(tile.group.matrixWorld);
           if (w.distanceTo(nearWorld) > r) continue;
           const key = `${tKey}:${i}`;
+          const cls = clsAt(tKey, pls, i);
           out.push({
             key, tile: tKey, world: w.clone(), tier: tile.tier,
             stickWarm: tile.sticks !== null, realWarm: tile.real !== null,
             hidden: twinHidden.has(key), v: pl.v,
+            ...(cls === undefined ? {} : { cls }),
+            ageScale: stageHeightRatio(FLORA_TREE_SPECIES, cls),
           });
         }
       }

@@ -38,6 +38,17 @@ const messageSchema = z.object({
     .optional(),
   replyType: z.enum(["text", "html", "md"]).optional(),
   timezone: z.string().optional(),
+  /**
+   * Guided Setup: `{ start: true }` opens the chat-driven onboarding flow for a
+   * NEW student; `{ resumeStudentId }` resumes an existing one (the rail's
+   * "Continue setup"). Zod STRIPS unknown keys, so a field missing from here
+   * never reaches the session — which is why the resume id is listed.
+   */
+  guidedSetup: z
+    .object({ start: z.boolean().optional(), resumeStudentId: z.string().optional() })
+    .optional(),
+  /** UI locale the user is working in; used by the Guided Setup prompt block. */
+  language: z.string().optional(),
 });
 
 /*
@@ -80,7 +91,7 @@ export class ChatController {
         body.featureContext = JSON.parse(body.featureContext);
       }
 
-      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType, timezone } = messageSchema.parse(body);
+      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType, timezone, guidedSetup, language } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
       }
@@ -133,6 +144,8 @@ export class ChatController {
         replyType: replyType || "html",
         currentImage,
         timezone,
+        guidedSetup,
+        language,
       })
       res.json(response);
     } catch (error: any) {

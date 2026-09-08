@@ -28,6 +28,24 @@ export class UnauthorizedError extends Error {
   }
 }
 
+/**
+ * The informed-consent gate refused the operation: the student has no active
+ * consent record and no live legacy grace window. Server answers 412 with
+ * `{ code: "consent_required", studentId }` from every gated entry point
+ * (report finalize, program activate, cross-institute share, deep analysis).
+ * Typed so panels can show the "Sign consent" CTA instead of a raw status line.
+ */
+export class ConsentRequiredError extends Error {
+  status = 412;
+  code = "consent_required" as const;
+  studentId?: string;
+  constructor(studentId?: string) {
+    super("CONSENT_REQUIRED");
+    this.name = "ConsentRequiredError";
+    this.studentId = studentId;
+  }
+}
+
 // Global handler invoked when a request unexpectedly returns 401 — i.e. the
 // session expired server-side. Registered by the AuthProvider so it can clear
 // the cached auth state and bounce the user to the login page instead of
@@ -52,6 +70,19 @@ async function throwIfResNotOk(res: Response) {
     if (res.status === 401) {
       notifyUnauthorized();
       throw new UnauthorizedError(`${res.status}: ${text}`);
+    }
+    if (res.status === 412) {
+      // Only the consent gate answers 412; confirm via the body's code so a
+      // future precondition failure isn't mislabelled as a consent problem.
+      try {
+        const body = JSON.parse(text);
+        if (body?.code === "consent_required") {
+          throw new ConsentRequiredError(body.studentId);
+        }
+      } catch (e) {
+        if (e instanceof ConsentRequiredError) throw e;
+        // Non-JSON 412 — fall through to the generic error below.
+      }
     }
     throw new Error(`${res.status}: ${text}`);
   }

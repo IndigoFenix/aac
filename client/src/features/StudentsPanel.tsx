@@ -14,6 +14,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { openUI } from '@/lib/uiEvents';
+import { useGuidedSetup } from '@/features/guided-setup/useGuidedSetup';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -82,6 +83,15 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const isAiRefreshing = aiRefreshing.has('students');
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
   const { sharedState, setSharedState } = useSharedState();
+  const {
+    start: startGuidedSetup,
+    isLaunching: guidedLaunching,
+    isChatBusy: guidedChatBusy,
+  } = useGuidedSetup();
+  // "New student" opens a chat and waits 10–20 s for the first reply. Spin
+  // while THIS button's turn is in flight; refuse the click while any chat turn
+  // is, so a second press cannot open a second flow on top of the first.
+  const newStudentBusy = guidedLaunching || guidedChatBusy;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -147,9 +157,12 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
     setActiveFeature('progress');
   }
 
-  // Handle create new student - opens the create student modal
+  // Handle create new student — starts the chat-driven Guided Setup flow. The
+  // real form is still one click away: the rail offers "use a form instead",
+  // which fires openUI('createStudent').
   const handleCreateStudent = () => {
-    openUI('createStudent');
+    if (newStudentBusy) return;
+    void startGuidedSetup();
   };
 
   // Handle edit student - opens the edit student modal with student data
@@ -202,12 +215,17 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
               {t('students.subtitle') || 'Manage student profiles and progress'}
             </p>
           </div>
-          <Button 
+          <Button
             className="gap-2 bg-primary text-primary-foreground shadow-md"
             onClick={handleCreateStudent}
+            disabled={newStudentBusy}
           >
-            <Plus className="w-4 h-4" />
-            {t('students.newStudent') || 'New Student'}
+            {guidedLaunching ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+            {t('students.newStudent')}
           </Button>
         </div>
 
@@ -423,12 +441,17 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                   : (t('students.noStudents') || 'No students yet')}
               </p>
               {!searchQuery && (
-                <Button 
+                <Button
                   className="mt-4"
                   onClick={handleCreateStudent}
+                  disabled={newStudentBusy}
                 >
-                  <Plus className="w-4 h-4 me-2" />
-                  {t('students.addFirst') || 'Add Your First Student'}
+                  {guidedLaunching ? (
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 me-2" />
+                  )}
+                  {t('students.addFirst')}
                 </Button>
               )}
             </div>

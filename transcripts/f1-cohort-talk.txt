@@ -1,0 +1,198 @@
+# world-text v1   proto=1
+# world=f1-cohort-world.spec  seed=11  locale=en  grid=8  dt=0.5000  settle=0.75s/8.0s
+# engine=196d0da5+dirty
+# started=2026-09-07T04:01:37.903Z
+# ─────────────────────────────────────────
+> wait 5
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 5 block for the table (feedback)
+TOAST  🪚 milling 3 block for the door (feedback)
+TOAST  🪚 milling 2 block for the bin (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the box (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 1 block for the chair (feedback)
+TOAST  🪚 milling 4 block for the workbench (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TOAST  🪚 milling 1 block for the door (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 5 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 5 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 4 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TICK   waited 5.0s.
+> scene
+SCENE  house-1 — 10 thing(s) in view, 97 place(s) around you.
+  basket-1 (basket), here east.
+  table-1 (table), there north.
+  bowl-1 (bowl), there north.
+  oven-1 (oven), there north.
+  refrigerator-1 (refrigerator), there south.
+  bin-1 (bin), there south.
+  a chair, here north.
+  a chair, there north.
+  a barrel, there north.
+  a chest, there south.
+  house-1 (house), here east, pink, you can see inside.
+  house-2 (house), here west, pink, shut to you.
+  house-3 (house), here west, pink, shut to you.
+  house-75 (house), close south, yellow, door open, shut to you.
+  40 houses, there south, all shut.
+  53 houses, close south, all shut.
+NOTE   about 4237 more people live in this city (1 district).
+TICK   quiet after 1.0s.
+> say hello
+OK     said: hello
+TICK   quiet after 1.0s.
+> wait 5
+ENTER  mara came into view here north.
+ENTER  orrin came into view here north.
+SAY    mara: "I'm happy."  [i_me + happy]
+TICK   waited 5.0s.
+> say thank_you
+OK     said: thank_you
+SAY    mara: "bye-bye"  [goodbye]
+TICK   quiet after 2.0s.
+> wait 10
+TOAST  🪚 milling 1 block for the bin (feedback)
+TOAST  🪚 milling 3 block for the bed (feedback)
+TOAST  🪚 milling 3 block for the workbench (feedback)
+TOAST  🪚 milling 4 block for the table (feedback)
+TOAST  🪚 milling 2 block for the door (feedback)
+TOAST  🪚 milling 3 block for the cupboard (feedback)
+TOAST  🪚 milling 2 block for the box (feedback)
+TOAST  🪚 milling 3 block for the bed (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 milling 2 block for the bed (feedback)
+TOAST  🪚 milling 2 block for the workbench (feedback)
+TOAST  🪚 milling 3 block for the table (feedback)
+TOAST  🪚 milling 1 block for the door (feedback)
+TOAST  🪚 milling 1 block for the box (feedback)
+TOAST  🪚 milling 2 block for the bed (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 2 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TOAST  🪚 materials in — milling 1 block (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "bye-bye"  [goodbye]
+TICK   waited 10.0s.
+> wait 10
+TOAST  🪚 milling 1 block for the bed (feedback)
+TOAST  🪚 milling 1 block for the workbench (feedback)
+TOAST  🪚 milling 2 block for the table (feedback)
+TOAST  🪚 milling 1 block for the bed (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 3 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 materials in — milling 2 block (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TOAST  🪚 1 block milled and stored (feedback)
+TICK   waited 10.0s.
+> wait 10
+SAY    mara: "Are you okay?"  [you + ok#question]
+TOAST  🪚 milling 1 block for the table (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 4 block milled and stored (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TOAST  🪚 materials in — milling 3 block (feedback)
+TICK   waited 10.0s.
+> self
+SELF   you are in house-1.
+  holding nothing.
+  looking at nothing.
+  talking with mara, orrin.
+  you are a bodiless spirit here.
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   quiet after 2.0s.
+# ─────────────────────────────────────────
+# commands=11  presses=0  screens=1  sim=66.5s
+# events: TOAST 133  TICK 11  SAY 5  NOTE 2  OK 2  ENTER 2  BOARD 1  SCENE 1  SELF 1
