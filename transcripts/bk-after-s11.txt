@@ -1,0 +1,28 @@
+# world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=10
+# t=0 ring-1 food units=2427  baskets=2  wood=133
+day  1  rations/day=  2.80  takes=   7  baskets=3  wood=131  ring1=2427  sleeps=2
+day  2  rations/day=  6.00  takes=  25  baskets=3  wood=131  ring1=2405  sleeps=8
+day  3  rations/day=  0.00  takes=  25  baskets=4  wood=128  ring1=2405  sleeps=15
+day  4  rations/day=  5.20  takes=  32  baskets=5  wood=126  ring1=2379  sleeps=21
+day  5  rations/day=  6.00  takes=  37  baskets=5  wood=126  ring1=2349  sleeps=25
+day  6  rations/day=  6.00  takes=  42  baskets=5  wood=126  ring1=2319  sleeps=33
+day  7  rations/day=  1.60  takes=  43  baskets=5  wood=126  ring1=2311  sleeps=41
+day  8  rations/day=  7.60  takes=  49  baskets=5  wood=126  ring1=2273  sleeps=47
+day  9  rations/day=  7.00  takes=  55  baskets=5  wood=126  ring1=2238  sleeps=51
+day 10  rations/day=  6.20  takes=  60  baskets=5  wood=126  ring1=2207  sleeps=58
+
+# takes=60  parked=25  re-selected=25  sleeps=58
+# rations delivered=48.40 over 10 days = 4.84/day
+# units per take: 1u×26 2u×1 3u×1 4u×3 5u×3 6u×11 7u×3 8u×11 9u×1
+# baskets by day: 3,3,4,5,5,5,5,5,5,5
+# wood by day: 131,131,128,126,126,126,126,126,126,126
+# basket bills posted=3  first at t=166.0
+# starvation body-days: >=1.5=12.8  >=1=16.7  (bodies=5)
+# ring-1 food units at end=2207
+# delivered lines=2
+#   733.0 📦 bring 2 wood — delivered
+#   1027.0 📦 bring 2 wood — delivered
+# craft toasts=3
+#   166.0 🔨 nobody has a basket free — making one
+#   548.0 🔨 nobody has a basket free — making one
+#   896.5 🔨 nobody has a basket free — making one

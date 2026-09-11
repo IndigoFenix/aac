@@ -55,6 +55,7 @@ import {
   import { INSTITUTE_PACKAGES_FIELD } from "./institute-packages-schema";
   import { resolveInstituteRefs, resolveInstituteRefOrThrow, instituteRefError } from "./institute-ref";
   import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
+  import { requireConsentForMemoryWrite } from "../consent/consentGate";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
   import { PROGRAM_FRAMEWORKS } from "@shared/program-framework";
@@ -2011,9 +2012,14 @@ import {
     // Both ops below are AI writes to a student's AAC settings, so both leave an
     // audit row. Before this they wrote silently: a settings change made by the
     // assistant left no trace in the activity log at all.
+    // Both ops also carry the CONSENT gate. This is the second door into
+    // `aac_settings` from the AI (the first is aac-settings-memory-schema's
+    // `writeAACSettings`), and a gate on one of two doors is not a gate —
+    // see docs/student-consent-implementation.md §7.2.
     write: async (ctx, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
+      await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
       const safe = pickDeclaredAacFields(value);
       const before = await aacSettingsRepository.getByStudentId(studentId);
       const updated = await aacSettingsRepository.upsert(studentId, safe);
@@ -2024,6 +2030,7 @@ import {
     update: async (ctx, _key, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
+      await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
       const safe = pickDeclaredAacFields(value);
       const before = await aacSettingsRepository.getByStudentId(studentId);
       const updated = await aacSettingsRepository.upsert(studentId, safe);
@@ -2395,8 +2402,10 @@ import {
       const serviceId = value.serviceId ?? undefined;
 
       if (instituteId) {
-        const link = await instituteRepository.getInstituteUserLink(instituteId, userId);
-        if (!link?.isAdmin) {
+        // The one institute predicate. This was a raw `getInstituteUserLink`
+        // + `link?.isAdmin` test — the AI-path sibling of audit finding C9,
+        // admitting a DEACTIVATED admin (removal is a soft delete).
+        if (!(await instituteRepository.isUserAdminOfInstitute(instituteId, userId))) {
           throw new Error("Only institute admins can create institute events");
         }
       }

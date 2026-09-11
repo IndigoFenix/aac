@@ -9,21 +9,27 @@
 // never leaves the server.
 
 import type { Request, Response } from "express";
-import { studentService } from "../services";
+import {
+  requireStudentAccess as requireStudentAccessPolicy,
+  type StudentAccessDenialShape,
+} from "../services/access";
 import { caretakerPinService, CaretakerPinError } from "../services/caretakerPinService";
 
+/**
+ * The bodies THIS surface answers with. The RULE (the broad student policy) is
+ * shared with the board / incident / voice controllers via
+ * `server/services/access/`; only the bytes are local. Until 2026-09-10 this
+ * file carried its own copy of the rule, byte-equivalent to
+ * `incidentController`'s and differing only in these two objects — which is
+ * exactly the duplication the authorization audit counted.
+ */
+const CARETAKER_PIN_DENIAL: StudentAccessDenialShape = {
+  unauthenticated: { success: false, error: "error:AUTH_REQUIRED" },
+  forbidden: { success: false, error: "error:STUDENT_ACCESS_DENIED" },
+};
+
 async function requireStudentAccess(req: Request, res: Response): Promise<string | undefined> {
-  const userId = req.user?.id;
-  if (!userId) {
-    res.status(401).json({ success: false, error: "error:AUTH_REQUIRED" });
-    return undefined;
-  }
-  const { hasAccess } = await studentService.verifyStudentAccess(req.params.id, userId);
-  if (!hasAccess) {
-    res.status(403).json({ success: false, error: "error:STUDENT_ACCESS_DENIED" });
-    return undefined;
-  }
-  return userId;
+  return requireStudentAccessPolicy(req, res, req.params.id, { shape: CARETAKER_PIN_DENIAL });
 }
 
 export class CaretakerPinController {

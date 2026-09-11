@@ -12,6 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import { openUI, useUIEvent } from "@/lib/uiEvents";
 import { StudentModal } from '@/components/StudentModal';
 import { ConsentWizard } from '@/features/consent/ConsentWizard';
+import { useInstitute } from '@/hooks/useInstitute';
+import { invalidateConsentForStudent } from '@/hooks/useConsentApi';
+import { invalidateGuidedSetup } from '@/features/guided-setup/guided-setup-query';
 import {
   Save,
   X,
@@ -59,6 +62,10 @@ export function GlobalAuthModals() {
     refetchStudent,
   } = useStudent();
 
+  // The guided-setup view is keyed on (institute, student), so opening the
+  // consent gate has to invalidate it under the institute currently in scope.
+  const { currentInstitute } = useInstitute();
+
   // Fetch user's invite codes
   const {
     data: inviteCodesData,
@@ -103,6 +110,9 @@ export function GlobalAuthModals() {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   // Consent wizard opened from outside a student form (Guided Setup rail).
   const [consentStudentId, setConsentStudentId] = useState<string | null>(null);
+  // Set only for the in-person clinician-attest path (rail → "Sign here with
+  // the guardian"). Null means the ordinary parent flow.
+  const [consentAttestContactId, setConsentAttestContactId] = useState<string | null>(null);
   
   const [profileForm, setProfileForm] = useState({
     firstName: "",
@@ -164,9 +174,12 @@ export function GlobalAuthModals() {
   // Listen for consentWizard event — the Guided Setup rail's "Sign consent"
   // button. Same wizard StudentModal chains into after a family create; it
   // fetches its own context from the studentId.
-  useUIEvent("consentWizard", (data?: { studentId?: string }) => {
+  useUIEvent("consentWizard", (data?: { studentId?: string; attestContactId?: string }) => {
     if (!data?.studentId) return;
     setConsentStudentId(data.studentId);
+    // Always assigned, never merged: reopening the wizard for the parent flow
+    // after an attest must not inherit the previous contact id.
+    setConsentAttestContactId(data.attestContactId ?? null);
   });
 
   // handlers (migrated from home.tsx)
@@ -1075,12 +1088,26 @@ export function GlobalAuthModals() {
       {consentStudentId && (
         <ConsentWizard
           studentId={consentStudentId}
+          attestContactId={consentAttestContactId ?? undefined}
           onClose={() => {
             const signedFor = consentStudentId;
             setConsentStudentId(null);
-            queryClient.invalidateQueries({ queryKey: ["consent-active", signedFor] });
-            queryClient.invalidateQueries({ queryKey: ["consent-wizard-context", signedFor] });
+            setConsentAttestContactId(null);
+            // Signing (or attesting) is the moment the consent GATE opens, so
+            // everything keyed off it has to be re-read — not just the three
+            // queries this used to name.
+            //
+            // `invalidateConsentForStudent` is the one place that knows the
+            // full consent set (it also covers `consent-authority` and
+            // `consent-pending-invitations`, which this list was missing).
+            invalidateConsentForStudent(queryClient, signedFor);
             queryClient.invalidateQueries({ queryKey: ["consent-history", signedFor] });
+            // ...and the GUIDED SETUP view, which was missing entirely. Its
+            // `gate` is derived server-side from the consent record, so without
+            // this the rail kept showing "Send consent request" after the
+            // guardian had already signed in front of the clinician — the
+            // consent completed, and nothing on screen moved.
+            invalidateGuidedSetup(queryClient, currentInstitute?.id, signedFor);
           }}
         />
       )}

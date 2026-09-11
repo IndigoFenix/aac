@@ -903,6 +903,7 @@ export const de: Translations = {
       when: "Wann",
       why: "Warum",
       how: "Wie",
+      question: "Frage",
       someone: "Jemand",
       near: "Nah",
       far: "Weit",

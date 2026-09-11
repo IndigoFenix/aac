@@ -1,0 +1,3 @@
+# arc-run script: found, then ordered to build a house at t=12s.
+wait 12
+say build house

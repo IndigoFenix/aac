@@ -4,8 +4,12 @@
  * This file is run before each test file to set up the test environment.
  */
 
-import { jest, beforeAll, afterAll } from '@jest/globals';
+import { jest, beforeAll, beforeEach, afterAll } from '@jest/globals';
 import dotenv from 'dotenv';
+import { emailService } from '../services/emailService.js';
+import { fakeSesClient, resetSentEmails } from './helpers/email-mock.js';
+import { smsService } from '../services/smsService.js';
+import { fakeSmsProvider, resetSentSms } from './helpers/sms-mock.js';
 
 // Load .env so TEST_DATABASE_URL is visible inside test workers
 // (jest workers don't auto-load it).
@@ -47,6 +51,33 @@ if (!process.env.ALLOW_REAL_LLM_CREDENTIALS) {
     delete process.env[key];
   }
 }
+
+// ── No outbound email from a test worker ─────────────────────────────────────
+// A serial run of the consent suites made 30 REAL SES API calls — all
+// rejected, but only because the fixture addresses (`makeUser()`'s
+// `@test.local`) carry an invalid TLD, against production-region SES
+// credentials this test environment holds (`EMAIL_FROM`/AWS creds loaded by
+// `dotenv.config()` above). Per-suite injection was tried and still leaked
+// (`consentWithdrawalService`'s `setWithdrawalDispatcher` covers only its own
+// dispatch path — `sendConsentReceipt` reaches `emailService` directly and
+// sailed right past it). Every send in this process goes through
+// `emailService.sendEmail()`, so that is the one seam that covers all of
+// them: swap its SES client for a recorder before any test file's own
+// imports run. Never an `if (NODE_ENV === 'test')` inside the shared
+// service — inject the transport instead (feedback_test_env_has_live_ses).
+emailService.setSesClientForTesting(fakeSesClient);
+
+// ── No outbound SMS from a test worker ───────────────────────────────────────
+// `.env` sets SMS_PROVIDER=sns (matching the real deployed stack), so
+// `smsService`'s singleton is a live AWS SNS provider from the moment it is
+// imported — found while chasing the SES leak above: consent-invitation.test
+// .ts's SMS-channel cases create an invitation with a real-shaped phone
+// number, which reaches `smsService.send()` unmocked. A few suites already
+// protect themselves per-file (`phone-otp.test.ts`, `guided-setup-*.test.ts`);
+// this covers every other one. `smsService` already exposes
+// `_setProviderForTesting` for exactly this — no class change needed, just
+// wiring it in here, globally, same as the email seam above.
+smsService._setProviderForTesting(fakeSmsProvider);
 
 // ── No outbound geocoding from a test worker ─────────────────────────────────
 // Same reasoning one step down the severity ladder: the area lookup fires on any
@@ -113,6 +144,12 @@ beforeAll(() => {
     // Keep error logs visible
     // console.error = jest.fn();
   }
+});
+
+beforeEach(() => {
+  // Scope the recorded-email/SMS lists to one test case, not the whole file.
+  resetSentEmails();
+  resetSentSms();
 });
 
 afterAll(() => {

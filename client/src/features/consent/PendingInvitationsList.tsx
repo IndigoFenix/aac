@@ -8,10 +8,10 @@ import { formatDistanceToNow } from "date-fns";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  usePendingInvitations,
   useRevokeConsentInvitation,
   type PendingInvitation,
 } from "@/hooks/useConsentApi";
+import { useConsentDetail } from "@/features/consent/ConsentProvider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Mail, MessageSquare, Copy, Send, X } from "lucide-react";
@@ -23,11 +23,15 @@ interface PendingInvitationsListProps {
 export function PendingInvitationsList({ studentId }: PendingInvitationsListProps) {
   const { t } = useLanguage();
   const { toast } = useToast();
-  const query = usePendingInvitations(studentId);
+  // Reads the shared observer rather than opening its own — see
+  // features/consent/ConsentProvider.tsx.
+  const { invitations: slice } = useConsentDetail();
   const revoke = useRevokeConsentInvitation();
 
-  if (query.isLoading) return null;
-  const invitations = query.data?.invitations ?? [];
+  // An errored read is NOT an empty list: the student-info panel says so, and
+  // this list stays out of the way rather than implying nothing was sent.
+  if (!slice.isSettled || slice.isError) return null;
+  const invitations = slice.data ?? [];
   if (invitations.length === 0) return null;
 
   async function handleRevoke(id: string) {

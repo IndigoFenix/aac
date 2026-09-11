@@ -1,0 +1,36 @@
+# world=scripts/worlds/frontier.spec.json seed=11 dt=0.5 days=6
+# t=0 ring-1 food units=0  baskets=30  wood=588
+day  1  rations/day=123.60  takes=   1  baskets=30  wood=588  ring1=0  sleeps=0
+day  2  rations/day= 34.40  takes=   2  baskets=30  wood=588  ring1=0  sleeps=11
+day  3  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=32
+day  4  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=37
+day  5  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=51
+day  6  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=55
+
+# takes=2  parked=0  re-selected=0  sleeps=55
+# rations delivered=158.00 over 6 days = 26.33/day
+# units per take: 172u×1 618u×1
+# baskets by day: 30,30,30,30,30,30
+# wood by day: 588,588,588,588,588,588
+# basket bills posted=0  first at t=-
+# starvation body-days: >=1.5=0.0  >=1=0.0  (bodies=5)
+# ring-1 food units at end=0
+# delivered lines=17
+#   188.0 📦 bring 8 block — delivered
+#   207.0 📦 bring 8 block — delivered
+#   208.5 📦 bring 8 block — delivered
+#   209.5 📦 bring 8 block — delivered
+#   219.5 📦 bring 8 block — delivered
+#   308.0 📦 bring 8 block — delivered 6 of 8
+#   329.5 📦 bring 8 block — delivered
+#   330.0 📦 bring 8 block — delivered
+#   403.5 📦 bring 8 block — delivered
+#   424.0 📦 bring 8 block — delivered
+# craft toasts=0
+# construction toasts=4
+#   10.0 🪧 build + house — anyone nearby may take it
+#   793.5 🧱 materials staged — builders raise the house
+#   966.5 🏛️ the house is finished
+#   1200.0 🏠 a family moves into the new house
+# buildings=[]
+# baskets end=30  carts end=0  wood end=588

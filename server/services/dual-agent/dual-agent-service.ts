@@ -1861,7 +1861,12 @@ export class DualAgentService {
    */
   terminateSessionsForStudent(
     studentId: string,
-    actingUserId: string,
+    /**
+     * Null when the actor has no user account — a guardian withdrawing consent
+     * over a withdrawal token. `activityLogService.log` already takes
+     * `userId?: string | null`, so the row is written either way.
+     */
+    actingUserId: string | null,
     cascadeReason: string,
   ): number {
     let terminated = 0;

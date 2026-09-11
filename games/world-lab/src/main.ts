@@ -79,6 +79,15 @@ import {
 } from "./world-saves";
 import { bankOwnedHerd } from "@shared/world-engine/interaction/quest/herd";
 import { charterBoxAt, charterReachCells, type PlanetCity } from "@shared/world-engine/planet/cities";
+// ⚖️ THE PLANET BOOT LIVES IN THE ENGINE (planet-boot round S3). The forest
+// cell, the kit, the charter, the samplers and the partner arithmetic below
+// are CALLS now, not copies — `shared/world-engine/interaction/town/
+// planet-scope.ts`, the same definition headless mode boots. The user's law:
+// "world-lab renders; text mode narrates; nothing else may differ."
+import {
+  planetScopeOn, partnerRows, partnerGeographyOf, sphereGeometry,
+} from "@shared/world-engine/interaction/town/planet-scope";
+import { parseSolarWorld } from "@shared/world-engine/space/space-game";
 import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
 import { mountBoardIsland } from "./board-island";
 import { createCityTownLoader, type CityTownLoader, type CityTownEntry } from "./city-towns";
@@ -734,6 +743,15 @@ function foundedPlanetCity(
     density: 0, // no wild crowd founded this — the player did
     charter: charter ?? { farmland: 60, ore_access: 0, timberland: 0 },
     startPop: 0, // zero-building growth: settlers raise everything (①b)
+    // ⚖️ NO NODE TAXON, SAID OUT LOUD (planet-boot S3, tsc #7). `PlanetCity`
+    // requires `node` because the founding SCAN classifies every city it
+    // founds (`classifyNode` over the site's terrain); the player's homestead
+    // was founded by a person, not a scan, so no verdict was ever reached. The
+    // row used to simply omit the field and the type error stood as a
+    // permanent red. An empty reading is the honest answer, and it is what
+    // every consumer already handles: `partnerGeographyOf` reads
+    // `node?.type ?? null`, so this row's partner geography is unchanged.
+    node: { type: null, types: [], freshWater: false, sentence: "" },
   };
 }
 
@@ -802,45 +820,41 @@ function stepFoundingPremise(): void {
   premiseSeedPending = null;
   let rec = foundedPlanetSites.get(PREMISE_KEY);
   if (!rec) {
-    // FOREST-FIRST: the ① ruling's whole point — the homestead stands where
-    // the timber is. Founding cells are pre-scored (findFoundingSites);
-    // biome 1 = tree (ecology.ts: species index + 1); dry land only.
-    const biome = built.grid.fields.biome;
-    const dry = (built.sites ?? []).filter((s) => {
-      const d = built.topo.pos3?.(s.cell);
-      return !!d && built.surface.heightAt(d) >= 0;
-    });
-    const site0 = dry.find((s) => biome?.[s.cell] === 1) ?? dry[0];
-    if (!site0 || !built.topo.pos3) return;
-    const dirArr = built.topo.pos3(site0.cell);
-    const dir: [number, number, number] = [dirArr[0]!, dirArr[1]!, dirArr[2]!];
-    const surfaceR = body.radius + Math.max(0, built.surface.heightAt(dirArr));
-    const site = foundSite({ seed: want.seed, at: { x: 0, y: 0 }, key: PREMISE_KEY });
-    // Spec stock straight onto the site ledger — founders carry what the
-    // spec says and nothing else (the #43 rider law); the baskets ride the
-    // same declared list (depositSiteStock's material filter would drop
-    // them, which is why this writes the ledger directly).
-    for (const [g, n] of Object.entries(want.stock)) {
-      if (n > 0) site.stock[g] = (site.stock[g] ?? 0) + n;
-    }
+    // ⚖️ THE WHOLE FOUNDING IS ONE ENGINE CALL (planet-boot S3). Forest cell,
+    // kit, charter, climate/biome/ecology, partners and the town config were
+    // all written out here; they are `planetScopeOn` now — the SECOND HALF of
+    // `buildPlanetScope`, the half after the bake, so the browser hands over
+    // the substrate its geology worker already produced and NEVER bakes twice.
+    // Text mode calls `buildPlanetScope`, which bakes and then calls this same
+    // function: one definition, two entrances, differing only in where the
+    // ground came from.
+    const planet = planetScopeOn(
+      built, { id: body.id, radiusM: body.radius },
+      { seed: want.seed, stock: want.stock, startPop: want.startPop },
+      rootLoaded?.game?.scale ?? null,
+    );
+    const site = planet.site;
+    const dir = planet.body.dir;
+    // THE BEACON'S CELL IS THE APP'S, not the engine's: `planet.cell` is the
+    // LATTICE cell the fields were read at (12755), while the flight list
+    // keys a founded site by a SYNTHETIC id deliberately disjoint from the
+    // lattice. Both are kept — the record carries the address, the beacon
+    // carries the identity.
     const cell = FOUNDED_CELL_BASE + site.seed;
-    rec = { cell, bodyId: body.id, dir, surfaceR, record: site };
+    rec = { cell, bodyId: body.id, dir, surfaceR: planet.body.surfaceR, record: site };
     foundedPlanetSites.set(PREMISE_KEY, rec);
     // ③ The frontier homestead measures the forest cell it was seeded on —
     // this is THE site the founding premise is about, and it is the one whose
     // charter used to read `{ 60, 0, 0 }` while standing in timber.
-    const charter = measuredSiteCharter(body.id, dir, site.buildings);
+    const charter = planet.env.charter;
     flight.addCities(body.id, [foundedPlanetCity(cell, PREMISE_KEY, dir, charter)]);
-    cityTowns.registerFounded(
-      cell,
-      siteTownConfig(site, {
-        scale: docSessionScale(), startPop: want.startPop,
-        ...(charter ? { charter } : {}),
-      }),
-    );
+    // …and the town config comes off the record too — `startPop` and the
+    // cell's own `climate` are already on it (the loader's `opts.climate`
+    // fallback has nothing left to fill).
+    cityTowns.registerFounded(cell, planet.townConfig);
     traceWalk(
-      `founding premise seeded: ${PREMISE_KEY} (cell ${cell}, biome ${biome?.[site0.cell] ?? "?"}` +
-      `, charter ${charter ? `farm ${Math.round(charter.farmland)} ore ${Math.round(charter.ore_access)} timber ${Math.round(charter.timberland)}` : "unmeasured"})`,
+      `founding premise seeded: ${PREMISE_KEY} (cell ${cell}, biome ${planet.env.biome}` +
+      `, charter farm ${Math.round(charter.farmland)} ore ${Math.round(charter.ore_access)} timber ${Math.round(charter.timberland)})`,
     );
   } else {
     // A RESTORED premise: the save's own registration ran with startPop 0
@@ -851,7 +865,23 @@ function stepFoundingPremise(): void {
     // (cell, `record.buildings`), both of which the save already carries, so
     // a reloaded homestead reproduces its charter exactly — including the
     // wider reach it earned by building.
-    const charter = measuredSiteCharter(rec.bodyId, rec.dir, rec.record?.buildings ?? 0);
+    //
+    // Same engine call, restore arm: `createFoundedSite` in place of
+    // `foundSite`, everything else identical. It measures through a COPY of
+    // the record (`foundedSiteToJSON`) so the LIVE record the host may be
+    // holding is never replaced — only the charter and the config are taken.
+    // ⚠️ On a body that is not the one under us (never seen; the premise is
+    // always the home planet) there is no substrate here to measure with, so
+    // the standing beacon read stays as the fallback.
+    const planet = rec.record && rec.bodyId === body.id
+      ? planetScopeOn(
+          built, { id: body.id, radiusM: body.radius },
+          { seed: rec.record.seed, stock: {}, startPop: want.startPop },
+          rootLoaded?.game?.scale ?? null,
+          { restore: { site: foundedSiteToJSON(rec.record), cell: rec.cell, dir: rec.dir } },
+        )
+      : null;
+    const charter = planet ? planet.env.charter : measuredSiteCharter(rec.bodyId, rec.dir, rec.record?.buildings ?? 0);
     if (!flight.cities().some((fc) => fc.city.cell === rec!.cell)) {
       flight.addCities(rec.bodyId, [foundedPlanetCity(rec.cell, PREMISE_KEY, rec.dir, charter)]);
     } else {
@@ -860,10 +890,15 @@ function stepFoundingPremise(): void {
     if (rec.record) {
       cityTowns.registerFounded(
         rec.cell,
-        siteTownConfig(rec.record, {
-          scale: docSessionScale(), startPop: want.startPop,
-          ...(charter ? { charter } : {}),
-        }),
+        // THE PREMISE RE-APPLIES ITS POPULATION (the engine's restore arm
+        // deliberately omits `startPop` — a restored site registers at 0 and
+        // the host says what it wants; that two-step is the app's, unchanged).
+        planet
+          ? { ...planet.townConfig, startPop: want.startPop }
+          : siteTownConfig(rec.record, {
+              scale: docSessionScale(), startPop: want.startPop,
+              ...(charter ? { charter } : {}),
+            }),
       );
     }
   }
@@ -1405,8 +1440,10 @@ function mountWildChunk(pos: THREE.Vector3, fwdWorld?: THREE.Vector3): boolean {
               wildPoint && wildRoot
                 ? nearbyCityPartners(
                     wildPoint.body,
+                    // The anchor's own +Y-out direction — `wildRoot.quaternion`
+                    // IS `setFromUnitVectors(+Y, this)`, so the engine derives
+                    // the frame from the one fact rather than being handed two.
                     _wildPartnerDir.copy(wildPoint.localDir).normalize(),
-                    wildRoot.quaternion,
                     { x: WILD_SIDE / 2, y: WILD_SIDE / 2 },
                     null,
                   )
@@ -2081,10 +2118,15 @@ function mountLiveTown(viz: CityViz, play: TownPlay, cityName: string): void {
         tradePartners: () =>
           nearbyCityPartners(
             viz.fc.body,
+            // `viz.mesh.quaternion` was the second argument here; it IS
+            // `setFromUnitVectors(+Y, this vector)` (attachSurfaceAnchor), so
+            // the engine derives it rather than being handed both.
             new THREE.Vector3(viz.fc.city.dir[0], viz.fc.city.dir[1], viz.fc.city.dir[2]).normalize(),
-            viz.mesh.quaternion,
             play.stage.center,
             viz.fc.city.cell,
+            // …and WHICH city we are, so each row can carry the incident ROAD's
+            // length instead of the chord (trade-topology ⑤).
+            viz.fc,
           ),
       },
     );
@@ -3204,107 +3246,73 @@ function makeTownGround(fc: FlightCity, mesh: THREE.Group): (x: number, z: numbe
 
 /** The K nearest same-body cities as BOOT-SUPPLIED trade partners (nations
  *  P0 — quest-host `deps.tradePartners`): each in the anchored layer's own
- *  sim coordinates via the identical tangent-frame projection the caravan
- *  bind below uses. A town excludes itself by cell; a wilderness chunk
+ *  sim coordinates via the identical tangent-frame projection the ground
+ *  samplers walk. A town excludes itself by cell; a wilderness chunk
  *  excludes nobody. Stub partners — the host prices them off the
- *  closed-form scarcity proxy until the civ tier makes them real. */
+ *  closed-form scarcity proxy until the civ tier makes them real.
+ *
+ *  ⚖️ AND HOW FAR THE ROAD RUNS (trade-topology ⑤). These rows are no longer a
+ *  side board: since the engine CHOOSES its caravan partner off them
+ *  (`chooseTradePartner`), a row with no distance prices at the abstract
+ *  `AWAY_DISTANCE_M` and loses to anything real. So each row carries the
+ *  INCIDENT ROAD's `lengthM` where the planet net joins the two cities — trade
+ *  prices the road, not the chord: a road round a mountain runs longer than the
+ *  line of sight, and the lane must feel it. `selfFc` is what makes that lookup
+ *  possible (a town mount knows which city it IS); a wilderness chunk has no
+ *  city and falls back to the chord, which is still honest geometry.
+ *
+ *  ⚖️ THE ARITHMETIC IS THE ENGINE'S NOW (planet-boot S3): `partnerRows`
+ *  (`interaction/town/planet-scope.ts`) — the same scan a headless boot's
+ *  `measuredEnvironment` runs, so a homestead's partner board is identical
+ *  whether it is rendered or narrated. What stays HERE is the browser's own
+ *  three answers, which the engine cannot know: WHICH ROWS exist
+ *  (`flight.cities()`, including a founded beacon at a synthetic cell no
+ *  lattice can address), WHERE WE STAND (the live anchor's direction), and
+ *  WHICH ROADS LEAVE US (`cityIncidentRoutes` — the body's net plus every
+ *  ready region's lanes). The tangent frame is derived from `selfDir` by the
+ *  engine exactly as `attachSurfaceAnchor` derives this layer's quaternion
+ *  from the same vector (`setFromUnitVectors(+Y, dir)`), which is why the
+ *  anchor's quaternion is no longer passed: it was always a second expression
+ *  of `selfDir`, and two expressions of one fact is the drift this closes.
+ *  Held against the pre-S3 arithmetic, verbatim, in
+ *  `games/world-lab/src/__tests__/planet-app-parity.test.ts`. */
 function nearbyCityPartners(
   body: CelestialBody,
   selfDir: THREE.Vector3,
-  quat: THREE.Quaternion,
   simCenter: { x: number; y: number },
   excludeCell: number | null,
+  selfFc?: FlightCity,
   maxN = 3,
-): Array<{ key: string; at: { x: number; y: number }; geo: PartnerGeography }> {
+): Array<{
+  key: string; at: { x: number; y: number }; geo: PartnerGeography; distanceM: number;
+}> {
   if (!flight) return [];
-  const east = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
-  const north = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
-  const other = new THREE.Vector3();
-  const rows: Array<{
-    key: string; ang: number; at: { x: number; y: number }; geo: PartnerGeography;
-  }> = [];
-  for (const c of flight.cities()) {
-    if (c.body !== body || c.city.cell === excludeCell) continue;
-    other.set(c.city.dir[0], c.city.dir[1], c.city.dir[2]);
-    const ang = selfDir.angleTo(other);
-    if (ang < 1e-9) continue;
-    const toward = other.addScaledVector(selfDir, -other.dot(selfDir));
-    if (toward.lengthSq() < 1e-12) continue;
-    toward.normalize();
-    const distM = ang * body.radius;
-    rows.push({
-      key: `city:${c.city.cell}`,
-      ang,
-      at: {
-        x: simCenter.x + toward.dot(east) * distM,
-        y: simCenter.y + toward.dot(north) * distM,
-      },
-      geo: cityPartnerGeography(c),
-    });
-  }
-  rows.sort((a, b) => a.ang - b.ang);
-  return rows.slice(0, maxN).map(({ key, at, geo }) => ({ key, at, geo }));
-}
-
-/** ⚖️ WHAT A DISTANT CITY'S GROUND SAYS IT CAN SELL (R&T ⑤ T5) — the founding
- *  scan's own verdict, forwarded verbatim: the node taxon `classifyNode` read
- *  off its terrain, plus the charter-box sums that verdict was derived from.
- *  Nothing new is computed here; "geography chooses" simply reaches the
- *  scarcity proxy the barter clerk quotes from. */
-function cityPartnerGeography(fc: FlightCity): PartnerGeography {
-  return {
-    node: fc.city.node?.type ?? null,
-    farmland: fc.city.charter?.farmland,
-    ore: fc.city.charter?.ore_access,
-  };
-}
-
-/** Aim the town's intercity trade line (kernel/town/trade.ts) at its REAL
- *  nearest neighbor, now that the planet knows its cities: the caravan comes
- *  and goes by the gate that faces the road out (matching the planet-scale
- *  net), and its rare cargo scales with the true distance. Villages already
- *  streamed by the region tier count as partners — a day's-walk hamlet beats
- *  a far capital. Sim coords ride the same east/north tangent frame the
- *  ground samplers walk. */
-function bindTradePartner(fc: FlightCity, mesh: THREE.Group, play: TownPlay): void {
-  const trade = play.stage.trade;
-  if (!trade || !flight) return;
-  const self = new THREE.Vector3(fc.city.dir[0], fc.city.dir[1], fc.city.dir[2]);
-  const other = new THREE.Vector3();
-  let best: FlightCity | null = null;
-  let bestAng = Infinity;
-  for (const c of flight.cities()) {
-    if (c.body !== fc.body || c.city.cell === fc.city.cell) continue;
-    const ang = self.angleTo(other.set(c.city.dir[0], c.city.dir[1], c.city.dir[2]));
-    if (ang < bestAng) { bestAng = ang; best = c; }
-  }
-  if (!best || bestAng < 1e-9) return;
-  other.set(best.city.dir[0], best.city.dir[1], best.city.dir[2]);
-  // Tangent-plane direction toward the partner, in town-sim coordinates.
-  const toward = other.addScaledVector(self, -other.dot(self));
-  if (toward.lengthSq() < 1e-12) return;
-  toward.normalize();
-  const east = new THREE.Vector3(1, 0, 0).applyQuaternion(mesh.quaternion);
-  const north = new THREE.Vector3(0, 0, 1).applyQuaternion(mesh.quaternion);
-  const distM = bestAng * fc.body.radius;
-  const c0 = play.stage.center;
-  // TRADE PRICES THE ROAD, NOT THE CHORD: the caravan walks the route, whose
-  // port-to-port length runs longer than the line of sight wherever the road
-  // went round a mountain. The chord stays the fallback for a partner with
-  // no road between — common only where the nearest city is across a border
-  // the state-adjacency net never paired.
-  const road = cityIncidentRoutes(fc).find(
-    ({ route, end }) => (end === "a" ? route.b : route.a) === best!.city.cell,
+  return partnerRows(
+    flight.cities().filter((c) => c.body === body).map((c) => c.city),
+    sphereGeometry(body.radius),
+    [selfDir.x, selfDir.y, selfDir.z],
+    simCenter,
+    excludeCell,
+    // The roads that LEAVE us, once — the same lookup the caravan bind did.
+    // A wilderness chunk has no city, so it has none, and every row prices at
+    // the chord, which is still honest geometry (ledger C-5).
+    selfFc ? cityIncidentRoutes(selfFc).map(({ route }) => route) : [],
+    maxN,
   );
-  trade.bindPartner({
-    key: `city:${best.city.cell}`,
-    at: { x: c0.x + toward.dot(east) * distM, y: c0.y + toward.dot(north) * distM },
-    distanceM: road?.route.lengthM,
-    // ⚖️ T5: the neighbour's own terrain reading rides the bind, so the closed-
-    // form proxy quotes a river-mouth granary differently from a mining camp.
-    geo: cityPartnerGeography(best),
-  });
 }
+
+// ⚖️ `bindTradePartner` LIVED HERE (trade-topology ⑤ — deleted 2026-09-10).
+// It aimed the town's caravan line at the smallest great-circle angle: WHO a
+// town traded with was an app's decision, taken by pure distance, at mount
+// time, before anyone's books existed — while WHAT the lane carried was the
+// engine's, re-derived per visit from complementarity. Two answers to one
+// question, and the nearer answer always won.
+// The engine chooses now, once, for every app: `chooseTradePartner`
+// (quest-host.ts) ranks the same cities by LANDED COST at each caravan bucket
+// and binds the lane worth the most seconds. Everything this function knew
+// still reaches it — the partner's place, its terrain (`cityPartnerGeography`,
+// kept) and the incident road's length — through `nearbyCityPartners`' rows,
+// which is why those rows gained `distanceM` above.
 
 /** The city's tangent frame — EXACTLY the surface-anchor convention its
  *  render mounts with (attachSurfaceAnchor: +Y-out quaternion; plan x runs
@@ -3409,6 +3417,18 @@ function cityRoadBearings(fc: FlightCity): readonly number[] | null {
  * session registers a SYNTHETIC cell (FOUNDED_CELL_BASE + seed — deliberately
  * disjoint from the lattice), so indexing a grid field with it is out of
  * bounds by construction. The site's DIRECTION is its one real address.
+ *
+ * ⚖️ THESE THREE ARE ALREADY THE ENGINE'S SAMPLERS (planet-boot S3, checked
+ * rather than assumed): `climateSampleAt(grid, cellAt(dir))`,
+ * `grid.fields.biome[cellAt(dir)]` and `ecoAbundanceAt(grid, cellAt(dir))` are
+ * character-for-character the three reads `measuredEnvironment`
+ * (`interaction/town/planet-scope.ts`) makes, on the same grid at the same
+ * cell — there was never a second derivation here to fold away, and the parity
+ * suite pins them equal to it at the founding direction. What DOES differ, and
+ * deliberately, is the ABSENCE convention: these three answer `null` where the
+ * engine's record answers `0` / `{}`, because their callers key off null to
+ * omit the host option entirely (`...(townBiome !== null ? { biome } : {})`).
+ * A `0` there would claim "barren" about ground nobody measured.
  */
 function cityClimate(fc: FlightCity): ClimateSample | null {
   const geo = fc.body.geography;
@@ -4172,7 +4192,9 @@ function streamGround(
         g.add(view.group);
         viz = { fc, mesh: g, view, ground: groundAt, point };
         cityViz.set(fc.city.cell, viz);
-        bindTradePartner(fc, g, e.play);
+        // (No caravan bind here any more — the engine picks the lane at the
+        // first trade bucket, off `deps.tradePartners`. See the note at the
+        // deleted `bindTradePartner`.)
         // The detailed render is up: incident ribbons clip at the town
         // edge and splice onto its arterial tips (render-only).
         const spliceSpec = townSpliceSpecOf(fc);
@@ -4791,25 +4813,32 @@ function bootSpiritWorld(game: GameSettings): void {
   const t0 = performance.now();
   clearWorld();
   setSpaceMode(true);
-  const ws = game.world as {
-    seed?: number;
-    questCount?: number;
-    // #44 E — the founding-premise marker rides the solar root's params
-    // verbatim (lowerObjectDef copies root params; nothing on the spirit
-    // path re-validates them — buildSolarWorld's reject-unknown gate never
-    // runs here).
-    premise?: string;
-    premise_stock?: Record<string, number>;
-    premise_population?: number;
-  };
+  const ws = game.world as { seed?: number; questCount?: number };
+  // ⚖️ THE PREMISE IS A DOCUMENT FIELD NOW (planet-boot S3). It used to ride
+  // the solar root's params UNTYPED — `lowerObjectDef` copies root params and
+  // nothing on this path re-validated them, so a mistyped `premise_stock`
+  // reached the site's ledger as-is and headless mode could not see the
+  // premise at all. `space-game.ts PREMISE_FIELDS` declares the three fields,
+  // so this is the document's own gate, path-exact, shared with text mode.
+  //
+  // ⚠️ ONLY A SOLAR DOCUMENT IS GATED. `bootSpiritWorld` is the CATCH-ALL
+  // route (main's dispatch sends galaxy, star_cluster and region here too),
+  // and their `world` objects have their own field sets — `parseSolarWorld`
+  // would reject them as unknown fields.
+  const solar = game.scope === "solar_system" ? parseSolarWorld(game.world, "game.world") : null;
+  // …and the SEED keeps its own read: `SOLAR_WORLD_FIELDS` defaults `seed` to
+  // 1 while this boot has always defaulted to 1337, and no generated document
+  // is seedless, so taking the parsed value here would move a number for no
+  // reason. One of the two defaults should win; that is main's call, not this
+  // hunk's (round residual R-8).
   const galaxySeed = (ws.seed ?? 1337) >>> 0;
   // #44 E — arm (or disarm) the founding premise for THIS boot; the seed
   // itself waits for the home planet's geography (stepFoundingPremise).
   premiseSeedPending =
-    ws.premise === "founding"
+    solar?.premise === "founding"
       ? {
-          stock: ws.premise_stock ?? { wood: 14, stone: 6, basket: 2 },
-          startPop: ws.premise_population ?? 5,
+          stock: solar.premise_stock ?? { wood: 14, stone: 6, basket: 2 },
+          startPop: solar.premise_population ?? 5,
           seed: galaxySeed,
         }
       : null;

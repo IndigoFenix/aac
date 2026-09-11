@@ -212,6 +212,23 @@ export interface WorldScale {
    *  takes half a year of game-days; 180 = a house rises in one game-day. */
   construction: number;
   /**
+   * PRACTICE ACCELERATION: a skill's real `masteryHours` ÷ this
+   * (`kernel/town/skills.ts masteryS`). 1 = a real apprenticeship — 300 hours
+   * at the axe before a feller is twice the novice. ECOSYSTEM-WIDE, same law as
+   * `metabolism`: one factor per PROCESS CLASS applied to every body at once.
+   *
+   * ⚖️ UNDECLARED, IT FOLLOWS `construction` (resolveWorldScale). Labour
+   * compression is ONE CLASS: raising a house and learning to raise one
+   * compress together, so a world that says "a house in a street-day" has
+   * already said how fast its people learn to build one, and no shipped spec
+   * needs editing to get a live skill tree.
+   *
+   * 🚨 NEVER MULTIPLIED BY `dayLengthS` (the two-clock law). Practice rides the
+   * METABOLIC clock — a labour second is a practice second — and this dial is
+   * the ONE compression allowed anywhere near it.
+   */
+  learning: number;
+  /**
    * BODY-SIZE compression: radii ÷ this (masses ÷ this², so surface gravity is
    * preserved). 1 = real-size bodies.
    *
@@ -352,6 +369,7 @@ export const REAL_SCALE: WorldScale = {
   revolution: 1,
   sleepFraction: REAL_SLEEP_FRACTION,
   construction: 1,
+  learning: 1, // a REAL apprenticeship: 300 hours at the axe
   planetCompression: 1,
   interplanetary: 1,
   interstellar: 1,
@@ -387,6 +405,7 @@ export const DOLLHOUSE_SCALE: WorldScale = {
   revolution: 1,
   sleepFraction: 0.05, // 12 s at the bed — sleep compressed past the day itself
   construction: 180, // a house in one street-day
+  learning: 180, // …and the trade learned at the same compression (the undeclared default)
   planetCompression: 1,
   interplanetary: 1,
   interstellar: 1,
@@ -423,6 +442,7 @@ export const SEASONAL_SCALE: WorldScale = {
   revolution: (REAL_YEAR_DAYS * 360) / 12,
   sleepFraction: 0.05,
   construction: 180,
+  learning: 180,
   planetCompression: 1,
   interplanetary: 1,
   interstellar: 1,
@@ -537,6 +557,10 @@ export interface WorldScaleSpec {
   revolution?: number;
   sleep_fraction?: number;
   construction?: number;
+  /** PRACTICE ACCELERATION — a skill's real `masteryHours` ÷ this. Absent ⇒
+   *  the resolved `construction` (labour compression is one class). See
+   *  `WorldScale.learning`. */
+  learning?: number;
   planet_compression?: number;
   /** Orbital distances ÷ this. Absent ⇒ `planet_compression` (uniform). */
   interplanetary?: number;
@@ -572,7 +596,7 @@ function num(v: unknown, path: string, min: number, max: number): number {
 export function parseWorldScaleSpec(raw: unknown, path: string): WorldScaleSpec {
   if (!isObj(raw)) fail(path, "expected an object (the space-time compression declaration)");
   const allowed = [
-    "rotation", "revolution", "sleep_fraction", "construction", "planet_compression",
+    "rotation", "revolution", "sleep_fraction", "construction", "learning", "planet_compression",
     "interplanetary", "interstellar", "gap_compression", "resource_compression",
     "lean_fraction", "metabolism", "locomotion", "generation", "growth_fraction",
   ];
@@ -593,6 +617,12 @@ export function parseWorldScaleSpec(raw: unknown, path: string): WorldScaleSpec 
   if ("revolution" in raw) out.revolution = num(raw.revolution, `${path}.revolution`, 1, 10_000_000);
   if ("sleep_fraction" in raw) out.sleep_fraction = num(raw.sleep_fraction, `${path}.sleep_fraction`, 0, 0.9);
   if ("construction" in raw) out.construction = num(raw.construction, `${path}.construction`, 0.01, 100_000);
+  // The practice dial is a TIME compression like `construction`, and legal
+  // below 1 for the same reason `metabolism` is: a world that wants learning to
+  // be slower than real is a legitimate world, not a mistake (it is also the
+  // A/B knob — `learning: 0.01` puts mastery out of reach and every body reads
+  // 1×, which is the pre-skill tree exactly).
+  if ("learning" in raw) out.learning = num(raw.learning, `${path}.learning`, 0.01, 1_000_000);
   if ("planet_compression" in raw) {
     out.planet_compression = num(raw.planet_compression, `${path}.planet_compression`, 1, 10_000);
   }
@@ -624,13 +654,20 @@ export function resolveWorldScale(spec?: WorldScaleSpec | null): WorldScale {
   // The distance dials fall back to the BODY scale, not to 1 — the universe
   // shrinks uniformly unless a world deliberately says otherwise.
   const planetCompression = spec?.planet_compression ?? REAL_SCALE.planetCompression;
+  // ⚖️ LABOUR COMPRESSION IS ONE CLASS. An undeclared `learning` follows the
+  // RESOLVED `construction` — the same reading `interplanetary` gets from
+  // `planetCompression`, applied to time rather than distance: a world that has
+  // already said how fast a house goes up has said how fast a body learns to
+  // put one up. Declared, it wins outright; under REAL_SCALE both are 1.
+  const construction = spec?.construction ?? REAL_SCALE.construction;
   return {
     rotation,
     // DERIVED — the planet's spin IS the clock (see WorldScale.dayLengthS).
     dayLengthS: dayLengthFor(rotation),
     revolution: spec?.revolution ?? REAL_SCALE.revolution,
     sleepFraction: spec?.sleep_fraction ?? REAL_SCALE.sleepFraction,
-    construction: spec?.construction ?? REAL_SCALE.construction,
+    construction,
+    learning: spec?.learning ?? construction,
     planetCompression,
     interplanetary: spec?.interplanetary ?? planetCompression,
     interstellar: spec?.interstellar ?? planetCompression,
@@ -659,6 +696,7 @@ export function scaleSpecOf(scale: WorldScale): Required<WorldScaleSpec> {
     revolution: scale.revolution,
     sleep_fraction: scale.sleepFraction,
     construction: scale.construction,
+    learning: scale.learning,
     planet_compression: scale.planetCompression,
     interplanetary: scale.interplanetary,
     interstellar: scale.interstellar,
@@ -1015,6 +1053,92 @@ export function yieldPerM2Daily(
 ): number {
   if (!(satiationDays > 0)) return 0;
   return 1 / (farmAreaPerPersonM2(tier, scale.resourceCompression) * satiationDays);
+}
+
+// ------------------------------------------------------- wild-forage realism
+//
+// THE FORAGE SEAM (plant-growth-render-round.md PART 6). The exact sibling of
+// the farmland anchor above, one rung wilder: farmland says how much GROUND a
+// PLOUGHED person needs, this says how much a person who plants nothing needs.
+// USER RULING (2026-09-08): *"per-hectare FLOW stays anchored to reality ÷ the
+// dial"* — so the two halves of what a countryside feeds (how thickly the
+// plants stand, how much each one bears in a day) may move freely against each
+// other as long as their PRODUCT lands here.
+
+/**
+ * REAL_ anchor (the F4 pattern): HECTARES of wild countryside one person eats
+ * off, foraging only. The ethnographic range for temperate foragers is 10–100
+ * ha a head (`plant-growth-render-round.md` PART 4 §6 ③); this is the
+ * productive-woodland end of it, not the middle of the whole range.
+ *
+ * ⚖️ USER CALL, 30 (2026-09-08). Two facts fix it and neither is a preference:
+ *   · the frontier premise is a MIXED TEMPERATE WOOD with a real understory —
+ *     the rich end of the forager's range, where 10–30 ha is the field figure
+ *     and 100 ha belongs to tundra and desert margin;
+ *   · at `resource_compression` 7.5 (the shipped GL preset) it puts the
+ *     compressed flow at 0.25 rations/ha/day against the 0.346 the shipped
+ *     catalogue was accidentally delivering — a 28 % trim, so the forage arc
+ *     PART 5 landed barely moves. A number that re-tuned the arc would have
+ *     been a balance dial wearing an anchor's clothes.
+ */
+export const REAL_FORAGE_HA_PER_PERSON = 30;
+
+/**
+ * REAL_ anchor: KCAL IN ONE RATION — one person-day of food.
+ *
+ * The bridge between the calorie facts a plant row can state (a crab apple
+ * crown makes so many kcal of fruit a year) and the RATION the economy counts
+ * in (`satiationDaysOf`, `rationsOf`, `forageRationsPerHaDaily` above). 2000
+ * kcal/day is the ordinary adult reference intake (WHO/FAO adult average;
+ * dietary labels use 2000–2500), and it is a REAL number, not a dial: the
+ * gameplay dial stays `resource_compression`, which divides only the regrow
+ * period at the point of use.
+ */
+export const RATION_KCAL = 2000;
+
+/**
+ * REAL_ anchor: THE SHARE OF A STAND'S ANNUAL EDIBLE PRODUCTION A FORAGER
+ * ACTUALLY TAKES, 0..1.
+ *
+ * ⚖️ WHY THIS CONSTANT HAS TO EXIST. `REAL_FORAGE_HA_PER_PERSON` above is a
+ * CAPTURE figure — what a forager gets off the land, measured in the field —
+ * while a plant row can only state GROSS production, what the stand makes.
+ * The two are not the same quantity and multiplying a gross yield straight
+ * into the anchor would say a forager eats every berry a wood grows. Birds,
+ * rodents, insects, rot, seasonality and the unreachable canopy take the rest.
+ *
+ * 0.41 sits inside the 0.2–0.5 field range for wild-plant capture. It is
+ * CALIBRATED at the temperate anchor cell (`headless/text-quest.ts`
+ * `PLANET_CELL_CLIMATE` / `PLANET_CELL_ECO`): with the catalogue's real crown
+ * areas and yield classes packed by `planet/packing.ts`, this is the fraction
+ * that lands the anchor cell's Σ flow exactly on `forageRationsPerHaDaily`.
+ *
+ * 🚫 NOT A SECOND GAMEPLAY DIAL. The gameplay dial is `resource_compression`
+ * and it still divides ONLY `wildRegrowPeriodS`'s period. This is a real fact
+ * about foraging, pinned inside its real range.
+ */
+export const REAL_FORAGE_CAPTURE_FRACTION = 0.41225;
+
+/** Hectares of wild ground one person forages off, ÷ the natural→usable
+ *  conversion dial — `farmAcresPerPerson`'s twin, divisor-first for the same
+ *  reason. Default 1 stays the real anchor, verbatim. */
+export function forageHaPerPerson(conversionDial = 1): number {
+  return REAL_FORAGE_HA_PER_PERSON / conversionDial;
+}
+
+/**
+ * RATIONS one hectare of wild ground bears per day — the reciprocal of the
+ * anchor, and the ONE number the wild scatter's density × yield must multiply
+ * out to. A ration is one person-day (`satiationDaysOf` turns it into units:
+ * at 0.2 days an item, 0.25 rations/ha/day is 1.25 items/ha/day).
+ *
+ * ⚖️ IT IS ONE ANCHOR DIVIDED, NOT A SECOND NUMBER — exactly `yieldPerM2Daily`'s
+ * construction one rung up, and for the same reason: a flow authored beside
+ * the area it comes from is two statements of one fact.
+ */
+export function forageRationsPerHaDaily(scale: WorldScale): number {
+  const ha = forageHaPerPerson(scale.resourceCompression);
+  return ha > 0 ? 1 / ha : 0;
 }
 
 // ------------------------------------------------------------ σ, THE SURPLUS

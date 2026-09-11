@@ -450,10 +450,16 @@ export function createTownTrade(
     return Number.isFinite(s) ? Math.max(0, Math.min(1, s)) : 1;
   };
 
-  /** ⚖️ G3 — the ranking's own wants for the CURRENT import list, or null for
-   *  an authored (unbound) list, which has no reading behind it and therefore
-   *  shares the hold alike — exactly what the flat split did. */
-  let importWants: Map<string, number> | null = null;
+  /** ⚖️ G3 — the ranking's own weight per good for the CURRENT import list, or
+   *  null for an authored (unbound) list, which has no reading behind it and
+   *  therefore shares the hold alike — exactly what the flat split did.
+   *
+   *  ⚖️ TRADE-TOPOLOGY ROUND (ruling 3): the weight is the ranking's
+   *  `advantageS` — hand-seconds per unit of LANDED ADVANTAGE — not its 0..1
+   *  `want`. The hold is dealt by landed cost, so a dense good outbids a bulky
+   *  one it merely tied with on appetite, and a good the road makes dearer
+   *  than doing without is not on the list to bid at all. */
+  let importAdvantage: Map<string, number> | null = null;
   /** Memo of the weighted split, keyed on the cargo array's IDENTITY: the one
    *  thing that replaces it is `deriveCargo`, which mints a new array. */
   let splitOf: readonly string[] | null = null;
@@ -462,7 +468,7 @@ export function createTownTrade(
     if (splitOf === route.imports) return splitUnits;
     const kinds = route.imports;
     const shares = allotmentSplit(
-      kinds.map((k) => importWants?.get(k) ?? 1),
+      kinds.map((k) => importAdvantage?.get(k) ?? 1),
       IMPORT_ALLOTMENT,
     );
     splitUnits = new Map(kinds.map((k, i) => [k, shares[i]!]));
@@ -489,9 +495,11 @@ export function createTownTrade(
     );
     route.imports = pair.imports.map((r) => r.good);
     route.exports = pair.exports.map((r) => r.good);
-    // ⚖️ G3 — KEEP THE EVIDENCE. The ranking's `want` per import good is what
-    // weights the hold; it was computed and discarded on this very line.
-    importWants = new Map(pair.imports.map((r) => [r.good, r.want]));
+    // ⚖️ G3 — KEEP THE EVIDENCE. The ranking's own weight per import good is
+    // what weights the hold; it was computed and discarded on this very line.
+    // ⚖️ TRADE-TOPOLOGY (ruling 3): that weight is `advantageS`, the landed
+    // one, in hand-seconds — the same number the list was ordered by.
+    importAdvantage = new Map(pair.imports.map((r) => [r.good, r.advantageS]));
   };
 
   return {
@@ -510,8 +518,12 @@ export function createTownTrade(
       if (good === route.rare.kind) return Math.max(0, route.rare.perVisit);
       if (!route.imports.includes(good)) return 0;
       // ⚖️ G3: the hold is bid for, not divided by headcount. The share is the
-      // ranking's own `want` through `allotmentSplit` — worst shortage, biggest
-      // share, Σ exactly IMPORT_ALLOTMENT.
+      // ranking's own weight through `allotmentSplit` — Σ exactly
+      // IMPORT_ALLOTMENT.
+      // ⚖️ TRADE-TOPOLOGY (ruling 3): that weight is LANDED ADVANTAGE
+      // (`advantageS`, hand-seconds per unit), not raw appetite — biggest gain
+      // per unit, biggest share. Two goods a town wants equally no longer take
+      // equal shares if one of them is twice the freight.
       return importSplit().get(good) ?? 0;
     },
     refreshCargo: (scarcity) => {

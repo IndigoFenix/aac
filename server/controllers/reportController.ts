@@ -9,18 +9,127 @@ import type { Request, Response } from "express";
 import { reportService } from "../services";
 import { activityLogService } from "../services/activityLogService";
 import { summarizeChanges, changeDetails } from "../services/activityChanges";
-import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
-import { canWriteObject } from "../services/sharing/visibility";
+import { visibilityCtx } from "../services/sharing/clinicianCtx";
+import { canWriteObject, type AccessCtx } from "../services/sharing/visibility";
 import { requireConsentForResponse } from "../services/consent/consentGate";
-import {
-  type InsertMedicalRecord,
-  type UpdateMedicalRecord,
-  type InsertFunctionalReport,
-  type UpdateFunctionalReport,
-  type InsertEducationalReport,
-  type UpdateEducationalReport,
-  type ShareableObjectType,
-} from "@shared/schema";
+import { type ShareableObjectType } from "@shared/schema";
+
+/** `new{Record,Report}Id` in a revision's activity-log details — see ReportKind.responseKey. */
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * The three report types differ ONLY in names — service methods, a couple of
+ * labels, the shareable-object type, and the key each one uses in its JSON
+ * response. Everything else in the 27 handlers below was the same code written
+ * out three times (~1,450 lines of it), which is how the consent gate on
+ * `finalize` came to live in three places instead of one.
+ *
+ * Collapsing them onto this table keeps the ROUTES and the RESPONSE SHAPES
+ * exactly as they are — the client calls 17 distinct URLs across these types
+ * and reads `record` from one and `report` from the others, so both stay
+ * verbatim. What goes is the triplication, not the API.
+ *
+ * `responseKey` is deliberately part of the descriptor rather than normalised:
+ * medical answers `{ record }` and the other two answer `{ report }`, and
+ * "tidying" that would be a silent breaking change to every client call site.
+ */
+export interface ReportKind {
+  /** Human label, lower case, for messages: "medical record". */
+  label: string;
+  /** Same, capitalised for the start of a sentence: "Medical record". */
+  Label: string;
+  /** `activity_logs.subject_type1` and the shareable-object type. */
+  objectType: "medical_record" | "functional_report" | "educational_report";
+  /** The key this type has always used in its JSON body. Client-visible. */
+  responseKey: "record" | "report";
+  /** The `reportType` string `verifyReportAccess` expects — same as this kind's own map key. */
+  verifyKind: "medical" | "functional" | "educational";
+  /** List for a student. Signature is uniform across all three services. */
+  list: (studentId: string, ctx?: AccessCtx) => Promise<any[]>;
+  /**
+   * The "current" (non-archived) row for a student. Medical's service method
+   * ALSO takes `instituteId` (a student may have one current record per
+   * institute); functional/educational do not, so their closures ignore it.
+   * That is a real service-layer asymmetry, papered over here the same way
+   * `getById` already papers over the `record`/`report` key split.
+   */
+  getCurrent: (studentId: string, instituteId: string | undefined, ctx?: AccessCtx) => Promise<any>;
+  /** Archived rows for a student. Same medical-only `instituteId` asymmetry as `getCurrent`. */
+  getArchived: (studentId: string, instituteId: string | undefined, ctx?: AccessCtx) => Promise<any[]>;
+  /** Normalises the service's `{ hasAccess, record }` / `{ hasAccess, report }`. */
+  getById: (id: string, userId: string, ctx?: AccessCtx) => Promise<{ hasAccess: boolean; row: any }>;
+  create: (data: any) => Promise<any>;
+  update: (id: string, updates: any) => Promise<any>;
+  finalize: (id: string) => Promise<any>;
+  createRevision: (id: string, userId: string) => Promise<any>;
+  remove: (id: string) => Promise<boolean>;
+}
+
+export const REPORT_KINDS: Record<"medical" | "functional" | "educational", ReportKind> = {
+  medical: {
+    label: "medical record",
+    Label: "Medical record",
+    objectType: "medical_record",
+    responseKey: "record",
+    verifyKind: "medical",
+    list: (studentId, ctx) => reportService.getMedicalRecordsByStudentId(studentId, ctx),
+    getCurrent: (studentId, instituteId, ctx) =>
+      reportService.getCurrentMedicalRecord(studentId, instituteId, ctx),
+    getArchived: (studentId, instituteId, ctx) =>
+      reportService.getArchivedMedicalRecords(studentId, instituteId, ctx),
+    getById: async (id, userId, ctx) => {
+      const r = await reportService.getMedicalRecordById(id, userId, ctx);
+      return { hasAccess: r.hasAccess, row: (r as any).record };
+    },
+    create: (data) => reportService.createMedicalRecord(data),
+    update: (id, updates) => reportService.updateMedicalRecord(id, updates),
+    finalize: (id) => reportService.finalizeMedicalRecord(id),
+    createRevision: (id, userId) => reportService.createMedicalRecordRevision(id, userId),
+    remove: (id) => reportService.deleteMedicalRecord(id),
+  },
+  functional: {
+    label: "functional report",
+    Label: "Functional report",
+    objectType: "functional_report",
+    responseKey: "report",
+    verifyKind: "functional",
+    list: (studentId, ctx) => reportService.getFunctionalReportsByStudentId(studentId, ctx),
+    getCurrent: (studentId, _instituteId, ctx) =>
+      reportService.getCurrentFunctionalReport(studentId, ctx),
+    getArchived: (studentId, _instituteId, ctx) =>
+      reportService.getArchivedFunctionalReports(studentId, ctx),
+    getById: async (id, userId, ctx) => {
+      const r = await reportService.getFunctionalReportById(id, userId, ctx);
+      return { hasAccess: r.hasAccess, row: (r as any).report };
+    },
+    create: (data) => reportService.createFunctionalReport(data),
+    update: (id, updates) => reportService.updateFunctionalReport(id, updates),
+    finalize: (id) => reportService.finalizeFunctionalReport(id),
+    createRevision: (id, userId) => reportService.createFunctionalReportRevision(id, userId),
+    remove: (id) => reportService.deleteFunctionalReport(id),
+  },
+  educational: {
+    label: "educational report",
+    Label: "Educational report",
+    objectType: "educational_report",
+    responseKey: "report",
+    verifyKind: "educational",
+    list: (studentId, ctx) => reportService.getEducationalReportsByStudentId(studentId, ctx),
+    getCurrent: (studentId, _instituteId, ctx) =>
+      reportService.getCurrentEducationalReport(studentId, ctx),
+    getArchived: (studentId, _instituteId, ctx) =>
+      reportService.getArchivedEducationalReports(studentId, ctx),
+    getById: async (id, userId, ctx) => {
+      const r = await reportService.getEducationalReportById(id, userId, ctx);
+      return { hasAccess: r.hasAccess, row: (r as any).report };
+    },
+    create: (data) => reportService.createEducationalReport(data),
+    update: (id, updates) => reportService.updateEducationalReport(id, updates),
+    finalize: (id) => reportService.finalizeEducationalReport(id),
+    createRevision: (id, userId) => reportService.createEducationalReportRevision(id, userId),
+    remove: (id) => reportService.deleteEducationalReport(id),
+  },
+};
 
 export class ReportController {
   /**
@@ -39,7 +148,15 @@ export class ReportController {
     subjectLabel: string,
     objectType: ShareableObjectType,
   ): Promise<boolean> {
-    const ctx = await buildClinicianCtx(req, record.studentId);
+    const ctxResult = await visibilityCtx(req, res, record.studentId);
+    // Refused (the caller named an institute they are not a member of) — the
+    // 403 is already sent. This gate used to read that state as `undefined` and
+    // `if (!ctx) return true`, i.e. the cross-institute WRITE gate OPENED for a
+    // caller asserting an institute context they did not hold.
+    if (!ctxResult.ok) return false;
+    const ctx = ctxResult.ctx;
+    // No institute selected, or a student/admin principal: this gate does not
+    // apply and the caller's own report-access check governs.
     if (!ctx || ctx.kind !== "institute") return true;
 
     const allowed = await canWriteObject(
@@ -60,6 +177,415 @@ export class ReportController {
   }
 
   // ==========================================================================
+  // GENERIC HANDLERS — one implementation per verb, parameterised by ReportKind.
+  // See the ReportKind doc comment above for why responseKey stays verbatim.
+  // ==========================================================================
+
+  /** `getXs` (list) for all three report types. */
+  private async getReports(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
+
+      const access = await reportService.verifyReportAccess(
+        studentId,
+        currentUser.id,
+        kind.verifyKind,
+        instituteId,
+      );
+
+      if (!access.hasAccess) {
+        res.status(403).json({
+          success: false,
+          message: `Access denied to ${kind.label}s`,
+        });
+        return;
+      }
+
+      const ctxResult = await visibilityCtx(req, res, studentId);
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
+      const rows = await kind.list(studentId, ctx);
+      res.json({ success: true, [`${kind.responseKey}s`]: rows });
+    } catch (error: any) {
+      console.error(`Error fetching ${kind.label}s:`, error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch ${kind.label}s`,
+      });
+    }
+  }
+
+  /** `getCurrentX` for all three report types. */
+  private async getCurrentReport(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
+
+      const access = await reportService.verifyReportAccess(
+        studentId,
+        currentUser.id,
+        kind.verifyKind,
+        instituteId,
+      );
+
+      if (!access.hasAccess) {
+        res.status(403).json({
+          success: false,
+          message: `Access denied to ${kind.label}s`,
+        });
+        return;
+      }
+
+      const ctxResult = await visibilityCtx(req, res, studentId);
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
+      const row = await kind.getCurrent(studentId, instituteId, ctx);
+
+      if (!row) {
+        res.status(404).json({
+          success: false,
+          message: `No current ${kind.label} found`,
+        });
+        return;
+      }
+
+      res.json({ success: true, [kind.responseKey]: row });
+    } catch (error: any) {
+      console.error(`Error fetching current ${kind.label}:`, error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch ${kind.label}`,
+      });
+    }
+  }
+
+  /** `getArchivedXs` for all three report types. */
+  private async getArchivedReports(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
+
+      const access = await reportService.verifyReportAccess(
+        studentId,
+        currentUser.id,
+        kind.verifyKind,
+        instituteId,
+      );
+
+      if (!access.hasAccess) {
+        res.status(403).json({
+          success: false,
+          message: `Access denied to ${kind.label}s`,
+        });
+        return;
+      }
+
+      const ctxResult = await visibilityCtx(req, res, studentId);
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
+      const rows = await kind.getArchived(studentId, instituteId, ctx);
+      res.json({ success: true, [`${kind.responseKey}s`]: rows });
+    } catch (error: any) {
+      console.error(`Error fetching archived ${kind.label}s:`, error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch archived ${kind.label}s`,
+      });
+    }
+  }
+
+  /**
+   * `getXById` for all three report types. Two-step: resolve `studentId` via
+   * a no-ctx fetch so family-institute escalation can fire on the second pass
+   * with the proper ctx.
+   */
+  private async getReportById(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+
+      const baseline = await kind.getById(id, currentUser.id);
+      if (!baseline.row) {
+        res.status(baseline.hasAccess ? 404 : 403).json({
+          success: false,
+          message: baseline.hasAccess ? `${kind.Label} not found` : "Access denied",
+        });
+        return;
+      }
+
+      const ctxResult = await visibilityCtx(req, res, baseline.row.studentId);
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
+      const result = ctx ? await kind.getById(id, currentUser.id, ctx) : baseline;
+
+      if (!result.hasAccess) {
+        res.status(403).json({
+          success: false,
+          message: "Access denied",
+        });
+        return;
+      }
+
+      if (!result.row) {
+        res.status(404).json({
+          success: false,
+          message: `${kind.Label} not found`,
+        });
+        return;
+      }
+
+      res.json({ success: true, [kind.responseKey]: result.row });
+      activityLogService.log({
+        instituteId: (result.row as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "view",
+        subjectType1: kind.objectType,
+        // Name the student too: once the record is hard-deleted, an audit row
+        // that only names the record id resolves to nothing.
+        subjectType2: "student",
+        subjectId1: id,
+        subjectId2: (result.row as any).studentId ?? null,
+      });
+    } catch (error: any) {
+      console.error(`Error fetching ${kind.label}:`, error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch ${kind.label}`,
+      });
+    }
+  }
+
+  /**
+   * `createX` for all three report types.
+   *
+   * Ownership of a new row is forced to the caller's selected institute. For
+   * student-principal callers (family-institute escalation), keep whatever
+   * the body specified — they may legitimately create rows owned by their
+   * family institute or null.
+   */
+  private async createReport(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
+
+      const access = await reportService.verifyReportAccess(
+        studentId,
+        currentUser.id,
+        kind.verifyKind,
+        instituteId,
+      );
+
+      if (!access.hasAccess) {
+        res.status(403).json({
+          success: false,
+          message: `Access denied to create ${kind.label}s`,
+        });
+        return;
+      }
+
+      const ctxResult = await visibilityCtx(req, res, studentId);
+      if (!ctxResult.ok) return;
+      const ctx = ctxResult.ctx;
+      const ownedInstituteId =
+        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
+
+      const data = {
+        ...req.body,
+        studentId,
+        userId: currentUser.id,
+        status: "draft",
+        instituteId: ownedInstituteId,
+      };
+
+      const row = await kind.create(data);
+      res.json({
+        success: true,
+        message: `${kind.Label} created successfully`,
+        [kind.responseKey]: row,
+      });
+      activityLogService.log({
+        instituteId: ownedInstituteId,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: kind.objectType,
+        subjectId1: (row as any).id ?? null,
+      });
+    } catch (error: any) {
+      console.error(`Error creating ${kind.label}:`, error);
+      res.status(500).json({
+        success: false,
+        message: error.message || `Failed to create ${kind.label}`,
+      });
+    }
+  }
+
+  /** `updateX` for all three report types. */
+  private async updateReport(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+
+      const result = await kind.getById(id, currentUser.id);
+
+      if (!result.hasAccess) {
+        res.status(403).json({
+          success: false,
+          message: "Access denied",
+        });
+        return;
+      }
+
+      if (!result.row) {
+        res.status(404).json({
+          success: false,
+          message: `${kind.Label} not found`,
+        });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.row, kind.label, kind.objectType))) {
+        return;
+      }
+
+      const updates = req.body;
+      const updated = await kind.update(id, updates);
+
+      if (!updated) {
+        res.status(400).json({
+          success: false,
+          message: `Failed to update ${kind.label}`,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: `${kind.Label} updated successfully`,
+        [kind.responseKey]: updated,
+      });
+      activityLogService.log({
+        instituteId: (updated as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: kind.objectType,
+        subjectId1: id,
+        details: changeDetails(
+          summarizeChanges(`${kind.objectType}s`, result.row as any, updates as any),
+        ),
+      });
+    } catch (error: any) {
+      console.error(`Error updating ${kind.label}:`, error);
+      res.status(500).json({
+        success: false,
+        message: error.message || `Failed to update ${kind.label}`,
+      });
+    }
+  }
+
+  /** `createXRevision` for all three report types. */
+  private async createReportRevision(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+
+      const result = await kind.getById(id, currentUser.id);
+
+      if (!result.hasAccess || !result.row) {
+        res.status(403).json({
+          success: false,
+          message: `Access denied or ${kind.responseKey} not found`,
+        });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.row, kind.label, kind.objectType))) {
+        return;
+      }
+
+      const newRow = await kind.createRevision(id, currentUser.id);
+
+      res.json({
+        success: true,
+        message: `${kind.Label} revision created successfully`,
+        [kind.responseKey]: newRow,
+      });
+      activityLogService.log({
+        instituteId: (newRow as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "revision",
+        subjectType1: kind.objectType,
+        subjectId1: id,
+        details: { [`new${capitalize(kind.responseKey)}Id`]: (newRow as any).id ?? null },
+      });
+    } catch (error: any) {
+      console.error(`Error creating ${kind.label} revision:`, error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to create revision",
+      });
+    }
+  }
+
+  /** `deleteX` (draft-only) for all three report types. */
+  private async deleteReport(req: Request, res: Response, kind: ReportKind): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+
+      const result = await kind.getById(id, currentUser.id);
+
+      if (!result.hasAccess || !result.row) {
+        res.status(403).json({
+          success: false,
+          message: `Access denied or ${kind.responseKey} not found`,
+        });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.row, kind.label, kind.objectType))) {
+        return;
+      }
+
+      const deleted = await kind.remove(id);
+
+      if (!deleted) {
+        res.status(400).json({
+          success: false,
+          message: `Only draft ${kind.responseKey}s can be deleted`,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: `${kind.Label} deleted successfully`,
+      });
+      activityLogService.log({
+        instituteId: (result.row as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: kind.objectType,
+        subjectId1: id,
+      });
+    } catch (error: any) {
+      console.error(`Error deleting ${kind.label}:`, error);
+      res.status(500).json({
+        success: false,
+        message: `Failed to delete ${kind.label}`,
+      });
+    }
+  }
+
+  // ==========================================================================
   // MEDICAL RECORD ENDPOINTS
   // ==========================================================================
 
@@ -68,36 +594,7 @@ export class ReportController {
    * Get all medical records for a student
    */
   async getMedicalRecords(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "medical",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to medical records",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const records = await reportService.getMedicalRecordsByStudentId(studentId, ctx);
-      res.json({ success: true, records });
-    } catch (error: any) {
-      console.error("Error fetching medical records:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch medical records",
-      });
-    }
+    return this.getReports(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -105,49 +602,7 @@ export class ReportController {
    * Get the current medical record for a student
    */
   async getCurrentMedicalRecord(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "medical",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to medical records",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const record = await reportService.getCurrentMedicalRecord(
-        studentId,
-        instituteId as string | undefined,
-        ctx,
-      );
-
-      if (!record) {
-        res.status(404).json({
-          success: false,
-          message: "No current medical record found",
-        });
-        return;
-      }
-
-      res.json({ success: true, record });
-    } catch (error: any) {
-      console.error("Error fetching current medical record:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch medical record",
-      });
-    }
+    return this.getCurrentReport(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -155,41 +610,7 @@ export class ReportController {
    * Get archived medical records for a student
    */
   async getArchivedMedicalRecords(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "medical",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to medical records",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const records = await reportService.getArchivedMedicalRecords(
-        studentId,
-        instituteId as string | undefined,
-        ctx,
-      );
-
-      res.json({ success: true, records });
-    } catch (error: any) {
-      console.error("Error fetching archived medical records:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch archived medical records",
-      });
-    }
+    return this.getArchivedReports(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -197,61 +618,7 @@ export class ReportController {
    * Get a specific medical record by ID
    */
   async getMedicalRecordById(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      // Two-step: resolve studentId via no-ctx fetch so family-institute
-      // escalation can fire on the second pass with the proper ctx.
-      const baseline = await reportService.getMedicalRecordById(id, currentUser.id);
-      if (!baseline.record) {
-        res.status(baseline.hasAccess ? 404 : 403).json({
-          success: false,
-          message: baseline.hasAccess ? "Medical record not found" : "Access denied",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, baseline.record.studentId);
-      const result = ctx
-        ? await reportService.getMedicalRecordById(id, currentUser.id, ctx)
-        : baseline;
-
-      if (!result.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-        return;
-      }
-
-      if (!result.record) {
-        res.status(404).json({
-          success: false,
-          message: "Medical record not found",
-        });
-        return;
-      }
-
-      res.json({ success: true, record: result.record });
-      activityLogService.log({
-        instituteId: (result.record as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "view",
-        subjectType1: "medical_record",
-        subjectId1: id,
-        // Name the student too: once the record is hard-deleted, an audit row
-        // that only names the record id resolves to nothing.
-        subjectType2: "student",
-        subjectId2: (result.record as any).studentId ?? null,
-      });
-    } catch (error: any) {
-      console.error("Error fetching medical record:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch medical record",
-      });
-    }
+    return this.getReportById(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -259,62 +626,7 @@ export class ReportController {
    * Create a new medical record
    */
   async createMedicalRecord(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "medical",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to create medical records",
-        });
-        return;
-      }
-
-      // Force new-record ownership to the caller's selected institute. For
-      // student-principal callers (family-institute escalation), keep whatever
-      // the body specified — they may legitimately create records owned by
-      // their family institute or null.
-      const ctx = await buildClinicianCtx(req, studentId);
-      const ownedInstituteId =
-        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
-
-      const data: InsertMedicalRecord = {
-        ...req.body,
-        studentId,
-        userId: currentUser.id,
-        status: "draft",
-        instituteId: ownedInstituteId,
-      };
-
-      const record = await reportService.createMedicalRecord(data);
-      res.json({
-        success: true,
-        message: "Medical record created successfully",
-        record,
-      });
-      activityLogService.log({
-        instituteId: ownedInstituteId,
-        userId: currentUser.id,
-        eventType: "create",
-        subjectType1: "medical_record",
-        subjectId1: (record as any).id ?? null,
-      });
-    } catch (error: any) {
-      console.error("Error creating medical record:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to create medical record",
-      });
-    }
+    return this.createReport(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -322,115 +634,74 @@ export class ReportController {
    * Update a medical record
    */
   async updateMedicalRecord(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getMedicalRecordById(id, currentUser.id);
-
-      if (!result.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-        return;
-      }
-
-      if (!result.record) {
-        res.status(404).json({
-          success: false,
-          message: "Medical record not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
-        return;
-      }
-
-      const updates: UpdateMedicalRecord = req.body;
-      const updated = await reportService.updateMedicalRecord(id, updates);
-
-      if (!updated) {
-        res.status(400).json({
-          success: false,
-          message: "Failed to update medical record",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Medical record updated successfully",
-        record: updated,
-      });
-      activityLogService.log({
-        instituteId: (updated as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "update",
-        subjectType1: "medical_record",
-        subjectId1: id,
-        details: changeDetails(
-          summarizeChanges("medical_records", result.record as any, updates as any),
-        ),
-      });
-    } catch (error: any) {
-      console.error("Error updating medical record:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to update medical record",
-      });
-    }
+    return this.updateReport(req, res, REPORT_KINDS.medical);
   }
 
   /**
    * POST /api/medical-records/:id/finalize
    * Finalize a medical record
    */
-  async finalizeMedicalRecord(req: Request, res: Response): Promise<void> {
+  /**
+   * `finalize` for all three report types.
+   *
+   * This verb is why the collapse matters: it carries the cross-institute
+   * ownership gate AND `requireConsentForResponse` (finalising is the
+   * consent-gated transition — drafts are deliberately open, see
+   * docs/student-consent-implementation.md §7.4). That pair used to be written
+   * out three times, so a change to the consent rule had three places to miss.
+   *
+   * Every message is derived from the descriptor, so the responses stay
+   * byte-identical to the three handlers this replaces — including the
+   * "record" / "report" split the client depends on.
+   */
+  private async finalizeReport(req: Request, res: Response, kind: ReportKind): Promise<void> {
     try {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const result = await reportService.getMedicalRecordById(id, currentUser.id);
+      const { hasAccess, row } = await kind.getById(id, currentUser.id);
 
-      if (!result.hasAccess || !result.record) {
+      if (!hasAccess || !row) {
         res.status(403).json({
           success: false,
-          message: "Access denied or record not found",
+          message: `Access denied or ${kind.responseKey} not found`,
         });
         return;
       }
 
-      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
+      if (!(await this.requireOwningInstitute(req, res, row, kind.label, kind.objectType))) {
         return;
       }
 
-      if (!(await requireConsentForResponse(req, res, (result.record as any).studentId))) {
+      if (!(await requireConsentForResponse(req, res, (row as any).studentId))) {
         return;
       }
 
-      const finalized = await reportService.finalizeMedicalRecord(id);
+      const finalized = await kind.finalize(id);
 
       res.json({
         success: true,
-        message: "Medical record finalized successfully",
-        record: finalized,
+        message: `${kind.Label} finalized successfully`,
+        [kind.responseKey]: finalized,
       });
       activityLogService.log({
         instituteId: (finalized as any).instituteId ?? null,
         userId: currentUser.id,
         eventType: "finalize",
-        subjectType1: "medical_record",
+        subjectType1: kind.objectType,
         subjectId1: id,
       });
     } catch (error: any) {
-      console.error("Error finalizing medical record:", error);
+      console.error(`Error finalizing ${kind.label}:`, error);
       res.status(500).json({
         success: false,
-        message: error.message || "Failed to finalize medical record",
+        message: error.message || `Failed to finalize ${kind.label}`,
       });
     }
+  }
+
+  async finalizeMedicalRecord(req: Request, res: Response): Promise<void> {
+    return this.finalizeReport(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -438,49 +709,7 @@ export class ReportController {
    * Create a new revision from a finalized medical record
    */
   async createMedicalRecordRevision(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getMedicalRecordById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.record) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or record not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
-        return;
-      }
-
-      const newRecord = await reportService.createMedicalRecordRevision(
-        id,
-        currentUser.id
-      );
-
-      res.json({
-        success: true,
-        message: "Medical record revision created successfully",
-        record: newRecord,
-      });
-      activityLogService.log({
-        instituteId: (newRecord as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "revision",
-        subjectType1: "medical_record",
-        subjectId1: id,
-        details: { newRecordId: (newRecord as any).id ?? null },
-      });
-    } catch (error: any) {
-      console.error("Error creating medical record revision:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to create revision",
-      });
-    }
+    return this.createReportRevision(req, res, REPORT_KINDS.medical);
   }
 
   /**
@@ -488,52 +717,7 @@ export class ReportController {
    * Delete a draft medical record
    */
   async deleteMedicalRecord(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getMedicalRecordById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.record) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or record not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
-        return;
-      }
-
-      const deleted = await reportService.deleteMedicalRecord(id);
-
-      if (!deleted) {
-        res.status(400).json({
-          success: false,
-          message: "Only draft records can be deleted",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Medical record deleted successfully",
-      });
-      activityLogService.log({
-        instituteId: (result.record as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "delete",
-        subjectType1: "medical_record",
-        subjectId1: id,
-      });
-    } catch (error: any) {
-      console.error("Error deleting medical record:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to delete medical record",
-      });
-    }
+    return this.deleteReport(req, res, REPORT_KINDS.medical);
   }
 
   // ==========================================================================
@@ -545,36 +729,7 @@ export class ReportController {
    * Get all functional reports for a student
    */
   async getFunctionalReports(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "functional",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to functional reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const reports = await reportService.getFunctionalReportsByStudentId(studentId, ctx);
-      res.json({ success: true, reports });
-    } catch (error: any) {
-      console.error("Error fetching functional reports:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch functional reports",
-      });
-    }
+    return this.getReports(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -582,45 +737,7 @@ export class ReportController {
    * Get the current functional report for a student
    */
   async getCurrentFunctionalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "functional",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to functional reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const report = await reportService.getCurrentFunctionalReport(studentId, ctx);
-
-      if (!report) {
-        res.status(404).json({
-          success: false,
-          message: "No current functional report found",
-        });
-        return;
-      }
-
-      res.json({ success: true, report });
-    } catch (error: any) {
-      console.error("Error fetching current functional report:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch functional report",
-      });
-    }
+    return this.getCurrentReport(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -628,36 +745,7 @@ export class ReportController {
    * Get archived functional reports for a student
    */
   async getArchivedFunctionalReports(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "functional",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to functional reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const reports = await reportService.getArchivedFunctionalReports(studentId, ctx);
-      res.json({ success: true, reports });
-    } catch (error: any) {
-      console.error("Error fetching archived functional reports:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch archived functional reports",
-      });
-    }
+    return this.getArchivedReports(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -665,57 +753,7 @@ export class ReportController {
    * Get a specific functional report by ID
    */
   async getFunctionalReportById(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const baseline = await reportService.getFunctionalReportById(id, currentUser.id);
-      if (!baseline.report) {
-        res.status(baseline.hasAccess ? 404 : 403).json({
-          success: false,
-          message: baseline.hasAccess ? "Functional report not found" : "Access denied",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, baseline.report.studentId);
-      const result = ctx
-        ? await reportService.getFunctionalReportById(id, currentUser.id, ctx)
-        : baseline;
-
-      if (!result.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-        return;
-      }
-
-      if (!result.report) {
-        res.status(404).json({
-          success: false,
-          message: "Functional report not found",
-        });
-        return;
-      }
-
-      res.json({ success: true, report: result.report });
-      activityLogService.log({
-        instituteId: (result.report as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "view",
-        subjectType1: "functional_report",
-        subjectId1: id,
-        subjectType2: "student",
-        subjectId2: (result.report as any).studentId ?? null,
-      });
-    } catch (error: any) {
-      console.error("Error fetching functional report:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch functional report",
-      });
-    }
+    return this.getReportById(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -723,58 +761,7 @@ export class ReportController {
    * Create a new functional report
    */
   async createFunctionalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "functional",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to create functional reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const ownedInstituteId =
-        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
-
-      const data: InsertFunctionalReport = {
-        ...req.body,
-        studentId,
-        userId: currentUser.id,
-        status: "draft",
-        instituteId: ownedInstituteId,
-      };
-
-      const report = await reportService.createFunctionalReport(data);
-      res.json({
-        success: true,
-        message: "Functional report created successfully",
-        report,
-      });
-      activityLogService.log({
-        instituteId: ownedInstituteId,
-        userId: currentUser.id,
-        eventType: "create",
-        subjectType1: "functional_report",
-        subjectId1: (report as any).id ?? null,
-      });
-    } catch (error: any) {
-      console.error("Error creating functional report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to create functional report",
-      });
-    }
+    return this.createReport(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -782,65 +769,7 @@ export class ReportController {
    * Update a functional report
    */
   async updateFunctionalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getFunctionalReportById(id, currentUser.id);
-
-      if (!result.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-        return;
-      }
-
-      if (!result.report) {
-        res.status(404).json({
-          success: false,
-          message: "Functional report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
-        return;
-      }
-
-      const updates: UpdateFunctionalReport = req.body;
-      const updated = await reportService.updateFunctionalReport(id, updates);
-
-      if (!updated) {
-        res.status(400).json({
-          success: false,
-          message: "Failed to update functional report",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Functional report updated successfully",
-        report: updated,
-      });
-      activityLogService.log({
-        instituteId: (updated as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "update",
-        subjectType1: "functional_report",
-        subjectId1: id,
-        details: changeDetails(
-          summarizeChanges("functional_reports", result.report as any, updates as any),
-        ),
-      });
-    } catch (error: any) {
-      console.error("Error updating functional report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to update functional report",
-      });
-    }
+    return this.updateReport(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -848,49 +777,7 @@ export class ReportController {
    * Finalize a functional report
    */
   async finalizeFunctionalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getFunctionalReportById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.report) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
-        return;
-      }
-
-      if (!(await requireConsentForResponse(req, res, (result.report as any).studentId))) {
-        return;
-      }
-
-      const finalized = await reportService.finalizeFunctionalReport(id);
-
-      res.json({
-        success: true,
-        message: "Functional report finalized successfully",
-        report: finalized,
-      });
-      activityLogService.log({
-        instituteId: (finalized as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "finalize",
-        subjectType1: "functional_report",
-        subjectId1: id,
-      });
-    } catch (error: any) {
-      console.error("Error finalizing functional report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to finalize functional report",
-      });
-    }
+    return this.finalizeReport(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -898,49 +785,7 @@ export class ReportController {
    * Create a new revision from a finalized functional report
    */
   async createFunctionalReportRevision(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getFunctionalReportById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.report) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
-        return;
-      }
-
-      const newReport = await reportService.createFunctionalReportRevision(
-        id,
-        currentUser.id
-      );
-
-      res.json({
-        success: true,
-        message: "Functional report revision created successfully",
-        report: newReport,
-      });
-      activityLogService.log({
-        instituteId: (newReport as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "revision",
-        subjectType1: "functional_report",
-        subjectId1: id,
-        details: { newReportId: (newReport as any).id ?? null },
-      });
-    } catch (error: any) {
-      console.error("Error creating functional report revision:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to create revision",
-      });
-    }
+    return this.createReportRevision(req, res, REPORT_KINDS.functional);
   }
 
   /**
@@ -948,52 +793,7 @@ export class ReportController {
    * Delete a draft functional report
    */
   async deleteFunctionalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getFunctionalReportById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.report) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
-        return;
-      }
-
-      const deleted = await reportService.deleteFunctionalReport(id);
-
-      if (!deleted) {
-        res.status(400).json({
-          success: false,
-          message: "Only draft reports can be deleted",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Functional report deleted successfully",
-      });
-      activityLogService.log({
-        instituteId: (result.report as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "delete",
-        subjectType1: "functional_report",
-        subjectId1: id,
-      });
-    } catch (error: any) {
-      console.error("Error deleting functional report:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to delete functional report",
-      });
-    }
+    return this.deleteReport(req, res, REPORT_KINDS.functional);
   }
 
   // ==========================================================================
@@ -1005,36 +805,7 @@ export class ReportController {
    * Get all educational reports for a student
    */
   async getEducationalReports(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "educational",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to educational reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const reports = await reportService.getEducationalReportsByStudentId(studentId, ctx);
-      res.json({ success: true, reports });
-    } catch (error: any) {
-      console.error("Error fetching educational reports:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch educational reports",
-      });
-    }
+    return this.getReports(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1042,45 +813,7 @@ export class ReportController {
    * Get the current educational report for a student
    */
   async getCurrentEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "educational",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to educational reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const report = await reportService.getCurrentEducationalReport(studentId, ctx);
-
-      if (!report) {
-        res.status(404).json({
-          success: false,
-          message: "No current educational report found",
-        });
-        return;
-      }
-
-      res.json({ success: true, report });
-    } catch (error: any) {
-      console.error("Error fetching current educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch educational report",
-      });
-    }
+    return this.getCurrentReport(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1088,36 +821,7 @@ export class ReportController {
    * Get archived educational reports for a student
    */
   async getArchivedEducationalReports(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "educational",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to educational reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const reports = await reportService.getArchivedEducationalReports(studentId, ctx);
-      res.json({ success: true, reports });
-    } catch (error: any) {
-      console.error("Error fetching archived educational reports:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch archived educational reports",
-      });
-    }
+    return this.getArchivedReports(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1125,57 +829,7 @@ export class ReportController {
    * Get a specific educational report by ID
    */
   async getEducationalReportById(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const baseline = await reportService.getEducationalReportById(id, currentUser.id);
-      if (!baseline.report) {
-        res.status(baseline.hasAccess ? 404 : 403).json({
-          success: false,
-          message: baseline.hasAccess ? "Educational report not found" : "Access denied",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, baseline.report.studentId);
-      const result = ctx
-        ? await reportService.getEducationalReportById(id, currentUser.id, ctx)
-        : baseline;
-
-      if (!result.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-        return;
-      }
-
-      if (!result.report) {
-        res.status(404).json({
-          success: false,
-          message: "Educational report not found",
-        });
-        return;
-      }
-
-      res.json({ success: true, report: result.report });
-      activityLogService.log({
-        instituteId: (result.report as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "view",
-        subjectType1: "educational_report",
-        subjectId1: id,
-        subjectType2: "student",
-        subjectId2: (result.report as any).studentId ?? null,
-      });
-    } catch (error: any) {
-      console.error("Error fetching educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch educational report",
-      });
-    }
+    return this.getReportById(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1183,58 +837,7 @@ export class ReportController {
    * Create a new educational report
    */
   async createEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { studentId } = req.params;
-      const instituteId = req.query.instituteId as string | undefined;
-
-      const access = await reportService.verifyReportAccess(
-        studentId,
-        currentUser.id,
-        "educational",
-        instituteId
-      );
-
-      if (!access.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to create educational reports",
-        });
-        return;
-      }
-
-      const ctx = await buildClinicianCtx(req, studentId);
-      const ownedInstituteId =
-        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
-
-      const data: InsertEducationalReport = {
-        ...req.body,
-        studentId,
-        userId: currentUser.id,
-        status: "draft",
-        instituteId: ownedInstituteId,
-      };
-
-      const report = await reportService.createEducationalReport(data);
-      res.json({
-        success: true,
-        message: "Educational report created successfully",
-        report,
-      });
-      activityLogService.log({
-        instituteId: ownedInstituteId,
-        userId: currentUser.id,
-        eventType: "create",
-        subjectType1: "educational_report",
-        subjectId1: (report as any).id ?? null,
-      });
-    } catch (error: any) {
-      console.error("Error creating educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to create educational report",
-      });
-    }
+    return this.createReport(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1242,65 +845,7 @@ export class ReportController {
    * Update an educational report
    */
   async updateEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getEducationalReportById(id, currentUser.id);
-
-      if (!result.hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied",
-        });
-        return;
-      }
-
-      if (!result.report) {
-        res.status(404).json({
-          success: false,
-          message: "Educational report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
-        return;
-      }
-
-      const updates: UpdateEducationalReport = req.body;
-      const updated = await reportService.updateEducationalReport(id, updates);
-
-      if (!updated) {
-        res.status(400).json({
-          success: false,
-          message: "Failed to update educational report",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Educational report updated successfully",
-        report: updated,
-      });
-      activityLogService.log({
-        instituteId: (updated as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "update",
-        subjectType1: "educational_report",
-        subjectId1: id,
-        details: changeDetails(
-          summarizeChanges("educational_reports", result.report as any, updates as any),
-        ),
-      });
-    } catch (error: any) {
-      console.error("Error updating educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to update educational report",
-      });
-    }
+    return this.updateReport(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1308,49 +853,7 @@ export class ReportController {
    * Finalize an educational report
    */
   async finalizeEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getEducationalReportById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.report) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
-        return;
-      }
-
-      if (!(await requireConsentForResponse(req, res, (result.report as any).studentId))) {
-        return;
-      }
-
-      const finalized = await reportService.finalizeEducationalReport(id);
-
-      res.json({
-        success: true,
-        message: "Educational report finalized successfully",
-        report: finalized,
-      });
-      activityLogService.log({
-        instituteId: (finalized as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "finalize",
-        subjectType1: "educational_report",
-        subjectId1: id,
-      });
-    } catch (error: any) {
-      console.error("Error finalizing educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to finalize educational report",
-      });
-    }
+    return this.finalizeReport(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1358,49 +861,7 @@ export class ReportController {
    * Create a new revision from a finalized educational report
    */
   async createEducationalReportRevision(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getEducationalReportById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.report) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
-        return;
-      }
-
-      const newReport = await reportService.createEducationalReportRevision(
-        id,
-        currentUser.id
-      );
-
-      res.json({
-        success: true,
-        message: "Educational report revision created successfully",
-        report: newReport,
-      });
-      activityLogService.log({
-        instituteId: (newReport as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "revision",
-        subjectType1: "educational_report",
-        subjectId1: id,
-        details: { newReportId: (newReport as any).id ?? null },
-      });
-    } catch (error: any) {
-      console.error("Error creating educational report revision:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to create revision",
-      });
-    }
+    return this.createReportRevision(req, res, REPORT_KINDS.educational);
   }
 
   /**
@@ -1408,52 +869,7 @@ export class ReportController {
    * Delete a draft educational report
    */
   async deleteEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const result = await reportService.getEducationalReportById(id, currentUser.id);
-
-      if (!result.hasAccess || !result.report) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied or report not found",
-        });
-        return;
-      }
-
-      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
-        return;
-      }
-
-      const deleted = await reportService.deleteEducationalReport(id);
-
-      if (!deleted) {
-        res.status(400).json({
-          success: false,
-          message: "Only draft reports can be deleted",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Educational report deleted successfully",
-      });
-      activityLogService.log({
-        instituteId: (result.report as any).instituteId ?? null,
-        userId: currentUser.id,
-        eventType: "delete",
-        subjectType1: "educational_report",
-        subjectId1: id,
-      });
-    } catch (error: any) {
-      console.error("Error deleting educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to delete educational report",
-      });
-    }
+    return this.deleteReport(req, res, REPORT_KINDS.educational);
   }
 
   // ==========================================================================
@@ -1470,7 +886,9 @@ export class ReportController {
       const { studentId } = req.params;
 
       const instituteId = req.query.instituteId as string | undefined;
-      const ctx = await buildClinicianCtx(req, studentId);
+      const ctxResult = await visibilityCtx(req, res, studentId);
+      if (!ctxResult.ok) return;
+      const ctx = ctxResult.ctx;
       const result = await reportService.getAllReportsForStudent(
         studentId,
         currentUser.id,
@@ -1501,7 +919,11 @@ export class ReportController {
       const { studentId } = req.params;
       const instituteId = req.query.instituteId as string | undefined;
 
-      const ctx = await buildClinicianCtx(req, studentId);
+      const ctxResult = await visibilityCtx(req, res, studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       const result = await reportService.getCurrentReportsForStudent(
         studentId,
         currentUser.id,

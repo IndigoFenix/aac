@@ -204,9 +204,10 @@ export function craftRecipeOf(
     };
   }
   // ④ THE BAG BRANCH — checked before the toy fallback so a bag head can never
-  // be reinterpreted as a doll's material. `basket` reaches here and falls
-  // straight through: it has no `craft` row, which is the honest "no weaver
-  // yet" rather than a recipe nobody authored.
+  // be reinterpreted as a doll's material. `basket` reaches here and ANSWERS
+  // since 2026-09-09 (2 wood at the workbench — containers.ts); `satchel` still
+  // falls straight through, which is the honest "no leatherworker yet" rather
+  // than a recipe nobody authored.
   const bag = portableCraftOf(glyph);
   if (bag) {
     return {

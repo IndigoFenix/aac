@@ -544,7 +544,8 @@ class StudentShareInviteService {
 
   async revokeObjectShare(
     objectShareId: string,
-    userId: string,
+    /** Null when the actor has no account — see cascadeRevokeAllForStudent. */
+    userId: string | null,
     extraDetails?: Record<string, unknown>,
   ): Promise<ObjectShare> {
     const updated = await shareInviteRepository.revokeObjectShare(
@@ -572,7 +573,8 @@ class StudentShareInviteService {
 
   async revokeStandingShare(
     standingShareId: string,
-    userId: string,
+    /** Null when the actor has no account — see cascadeRevokeAllForStudent. */
+    userId: string | null,
     extraDetails?: Record<string, unknown>,
   ): Promise<StandingShare> {
     const updated = await shareInviteRepository.revokeStandingShare(
@@ -787,7 +789,10 @@ class StudentShareInviteService {
    */
   async cascadeRevokeAllForStudent(
     studentId: string,
-    actingUserId: string,
+    // Null when the withdrawal came from a signer with no user account (the
+    // consent-withdrawal token path). Every `revoked_by_user_id` column here is
+    // nullable, so this widening is a signature change and nothing else.
+    actingUserId: string | null,
     cascadeReason: string,
   ): Promise<{ objectSharesRevoked: number; standingSharesRevoked: number }> {
     const { objectShares: objs, standingShares: stds } =

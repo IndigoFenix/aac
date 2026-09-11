@@ -5,11 +5,18 @@
 // Contract: @shared/guided-setup (types + routes + constants; never edited here).
 //
 // The SERVER owns the flow. This provider only:
-//   - calls the REST surface and parks the returned view in FeaturePanel
-//     sharedState (`guidedSetup: { view, live }`), where the rail reads it;
+//   - holds the view as an ordinary react-query query over
+//     `GET /api/guided-setup/students/:id`, refetched when a chat turn ends;
+//   - parks the chat session's own SIGNAL (`GuidedSetupSignal` — is a flow
+//     live in this chat, who did it bind to, any pending roster proposal or
+//     refusal) in FeaturePanel sharedState, where useChat writes it;
 //   - opens the flow (auto-launch on a zero-student institute, or the
 //     "New student" button) and sends the hidden kickoff turn;
 //   - picks a student created through the StudentModal form back up.
+//
+// THE VIEW IS FETCHED, NOT PUSHED — everything in it is derived from rows, so
+// a refetch reproduces it. Only what a refetch cannot reproduce rides the
+// signal, and is merged over the fetched view below.
 //
 // Every request is swallowed on failure: Phase A may not be deployed yet, and a
 // 404 from /api/guided-setup must never break the dashboard.
@@ -25,6 +32,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation } from 'wouter';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiRequest } from '@/lib/queryClient';
 import { useChat } from '@/hooks/useChat';
@@ -34,17 +42,20 @@ import { useInstitute } from '@/hooks/useInstitute';
 import { useFeaturePanel, useSharedState, PATH_TO_FEATURE } from '@/contexts/FeaturePanelContext';
 
 import { shouldAutoLaunchGuidedSetup } from './auto-launch';
+import { guidedSetupQueryKey } from './guided-setup-query';
 
 import {
   GUIDED_SETUP_NOT_NOW_KEY,
   GUIDED_SETUP_ROUTES,
   type GuidedSetupConsentBatchItem,
+  type GuidedSetupGate,
   type GuidedSetupConsentBatchOutcome,
   type GuidedSetupRecord,
   type GuidedSetupRequest,
   type GuidedSetupRosterConfirmResult,
   type GuidedSetupRosterCreated,
   type GuidedSetupRosterRow,
+  type GuidedSetupSignal,
   type GuidedSetupSkippableStep,
   type GuidedSetupView,
 } from '@shared/guided-setup';
@@ -53,15 +64,18 @@ import {
 // TYPES
 // ============================================================================
 
-/** What lives at `sharedState.guidedSetup`. `live` = it came from a chat turn. */
-export interface GuidedSetupSharedState {
-  view: GuidedSetupView;
-  live: boolean;
-}
-
 interface GuidedSetupContextValue {
   view: GuidedSetupView | null;
-  /** True when the view arrived on a chat turn (as opposed to a GET on load). */
+  /**
+   * A flow is running in THIS chat — the server's session state, straight off
+   * `GuidedSetupSignal.active`.
+   *
+   * NOT `view.active`, which the two mean different things: the server reports
+   * `active: !done` on every GET, so ANY student with an unfinished profile
+   * has an "active" view whether or not a flow is running. The full rail keys
+   * off `live && view.active`; collapsing them would put the whole wizard on
+   * screen for every half-filled patient the user selects.
+   */
   live: boolean;
   /** A live flow is running right now. */
   isActive: boolean;
@@ -89,24 +103,25 @@ interface GuidedSetupContextValue {
   skip: (step: GuidedSetupSkippableStep) => Promise<void>;
   dismiss: () => Promise<void>;
   ackAac: () => Promise<void>;
-  /** GET the persisted view for a student (resume detection; not a live turn). */
+  /**
+   * Look at a DIFFERENT student than the one the chat's flow is about: drop
+   * the live flag (so the selected student's own view is the one on screen)
+   * and re-fetch their view. Used by the rail's parked list and by anything
+   * that just wrote a fact the view is derived from (a guardian contact flips
+   * the consent gate).
+   */
   refresh: (studentId: string) => Promise<void>;
   /**
-   * The student id whose guided-setup view has actually settled — either the
-   * resume-detection GET returned (with or without a record) or a live view
-   * for exactly this student is already in hand, so there is nothing left to
-   * learn right now. `null` (or any other student's id) means "don't know
-   * yet": a consumer rendering a stable footprint (no second layout shift)
-   * should hold its placeholder until this equals the student it cares about.
+   * The view for the student ON SCREEN has not settled yet — a consumer
+   * rendering a stable footprint holds its placeholder while this is true.
    *
-   * It is a SETTLE signal, not a freshness one, and it is guaranteed to
-   * arrive: the resume-detection effect marks the selected student probed on
-   * every path it can take (fetched, empty, failed, no institute to ask, a
-   * live flow already showing, a view already in hand) and never clears it
-   * out from under a consumer. Anything that leaves a placeholder waiting on
-   * a fetch that will never happen is a bar that pulses forever.
+   * This is react-query's own per-key loading state, so it terminates by
+   * construction: there is no request it can be waiting on that will not
+   * resolve or error. (It replaces a hand-rolled `probedStudentId` that
+   * needed an 8-second timeout to guarantee the same thing, and still hung a
+   * skeleton forever when a view arrived for somebody else.)
    */
-  probedStudentId: string | null;
+  isViewPending: boolean;
   /**
    * Institution step 1: create the reviewed roster rows. The rows are sent back
    * WITH the user's edits — the server re-validates every cell, so this is a
@@ -164,13 +179,6 @@ export function useGuidedSetup(): GuidedSetupContextValue {
  */
 const GUIDED_SETUP_COMPLETE_LINGER_MS = 4000;
 
-/**
- * Last-resort settle for `probedStudentId`. `refresh` swallows its own
- * failures, so this only fires for a request that never comes back at all —
- * and the whole point of the signal is that it terminates.
- */
-const PROBE_SETTLE_TIMEOUT_MS = 8000;
-
 function readNotNow(): boolean {
   try {
     return window.sessionStorage.getItem(GUIDED_SETUP_NOT_NOW_KEY) === '1';
@@ -219,41 +227,94 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
   const { sendMessage, startNewSession, isSending } = useChat();
   const { t } = useLanguage();
 
+  const queryClient = useQueryClient();
+
   const [isBusy, setIsBusy] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   /** What this session's roster import created. Null until one runs. */
   const [rosterCreated, setRosterCreated] = useState<GuidedSetupRosterCreated[] | null>(null);
-  /** See `GuidedSetupContextValue.probedStudentId`. Set in `store()`. */
-  const [probedStudentId, setProbedStudentId] = useState<string | null>(null);
 
-  const entry: GuidedSetupSharedState | null = sharedState.guidedSetup ?? null;
-  const view = entry?.view ?? null;
-  const live = Boolean(entry?.live);
-  const isActive = Boolean(live && view?.active);
+  /** The chat session's flow state, written by useChat on every turn. */
+  const signal: GuidedSetupSignal | null = sharedState.guidedSetup ?? null;
+  const live = Boolean(signal?.active);
 
   const instituteId = currentInstitute?.id ?? null;
 
   // --------------------------------------------------------------------------
-  // Resume-detection guard. Declared up here (ahead of `store`) so `store` can
-  // clear it — see the comment inside `store` below for why.
+  // THE VIEW — one query per (institute, student).
+  //
+  // A live flow owns the slot outright, including while it is still UNBOUND:
+  // it may be about a student the user has not selected (the server can bind
+  // it mid-turn to one the model just created), and clicking a patient during
+  // "New student" must not swap the rail over to them. With no flow it
+  // follows the selection, which is what shows a parked patient's banner.
+  //
+  // An unbound flow has no GET to make, so that key is disabled and holds only
+  // what the POST that opened the flow wrote into it.
   // --------------------------------------------------------------------------
 
-  const refreshedForRef = useRef<string | null>(null);
+  const viewStudentId = live ? (signal?.studentId ?? null) : (student?.id ?? null);
+
+  const viewQuery = useQuery<GuidedSetupView | null>({
+    queryKey: guidedSetupQueryKey(instituteId, viewStudentId),
+    queryFn: async () => {
+      const res = await apiRequest(
+        'GET',
+        `${GUIDED_SETUP_ROUTES.student(viewStudentId as string)}?instituteId=${encodeURIComponent(
+          instituteId as string,
+        )}`,
+      );
+      const data = await res.json();
+      // Phase A may not be deployed, and a 404 must never break the dashboard.
+      return data?.success && data.view ? (data.view as GuidedSetupView) : null;
+    },
+    enabled: !!instituteId && !!viewStudentId,
+    // A failed probe is not worth three round trips; the next invalidation
+    // (or student switch) asks again.
+    retry: false,
+  });
+
+  /**
+   * The fetched view plus the two things a fetch cannot reproduce: `refused`
+   * (persisted NOWHERE, so it lives only on the turn that caused it — exactly
+   * how the banner should behave) and `roster` (chat-session state; the GET
+   * always answers null, so without this the review table would vanish the
+   * moment the user typed anything).
+   */
+  const view = useMemo<GuidedSetupView | null>(() => {
+    const base = viewQuery.data ?? null;
+    // Only ever onto the view the signal is ABOUT. A refusal or a proposal
+    // from the flow's own student must never be painted onto somebody else's
+    // view — which is reachable, because dropping `live` hands the slot back
+    // to the selection while the signal is still in hand.
+    if (!base || !signal || (signal.studentId ?? null) !== (base.studentId ?? null)) return base;
+    const merged = { ...base };
+    if (signal.refused !== undefined) merged.refused = signal.refused;
+    if (signal.roster !== undefined) merged.roster = signal.roster;
+    return merged;
+  }, [viewQuery.data, signal]);
+
+  const isActive = Boolean(live && view?.active);
+
+  // Only ever about the student ON SCREEN: a flow live for somebody else has
+  // no request pending for the selection, so a consumer must not hold a
+  // placeholder for one — that is the case that used to pulse forever.
+  const isViewPending = viewQuery.isLoading && viewStudentId === student?.id;
 
   // --------------------------------------------------------------------------
   // Transport — every call is best-effort. Phase A may be missing entirely.
   // --------------------------------------------------------------------------
 
   const call = useCallback(
-    async (method: 'GET' | 'POST', path: string, body?: unknown): Promise<GuidedSetupView | null> => {
+    async (path: string, body?: unknown): Promise<GuidedSetupView | null> => {
       setIsBusy(true);
       try {
-        const res = await apiRequest(method, path, body);
+        const res = await apiRequest('POST', path, body);
         const data = await res.json();
         if (data?.success && data.view) return data.view as GuidedSetupView;
         return null;
       } catch (err) {
-        console.warn('[GuidedSetup] request failed:', method, path, err);
+        console.warn('[GuidedSetup] request failed: POST', path, err);
         return null;
       } finally {
         setIsBusy(false);
@@ -284,43 +345,30 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const store = useCallback(
-    (next: GuidedSetupView | null, isLive: boolean, probedFor?: string) => {
-      // The resume-detection effect below fetches a student's view once per
-      // `${instituteId}:${studentId}` token and remembers that in
-      // `refreshedForRef`, so it doesn't refetch on every render. That guard
-      // goes stale the moment the view it "guards" is cleared or replaced by
-      // a DIFFERENT student's view (e.g. "New Patient" then "Not now"): the
-      // token stays set, but there is no longer a matching view for that
-      // student, so reselecting them would silently short-circuit forever.
-      // Clearing the token here — whenever we store nothing, or store a view
-      // for someone else — makes the next selection of that student a real
-      // refetch, while a genuinely-failed GET (which also stores null) still
-      // only retries on the next actual re-render trigger, not in a loop.
-      const trackedStudentId = refreshedForRef.current?.split(':')[1];
-      if (!next || next.studentId !== trackedStudentId) {
-        refreshedForRef.current = null;
+  /**
+   * Take the view a REST action just handed back: the server already resolved
+   * it, so it goes straight into the cache rather than costing a second round
+   * trip. `isLive` is whether that action left a flow running in this chat.
+   */
+  const publish = useCallback(
+    (next: GuidedSetupView | null, isLive: boolean) => {
+      if (!next) {
+        setSharedState({ guidedSetup: undefined });
+        return;
       }
-      // `probedStudentId` is a SETTLE signal, never a freshness one: it says
-      // "we have finished finding out about this student", and a consumer
-      // holds a loading placeholder until it names the student on screen. So
-      // it only ever moves FORWARD here — `probedFor` (passed by `refresh`,
-      // the one caller that knows who was checked) marks that student
-      // settled, and every other store leaves it alone.
-      //
-      // It used to be cleared whenever a store carried nothing, or someone
-      // else's view — mirroring `refreshedForRef` above. That is what hung
-      // the placeholder: clearing it does not, by itself, schedule anything
-      // that would set it again, and the resume-detection effect below only
-      // re-runs when one of its deps changes. A live view arriving for a
-      // student the user is not looking at (a roster confirm, a flow bound to
-      // a freshly-created child) cleared the flag with no dep change behind
-      // it, and the skeleton pulsed forever. Re-probing is the effect's job,
-      // and it now marks the student settled on every path it can take.
-      if (probedFor) setProbedStudentId(probedFor);
-      setSharedState({ guidedSetup: next ? { view: next, live: isLive } : undefined });
+      queryClient.setQueryData(guidedSetupQueryKey(next.instituteId, next.studentId), next);
+      setSharedState({
+        guidedSetup: {
+          active: isLive && next.active !== false,
+          instituteId: next.instituteId,
+          studentId: next.studentId,
+          panel: next.panel,
+          roster: next.roster ?? null,
+          refused: next.refused ?? null,
+        } satisfies GuidedSetupSignal,
+      });
     },
-    [setSharedState],
+    [queryClient, setSharedState],
   );
 
   /** Make sure the user can actually see the conversation the flow is about to open. */
@@ -379,41 +427,41 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       // holds, because `sendMessage` closes over the student of THIS render.
       await selectStudent(null);
 
-      const next = await call('POST', GUIDED_SETUP_ROUTES.start, { instituteId });
+      const next = await call(GUIDED_SETUP_ROUTES.start, { instituteId });
       if (!next) return;
 
-      store(next, true);
+      publish(next, true);
       revealChat();
       if (next.panel) setActiveFeature(next.panel);
       await sendKickoff(t('guidedSetup.kickoff.new'), { start: true }, { withoutStudent: true });
     } finally {
       setIsLaunching(false);
     }
-  }, [instituteId, selectStudent, call, store, revealChat, setActiveFeature, sendKickoff, t]);
+  }, [instituteId, selectStudent, call, publish, revealChat, setActiveFeature, sendKickoff, t]);
 
   const adopt = useCallback(
     async (studentId: string, source: GuidedSetupRecord['source']) => {
       if (!instituteId) return;
-      const next = await call('POST', GUIDED_SETUP_ROUTES.adopt(studentId), { instituteId, source });
-      if (next) store(next, true);
+      const next = await call(GUIDED_SETUP_ROUTES.adopt(studentId), { instituteId, source });
+      if (next) publish(next, true);
     },
-    [instituteId, call, store],
+    [instituteId, call, publish],
   );
 
   const skip = useCallback(
     async (step: GuidedSetupSkippableStep) => {
       const studentId = view?.studentId;
       if (!studentId || !instituteId) return;
-      const next = await call('POST', GUIDED_SETUP_ROUTES.skip(studentId), { instituteId, step });
-      if (next) store(next, true);
+      const next = await call(GUIDED_SETUP_ROUTES.skip(studentId), { instituteId, step });
+      if (next) publish(next, true);
     },
-    [view?.studentId, instituteId, call, store],
+    [view?.studentId, instituteId, call, publish],
   );
 
   const dismiss = useCallback(async () => {
     const studentId = view?.studentId;
     if (!studentId || !instituteId) {
-      store(null, false);
+      publish(null, false);
       try {
         await startNewSession();
       } catch (err) {
@@ -421,10 +469,10 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       }
       return;
     }
-    const next = await call('POST', GUIDED_SETUP_ROUTES.dismiss(studentId), { instituteId });
+    const next = await call(GUIDED_SETUP_ROUTES.dismiss(studentId), { instituteId });
     // A dismissed record renders neither the rail nor the banner; keeping the
     // returned view lets the server stay the single source of truth.
-    store(next, false);
+    publish(next, false);
     // The dismiss request only marks the record dismissed — the chat session's
     // guidedSetup state (which is what actually drives the system prompt) is
     // still live until the next turn starts a fresh session.
@@ -433,28 +481,31 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn('[GuidedSetup] startNewSession failed after dismiss:', err);
     }
-  }, [view?.studentId, instituteId, call, store, startNewSession]);
+  }, [view?.studentId, instituteId, call, publish, startNewSession]);
 
   const ackAac = useCallback(async () => {
     const studentId = view?.studentId;
     if (!studentId || !instituteId) return;
-    const next = await call('POST', GUIDED_SETUP_ROUTES.ackAac(studentId), { instituteId });
-    if (next) store(next, true);
-  }, [view?.studentId, instituteId, call, store]);
+    const next = await call(GUIDED_SETUP_ROUTES.ackAac(studentId), { instituteId });
+    if (next) publish(next, true);
+  }, [view?.studentId, instituteId, call, publish]);
 
   const refresh = useCallback(
     async (studentId: string) => {
       if (!instituteId) return;
-      const next = await call(
-        'GET',
-        `${GUIDED_SETUP_ROUTES.student(studentId)}?instituteId=${encodeURIComponent(instituteId)}`,
-      );
-      // Pass the probed student explicitly: `next` (or its absence) alone
-      // can't say WHO was just checked, and "checked, nothing there" is the
-      // whole point of this signal.
-      store(next, false, studentId);
+      // Dropping `active` is the half that puts THIS student's view on screen:
+      // while a flow is live the query follows the flow's own student, not the
+      // selection. (That is also what the old GET did — it stored a non-live
+      // view, replacing the running flow's.) The invalidation is the other
+      // half; react-query refetches the key it lands on.
+      setSharedState({
+        guidedSetup: signal ? { ...signal, active: false } : undefined,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: guidedSetupQueryKey(instituteId, studentId),
+      });
     },
-    [instituteId, call, store],
+    [instituteId, signal, setSharedState, queryClient],
   );
 
   const confirmRoster = useCallback(
@@ -468,7 +519,7 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       if (!data) return null;
       // The returned view carries roster:null and a refreshed parked list —
       // storing it is what makes the table disappear and the list appear.
-      if (data.view) store(data.view as GuidedSetupView, true);
+      if (data.view) publish(data.view as GuidedSetupView, true);
       const created = (data.created ?? []) as GuidedSetupRosterConfirmResult['created'];
       // Remembered here rather than in the review table, which unmounts the
       // moment the view comes back with roster:null. The rail's parked list is
@@ -481,7 +532,7 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
         failed: (data.failed ?? []) as GuidedSetupRosterConfirmResult['failed'],
       };
     },
-    [instituteId, callFull, store],
+    [instituteId, callFull, publish],
   );
 
   const requestConsentBatch = useCallback(
@@ -492,15 +543,15 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
         items,
       });
       if (!data) return null;
-      if (data.view) store(data.view as GuidedSetupView, true);
+      if (data.view) publish(data.view as GuidedSetupView, true);
       return (data.results ?? []) as GuidedSetupConsentBatchOutcome[];
     },
-    [instituteId, callFull, store],
+    [instituteId, callFull, publish],
   );
 
   const notNow = useCallback(async () => {
     writeNotNow();
-    store(null, false);
+    publish(null, false);
     // The rail hides, but the server's chat_sessions.state.guidedSetup stays
     // live until a fresh session starts — otherwise the very next turn still
     // carries the guided-setup system-prompt section.
@@ -509,7 +560,7 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn('[GuidedSetup] startNewSession failed after notNow:', err);
     }
-  }, [store, startNewSession]);
+  }, [publish, startNewSession]);
 
   const continueSetup = useCallback(
     async (explicitStudentId?: string) => {
@@ -551,6 +602,46 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
     },
     [revealChat, view?.studentId, start, adopt, sendKickoff, selectStudent, student, students, t],
   );
+
+  // --------------------------------------------------------------------------
+  // Consent opened the gate — carry the conversation on.
+  //
+  // Consent is granted OUTSIDE the chat: the wizard is a dialog, and the
+  // in-person attest and magic-link paths never produce a turn at all. So the
+  // rail correctly unlocked step 2 the moment the gate opened, and the guide
+  // that had been walking the user through it went silent — leaving them
+  // looking at an unlocked checklist with nothing telling them what happens
+  // next, right after the card promised "the remaining steps open on their own
+  // the moment the approval is signed".
+  //
+  // Fires only on the TRANSITION into `active` for the student the live flow is
+  // about. The first observation of a gate never fires (a flow resumed on an
+  // already-consented patient must not open with "let's carry on" out of
+  // nowhere), and each student fires at most once per mount — the guard the
+  // 2026-09-08 auto-launch race taught us to write, where a settling value read
+  // one render early started a whole flow nobody asked for.
+  // --------------------------------------------------------------------------
+
+  const prevGateRef = useRef<Record<string, GuidedSetupGate>>({});
+  const consentResumedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const studentId = view?.studentId;
+    const gate = view?.gate;
+    if (!studentId || !gate) return;
+
+    const prev = prevGateRef.current[studentId];
+    prevGateRef.current[studentId] = gate;
+
+    if (!live) return;
+    if (prev === undefined) return;          // first sighting: nothing to compare
+    if (prev === gate) return;               // no transition
+    if (gate !== 'active') return;           // only the gate OPENING matters
+    if (consentResumedRef.current.has(studentId)) return;
+
+    consentResumedRef.current.add(studentId);
+    void continueSetup(studentId);
+  }, [live, view?.studentId, view?.gate, continueSetup]);
 
   // --------------------------------------------------------------------------
   // The "use a form instead" pick-up
@@ -617,90 +708,29 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
     void start();
   }, [instituteId, studentsInstituteId, location, studentsLoading, students.length, isActive, view, start]);
 
-  // --------------------------------------------------------------------------
-  // Resume detection: selecting a student with an unfinished record shows the
-  // compact banner. Never while a live flow is running — that view is fresher.
-  // --------------------------------------------------------------------------
-
-  useEffect(() => {
-    const studentId = student?.id;
-    // Nothing selected: there is no student for the signal to be about, and
-    // consumers key their placeholder off having one.
-    if (!studentId) return;
-
-    // EVERY path from here marks this student probed. `probedStudentId` is
-    // what a consumer holds a placeholder on, so a path that returns without
-    // marking is a placeholder that never resolves — the bar at the top of
-    // Patient Info that pulsed forever. The paths are: no institute to ask,
-    // a live view already on screen, a view for this student already in
-    // hand, the GET landing (with or without a record), and the GET failing.
-    if (!instituteId) {
-      // No institute selected → no request to make, so this is as settled as
-      // it gets. If one resolves a moment later this effect runs again and
-      // does the real fetch; the worst case is a card that fills in, against
-      // a placeholder that never would.
-      setProbedStudentId(studentId);
-      return;
-    }
-
-    if (live) {
-      // A live view is already the freshest possible answer for whoever it's
-      // about. If that's this student, we have it. If it's someone else,
-      // resume detection deliberately does not run while a flow is live
-      // elsewhere (unchanged behaviour) — and won't learn anything new about
-      // THIS student until `live` clears, so there is nothing to wait on.
-      setProbedStudentId(studentId);
-      return;
-    }
-
-    const token = `${instituteId}:${studentId}`;
-    if (refreshedForRef.current === token) {
-      // Already fetched for this (institute, student) and still holding that
-      // answer: no request is coming, so settle rather than wait for one.
-      setProbedStudentId(studentId);
-      return;
-    }
-    refreshedForRef.current = token;
-
-    let cancelled = false;
-    const settle = () => {
-      if (!cancelled) setProbedStudentId(studentId);
-    };
-    // `refresh` settles through `store(..., probedFor)` on every path that
-    // stores something (including "checked, nothing there" and a failed
-    // request, which `call` swallows into null). `finally` covers the rest —
-    // an early return inside `refresh`, or a rejection nobody expected.
-    void refresh(studentId).finally(settle);
-    // …and a request that never comes back at all — a fetch left pending by a
-    // dropped connection resolves NOTHING, and this signal must terminate.
-    const failsafe = window.setTimeout(settle, PROBE_SETTLE_TIMEOUT_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(failsafe);
-    };
-  }, [student?.id, instituteId, live, refresh]);
+  // Resume detection — selecting a student with an unfinished record shows the
+  // compact banner — needs no effect at all: `viewStudentId` follows the
+  // selection whenever no flow is live, and the query does the rest.
 
   // --------------------------------------------------------------------------
   // The flow retires itself when it is done.
   //
-  // The rail renders while `live && view.active`, and the server's per-turn
-  // resolve does report `active: false` (plus `record.completedAt`) once the
-  // flow reaches `done`. But the turn that FINISHES the flow publishes its
-  // view from the tool action instead — `applyFlowAction`/`resolveView`, which
-  // pass no `active` and so always say `true`, on a record that has not been
-  // stamped completed yet. So the last thing the client is handed says
-  // "active, step: done", and the rail sat there — with a Finish later button
-  // as the only way out — until the user pressed it.
+  // The rail renders while `live && view.active`. `step === 'done'` (or a
+  // stamped `record.completedAt`) is the signal every server path agrees on,
+  // including the tool action that FINISHES the flow — the completing turn's
+  // own view is the one the client has in hand, and it must not leave the
+  // wizard on screen with "Finish later" as the only way out.
   //
-  // `step === 'done'` is the signal both server paths agree on. Downgrading
-  // `live` (rather than dropping the view) is what retires the rail: the
-  // compact banner requires a resumable record, and a finished flow is not
-  // resumable, so it renders nothing — and keeping the view in hand means the
-  // resume-detection effect above finds its answer already there instead of
-  // firing another GET.
+  // Downgrading `live` (rather than dropping the view) is what retires the
+  // rail: the compact banner requires a resumable record, and a finished flow
+  // is not resumable, so it renders nothing.
   // --------------------------------------------------------------------------
 
   const retiredForRef = useRef<string | null>(null);
+
+  const retire = useCallback(() => {
+    setSharedState({ guidedSetup: signal ? { ...signal, active: false } : undefined });
+  }, [signal, setSharedState]);
 
   useEffect(() => {
     if (!view || !live) return;
@@ -713,18 +743,18 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
     }
     if (retiredForRef.current === token) {
       // The "all done" banner has had its moment for this flow. A later turn
-      // republishes the finished view (the session state only flips on the
+      // can report the flow live again (the session state only flips on the
       // NEXT turn's resolve), and putting the banner back on screen — where
       // nothing would ever clear it again — is the bug, not the fix.
-      store(view, false);
+      retire();
       return;
     }
     const timer = window.setTimeout(() => {
       retiredForRef.current = token;
-      store(view, false);
+      retire();
     }, GUIDED_SETUP_COMPLETE_LINGER_MS);
     return () => window.clearTimeout(timer);
-  }, [view, live, store]);
+  }, [view, live, retire]);
 
   // --------------------------------------------------------------------------
 
@@ -744,7 +774,7 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       dismiss,
       ackAac,
       refresh,
-      probedStudentId,
+      isViewPending,
       confirmRoster,
       rosterCreated,
       requestConsentBatch,
@@ -764,7 +794,7 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       dismiss,
       ackAac,
       refresh,
-      probedStudentId,
+      isViewPending,
       confirmRoster,
       rosterCreated,
       requestConsentBatch,

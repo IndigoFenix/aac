@@ -43,6 +43,7 @@ import { activityLogService } from "../activityLogService";
 import { summarizeChanges, changeDetails } from "../activityChanges";
 import type { AccessCtx } from "../sharing/visibility";
 import { normalizeAacPromptList, promptNoteToday, stampPromptNote } from "./aac-memory-schema";
+import { requireConsentForMemoryWrite } from "../consent/consentGate";
 import { assertPresenceSafe } from "./presence-context";
 import { COMPETENCY_LABEL } from "@shared/social-bot/state";
 import { coerceSeizureConfig, type SeizureConfig } from "@shared/aac/seizure-config";
@@ -146,6 +147,27 @@ async function readAACSettings(ctx: DBOperationContext): Promise<Record<string, 
 async function writeAACSettings(ctx: DBOperationContext, updates: Record<string, any>): Promise<any> {
   const studentId = ctx.all.studentId;
   if (!studentId) return updates;
+
+  // Consent gate — the single choke point for every AI write to this table
+  // (Context_AACPrompt, Context_AACAutoPrompt, Context_AACSettings and the
+  // social-trainer config all land here).
+  //
+  // Why aac_settings is gated (2026-09-10 closeout, item A — the judgement
+  // call): `autoAacPrompt` is the assistant's own free-text notes ABOUT the
+  // child — "communication level, interests, triggers, physical and cognitive
+  // abilities, people around them" per this field's own description. That is
+  // the Ray Cairo content in a different column, so leaving it open would
+  // leave the hole open. And nothing legitimate needs THIS path before
+  // consent: a new student's row is minted by
+  // `aacSettingsRepository.createDefaults` (student creation, repository-
+  // direct); the clinician settings panel and the AAC client write through
+  // `studentService.updateAacSettings` / PATCH; the guided-setup AAC step is
+  // already behind the flow's own consent gate and also goes to the
+  // repository; and the live-session writers (encryption key, learned
+  // baselines, Spotify app config) run inside a session that
+  // `requireActiveConsent` has already admitted. Gating the memory-schema
+  // door therefore costs nothing operationally.
+  await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
 
   // Authorize the writer. Without this gate, an authenticated user with no
   // relationship to the student could rewrite Context_AACPrompt or any

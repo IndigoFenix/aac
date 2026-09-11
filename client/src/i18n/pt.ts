@@ -66,9 +66,9 @@ export const pt = {
   // ============================================================================
   identity: {
     verificationRequired: "Verificação de identidade necessária",
-    verificationNeeded: "{{institute}} requer verificação através de {{provider}}. Por favor, verifique sua identidade para acessar esta organização.",
-    verificationExpired: "Sua verificação de {{provider}} para {{institute}} expirou. Por favor, verifique sua identidade novamente.",
-    verifyNow: "Verificar com {{provider}}",
+    verificationNeeded: "{institute} requer verificação através de {provider}. Por favor, verifique sua identidade para acessar esta organização.",
+    verificationExpired: "Sua verificação de {provider} para {institute} expirou. Por favor, verifique sua identidade novamente.",
+    verifyNow: "Verificar com {provider}",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const pt = {
     genderOther: "Outro",
     primaryLanguage: "Idioma principal",
     dateOfBirth: "Data de nascimento",
-    ageDisplay: "Idade: {{age}} anos",
+    ageDisplay: "Idade: {age} anos",
     systemType: "Sistema educacional",
     frameworkTala: "TALA (Israel)",
     frameworkIep: "IEP (EUA)",
@@ -1081,9 +1081,9 @@ export const pt = {
     clearUnsavedDesc: "Você tem alterações não salvas. Gostaria de salvar antes de limpar a prancha?",
     discardAndClear: "Descartar e limpar",
     saveAndClear: "Salvar e limpar",
-    generatingIcons: "Gerando ícones, restantes: {{remaining}}",
+    generatingIcons: "Gerando ícones, restantes: {remaining}",
     iconsGenerated: "Todos os ícones foram gerados com sucesso",
-    iconsFailed: "{{count}} ícone(s) não puderam ser gerados",
+    iconsFailed: "{count} ícone(s) não puderam ser gerados",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const pt = {
     importWarning: "Importar substituirá a prancha atual. Alguns recursos do Grid3 podem não ser importados perfeitamente.",
     importButton: "Importar",
     importSuccess: "Prancha importada",
-    importSuccessDesc: "\\\"{{name}}\\\" importado do Dropbox",
+    importSuccessDesc: "\\\"{name}\\\" importado do Dropbox",
     importFailed: "Falha na importação",
     noFilesFound: "Nenhum arquivo de prancha encontrado na sua pasta do Dropbox.",
   },
@@ -1349,6 +1349,8 @@ export const pt = {
     noStudentsDesc: "Adicione seu primeiro {{STUDENT}} para começar",
     noResults: "Nenhum {{STUDENTS}} encontrado",
     noResultsDesc: "Tente ajustar sua busca ou filtros",
+    selectInstituteFirst: "Selecione primeiro uma organização para adicionar um {{student}}",
+    selectInstituteEmpty: "Selecione uma organização para ver {{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const pt = {
     gasOverallScoreDesc: "Progresso agregado nos objetivos pontuados com GAS. 50 = esperado.",
     gasAtOrAbove: "no nível esperado ou acima",
     gasBelow: "abaixo do nível esperado",
-    gasGoalsCounted: "Baseado em {{count}} objetivo(s) GAS com dados registados.",
+    gasGoalsCounted: "Baseado em {count} objetivo(s) GAS com dados registados.",
     goalCompletion: "Cumprimento de objetivos",
     goalsByDomain: "Objetivos por domínio",
     timeline: "Cronograma",
@@ -1779,7 +1781,7 @@ export const pt = {
     title: "Dados de progresso",
     noDataPoints: "Nenhum dado registrado ainda",
     collectedBy: "Coletado por",
-    moreCount: "+{{count}} registros adicionais",
+    moreCount: "+{count} registros adicionais",
 
     numericValue: "Valor numérico",
     numericPlaceholder: "ex., 85",
@@ -2206,7 +2208,7 @@ export const pt = {
 
   reports: {
     title: "Relatórios",
-    subtitle: "Relatórios para {{name}}",
+    subtitle: "Relatórios para {name}",
     noStudent: "Por favor, selecione um {{STUDENT}} para ver os relatórios",
     noStudentSelected: "Nenhum {{STUDENT}} selecionado",
     selectStudentFirst: "Por favor, selecione um {{STUDENT}} para ver seus relatórios",
@@ -2243,10 +2245,12 @@ export const pt = {
     finalizeTitle: "Finalizar relatório",
     finalizeWarning: "Uma vez finalizado, este relatório não pode ser editado. Você precisará criar uma nova revisão para fazer alterações.",
     finalizeCannotUndo: "Esta ação não pode ser desfeita.",
+    consentWarning: "A finalização está bloqueada: não há registo de consentimento informado no processo. Um pai, mãe ou tutor legal tem de assinar primeiro o formulário de consentimento.",
+    finalizeFailed: "Não foi possível finalizar o relatório.",
 
     confirmCreate: {
       title: "Criar novo relatório",
-      description: "Isso criará um novo relatório {{type}}. Qualquer relatório ativo existente será arquivado.",
+      description: "Isso criará um novo relatório {type}. Qualquer relatório ativo existente será arquivado.",
       confirm: "Criar"
     },
 
@@ -2365,7 +2369,7 @@ export const pt = {
     },
 
     empty: {
-      title: "Sem relatórios {{type}}",
+      title: "Sem relatórios {type}",
       description: "Crie um novo relatório para começar."
     },
 
@@ -2988,7 +2992,7 @@ export const pt = {
     selectOrGenerate: "Selecione uma análise ou gere uma nova.",
     selectStudent: "Selecione um {{STUDENT}} para gerar uma análise profunda.",
     untitled: "Análise sem título",
-    inProgress: "Em andamento (passo {{STEP}})...",
+    inProgress: "Em andamento (passo {STEP})...",
     delete: "Excluir",
     confirmDelete: "Excluir esta análise permanentemente?",
     error: "Erro",
@@ -3074,7 +3078,7 @@ export const pt = {
       categoryPages: "Agrupar por categorias",
       dietaryTags: "Mostrar etiquetas alimentares",
       dietaryTagsDesc: "Para si, não para o aluno. Estas etiquetas não são fiáveis e não filtram nada.",
-      autoNow: "Agora: {{value}}",
+      autoNow: "Agora: {value}",
     },
     review: {
       title: "Cardápios para verificar",
@@ -3171,9 +3175,15 @@ export const pt = {
     LICENSE_ALREADY_PAID: "Esta licença já está paga.",
     LICENSE_NOT_PURCHASABLE: "Esta licença não pode ser paga online. Entre em contacto connosco.",
     PADDLE_NOT_CONFIGURED: "O pagamento online não está disponível de momento. Tente mais tarde ou entre em contacto connosco.",
+    consent_required: "É necessário um registo de consentimento informado ativo antes de este relatório poder ser finalizado.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "Informações de consentimento indisponíveis",
+      loadFailedDescription: "Não foi possível carregar os registros de consentimento deste {{student}}. Isso não significa que não existam — a solicitação falhou.",
+      retry: "Tentar novamente",
+    },
     authority: {
       title: "Autoridade de consentimento",
       description: "Por padrão, quem dá o consentimento é decidido pela maioridade do aluno. Substitua isto aqui se um aluno adulto continuar sob tutela legal, ou se um menor consentir por si mesmo.",
@@ -3306,6 +3316,27 @@ export const pt = {
         attemptsRemaining: "Restam {count} tentativa(s).",
         locked: "Demasiadas tentativas incorretas. Peça à clínica que envie um novo link.",
       },
+      attest: {
+        identityIntro: "Está a registar este consentimento presencialmente, com o tutor presente. Verifique os dados abaixo antes de continuar.",
+        guardianLabel: "Tutor que assina",
+        attestedByLabel: "Atestado por",
+        guardianIntro: "Registe o documento de identificação que o tutor lhe mostrou. Introduza-o exatamente como aparece no documento.",
+        coGuardianDeclaration: "O tutor confirma que é o tutor legal e que tem autoridade para dar este consentimento em nome de qualquer outro tutor.",
+        signatureIntro: "Entregue agora o dispositivo ao tutor. A assinatura tem de ser a dele.",
+        signatureLegal: "Ao assinar, o tutor confirma que é o tutor legal e autoriza este consentimento.",
+        stepIntro: "Por fim, confirme o que observou. Esta declaração é guardada com o registo de consentimento e identifica-o como o clínico que atesta.",
+        documentLabel: "Documento verificado",
+        presenceDeclaration: "Confirmo que o tutor esteve fisicamente presente comigo, que verifiquei o documento de identificação registado acima e que corresponde à pessoa que assinou.",
+        notesLabel: "Notas (opcional)",
+        notesPlaceholder: "por ex. passaporte válido até 2031, o nome corresponde",
+        legal: "O seu nome, a sua conta de utilizador e a hora deste atesto são guardados como prova no registo de consentimento.",
+        reviewIntro: "Verifique o registo antes de o guardar. Depois de guardado não pode ser editado — apenas revogado e assinado de novo.",
+        methodLabel: "Verificado por",
+        methodValue: "Atesto presencial do clínico",
+        submitButton: "Registar consentimento",
+        toastTitle: "Consentimento registado",
+        toastDescription: "O consentimento presencial foi guardado juntamente com o seu atesto.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const pt = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "Histórico de consentimentos",
       activeBadge: "Ativo",
@@ -3364,6 +3447,11 @@ export const pt = {
       revokeReasonPlaceholder: "Motivo (opcional)",
       toastRevoked: "Consentimento revogado",
       toastRevokeFailed: "Não foi possível revogar",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const pt = {
       reverificationDays: "Re-verificação (dias)",
       autoProvision: "Provisionar novos usuários automaticamente",
       autoProvisionDesc: "Quando um usuário autentica via este IdP e não tem conta Aivota, uma é criada a partir das claims SSO e vinculada. Necessário para IdPs institucionais (p. ex. IL MoE Sapakim) onde os usuários esperam chegar já conectados.",
-      days: "{{count}} dias",
+      days: "{count} dias",
       never: "Nunca",
       neverPlaceholder: "Deixe vazio para nunca",
       discoveryUrl: "URL de descoberta",
@@ -4076,8 +4164,8 @@ export const pt = {
     noInstitute: "Entre numa organização para começar a ligar",
     loadingContacts: "Carregando contatos…",
     noContacts: "Nenhum contato encontrado",
-    callPerson: "Ligar para {{name}}",
-    callPersonAuto: "Ligar para {{name}} automaticamente",
+    callPerson: "Ligar para {name}",
+    callPersonAuto: "Ligar para {name} automaticamente",
     students: "Alunos",
     online: "Online",
     offline: "Offline",
@@ -4157,7 +4245,7 @@ export const pt = {
     title: "Contactos",
     panelTitle: "Contactos do aluno",
     description: "Pessoas que o aluno conhece — pais, colegas, terapeutas.",
-    forStudent: "Contactos para {{name}}",
+    forStudent: "Contactos para {name}",
     empty: "Ainda não há contactos registados.",
     add: "Adicionar contacto",
     new: "Novo contacto",
@@ -4351,7 +4439,7 @@ export const pt = {
       title: "Revogar todo o acesso?",
       description: "Todos os compartilhamentos ativos — por objeto e permanentes — que você concedeu a esta organização para este aluno serão revogados. Isso não pode ser desfeito.",
       confirm: "Revogar tudo",
-      toastSuccess: "{{count}} compartilhamentos revogados.",
+      toastSuccess: "{count} compartilhamentos revogados.",
     },
     inbox: {
       pendingHeader: "Convites pendentes",
@@ -4372,8 +4460,8 @@ export const pt = {
     },
     standing: {
       expired: "Expirado",
-      expiresInDays: "Expira em {{days}} dias",
-      expiresOn: "Expira em {{date}}",
+      expiresInDays: "Expira em {days} dias",
+      expiresOn: "Expira em {date}",
       renewedToast: "Compartilhamento permanente renovado por 1 ano.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const pt = {
     field: {
       codeExpires: "O código expira",
       shareExpires: "O compartilhamento expira",
-      sensitiveCount: "{{count}} itens sensíveis",
+      sensitiveCount: "{count} itens sensíveis",
     },
     bundle: {
       objects: "Objetos",
@@ -4471,9 +4559,9 @@ export const pt = {
     notifications: {
       bellLabel: "Convites de compartilhamento",
       newInviteTitle: "Novo convite de compartilhamento",
-      newInviteBody: "{{count}} convites aguardando sua aprovação.",
+      newInviteBody: "{count} convites aguardando sua aprovação.",
       expiringTitle: "Compartilhamento prestes a expirar",
-      expiringBody: "{{count}} compartilhamentos permanentes expiram em breve — revise e renove.",
+      expiringBody: "{count} compartilhamentos permanentes expiram em breve — revise e renove.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const pt = {
       addGuardian: "Adicionar contato do responsável",
       requestsSent: "{count} enviados, {failed} não puderam ser enviados",
       sendRequests: "Enviar pedidos de consentimento ({count})",
+      stage: "Consentimento",
+      explainTitle: "A seguir: a autorização de um pai, mãe ou tutor",
+      explainBody: "Antes de podermos registar seja o que for sobre a saúde, o programa ou a forma de comunicar deste {{student}}, um pai, mãe ou tutor legal tem de dar autorização por escrito. Até agora só foram guardados os dados básicos. Os restantes passos abrem-se sozinhos assim que a autorização for assinada.",
+      signCaption: "Está registado como tutor, por isso pode ler e assinar a autorização você mesmo — demora cerca de um minuto.",
+      familyNoGuardianCaption: "Primeiro precisamos de um tutor registado. Acrescente-se a si (ou ao outro progenitor) como tutor deste {{student}} e aparecerá aqui um botão para assinar o consentimento.",
+      sendRequest: "Enviar pedido de consentimento",
+      sendCaption: "Enviaremos ao tutor uma ligação privada por e-mail. Ele lê a autorização e assina-a online — não é preciso mais nada da sua parte.",
+      sentCaption: "A ligação foi enviada ao tutor. Os restantes passos abrem-se assim que for assinada, por isso pode voltar mais tarde.",
+      sentOne: "Ligação de consentimento enviada ao tutor.",
+      sendFailed: "Não foi possível enviar a ligação de consentimento. Verifique se o tutor tem um endereço de e-mail válido e tente novamente.",
+      attestInPerson: "O tutor está aqui — assinem juntos",
+      attestCaption: "Se o pai, a mãe ou o tutor estiver consigo neste momento, podem ler a autorização juntos e ele assinar neste dispositivo. É o utilizador que verifica o documento de identidade e não é preciso qualquer link.",
     },
     notes: {
       documentsNotStored: "Os documentos são lidos, não armazenados — apenas os dados extraídos deles são mantidos.",

@@ -475,10 +475,6 @@ export class ProgramService {
     return programRepository.getProgressReportsByProgramId(programId);
   }
 
-  async updateProgressReport(id: string, updates: UpdateProgressReport): Promise<ProgressReport | undefined> {
-    return programRepository.updateProgressReport(id, updates);
-  }
-
   async deleteProgressReport(id: string): Promise<boolean> {
     return programRepository.deleteProgressReport(id);
   }
@@ -513,10 +509,6 @@ export class ProgramService {
 
   async getDataPointsByObjectiveId(objectiveId: string): Promise<DataPoint[]> {
     return programRepository.getDataPointsByObjectiveId(objectiveId);
-  }
-
-  async deleteDataPoint(id: string): Promise<boolean> {
-    return programRepository.deleteDataPoint(id);
   }
 
   // ==========================================================================
@@ -634,10 +626,6 @@ export class ProgramService {
 
   async getConsentFormsByProgramId(programId: string): Promise<ConsentForm[]> {
     return programRepository.getConsentFormsByProgramId(programId);
-  }
-
-  async updateConsentForm(id: string, updates: UpdateConsentForm): Promise<ConsentForm | undefined> {
-    return programRepository.updateConsentForm(id, updates);
   }
 
   async deleteConsentForm(id: string): Promise<boolean> {

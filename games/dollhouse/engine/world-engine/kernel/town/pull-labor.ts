@@ -15,9 +15,17 @@
 //
 // WHAT THIS FILE HOLDS: the vocabulary a self-issued slice is written in —
 // the pursuit's `tplKey`, the `bill` a contribute pursuit carries, the
-// reservation HOLDER namespace a puller books under, and the ONE derivation
-// of the `pullLabor` capability. Nothing here reads a session, a ledger or a
-// body: every consumer passes what it has.
+// reservation HOLDER namespace a puller books under, the SCHEMA the cascade's
+// order is derived from, and the ONE derivation of the `pullLabor` capability.
+// Nothing here reads a session, a ledger or a body: every consumer passes what
+// it has.
+//
+// 🚨 THE IMPORT LAW, AND ITS ONE EXCEPTION. This file imports exactly ONE
+// module — `kernel/means-ends.ts`, which itself imports nothing at all (not
+// even a type). So the seam stays cycle-free by the same argument it always
+// was: neither side of the round can reach this file through it.
+
+import { depthOf, type Operator } from "../means-ends.js";
 
 /** The `tplKey` every contribute pursuit carries — the ONE discriminator the
  *  hand census, the warp guard, the streamer pin and the why-chain read. A
@@ -244,10 +252,16 @@ export function hiOfCraftSiteId(siteId: string): number | null {
  * become an ordinary bill and the labour an ordinary seat, so the SAME argmax
  * that staffs a house staffs the bench.
  *
- * ⚖️ SPOKEN ONLY. The household's inventory rotation and its program crafts
- * are the family's own appetite, not the settlement's; they keep the direct
- * haul untouched (C4: "v1 IS THE SPOKEN `make cart`"). So this list is empty
- * off the capability AND empty for every automated job.
+ * ⚖️ THE SETTLEMENT'S BUSINESS ONLY. The household's inventory rotation and its
+ * program crafts are the family's own appetite, not the settlement's; they keep
+ * the direct haul untouched (C4: "v1 IS THE SPOKEN `make cart`"). So this list
+ * is empty off the capability AND empty for every automated job.
+ *
+ * 🧺 TWO KINDS REACH IT (baskets makeable, 2026-09-09): a SPOKEN `make`, and a
+ * SELF-ISSUED DEMAND — a body whose own collection plan wanted an enabler the
+ * world does not contain, priced against what making one costs. They differ in
+ * exactly one field, `spoken`, which is the weight; everything downstream of
+ * this row reads one kind of thing.
  */
 export interface CraftBillRow {
   /** `craftSiteId(hi)` — what the seat and the presence count key on. */
@@ -271,8 +285,12 @@ export interface CraftBillRow {
   work: { at: { x: number; y: number }; leftS: number; urgency: number } | null;
   /** The place word a haul to the spot announces ("house", "yard"). */
   destWord: string;
-  /** Always true today (only spoken jobs are enumerated) — carried rather than
-   *  assumed so the weight is read where every other bill reads it. */
+  /** Whether a PLAYER asked for it (the "you asked" weight). TRUE for a spoken
+   *  `make`; FALSE for a self-issued DEMAND (`CraftJob.demand` — a body whose
+   *  collection plan wanted an enabler the world does not contain), which is an
+   *  ordinary civic bill and must not borrow the player's compliance weight.
+   *  Carried rather than assumed so the weight is read where every other bill
+   *  reads it. */
   spoken: boolean;
 }
 
@@ -298,8 +316,200 @@ export function collectSiteId(destEndpointId: string): string {
  *   fell   — draw standing timber / a folded record onto its shelf, then
  *            haul (one leg: the puller draws the shelf ITSELF before posting
  *            the agreement — the director used to do that in the poster).
+ *
+ * 🚨 THE ORDER ABOVE IS NOW DERIVED, NOT DECLARED (emergent-plans-round.md D8).
+ * "Most downstream first" used to be a literal rank table in the reader
+ * (`contribute.ts` `LINK_RANK = {build:0, haul:1, refine:2, fell:3}`); it is
+ * now `cascadeRank()` — `depthOf(CASCADE_SCHEMA, CASCADE_ROOT)` folded onto
+ * these four names. Adding a link to the chain is adding a ROW to
+ * `CASCADE_SCHEMA` below; nothing re-numbers by hand, and nothing may write a
+ * rank literal again.
  */
 export type ContributeLink = "build" | "haul" | "refine" | "fell";
+
+// ── THE CASCADE AS A SCHEMA (emergent-plans-round.md D3/D8, erratum E-7) ─────
+//
+// ⚖️ WHAT THIS BLOCK IS. The four links above are the ACTIONS; the block below
+// says what each action MAKES TRUE and what must hold before it can be taken.
+// That is the whole means-ends vocabulary (`kernel/means-ends.ts`), and with it
+// the cascade's order stops being an assertion and becomes an arithmetic
+// consequence of the rows.
+//
+// 🚨 PRIMITIVES-ONLY. Every `StockKind` is a PREDICATE KIND — a question the
+// bookkeeper already answers about a bill — never a good's head. There is no
+// "block" and no "wood" anywhere in this schema, which is exactly why the same
+// rows describe a stone site, a timber site and a world with neither.
+//
+// 🚨 IT DECIDES NOTHING. No reservation, no seat, no slice and no weight is
+// read here. The reader (`contribute.ts`) still enumerates its rows exactly as
+// it did, and the DECIDER's two rungs (town argmax / body beat), the
+// worthwhile sign, the trip damper and the atomic reserve are untouched: this
+// block only supplies the sort's FIRST key and names the rows the reader
+// instantiates.
+
+/**
+ * THE PREDICATE KINDS OF A BILL'S CHAIN — each one a NON-RESERVING BOOKKEEPER
+ * READ, named here for the first time (D2's tier T2). The read in brackets is
+ * the one that decides the kind; nothing else may be invented to answer it.
+ *
+ *  · `built`       — [`buildworkSiteAt(session, siteId)`] the site has no dwell
+ *                    work left: staged, labour done, geometry alive. FALSE for
+ *                    as long as that read answers a spot to stand on. THE ROOT.
+ *  · `staged`      — [`pileShortfall(stagingMissing(order))`] the site pile
+ *                    holds the bill: no head is still short of it.
+ *  · `refinedFree` — [`freeHeadStockWithinReach(session, pileAt, head, viewer)`]
+ *                    for a REFINED head at the site pile: finished material
+ *                    stands unspoken-for within this body's reach.
+ *  · `stocked`     — [the refine order's own raw pile: the same
+ *                    `pileShortfall ∘ stagingMissing` read, asked of the bench's
+ *                    row] the bench holds what the mill needs to run.
+ *  · `rawFree`     — [`freeHeadStockWithinReach(...)`] for a RAW head at the
+ *                    BENCH: cut timber stands unspoken-for within reach.
+ *  · `standing`    — [`fellRows(session)` with `standing === true`, or a source
+ *                    whose ref `parseScopeId(...).kind === "wild"`] the material
+ *                    is still IN THE WORLD, uncut. A PRIMITIVE: no row in this
+ *                    schema makes a tree grow.
+ *  · `seat`        — [`seatsOf(session, siteId)` minus `seatTaken`] there is a
+ *                    free place to stand at this work. A PRIMITIVE: no action
+ *                    here creates a seat (labour raising a bay does, and that
+ *                    is the DIRECTOR's arithmetic, not a link).
+ *  · `loose`       — [`looseGoodOf(objId)`] a thing is lying about with no bill
+ *                    already drawing on it. A PRIMITIVE: the world drops it.
+ */
+export type StockKind =
+  | "built"
+  | "staged"
+  | "refinedFree"
+  | "stocked"
+  | "rawFree"
+  | "standing"
+  | "seat"
+  | "loose";
+
+/**
+ * THE ROW IDS OF THE SCHEMA — one per OPERATOR, which is NOT one per
+ * `ContributeLink`.
+ *
+ * 🚨 E-7, AND IT IS THE WHOLE REASON THESE IDS EXIST. Two different hauls sit
+ * at two different distances from a finished house: blocks onto the SITE pile
+ * are one rung below `built`, raw timber onto the BENCH is three. They are the
+ * same `ContributeLink` ("haul") to every consumer — one executor, one bound,
+ * one bill shape — but they are NOT the same schema row, and a schema that
+ * merged them into one `sourceFree` kind is CYCLIC (haul needs it, refine
+ * achieves it, the raw haul needs it again — pinned in `cascade-schema.test.ts`
+ * as the erratum). So the ROWS carry distinct ids and `contributeLinkOf` folds
+ * them back down to the four names the rest of the engine speaks.
+ */
+export type CascadeRowLink =
+  | "build"
+  | "haul:site"
+  | "refine"
+  | "haul:bench"
+  | "fell"
+  | "fell:mark"
+  | "collect";
+
+/**
+ * THE CHAIN, AS SEVEN ROWS. Read each as *"this action makes THAT true, once
+ * THESE hold"* — the whole of `build → haul → refine → fell` and both of the
+ * chain's side doors, with nothing left implicit.
+ *
+ * ⚖️ ROW ORDER IS THE TIE-BREAK (FIRST-WINS, Scout B risk 1): `frontier` and
+ * every other consumer of this array keep it, so the array is written most
+ * downstream first, exactly as the reader enumerates.
+ *
+ * ⚖️ `refine` NAMES THE EDGE; THE BOOKKEEPER STILL POSTS THE ROW (E-3). "Blocks
+ * come from wood" is `rawsForRefined` (`products.ts`) and the refine ORDER is
+ * minted by `ensureRefineOrders` with its 1+1 gather-ahead bound, which guards
+ * a MEASURED four-concurrent-rows defect. This schema says only that a refined
+ * head in reach can be produced by labour at a stocked bench; it does not mint,
+ * and moving the mint into a walker is a later lift.
+ *
+ * ⚖️ `fell:mark` IS THE FELL LINK'S SECOND PROVENANCE, and it achieves
+ * `rawFree` — the same shelf `fell` fills. A mark is a player's (or the
+ * clearing sweep's) designation on a standing thing; cutting it leaves TIMBER
+ * on a shelf, never finished material, so `rawFree` is the honest effect and
+ * `refinedFree` would be a lie about what falls out of a tree. A mark with
+ * nothing to carry (a bush in the way) buys GROUND rather than goods — it still
+ * needs `standing` and still ends standing-less, so the same row describes it.
+ *
+ * ⚖️ `collect` IS A HAUL WITH NO BILL — a loose thing tidied into the place the
+ * bill would have drawn from. It achieves `staged` like the site haul does,
+ * from a PRIMITIVE (`loose`) instead of from a producible one, which is exactly
+ * why it can never lengthen the chain.
+ */
+export const CASCADE_SCHEMA: readonly Operator<StockKind, CascadeRowLink>[] = [
+  { link: "build", achieves: "built", needs: ["staged", "seat"] },
+  { link: "haul:site", achieves: "staged", needs: ["refinedFree"] },
+  { link: "refine", achieves: "refinedFree", needs: ["stocked", "seat"] },
+  { link: "haul:bench", achieves: "stocked", needs: ["rawFree"] },
+  { link: "fell", achieves: "rawFree", needs: ["standing"] },
+  { link: "fell:mark", achieves: "rawFree", needs: ["standing"] },
+  { link: "collect", achieves: "staged", needs: ["loose"] },
+];
+
+/** THE GOAL THE CHAIN HANGS OFF — "the thing is built". Every depth in the
+ *  cascade is a distance from this one predicate, which is why a bill's chain
+ *  can be read without knowing what is being built or out of what. */
+export const CASCADE_ROOT: StockKind = "built";
+
+/**
+ * THE FOLD: which of the four spoken links a schema row IS.
+ *
+ * The rest of the engine — the bill, the executor routing, the transcript, the
+ * seat ledger, `contributeCrewAt` — knows four links, and that is deliberate:
+ * a haul is one act whichever pile it fills. This function is the ONLY place
+ * the row vocabulary meets the link vocabulary.
+ */
+export function contributeLinkOf(row: CascadeRowLink): ContributeLink {
+  switch (row) {
+    case "haul:site":
+    case "haul:bench":
+    // ⚖️ A COLLECT IS A HAUL. It has always been offered as one (`decideCollect`
+    // posts a `haul` bill against a `collect:<endpoint>` site) — the schema
+    // gives it its own ROW because its input is a different fact, not because
+    // it is a different act.
+    case "collect":
+      return "haul";
+    // ⚖️ A MARK AND A WILD SOURCE ARE ONE LINK. Two provenances, one act:
+    // "cut the standing thing down". The reader offers both as `fell` today.
+    case "fell:mark":
+      return "fell";
+    default:
+      return row;
+  }
+}
+
+/**
+ * THE CASCADE'S RANK — the sort key that used to be a literal.
+ *
+ * 🚨 THE FOLD IS **MIN**, and the literal's own wording is why. `LINK_RANK` was
+ * documented as "the most downstream link", and `depthOf` folds a link shared
+ * by two rows to its DEEPEST row (P's ruling, pinned in `means-ends.test.ts`) —
+ * the opposite reading. A body that can serve either haul is standing one rung
+ * below the finished house, not three, so the MIN over a link's rows is the
+ * honest answer and it is taken HERE rather than in `means-ends.ts`: the fold
+ * is a fact about these four names, not about schemas in general.
+ *
+ * The numbers come out `{build: 0, haul: 1, refine: 2, fell: 4}` where the
+ * literal said `fell: 3`. THAT IS THE SAME ORDER — the value is only ever a
+ * sort key (`contribute.ts`' first comparator term), never an index, a count or
+ * a weight, so the arcs are byte-identical and the pin is ORDINAL.
+ *
+ * Cheap and pure (seven rows, no world), and computed ONCE at the reader's
+ * module load.
+ */
+export function cascadeRank(): Record<ContributeLink, number> {
+  const rowDepth = depthOf(CASCADE_SCHEMA, CASCADE_ROOT);
+  const out = {} as Record<ContributeLink, number>;
+  for (const row of Object.keys(rowDepth) as CascadeRowLink[]) {
+    const d = rowDepth[row];
+    const link = contributeLinkOf(row);
+    const had = out[link] as number | undefined;
+    if (had === undefined || d < had) out[link] = d;
+  }
+  return out;
+}
 
 /**
  * WHAT A CONTRIBUTE PURSUIT IS FOR — the slice a body issued to itself. Small

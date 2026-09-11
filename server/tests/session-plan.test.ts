@@ -111,11 +111,13 @@ describe("session-plan — prompt assembly", () => {
     }
   });
 
-  it("identity calls exclude the event schedule; situations/goals include it", () => {
+  it("identity calls exclude the event schedule; situations/goals/seeds include it", () => {
     for (const spec of PLAN_CALLS) {
       const built = buildPlanCall(spec, ctx, NONCES);
       const hasEvents = built.systemPrompt.includes("Music therapy");
-      expect(hasEvents).toBe(spec.call === "situations" || spec.call === "goals");
+      expect(hasEvents).toBe(
+        spec.call === "situations" || spec.call === "goals" || spec.call === "seeds",
+      );
     }
   });
 
@@ -217,7 +219,7 @@ describe("session-plan — authority-figure deference default", () => {
     expect(bare).toContain("AUTHORITY DEFERENCE");
   });
 
-  it("is scoped to the persona call — the other three calls carry neither the block nor the extra rung", () => {
+  it("is scoped to the persona call — no other call carries the block or the extra rung", () => {
     for (const spec of PLAN_CALLS) {
       const built = buildPlanCall(spec, child, NONCES).systemPrompt;
       expect(built.includes("AUTHORITY DEFERENCE")).toBe(spec.call === "identity_core");

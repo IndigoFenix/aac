@@ -903,6 +903,7 @@ export const es: Translations = {
       when: "Cuándo",
       why: "Por qué",
       how: "Cómo",
+      question: "Pregunta",
       someone: "Alguien",
       near: "Cerca",
       far: "Lejos",

@@ -1,0 +1,22 @@
+# world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=10 dense=×1
+# forageRadiusM=182.4  nearStand=30
+# t=0 ring-1 food units=1287  (tile--1--1=170 tile--1-0=159 tile--1-1=155 tile-0--1=161 tile-0-1=169 tile-1--1=158 tile-1-0=155 tile-1-1=160)
+# t=0 records=20 population=2380  loaded features=14
+day   1  rations/day=  3.20  takes=   9  blocked=  0  hungry=4/5 mean=1.16 deep=0  ring1=1277  sleeps=2
+day   2  rations/day=  0.60  takes=  12  blocked=  0  hungry=4/5 mean=1.80 deep=1  ring1=1274  sleeps=6
+day   3  rations/day=  6.00  takes=  24  blocked=  5  hungry=3/5 mean=1.84 deep=3  ring1=1244  sleeps=13
+day   4  rations/day=  0.00  takes=  24  blocked=  5  hungry=4/5 mean=2.60 deep=3  ring1=1244  sleeps=17
+day   5  rations/day=  2.40  takes=  29  blocked= 11  hungry=4/5 mean=3.08 deep=3  ring1=1232  sleeps=24
+day   6  rations/day=  3.40  takes=  35  blocked= 11  hungry=4/5 mean=3.44 deep=3  ring1=1215  sleeps=28
+day   7  rations/day=  5.60  takes=  52  blocked= 13  hungry=4/5 mean=3.48 deep=3  ring1=1187  sleeps=33
+day   8  rations/day=  0.00  takes=  52  blocked= 14  hungry=5/5 mean=4.28 deep=3  ring1=1187  sleeps=37
+day   9  rations/day=  3.00  takes=  56  blocked= 15  hungry=5/5 mean=4.68 deep=3  ring1=1172  sleeps=40
+day  10  rations/day=  3.40  takes=  62  blocked= 15  hungry=4/5 mean=5.12 deep=3  ring1=1155  sleeps=45
+
+# takes=62 (zero-yield=2)  blocked mid-flight=15
+# rations delivered=27.60 over 10 days = 2.76/day
+# take spread by source: tile-1-0=21  tile--1-0=20  tile-0--1=12  flora:bush:wild:bush_20=3  tile-0-1=3  flora:bush:wild:bush_4=2  flora:apple_tree:wild:apple_tree_2=1
+# crowd frames (two hunger-errand settlers inside one arrival disc, sampled 1/s) = 202 of 2400
+# starvation body-days=30  sleeps=45
+# final hungry=4/5 mean=5.12 deep=3
+# ring-1 food units at end=1155

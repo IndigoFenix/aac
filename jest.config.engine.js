@@ -1,25 +1,27 @@
-// jest.config.engine.js — FAST, DB-FREE runs for the world-engine tests.
+// jest.config.engine.js — THE FAST HALF of the world-engine suite.
 //
 // Every test that exercises the world-engine (shared/world-engine/*) lives in
 // server/tests/world-engine/. Those are PURE logic over WorldState — they never
-// touch Postgres. The default `npm test` still pays `jest.config.js`'s
-// `globalSetup` (connect to the test DB + run Drizzle migrations) on every run,
-// and shares the pool with the slow integration / http / crm / llm-mocked /
-// memory-schema suites. This config inherits the base EXCEPT:
-//   • globalSetup is dropped — no DB connection, so an engine run needs no test
-//     DB, can't collide with a concurrent full run, and starts instantly;
-//   • the file set is narrowed by testRegex to the world-engine/ folder.
+// touch Postgres. `jest.config.engine-all.js` selects the whole folder and
+// drops the DB globalSetup; THIS config removes the BOOT ARCS from it.
 //
-// Run it with:  npm run test:engine            (all world-engine suites)
-//               npm run test:engine -- routing (a slice — adds a pattern)
+// ⏱️ WHY THE SPLIT (2026-09-09 efficiency round). A suite that calls
+// `bootTextQuest` boots the real quest-host headless — ~60 s of wall time
+// EACH, before a single assertion runs. On 2026-09-05 twenty-two such suites
+// were 56 % of a 74-minute sweep; four days later there were thirty-six. They
+// are now named `*.arc.test.ts` and live behind `npm run test:engine:arcs`, so
+// the per-tweak run (`npm run test:engine -- <word>`) never pays for them.
+// `server/tests/world-engine/arc-naming-guard.test.ts` keeps the drift from
+// coming back.
+//
+// Run it with:  npm run test:engine              (the fast half)
+//               npm run test:engine -- routing   (a slice — adds a pattern)
+//               npm run test:engine:arcs         (the boot arcs)
+//               npm run test:engine:all          (both, one process)
 
-import base from './jest.config.js';
-
-// Drop testMatch so testRegex is the sole selector (they are mutually exclusive).
-const { testMatch: _drop, ...rest } = base;
+import all, { engineBase } from './jest.config.engine-all.js';
 
 export default {
-  ...rest,
-  globalSetup: undefined,
-  testRegex: 'server[\\\\/]tests[\\\\/]world-engine[\\\\/].*\\.test\\.ts$',
+  ...all,
+  testPathIgnorePatterns: [...(engineBase.testPathIgnorePatterns ?? []), '\\.arc\\.test\\.ts$'],
 };

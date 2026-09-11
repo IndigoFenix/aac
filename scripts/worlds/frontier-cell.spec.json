@@ -1,0 +1,88 @@
+{
+  "engine": "aivota-world",
+  "engineVersion": 1,
+  "uses": [],
+  "packs": [],
+  "game": {
+    "scope": "town",
+    "world": {
+      "seed": 1337,
+      "days": 0,
+      "population": 5,
+      "wilderness": true,
+      "terrain": "planet",
+      "stock": {
+        "wood": 14,
+        "stone": 6,
+        "basket": 2
+      },
+      "climate": {
+        "rain": 1.0753296100845404,
+        "tempC": 28.412460127278745,
+        "elevation": 7,
+        "fertility": 12,
+        "ore": 0
+      },
+      "biome": 1,
+      "eco": {
+        "tree": 0.24,
+        "grass": 0,
+        "horse": 0
+      },
+      "charter": {
+        "farmland": 516,
+        "ore_access": 0,
+        "timberland": 302
+      },
+      "partners": [
+        {
+          "key": "city:12804",
+          "at": {
+            "x": -124667.60987197873,
+            "y": 251523.23817276882
+          },
+          "geo": {
+            "node": "junction",
+            "farmland": 516,
+            "ore": 0
+          },
+          "distanceM": 280723.9788334927
+        },
+        {
+          "key": "city:12706",
+          "at": {
+            "x": 123385.83944489846,
+            "y": -256306.48490623367
+          },
+          "geo": {
+            "node": "mouth",
+            "farmland": 451,
+            "ore": 0
+          },
+          "distanceM": 284459.2757856767
+        },
+        {
+          "key": "city:12708",
+          "at": {
+            "x": -266189.37510955514,
+            "y": -105059.2388362629
+          },
+          "geo": {
+            "node": "anchorage",
+            "farmland": 517,
+            "ore": 0
+          },
+          "distanceM": 286171.67415044835
+        }
+      ]
+    },
+    "avatar": "spirit",
+    "scale": {
+      "rotation": 360,
+      "sleep_fraction": 0.05,
+      "construction": 720,
+      "gap_compression": 10,
+      "resource_compression": 7.5
+    }
+  }
+}

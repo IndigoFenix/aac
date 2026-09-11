@@ -3380,6 +3380,7 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 symbolUpdate={prebuiltBoardData ? null : symbolUpdateData}
                 aiButtonPress={aiButtonPressData}
                 highlightButtonId={peerCursorId}
+                guessingActive={isGuessingMode}
                 busyButtonId={busyButton?.id ?? null}
                 busyPhase={busyButton?.phase ?? null}
                 onButtonClick={handleBoardButtonClick}

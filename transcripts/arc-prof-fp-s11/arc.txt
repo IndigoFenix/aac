@@ -1,0 +1,21 @@
+# arc-run world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=10 dayS=240
+day   1  rations=   2.80  takes=   7  parked=  0 resel=  1  sleeps=  2  hungry=4/5 mean=1.12
+day   2  rations=   6.00  takes=  18  parked=  0 resel=  5  sleeps=  8  hungry=2/5 mean=1.12
+day   3  rations=   0.00  takes=   0  parked=  0 resel= 10  sleeps= 15  hungry=4/5 mean=1.76
+day   4  rations=   5.20  takes=   7  parked=  0 resel= 11  sleeps= 21  hungry=3/5 mean=1.84
+day   5  rations=   6.00  takes=   6  parked=  0 resel= 14  sleeps= 25  hungry=2/5 mean=1.80
+day   6  rations=   6.00  takes=   5  parked=  0 resel= 16  sleeps= 33  hungry=3/5 mean=1.92
+day   7  rations=   1.60  takes=   1  parked=  0 resel= 16  sleeps= 41  hungry=4/5 mean=2.04
+day   8  rations=   7.60  takes=   6  parked=  0 resel= 20  sleeps= 47  hungry=2/5 mean=1.68
+day   9  rations=   7.00  takes=   6  parked=  0 resel= 22  sleeps= 51  hungry=3/5 mean=1.44
+day  10  rations=   6.20  takes=   5  parked=  0 resel= 25  sleeps= 58  hungry=4/5 mean=1.36
+
+# takes=61 (zero-yield=3)  ≥6u=0  sizes=0.2u×27 0.4u×1 0.6u×3 0.8u×1 1u×1 1.2u×13 1.4u×3 1.6u×12
+# food units=48.40 over 10 days = 4.84/day
+# parked=0  re-selected=25  sleeps=58  reaped=0  haul ABANDONED=2 RE-ISSUED=0
+# starvation body-days ≥1.5=17.98  ≥3=6.82
+# frozen body-seconds=20  episodes>60s=0
+# construction beats: materialsStaged=-  houseFinished=-  anyFinished=-  familyMovesIn=-
+#   t=661.0 [haul] settler_3 ABANDONED agr_11 — set down 1× wood
+#   t=961.0 [haul] settler_3 ABANDONED agr_18 — set down 0× wood
+# wall=13.5s  sim/wall=177.57×  bodies=5

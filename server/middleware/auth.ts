@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import { userRepository, studentRepository } from "../repositories";
+import { userRepository, studentRepository, instituteRepository } from "../repositories";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { runWithSupportContext } from "../services/customerSupportService";
 import { activityLogService } from "../services/activityLogService";
@@ -75,36 +75,38 @@ export const SUPPORT_SESSION_MAX_MS = 60 * 60 * 1000;
 // public (`/auth/user`, the consent magic-link endpoints), carry no auth
 // middleware at all and say so at the route.
 
-/**
- * Middleware that requires admin privileges
- */
-export const requireAdmin: RequestHandler = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  if (!req.isAuthenticated() || !req.user) {
-    res.status(401).json({
-      success: false,
-      message: "Authentication required",
-    });
-    return;
-  }
-
-  const user = req.user as any;
-  if (!user.isAdmin && !user.isSystemAdmin && user.userType !== "admin") {
-    res.status(403).json({
-      success: false,
-      message: "Admin privileges required",
-    });
-    return;
-  }
-
-  next();
-};
+// `requireAdmin` was REMOVED on 2026-09-10 (authorization structural pass,
+// phase 0a). It gated 20 route registrations over `/api/admin/users`,
+// `/prompt`, `/settings/:key`, `/subscription-plans`, `/interpretations`,
+// `/api-providers` and `/credit-packages` — none of which had a client call
+// site, because the backoffice (`client/src/components/admin/`) drives the
+// `requireAdminSection` routes exclusively and has no "users" section at all.
+//
+// It was also the blast radius of audit finding C1: until 2026-09-10 the gate
+// admitted `userType === "admin"`, a value `registerSchema` accepted from the
+// unauthenticated `POST /auth/register` body, so anyone on the internet could
+// self-issue every route behind it — including `GET /api/admin/users`, which
+// answered with every account's bcrypt hash and encrypted TOTP seed. That
+// clause was removed when C1 was fixed; deleting the tier removes what it
+// reached. Production was verified unexploited.
+//
+// The three account/billing writes that had to survive (the access-review off
+// switch, MFA enforcement, credit-package authoring) moved onto
+// `requireAdminSection` — see the notes at their registrations in routes.ts.
+// Anything new under `/api/admin/*` names a section; there is no general
+// "is an admin" door any more. See docs/SECURITY_ARCHITECTURE.md §5.8.
 
 /**
- * Middleware that requires system admin privileges
+ * Middleware that requires system admin privileges.
+ *
+ * Tests `users.is_system_admin` only. It never trusted `userType`, so it did
+ * NOT share the C1 weakness — a self-registered account has
+ * `is_system_admin = false` (the column defaults false and no request body can
+ * set it) and is refused. Its own separate weakness is unrelated and still
+ * open: `adminAuthService.adaptAdminAsUser` stamps `isSystemAdmin: true` on
+ * EVERY `admin_users` row regardless of that row's `permissions`, so a
+ * section-scoped backoffice admin passes this gate (audit finding F1, its own
+ * round).
  */
 export const requireSystemAdmin: RequestHandler = (
   req: Request,
@@ -340,6 +342,76 @@ export const validateCSRF: RequestHandler = (
  * System admins bypass all checks.
  * Usage: requireLicensePermission('aacEnabled')
  */
+/**
+ * Gate a route on the caller's role in the institute named by a PATH PARAM.
+ *
+ * Replaces ~24 hand-rolled copies of the same three steps — re-read the param,
+ * call one of the membership predicates, map a boolean to a status — written
+ * out again in every institute-scoped handler. Two of those copies decided the
+ * status by STRING-MATCHING the service's error message:
+ *
+ *     res.status(result.error === "Only admins can update institute details" ? 403 : 404)
+ *     res.status(result.error?.includes("admin") ? 403 : 404)
+ *
+ * The second turns any future error message containing the word "admin" into a
+ * 403; the first breaks the moment somebody rewords a string. Deciding
+ * permission BEFORE the handler runs removes the mapping problem entirely.
+ *
+ * It also makes "which routes are admin-only" greppable in `routes.ts` rather
+ * than archaeological — what the 2026-09-10 authorization audit needed and
+ * could not do.
+ *
+ * ENUMERATION: an unpermitted caller gets 403 whether or not the institute
+ * exists. That is the platform standard (§2.4, 403-before-404) and a deliberate
+ * change from the handlers' old 404-for-missing, which let anyone with a session
+ * probe which institute ids are real.
+ *
+ * Support sessions pass through `isUserMemberOfInstitute` / `isUserAdminOfInstitute`
+ * exactly as everywhere else; both refuse a nullish institute or user outright,
+ * so a missing param cannot become an accidental match.
+ *
+ * Usage: app.patch("/api/institutes/:id", requireAuth, requireInstituteRole("id", "admin"), handler)
+ */
+export function requireInstituteRole(
+  param: string,
+  role: "member" | "admin",
+): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const userId = (req.user as { id?: string } | undefined)?.id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Authentication required" });
+      return;
+    }
+
+    const instituteId = req.params[param];
+    if (!instituteId) {
+      res.status(400).json({ success: false, message: "Institute id is required" });
+      return;
+    }
+
+    try {
+      const permitted =
+        role === "admin"
+          ? await instituteRepository.isUserAdminOfInstitute(instituteId, userId)
+          : await instituteRepository.isUserMemberOfInstitute(instituteId, userId);
+
+      if (!permitted) {
+        res.status(403).json({
+          success: false,
+          message:
+            role === "admin"
+              ? "Institute admin privileges required"
+              : "You do not have access to this institute",
+        });
+        return;
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
 export function requireLicensePermission(
   permKey: keyof LicensePermissions,
 ): RequestHandler {

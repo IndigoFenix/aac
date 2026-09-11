@@ -4,18 +4,24 @@
   "uses": [],
   "packs": [],
   "game": {
-    "scope": "town",
+    "scope": "solar_system",
     "world": {
-      "seed": 11,
-      "days": 0,
-      "population": 5,
-      "wilderness": true,
-      "terrain": "planet",
-      "stock": { "wood": 14, "stone": 6, "basket": 2 },
-      "syntax": "b",
-      "locale": "en"
+      "seed": 1337,
+      "premise": "founding",
+      "premise_stock": {
+        "wood": 14,
+        "stone": 6,
+        "basket": 2
+      },
+      "premise_population": 5
     },
     "avatar": "spirit",
-    "scale": { "rotation": 360, "sleep_fraction": 0.05, "construction": 720 }
+    "scale": {
+      "rotation": 360,
+      "sleep_fraction": 0.05,
+      "construction": 720,
+      "gap_compression": 10,
+      "resource_compression": 7.5
+    }
   }
 }

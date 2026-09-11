@@ -66,9 +66,9 @@ export const he = {
   // ============================================================================
   identity: {
     verificationRequired: "נדרש אימות זהות",
-    verificationNeeded: "{{institute}} דורש אימות דרך {{provider}}. אנא אמתו את זהותכם כדי לגשת לארגון זה.",
-    verificationExpired: "אימות ה-{{provider}} שלכם עבור {{institute}} פג תוקף. אנא אמתו מחדש את זהותכם.",
-    verifyNow: "אמת באמצעות {{provider}}",
+    verificationNeeded: "{institute} דורש אימות דרך {provider}. אנא אמתו את זהותכם כדי לגשת לארגון זה.",
+    verificationExpired: "אימות ה-{provider} שלכם עבור {institute} פג תוקף. אנא אמתו מחדש את זהותכם.",
+    verifyNow: "אמת באמצעות {provider}",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const he = {
     genderOther: "אחר",
     primaryLanguage: "שפה ראשית",
     dateOfBirth: "תאריך לידה",
-    ageDisplay: "גיל: {{age}} שנים",
+    ageDisplay: "גיל: {age} שנים",
     systemType: "מערכת חינוכית",
     frameworkTala: "תל״א (ישראל)",
     frameworkIep: "IEP (ארה״ב)",
@@ -1081,9 +1081,9 @@ export const he = {
     clearUnsavedDesc: "יש שינויים שלא נשמרו. האם תרצה לשמור לפני ניקוי הלוח?",
     discardAndClear: "התעלם ונקה",
     saveAndClear: "שמור ונקה",
-    generatingIcons: "מייצר אייקונים, נותרו: {{remaining}}",
+    generatingIcons: "מייצר אייקונים, נותרו: {remaining}",
     iconsGenerated: "כל האייקונים נוצרו בהצלחה",
-    iconsFailed: "{{count}} אייקונים נכשלו ביצירה",
+    iconsFailed: "{count} אייקונים נכשלו ביצירה",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const he = {
     importWarning: "ייבוא יחליף את הלוח הנוכחי. חלק מתכונות Grid3 עשויות לא להתייבא בצורה מושלמת.",
     importButton: "ייבוא",
     importSuccess: "הלוח יובא",
-    importSuccessDesc: "\"{{name}}\" יובא מ־Dropbox",
+    importSuccessDesc: "\"{name}\" יובא מ־Dropbox",
     importFailed: "הייבוא נכשל",
     noFilesFound: "לא נמצאו קבצי לוחות בתיקיית ה-Dropbox שלכם.",
   },
@@ -1349,6 +1349,8 @@ export const he = {
     noStudentsDesc: "הוסף את ה{{STUDENT}} הראשון שלך להתחיל",
     noResults: "לא נמצאו {{STUDENTS}}",
     noResultsDesc: "נסה לשנות את החיפוש או הסינון",
+    selectInstituteFirst: "בחר תחילה ארגון כדי להוסיף {{student}}",
+    selectInstituteEmpty: "בחר ארגון כדי לראות {{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const he = {
     gasOverallScoreDesc: "התקדמות כוללת על פני מטרות GAS. 50 = צפוי.",
     gasAtOrAbove: "ברמה הצפויה או מעליה",
     gasBelow: "מתחת לצפוי",
-    gasGoalsCounted: "מבוסס על {{count}} מטרות GAS עם נתונים מתועדים.",
+    gasGoalsCounted: "מבוסס על {count} מטרות GAS עם נתונים מתועדים.",
     goalCompletion: "השלמת מטרות",
     goalsByDomain: "מטרות לפי תחום",
     timeline: "ציר זמן",
@@ -1779,7 +1781,7 @@ export const he = {
     title: "נתוני התקדמות",
     noDataPoints: "עדיין לא נרשמו נתונים",
     collectedBy: "נאסף על ידי",
-    moreCount: "+{{count}} רשומות נוספות",
+    moreCount: "+{count} רשומות נוספות",
 
     numericValue: "ערך מספרי",
     numericPlaceholder: "לדוגמה: 85",
@@ -2206,7 +2208,7 @@ export const he = {
 
   reports: {
     title: "דוחות",
-    subtitle: "דוחות עבור {{name}}",
+    subtitle: "דוחות עבור {name}",
     noStudent: "בחר {{STUDENT}} לצפייה בדוחות",
     noStudentSelected: "לא נבחר {{STUDENT}}",
     selectStudentFirst: "בחר {{STUDENT}} לצפייה בדוחות שלו",
@@ -2243,10 +2245,12 @@ export const he = {
     finalizeTitle: "סיום דוח",
     finalizeWarning: "לאחר סיום, לא ניתן לערוך דוח זה. יש ליצור גרסה חדשה לביצוע שינויים.",
     finalizeCannotUndo: "פעולה זו אינה ניתנת לביטול.",
+    consentWarning: "הסגירה הסופית חסומה: אין רשומת הסכמה מדעת בתיק. הורה או אפוטרופוס צריך לחתום תחילה על טופס ההסכמה.",
+    finalizeFailed: "לא ניתן היה לסגור את הדוח סופית.",
 
     confirmCreate: {
       title: "יצירת דוח חדש",
-      description: "פעולה זו תיצור דוח {{type}} חדש. דוח פעיל קיים יועבר לארכיון.",
+      description: "פעולה זו תיצור דוח {type} חדש. דוח פעיל קיים יועבר לארכיון.",
       confirm: "יצירה"
     },
 
@@ -2365,7 +2369,7 @@ export const he = {
     },
 
     empty: {
-      title: "אין דוחות {{type}}",
+      title: "אין דוחות {type}",
       description: "צור דוח חדש להתחלה."
     },
 
@@ -2988,7 +2992,7 @@ export const he = {
     selectOrGenerate: "בחר ניתוח או צור חדש.",
     selectStudent: "בחר {{STUDENT}} כדי ליצור ניתוח מעמיק.",
     untitled: "ניתוח ללא כותרת",
-    inProgress: "בתהליך (שלב {{STEP}})...",
+    inProgress: "בתהליך (שלב {STEP})...",
     delete: "מחק",
     confirmDelete: "למחוק את הניתוח הזה לצמיתות?",
     error: "שגיאה",
@@ -3074,7 +3078,7 @@ export const he = {
       categoryPages: "חלוקה לקטגוריות",
       dietaryTags: "הצגת תוויות תזונה",
       dietaryTagsDesc: "עבורך, לא עבור התלמיד. התוויות אינן אמינות ואינן מסננות דבר.",
-      autoNow: "כרגע: {{value}}",
+      autoNow: "כרגע: {value}",
     },
     review: {
       title: "תפריטים לבדיקה",
@@ -3171,9 +3175,15 @@ export const he = {
     LICENSE_ALREADY_PAID: "הרישיון הזה כבר שולם.",
     LICENSE_NOT_PURCHASABLE: "לא ניתן לשלם עבור רישיון זה באופן מקוון. אנא צרו איתנו קשר.",
     PADDLE_NOT_CONFIGURED: "תשלום מקוון אינו זמין כרגע. נסו שוב מאוחר יותר או צרו איתנו קשר.",
+    consent_required: "נדרשת רשומת הסכמה מדעת פעילה לפני שניתן לסגור דוח זה סופית.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "מידע ההסכמה אינו זמין",
+      loadFailedDescription: "לא הצלחנו לטעון את רשומות ההסכמה של {{student}}. אין פירושו שאין הסכמה בתיק — הבקשה נכשלה.",
+      retry: "נסה שוב",
+    },
     authority: {
       title: "סמכות הסכמה",
       description: "כברירת מחדל, מי שמעניק את ההסכמה נקבע לפי גיל הבגרות של התלמיד/ה. ניתן לעקוף זאת כאן אם תלמיד/ה בגיר/ה נמצא/ת תחת אפוטרופסות, או אם קטין/ה מעניק/ה הסכמה בעצמו/ה.",
@@ -3306,6 +3316,27 @@ export const he = {
         attemptsRemaining: "נותרו {count} ניסיונות.",
         locked: "יותר מדי ניסיונות שגויים. אנא בקשו מהמרפאה לשלוח קישור חדש.",
       },
+      attest: {
+        identityIntro: "אתם מתעדים הסכמה זו באופן אישי, בנוכחות האפוטרופוס. בדקו את הפרטים שלהלן לפני שתמשיכו.",
+        guardianLabel: "האפוטרופוס החותם",
+        attestedByLabel: "מאושר על ידי",
+        guardianIntro: "תעדו את מסמך הזיהוי שהאפוטרופוס הציג בפניכם. הזינו אותו בדיוק כפי שהוא מופיע במסמך.",
+        coGuardianDeclaration: "האפוטרופוס מאשר כי הוא האפוטרופוס החוקי וכי יש לו סמכות לתת הסכמה זו גם בשם כל אפוטרופוס אחר.",
+        signatureIntro: "העבירו כעת את המכשיר לאפוטרופוס. החתימה חייבת להיות שלו.",
+        signatureLegal: "בחתימתו מאשר האפוטרופוס כי הוא האפוטרופוס החוקי ומאשר הסכמה זו.",
+        stepIntro: "לסיום, אשרו את מה שראיתם. הצהרה זו נשמרת יחד עם רשומת ההסכמה ומציינת אתכם כמאשרים.",
+        documentLabel: "המסמך שנבדק",
+        presenceDeclaration: "אני מאשר כי האפוטרופוס נכח פיזית לצדי, כי בדקתי את מסמך הזיהוי שתועד לעיל וכי הוא תואם לאדם שחתם.",
+        notesLabel: "הערות (רשות)",
+        notesPlaceholder: "לדוגמה: דרכון בתוקף עד 2031, השם תואם",
+        legal: "שמכם, חשבון המשתמש שלכם ומועד האישור נשמרים כראיה ברשומת ההסכמה.",
+        reviewIntro: "בדקו את הרשומה לפני השמירה. לאחר השמירה לא ניתן לערוך אותה — רק לבטל ולחתום מחדש.",
+        methodLabel: "אומת באמצעות",
+        methodValue: "אישור מטפל בנוכחות פיזית",
+        submitButton: "שמירת ההסכמה",
+        toastTitle: "ההסכמה נשמרה",
+        toastDescription: "ההסכמה שניתנה בנוכחות פיזית נשמרה יחד עם האישור שלכם.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const he = {
       },
     },
 
+    withdraw: {
+      title: "ביטול הסכמה",
+      invalidLink: "קישור לא תקין",
+      missingCode: "בקישור הזה חסר קוד. נא להשתמש בקישור המקורי מהודעת הדוא״ל או ה-SMS שקיבלת.",
+      linkProblem: "לא הצלחנו לפתוח את קישור הביטול",
+      loading: "טוען",
+      requestTitle: "ביטול ההסכמה שנתת",
+      requestIntro: "כדי לוודא שזה באמת אתה, נשלח קישור חד-פעמי לכתובת הדוא״ל או למספר הטלפון שכבר רשומים אצל המרפאה. שום דבר לא משתנה עד שתאשר/י בעמוד שהקישור יוביל אליו.",
+      requestButton: "שלחו לי קישור לביטול",
+      sending: "שולח...",
+      linkSentTitle: "הקישור נשלח",
+      linkSentBody: "אם הפנייה תואמת הסכמה פעילה, שלחנו קישור חד-פעמי לכתובת הדוא״ל או למספר הטלפון הרשומים. הקישור ניתן לשימוש פעם אחת ותוקפו 72 שעות. אם לא הגיע דבר, יש לפנות למרפאה.",
+      forStudent: "עבור",
+      signedBy: "נחתם על ידי",
+      signedOn: "נחתם בתאריך",
+      effectsTitle: "מה קורה כשמבטלים:",
+      effectProcessing: "עיבוד המידע נפסק. המרפאה לא תוכל להמשיך לתעד או לעבד את המידע של ילדך על בסיס ההסכמה הזו.",
+      effectAac: "עוזר ה-AAC יפסיק להשתמש במידע של ילדך, וכל מפגש פעיל ייסגר מיד.",
+      effectShares: "כל שיתופי המידע הפעילים עם גורמים אחרים יבוטלו.",
+      effectRecords: "לא ניתן יהיה לסגור דוחות, תוכניות או רישומי אירוע עד לחתימה על הסכמה חדשה.",
+      effectPast: "הביטול אינו מבטל עיבוד שכבר התרחש ואינו מוחק מידע קיים. לבקשת מחיקה יש לפנות למרפאה.",
+      otpIntro: "נשלח קוד חד-פעמי למספר הטלפון הרשום",
+      sendOtp: "שלחו לי קוד",
+      resendOtp: "שלחו קוד שוב",
+      otpLabel: "קוד האימות",
+      otpPlaceholder: "6 ספרות",
+      otpWrong: "הקוד שהוזן אינו נכון.",
+      verify: "אימות",
+      childIdIntro: "כדי לוודא שזה באמת אתה, הזן/י את 4 הספרות האחרונות של מספר הזהות של ילדך כפי שנמסר למרפאה.",
+      childIdLabel: "4 ספרות אחרונות",
+      childIdWrong: "הספרות אינן תואמות למספר הרשום.",
+      childIdLocked: "יותר מדי ניסיונות שגויים. יש לבקש מהמרפאה לשלוח קישור חדש.",
+      attemptsRemaining: "ניסיונות שנותרו",
+      factorGenericError: "האימות נכשל. נסה/י שוב או פנה/י למרפאה.",
+      reasonLabel: "סיבת הביטול (לא חובה)",
+      reasonPlaceholder: "אפשר להשאיר ריק",
+      acknowledge: "הבנתי מה קורה כשמבטלים, ואני מבקש/ת לבטל את ההסכמה שנתתי עבור ילדי.",
+      confirmButton: "בטלו את ההסכמה שלי",
+      submitting: "מבטל...",
+      doneTitle: "ההסכמה בוטלה",
+      doneBody: "עיבוד המידע נפסק, שיתופי המידע הפעילים בוטלו וכל מפגש AAC פעיל נסגר. המרפאה קיבלה על כך הודעה. אם תרצה/י להסכים מחדש בעתיד, המרפאה תוכל לשלוח בקשה חדשה.",
+      error: {
+        notFound: "הקישור הזה אינו תקף יותר. יש לבקש מהמרפאה לשלוח קישור חדש.",
+        expired: "תוקף הקישור פג. יש לבקש מהמרפאה לשלוח קישור חדש.",
+        used: "כבר נעשה שימוש בקישור הזה. אם ההסכמה עדיין פעילה, יש לבקש מהמרפאה קישור חדש.",
+        revoked: "הקישור בוטל על ידי המרפאה. יש לפנות אליהם בשאלות.",
+        alreadyWithdrawn: "ההסכמה הזו כבר בוטלה. לא נדרשת פעולה נוספת.",
+        factorRequired: "יש להשלים את שלב האימות לפני ביטול ההסכמה.",
+        generic: "משהו השתבש. נסה/י שוב או פנה/י למרפאה.",
+      },
+    },
+
     history: {
       title: "היסטוריית הסכמות",
       activeBadge: "פעיל",
@@ -3364,6 +3447,11 @@ export const he = {
       revokeReasonPlaceholder: "סיבה (אופציונלי)",
       toastRevoked: "ההסכמה בוטלה",
       toastRevokeFailed: "לא ניתן לבטל",
+      sendWithdrawalLink: "שלח קישור לביטול הסכמה",
+      withdrawalLinkHint: "שולח קישור חד-פעמי לכתובת הדוא״ל או לטלפון הרשומים של החותם, כדי שיוכל לבטל את ההסכמה בעצמו.",
+      withdrawalLinkSent: "קישור הביטול נשלח",
+      withdrawalLinkSentTo: "נשלח אל",
+      withdrawalLinkFailed: "לא ניתן לשלוח קישור לביטול",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const he = {
       reverificationDays: "אימות מחדש (ימים)",
       autoProvision: "יצירה אוטומטית של משתמשים חדשים",
       autoProvisionDesc: "כאשר משתמש מתחבר דרך ספק זהות זה ואין לו חשבון Aivota, ייצרו עבורו חשבון מתוך פרטי ה-SSO ויקשרו אליו. נדרש עבור ספקי זהות מוסדיים (כגון משרד החינוך – ספקים) שבהם המשתמשים מצפים להגיע מחוברים מראש.",
-      days: "{{count}} ימים",
+      days: "{count} ימים",
       never: "לעולם לא",
       neverPlaceholder: "השאירו ריק עבור לעולם לא",
       discoveryUrl: "כתובת Discovery",
@@ -4076,8 +4164,8 @@ export const he = {
     noInstitute: "הצטרפו לארגון כדי להתחיל בשיחות",
     loadingContacts: "טוען אנשי קשר…",
     noContacts: "לא נמצאו אנשי קשר",
-    callPerson: "התקשרו אל {{name}}",
-    callPersonAuto: "התקשרות אוטומטית אל {{name}}",
+    callPerson: "התקשרו אל {name}",
+    callPersonAuto: "התקשרות אוטומטית אל {name}",
     students: "תלמידים",
     online: "מחובר",
     offline: "מנותק",
@@ -4157,7 +4245,7 @@ export const he = {
     title: "אנשי קשר",
     panelTitle: "אנשי קשר של התלמיד",
     description: "אנשים שהתלמיד מכיר — הורים, חברי כיתה, מטפלים.",
-    forStudent: "אנשי קשר עבור {{name}}",
+    forStudent: "אנשי קשר עבור {name}",
     empty: "לא נרשמו אנשי קשר עדיין.",
     add: "הוסף איש קשר",
     new: "איש קשר חדש",
@@ -4351,7 +4439,7 @@ export const he = {
       title: "לבטל את כל הגישה?",
       description: "כל השיתופים הפעילים — לפי פריט וקבועים — שהענקת לארגון הזה עבור התלמיד הזה יבוטלו. לא ניתן לבטל פעולה זו.",
       confirm: "בטל הכל",
-      toastSuccess: "בוטלו {{count}} שיתופים.",
+      toastSuccess: "בוטלו {count} שיתופים.",
     },
     inbox: {
       pendingHeader: "הזמנות ממתינות",
@@ -4372,8 +4460,8 @@ export const he = {
     },
     standing: {
       expired: "פג תוקף",
-      expiresInDays: "פג תוקף בעוד {{days}} ימים",
-      expiresOn: "פג תוקף ב-{{date}}",
+      expiresInDays: "פג תוקף בעוד {days} ימים",
+      expiresOn: "פג תוקף ב-{date}",
       renewedToast: "השיתוף הקבוע חודש לשנה.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const he = {
     field: {
       codeExpires: "תוקף הקוד",
       shareExpires: "תוקף השיתוף",
-      sensitiveCount: "{{count}} פריטים רגישים",
+      sensitiveCount: "{count} פריטים רגישים",
     },
     bundle: {
       objects: "פריטים",
@@ -4471,9 +4559,9 @@ export const he = {
     notifications: {
       bellLabel: "הזמנות שיתוף",
       newInviteTitle: "הזמנת שיתוף חדשה",
-      newInviteBody: "{{count}} הזמנות ממתינות לאישורך.",
+      newInviteBody: "{count} הזמנות ממתינות לאישורך.",
       expiringTitle: "שיתוף מתקרב לפקיעת תוקף",
-      expiringBody: "{{count}} שיתופים קבועים יפוגו בקרוב — בדוק וחדש.",
+      expiringBody: "{count} שיתופים קבועים יפוגו בקרוב — בדוק וחדש.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const he = {
       addGuardian: "הוספת איש קשר הורה/אפוטרופוס",
       requestsSent: "{count} נשלחו, {failed} לא נשלחו",
       sendRequests: "שליחת בקשות הסכמה ({count})",
+      stage: "הסכמה",
+      explainTitle: "השלב הבא: אישור מהורה או אפוטרופוס",
+      explainBody: "לפני שאפשר לתעד משהו על הבריאות, התוכנית או דרך התקשורת של ה{{student}}, הורה או אפוטרופוס חוקי חייב לתת אישור בכתב. עד עכשיו נשמרו רק הפרטים הבסיסיים. שאר השלבים ייפתחו מעצמם ברגע שהאישור ייחתם.",
+      signCaption: "אתם רשומים כאפוטרופוס, ולכן תוכלו לקרוא ולחתום על האישור בעצמכם — זה לוקח כדקה.",
+      familyNoGuardianCaption: "קודם צריך אפוטרופוס רשום. הוסיפו את עצמכם (או את ההורה השני) כאפוטרופוס של ה{{student}}, ואז יופיע כאן כפתור לחתימה על ההסכמה.",
+      sendRequest: "שליחת בקשת הסכמה",
+      sendCaption: "נשלח לאפוטרופוס קישור אישי במייל. הוא יקרא את האישור ויחתום עליו אונליין — לא נדרש מכם דבר נוסף.",
+      sentCaption: "הקישור נשלח לאפוטרופוס. שאר השלבים ייפתחו ברגע שהוא ייחתם, אפשר לחזור לכאן מאוחר יותר.",
+      sentOne: "קישור ההסכמה נשלח לאפוטרופוס.",
+      sendFailed: "לא ניתן היה לשלוח את קישור ההסכמה. בדקו שלאפוטרופוס יש כתובת אימייל תקינה ונסו שוב.",
+      attestInPerson: "האפוטרופוס נמצא כאן — חתמו יחד",
+      attestCaption: "אם ההורה או האפוטרופוס נמצא איתכם כעת, תוכלו לקרוא יחד את האישור ולבקש ממנו לחתום במכשיר זה. אתם מאמתים את זהותו, ואין צורך בקישור.",
     },
     notes: {
       documentsNotStored: "מסמכים נקראים ואינם נשמרים — נשמרים רק הפרטים שחולצו מהם.",

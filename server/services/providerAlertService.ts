@@ -177,9 +177,82 @@ export function notifyPaddleFulfillmentProblem(opts: {
   })();
 }
 
-/** Test seam: forget the Paddle alert throttle. */
+// ─── Paddle API-key expiry (webhook) ─────────────────────────────────────────
+
+export type PaddleApiKeyExpiryKind = "expiring" | "expired";
+const lastPaddleKeyAlert = new Map<PaddleApiKeyExpiryKind, number>();
+
+/**
+ * Paddle API keys CANNOT be created without an expiry date, so the live key is
+ * a scheduled outage waiting to happen. Paddle sends `api_key.expiring` ahead of
+ * time and `api_key.expired` when it lapses; our notification destination is
+ * subscribed to all events, so both land in the webhook as "unhandled event
+ * type" — filed as ignored and otherwise invisible.
+ *
+ * The failure mode is asymmetric and therefore easy to miss: an expired key
+ * breaks OUTBOUND calls (checkout creation, `POST /api/licenses/:id/checkout`)
+ * while INBOUND webhooks keep verifying and fulfilling normally, because they
+ * authenticate with the webhook signing secret, not the API key. Nothing looks
+ * broken until someone tries to buy.
+ *
+ * Throttled per kind with the same cooldown as the other Paddle alerts.
+ * Fire-and-forget — never throws, never blocks the webhook response.
+ */
+export function notifyPaddleApiKeyExpiry(opts: {
+  kind: PaddleApiKeyExpiryKind;
+  eventId: string;
+  keyName?: string | null;
+  expiresAt?: string | null;
+}): void {
+  void (async () => {
+    try {
+      const now = Date.now();
+      const last = lastPaddleKeyAlert.get(opts.kind) ?? 0;
+      if (now - last < cooldownMs()) return;
+      lastPaddleKeyAlert.set(opts.kind, now);
+
+      const name = opts.keyName || "(unnamed key)";
+      const expiry = opts.expiresAt || "(date not supplied)";
+      const subject =
+        opts.kind === "expired"
+          ? `🚨 Paddle API key EXPIRED: ${name} (expired ${expiry})`
+          : `⚠️ Paddle API key expiring: ${name} (expires ${expiry})`;
+      const lines = [
+        opts.kind === "expired"
+          ? `The Paddle API key "${name}" has EXPIRED (${expiry}). Paddle checkouts are broken NOW.`
+          : `The Paddle API key "${name}" is due to expire on ${expiry}. Rotate it before then.`,
+        ``,
+        `What breaks: every OUTBOUND Paddle call — creating a checkout transaction,`,
+        `so POST /api/licenses/:id/checkout starts failing and nobody can buy a license.`,
+        `What does NOT break: inbound webhooks keep arriving and fulfilling, because they`,
+        `authenticate with PADDLE_WEBHOOK_SECRET, not the API key. So the system looks`,
+        `healthy until a customer tries to pay — this email is the only warning.`,
+        ``,
+        `Event:      ${opts.eventId} (api_key.${opts.kind})`,
+        `Key:        ${name}`,
+        `Expires:    ${expiry}`,
+        `Time (UTC): ${new Date(now).toISOString()}`,
+        ``,
+        `Rotation steps:`,
+        `  1. Paddle dashboard → Developer tools → Authentication → create a new API key.`,
+        `     Scopes: Products read+write, Transactions read+write, Customers read.`,
+        `  2. Write it into the AWS Secrets Manager secret \`aivota-prod/app-secrets\` as`,
+        `     \`PADDLE_API_KEY\` (hand-edited JSON — this secret is NOT managed by Terraform).`,
+        `  3. Redeploy \`main\` so the ECS task restarts and reloads the secrets JSON at boot.`,
+        `  4. Confirm a checkout works, then revoke the old key in the Paddle dashboard.`,
+      ];
+      await sendAlertEmail(subject, lines);
+      console.warn(`[providerAlert] Sent Paddle api-key ${opts.kind} alert for ${opts.eventId}`);
+    } catch (err) {
+      console.error("[providerAlert] Failed to send Paddle api-key alert:", err);
+    }
+  })();
+}
+
+/** Test seam: forget the Paddle alert throttles (fulfillment + api-key expiry). */
 export function resetPaddleAlertThrottle(): void {
   lastPaddleAlert.clear();
+  lastPaddleKeyAlert.clear();
 }
 
 // ─── Spend-threshold sweep (cron) ────────────────────────────────────────────

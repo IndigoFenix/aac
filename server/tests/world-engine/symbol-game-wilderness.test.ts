@@ -685,8 +685,20 @@ describe("the climate arm — livestock filtering and the suitability-weighted p
 });
 
 // The regrow calculators are PURE — the host applies their results to its
-// live stock copy. An apple tree (regrowDays 1) at day-length 100 s.
+// live stock copy. An apple tree at day-length 100 s.
+//
+// ⚖️ THE PERIOD COMES OFF THE CATALOGUE, NEVER A LITERAL (PART 6, 2026-09-08).
+// These deadlines used to be spelled `DAY` because the apple's `regrowDays`
+// happened to be 1; the field now carries a REAL cadence (a fruit tree bears
+// once a year) which the world's `resource_compression` divides at the point
+// of use, so a literal here was pinning a balance number under cover of
+// pinning the calculator. What these tests are ABOUT — one unit per period,
+// a long absence catching up whole periods, the ledger retiring at cap — is
+// untouched, which is exactly why the fix is to read the row.
 const DAY = 100;
+const APPLE_REGROW_DAYS = naturalSourceOf("apple_tree")!.products
+  .find((p) => p.glyph === "apple")!.regrowDays!;
+const PERIOD = APPLE_REGROW_DAYS * DAY;
 const appleTree = (): WildernessFeature => ({
   id: "wild:apple_tree_0",
   species: "apple_tree",
@@ -702,17 +714,22 @@ describe("live-harvest regrow (dueHarvestRegrowth / armHarvestRegrow)", () => {
     armHarvestRegrow(f, "wood", 10, DAY); // kill glyph — no-op
     expect(f.regrowAt).toBeUndefined();
     armHarvestRegrow(f, "apple", 10, DAY);
-    expect(f.regrowAt).toEqual({ apple: 10 + DAY });
+    expect(f.regrowAt).toEqual({ apple: 10 + PERIOD });
     // A second take during regrowth keeps the standing cadence.
     armHarvestRegrow(f, "apple", 50, DAY);
-    expect(f.regrowAt).toEqual({ apple: 10 + DAY });
+    expect(f.regrowAt).toEqual({ apple: 10 + PERIOD });
   });
 
-  it("nothing matures before the deadline; one unit per period after it", () => {
+  // 🌿 A BEARING SCALES WITH THE PLANT (the resource-packing round,
+  // `planet/packing.ts itemsPerBearing`): one cadence off a crab apple is
+  // 2.09 apples, not one. The pins below still read the SAME law — nothing
+  // before the deadline, catch-up capped by capacity, the ledger advancing
+  // from the deadline — they just read it at the plant's own rate.
+  it("nothing matures before the deadline; a bearing's worth after it", () => {
     const f = appleTree();
     armHarvestRegrow(f, "apple", 0, DAY);
-    expect(dueHarvestRegrowth(f, { apple: 1, wood: 1 }, DAY - 1, DAY)).toBeNull();
-    const due = dueHarvestRegrowth(f, { apple: 1, wood: 1 }, DAY, DAY);
+    expect(dueHarvestRegrowth(f, { apple: 1, wood: 1 }, PERIOD - 1, DAY)).toBeNull();
+    const due = dueHarvestRegrowth(f, { apple: 1, wood: 1 }, PERIOD, DAY);
     expect(due).not.toBeNull();
     expect(due!.add).toEqual({ apple: 1 });
     // Back at capacity (1 + 1 = cap 2) — the ledger entry retires.
@@ -723,19 +740,28 @@ describe("live-harvest regrow (dueHarvestRegrowth / armHarvestRegrow)", () => {
     const f = appleTree();
     armHarvestRegrow(f, "apple", 0, DAY);
     // Picked clean (live stock 0), away for 10 periods: refills to cap 2, not 10.
-    const due = dueHarvestRegrowth(f, { apple: 0, wood: 1 }, 10 * DAY, DAY);
+    const due = dueHarvestRegrowth(f, { apple: 0, wood: 1 }, 10 * PERIOD, DAY);
     expect(due!.add).toEqual({ apple: 2 });
     expect(due!.regrowAt).toEqual({});
   });
 
   it("below capacity, the ledger advances to the next deadline", () => {
     const f = appleTree();
-    f.harvestCap = { apple: 3 };
+    // Cap 5 rather than 3: ONE cadence off an apple tree is 2.09 apples, so a
+    // cap of 3 would be reached inside the first period and this test would be
+    // pinning the capacity retirement (the test above it) instead of the
+    // ledger advance it exists for.
+    f.harvestCap = { apple: 5 };
     armHarvestRegrow(f, "apple", 0, DAY);
-    // One period elapsed, two units short of cap: one matures, next is due a period later.
-    const due = dueHarvestRegrowth(f, { apple: 1, wood: 1 }, DAY, DAY);
-    expect(due!.add).toEqual({ apple: 1 });
-    expect(due!.regrowAt).toEqual({ apple: 2 * DAY });
+    // One period elapsed, four units short of cap: a bearing's whole part
+    // matures, the fraction is carried, and the next deadline is a period on.
+    const due = dueHarvestRegrowth(f, { apple: 1, wood: 1 }, PERIOD, DAY);
+    expect(due!.add).toEqual({ apple: 2 });
+    expect(due!.regrowAt).toEqual({ apple: 2 * PERIOD });
+    // 🚫 THE FRACTION IS NOT LOST — it waits on the source for the next
+    // cadence (item conservation: never a phantom unit, never a missing one).
+    expect(f.bearCarry!.apple).toBeGreaterThan(0);
+    expect(f.bearCarry!.apple).toBeLessThan(1);
   });
 
   it("an unarmed feature has nothing pending", () => {

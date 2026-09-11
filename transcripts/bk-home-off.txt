@@ -1,0 +1,26 @@
+# world=scripts/worlds/homestead.spec.json seed=11 dt=0.5 days=10
+# t=0 ring-1 food units=0  baskets=2  wood=207
+day  1  rations/day=  3.00  takes=   9  baskets=2  wood=207  ring1=0  sleeps=2
+day  2  rations/day=  4.40  takes=  27  baskets=2  wood=207  ring1=0  sleeps=8
+day  3  rations/day=  3.80  takes=  41  baskets=2  wood=207  ring1=0  sleeps=15
+day  4  rations/day=  0.20  takes=  42  baskets=2  wood=207  ring1=0  sleeps=22
+day  5  rations/day=  0.00  takes=  42  baskets=2  wood=207  ring1=0  sleeps=27
+day  6  rations/day=  0.00  takes=  42  baskets=2  wood=207  ring1=0  sleeps=35
+day  7  rations/day=  0.00  takes=  42  baskets=2  wood=207  ring1=0  sleeps=41
+day  8  rations/day=  0.00  takes=  42  baskets=2  wood=207  ring1=0  sleeps=47
+day  9  rations/day=  0.00  takes=  42  baskets=2  wood=207  ring1=0  sleeps=52
+day 10  rations/day=  0.00  takes=  42  baskets=2  wood=207  ring1=0  sleeps=60
+
+# takes=42  parked=13  re-selected=13  sleeps=60
+# rations delivered=11.40 over 10 days = 1.14/day
+# units per take: 1u×35 2u×1 3u×4 4u×2
+# baskets by day: 2,2,2,2,2,2,2,2,2,2
+# wood by day: 207,207,207,207,207,207,207,207,207,207
+# basket bills posted=0  first at t=-
+# starvation body-days: >=1.5=0.0  >=1=14.5  (bodies=5)
+# ring-1 food units at end=0
+# delivered lines=0
+# craft toasts=0
+# construction toasts=0
+# buildings=[]
+# baskets end=2  carts end=0  wood end=207

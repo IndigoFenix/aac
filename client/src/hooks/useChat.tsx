@@ -11,9 +11,10 @@ import { openUI } from '@/lib/uiEvents';
 import { useBoardStore } from '@/store/board-store';
 import { useCustomAppStore } from '@/store/custom-app-store';
 import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
-import type { GuidedSetupRequest, GuidedSetupView } from '@shared/guided-setup';
+import type { GuidedSetupRequest, GuidedSetupSignal } from '@shared/guided-setup';
 import { useChatStream } from './useChatStream';
 import { invalidateConsentForStudent } from './useConsentApi';
+import { invalidateGuidedSetup } from '@/features/guided-setup/guided-setup-query';
 import { toast } from '@/hooks/use-toast';
 
 // ============================================================================
@@ -175,10 +176,11 @@ export interface ChatResponseActions {
   aacautoprompt?: any;
 
   // Guided Setup — the server sets Context_GuidedSetup every turn while the
-  // student-onboarding flow is active; it lands here lower-cased. The rail
-  // renders it and the flow's panel/student follow it.
+  // student-onboarding flow is active; it lands here lower-cased. It is the
+  // chat SESSION's state, not the rail's view (which is a react-query query
+  // this handler invalidates); the flow's panel/student follow it.
   // (key constant: GUIDED_SETUP_CONTEXT_DATA_KEY in @shared/guided-setup)
-  guidedsetup?: GuidedSetupView;
+  guidedsetup?: GuidedSetupSignal;
 }
 
 interface ChatContextType {
@@ -375,8 +377,8 @@ export const ChatProvider = ({
   // Guided Setup: while the flow is live the conversation must survive panel
   // switches (each step moves the panel) and reloads, so it is keyed by the
   // institute rather than by (student, feature).
-  const guidedSetupActive = Boolean(sharedState.guidedSetup?.view?.active);
-  const guidedSetupInstituteId: string | undefined = sharedState.guidedSetup?.view?.instituteId;
+  const guidedSetupActive = Boolean(sharedState.guidedSetup?.active);
+  const guidedSetupInstituteId: string | undefined = sharedState.guidedSetup?.instituteId;
 
   // DEBUG: Track activeFeature and sendMessage recreation
   useEffect(() => {
@@ -819,21 +821,27 @@ export const ChatProvider = ({
       }
     }
 
-    // Guided Setup — the flow view the server recomputes every turn. It drives
-    // the rail, and (while active) the panel and the selected student, because
-    // the AI may create the student mid-turn. The null → value student fill-in
-    // is deliberately left to the existing student-change effect, which only
-    // clears the session on a value → value switch.
+    // Guided Setup — the chat session's own flow state (see GuidedSetupSignal).
+    // It drives the rail's `live`, and (while active) the panel and the
+    // selected student, because the AI may create the student mid-turn. The
+    // null → value student fill-in is deliberately left to the existing
+    // student-change effect, which only clears the session on a value → value
+    // switch.
+    //
+    // THE VIEW ITSELF IS NOT PUSHED. Every field of it is derived from rows,
+    // so the end of a turn simply invalidates the query the rail reads — one
+    // call in place of the six publish sites this channel used to need.
     if (contextData.guidedsetup) {
-      const view = contextData.guidedsetup;
-      console.log('[ChatProvider] Guided Setup view received, step:', view.step);
-      setSharedState({ guidedSetup: { view, live: true } });
+      const signal = contextData.guidedsetup;
+      console.log('[ChatProvider] Guided Setup signal received, active:', signal.active);
+      setSharedState({ guidedSetup: signal });
+      invalidateGuidedSetup(queryClient, signal.instituteId, signal.studentId);
 
-      if (view.active && view.panel && view.panel !== activeFeature) {
-        setActiveFeature(view.panel);
+      if (signal.active && signal.panel && signal.panel !== activeFeature) {
+        setActiveFeature(signal.panel);
       }
-      if (view.studentId && view.studentId !== student?.id) {
-        selectStudent(view.studentId);
+      if (signal.studentId && signal.studentId !== student?.id) {
+        selectStudent(signal.studentId);
       }
     }
 

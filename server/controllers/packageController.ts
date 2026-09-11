@@ -14,7 +14,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { boardRepository, packageRepository } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
-import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { requireInstituteCtx } from "../services/sharing/clinicianCtx";
 import {
   isFrozen,
   resolvePackagePermission,
@@ -121,14 +121,17 @@ async function canAccessStudent(ctx: AccessCtx, studentId: string): Promise<bool
   return hasAccess;
 }
 
-/** Resolve the caller's access context, or 400 if no institute is selected. */
+/**
+ * Resolve the caller's access context, or refuse: 400 if no institute is
+ * selected, 403 if the caller named one they are not a member of.
+ *
+ * Those were the same 400 before 2026-09-10 — `buildClinicianCtx` returned one
+ * `undefined` for both — which is what let a genuine refusal read as a
+ * client-side omission here while the SAME value read as "no filter" in
+ * `customAppRepository`. See `services/sharing/clinicianCtx.ts`.
+ */
 async function requireCtx(req: Request, res: Response): Promise<AccessCtx | null> {
-  const ctx = await buildClinicianCtx(req);
-  if (!ctx) {
-    res.status(400).json({ error: "error:INSTITUTE_NOT_SELECTED" });
-    return null;
-  }
-  return ctx;
+  return requireInstituteCtx(req, res);
 }
 
 /**
@@ -171,11 +174,11 @@ export class PackageController {
       const body = createSchema.parse(req.body);
       const userId = req.user!.id;
 
-      // The support-aware membership predicate, NOT instituteService.
-      // verifyMembership — that one reports the raw institute_users row, which
-      // a customer-support agent never has for the institute they are
-      // supporting. (The grantee check in addGrant deliberately keeps using the
-      // raw one: a grant must land on a real member.)
+      // The institute predicate — the CALLER's authority to act here, so the
+      // support-aware form (a customer-support agent holds no `institute_users`
+      // row for the institute they are supporting). The grantee check in
+      // `addGrant` deliberately uses `getActiveMembership` instead: that asks
+      // about a THIRD party and must stay support-blind.
       const isMember = await instituteRepository.isUserMemberOfInstitute(body.instituteId, userId);
       if (!isMember) {
         res.status(403).json({ error: "error:NOT_INSTITUTE_MEMBER" });
@@ -531,10 +534,18 @@ export class PackageController {
 
       // V1: grants are intra-institute only. Cross-institute sharing is a
       // separate feature (plan §1.2) and must not sneak in through this door.
-      const { isMember } = await instituteService.verifyMembership(
+      //
+      // `getActiveMembership`, NOT a caller predicate: this asks whether a
+      // THIRD party holds a real membership row, so it must stay blind to
+      // customer-support mode. (Before 2026-09-10 `verifyMembership` was the
+      // support-blind one and served here; it is now support-aware like the
+      // rest of the pair, and `getActiveMembership` is the named home for this
+      // question.) Under a support session the support-aware form would answer
+      // "member" for ANY grantee user id.
+      const isMember = !!(await instituteRepository.getActiveMembership(
         loaded.pkg.instituteId!,
         body.granteeUserId,
-      );
+      ));
       if (!isMember) {
         res.status(400).json({ error: "error:GRANTEE_NOT_INSTITUTE_MEMBER" });
         return;
@@ -791,11 +802,8 @@ export class PackageController {
   async availableForStudent(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
-      const ctx = await buildClinicianCtx(req, studentId);
-      if (!ctx) {
-        res.status(400).json({ error: "error:INSTITUTE_NOT_SELECTED" });
-        return;
-      }
+      const ctx = await requireInstituteCtx(req, res, studentId);
+      if (!ctx) return;
       // The response carries `assignedIds` — which packages this student
       // actually uses. `packageAssignments` is PHI-adjacent for exactly that
       // reason (see the table comment in schema-private), so this read needs
@@ -820,11 +828,8 @@ export class PackageController {
   async assignToStudent(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = assignSchema.parse(req.body);
-      const ctx = await buildClinicianCtx(req, studentId);
-      if (!ctx) {
-        res.status(400).json({ error: "error:INSTITUTE_NOT_SELECTED" });
-        return;
-      }
+      const ctx = await requireInstituteCtx(req, res, studentId);
+      if (!ctx) return;
 
       const pkg = await packageRepository.getPackage(req.params.id);
       if (!pkg) {
@@ -878,11 +883,8 @@ export class PackageController {
   async unassignFromStudent(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
-      const ctx = await buildClinicianCtx(req, studentId);
-      if (!ctx) {
-        res.status(400).json({ error: "error:INSTITUTE_NOT_SELECTED" });
-        return;
-      }
+      const ctx = await requireInstituteCtx(req, res, studentId);
+      if (!ctx) return;
       if (!(await canAccessStudent(ctx, studentId))) {
         res.status(403).json({ error: "error:STUDENT_FORBIDDEN" });
         return;

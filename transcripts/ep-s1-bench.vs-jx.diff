@@ -1,0 +1,8 @@
+# ep-s1 (Builder P, Stage 1) dollhouse bench vs the live reference, BELOW THE FENCE.
+# seed 12  dt 1/20  17 commands (regenerated from jx-doll-bench.txt's own `> ` lines).
+# run-to-run (ep-s1-bench-a vs -b): 0 lines below the fence.
+# ep-s1-bench-a vs jx-doll-bench: 0 lines. THE BENCH DID NOT MOVE.
+# USER CALL E-1 (link 0 becomes the current step) is therefore INVISIBLE at this seed:
+# every dollhouse pursuit sampled is a single-rung goal (fetch / takeUnits / bag-fetch),
+# whose STEP reading and GOAL reading are the same words, so no line could change.
+

@@ -914,15 +914,6 @@ export class ProgramRepository {
     return hydrateRecords("progress_reports", rows);
   }
 
-  async updateProgressReport(id: string, updates: UpdateProgressReport): Promise<ProgressReport | undefined> {
-    const [updated] = await db
-      .update(progressReports)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(progressReports.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
   async deleteProgressReport(id: string): Promise<boolean> {
     const result = await db
       .delete(progressReports)
@@ -1043,13 +1034,6 @@ export class ProgramRepository {
       .where(where)
       .orderBy(desc(dataPoints.recordedAt));
     return hydrateRecords("data_points", rows);
-  }
-
-  async deleteDataPoint(id: string): Promise<boolean> {
-    const result = await db
-      .delete(dataPoints)
-      .where(eq(dataPoints.id, id));
-    return (result.rowCount ?? 0) > 0;
   }
 
   // ==========================================================================
@@ -1314,15 +1298,6 @@ export class ProgramRepository {
       .from(consentForms)
       .where(where);
     return hydrateRecords("consent_forms", rows);
-  }
-
-  async updateConsentForm(id: string, updates: UpdateConsentForm): Promise<ConsentForm | undefined> {
-    const [updated] = await db
-      .update(consentForms)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(consentForms.id, id))
-      .returning();
-    return updated || undefined;
   }
 
   async deleteConsentForm(id: string): Promise<boolean> {

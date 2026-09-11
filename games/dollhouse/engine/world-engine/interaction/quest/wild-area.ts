@@ -1643,11 +1643,14 @@ export function ripenWildArea(
   rec: WildAreaRecord,
   now: number,
   regrowPeriodS: (species: string, glyph: string) => number,
+  opts?: RipenOpts,
 ): WildAreaRecord {
+  const perPlant = opts?.perPlant === true;
   let moved = false;
   const stands = rec.stands.map((st) => {
     const src = naturalSourceOf(st.species);
-    if (!src || standPopulation(st) <= 0) return st;
+    const pop = standPopulation(st);
+    if (!src || pop <= 0) return st;
     let touched = false;
     const next = cloneStand(st);
     for (const p of src.products) {
@@ -1660,8 +1663,19 @@ export function ripenWildArea(
       const kept: number[] = [];
       for (const at of list) {
         if (at <= now && (next.stock[g] ?? 0) < cap) {
-          next.stock[g] = cap; // the pulse: the whole field bears again
+          // ⚖️ THE TWO LAWS, ONE WALK (PART 6). FIELD PULSE (default): one due
+          // deadline refills the stand to cap — a ploughed field IS harvested
+          // whole, and the books assert it that way. PER-PLANT (a WILD stand):
+          // the deadline matures ONE UNIT PER PLANT and re-arms, so a folded
+          // stand and a loaded feature bear at exactly the same rate.
+          next.stock[g] = perPlant
+            ? Math.min(cap, (next.stock[g] ?? 0) + pop)
+            : cap;
           touched = true;
+          // A per-plant stand still below cap keeps ripening: roll the clock
+          // forward from the deadline (never from `now` — the pulse must not
+          // lose the remainder of a long absence).
+          if (perPlant && (next.stock[g] ?? 0) < cap && kept.length === 0) kept.push(at + per);
         } else if ((next.stock[g] ?? 0) < cap && kept.length === 0) {
           kept.push(at); // one live clock is all the pulse needs
         } else if (at > now && (next.stock[g] ?? 0) < cap) {
@@ -1688,6 +1702,30 @@ export function ripenWildArea(
   });
   if (!moved) return rec;
   return { ...rec, at: now, stands };
+}
+
+/**
+ * ⚖️ WHICH RIPENING LAW A RECORD RUNS (PART 6, 2026-09-08).
+ *
+ * 🚨 THE DEFECT THIS CLOSES. A loaded wilderness FEATURE matures one unit per
+ * `regrowDays` (`dueHarvestRegrowth`); a FOLDED tile record refilled every
+ * stand TO CAP on a flat one-day pulse — and since #49 the host was running
+ * that pulse over the whole neighbourhood, so the eight ring-1 tiles renewed
+ * **63.6 rations a day** against the 10.4 their own plants could bear. Walking
+ * away from a berry patch made it six times more productive, which is the
+ * felled-oak-re-seeds law wearing a different hat: two representations of one
+ * hectare must not disagree about what it grows.
+ *
+ * `perPlant` is the wild law and it is not the default, because the FARM record
+ * genuinely is the field pulse: `stepFarmSource` sizes its cap from the
+ * cultivated area's daily yield (`yieldPerM2Daily`) and `localYieldPerDay`
+ * reads that cap AS the per-day rate. Two different things, said out loud, each
+ * with one caller — rather than one law quietly wrong for half its callers.
+ */
+export interface RipenOpts {
+  /** True = mature one unit PER PLANT per period (a wild stand). Default/false
+   *  = refill to cap on the pulse (a sown field). */
+  perPlant?: boolean;
 }
 
 /**

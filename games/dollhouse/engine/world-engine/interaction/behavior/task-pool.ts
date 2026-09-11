@@ -307,11 +307,70 @@ export interface TaskCandidate {
    * back to geometry and the choice is byte-identical to the shipped rule.
    */
   cost?: VerbCost;
+  /**
+   * ⚖️ CAN THIS BODY ACTUALLY GET TO THE WORK — see {@link TaskReach}.
+   *
+   * Carried ON THE CANDIDATE for exactly the reason `cost` is (the caller
+   * resolves the world question and hands the answer over): the pool is pure
+   * and has no world to walk. Absent = NOBODY MEASURED, and an unmeasured
+   * claim is admitted — so every fixture, pin and save written before this
+   * behaves bit for bit as it did.
+   */
+  reach?: TaskReach;
+}
+
+/**
+ * ⚖️ A CHORD THROUGH A WALL IS NOT REACH (dollhouse unreachable-recruit,
+ * 2026-09-08).
+ *
+ * 🚨 THE DEFECT THIS EXISTS FOR, measured on the dollhouse (seed 12, 900 sim-s,
+ * no player command): of 53 civic claims, 17 were aimed at a work point INSIDE
+ * a pending annex room — a box the delta-applied plan already stands walls for
+ * and has not yet cut a doorway into. Exactly ONE body ever got inside. Every
+ * no-door-chain haul ended `[haul] … ABANDONED — set down N× wood`, and a
+ * family member (`resident_161_0`, task_24 → `h_211_a0`) stood at the outside
+ * of that wall holding six wood for the last 460 s of the run. The pool had
+ * elected it because the focus disc measured 70.3 m ≤ 76.8 m.
+ *
+ * `routed` = A BODY CAN WALK THERE: an unlocked door chain joins where it
+ * stands to where the work is. It has to be asked HERE, by the caller, because
+ * `routeThroughDoors` answers `[to]` for BOTH "same room" and "no chain at
+ * all" (engine.ts) — nothing downstream can tell a wall from a straight line,
+ * which is exactly how a porter came to walk into one.
+ *
+ * ⚠️ NOT A DISTANCE, AND NOT A REPLACEMENT FOR ONE. The locality radius
+ * (`civicRecruitRadiusM` — "conscription must be LOCAL") still says how far a
+ * site may shout; this says whether the body it shouted at can get there. Both,
+ * or a site recruits the whole town again.
+ *
+ * 🚧 THE SECOND HALF — SCOPE-WALK VISIBILITY ("a bill inside a building is that
+ * building's business", the question the pull model's `visibleBills` already
+ * asks as `rungs.has(row.scopeId)`) — IS DELIBERATELY NOT SHIPPED HERE, and the
+ * measurement is why. A record was written for it and it came back INERT: an
+ * annex room's id is `h_206_a0`, `buildingIdOfRoomId` strips only `_r…`
+ * (kernel/town/rooms.ts `ROOM_SUFFIX`), so `scopeOfPoint` hands back an id
+ * `parseScopeId` does not call a building and the walk never ran. Worse, the
+ * one claim it WOULD have caught if it worked is a claim that succeeds today:
+ * `resident_142_0` (a neighbour, not the household) carried wood into
+ * `h_206_a0` and arrived, in both the before and after arcs. Gating that would
+ * be a regression dressed as a law. The interface keeps the record shape so the
+ * half has a seat when the room-id convention is fixed at its owner.
+ */
+export interface TaskReach {
+  /** A walkable route (door chain) exists from this body to the work. */
+  routed: boolean;
+}
+
+/** Is this body's reach — where it was MEASURED — good enough to claim?
+ *  Unmeasured (`reach` absent) is admitted: see {@link TaskCandidate.reach}. */
+export function reachableForTask(c: TaskCandidate): boolean {
+  return !c.reach || c.reach.routed;
 }
 
 /** Is this candidate allowed to claim the task at all? */
 export function eligibleForTask(task: PooledTask, c: TaskCandidate): boolean {
   if (!c.capable || !c.willing) return false;
+  if (!reachableForTask(c)) return false; // a chord through a wall is not reach
   return Math.hypot(c.pos.x - task.focus.x, c.pos.y - task.focus.y) <= task.focus.radius;
 }
 

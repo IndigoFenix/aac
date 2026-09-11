@@ -86,8 +86,9 @@ const WRITER_PINS: WriterPin[] = [
     law:
       "YARD-STOCK AD-HOC WRITES — recorded exemption: construction's own " +
       "pile arithmetic (deposit, refused-order return, declared-resources " +
-      "boot fold) and the FOUNDED-SITE RESTORE FOLD (#50 ⑦, founding.ts " +
-      "`createFoundedSite`); a write outside these is a new channel to declare",
+      "boot fold), the FOUNDED-SITE RESTORE FOLD (#50 ⑦, founding.ts " +
+      "`createFoundedSite`) and the FOUNDERS' KIT (founding.ts `foundSite`); " +
+      "a write outside these is a new channel to declare",
     pattern: /deltas\.stock\[[^\]]+\] =/g,
     sites: {
       "interaction/town/town-play.ts": 1,
@@ -113,7 +114,35 @@ const WRITER_PINS: WriterPin[] = [
       // here: that arithmetic moves units between a SHELF and an order PILE
       // (`dstStack`, construction-director.ts) and never touches a yard
       // ledger — which is why the director's count below is still 2.
-      "interaction/town/founding.ts": 1,
+      //
+      // ── AND THE SECOND: THE FOUNDERS' KIT (planet-boot round S1, 2026-09-10).
+      // `foundSite({ stock })` deposits what the founding party CARRIED IN, at
+      // the moment the site comes into being. It is a DOOR, not a flow — the
+      // same category as town-play's declared-resources boot fold two lines up,
+      // and for the same reason: no unit is created during play, none moves
+      // between scopes, and nothing can read the record until after it is
+      // written. It is the world's INITIAL CONDITION arriving — the document's
+      // own `premise_stock` (`space-game.ts PREMISE_FIELDS`), which the browser
+      // and headless mode now both found from.
+      //
+      // 🚫 WHY NOT `depositSiteStock`, the declared writer that exists. That
+      // one applies the building-MATERIAL filter (`isSiteMaterial`), because a
+      // yard picked up off the ground is a builder's yard and not a pantry. A
+      // KIT is a declaration: founders carry what the spec says and nothing
+      // else (the #43 rider law), baskets included — routing the kit through
+      // the filter would silently drop them, which is precisely the defect the
+      // app's own three lines existed to avoid before they moved here.
+      //
+      // 🚫 WHY NOT A COARSE CHANNEL. Channels are FLOWS — units moving between
+      // scopes while the world runs (imports landing, exports leaving, the
+      // day's eating). A founding kit is a boot-time initial condition, so
+      // registering one would put a world's first frame on the same list as
+      // its economy. Its kin on this list are the two other doors.
+      //
+      // It writes `deltas.stock`, not `site.stock`, DELIBERATELY: they are one
+      // object (#50 ⑦) and the overlay is the name the audit, the haul and the
+      // renderer all read. Written once, at construction, on the one ledger.
+      "interaction/town/founding.ts": 2,
     },
   },
   {

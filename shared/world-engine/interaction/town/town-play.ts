@@ -20,6 +20,7 @@ import { buildTownQuestGame, type TownQuestBundle } from "@shared/world-engine/i
 import { createTownStageSteps, type TownStage } from "@shared/world-engine/interaction/town/town-stage.js";
 import { resolveWorkstationRegistry } from "@shared/world-engine/kernel/town/workstations.js";
 import type { WorldArchitectureSpec } from "@shared/world-engine/culture.js";
+import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter.js";
 import { TOWN_HOUSE_PALETTE } from "@shared/world-engine/interaction/dialogue/directions.js";
 import {
   createTownDeltas, groundObstacles, seedFoundingWorkshops,
@@ -78,6 +79,23 @@ export interface TownPlayConfig {
    *  the window on the chart goes BEYOND one town). 0-4; default 0. Each
    *  neighbor is a full living town at a walkable offset. */
   cluster?: number;
+  /** PER-HAMLET OVERRIDES for that ring (`buildClusterWindow`, user call U-1 of
+   *  the trade-topology round). Index-aligned with the ring seats: entry `i`
+   *  spreads OVER seat `i`'s default config (`{seed: seed+101+37i, key:
+   *  "hamlet-<i+1>", startPop: 60, days: 160, questCount: 0}`), so it is the
+   *  SAME TownPlayConfig this town takes, applied per neighbour — not a
+   *  goods/partner list. Absent (or a seat with no entry) ⇒ the byte-identical
+   *  ring that shipped. Extra entries beyond `cluster` are ignored.
+   *
+   *  The document says `world.hamlets: [{ population?, days?, seed?, charter? }]`
+   *  and the gate remaps `population` → `startPop` exactly as it does for the
+   *  primary (town-play-game.ts). */
+  hamlets?: Array<{
+    startPop?: number;
+    days?: number;
+    seed?: number;
+    charter?: { farmland: number; ore_access: number; timberland?: number };
+  }>;
   /** The site's endowment — what the substrate chartered. */
   charter?: { farmland: number; ore_access: number; timberland?: number };
   /** Founding population (primary species). */
@@ -154,6 +172,39 @@ export interface TownPlayConfig {
    *  by indexing a grid field with `city.cell`: a FOUNDED site's cell is
    *  synthetic (FOUNDED_CELL_BASE + seed) and out of the lattice by design. */
   climate?: ClimateSample;
+  /**
+   * 📜 THE DECLARED CELL (planet-boot round S2) — the other three quarters of
+   * the record `climate` above is one quarter of.
+   *
+   * A town document standing on planet ground can now CARRY what a measured
+   * founding cell says about itself, so a boot that has no substrate under it
+   * reads a real cell instead of a hand-written guess (the four
+   * `PLANET_CELL_*` constants that pretended to be one, and described a
+   * temperate wood that exists nowhere on the world the browser bakes).
+   * `interaction/town/planet-scope.ts declaredEnvironment` is the reader; the
+   * generator (`scripts/dev/lower-world.ts --declare-cell`) is the writer, and
+   * it writes what `measuredEnvironment` measured.
+   *
+   * ALL FIVE OR NONE — `declaredEnvironment` returns null unless `climate`,
+   * `biome`, `eco`, `charter` and `partners` are all present: a half-declared
+   * cell is a document that says one thing about its ground and defaults the
+   * rest, which is the sampled-constants defect in a new costume.
+   */
+  /** `fields.biome` index (DEFAULT_BIOSPHERE order; 1 = forest). NEVER
+   *  `plan.biome`, which is a land-use label. */
+  biome?: number;
+  /** Per-species abundance at the cell, 0..1 (`ecoAbundanceAt`). */
+  eco?: Record<string, number>;
+  /** The nearest cities as BOOT-SUPPLIED trade partners, in this settlement's
+   *  own sim coordinates, nearest first — what `QuestHostDeps.tradePartners`
+   *  hands the barter clerk. `distanceM` is the incident ROAD's length where
+   *  the net joins the two, else the great-circle chord. */
+  partners?: Array<{
+    key: string;
+    at: { x: number; y: number };
+    geo: PartnerGeography;
+    distanceM: number;
+  }>;
 }
 
 export interface TownFamilyMember {

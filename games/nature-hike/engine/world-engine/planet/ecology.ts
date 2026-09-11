@@ -412,3 +412,120 @@ export function biomePalette(species: SpeciesDef[]): Array<EcoRGB | null> {
 /** The default biosphere (order matters: trees settle, then grass reads
  *  them, then horses read grass). */
 export const DEFAULT_BIOSPHERE: SpeciesDef[] = [TREE, GRASS, HORSE];
+
+// ── 🌿 THE UNDERSTORY (plant-growth-render-round.md PART 6, 2026-09-08) ─────
+//
+// THE COMPLAINT THIS ANSWERS, verbatim: *"it looks like they wander off-screen
+// to get food — I can't see them because there are none in the immediate
+// area."* And he was right: on the shipped forest cell the canopy stood at
+// 15.05 oaks/ha and the whole larder at **3.32 food plants/ha**, so a founding
+// party's 0.28 ha ownership disc held ONE bearing plant — a forest floor with
+// no forest floor on it.
+//
+// 🚨 WHY THESE ROWS ARE NOT IN `DEFAULT_BIOSPHERE`, and it is not tidiness.
+// That list is the BAKE: `applyEcology({ perSpecies: true })` writes one
+// `eco_<key>` field per member and encodes the dominant member's INDEX as
+// `fields.biome` (0 barren, 1 forest, 2 steppe, 3 grazer range — the very
+// integers `wildMixForBiome` switches on). Appending to it would renumber
+// every biome on every planet ever baked and hand `ecoAbundanceAt` five keys
+// no serialized substrate carries — which `ecoAbundanceAt` answers by leaving
+// them OUT of the record, so the new densities would silently read 0 on
+// exactly the worlds this round exists to fix.
+//
+// ⚖️ SO AN UNDERSTORY ROW RIDES A CANOPY FIELD. Its `key` names the BAKED
+// abundance it is read against — `tree` for the wood's own shrubs and
+// understory trees, `grass` for the open country's bulbs and weeds — and its
+// `model` names the plant that actually stands there. `standDensityPerHa`
+// finds a row by MODEL and scales by `abundance[key]`, so two rows may share a
+// key and a thicker wood carries a thicker hedge, off ONE number, with no
+// second bake and no new field. That is the whole mechanism.
+//
+// 🚫 NOT A BALANCE DIAL — the same law TREE/GRASS carry. Each figure is a real
+// stand density, and their PRODUCT with the catalogue's regrow cadence is
+// pinned to the forage anchor (`scale.ts REAL_FORAGE_HA_PER_PERSON`, 30 ha a
+// head ⇒ 1/30 rations/ha/day raw). At the shipped forest cell (`eco_tree`
+// 0.35), summing `density ÷ regrowDays` over the four bearing rows:
+//
+//   bush  15.05/ha ÷ 120 = 0.12542      hazel  8.05/ha ÷ 240 = 0.03354
+//   apple  1.05/ha ÷ 180 = 0.00583      carrot 0.277/ha ÷ 120 = 0.00231
+//   ─────────────────────────────────────────────────────────────────
+//   Σ = 0.1671 units/ha/day = 0.0334 rations/ha/day  (anchor 0.0333, 100.3 %)
+//   × `resource_compression` 7.5 (the GL preset) ⇒ 0.251 rations/ha/day
+//
+// ⚖️ THE DENSITY AND THE CADENCE MOVED TOGETHER, and that is the law in action:
+// PART 6b roughly doubled the standing rows (22→43, 12→23, 2→3) and doubled the
+// cadences beside them (berry 60→120, nut 125→240) so the PRODUCT did not move.
+// A round that had raised only the density would have doubled what the
+// countryside feeds you, silently, under cover of "more plants".
+//
+// Move a density and the cadence beside it has to move back, or the
+// countryside quietly stops matching the anchor.
+const understory = (key: string, model: string, standPerHa: number): SpeciesDef => ({
+  key,
+  kind: "plant",
+  // ⚠️ THE NICHE IS DELIBERATELY EMPTY, and it is not an omission. These rows
+  // never reach `applyEcology` (see above), so nothing ever evaluates a niche
+  // on them — WHICH plants a cell admits is `wildFoodPlants(climate)`'s
+  // question and is answered off the species' OWN catalogue row, which is the
+  // one place a niche is written. A copy here would be a second statement of
+  // it, free to drift.
+  niche: {},
+  model,
+  standPerHa,
+});
+
+/**
+ * WHAT GROWS UNDER THE CANOPY AND BETWEEN THE TUFTS — the forage layer's
+ * standing densities, individuals per hectare at abundance 1. Read against the
+ * shipped medians (`eco_tree` 0.35 in a tree-dominant cell, `eco_grass` 0.37
+ * in a grass-dominant one, ~0.00 under closed canopy) for the realized number.
+ */
+export const FORAGE_UNDERSTORY: SpeciesDef[] = [
+  // 🫐 THE SHRUB LAYER — 43/ha, realized 15.1/ha in the median wood: the
+  // canopy's OWN figure, and still conservative against reality. A temperate
+  // mixed wood carries hundreds of shrub stems a hectare against ~150 canopy
+  // trees, and this world already renders the canopy at a tenth of that (see
+  // TREE); standing the hedge at parity keeps that one reduction instead of
+  // inventing a second. A wood with fewer shrubs than trees is not a wood.
+  understory("tree", "bush", 43),
+  // 🌰 THE UNDERSTORY TREE — 23/ha, realized 8.1/ha. A hazel is scattered
+  // through the wood rather than forming it: about half the shrub layer, which
+  // is what "grows under the canopy" looks like when you count stems.
+  understory("tree", "hazel", 23),
+  // 🍏 THE CRAB APPLE — 3/ha, realized 1.05/ha. The row's own `rarity: 0.2`
+  // said this in the count vocabulary ("occasional, and worth noticing when
+  // you find one"); ~1/ha is that sentence as a density.
+  understory("tree", "apple_tree", 3),
+  // 🧅 THE GRASSLAND BULB — 40/ha, realized 14.8/ha on the steppe and ~0 under
+  // closed canopy, because it rides `grass` and the canopy suppression puts
+  // `eco_grass` at 0.00 there. An allium is a plant of the open sward, and the
+  // ecology says so without a switch. ⚖️ OPEN COUNTRY IS POORER FORAGE THAN A
+  // WOOD and stays so: even at 40/ha the steppe bears ~60 % of the woodland's
+  // per-hectare flow, which is the ethnographic picture (grassland sits at the
+  // 50-ha end of the 10–100 ha/head range, which is why steppe peoples herded)
+  // and not a gap to be closed by inventing onions.
+  understory("grass", "wild_onion", 40),
+];
+
+// ⚠️ THESE FIGURES ONCE SHIPPED AT HALF, AND THE HISTORY IS THE WARNING
+// (PART 6 §4 / PART 6b). Authored at the woodland numbers above, they measured
+// WORSE than a thin wood — 3.28 rations/day against 4.20, and 24 starvation
+// body-days against 0 — and the temptation was to call that "too dense" and
+// halve the ecology. It was halved, under protest and with the measurement
+// written down, because the cause was known and was not ecology:
+// `forageCandidates` ranked loaded features and tile records by DISTANCE
+// ALONE, so five settlers converged on one record's single shelf point, bunched
+// there, and their plans died mid-walk (22 blocked pursuits against 0 in every
+// thin run) while 190 rations stood unreached.
+//
+// ✅ THAT SEAT IS FIXED (PART 5b's forage claims + K stand points, crowd-seconds
+// 318 → 19; the emergent-plans round's 1b re-select on a lost precondition,
+// blocked 22 → 0), and the honest density is back — measured, not restored on
+// faith. The lesson worth keeping: a DENSITY that reads wrong in play is
+// evidence about the CONSUMER of the density at least as often as about the
+// number, and halving an anchor to fit a defect hides the defect twice.
+
+/** The biosphere a SCATTER reads: the baked three, plus the understory that
+ *  rides their fields. `DEFAULT_BIOSPHERE` first, so `oak`/`grass` still
+ *  resolve to TREE/GRASS and every shipped density is byte-identical. */
+export const SCATTER_BIOSPHERE: SpeciesDef[] = [...DEFAULT_BIOSPHERE, ...FORAGE_UNDERSTORY];

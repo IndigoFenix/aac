@@ -12,7 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useActiveConsent } from "@/hooks/useConsentApi";
+import { useConsent } from "@/features/consent/ConsentProvider";
 import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
@@ -31,13 +31,19 @@ export function ConsentMissingIndicator({
 }: ConsentMissingIndicatorProps) {
   const { t } = useLanguage();
   const { setActiveFeature } = useFeaturePanel();
-  const consentQuery = useActiveConsent(studentId);
+  // Read-only: this component mounts in three places at once (TopHeader,
+  // ChatFeature, ChatPopup) and must NOT own an observer on the consent-active
+  // query — see features/consent/ConsentProvider.tsx.
+  const consent = useConsent();
 
-  // Hide while loading or when consent exists. The query returns
-  // { consent: null } when there's none active — that's the trigger.
+  // Hide while loading, when consent exists, and when the read FAILED: a
+  // warning that says "no consent on file" must rest on an answer, not on an
+  // absent one. The student-info panel reports the failure honestly.
   if (!studentId) return null;
-  if (consentQuery.isLoading) return null;
-  const hasActive = !!consentQuery.data?.consent;
+  // The provider tracks the SELECTED student; anything else is unknown here.
+  if (consent.studentId !== studentId) return null;
+  if (!consent.active.isSettled || consent.active.isError) return null;
+  const hasActive = !!consent.active.data;
   if (hasActive) return null;
 
   const iconCls = size === "md" ? "w-4 h-4" : "w-3.5 h-3.5";

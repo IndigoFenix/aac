@@ -66,9 +66,9 @@ export const de = {
   // ============================================================================
   identity: {
     verificationRequired: "Identitätsprüfung erforderlich",
-    verificationNeeded: "{{institute}} erfordert eine Verifizierung über {{provider}}. Bitte bestätigen Sie Ihre Identität, um auf diese Organisation zuzugreifen.",
-    verificationExpired: "Ihre {{provider}}-Verifizierung für {{institute}} ist abgelaufen. Bitte verifizieren Sie sich erneut.",
-    verifyNow: "Mit {{provider}} verifizieren",
+    verificationNeeded: "{institute} erfordert eine Verifizierung über {provider}. Bitte bestätigen Sie Ihre Identität, um auf diese Organisation zuzugreifen.",
+    verificationExpired: "Ihre {provider}-Verifizierung für {institute} ist abgelaufen. Bitte verifizieren Sie sich erneut.",
+    verifyNow: "Mit {provider} verifizieren",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const de = {
     genderOther: "Sonstige",
     primaryLanguage: "Muttersprache",
     dateOfBirth: "Geburtsdatum",
-    ageDisplay: "Alter: {{age}} Jahre",
+    ageDisplay: "Alter: {age} Jahre",
     systemType: "Bildungssystem",
     frameworkTala: "TALA (Israel)",
     frameworkIep: "IEP (USA)",
@@ -1081,9 +1081,9 @@ export const de = {
     clearUnsavedDesc: "Sie haben ungespeicherte Änderungen. Möchten Sie vor dem Leeren speichern?",
     discardAndClear: "Verwerfen & leeren",
     saveAndClear: "Speichern & leeren",
-    generatingIcons: "Symbole werden generiert, verbleibend: {{remaining}}",
+    generatingIcons: "Symbole werden generiert, verbleibend: {remaining}",
     iconsGenerated: "Alle Symbole erfolgreich generiert",
-    iconsFailed: "{{count}} Symbol(e) konnten nicht generiert werden",
+    iconsFailed: "{count} Symbol(e) konnten nicht generiert werden",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const de = {
     importWarning: "Der Import ersetzt die aktuelle Tafel. Einige Grid3-Funktionen werden möglicherweise nicht perfekt importiert.",
     importButton: "Importieren",
     importSuccess: "Tafel importiert",
-    importSuccessDesc: "\\\"{{name}}\\\" aus Dropbox importiert",
+    importSuccessDesc: "\\\"{name}\\\" aus Dropbox importiert",
     importFailed: "Import fehlgeschlagen",
     noFilesFound: "Keine Tafeldateien in Ihrem Dropbox-Ordner gefunden.",
   },
@@ -1349,6 +1349,8 @@ export const de = {
     noStudentsDesc: "Fügen Sie Ihren ersten {{STUDENT}} hinzu, um zu beginnen",
     noResults: "Keine {{STUDENTS}} gefunden",
     noResultsDesc: "Versuchen Sie, Ihre Suche oder Filter anzupassen",
+    selectInstituteFirst: "Wählen Sie zuerst eine Organisation aus, um ein {{student}} hinzuzufügen",
+    selectInstituteEmpty: "Wählen Sie eine Organisation aus, um {{students}} zu sehen",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const de = {
     gasOverallScoreDesc: "Gesamtfortschritt über GAS-bewertete Ziele. 50 = erwartet.",
     gasAtOrAbove: "auf oder über dem erwarteten Niveau",
     gasBelow: "unter dem erwarteten Niveau",
-    gasGoalsCounted: "Basierend auf {{count}} GAS-Ziel(en) mit erfassten Daten.",
+    gasGoalsCounted: "Basierend auf {count} GAS-Ziel(en) mit erfassten Daten.",
     goalCompletion: "Zielerreichung",
     goalsByDomain: "Ziele nach Bereich",
     timeline: "Zeitverlauf",
@@ -1779,7 +1781,7 @@ export const de = {
     title: "Fortschrittsdaten",
     noDataPoints: "Noch keine Daten erfasst",
     collectedBy: "Erfasst von",
-    moreCount: "+{{count}} weitere Einträge",
+    moreCount: "+{count} weitere Einträge",
 
     numericValue: "Numerischer Wert",
     numericPlaceholder: "z.B. 85",
@@ -2206,7 +2208,7 @@ export const de = {
 
   reports: {
     title: "Berichte",
-    subtitle: "Berichte für {{name}}",
+    subtitle: "Berichte für {name}",
     noStudent: "Bitte wählen Sie einen {{STUDENT}} aus, um Berichte anzuzeigen",
     noStudentSelected: "Kein {{STUDENT}} ausgewählt",
     selectStudentFirst: "Bitte wählen Sie einen {{STUDENT}} aus, um dessen Berichte anzuzeigen",
@@ -2243,10 +2245,12 @@ export const de = {
     finalizeTitle: "Bericht abschließen",
     finalizeWarning: "Nach dem Abschluss kann dieser Bericht nicht mehr bearbeitet werden. Sie müssen eine neue Revision erstellen, um Änderungen vorzunehmen.",
     finalizeCannotUndo: "Diese Aktion kann nicht rückgängig gemacht werden.",
+    consentWarning: "Abschließen ist gesperrt: Es liegt keine Einwilligungserklärung vor. Ein Elternteil oder Erziehungsberechtigter muss zuerst die Einwilligung unterschreiben.",
+    finalizeFailed: "Der Bericht konnte nicht abgeschlossen werden.",
 
     confirmCreate: {
       title: "Neuen Bericht erstellen",
-      description: "Dies erstellt einen neuen {{type}}-Bericht. Jeder vorhandene aktive Bericht wird archiviert.",
+      description: "Dies erstellt einen neuen {type}-Bericht. Jeder vorhandene aktive Bericht wird archiviert.",
       confirm: "Erstellen"
     },
 
@@ -2365,7 +2369,7 @@ export const de = {
     },
 
     empty: {
-      title: "Keine {{type}}-Berichte",
+      title: "Keine {type}-Berichte",
       description: "Erstellen Sie einen neuen Bericht, um zu beginnen."
     },
 
@@ -2988,7 +2992,7 @@ export const de = {
     selectOrGenerate: "Wählen Sie eine Analyse aus oder erstellen Sie eine neue.",
     selectStudent: "Wählen Sie einen {{STUDENT}}, um eine Tiefenanalyse zu erstellen.",
     untitled: "Unbenannte Analyse",
-    inProgress: "Läuft (Schritt {{STEP}})...",
+    inProgress: "Läuft (Schritt {STEP})...",
     delete: "Löschen",
     confirmDelete: "Diese Analyse dauerhaft löschen?",
     error: "Fehler",
@@ -3074,7 +3078,7 @@ export const de = {
       categoryPages: "Nach Kategorien gruppieren",
       dietaryTags: "Ernährungskennzeichen zeigen",
       dietaryTagsDesc: "Für Sie, nicht für das Kind. Diese Kennzeichen sind unzuverlässig und filtern nichts.",
-      autoNow: "Jetzt: {{value}}",
+      autoNow: "Jetzt: {value}",
     },
     review: {
       title: "Zu prüfende Speisekarten",
@@ -3171,9 +3175,15 @@ export const de = {
     LICENSE_ALREADY_PAID: "Diese Lizenz ist bereits bezahlt.",
     LICENSE_NOT_PURCHASABLE: "Diese Lizenz kann nicht online bezahlt werden. Bitte kontaktieren Sie uns.",
     PADDLE_NOT_CONFIGURED: "Online-Zahlung ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut oder kontaktieren Sie uns.",
+    consent_required: "Für den Abschluss dieses Berichts ist eine gültige Einwilligungserklärung erforderlich.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "Einwilligungsdaten nicht verfügbar",
+      loadFailedDescription: "Die Einwilligungen dieses {{student}} konnten nicht geladen werden. Das heißt nicht, dass keine vorliegen — die Anfrage ist fehlgeschlagen.",
+      retry: "Erneut versuchen",
+    },
     authority: {
       title: "Einwilligungsbefugnis",
       description: "Standardmäßig wird anhand der Volljährigkeit des Schülers bestimmt, wer einwilligt. Überschreiben Sie dies hier, wenn ein volljähriger Schüler weiterhin unter Betreuung steht oder ein Minderjähriger selbst einwilligt.",
@@ -3306,6 +3316,27 @@ export const de = {
         attemptsRemaining: "Noch {count} Versuch(e).",
         locked: "Zu viele falsche Versuche. Bitte fordern Sie bei der Klinik einen neuen Link an.",
       },
+      attest: {
+        identityIntro: "Sie erfassen diese Einwilligung persönlich, in Anwesenheit der erziehungsberechtigten Person. Prüfen Sie die Angaben unten, bevor Sie fortfahren.",
+        guardianLabel: "Unterzeichnende erziehungsberechtigte Person",
+        attestedByLabel: "Bestätigt von",
+        guardianIntro: "Erfassen Sie das Ausweisdokument, das Ihnen vorgelegt wurde. Geben Sie es genau so ein, wie es im Dokument steht.",
+        coGuardianDeclaration: "Die erziehungsberechtigte Person bestätigt, dass sie der gesetzliche Vormund ist und befugt ist, diese Einwilligung auch im Namen weiterer Erziehungsberechtigter zu erteilen.",
+        signatureIntro: "Geben Sie das Gerät jetzt an die erziehungsberechtigte Person weiter. Die Unterschrift muss ihre eigene sein.",
+        signatureLegal: "Mit der Unterschrift bestätigt die erziehungsberechtigte Person, dass sie der gesetzliche Vormund ist, und erteilt diese Einwilligung.",
+        stepIntro: "Bestätigen Sie zum Schluss, was Sie gesehen haben. Diese Erklärung wird mit dem Einwilligungsdatensatz gespeichert und nennt Sie als bestätigende Fachkraft.",
+        documentLabel: "Geprüftes Dokument",
+        presenceDeclaration: "Ich bestätige, dass die erziehungsberechtigte Person persönlich anwesend war, dass ich das oben erfasste Ausweisdokument geprüft habe und dass es mit der unterzeichnenden Person übereinstimmt.",
+        notesLabel: "Notizen (optional)",
+        notesPlaceholder: "z. B. Reisepass gültig bis 2031, Name stimmt überein",
+        legal: "Ihr Name, Ihr Benutzerkonto und der Zeitpunkt dieser Bestätigung werden als Nachweis im Einwilligungsdatensatz gespeichert.",
+        reviewIntro: "Prüfen Sie den Datensatz vor dem Speichern. Danach lässt er sich nicht mehr bearbeiten — nur widerrufen und neu unterzeichnen.",
+        methodLabel: "Verifiziert durch",
+        methodValue: "Persönliche Bestätigung durch die Fachkraft",
+        submitButton: "Einwilligung erfassen",
+        toastTitle: "Einwilligung erfasst",
+        toastDescription: "Die persönlich erteilte Einwilligung wurde mit Ihrer Bestätigung gespeichert.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const de = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "Einwilligungsverlauf",
       activeBadge: "Aktiv",
@@ -3364,6 +3447,11 @@ export const de = {
       revokeReasonPlaceholder: "Grund (optional)",
       toastRevoked: "Einwilligung widerrufen",
       toastRevokeFailed: "Widerruf nicht möglich",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const de = {
       reverificationDays: "Erneute Verifizierung (Tage)",
       autoProvision: "Neue Benutzer automatisch anlegen",
       autoProvisionDesc: "Wenn sich ein Benutzer über diesen IdP authentifiziert und kein Aivota-Konto hat, wird eines aus den SSO-Claims erstellt und verknüpft. Erforderlich für institutionelle IdPs (z.B. IL MoE Sapakim), bei denen Benutzer erwarten, bereits angemeldet anzukommen.",
-      days: "{{count}} Tage",
+      days: "{count} Tage",
       never: "Nie",
       neverPlaceholder: "Leer lassen für nie",
       discoveryUrl: "Discovery-URL",
@@ -4076,8 +4164,8 @@ export const de = {
     noInstitute: "Treten Sie einer Organisation bei, um Anrufe zu starten",
     loadingContacts: "Kontakte werden geladen…",
     noContacts: "Keine Kontakte gefunden",
-    callPerson: "{{name}} anrufen",
-    callPersonAuto: "{{name}} automatisch anrufen",
+    callPerson: "{name} anrufen",
+    callPersonAuto: "{name} automatisch anrufen",
     students: "Schüler",
     online: "Online",
     offline: "Offline",
@@ -4157,7 +4245,7 @@ export const de = {
     title: "Kontakte",
     panelTitle: "Schülerkontakte",
     description: "Personen, die der Schüler kennt — Eltern, Mitschüler, Therapeuten.",
-    forStudent: "Kontakte für {{name}}",
+    forStudent: "Kontakte für {name}",
     empty: "Noch keine Kontakte erfasst.",
     add: "Kontakt hinzufügen",
     new: "Neuer Kontakt",
@@ -4351,7 +4439,7 @@ export const de = {
       title: "Gesamten Zugriff widerrufen?",
       description: "Alle aktiven Freigaben — objektbezogen und dauerhaft —, die Sie dieser Organisation für diesen Schüler erteilt haben, werden widerrufen. Dies kann nicht rückgängig gemacht werden.",
       confirm: "Alle widerrufen",
-      toastSuccess: "{{count}} Freigaben widerrufen.",
+      toastSuccess: "{count} Freigaben widerrufen.",
     },
     inbox: {
       pendingHeader: "Ausstehende Einladungen",
@@ -4372,8 +4460,8 @@ export const de = {
     },
     standing: {
       expired: "Abgelaufen",
-      expiresInDays: "Läuft in {{days}} Tagen ab",
-      expiresOn: "Läuft am {{date}} ab",
+      expiresInDays: "Läuft in {days} Tagen ab",
+      expiresOn: "Läuft am {date} ab",
       renewedToast: "Dauerfreigabe um 1 Jahr verlängert.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const de = {
     field: {
       codeExpires: "Code läuft ab",
       shareExpires: "Freigabe läuft ab",
-      sensitiveCount: "{{count}} sensible Einträge",
+      sensitiveCount: "{count} sensible Einträge",
     },
     bundle: {
       objects: "Objekte",
@@ -4471,9 +4559,9 @@ export const de = {
     notifications: {
       bellLabel: "Freigabeeinladungen",
       newInviteTitle: "Neue Freigabeeinladung",
-      newInviteBody: "{{count}} Einladungen warten auf Ihre Genehmigung.",
+      newInviteBody: "{count} Einladungen warten auf Ihre Genehmigung.",
       expiringTitle: "Freigabe läuft bald ab",
-      expiringBody: "{{count}} Dauerfreigaben laufen bald ab — prüfen und verlängern.",
+      expiringBody: "{count} Dauerfreigaben laufen bald ab — prüfen und verlängern.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const de = {
       addGuardian: "Erziehungsberechtigten-Kontakt hinzufügen",
       requestsSent: "{count} gesendet, {failed} konnten nicht gesendet werden",
       sendRequests: "Einwilligungsanfragen senden ({count})",
+      stage: "Einwilligung",
+      explainTitle: "Als Nächstes: die Zustimmung eines Elternteils oder Erziehungsberechtigten",
+      explainBody: "Bevor irgendetwas über Gesundheit, Förderprogramm oder Kommunikationsweise von diesem {{student}} erfasst werden darf, muss ein Elternteil oder gesetzlicher Vertreter schriftlich zustimmen. Bisher sind nur die Basisangaben gespeichert. Die übrigen Schritte öffnen sich von selbst, sobald die Zustimmung unterschrieben ist.",
+      signCaption: "Sie sind als erziehungsberechtigt hinterlegt und können die Zustimmung daher selbst lesen und unterschreiben — das dauert etwa eine Minute.",
+      familyNoGuardianCaption: "Zuerst brauchen wir eine erziehungsberechtigte Person. Tragen Sie sich (oder den anderen Elternteil) als erziehungsberechtigt für dieses {{student}} ein, dann erscheint hier eine Schaltfläche zum Unterschreiben.",
+      sendRequest: "Einwilligungsanfrage senden",
+      sendCaption: "Wir senden der erziehungsberechtigten Person einen persönlichen Link per E-Mail. Sie liest die Zustimmung und unterschreibt online — mehr ist von Ihnen nicht nötig.",
+      sentCaption: "Der Link wurde an die erziehungsberechtigte Person gesendet. Die übrigen Schritte öffnen sich, sobald er unterschrieben ist; Sie können später zurückkommen.",
+      sentOne: "Einwilligungslink an die erziehungsberechtigte Person gesendet.",
+      sendFailed: "Der Einwilligungslink konnte nicht gesendet werden. Prüfen Sie, ob eine gültige E-Mail-Adresse hinterlegt ist, und versuchen Sie es erneut.",
+      attestInPerson: "Die erziehungsberechtigte Person ist hier — gemeinsam unterschreiben",
+      attestCaption: "Wenn das Elternteil oder die erziehungsberechtigte Person gerade bei Ihnen ist, können Sie die Einwilligung gemeinsam lesen und sie auf diesem Gerät unterschreiben lassen. Sie prüfen den Ausweis, ein Link ist nicht nötig.",
     },
     notes: {
       documentsNotStored: "Dokumente werden gelesen, nicht gespeichert – erhalten bleiben nur die daraus entnommenen Angaben.",

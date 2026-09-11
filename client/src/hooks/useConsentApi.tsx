@@ -113,6 +113,30 @@ export interface StudentConsentRecord {
   signedAt: string;
   revokedAt: string | null;
   revocationReason?: string | null;
+  /**
+   * Server-computed: may the CURRENT caller revoke THIS record? Present only on
+   * the `/history` response — the endpoint that feeds the revoke affordance.
+   *
+   * Reading a student's consent and being allowed to withdraw it are different
+   * permissions: `/history` admits any institute member, while revoking wants
+   * the original signer, a system admin, or — for a clinician-attested record
+   * only — someone who could have attested it (see `revokePathFor` in
+   * `server/controllers/consentController.ts`). The flag exists so the button
+   * and the 403 cannot disagree; treat its ABSENCE as "not permitted", never as
+   * "unknown, show it anyway".
+   */
+  canRevoke?: boolean;
+  /**
+   * Server-computed: may the CURRENT caller have a WITHDRAWAL LINK sent to this
+   * record's signer? (§5.3 — the "the guardian phoned / lost the email" path.)
+   *
+   * True only when the caller is an institute admin for the student AND the
+   * signer is someone the link could actually reach: no user account of their
+   * own (a signer who has one uses their session) and an email or phone on
+   * file. The client can see neither fact, so — as with `canRevoke` — absence
+   * means "not offered", never "unknown, show it anyway".
+   */
+  canSendWithdrawalLink?: boolean;
 }
 
 export type ConsentAuthorityMode = "auto" | "guardian_required" | "self";
@@ -169,6 +193,24 @@ export interface WizardContextResponse {
   activeConsent: StudentConsentRecord | null;
 }
 
+/**
+ * The server's own answer to "would a gated PHI write be refused right now",
+ * computed by `getConsentStatus` in server/services/consent/consentGate.ts and
+ * shipped on the `/active` response.
+ *
+ * Read `writesAllowed`. Do NOT recompute it from `consent === null`: the gate
+ * also honours the `CONSENT_GATE_ENABLED` flag and the legacy grace window, so
+ * an absent record does not by itself mean a finalize would 412.
+ */
+export interface ConsentGateStatus {
+  /** False means a gated write (e.g. report finalize) would return 412. */
+  writesAllowed: boolean;
+  hasActiveConsent: boolean;
+  inLegacyGrace: boolean;
+  legacyConsentDeadline: string | null;
+  gateEnabled: boolean;
+}
+
 /** Supplemental signature evidence (type-to-sign or draw-to-sign). */
 export interface ConsentSignaturePayload {
   mode: "typed" | "drawn";
@@ -205,6 +247,54 @@ export interface SignConsentRequest {
 // Hooks
 // ============================================================================
 
+// 🚨 THE FOUR STUDENT-SCOPED CONSENT READS BELONG TO ConsentProvider.
+//
+// `useActiveConsent`, `useConsentAuthority`, `useConsentHistory` and
+// `usePendingInvitations` must be called from exactly ONE place —
+// `client/src/features/consent/ConsentProvider.tsx`. Everything else reads
+// `useConsent()` / `useConsentDetail()`. Calling one of these from a component
+// mounts a second observer on the key, and observer multiplicity is the
+// mechanism behind the request loop documented in that file: an errored query
+// holds an error and no data, react-query's `shouldLoadOnMount` is
+// `data === undefined && !(status === 'error' && retryOnMount === false)`, and
+// `staleTime: Infinity` only governs queries that HAVE data — so every newly
+// mounted observer on an errored key fires another request. Measured live:
+// 124 requests to three endpoints in a single page view.
+//
+// `retryOnMount: false` below is the second half of that fix: even the
+// provider re-mounting cannot re-drive a query that has already failed. Its
+// cost is that a transient failure no longer heals on its own — recovery is an
+// explicit `refetch()` (the consent block's "Try again" button) or one of the
+// `invalidate*` helpers above. `retry` was never the mechanism: the app
+// default only retries 503s, and the loop ran anyway.
+
+/** One query's settle state, as `consentBlockState` reads it. */
+export interface ConsentQueryState {
+  status: "pending" | "error" | "success";
+  isError: boolean;
+}
+
+/**
+ * The consent block's render decision, as a pure function so the rule is one
+ * expression rather than four `isLoading` checks that drift.
+ *
+ * `settled` deliberately keys off `status`, not `isLoading`: a query that has
+ * errored is decided, and treating it as still-loading holds the block on a
+ * skeleton forever. `failed` exists so the block can SAY so — rendering an
+ * errored consent query as "no invitations, no authority, no history" states a
+ * fact nobody established.
+ *
+ * NOTE: there is no jest project over `client/src`, so this function has no
+ * test. It is pure and exported for that reason.
+ */
+export function consentBlockState(queries: readonly ConsentQueryState[]): {
+  settled: boolean;
+  failed: boolean;
+} {
+  const settled = queries.every((q) => q.status !== "pending");
+  return { settled, failed: settled && queries.some((q) => q.isError) };
+}
+
 export function useConsentNotice(country: string | undefined, locale: string) {
   return useQuery<ConsentNoticeResponse>({
     queryKey: ["consent-notice", country, locale],
@@ -218,14 +308,31 @@ export function useConsentNotice(country: string | undefined, locale: string) {
   });
 }
 
-export function useConsentWizardContext(studentId: string | undefined) {
+/**
+ * `contactId` is the in-person-attestation variant: the signing guardian is a
+ * contact the CALLER does not own, so the server's default "contact linked to
+ * the current user" lookup finds nothing. The server gates that param behind
+ * institute membership.
+ *
+ * It is part of the query key (a different contact is a different answer), and
+ * the key stays PREFIXED by `["consent-wizard-context", studentId]` so
+ * `invalidateConsentForStudent` keeps reaching it — react-query invalidation is
+ * prefix-matched.
+ */
+export function useConsentWizardContext(
+  studentId: string | undefined,
+  contactId?: string,
+) {
   return useQuery<WizardContextResponse>({
-    queryKey: ["consent-wizard-context", studentId],
+    queryKey: ["consent-wizard-context", studentId, contactId ?? null],
     enabled: !!studentId,
     queryFn: async () => {
+      const suffix = contactId
+        ? `?${new URLSearchParams({ contactId }).toString()}`
+        : "";
       const res = await apiRequest(
         "GET",
-        `/api/consent/students/${studentId}/wizard-context`,
+        `/api/consent/students/${studentId}/wizard-context${suffix}`,
       );
       if (!res.ok) throw new Error(`Failed to load wizard context (${res.status})`);
       return res.json();
@@ -233,10 +340,12 @@ export function useConsentWizardContext(studentId: string | undefined) {
   });
 }
 
-export function useConsentHistory(studentId: string | undefined) {
+/** @internal ConsentProvider only — see the note above. Read `useConsentDetail()`. */
+export function useConsentHistory(studentId: string | undefined, enabled = true) {
   return useQuery<{ success: true; history: StudentConsentRecord[] }>({
     queryKey: ["consent-history", studentId],
-    enabled: !!studentId,
+    enabled: !!studentId && enabled,
+    retryOnMount: false, // see the note above the hooks
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/consent/students/${studentId}/history`);
       if (!res.ok) throw new Error(`Failed to load history (${res.status})`);
@@ -245,10 +354,17 @@ export function useConsentHistory(studentId: string | undefined) {
   });
 }
 
+/** @internal ConsentProvider only — see the note above. Read `useConsent()`. */
 export function useActiveConsent(studentId: string | undefined) {
-  return useQuery<{ success: true; consent: StudentConsentRecord | null }>({
+  return useQuery<{
+    success: true;
+    consent: StudentConsentRecord | null;
+    /** Optional so an older/cached server response still types. */
+    gate?: ConsentGateStatus;
+  }>({
     queryKey: ["consent-active", studentId],
     enabled: !!studentId,
+    retryOnMount: false, // see the note above the hooks
     queryFn: async () => {
       const res = await apiRequest(
         "GET",
@@ -260,11 +376,15 @@ export function useActiveConsent(studentId: string | undefined) {
   });
 }
 
-/** Reads the consent-authority determination + resolved signer for a student. */
-export function useConsentAuthority(studentId: string | undefined) {
+/**
+ * Reads the consent-authority determination + resolved signer for a student.
+ * @internal ConsentProvider only — see the note above. Read `useConsentDetail()`.
+ */
+export function useConsentAuthority(studentId: string | undefined, enabled = true) {
   return useQuery<ConsentAuthorityResponse>({
     queryKey: ["consent-authority", studentId],
-    enabled: !!studentId,
+    enabled: !!studentId && enabled,
+    retryOnMount: false, // see the note above the hooks
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/consent/students/${studentId}/authority`);
       if (!res.ok) throw new Error(`Failed to load consent authority (${res.status})`);
@@ -328,6 +448,75 @@ export function useSignConsent(studentId: string) {
       // this the contacts list keeps the pre-signature copy forever
       // (staleTime: Infinity).
       qc.invalidateQueries({ queryKey: studentContactsQueryKey(studentId) });
+    },
+  });
+}
+
+/**
+ * The clinic-desk sign: the guardian is in the room and the clinician records
+ * the consent from their own session.
+ *
+ * Note what this payload does NOT carry: `identityVerificationMethod`,
+ * `nonRepudiationMethod` and `isSensitive`. The server forces all three — see
+ * `IN_PERSON_IDV_METHOD` in `server/controllers/consentController.ts`. Adding
+ * them here would be dead weight at best (the server's zod schema strips them)
+ * and a false suggestion that the client gets a say at worst.
+ */
+export interface AttestInPersonRequest {
+  signedByContactId: string;
+  locale: string;
+  consentTextVersion: string;
+  consentTextHash: string;
+  /** The GUARDIAN's own signature — required on this path, not optional. */
+  signature: ConsentSignaturePayload;
+  attestation: {
+    guardianPresent: true;
+    identificationType: "national_id" | "passport" | "driver_license" | "other";
+    identificationCountry?: string;
+    notes?: string;
+  };
+  guardianFields?: {
+    governmentIdNumber?: string;
+    governmentIdCountry?: string;
+    coGuardianAcknowledged?: boolean;
+  };
+  purposeAcknowledged: boolean;
+  voluntarinessAcknowledged: boolean;
+  thirdPartyTransfersAcknowledged: boolean;
+  optInModelTraining?: boolean;
+  optInAdvertising?: boolean;
+  optInThirdPartyResearch?: boolean;
+  optInMarketingComms?: boolean;
+}
+
+export function useAttestConsentInPerson(studentId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    { success: true; consent: StudentConsentRecord },
+    Error,
+    AttestInPersonRequest
+  >({
+    mutationFn: async (body) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/consent/students/${studentId}/attest-in-person`,
+        body,
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message ?? `Attestation failed (${res.status})`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["consent-active", studentId] });
+      qc.invalidateQueries({ queryKey: ["consent-wizard-context", studentId] });
+      qc.invalidateQueries({ queryKey: ["consent-history", studentId] });
+      // Attesting WRITES to the contact row (isLegalGuardian, gov-ID type,
+      // verification provider) — same reason as useSignConsent.
+      qc.invalidateQueries({ queryKey: studentContactsQueryKey(studentId) });
+      // A pending magic link for the same guardian is now moot.
+      qc.invalidateQueries({ queryKey: ["consent-pending-invitations", studentId] });
     },
   });
 }
@@ -417,11 +606,15 @@ export interface PendingInvitation {
   createdAt: string;
 }
 
-/** Lists active (pending, unexpired, unrevoked) invitations for a student. */
-export function usePendingInvitations(studentId: string | undefined) {
+/**
+ * Lists active (pending, unexpired, unrevoked) invitations for a student.
+ * @internal ConsentProvider only — see the note above. Read `useConsentDetail()`.
+ */
+export function usePendingInvitations(studentId: string | undefined, enabled = true) {
   return useQuery<{ success: true; invitations: PendingInvitation[] }>({
     queryKey: ["consent-pending-invitations", studentId],
-    enabled: !!studentId,
+    enabled: !!studentId && enabled,
+    retryOnMount: false, // see the note above the hooks
     queryFn: async () => {
       const res = await apiRequest(
         "GET",
@@ -579,6 +772,174 @@ export function useSignWithToken() {
         (e as any).code = err.code;
         throw e;
       }
+      return res.json();
+    },
+  });
+}
+
+// ============================================================================
+// Self-serve withdrawal — a signer with NO user account (§5.3)
+//
+// Every hook in this block is PUBLIC (no session) and lives OUTSIDE
+// ConsentProvider: the withdrawal page is rendered for a guardian who has no
+// account, so none of the provider's student-scoped reads exist for them and
+// none of the `@internal` rules above apply. They are all mutations, so they
+// also add no observer to any query key — the request-loop mechanism documented
+// above cannot be reached from here.
+//
+// The only exception is `useReissueWithdrawalLink`, which IS authenticated: it
+// is the clinic's "the guardian phoned" affordance in ConsentHistoryPanel.
+// ============================================================================
+
+export interface WithdrawalContextResponse {
+  success: true;
+  invitationId: string;
+  channel: "email" | "sms";
+  requiresPhoneOtp: boolean;
+  requiresIdVerification: boolean;
+  idVerified: boolean;
+  contactPhoneMasked: string | null;
+  student: { id: string; name: string; firstName: string | null; lastName: string | null };
+  contact: { id: string; name: string; relationship: string | null } | null;
+  consent: { id: string; signedAt: string; consentTextVersion: string };
+  expiresAt: string;
+}
+
+/** Attach the server's `code`/`details` to a thrown Error so the page can branch. */
+async function throwApiError(res: Response, fallback: string): Promise<never> {
+  const err = await res.json().catch(() => ({} as any));
+  const e = new Error(err.message ?? `${fallback} (${res.status})`);
+  (e as any).code = err.code;
+  (e as any).details = err.details;
+  throw e;
+}
+
+/**
+ * PUBLIC — the receipt's reference URL lands here.
+ *
+ * The server ALWAYS answers 200 with the same body, on purpose: it must not
+ * reveal whether the reference names a real consent record. So there is nothing
+ * to branch on and the page must show the same "check your email/phone" message
+ * either way. Do not add error handling that implies otherwise.
+ */
+export function useRequestWithdrawalLink() {
+  return useMutation<{ success: true }, Error, { reference: string }>({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/consent/withdraw/request-link", body);
+      if (!res.ok) return throwApiError(res, "Request failed");
+      return res.json();
+    },
+  });
+}
+
+/**
+ * PUBLIC — resolve a withdrawal token. A MUTATION rather than a query because
+ * the code must travel in a POST body, never a URL (it would otherwise land in
+ * CDN/ALB access logs), and because resolving it is a step the page drives
+ * once rather than a cache entry.
+ */
+export function useWithdrawalContext() {
+  return useMutation<WithdrawalContextResponse, Error, { code: string }>({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/consent/withdraw/context", body);
+      if (!res.ok) return throwApiError(res, "Code lookup failed");
+      return res.json();
+    },
+  });
+}
+
+/** PUBLIC — send/re-send the SMS OTP for a withdrawal token. */
+export function useRequestWithdrawalOtp() {
+  return useMutation<
+    { success: true; sentTo: string; expiresAt: string; bypass: boolean },
+    Error,
+    { code: string }
+  >({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/consent/withdraw/request-otp", body);
+      if (!res.ok) return throwApiError(res, "Request failed");
+      return res.json();
+    },
+  });
+}
+
+/** PUBLIC — verify the OTP for a withdrawal token. */
+export function useVerifyWithdrawalOtp() {
+  return useMutation<
+    { success: true; verifiedAt: string; sentTo: string },
+    Error,
+    { code: string; otpCode: string }
+  >({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/consent/withdraw/verify-otp", body);
+      if (!res.ok) return throwApiError(res, "Verify failed");
+      return res.json();
+    },
+  });
+}
+
+/** PUBLIC — verify the child-ID last-4 for an email-channel withdrawal token. */
+export function useVerifyWithdrawalChildId() {
+  return useMutation<
+    { success: true; verifiedAt: string; attemptsRemaining: number },
+    Error,
+    { code: string; last4: string }
+  >({
+    mutationFn: async (body) => {
+      const res = await apiRequest("POST", "/api/consent/withdraw/verify-id", body);
+      if (!res.ok) return throwApiError(res, "Verify failed");
+      return res.json();
+    },
+  });
+}
+
+/**
+ * PUBLIC — the withdrawal itself.
+ *
+ * `confirm: true` is required by the server (`z.literal(true)`). It is passed
+ * here rather than defaulted server-side so that the affirmative act is visible
+ * at the call site: this mutation must only ever be fired from a human clicking
+ * the confirmation button, never from an effect on page load.
+ */
+export function useConfirmWithdrawal() {
+  return useMutation<
+    { success: true; revokedAt: string | null },
+    Error,
+    { code: string; reason?: string }
+  >({
+    mutationFn: async ({ code, reason }) => {
+      const res = await apiRequest("POST", "/api/consent/withdraw/confirm", {
+        code,
+        confirm: true,
+        reason,
+      });
+      if (!res.ok) return throwApiError(res, "Withdrawal failed");
+      return res.json();
+    },
+  });
+}
+
+/**
+ * AUTHENTICATED — the clinic re-issues a withdrawal link because the guardian
+ * phoned or lost the email. Institute-admin gated server-side.
+ *
+ * The response carries a MASKED destination only; the clinician never sees the
+ * code, which is what keeps this from becoming a way to withdraw a
+ * parent-signed consent from the clinic side.
+ */
+export function useReissueWithdrawalLink() {
+  return useMutation<
+    { success: true; channel: "email" | "sms"; sentTo: string; expiresAt: string },
+    Error,
+    { consentId: string; channel?: "email" | "sms" }
+  >({
+    mutationFn: async ({ consentId, channel }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/consent/${consentId}/withdrawal-link`,
+        channel ? { channel } : {},
+      );
+      if (!res.ok) return throwApiError(res, "Send failed");
       return res.json();
     },
   });

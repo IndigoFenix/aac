@@ -66,9 +66,9 @@ export const ru = {
   // ============================================================================
   identity: {
     verificationRequired: "Требуется подтверждение личности",
-    verificationNeeded: "{{institute}} требует верификацию через {{provider}}. Пожалуйста, подтвердите свою личность для доступа к этой организации.",
-    verificationExpired: "Срок вашей верификации {{provider}} для {{institute}} истёк. Пожалуйста, пройдите повторную верификацию.",
-    verifyNow: "Подтвердить через {{provider}}",
+    verificationNeeded: "{institute} требует верификацию через {provider}. Пожалуйста, подтвердите свою личность для доступа к этой организации.",
+    verificationExpired: "Срок вашей верификации {provider} для {institute} истёк. Пожалуйста, пройдите повторную верификацию.",
+    verifyNow: "Подтвердить через {provider}",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const ru = {
     genderOther: "Другой",
     primaryLanguage: "Основной язык",
     dateOfBirth: "Дата рождения",
-    ageDisplay: "Возраст: {{age}} лет",
+    ageDisplay: "Возраст: {age} лет",
     systemType: "Образовательная система",
     frameworkTala: "TALA (Израиль)",
     frameworkIep: "IEP (США)",
@@ -1081,9 +1081,9 @@ export const ru = {
     clearUnsavedDesc: "У вас есть несохранённые изменения. Хотите сохранить перед очисткой доски?",
     discardAndClear: "Отменить и очистить",
     saveAndClear: "Сохранить и очистить",
-    generatingIcons: "Генерация иконок, осталось: {{remaining}}",
+    generatingIcons: "Генерация иконок, осталось: {remaining}",
     iconsGenerated: "Все иконки успешно сгенерированы",
-    iconsFailed: "Не удалось сгенерировать {{count}} иконок(ки)",
+    iconsFailed: "Не удалось сгенерировать {count} иконок(ки)",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const ru = {
     importWarning: "Импорт заменит текущую доску. Некоторые функции Grid3 могут быть импортированы не полностью.",
     importButton: "Импортировать",
     importSuccess: "Доска импортирована",
-    importSuccessDesc: "\\\"{{name}}\\\" импортирована из Dropbox",
+    importSuccessDesc: "\\\"{name}\\\" импортирована из Dropbox",
     importFailed: "Ошибка импорта",
     noFilesFound: "Файлы досок не найдены в вашей папке Dropbox.",
   },
@@ -1349,6 +1349,8 @@ export const ru = {
     noStudentsDesc: "Добавьте вашего первого {{STUDENT}} для начала работы",
     noResults: "{{STUDENTS}} не найдены",
     noResultsDesc: "Попробуйте изменить поиск или фильтры",
+    selectInstituteFirst: "Сначала выберите организацию, чтобы добавить {{student}}",
+    selectInstituteEmpty: "Выберите организацию, чтобы увидеть {{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const ru = {
     gasOverallScoreDesc: "Совокупный прогресс по целям, оценённым по GAS. 50 = ожидаемый.",
     gasAtOrAbove: "на ожидаемом уровне или выше",
     gasBelow: "ниже ожидаемого уровня",
-    gasGoalsCounted: "На основе {{count}} GAS-цел(ей) с записанными данными.",
+    gasGoalsCounted: "На основе {count} GAS-цел(ей) с записанными данными.",
     goalCompletion: "Выполнение целей",
     goalsByDomain: "Цели по доменам",
     timeline: "Временная шкала",
@@ -1779,7 +1781,7 @@ export const ru = {
     title: "Данные прогресса",
     noDataPoints: "Данные ещё не записаны",
     collectedBy: "Собрано",
-    moreCount: "+{{count}} ещё записей",
+    moreCount: "+{count} ещё записей",
 
     numericValue: "Числовое значение",
     numericPlaceholder: "напр., 85",
@@ -2206,7 +2208,7 @@ export const ru = {
 
   reports: {
     title: "Отчёты",
-    subtitle: "Отчёты для {{name}}",
+    subtitle: "Отчёты для {name}",
     noStudent: "Пожалуйста, выберите {{STUDENT}} для просмотра отчётов",
     noStudentSelected: "{{STUDENT}} не выбран",
     selectStudentFirst: "Пожалуйста, выберите {{STUDENT}} для просмотра отчётов",
@@ -2243,10 +2245,12 @@ export const ru = {
     finalizeTitle: "Финализировать отчёт",
     finalizeWarning: "После финализации отчёт нельзя будет редактировать. Для внесения изменений потребуется создать новую редакцию.",
     finalizeCannotUndo: "Это действие нельзя отменить.",
+    consentWarning: "Завершение заблокировано: в деле нет записи об информированном согласии. Сначала родитель или опекун должен подписать форму согласия.",
+    finalizeFailed: "Не удалось завершить отчёт.",
 
     confirmCreate: {
       title: "Создать новый отчёт",
-      description: "Будет создан новый отчёт типа {{type}}. Существующий активный отчёт будет архивирован.",
+      description: "Будет создан новый отчёт типа {type}. Существующий активный отчёт будет архивирован.",
       confirm: "Создать"
     },
 
@@ -2365,7 +2369,7 @@ export const ru = {
     },
 
     empty: {
-      title: "Нет отчётов типа {{type}}",
+      title: "Нет отчётов типа {type}",
       description: "Создайте новый отчёт для начала работы."
     },
 
@@ -2988,7 +2992,7 @@ export const ru = {
     selectOrGenerate: "Выберите анализ или создайте новый.",
     selectStudent: "Выберите {{STUDENT}}, чтобы создать глубокий анализ.",
     untitled: "Анализ без названия",
-    inProgress: "Выполняется (шаг {{STEP}})...",
+    inProgress: "Выполняется (шаг {STEP})...",
     delete: "Удалить",
     confirmDelete: "Удалить этот анализ навсегда?",
     error: "Ошибка",
@@ -3074,7 +3078,7 @@ export const ru = {
       categoryPages: "Группировать по категориям",
       dietaryTags: "Показывать пищевые метки",
       dietaryTagsDesc: "Для вас, а не для ученика. Эти метки ненадёжны и ничего не фильтруют.",
-      autoNow: "Сейчас: {{value}}",
+      autoNow: "Сейчас: {value}",
     },
     review: {
       title: "Меню на проверку",
@@ -3171,9 +3175,15 @@ export const ru = {
     LICENSE_ALREADY_PAID: "Эта лицензия уже оплачена.",
     LICENSE_NOT_PURCHASABLE: "Эту лицензию нельзя оплатить онлайн. Пожалуйста, свяжитесь с нами.",
     PADDLE_NOT_CONFIGURED: "Онлайн-оплата сейчас недоступна. Повторите попытку позже или свяжитесь с нами.",
+    consent_required: "Для завершения этого отчёта требуется действующая запись об информированном согласии.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "Данные о согласии недоступны",
+      loadFailedDescription: "Не удалось загрузить записи согласия этого {{student}}. Это не значит, что их нет — запрос завершился ошибкой.",
+      retry: "Повторить",
+    },
     authority: {
       title: "Право давать согласие",
       description: "По умолчанию то, кто даёт согласие, определяется возрастом совершеннолетия учащегося. Измените это здесь, если совершеннолетний учащийся остаётся под опекой или несовершеннолетний даёт согласие самостоятельно.",
@@ -3306,6 +3316,27 @@ export const ru = {
         attemptsRemaining: "Осталось попыток: {count}.",
         locked: "Слишком много неверных попыток. Попросите клинику отправить новую ссылку.",
       },
+      attest: {
+        identityIntro: "Вы оформляете это согласие лично, в присутствии законного представителя. Проверьте данные ниже, прежде чем продолжить.",
+        guardianLabel: "Подписывающий представитель",
+        attestedByLabel: "Засвидетельствовал",
+        guardianIntro: "Укажите документ, удостоверяющий личность, который вам предъявил представитель. Введите данные точно так, как они указаны в документе.",
+        coGuardianDeclaration: "Представитель подтверждает, что является законным опекуном и имеет право дать это согласие от имени любого другого опекуна.",
+        signatureIntro: "Передайте устройство представителю. Подпись должна быть его собственной.",
+        signatureLegal: "Подписывая, представитель подтверждает, что является законным опекуном, и даёт это согласие.",
+        stepIntro: "Наконец, подтвердите увиденное. Это заявление сохраняется вместе с записью согласия и указывает вас как засвидетельствовавшего специалиста.",
+        documentLabel: "Проверенный документ",
+        presenceDeclaration: "Подтверждаю, что представитель лично присутствовал, что я проверил указанный выше документ и что он соответствует подписавшему лицу.",
+        notesLabel: "Примечания (необязательно)",
+        notesPlaceholder: "напр. паспорт действителен до 2031 г., имя совпадает",
+        legal: "Ваше имя, учётная запись и время этого засвидетельствования сохраняются как доказательство в записи согласия.",
+        reviewIntro: "Проверьте запись перед сохранением. После сохранения её нельзя изменить — только отозвать и подписать заново.",
+        methodLabel: "Способ проверки",
+        methodValue: "Личное засвидетельствование специалистом",
+        submitButton: "Сохранить согласие",
+        toastTitle: "Согласие сохранено",
+        toastDescription: "Согласие, полученное лично, сохранено вместе с вашим засвидетельствованием.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const ru = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "История согласий",
       activeBadge: "Действует",
@@ -3364,6 +3447,11 @@ export const ru = {
       revokeReasonPlaceholder: "Причина (необязательно)",
       toastRevoked: "Согласие отозвано",
       toastRevokeFailed: "Не удалось отозвать",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const ru = {
       reverificationDays: "Повторная верификация (дни)",
       autoProvision: "Автоматически создавать новых пользователей",
       autoProvisionDesc: "Когда пользователь аутентифицируется через этот IdP и не имеет учётной записи Aivota, она создаётся из SSO-заявлений и связывается. Требуется для институциональных IdP (например, IL MoE Sapakim), где пользователи ожидают попасть в систему уже авторизованными.",
-      days: "{{count}} дней",
+      days: "{count} дней",
       never: "Никогда",
       neverPlaceholder: "Оставьте пустым для «никогда»",
       discoveryUrl: "URL обнаружения",
@@ -4076,8 +4164,8 @@ export const ru = {
     noInstitute: "Присоединитесь к организации, чтобы совершать звонки",
     loadingContacts: "Загрузка контактов…",
     noContacts: "Контакты не найдены",
-    callPerson: "Позвонить {{name}}",
-    callPersonAuto: "Позвонить {{name}} автоматически",
+    callPerson: "Позвонить {name}",
+    callPersonAuto: "Позвонить {name} автоматически",
     students: "Ученики",
     online: "В сети",
     offline: "Не в сети",
@@ -4157,7 +4245,7 @@ export const ru = {
     title: "Контакты",
     panelTitle: "Контакты ученика",
     description: "Люди, которых знает ученик — родители, одноклассники, терапевты.",
-    forStudent: "Контакты для {{name}}",
+    forStudent: "Контакты для {name}",
     empty: "Контакты ещё не добавлены.",
     add: "Добавить контакт",
     new: "Новый контакт",
@@ -4351,7 +4439,7 @@ export const ru = {
       title: "Отозвать весь доступ?",
       description: "Все активные доступы — к отдельным объектам и постоянные, — которые вы предоставили этой организации для этого ученика, будут отозваны. Это действие нельзя отменить.",
       confirm: "Отозвать все",
-      toastSuccess: "Отозвано доступов: {{count}}.",
+      toastSuccess: "Отозвано доступов: {count}.",
     },
     inbox: {
       pendingHeader: "Ожидающие приглашения",
@@ -4372,8 +4460,8 @@ export const ru = {
     },
     standing: {
       expired: "Истёк",
-      expiresInDays: "Истекает через {{days}} дн.",
-      expiresOn: "Истекает {{date}}",
+      expiresInDays: "Истекает через {days} дн.",
+      expiresOn: "Истекает {date}",
       renewedToast: "Постоянный доступ продлён на 1 год.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const ru = {
     field: {
       codeExpires: "Код истекает",
       shareExpires: "Доступ истекает",
-      sensitiveCount: "Конфиденциальных элементов: {{count}}",
+      sensitiveCount: "Конфиденциальных элементов: {count}",
     },
     bundle: {
       objects: "Объекты",
@@ -4471,9 +4559,9 @@ export const ru = {
     notifications: {
       bellLabel: "Приглашения к доступу",
       newInviteTitle: "Новое приглашение к доступу",
-      newInviteBody: "Приглашений, ожидающих вашего одобрения: {{count}}.",
+      newInviteBody: "Приглашений, ожидающих вашего одобрения: {count}.",
       expiringTitle: "Срок доступа скоро истечёт",
-      expiringBody: "Постоянных доступов, истекающих в ближайшее время: {{count}} — проверьте и продлите.",
+      expiringBody: "Постоянных доступов, истекающих в ближайшее время: {count} — проверьте и продлите.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const ru = {
       addGuardian: "Добавить контакт опекуна",
       requestsSent: "Отправлено: {count}, не удалось: {failed}",
       sendRequests: "Отправить запросы согласия ({count})",
+      stage: "Согласие",
+      explainTitle: "Далее: согласие родителя или опекуна",
+      explainBody: "Прежде чем мы сможем записать что-либо о здоровье, программе или способе общения этого {{student}}, родитель или законный опекун должен дать письменное согласие. Пока сохранены только основные данные. Остальные шаги откроются сами, как только согласие будет подписано.",
+      signCaption: "Вы указаны как опекун, поэтому можете прочитать и подписать согласие сами — это займёт около минуты.",
+      familyNoGuardianCaption: "Сначала нужен зарегистрированный опекун. Добавьте себя (или второго родителя) как опекуна этого {{student}}, и здесь появится кнопка подписания согласия.",
+      sendRequest: "Отправить запрос согласия",
+      sendCaption: "Мы отправим опекуну персональную ссылку по электронной почте. Он прочитает согласие и подпишет его онлайн — больше от вас ничего не требуется.",
+      sentCaption: "Ссылка отправлена опекуну. Остальные шаги откроются, как только он её подпишет, так что вы можете вернуться позже.",
+      sentOne: "Ссылка на согласие отправлена опекуну.",
+      sendFailed: "Не удалось отправить ссылку на согласие. Проверьте, что у опекуна указан действительный адрес электронной почты, и попробуйте снова.",
+      attestInPerson: "Представитель здесь — подпишите вместе",
+      attestCaption: "Если родитель или законный представитель сейчас рядом с вами, вы можете вместе прочитать разрешение и дать ему подписать на этом устройстве. Личность вы проверяете сами, ссылка не нужна.",
     },
     notes: {
       documentsNotStored: "Документы читаются, но не сохраняются — остаются только извлечённые из них сведения.",

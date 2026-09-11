@@ -16,7 +16,8 @@
 // Determinism holds: the cluster is a pure function of its towns + offsets.
 
 import type { ClusterHouseCtx, ClusterPartner, ConstructionSite, TownStage, TownStageFrame } from "./town-stage.js";
-import type { TownPlay } from "./town-play.js";
+import { buildTownPlay, type TownPlay, type TownPlayConfig } from "./town-play.js";
+import type { TownTrade } from "../../kernel/town/trade.js";
 import type { WorldSpec, RoadPath, BuildingSpec } from "../../types.js";
 
 export interface ClusterMember {
@@ -82,6 +83,45 @@ const offsetRoads = (roads: RoadPath[], dx: number, dy: number): RoadPath[] =>
   roads.map(r => ({ ...r, points: r.points.map(p => ({ x: p.x + dx, y: p.y + dy })) }));
 
 /**
+ * THE INTERCITY LINE, SEEN FROM THE WINDOW (trade-topology ⑤ / S2b).
+ *
+ * The composite's caravan line IS the primary's — one town, one road out — but
+ * the two live in different frames. The trade geometry (gate, route, and
+ * therefore `route.partnerAt`) belongs to the PRIMARY's own coordinates,
+ * because the caravan streams through the primary's stage; the DEPOT is the
+ * one anchor the host reads directly to stand the crates, so it must be in
+ * WINDOW coordinates. That mismatch used to be papered over at the ring's own
+ * seat — the caller lifted the depot, and separately subtracted `windowShift`
+ * from a partner's `at` before binding. Both halves live HERE now, so a caller
+ * that knows nothing about frames (the engine's `chooseTradePartner`, which
+ * enumerates partners in the composite's own window coordinates) binds
+ * correctly by construction.
+ *
+ * Everything else DELEGATES BY REFERENCE — in particular `route` is the very
+ * object the line mutates in place, because the host reads `tr.route.partnerKey`
+ * straight after a bind.
+ */
+function windowFramedTrade(inner: TownTrade, d0: { x: number; y: number }): TownTrade {
+  return {
+    // NOT a copy: `bindPartner` mutates this object, and the host reads it back.
+    get route() { return inner.route; },
+    // The one anchor in WINDOW coordinates (the crates stand where the player is).
+    depot: { x: inner.depot.x + d0.x, y: inner.depot.y + d0.y },
+    caravan: (t) => inner.caravan(t),
+    tradeDay: (t) => inner.tradeDay(t),
+    dayPhase: (t) => inner.dayPhase(t),
+    importUnitsPerVisit: (good) => inner.importUnitsPerVisit(good),
+    refreshCargo: (scarcity) => inner.refreshCargo(scarcity),
+    exportPile: (t) => inner.exportPile(t),
+    exportDailyUnits: () => inner.exportDailyUnits(),
+    // WINDOW frame → PRIMARY frame. This is the seat the ring's `− windowShift`
+    // was; `d0` is that same shift (`primary.at − primary.stage.center`).
+    bindPartner: (partner) =>
+      inner.bindPartner({ ...partner, at: { x: partner.at.x - d0.x, y: partner.at.y - d0.y } }),
+  };
+}
+
+/**
  * Compose a walking WINDOW from a primary town and its neighbors.
  *
  * `windowSpec` is the session's world spec — the caller widens the primary
@@ -125,8 +165,9 @@ export function clusterStages(
     castSpawns,
     goods: primary.stage.goods,
     // The intercity caravan line stays the PRIMARY's (v1 — neighbor trade
-    // joins when their carts get window-frame routes).
-    trade: primary.stage.trade,
+    // joins when their carts get window-frame routes), wrapped so the window
+    // and the primary agree about which frame a depot and a partner live in.
+    trade: primary.stage.trade ? windowFramedTrade(primary.stage.trade, d0) : null,
     // A neighbor resident's house index carries its town (the reserved
     // range); this hands the host that town's OWN books + geometry.
     cluster: {
@@ -238,4 +279,107 @@ export function widenSpecWindow(
     objects: spec.objects.map(o => ({ ...o, x: o.x + dx, y: o.y + dy })),
     npcs: (spec.npcs ?? []).map(n => ({ ...n, x: n.x + dx, y: n.y + dy })),
   };
+}
+
+/** What `buildTownScope` hands back, structurally — the ring needs only the
+ *  built config and the primary's play, so this stays a LEAF on the type graph
+ *  (no import of town-play-game.ts, whose `BuiltTownScope` satisfies it). */
+export interface ClusterWindowInput {
+  spec: { config: TownPlayConfig };
+  play: TownPlay;
+}
+
+/** The composed walking window: the play the session runs (the primary's, with
+ *  the composite stage swapped in) and the primary-town → window-coords shift
+ *  the caller applies to its GROUND samplers. `cluster: 0` ⇒ the input play
+ *  back, shift {0,0}. */
+export interface ClusterWindow {
+  play: TownPlay;
+  windowShift: { x: number; y: number };
+}
+
+/** Metres of the default walking window (the composite manifold's extent). */
+const CLUSTER_WINDOW_M = 4000;
+
+/**
+ * THE WALKING WINDOW — `cluster: N` streams N neighbour hamlets into the SAME
+ * session (the window on the chart goes beyond one town): each neighbour is a
+ * full living town at a walkable offset, its stage translated + merged with the
+ * primary's. The primary keeps quests/cast/goods.
+ *
+ * This is the ONE definition of the ring. It was born inside world-lab's
+ * `bootLivingTown` (quest-boot.ts), which made a cluster world unreachable from
+ * any headless boot — `headless/text-quest.ts` played `built.play` as-is, so
+ * `npm run world:text` / `npm run arc:run` could not boot one at all. Both are
+ * now callers (trade-topology-round.md, deviation D-1).
+ *
+ * 🔒 S2b: the window comes back with its caravan line UNBOUND. Composing a
+ * cluster no longer decides WHO trades with whom — the engine does, at the
+ * first caravan bucket, by landed cost (`chooseTradePartner`). See the note at
+ * the return.
+ */
+export function buildClusterWindow(
+  built: ClusterWindowInput,
+  opts?: { window?: number },
+): ClusterWindow {
+  const clusterN = Math.max(0, Math.min(4, Math.floor(built.spec.config.cluster ?? 0)));
+  if (clusterN <= 0) return { play: built.play, windowShift: { x: 0, y: 0 } };
+
+  const WINDOW = opts?.window ?? CLUSTER_WINDOW_M; // metres — a comfortable walking window
+  const primaryAt = { x: WINDOW * 0.35, y: WINDOW * 0.35 };
+  const windowShift = {
+    x: primaryAt.x - built.play.stage.center.x,
+    y: primaryAt.y - built.play.stage.center.y,
+  };
+  // Deterministic hamlet ring, ~1.1-1.7 km out — demo-walkable (REAL
+  // region spacing is a day's walk; the window is the mechanism, the
+  // distances are content).
+  const neighbors: ClusterMember[] = [];
+  for (let i = 0; i < clusterN; i++) {
+    // THE PER-HAMLET KNOB (`world.hamlets[i]`, user call U-1): the SAME
+    // TownPlayConfig the primary takes, per ring seat, spread OVER the
+    // default — absent ⇒ the byte-identical ring that shipped.
+    const nPlay = buildTownPlay({
+      seed: built.spec.config.seed + 101 + i * 37,
+      key: `hamlet-${i + 1}`,
+      startPop: 60,
+      days: 160,
+      questCount: 0,
+      ...(built.spec.config.hamlets?.[i] ?? {}),
+    });
+    const ang = (i / clusterN) * Math.PI * 1.4 + 0.4;
+    const r = 1100 + 300 * i;
+    neighbors.push({
+      stage: nPlay.stage,
+      at: { x: primaryAt.x + Math.cos(ang) * r, y: primaryAt.y + Math.sin(ang) * r },
+      tag: `n${i + 1}`,
+      // Reserved house range → neighbor residents keep the resident id
+      // PROTOCOL, so the host's dialogue layer gives them real minds.
+      houseBase: 1000 * (i + 1),
+      // Its live context — the composite stage resolves a neighbor
+      // resident's OWN books/geometry through it (TownStage.cluster).
+      play: nPlay,
+    });
+  }
+  const windowSpec = widenSpecWindow(
+    built.play.stage.spec, built.play.stage.center, primaryAt, WINDOW, WINDOW,
+  );
+  const composite = clusterStages(
+    windowSpec,
+    { stage: built.play.stage, at: primaryAt, tag: "t0" },
+    neighbors,
+  );
+  // 🔒 S2b — THE RING NO LONGER BINDS. What stood here was a NEAREST-BIND: the
+  // caravan line was aimed at the closest hamlet by `Math.hypot`, at boot, with
+  // no price and no books read — "who" decided twice, in two apps, by distance
+  // alone (S0's confirmed gap). The engine now chooses, at the first caravan
+  // bucket, by LANDED COST (`chooseTradePartner`, quest-host.ts). So a freshly
+  // composed window comes back UNBOUND: `route.partnerAt` undefined and
+  // `route.partnerKey` still `away:<seed>` — the honest marker of a line with
+  // no partner read yet — until that first bucket edge.
+  //
+  // The depot lift moved too: it is `windowFramedTrade`'s job now (ONE place
+  // that knows the window frame from the primary's), which is also what lets
+  // the engine enumerate partners in window coordinates and bind correctly.
+  return { play: { ...built.play, stage: composite }, windowShift };
 }

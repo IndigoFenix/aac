@@ -12,7 +12,6 @@ import { interpretationRepository } from "./repositories/interpretationRepositor
 import { creditRepository } from "./repositories/creditRepository";
 import { inviteCodeRepository } from "./repositories/inviteCodeRepository";
 import { apiProviderRepository } from "./repositories/apiProviderRepository";
-import { savedLocationRepository } from "./repositories/savedLocationRepository";
 import { boardRepository } from "./repositories/boardRepository";
 import { settingsRepository } from "./repositories/settingsRepository";
 import { chatRepository } from "./repositories/chatRepository";
@@ -107,9 +106,6 @@ export const storage = {
   deactivateApiProviderPricing: apiProviderRepository.deactivateApiProviderPricing.bind(apiProviderRepository),
 
   // Saved location operations
-  createSavedLocation: savedLocationRepository.createSavedLocation.bind(savedLocationRepository),
-  getUserSavedLocations: savedLocationRepository.getUserSavedLocations.bind(savedLocationRepository),
-  deleteSavedLocation: savedLocationRepository.deleteSavedLocation.bind(savedLocationRepository),
 
   // Board operations
   createBoard: boardRepository.createBoard.bind(boardRepository),
@@ -220,7 +216,6 @@ export const storage = {
   createProgressReport: programRepository.createProgressReport.bind(programRepository),
   getProgressReportById: programRepository.getProgressReportById.bind(programRepository),
   getProgressReportsByProgramId: programRepository.getProgressReportsByProgramId.bind(programRepository),
-  updateProgressReport: programRepository.updateProgressReport.bind(programRepository),
   deleteProgressReport: programRepository.deleteProgressReport.bind(programRepository),
 
   // Goal progress entry operations
@@ -232,7 +227,6 @@ export const storage = {
   createDataPoint: programRepository.createDataPoint.bind(programRepository),
   getDataPointsByGoalId: programRepository.getDataPointsByGoalId.bind(programRepository),
   getDataPointsByObjectiveId: programRepository.getDataPointsByObjectiveId.bind(programRepository),
-  deleteDataPoint: programRepository.deleteDataPoint.bind(programRepository),
 
   // Transition plan operations
   createTransitionPlan: programRepository.createTransitionPlan.bind(programRepository),
@@ -257,7 +251,6 @@ export const storage = {
   createConsentForm: programRepository.createConsentForm.bind(programRepository),
   getConsentFormById: programRepository.getConsentFormById.bind(programRepository),
   getConsentFormsByProgramId: programRepository.getConsentFormsByProgramId.bind(programRepository),
-  updateConsentForm: programRepository.updateConsentForm.bind(programRepository),
   deleteConsentForm: programRepository.deleteConsentForm.bind(programRepository),
 
   // Aggregate operations

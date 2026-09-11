@@ -321,6 +321,35 @@ export function useReportMutations(studentId: string | undefined) {
     queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'reports'] });
   };
 
+  /**
+   * Turn a failed finalize into an Error the toast can show in the user's
+   * language.
+   *
+   * Finalize is consent-gated: `requireConsentForResponse` answers 412 with
+   * `{ code: "consent_required" }`. Throwing a hardcoded English string here
+   * discarded both the status and the code, so a refusal that has a specific,
+   * actionable explanation reached the clinician as "Failed to finalize …".
+   *
+   * `t()` returns the KEY when a key is missing (which is truthy — the
+   * `t(x) || fallback` idiom is dead code), so the miss is detected by
+   * comparing the result to the key rather than by falsiness.
+   */
+  const finalizeError = async (response: Response, fallback: string): Promise<Error> => {
+    let code: string | undefined;
+    try {
+      const body = await response.json();
+      code = typeof body?.code === 'string' ? body.code : undefined;
+    } catch {
+      // Non-JSON body (a proxy error page, say) — fall through to `fallback`.
+    }
+    if (code) {
+      const key = `errors.${code}`;
+      const translated = t(key);
+      if (translated !== key) return new Error(translated);
+    }
+    return new Error(fallback);
+  };
+
   // ==========================================================================
   // MEDICAL RECORD MUTATIONS
   // ==========================================================================
@@ -363,7 +392,7 @@ export function useReportMutations(studentId: string | undefined) {
   const finalizeMedicalRecord = useMutation<MedicalRecord, Error, string>({
     mutationFn: async (recordId) => {
       const response = await apiRequest('POST', `/api/medical-records/${recordId}/finalize`);
-      if (!response.ok) throw new Error('Failed to finalize medical record');
+      if (!response.ok) throw await finalizeError(response, t('reports.finalizeFailed'));
       const result = await response.json();
       return result.record;
     },
@@ -448,7 +477,7 @@ export function useReportMutations(studentId: string | undefined) {
   const finalizeFunctionalReport = useMutation<FunctionalReport, Error, string>({
     mutationFn: async (reportId) => {
       const response = await apiRequest('POST', `/api/functional-reports/${reportId}/finalize`);
-      if (!response.ok) throw new Error('Failed to finalize functional report');
+      if (!response.ok) throw await finalizeError(response, t('reports.finalizeFailed'));
       const result = await response.json();
       return result.report;
     },
@@ -533,7 +562,7 @@ export function useReportMutations(studentId: string | undefined) {
   const finalizeEducationalReport = useMutation<EducationalReport, Error, string>({
     mutationFn: async (reportId) => {
       const response = await apiRequest('POST', `/api/educational-reports/${reportId}/finalize`);
-      if (!response.ok) throw new Error('Failed to finalize educational report');
+      if (!response.ok) throw await finalizeError(response, t('reports.finalizeFailed'));
       const result = await response.json();
       return result.report;
     },

@@ -1,0 +1,22 @@
+# world=scripts/worlds/frontier-planet.spec.json seed=7 dt=0.5 days=10 dense=×1
+# t=0 ring-1 food units=2427  (tile--1--1=307 tile--1-0=309 tile--1-1=296 tile-0--1=296 tile-0-1=314 tile-1--1=300 tile-1-0=293 tile-1-1=312)
+# t=0 records=20 population=3280  loaded features=17  dayS=240
+day   1  rations/day=  3.40  takes=   8  blocked=  0 resel=  3  hungry=3/5 mean=1.04 deep=0  ring1=2421  sleeps=2
+day   2  rations/day=  4.40  takes=  23  blocked=  0 resel=  6  hungry=4/5 mean=1.20 deep=0  ring1=2409  sleeps=7
+day   3  rations/day=  1.40  takes=  25  blocked=  0 resel=  6  hungry=4/5 mean=1.72 deep=0  ring1=2402  sleeps=15
+day   4  rations/day=  4.20  takes=  34  blocked=  0 resel= 10  hungry=3/5 mean=2.04 deep=0  ring1=2381  sleeps=21
+day   5  rations/day=  7.00  takes=  62  blocked=  0 resel= 13  hungry=4/5 mean=1.68 deep=0  ring1=2346  sleeps=26
+day   6  rations/day=  1.20  takes=  63  blocked=  0 resel= 13  hungry=4/5 mean=2.24 deep=1  ring1=2341  sleeps=30
+day   7  rations/day=  2.80  takes=  70  blocked=  0 resel= 16  hungry=4/5 mean=2.76 deep=3  ring1=2327  sleeps=37
+day   8  rations/day=  8.40  takes= 100  blocked=  0 resel= 22  hungry=4/5 mean=2.28 deep=2  ring1=2285  sleeps=42
+day   9  rations/day=  0.60  takes= 101  blocked=  0 resel= 22  hungry=4/5 mean=2.92 deep=3  ring1=2281  sleeps=50
+day  10  rations/day=  5.60  takes= 115  blocked=  0 resel= 28  hungry=4/5 mean=2.96 deep=3  ring1=2254  sleeps=53
+
+# takes=115 (zero-yield=4)  blocked mid-flight (route parked)=0  re-selected=28
+# rations delivered=39.00 over 10 days = 3.90/day
+# take spread by source: tile-1-0=37  tile-0-1=29  tile--1-0=24  tile-0--1=7  flora:bush:wild:bush_53=4  flora:hazel:wild:hazel_17=3  flora:hazel:wild:hazel_26=3  flora:bush:wild:bush_20=3  flora:hazel:wild:hazel_22=2  flora:bush:wild:bush_4=2  flora:hazel:wild:hazel_1=1
+# crowd frames (two hunger-errand settlers inside one arrival disc, sampled 1/s) = 1903 of 2400
+# crowd variants: e1.3=1585  e2.6=1903  p1.3=1585  p2.6=1903
+# starvation body-days by threshold: ≥1=36.1  ≥2=22.4  ≥3=13.6  ≥1.5=25.9  ≥2.5=17.9  sleeps=53
+# final hungry=4/5 mean=2.96 deep=3
+# ring-1 food units at end=2254

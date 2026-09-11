@@ -532,21 +532,53 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
     ).toEqual(["milk"]);
   });
 
-  it("ranks by NEED and breaks ties toward the earlier good (deterministic)", () => {
+  it("ranks by LANDED ADVANTAGE and breaks TRUE ties toward the earlier good", () => {
+    // 🚨 RE-FIXTURED, PREMISE MOVED (trade-topology round, R-2) — same
+    // assertion, new numbers, derived. The ranking key was the 0..1 `want`, so
+    // `wood` and `cloth` (both 0.5, both durable ⇒ both weigh 0.5) TIED and
+    // the tie broke toward `wood`, the earlier good. The key is now the landed
+    // PRICE in hand-seconds, and those two do not tie at all — cloth is eight
+    // times the worth on the same porter's back, so an eighth of the freight:
+    //   clothing  0.9×240 − 200/(15.2×8)   = 216 −  1.645 = 214.355
+    //   cloth     0.5×240 − 200/(15.2×4)   = 120 −  3.289 = 116.711
+    //   wood      0.5×240 − 200/(15.2×0.5) = 120 − 26.316 =  93.684
     const need = sig({ wood: 0.5, cloth: 0.5, clothing: 0.9 });
     const spare = sig({});
     const pair = complementaryTrade(need, spare, ["wood", "cloth", "clothing"], 200, SCALE);
-    expect(pair.imports).toEqual(["clothing", "wood", "cloth"]);
+    expect(pair.imports).toEqual(["clothing", "cloth", "wood"]);
     expect(complementaryTrade(need, spare, ["wood", "cloth", "clothing"], 200, SCALE)).toEqual(pair);
+    // …and the RULE that was being pinned is intact: a TRUE tie — the same
+    // shortage AND the same freight row — still breaks toward the earlier good.
+    expect(freightOf("ball")).toEqual(freightOf("teddy"));
+    expect(
+      complementaryTrade(sig({ ball: 0.5, teddy: 0.5 }), spare, ["wood", "ball", "teddy"], 200, SCALE)
+        .imports,
+    ).toEqual(["ball", "teddy"]);
   });
 
   it("reads the WANT LINE the willingness refusal reads — one threshold, not two", () => {
-    const spare = sig({ cloth: BARTER_WANT_MIN - 1e-9 }); // just barely "enough"
-    const need = sig({ cloth: BARTER_WANT_MIN });
-    expect(complementaryTrade(need, spare, ["cloth"], 100, SCALE).imports).toEqual(["cloth"]);
-    // Nudge their own need up to the line and they no longer have it spare.
-    const holding = sig({ cloth: BARTER_WANT_MIN });
-    expect(complementaryTrade(need, holding, ["cloth"], 100, SCALE).imports).toEqual([]);
+    // 🚨 RE-FIXTURED, PREMISE MOVED (trade-topology round, R-2) — same
+    // assertion, one input moved off the line. This used to sit BOTH sides
+    // exactly on the threshold (they 0.15−ε, we 0.15), which the new
+    // WORTHWHILE gate refuses on its own account: a partner as short as we are
+    // prices a unit exactly as we do, so the road is pure loss and the good is
+    // not worth carrying whatever the want gate says. The THRESHOLD is what is
+    // pinned here, so it is now read one side at a time, with the other side
+    // clear of the gate and nothing else in play.
+    const flush = sig({});
+    // OUR side of the line: at it we want it, a hair under it we do not.
+    expect(complementaryTrade(sig({ cloth: BARTER_WANT_MIN }), flush, ["cloth"], 100, SCALE).imports)
+      .toEqual(["cloth"]);
+    expect(
+      complementaryTrade(sig({ cloth: BARTER_WANT_MIN - 1e-9 }), flush, ["cloth"], 100, SCALE).imports,
+    ).toEqual([]);
+    // THEIR side: a hair under it they can spare it, at it they cannot.
+    const need = sig({ cloth: 0.9 });
+    expect(
+      complementaryTrade(need, sig({ cloth: BARTER_WANT_MIN - 1e-9 }), ["cloth"], 100, SCALE).imports,
+    ).toEqual(["cloth"]);
+    expect(complementaryTrade(need, sig({ cloth: BARTER_WANT_MIN }), ["cloth"], 100, SCALE).imports)
+      .toEqual([]);
   });
 
   // ⚖️ G3 — the ranking's own evidence, kept instead of discarded.
@@ -568,7 +600,10 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
     // pre-Stage-B ones, unchanged, to the bit.
     expect(freightArrivalFraction("cloth", 300, SCALE)).toBe(1);
     expect(freightArrivalFraction("clothing", 300, SCALE)).toBe(1);
-    expect(rank.imports).toEqual([
+    // 🚨 RE-FIXTURED (trade-topology round, R-2): the row gained `advantageS`,
+    // so the whole-row `toEqual` became a projection plus a price assertion.
+    // `want` itself is UNCHANGED, to the bit — that was the point of keeping it.
+    expect(rank.imports.map((r) => ({ good: r.good, want: r.want }))).toEqual([
       { good: "cloth", want: 0.9 },
       { good: "clothing", want: 0.4 },
     ]);
@@ -577,10 +612,20 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
     // lower. Derived from the freight row, never a literal (0.8 × ~0.918).
     const landedFood = 0.8 * freightArrivalFraction("food", 300, SCALE);
     expect(landedFood).toBeLessThan(0.8);
-    expect(rank.exports).toEqual([
+    expect(rank.exports.map((r) => ({ good: r.good, want: r.want }))).toEqual([
       { good: "food", want: landedFood },
       { good: "wood", want: 0.3 }, // rawBulk but DURABLE ⇒ 1
     ]);
+    // …and the PRICE each row was actually ranked by, in hand-seconds per unit
+    // (`local − (producer + freight)/delivered`, landed-cost.ts):
+    //   cloth     0.9×240 − 300/(15.2×4)                       = 211.066
+    //   clothing  0.4×240 − (0.05×240 + 300/(15.2×8))          =  81.533
+    //   food      0.8×240 − (0.02×240 + 300/15.2)/0.91776      = 165.265
+    //   wood      0.3×240 − 300/(15.2×0.5)                     =  32.526
+    expect(rank.imports[0]!.advantageS).toBeCloseTo(211.06578947368422, 6);
+    expect(rank.imports[1]!.advantageS).toBeCloseTo(81.53289473684211, 6);
+    expect(rank.exports[0]!.advantageS).toBeCloseTo(165.26451612903224, 6);
+    expect(rank.exports[1]!.advantageS).toBeCloseTo(32.52631578947368, 6);
     // Descending, and each row still bounded by the raw shortage that admitted
     // it — the ADMISSION gate reads the shortage, the BID reads what lands, so
     // a weight below `BARTER_WANT_MIN` is legal where a shortage below it is
@@ -594,10 +639,20 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
   it("🚨 THE LANDED BID: a lossy good re-ranks below a durable one it outweighed", () => {
     // Both wanted the same on paper. `cloth` is durable; `food` is eaten by
     // its own haulers, and far enough out it lands less than the cloth does.
-    // 0.4 of reach — INSIDE the 0.5 survival floor (a selfConsuming good loses
+    // 0.3 of reach — INSIDE the 0.5 survival floor (a selfConsuming good loses
     // linearly to its reach, so the floor sits at half of it), which is the
     // whole point: the re-rank happens on legs the gate still admits.
-    const legM = carryReachM(SCALE, freightOf("food")) * 0.4;
+    //
+    // 🚨 RE-FIXTURED 0.4 → 0.3, PREMISE MOVED (trade-topology round, R-2) —
+    // same assertion, one derived fraction moved. At 0.4 of reach the new
+    // WORTHWHILE gate now drops food from the lane ALTOGETHER rather than
+    // re-ranking it: landed = 96/0.6 = 160 s against a local worth of
+    // 0.6×240 = 144 s, so the caravan would destroy value carrying it. The
+    // RE-RANK is what this test pins, so the leg moves to where both goods are
+    // still worth carrying: at 0.3 food lands 240×0.3/0.7 = 102.86 s and is
+    // worth 41.14 s of advantage, against cloth's 102 s. (The drop itself is
+    // pinned in `complementary.test.ts` ②, off the good's own break-even.)
+    const legM = carryReachM(SCALE, freightOf("food")) * 0.3;
     expect(freightSurvivesLeg("food", legM, SCALE)).toBe(true); // the FLOOR holds
     expect(freightArrivalFraction("food", legM, SCALE)).toBeLessThan(1);
     expect(freightArrivalFraction("cloth", legM, SCALE)).toBe(1);
@@ -624,9 +679,11 @@ describe("complementaryTrade — their surplus ∩ our shortage, over a real roa
     const still = { ...SCALE, dayLengthS: 0 };
     expect(dailyTravelM(still)).toBe(0);
     expect(freightArrivalFraction("food", 300, still)).toBe(1);
-    // A ranked row over that leg carries its raw shortage, unweighted.
+    // A ranked row over that leg carries its raw shortage, unweighted — and,
+    // since a road with no metres in it has no freight either, its landed
+    // advantage is the whole local worth: 0.6 × townFillS(240) = 144 s.
     expect(complementaryRanking(sig({ food: 0.6 }), sig({}), ["food"], 0, SCALE).imports)
-      .toEqual([{ good: "food", want: 0.6 }]);
+      .toEqual([{ good: "food", want: 0.6, advantageS: 144 }]);
   });
 });
 

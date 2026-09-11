@@ -903,6 +903,7 @@ export const zh: Translations = {
       when: "什么时候",
       why: "为什么",
       how: "怎么",
+      question: "问题",
       someone: "有人",
       near: "近",
       far: "远",

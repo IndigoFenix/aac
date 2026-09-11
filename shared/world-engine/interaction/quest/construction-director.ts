@@ -28,6 +28,10 @@ import { fixtureKindForWord, fixtureWord, type FixtureKind } from "../../types.j
 import { certifyGoalTreeGame } from "../../solver/index.js";
 import { buildLogicalWorld, type LogicalWorld } from "../../solver/logical-world.js";
 import { walkGoalTree } from "../../solver/walk.js";
+// ⚖️ SKILLS — THE BODY SLICE (skill-learning-round.md). The director owns ONE
+// seat: the observed crew banks its SKILL SUM rather than its head count, and
+// every body standing at the work practises the trade the row is.
+import { practiceSkill, skillFor, skillMultiplier } from "@shared/world-engine/kernel/town/skills.js";
 import { projectGameLayout } from "../../solver/projector2d.js";
 import { generateHouse } from "../../place/house.js";
 import { embedPuzzle, type PuzzleEmbedding } from "../../place/embed.js";
@@ -98,7 +102,12 @@ import {
   deleteContainerRecord,
   isLooseProp,
   looseEntries,
+  // 🧺 A MADE BAG LANDS AS A PROP, watched or not — every bag reader in the
+  // game walks loose props, so a stowed one is invisible to all of them.
+  isPortableContainer,
 } from "@shared/world-engine/kernel/town/containers.js";
+// 🪨 piles-not-boxes ruling 5 — "whose doorstep is this?", the pure half.
+import { nearestRectKey } from "@shared/world-engine/kernel/town/ground-piles.js";
 import {
   blueprintDelta,
   blueprintSlots,
@@ -1171,6 +1180,11 @@ export interface ConstructionDirectorCtx {
   ): void;
   issueTransferHaul(session: QuestSession, cid: string, agreementId: string): void;
   enqueueNpcErrand(session: QuestSession, npcId: string, errand: NpcErrand): void;
+  /** THE RETIREMENT DOOR (quest-host `retireNpcErrands`, 2026-09-09): end this
+   *  body's queued errands — firing each one's own `onAbandon` — instead of
+   *  dropping them. Every seat that replaces or clears a body's errands calls
+   *  it, so no callback-holding seat is left believing a trip is still walking. */
+  retireNpcErrands(session: QuestSession, npcId: string, why: string): number;
   townShortage(session: QuestSession, good: string): number;
   /** ⚖️ `townShortage`'s MIRROR (S&D S1): production above COMMITTED DEMAND
    *  (own need + export owed) as a fraction of it, 0 when the books merely
@@ -1316,7 +1330,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     presenter, deps, possession,
     avatarIdOf, npcChatBubble, containerAnchor, houseContainerKeys, buildingUnits,
     stockEndpointOf, postPooledTask, playerWorldPos, familyOf, drawSourceShelf,
-    playerFocusArea, issueTransferHaul, enqueueNpcErrand, townShortage, townSurplus,
+    playerFocusArea, issueTransferHaul, enqueueNpcErrand, retireNpcErrands, townShortage, townSurplus,
     standAvoid, stackTake, spawnLooseProp, residentTownCtx, removeLooseProp,
     relationToward, emitOrderOutcome, pushPocket, itemLocOf, issueGoalPlan, handlePlaceOrder,
     gazeCreature, fireCarryGesture, depleteWildSource, cutWildFeature, cutForDraw, dropFromStack,
@@ -2016,17 +2030,24 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * a standing `CraftJob` through, so the SAME argmax that staffs a house
    * staffs the bench.
    *
-   * 🚨 SPOKEN ONLY, AND ONLY UNDER THE CAPABILITY. The household's inventory
-   * rotation and its program crafts are the family's own appetite and keep the
-   * direct household haul (C4: "v1 IS THE SPOKEN `make cart`"); off the
+   * 🚨 SPOKEN OR DEMANDED, AND ONLY UNDER THE CAPABILITY. The household's
+   * inventory rotation and its program crafts are the family's own appetite and
+   * keep the direct household haul (C4: "v1 IS THE SPOKEN `make cart`"); off the
    * capability this is `[]` and NOTHING about a craft changes, which is what
    * holds the dollhouse bench byte-identical.
+   *
+   * 🧺 THE SECOND ENUMERATED KIND (baskets makeable, 2026-09-09) is a
+   * SELF-ISSUED demand (`CraftJob.demand`): a body whose collection plan wanted
+   * an enabler the world does not contain. It is read HERE, through this one
+   * function, precisely so nothing downstream learns there are two kinds —
+   * `contribute.ts` sees one more `CraftBillRow` and prices it by the `spoken`
+   * flag it already carries, which for a demand is FALSE.
    */
   function craftBillsOf(session: QuestSession): CraftBillRow[] {
     if (!pullLaborOn(session)) return [];
     const rows: CraftBillRow[] = [];
     for (const [hi, job] of craftJobsOf(session)) {
-      if (job.spoken !== true) continue;
+      if (job.spoken !== true && job.demand === undefined) continue;
       const at = containerAnchor(session, job.spotId);
       if (!at) continue; // an unstreamed spot has no place to deliver to
       const required: Record<string, number> = {};
@@ -2056,7 +2077,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         // household bench is IN the house, the camp's crate is the yard — and
         // the yard endpoints answer "yard" for themselves anyway.
         destWord: hi >= 0 ? "house" : "yard",
-        spoken: true,
+        // 🧺 A DEMAND IS NOT A REQUEST. `spoken` is the "you asked me" weight;
+        // a body's own errand carries none, so this reads the job rather than
+        // asserting a constant (it was `true` while spoken jobs were the only
+        // kind enumerated — the field's own docblock said "always true today").
+        spoken: job.spoken === true,
       });
     }
     return rows;
@@ -2171,7 +2196,11 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // 🚫 An AUTOMATED job (the inventory rotation, a program craft) is the
     // family's own appetite and keeps the household lane verbatim, on or off
     // the capability.
-    const pull = pullLaborOn(session) && job.spoken === true;
+    // 🧺 …and a SELF-ISSUED DEMAND runs the pull lane for the same reason a
+    // spoken make does: it is the settlement's bill, its materials are anybody's
+    // to fetch and its labour anybody's to sit. The two are one arm here — the
+    // only place they differ is the `spoken` weight on the row.
+    const pull = pullLaborOn(session) && (job.spoken === true || job.demand !== undefined);
     // The bill's own liveness: a slice nobody is walking must go back on the
     // shelf, or one wedged carrier holds a 4-block bill forever (see the sweep).
     if (pull) sweepCraftHauls(session, job);
@@ -2589,7 +2618,15 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // Craft labor in THE SESSION'S OWN DAY × the construction scale — the
       // hardcoded food-day ignored scale.construction entirely (the build
       // sites' unit law, applied to the bench).
-      job.laborS = craftLabourSecondsOf(session, hi, job);
+      // ⚖️ THE BENCH HAS ITS OWN CLOCK, so the multiplier lands ON IT
+      // (skill-learning-round.md §2.5 — the craft bullet, confirmed against the
+      // tree: a craft job does NOT go through `laborRatePerS`/`bankLabor`, it
+      // counts down `laborStart + laborS` on the town clock). The crafter is
+      // KNOWN here (`member`, the body standing at the work), so the job's
+      // length is that body's own: a practised carpenter's bench-hour is
+      // shorter, and it is shortened once, at the instant the work starts.
+      const craftSkill = skillFor("refine", job.produces);
+      job.laborS = craftLabourSecondsOf(session, hi, job) / skillMultiplier(session, member, craftSkill);
       job.laborStart = session.townClock;
       // A shown crafter walks to the bench (or the store) and DWELLS there
       // for the labor — the body renders the work; the clock stays the
@@ -2632,6 +2669,17 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       walkCrafterToWork(); // pulled away mid-work — come back to the bench
       return;
     }
+    // 🚨 PRACTICE IS THE SECONDS SPENT AT THE BENCH — the wall time that
+    // actually passed while this body stood at the work, which is exactly what
+    // the away-shift above pushes the finish line out by. (The shift and this
+    // credit read the same `lastWorkedAt`, so a crafter can never be paid for a
+    // second it spent eating.)
+    practiceSkill(
+      session,
+      member,
+      skillFor("refine", job.produces),
+      Math.max(0, session.townClock - (job.lastWorkedAt ?? session.townClock)),
+    );
     job.lastWorkedAt = session.townClock;
     // The CRAFT LOOP animation (the build loop's twin): while the crafter
     // stands at the work, hold the sustained "play" rig — crouched over
@@ -2734,8 +2782,19 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       // a craft completes and nothing whatever appears, which is the bug this
       // replaces. When the house is on screen the unit becomes a real prop by the
       // bench, which is where a just-finished thing would actually be.
+      //
+      // 🧺 …AND A BAG ARRIVES WHETHER OR NOT ANYBODY IS WATCHING (baskets
+      // makeable, 2026-09-09). For FURNITURE the `isShown` gate is a rendering
+      // concession and the stack unit in the cupboard is a real place for a
+      // chair to be. For a PORTABLE CONTAINER it is not: every bag reader in
+      // the game — `idleBagsFor`, `haulBagLeg`, the `@tool` claim, the put-down —
+      // walks LOOSE PROPS, so a basket that never leaves the crate is a basket
+      // that does not exist, and the body whose demand made it would ask for
+      // another one, and another. The conservation is identical either way
+      // (`dropFromStack` MOVES the unit and puts it straight back if no prop can
+      // be made); only its VISIBILITY to the machinery changes.
       const raw = craftBenchOf(session, hi) ?? containerAnchor(session, job.spotId);
-      if (isShown && raw) {
+      if ((isShown || isPortableContainer(job.produces)) && raw) {
         // ON the floor beside the bench, not INSIDE it. The bench/cupboard
         // coordinate is a fixture CENTRE, so spawning there buries the finished
         // thing in the furniture mesh — the same raw-centre trap the walk legs
@@ -6661,7 +6720,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       const per = o.buildDays / o.count; // build-days a unit — `mintDueRefineUnits`' own identity
       if (!(per > 1e-12)) continue;
       const cap = !pullLaborOn(session) ? REFINE_CREW_CAP : Math.max(1, seatsOfOrder(session, o).length);
-      const crew = contributeCrewAt(session.pursuits, orderSiteId(o.ord)).length;
+      // ⚖️ THE FORECAST READS THE SAME CREW THE SWEEP BANKS (skill-learning-
+      // round.md §2.5): the SKILL SUM of the hands standing here, not their
+      // count — else a bench worked by masters would mint faster than the
+      // forecast the porter planned his trip against.
+      const hands = contributeCrewAt(session.pursuits, orderSiteId(o.ord));
+      const skill = skillFor("refine", o.produces);
+      let crew = 0;
+      for (const cid of hands) crew += skillMultiplier(session, cid, skill);
       const daysPerS =
         crew > 0
           ? laborRatePerS(session, crew, cap)
@@ -6925,7 +6991,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         type: spec.type, color: spec.color, dx: b.dx, dy: b.dy, w: b.w, h: b.h, door: b.door,
       });
       session.needStep.delete(builder);
-      session.npcTasks.delete(avatarIdOf(builder));
+      retireNpcErrands(session, avatarIdOf(builder), "build"); // 2026-09-09 — end it, don't drop it
       session.lastDrive.set(avatarIdOf(builder), "build");
       // A hand-built one-leg plan: the walk is the whole errand and nothing
       // chooses between alternatives here, so it carries a ZERO price rather
@@ -8369,6 +8435,12 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       row: { labor?: number; buildDays?: number; ord?: number },
       rect?: { x: number; y: number; w: number; h: number },
       cap: number = BUILDERS_CAP,
+      /** ⚖️ WHICH TRADE THIS ROW IS (skill-learning-round.md §2.5) — the row
+       *  knows what it is, so the SKILL is the caller's to name rather than
+       *  something re-derived from a site id. Every build-shaped row (founded,
+       *  annex, demolition) is `building`; a refine row is `skillFor("refine",
+       *  produces)`, which is `carpentry` for wood and `refining` otherwise. */
+      skill: string = "building",
     ) => {
       const tasks = [...session.taskPool.open(), ...session.taskPool.claimed()].filter(
         (t) => t.goal.kind === "buildwork" && t.goal.site === siteId,
@@ -8490,12 +8562,23 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         session.needPoseShow.set(npcId, { t: elapsedS + 2, kind: "play" });
       };
       let present = 0;
+      // ⚖️ …AND THE RATE IS THE CREW'S SKILL SUM, NOT ITS HEAD COUNT
+      // (skill-learning-round.md §2.5). `laborRatePerS` says one NOVICE banks
+      // `1 / dayLengthS` build-days a second; a body at multiplier m banks m of
+      // them, so two practised builders can be worth three green ones — which
+      // is the whole of "roles emerge". `present` stays the COUNT, because the
+      // unstaffed gate below is a question about bodies, not about competence.
+      let presentSkill = 0;
+      /** Bodies standing at the work this sweep — they practise the trade. */
+      const workers: string[] = [];
       for (const cid of crew) {
         if (!world) break;
         const npcId = avatarIdOf(cid);
         const body = world.state.avatars[npcId];
         if (!body || !atWork(body)) continue;
         present++;
+        presentSkill += skillMultiplier(session, cid, skill);
+        workers.push(cid);
         workPose(npcId, body);
         // 🚫 AND NOTHING IS RE-AIMED. The claimant arm below re-issues a dwell
         // errand whenever its body runs idle, because the pool put that body
@@ -8511,6 +8594,8 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         if (!body) continue;
         if (atWork(body)) {
           present++;
+          presentSkill += skillMultiplier(session, t.claimedBy, skill);
+          workers.push(t.claimedBy);
           // THE CLAIM IS ALIVE — a body stood at the work this sweep, so its
           // window restarts. This stamp is the whole difference between "a row
           // says claimed" and "somebody is building it".
@@ -8531,8 +8616,16 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         clockArm(row, cap); // schedule-banked: the abstract crew, same rate function
         return;
       }
-      const banked = elapsedS * laborRatePerS(session, Math.min(cap, present), cap);
+      // The clamp is `laborRatePerS`'s own (`Math.min(cap, crew)`), so a crowd
+      // of masters is still bounded by the row's SEATS — skill buys speed per
+      // seat, never extra seats.
+      const banked = elapsedS * laborRatePerS(session, presentSkill, cap);
       bankLabor(row, banked);
+      // 🚨 PRACTICE IS THE SECONDS SPENT, per body, at the METABOLIC clock — the
+      // sweep's own elapsed seconds, never divided by `dayLengthS` (that factor
+      // is `laborRatePerS`'s, and it converts seconds to BUILD-DAYS; a practice
+      // second is a second). Credited to every body that actually stood here.
+      if (elapsedS > 0) for (const w of workers) practiceSkill(session, w, skill, elapsedS);
       // Labor is a first-class mutation: without the bump every
       // deltas.version watcher (stage restage, overlays, the spot cache)
       // was blind to the ladder climbing.
@@ -8699,7 +8792,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         if (!((r.labor ?? 0) >= r.buildDays - 1e-9)) {
           if (obs) {
             if (!wasObs) materializeCrew(session, r.at, REFINE_CREW_CAP, issuer);
-            workSite(orderSiteId(r.ord), r.at, r, rect ?? undefined, crewCapOf(r));
+            workSite(orderSiteId(r.ord), r.at, r, rect ?? undefined, crewCapOf(r), skillFor("refine", r.produces));
           } else {
             clockArm(r, crewCapOf(r));
           }
@@ -9157,6 +9250,167 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       `🔨 making a ${word}${craftBenchOf(session, hi) ? "" : " — by hand, no workbench"}`,
       "feedback",
     );
+    return true;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🧺 DEMAND — A MAKE NOBODY SPOKE (baskets makeable, 2026-09-09)
+  //
+  // ⚖️ THE USER'S RULING, verbatim: *"making baskets makeable would be a better
+  // solution"* — taken over shipping a bigger founding kit, because the ⚖️ rider
+  // law says FOUNDERS CARRY WHAT THE SPEC SAYS AND NOTHING ELSE.
+  //
+  // 🚨 WHAT THE OTHER HALF OF THAT RULING IS. A recipe alone answers nothing:
+  // nobody in a founding camp says "make a basket", so a makeable basket that
+  // waits to be ASKED FOR is a basket that is never made, and the measured
+  // ceiling (108 of 117 bag lookups saw no idle basket; 3.80 rations/day
+  // against 4.86 at one basket a head) would stand exactly where it is. The
+  // thing has to get made because it PAYS, which is the same worthwhile shape
+  // as everything else under pull labour.
+  //
+  // ⚖️ AND THE DECIDER NAMES NO KIND. It is handed a GLYPH by the body whose
+  // plan wanted the enabler, resolves it through `craftRecipeOf` like any other
+  // make, and never learns whether it is a basket, a cart or a pack frame. The
+  // seat below is `orderCraft`'s twin with the three things a spoken order has
+  // and a demand does not — a speaker, a queue, and the right to displace —
+  // taken away. Everything else (the slot, the spot, the dead-bill refusal, the
+  // pull lane) is the SAME machinery, and that is the whole point: a demand is
+  // a bill, not a second kind of craft.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * The craft slot a settlement-wide demand keys on: the COMMUNITY one, and a
+   * house's only where a camp has no crate to work at.
+   *
+   * ⚖️ THE COMMUNITY SLOT FIRST, deliberately. A demand is the SETTLEMENT's
+   * business — `contribute.ts` hangs its bill off the town scope for exactly
+   * that reason — and a household's ONE craft slot belongs to that household's
+   * own appetite: the inventory rotation, its program crafts, and any spoken
+   * order the family was given. Parking a settlement-wide want in a family's
+   * slot would silently stop that family making anything for as long as it
+   * stood, which is the order-scoping law read backwards.
+   *
+   * ONE slot ⇒ AT MOST ONE OPEN DEMAND AT A TIME, which is the whole of the
+   * "don't weave the forest into baskets" guard: the next body's want cannot
+   * post until this one has landed.
+   */
+  function demandCraftHi(session: QuestSession): number | null {
+    if (containerAnchor(session, craftSpotOf(session, COMMUNITY_CRAFT_HI))) {
+      return COMMUNITY_CRAFT_HI;
+    }
+    return session.town?.plan.houses[0]?.index ?? null;
+  }
+
+  /** ⚖️ WHERE A DEMANDED PIECE WOULD BE MADE, and therefore the ONE point the
+   *  body that wanted it must walk to in order to take it up — the fetch leg of
+   *  the enabler's price, answered by the side that knows which bench the slot
+   *  belongs to. Null ⇔ there is no slot to demand into at all. */
+  function craftDemandAt(session: QuestSession): { x: number; y: number } | null {
+    const hi = demandCraftHi(session);
+    if (hi === null) return null;
+    return craftBenchOf(session, hi) ?? containerAnchor(session, craftSpotOf(session, hi));
+  }
+
+  /** The standing self-issued demand, or null. Exported for the host seat that
+   *  both posts and retires one — it must be able to ask before it prices. */
+  function craftDemandOf(session: QuestSession): { hi: number; job: CraftJob } | null {
+    for (const [hi, job] of craftJobsOf(session)) {
+      if (job.demand !== undefined) return { hi, job };
+    }
+    return null;
+  }
+
+  /**
+   * 🧺 ISSUE ONE. Returns true when a bill now stands.
+   *
+   * REFUSES SILENTLY, and deliberately: nobody asked, so there is nobody to
+   * answer. A spoken order that cannot be filled is REFUSED ALOUD with the
+   * reason (user law ③) because a person is owed one; a body's own want that
+   * cannot be filled simply is not a want it can act on, and a toast for every
+   * unfillable one would be a settlement narrating its own arithmetic.
+   *
+   * The one thing it DOES announce is a bill actually posted — because that is
+   * a thing that happened in the world, and the player watching a camp deserves
+   * to see why somebody walked off to the bench.
+   */
+  function requestCraftDemand(session: QuestSession, glyph: string, issuer: string): boolean {
+    // 🚫 OFF THE CAPABILITY, NOTHING. A demand is served by the pull lane and
+    // by nothing else: `craftBillsOf` is `[]` without it, so a job posted here
+    // would be a household push job nobody asked the household for — and the
+    // dollhouse (no wilderness ⇒ no capability) can never reach this line.
+    if (!session.town || !pullLaborOn(session)) return false;
+    const recipe = craftRecipeOf(glyph);
+    if (!recipe) return false;
+    const hi = demandCraftHi(session);
+    if (hi === null) return false;
+    // 🚫 A DEMAND NEVER QUEUES AND NEVER DISPLACES. A spoken `make` outranks an
+    // automated job because a person asked; a body's own want outranks nothing,
+    // so a busy slot is simply the end of it — the want will still be there
+    // next decide, and the bill it would have posted is one nobody was owed.
+    if (craftJobsOf(session).get(hi) || craftQueueOf(session).get(hi)?.length) return false;
+    const spotId = craftSpotOf(session, hi);
+    const spotAt = containerAnchor(session, spotId);
+    if (!spotAt) return false;
+    const wantHeads: Record<string, number> = {};
+    for (const [g, n] of Object.entries(recipe.consumes)) {
+      const head = stackHead(g);
+      wantHeads[head] = (wantHeads[head] ?? 0) + Math.max(0, n);
+    }
+    // DEAD ⇒ NOT POSTED — `orderCraft`'s own test, run for its own reason: a
+    // bill for a head no source holds and no raw refines into burns the
+    // settlement's ONE craft slot on work that can never begin.
+    const dead = deadBillHeads(
+      session,
+      wantHeads,
+      [
+        { id: spotId, stack: session.containerRecords.get(spotId)?.stock ?? {}, d: 0 },
+        ...craftMaterialSources(session, hi, spotAt, spotId),
+      ],
+      issuer,
+      hi >= 0 ? houseOrderScope(hi) : TOWN_ORDER_SCOPE,
+    );
+    if (Object.keys(dead).length) return false;
+    craftJobsOf(session).set(hi, {
+      ...recipe,
+      spotId,
+      agreements: [],
+      laborS: 0,
+      demand: { issuer },
+      // #44's chosen hand, for the community slot's OFF-pull arm only (under
+      // pull the crafter is whoever takes the seat — `craftContributorAt`).
+      ...(hi < 0 ? { crafter: communityCrafterCid(session, spotAt) ?? issuer } : {}),
+    });
+    presenter.toast(`🔨 nobody has a ${recipe.label} free — making one`, "feedback");
+    return true;
+  }
+
+  /**
+   * 🧺 …AND RETIRE ONE THE WORLD HAS OVERTAKEN. The want that posted this bill
+   * was "no free vessel anywhere I can reach"; the moment one IS free the bill
+   * is answering a question nobody is asking any more, and leaving it standing
+   * spends the settlement's timber on a second copy of a thing already idle.
+   *
+   * ⚖️ ONLY WHILE NOTHING IS UNDERWAY. A job with labour banked, a haul walking
+   * toward its spot or units reserved under its own holder is WORK IN PROGRESS,
+   * and cancelling that is how a claim outlives its bill (the double-spend the
+   * staging sweep warns about) and how a porter arrives at a spot that has
+   * forgotten why it wanted anything. Nothing is destroyed by waiting: the piece
+   * lands, and the next body's `idleBagsFor` simply answers.
+   *
+   * Returns true when a bill was withdrawn.
+   */
+  function retireCraftDemand(session: QuestSession): boolean {
+    const standing = craftDemandOf(session);
+    if (!standing) return false;
+    const { hi, job } = standing;
+    if (job.laborStart !== undefined) return false;
+    if (job.agreements.length > 0) return false;
+    for (const a of session.transfers.active()) if (a.to === job.spotId) return false;
+    for (const _ of session.reservations.holderRows(`craftspot:${hi}`)) return false;
+    craftJobsOf(session).delete(hi);
+    craftApproachAt.delete(hi);
+    craftStarvedAt.delete(hi);
+    session.townParks.delete(craftGatherParkKey(hi));
     return true;
   }
 
@@ -10359,16 +10613,66 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
    * know nothing about props: it sees a piece of the right kind that is not on
    * its mark, and says carry it.
    */
+  /**
+   * 🪨 WHICH BUILDING A PIECE OF OPEN GROUND BELONGS TO (piles-not-boxes ruling
+   * 5) — the NEAREST building by point-to-FOOTPRINT distance, which is 0 for a
+   * point inside one. Measuring to the rect rather than to the centre is what
+   * makes the answer subsume the room test: a piece standing in building B's
+   * bedroom is at distance 0 from B and cannot be claimed by anybody else, so
+   * the outdoor arm below can never steal a piece the indoor arm owns.
+   *
+   * Ties break on the delta key, so two peers over one world answer the same.
+   * Null when this session has no town plan to walk.
+   */
+  function nearestBuildingKeyTo(session: QuestSession, p: { x: number; y: number }): string | null {
+    const t = session.town;
+    if (!t) return null;
+    const c = t.stage.center;
+    const rects: { key: string; rect: { x: number; y: number; w: number; h: number } }[] = [];
+    const consider = (key: string, r: { dx: number; dy: number; w: number; h: number }): void => {
+      rects.push({ key, rect: { x: c.x + r.dx, y: c.y + r.dy, w: r.w, h: r.h } });
+    };
+    for (const h of t.plan.houses) consider(`h_${h.index}`, h);
+    t.plan.works.forEach((wk, i) => {
+      if (wk.vacated) return;
+      consider(workDeltaKey(wk, i), wk);
+    });
+    return nearestRectKey(p, rects);
+  }
+
   function looseFurnitureIn(session: QuestSession, buildingKey: string): FurniturePiece[] {
     const b = pendingBuildingOf(session, buildingKey);
     if (!b || !world) return [];
+    // 🪨 THE SETTLEMENT'S CHARTERED GROUND (ruling 5): *"outdoor furniture
+    // should get moved to a building when the appropriate building exists"*.
+    //
+    // 🚨 THE DEFECT THIS CLOSES, EXACTLY AS THE ROUND STATED IT: the room-rect
+    // gate below made a piece standing OUTSIDE any room invisible to every
+    // furnish sweep in the game — so a chair set down in the camp was furniture
+    // nothing owned, forever, and the existing reflow errand
+    // (`stepBlueprintReflow`: lift → carry → land, rate-limited by
+    // `reflowShareOf`) had nothing to move. Widening what the sweep SEES is the
+    // whole change; the move was already a task, which is the user's *"not
+    // instantly — they should create tasks"* satisfied by machinery that exists.
+    //
+    // 🚫 AND IT IS THE LOT THAT GATES IT, NOT A CAPABILITY FLAG. A settlement
+    // charters community ground when it is founded (or at its first houseless
+    // deposit); a grown town like the dollhouse never has, so `lot` is null
+    // there and this arm cannot reach its first comparison — which is what
+    // holds the dollhouse bench byte-identical, honestly rather than by a
+    // switch.
+    const lot = communityLotWorld(session);
     const out: FurniturePiece[] = [];
     for (const [objId, rec] of looseEntries(session)) {
       const kind = furnitureKindOfGlyph(rec.glyph!);
       if (!kind) continue;
       const o = world.state.objects[objId];
       if (!o || o.carriedBy || o.containedIn) continue; // in hand or in a box already
-      if (!b.plan.rooms.some((r) => inRoomRect(r, o.x, o.y))) continue;
+      if (!b.plan.rooms.some((r) => inRoomRect(r, o.x, o.y))) {
+        if (!lot) continue; // no chartered ground ⇒ the old rule, to the byte
+        if (Math.hypot(o.x - lot.x, o.y - lot.y) > lot.r) continue; // off the settlement's ground
+        if (nearestBuildingKeyTo(session, o) !== buildingKey) continue; // somebody else's doorstep
+      }
       const fdef = furnitureItemOf(kind);
       out.push({
         id: objId,
@@ -11364,6 +11668,14 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
     // automated job, which is what leaves the household craft lane — and the
     // dollhouse bench — byte-identical.
     craftBillsOf,
+    // 🧺 …and the SECOND kind of row that list can carry: a DEMAND nobody spoke
+    // (baskets makeable, 2026-09-09). The body that finds its collection plan
+    // wanting an enabler the world does not contain issues the bill to itself
+    // through this handle, and withdraws it through `retireCraftDemand` the
+    // moment a free one turns up — the arithmetic is the HOST's (it owns the
+    // price board and the bag list), the craft slot, the spot and the dead-bill
+    // refusal are the DIRECTOR's, and neither side re-derives the other's half.
+    requestCraftDemand, retireCraftDemand, craftDemandOf, craftDemandAt,
     // ⚖️ …and the NON-RESERVING reach read the bookkeeper decides the chain on
     // (task #51 item ①). Exported so the body sizing its own slice measures the
     // same free stock the books did: the number that says "a mill is needed" and

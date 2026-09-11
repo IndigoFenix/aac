@@ -6,7 +6,7 @@
  * `admin_users` is fully self-contained as of migration 0107: password, MFA
  * secret, auth_provider, and google_id all live on the admin row, and the
  * legacy `users` row for each admin has been dropped. Downstream code
- * (`requireAdmin`, `isCustomerSupport`, license checks, etc.) reads
+ * (`requireSystemAdmin`, `isCustomerSupport`, license checks, etc.) reads
  * `user.isSystemAdmin` — we set that flag on the adapted pseudo-user so
  * those checks continue to work without modification.
  */

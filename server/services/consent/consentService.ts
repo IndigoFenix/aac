@@ -325,10 +325,33 @@ class ConsentService {
     return inserted;
   }
 
+  /**
+   * Withdraw a consent record. The cascade below is deliberately non-fatal —
+   * the withdrawal itself is the legally binding act and must complete even if
+   * downstream cleanup partially fails (§7.5).
+   *
+   * `extraDetails` is merged into the `consent_revoked` audit row, the same
+   * shape `studentShareInviteService.revokeObjectShare` uses for its cascade
+   * tag. The controller passes `revocation_path` there so the log distinguishes
+   * a signer's own withdrawal from one a clinic performed under attest parity;
+   * the service does not care which rule admitted the caller, only that the
+   * caller was admitted.
+   */
   async revokeConsent(args: {
     consentId: string;
-    revokedByUserId: string;
+    /**
+     * NULL when the withdrawal came from the data subject over a withdrawal
+     * token (§5.3) — that signer has no `users` row, which is the entire reason
+     * that path exists. Everything downstream of here already tolerated a null
+     * actor at the DATABASE level (every `revoked_by_user_id` column is
+     * nullable and `activityLogService.log` takes `userId?: string | null`);
+     * only the TypeScript signatures asserted an account. The audit row still
+     * says who — `revocation_path` names the rule and, on the token path,
+     * `revoked_by_contact_id` names the person.
+     */
+    revokedByUserId: string | null;
     reason?: string;
+    extraDetails?: Record<string, unknown>;
   }): Promise<StudentConsentRecord> {
     const existing = await studentConsentRecordRepository.getById(args.consentId);
     if (!existing) throw new ConsentError("consent_not_found");
@@ -354,6 +377,7 @@ class ConsentService {
         reason: args.reason ?? null,
         priorVersion: existing.consentTextVersion,
         priorRegime: existing.enhancedProtectionRegime,
+        ...(args.extraDetails ?? {}),
       },
     });
 

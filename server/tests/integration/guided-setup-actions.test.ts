@@ -56,12 +56,14 @@ import { studentRepository } from "../../repositories/studentRepository.js";
 type ServiceModule = typeof import("../../services/guided-setup/student-setup-service.js");
 type ActionsModule = typeof import("../../services/guided-setup/student-setup-actions.js");
 type StateModule = typeof import("../../services/guided-setup/student-setup-state.js");
+type QueriesModule = typeof import("../../services/guided-setup/student-setup-queries.js");
 type InstituteSchemaModule = typeof import("../../services/memory-schema/institute-memory-schema.js");
 type SessionModule = typeof import("../../services/sessionService.js");
 
 let service: ServiceModule;
 let actions: ActionsModule;
 let state: StateModule;
+let queries: QueriesModule;
 let instituteSchema: InstituteSchemaModule;
 let sessionService: SessionModule;
 
@@ -72,6 +74,7 @@ beforeAll(async () => {
   service = await import("../../services/guided-setup/student-setup-service.js");
   actions = await import("../../services/guided-setup/student-setup-actions.js");
   state = await import("../../services/guided-setup/student-setup-state.js");
+  queries = await import("../../services/guided-setup/student-setup-queries.js");
   instituteSchema = await import("../../services/memory-schema/institute-memory-schema.js");
   // Same reason as the three above, and it matters more here: a statically
   // imported sessionService drags the real SES client in with it.
@@ -499,6 +502,240 @@ describe("Guided Setup — step 5 completion reads real contact rows", () => {
     const reread = await service.resolveView(base);
     expect(`reread active: ${JSON.stringify(reread.view.active)}`).toBe("reread active: false");
     expect(typeof reread.view.record?.completedAt).toBe("string");
+  });
+
+  /**
+   * THE CONSENT GUARDIAN IS NOT A STEP-5 ANSWER.
+   *
+   * Observed live (clinic patient, no contacts): the consent stage asked for a
+   * guardian, the assistant saved "Dana Nella, mother" through the same
+   * `Student_Contacts add` op a step-5 answer uses, and the rail's step-5 dot
+   * went DONE on the spot — three steps before the flow could reach it. The
+   * row is human-entered, `autoAdded = false`, linked to nobody, so every
+   * earlier exclusion looked straight past it.
+   */
+  it("is not completed by the guardian the consent stage asked for", async () => {
+    const { owner, institute, student } = await setupAccount("clinic");
+    await db.insert(studentContacts).values({
+      studentId: student.id,
+      name: "Dana Nella",
+      relationship: "mother",
+      role: "parent_guardian",
+      contactEmail: "dana.nella@test.local",
+    });
+
+    const facts = await queries.loadContactFacts(student.id, owner.id);
+    // The row IS there — this is not a fixture that failed to write.
+    expect(facts.total).toBe(1);
+    expect(facts.peopleAdded).toBe(0);
+
+    const { view } = await service.resolveView({
+      userId: owner.id,
+      instituteId: institute.id,
+      studentId: student.id,
+    });
+    expect(peopleItem(view)?.done).toBe(false);
+  });
+
+  it("is completed by the first person added AFTER the consent guardian", async () => {
+    const { owner, institute, student } = await setupAccount("clinic");
+    await db.insert(studentContacts).values({
+      studentId: student.id,
+      name: "Dana Nella",
+      relationship: "mother",
+      role: "parent_guardian",
+      contactEmail: "dana.nella@test.local",
+    });
+    await db.insert(studentContacts).values({
+      studentId: student.id,
+      name: "Yael the teacher",
+      relationship: "teacher",
+      role: "homeroom_teacher",
+    });
+
+    const facts = await queries.loadContactFacts(student.id, owner.id);
+    expect(facts.total).toBe(2);
+    expect(facts.peopleAdded).toBe(1);
+
+    const { view } = await service.resolveView({
+      userId: owner.id,
+      instituteId: institute.id,
+      studentId: student.id,
+    });
+    expect(peopleItem(view)?.done).toBe(true);
+  });
+
+  /**
+   * THE OVER-EXCLUSION GUARD.
+   *
+   * Exactly ONE row leaves the count — the row `loadConsentContact` picks —
+   * never the class of row it belongs to. A second parent is the commonest
+   * step-5 answer there is, and a rule that dropped "guardians" rather than
+   * "the consent guardian" would leave a family whose only person left to list
+   * is the other parent unable to finish the step at all.
+   */
+  it("still counts a second contactable parent the user deliberately adds", async () => {
+    const { owner, institute, student } = await setupAccount("clinic");
+    const [consentGuardian] = await db
+      .insert(studentContacts)
+      .values({
+        studentId: student.id,
+        name: "Dana Nella",
+        relationship: "mother",
+        role: "parent_guardian",
+        contactEmail: "dana.nella@test.local",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      })
+      .returning();
+    await db.insert(studentContacts).values({
+      studentId: student.id,
+      name: "Ori Nella",
+      relationship: "father",
+      role: "parent_guardian",
+      contactEmail: "ori.nella@test.local",
+      createdAt: new Date("2026-02-01T00:00:00Z"),
+    });
+
+    // The pick is the older row, so the co-parent is the one that must count.
+    expect((await queries.loadConsentContact(student.id))?.id).toBe(consentGuardian.id);
+    const facts = await queries.loadContactFacts(student.id, owner.id);
+    expect(facts.total).toBe(2);
+    expect(facts.peopleAdded).toBe(1);
+
+    const { view } = await service.resolveView({
+      userId: owner.id,
+      instituteId: institute.id,
+      studentId: student.id,
+    });
+    expect(peopleItem(view)?.done).toBe(true);
+  });
+
+  /**
+   * The family path is UNCHANGED by the consent exclusion. The admin's own
+   * auto-created guardian row is discounted for its own reason (it is the
+   * signed-in user), and it is usually the consent pick as well — being
+   * excluded twice must not change what a real answer does to the count.
+   */
+  it("family: the admin's own guardian row still does not count, and a real contact still does", async () => {
+    const { owner, institute, student } = await setupAccount("family");
+    await db.insert(studentContacts).values({
+      studentId: student.id,
+      name: "Dana Cohen",
+      relationship: "parent_guardian",
+      role: "parent_guardian",
+      linkedUserId: owner.id,
+      contactEmail: "dana@example.com",
+    });
+
+    const base = { userId: owner.id, instituteId: institute.id, studentId: student.id };
+    expect((await queries.loadContactFacts(student.id, owner.id)).peopleAdded).toBe(0);
+    expect(peopleItem((await service.resolveView(base)).view)?.done).toBe(false);
+
+    await db.insert(studentContacts).values({
+      studentId: student.id,
+      name: "Savta Rivka",
+      relationship: "grandmother",
+    });
+
+    const after = await queries.loadContactFacts(student.id, owner.id);
+    expect(after.total).toBe(2);
+    expect(after.peopleAdded).toBe(1);
+    expect(peopleItem((await service.resolveView(base)).view)?.done).toBe(true);
+  });
+});
+
+/**
+ * WHICH guardian the consent link is offered to.
+ *
+ * `loadConsentContact` ended with `limit(1)` and no `ORDER BY`, and Postgres
+ * promises nothing there: on a patient with two contactable guardians the row
+ * named in the prompt block, the row behind the rail's "Send consent request"
+ * button (`parked()` publishes this id) and the row step 5 discounts could all
+ * be different, and two calls in ONE request could disagree. The order is now
+ * total: explicit `parent_guardian` role, then a row with an email, then oldest
+ * `created_at`, then id.
+ */
+describe("Guided Setup — the consent contact is a deterministic pick", () => {
+  withEnvRestore();
+
+  it("prefers the explicit role, then an email, then the oldest row — stably", async () => {
+    const { owner, institute, student } = await setupAccount("clinic");
+    const seed = async (over: Record<string, unknown>) => {
+      const [row] = await db
+        .insert(studentContacts)
+        .values({ studentId: student.id, name: "G", ...over } as never)
+        .returning();
+      return row;
+    };
+    // Oldest of all, but only a WORD for a relationship — a guessed guardian.
+    await seed({
+      relationship: "mother",
+      contactEmail: "guessed@test.local",
+      createdAt: new Date("2020-01-01T00:00:00Z"),
+    });
+    // Explicit role and older than the winner, but reachable by phone only.
+    await seed({
+      relationship: "father",
+      role: "parent_guardian",
+      contactPhone: "+972500000000",
+      createdAt: new Date("2021-01-01T00:00:00Z"),
+    });
+    const wanted = await seed({
+      relationship: "mother",
+      role: "parent_guardian",
+      contactEmail: "wanted@test.local",
+      createdAt: new Date("2022-01-01T00:00:00Z"),
+    });
+    // Same shape as the winner in every respect but age.
+    await seed({
+      relationship: "father",
+      role: "parent_guardian",
+      contactEmail: "younger@test.local",
+      createdAt: new Date("2023-01-01T00:00:00Z"),
+    });
+
+    const picks = await Promise.all(
+      [1, 2, 3, 4, 5].map(() => queries.loadConsentContact(student.id)),
+    );
+    expect(picks.map((p) => p?.id)).toEqual(new Array(5).fill(wanted.id));
+    expect(picks[0]?.name).toBe("G");
+    expect(picks[0]?.hasEmail).toBe(true);
+
+    // And the fact the flow publishes agrees with it, on the same rows.
+    const basics = await queries.loadBasicsFacts(student.id, institute.id);
+    expect(basics.consentContact?.id).toBe(wanted.id);
+    // The count step 5 shows is derived from the SAME pick: four contacts,
+    // three of them answers to nothing but the consent question's neighbours.
+    expect((await queries.loadContactFacts(student.id, owner.id)).peopleAdded).toBe(3);
+  });
+
+  it("breaks a created_at tie on id, so rows written in one statement cannot swap", async () => {
+    const { student } = await setupAccount("clinic");
+    const sameMoment = new Date("2026-03-03T12:00:00Z");
+    const rows = await db
+      .insert(studentContacts)
+      .values([
+        {
+          studentId: student.id,
+          name: "Guardian A",
+          role: "parent_guardian" as const,
+          contactEmail: "a@test.local",
+          createdAt: sameMoment,
+        },
+        {
+          studentId: student.id,
+          name: "Guardian B",
+          role: "parent_guardian" as const,
+          contactEmail: "b@test.local",
+          createdAt: sameMoment,
+        },
+      ])
+      .returning();
+    const lowestId = rows.map((r) => r.id).sort()[0];
+
+    for (let i = 0; i < 5; i++) {
+      expect((await queries.loadConsentContact(student.id))?.id).toBe(lowestId);
+    }
   });
 });
 

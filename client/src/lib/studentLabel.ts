@@ -111,7 +111,34 @@ export function setCurrentStudentContext(instituteType: InstituteType | undefine
   _currentLanguage = language;
 }
 
-const PLACEHOLDER_RE = /\{\{(STUDENT|Student|student|STUDENTS|Students|students)\}\}/g;
+/**
+ * The ONLY double-brace tokens this system understands, mapped to the label
+ * field each one resolves to.
+ *
+ * This is the single source of truth: the matching regex and the substitution
+ * are both derived from it, and `scripts/scan-i18n-coverage.ts` imports it so
+ * the CI check for stray `{{...}}` tokens in locale files can never drift from
+ * what `adaptStudentLabel` actually replaces.
+ *
+ * Anything NOT listed here survives untouched and is rendered to the user with
+ * its braces showing. In particular `t()` interpolation uses SINGLE braces
+ * (`{name}`), so `"Reports for {{name}}"` renders as `Reports for {Sam}`.
+ */
+export const STUDENT_LABEL_TOKENS = {
+  STUDENT: 'singular',
+  Student: 'singular',
+  student: 'singularLower',
+  STUDENTS: 'plural',
+  Students: 'plural',
+  students: 'pluralLower',
+} as const satisfies Record<string, keyof StudentLabelMap>;
+
+export type StudentLabelToken = keyof typeof STUDENT_LABEL_TOKENS;
+
+const PLACEHOLDER_RE = new RegExp(
+  `\\{\\{(${Object.keys(STUDENT_LABEL_TOKENS).join('|')})\\}\\}`,
+  'g'
+);
 
 /**
  * Replace {{STUDENT}}/{{Student}}/{{student}}/{{STUDENTS}}/{{Students}}/{{students}}
@@ -133,19 +160,7 @@ export function adaptStudentLabel(
   const labels = getStudentLabels(type, lang);
 
   return text.replace(PLACEHOLDER_RE, (match, token: string) => {
-    switch (token) {
-      case 'STUDENT':
-      case 'Student':
-        return labels.singular;
-      case 'student':
-        return labels.singularLower;
-      case 'STUDENTS':
-      case 'Students':
-        return labels.plural;
-      case 'students':
-        return labels.pluralLower;
-      default:
-        return match;
-    }
+    const field = STUDENT_LABEL_TOKENS[token as StudentLabelToken];
+    return field ? labels[field] : match;
   });
 }

@@ -59,8 +59,9 @@
 // pass, with no search and no RNG, so the same inputs give a deep-equal trace.
 
 import type { CreatureId, ItemId } from "@shared/world-engine/interaction/behavior/creatures.js";
-import type { PlaceRef, PursuitGoal } from "@shared/world-engine/interaction/behavior/rules.js";
+import type { GoalSpec, PlaceRef, PursuitGoal } from "@shared/world-engine/interaction/behavior/rules.js";
 import type { GoalPlan, GoalStep, WorldResolver } from "@shared/world-engine/interaction/behavior/goal-selection.js";
+import type { Operator } from "@shared/world-engine/kernel/means-ends.js";
 import { journeyTimeS, priceOf } from "@shared/world-engine/kernel/town/pricing.js";
 import type { VerbCost } from "@shared/world-engine/kernel/town/scope-shape.js";
 import type { Vec2 } from "../../types.js";
@@ -149,18 +150,41 @@ export function achieve(target: Predicate, self: CreatureId, r: WorldResolver): 
 }
 
 /**
+ * A traced plan, or the reason there isn't one.
+ *
+ * ⚖️ D7 — PRECONDITIONS ARE THE RESPONSE (elemental-actions §4). The untraced
+ * entry points still answer a bare `null`; the TRACED ones answer with
+ * `blockedAt` — the DEEPEST predicate whose operator arm returned null. Today
+ * `achieveInto` rolls the trace back on a dead branch and the reason is lost
+ * (`:184-186`), so `pursuitBlockLine` can only speak a line per GOAL KIND. The
+ * EDGE roll-back stays exactly as it was — a null plan still leaves no edges —
+ * and only the failed TARGET is recorded beside it.
+ */
+export type TracedPlan =
+  | { steps: GoalStep[]; trace: PlanTrace; blockedAt?: undefined }
+  | { steps: null; trace?: undefined; blockedAt?: Predicate };
+
+/** The deepest-failure slot threaded through the regression (see `TracedPlan`).
+ *  A mutable one-field box rather than a return value, so the arms' own shapes
+ *  and the untraced path stay byte-identical. */
+interface FailSlot {
+  at?: Predicate;
+}
+
+/**
  * `achieve` plus the regression tree it walked, as an index-aligned `PlanTrace`
  * (header: "THE TRACE"). The `steps` are byte-identical to `achieve`'s — this is
  * the same single pass with a collector attached, not a second derivation.
+ *
+ * On failure the `blockedAt` arm is ALWAYS populated (the target itself when no
+ * sub-goal got deeper) — `planStepsTraced` is the entry that can answer without
+ * one, because a goal that isn't an item errand has no predicate to name.
  */
-export function achieveTraced(
-  target: Predicate,
-  self: CreatureId,
-  r: WorldResolver,
-): { steps: GoalStep[]; trace: PlanTrace } | null {
+export function achieveTraced(target: Predicate, self: CreatureId, r: WorldResolver): TracedPlan {
   const trace: PlanEdge[] = [];
-  const steps = achieveInto(target, self, r, trace);
-  return steps ? { steps, trace } : null;
+  const fail: FailSlot = {};
+  const steps = achieveInto(target, self, r, trace, undefined, fail);
+  return steps ? { steps, trace } : { steps: null, blockedAt: fail.at ?? target };
 }
 
 /**
@@ -171,6 +195,13 @@ export function achieveTraced(
  * puts its sub-plan's steps FIRST and its own steps after, so append order and
  * step order agree). A sub-plan that succeeded inside an arm that then fails is
  * rolled back to the mark, so a null plan leaves no edges behind.
+ *
+ * ⚖️ D7 — `fail` records the DEEPEST arm that returned null, and mirrors the
+ * trace's own mark/roll-back discipline: an arm that SUCCEEDS restores whatever
+ * the slot held on entry, so a failure inside an abandoned branch (the dining
+ * leg's `holding` regression, before the arm falls through to eat-where-it-lies)
+ * is discarded exactly as its edges are. Deepest wins because the innermost arm
+ * fails FIRST and its ancestors only fill an EMPTY slot.
  */
 function achieveInto(
   target: Predicate,
@@ -178,13 +209,17 @@ function achieveInto(
   r: WorldResolver,
   trace: PlanEdge[] | null,
   parent?: Predicate,
+  fail?: FailSlot,
 ): GoalStep[] | null {
   const mark = trace ? trace.length : 0;
-  const steps = achieveOperator(target, self, r, trace);
+  const failMark = fail?.at;
+  const steps = achieveOperator(target, self, r, trace, fail);
   if (!steps) {
     if (trace) trace.length = mark; // this branch is dead — un-record it
+    if (fail && fail.at === undefined) fail.at = target; // …and the deepest failure is kept
     return null;
   }
+  if (fail) fail.at = failMark; // this branch lived — un-record any dead sub-branch
   if (trace) {
     // Everything not accounted for by a sub-plan's edges is this arm's own.
     const own = steps.length - (trace.length - mark);
@@ -198,6 +233,7 @@ function achieveOperator(
   self: CreatureId,
   r: WorldResolver,
   trace: PlanEdge[] | null,
+  fail?: FailSlot,
 ): GoalStep[] | null {
   // ONE walk-leg helper — arrival-aware: an already-reached destination emits
   // NO step, so re-running the plan each tick advances past legs the body has
@@ -225,18 +261,18 @@ function achieveOperator(
         }
         return null;
       }
-      const near = achieveInto({ kind: "near", item: target.item }, self, r, trace, target);
+      const near = achieveInto({ kind: "near", item: target.item }, self, r, trace, target, fail);
       return near ? [...near, { kind: "pick", itemId: target.item }] : null;
     }
     case "in": {
-      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target);
+      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target, fail);
       if (!hold) return null;
       const pos = r.place(target.container);
       if (!pos) return null;
       return [...hold, ...legTo(pos), { kind: "place", itemId: target.item, place: target.container }];
     }
     case "possessed": {
-      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target);
+      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target, fail);
       if (!hold) return null;
       const to = r.positionOf(target.by);
       if (!to) return null;
@@ -267,7 +303,7 @@ function achieveOperator(
           if (on && Math.hypot(on.x - spot.x, on.y - spot.y) <= SAME_SPOT_M) {
             return [...legTo(spot), { kind: "eat", itemId: target.item }];
           }
-          const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target);
+          const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target, fail);
           if (hold) return [...hold, ...legTo(spot), { kind: "eat", itemId: target.item }];
         }
       }
@@ -284,7 +320,7 @@ function achieveOperator(
       // performs the swap. No station that grants the state → null (blocked).
       const pos = r.stationFor(target.state);
       if (!pos) return null;
-      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target);
+      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target, fail);
       if (!hold) return null;
       return [...hold, ...legTo(pos), { kind: "transform", itemId: target.item, state: target.state }];
     }
@@ -323,7 +359,7 @@ function achieveOperator(
       // No station: you dress where you stand. The terminal `equip` step's `last`
       // ends the pursuit (the garment is consumed onto the body — re-planning
       // would read it gone, so `last` guards the false block, like `eat`).
-      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target);
+      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target, fail);
       return hold ? [...hold, { kind: "equip", itemId: target.item }] : null;
     }
     case "colored": {
@@ -332,7 +368,7 @@ function achieveOperator(
       // swap the colour. No tub nearby → recolour in hand where you stand (like
       // `consumed`'s else-in-place), so a commanded colour never dead-ends. The
       // terminal `color` step's `last` ends the pursuit.
-      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target);
+      const hold = achieveInto({ kind: "holding", item: target.item }, self, r, trace, target, fail);
       if (!hold) return null;
       const tub = r.colorStation?.(self) ?? null;
       const leg = tub ? legTo(tub) : [];
@@ -446,6 +482,61 @@ function achieveOperator(
 }
 
 // ---------------------------------------------------------------------------
+// THE OPERATOR GRAPH AS DATA (emergent-plans-round.md D3)
+// ---------------------------------------------------------------------------
+//
+// The switch above IS the schema, written as engine code. This table is the
+// SAME schema written as rows — one row per arm, `needs` = exactly the
+// predicate kinds that arm regresses through `achieveInto`, `link` = the
+// GoalStep kind the arm's own step emits.
+//
+// ⚖️ IT IS A MIRROR, NOT A SOURCE. The switch is not rewritten to walk it:
+// re-expressing 20 hand-tuned arms (the dining fork, the already-served case,
+// the take-from hand-off, the optional colour tub) as row data would be a
+// refactor with zero behavioural gain across a 1 100-line pin surface. What the
+// table buys is what the doc actually wanted (§3.2): the chain becomes a
+// DERIVED property — `validateOperators` proves it acyclic and 3 deep instead
+// of a header comment claiming it, and a later teaching seam has a table to add
+// a row to. A jest pin replays the planner suite's own fixtures and asserts
+// every `parent → serves` pair the regression ACTUALLY emits is an edge here,
+// so the mirror cannot drift from the switch unnoticed.
+//
+// 🚨 PRIMITIVES-ONLY: every id below is a predicate KIND or a step KIND. No
+// world kind ever appears, and none may.
+export const OPERATOR_GRAPH: readonly Operator<Predicate["kind"], GoalStep["kind"]>[] = [
+  // Leaves — a walk, or a walk-then-act with nothing to acquire first.
+  { link: "moveTo", achieves: "at", needs: [] },
+  { link: "moveTo", achieves: "near", needs: [] },
+  { link: "toggle", achieves: "toggled", needs: [] },
+  { link: "rest", achieves: "rested", needs: [] },
+  { link: "openClose", achieves: "openState", needs: [] },
+  { link: "converse", achieves: "socialized", needs: [] },
+  { link: "address", achieves: "addressed", needs: [] },
+  // The one rung with a precondition of its own: you must be BESIDE a thing to
+  // lift it. (The take-from hand-off walks to the HOLDER instead — same arm,
+  // same `holding` target, no `near` rung; that is a branch inside the arm, not
+  // a second operator.)
+  { link: "pick", achieves: "holding", needs: ["near"] },
+  // …and everything an item errand does to a thing it must first be HOLDING.
+  { link: "place", achieves: "in", needs: ["holding"] },
+  { link: "give", achieves: "possessed", needs: ["holding"] },
+  { link: "eat", achieves: "consumed", needs: ["holding"] },
+  { link: "transform", achieves: "facet", needs: ["holding"] },
+  { link: "equip", achieves: "worn", needs: ["holding"] },
+  { link: "color", achieves: "colored", needs: ["holding"] },
+  // The stack micro-targets are TERMINAL BY DESIGN — one leg, one act; the
+  // SELECTOR paces a multi-leg errand (`:106-108`). So every one of them is a
+  // leaf, and a schema row that gave one a precondition would be describing a
+  // different engine.
+  { link: "withdraw", achieves: "unitsTaken", needs: [] },
+  { link: "stow", achieves: "unitsStowed", needs: [] },
+  { link: "processStack", achieves: "stackProcessed", needs: [] },
+  { link: "equipStack", achieves: "stackEquipped", needs: [] },
+  { link: "dropStack", achieves: "stackDropped", needs: [] },
+  { link: "consumeStack", achieves: "stackConsumed", needs: [] },
+];
+
+// ---------------------------------------------------------------------------
 // Goal → target predicate (the vocabulary table)
 // ---------------------------------------------------------------------------
 
@@ -553,6 +644,114 @@ export function goalTarget(goal: PursuitGoal, self: CreatureId, r: WorldResolver
   }
 }
 
+/**
+ * THE INVERSE OF `goalTarget` — a predicate back to the goal that wants it
+ * (emergent-plans-round.md D6).
+ *
+ * ⚖️ WORD-FREE, AND THAT IS THE WHOLE POINT (why-chains law ④ — NO NEW
+ * LEXICON). The `why` chain needs a READING for a rung of the plan, and the one
+ * function that already words every goal in the engine is `goalActivity`. So
+ * this hands the plan rung back to that function instead of growing a second
+ * predicate→words table beside it: `goalActivity(predicateGoal(edge.serves))`
+ * is the same sentence the same body would speak about the same goal, which is
+ * exactly why the activity a creature claims and the chain it explains cannot
+ * disagree.
+ *
+ * TWO KINDS ANSWER NULL, both deliberately:
+ *   • `near` — NO GoalSpec's target predicate is `near`; `goTo` maps to `at`,
+ *     over a PLACE, and a `goTo` synthesised at an item's position would be a
+ *     goal nobody has. A walk leg that serves `near(item)` speaks its PARENT's
+ *     reading ("get the apple"), which is what the legacy need-step path has
+ *     always said of a take's walk (`going.ts:84-94`) — D6's walk-leg rule.
+ *   • `addressed` — an `AddressGoal` is deliberately OUTSIDE `GoalSpec`
+ *     ("an order is not negotiable", `rules.ts:300-319`), so it cannot be
+ *     returned from a `GoalSpec` seat. The address rung collapses, law ④.
+ */
+export function predicateGoal(p: Predicate): GoalSpec | null {
+  switch (p.kind) {
+    case "at":
+      return { kind: "goTo", place: p.place };
+    case "near":
+      return null; // the parent speaks for it — see the docblock
+    case "holding":
+      return {
+        kind: "fetch",
+        item: { id: p.item },
+        ...(p.takeFrom !== undefined ? { from: { kind: "creature" as const, id: p.takeFrom } } : {}),
+      };
+    case "in":
+      return { kind: "putIn", item: { id: p.item }, container: p.container };
+    case "possessed":
+      return { kind: "give", item: { id: p.item }, to: p.by };
+    case "consumed":
+      return { kind: "consume", item: { id: p.item }, ...(p.at ? { at: p.at } : {}) };
+    case "facet":
+      return { kind: "transform", item: { id: p.item }, state: p.state };
+    case "toggled":
+      return { kind: "toggle", device: { id: p.item }, state: p.state };
+    case "rested":
+      return {
+        kind: "rest",
+        place: p.place,
+        ...(p.dwellS !== undefined ? { dwellS: p.dwellS } : {}),
+        ...(p.pose ? { pose: p.pose } : {}),
+      };
+    case "openState":
+      return { kind: "setOpen", place: p.place, open: p.open };
+    case "worn":
+      return { kind: "wear", item: { id: p.item } };
+    case "colored":
+      return { kind: "color", item: { id: p.item }, color: p.color };
+    case "socialized":
+      return { kind: "converse", target: p.partner };
+    case "addressed":
+      return null; // an AddressGoal is not a GoalSpec — see the docblock
+    case "unitsTaken":
+      return {
+        kind: "takeUnits",
+        from: p.from,
+        category: p.category,
+        units: p.units,
+        ...(p.affords ? { affords: p.affords } : {}),
+        ...(p.tplKey ? { tplKey: p.tplKey } : {}),
+      };
+    case "unitsStowed":
+      return {
+        kind: "putUnits",
+        into: p.into,
+        category: p.category,
+        units: p.units,
+        ...(p.tplKey ? { tplKey: p.tplKey } : {}),
+      };
+    case "stackProcessed":
+      return {
+        kind: "processUnits",
+        at: p.at,
+        category: p.category,
+        ...(p.drop ? { drop: p.drop } : {}),
+        ...(p.add ? { add: p.add } : {}),
+        ...(p.dwellS !== undefined ? { dwellS: p.dwellS } : {}),
+        ...(p.tplKey ? { tplKey: p.tplKey } : {}),
+      };
+    case "stackEquipped":
+      return { kind: "equipUnits", category: p.category, ...(p.tplKey ? { tplKey: p.tplKey } : {}) };
+    case "stackDropped":
+      return {
+        kind: "dropUnits",
+        category: p.category,
+        units: p.units,
+        ...(p.tplKey ? { tplKey: p.tplKey } : {}),
+      };
+    case "stackConsumed":
+      return {
+        kind: "consumeUnits",
+        category: p.category,
+        ...(p.at ? { at: p.at } : {}),
+        ...(p.tplKey ? { tplKey: p.tplKey } : {}),
+      };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // THE PRICE OF A PLAN (step ④ — scope-behaviors.md §2.3 PREFER, §3 the
 // currency, §5 seat 3)
@@ -618,15 +817,16 @@ export function planSteps(goal: PursuitGoal, self: CreatureId, r: WorldResolver)
 /** `planSteps` plus the plan's causal edges (header: "THE TRACE"). `steps` is
  *  byte-identical to `planSteps`; `trace` is index-aligned with it, so
  *  `trace.length === steps.length` and `trace[i]` says which predicate `steps[i]`
- *  achieves and which predicate that one is a precondition of. Null on exactly
- *  the same inputs `planSteps` returns null for. */
-export function planStepsTraced(
-  goal: PursuitGoal,
-  self: CreatureId,
-  r: WorldResolver,
-): { steps: GoalStep[]; trace: PlanTrace } | null {
+ *  achieves and which predicate that one is a precondition of. `steps: null` on
+ *  exactly the same inputs `planSteps` returns null for.
+ *
+ *  ⚖️ D7 — `blockedAt` names the deepest predicate whose arm failed, and is
+ *  ABSENT in exactly one case: `goalTarget` answered null, i.e. this is not an
+ *  item errand (or its item does not resolve), so there is no predicate to
+ *  name and inventing one would be a lie. */
+export function planStepsTraced(goal: PursuitGoal, self: CreatureId, r: WorldResolver): TracedPlan {
   const target = goalTarget(goal, self, r);
-  if (!target) return null;
+  if (!target) return { steps: null };
   return achieveTraced(target, self, r);
 }
 
@@ -635,7 +835,7 @@ export function planStepsTraced(
  *  (`near(banana) → holding(banana) → consumed(banana)`); the goal's own target
  *  has no `parent`, so the walk terminates. */
 export function planTrace(goal: PursuitGoal, self: CreatureId, r: WorldResolver): PlanTrace | null {
-  return planStepsTraced(goal, self, r)?.trace ?? null;
+  return planStepsTraced(goal, self, r).trace ?? null;
 }
 
 /** Plan a goal into body steps by target-predicate regression, or null when it
@@ -685,8 +885,16 @@ export function pursue(goal: PursuitGoal, self: CreatureId, r: WorldResolver): P
 
 /** A `PursuitStep` carrying the CURRENT step's causal edge. `serves`/`parent`
  *  ride only the traced call — `pursue`'s own shape is untouched — and are
- *  absent on `done`/`blocked` (there is no step to explain). */
-export type TracedPursuitStep = PursuitStep & { serves?: Predicate; parent?: Predicate };
+ *  absent on `done`/`blocked` (there is no step to explain).
+ *
+ *  ⚖️ D7 — `blockedAt` rides `blocked` alone, and only when a predicate can
+ *  honestly be named (see `planStepsTraced`): the caller may speak the FAILED
+ *  PRECONDITION instead of a line per goal kind. */
+export type TracedPursuitStep = PursuitStep & {
+  serves?: Predicate;
+  parent?: Predicate;
+  blockedAt?: Predicate;
+};
 
 /**
  * `pursue` plus the WHY of the step it chose: which predicate this tick's move
@@ -698,7 +906,9 @@ export type TracedPursuitStep = PursuitStep & { serves?: Predicate; parent?: Pre
  */
 export function pursueTraced(goal: PursuitGoal, self: CreatureId, r: WorldResolver): TracedPursuitStep {
   const planned = planStepsTraced(goal, self, r);
-  if (!planned) return { kind: "blocked" };
+  if (planned.steps === null) {
+    return planned.blockedAt ? { kind: "blocked", blockedAt: planned.blockedAt } : { kind: "blocked" };
+  }
   const { steps, trace } = planned;
   if (steps.length === 0) return { kind: "done" };
   const first = steps[0]!;

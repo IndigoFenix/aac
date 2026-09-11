@@ -1,0 +1,30 @@
+# arc-run world=scripts/worlds/frontier.spec.json seed=11 dt=0.5 days=6 dayS=240
+# script=scripts/dev/arc-build-house.txt
+> wait 12
+  SAY {"tag":"SAY","who":"mara","text":"🥺","glyph":"shirt.color_red"}
+  SAY {"tag":"SAY","who":"orrin","text":"🥺","glyph":"shirt.color_red"}
+  NOTE {"tag":"NOTE","text":"1 choice(s), the whole list."}
+  SAY {"tag":"SAY","who":"orrin","text":"Are you okay?","glyph":"you + ok#question"}
+  SAY {"tag":"SAY","who":"mara","text":"I'm happy.","glyph":"i_me + happy"}
+> say build house
+  SAY {"tag":"SAY","who":"mara","text":"I will build the house.","glyph":"build.will + house"}
+  TOAST {"tag":"TOAST","text":"🪧 build + house — anyone nearby may take it","kind":"feedback"}
+  SAY {"tag":"SAY","who":"mara","text":"bye-bye","glyph":"goodbye"}
+  SAY {"tag":"SAY","who":"orrin","text":"I will carry the block to the house.","glyph":"carry.will + block + to + house"}
+day   1  rations=   0.00  takes=   0  parked=  0 resel=  0  sleeps=  0  hungry=0/0 mean=0.00
+day   2  rations=   4.00  takes=   4  parked=  0 resel=  0  sleeps= 11  hungry=0/0 mean=0.00
+day   3  rations=   1.00  takes=   1  parked=  0 resel=  0  sleeps= 12  hungry=0/0 mean=0.00
+day   4  rations=   0.00  takes=   0  parked=  0 resel=  0  sleeps= 17  hungry=0/0 mean=0.00
+day   5  rations=   7.00  takes=   7  parked=  0 resel=  0  sleeps= 25  hungry=0/0 mean=0.00
+day   6  rations=   3.00  takes=   3  parked=  0 resel=  0  sleeps= 36  hungry=0/0 mean=0.00
+
+# takes=15 (zero-yield=0)  ≥6u=0  sizes=1u×15
+# food units=15.00 over 6 days = 2.5/day
+# parked=0  re-selected=0  sleeps=36  reaped=0  haul ABANDONED=0 RE-ISSUED=0
+# starvation body-days ≥1.5=0  ≥3=0
+# frozen body-seconds=0  episodes>60s=0
+# construction beats: materialsStaged=734.5  houseFinished=930.5  anyFinished=930.5  familyMovesIn=960.0
+#   t=734.5 🧱 materials staged — builders raise the house
+#   t=930.5 🏛️ the house is finished
+#   t=960.0 🏠 a family moves into the new house
+# wall=60.1s  sim/wall=23.96×  bodies=0

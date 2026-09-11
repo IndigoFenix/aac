@@ -7,11 +7,24 @@
 //   4. Set opt-ins
 //   5. Submit (signs consent + flips contact.isLegalGuardian = true)
 //
-// Lives in the clinician client only. v1 uses authenticated_session as the
-// IDV method; stronger flows (clinic in-person, video, gov SSO, third-party
-// IDV) will be separate components.
+// Lives in the clinician client only. Three modes, ONE wizard:
 //
-// See planning-docs/student-consent-onboarding-plan.md.
+//   session  — the logged-in parent signs for their own child.
+//              IDV: authenticated_session.
+//   token    — a parent without an account arrives on a magic link.
+//              IDV: verified_phone_otp.
+//   attest   — `attestContactId` set: the guardian is physically in the room and
+//              the CLINICIAN records the consent from their own session.
+//              IDV: in_person_clinician_attested, forced SERVER-side.
+//
+// The three share this component rather than forking it because the parts that
+// must not drift are exactly the parts they share: the notice render, the
+// notice-hash round trip (the server refuses a `notice_hash_mismatch`, so a
+// second wizard that rendered the notice even slightly differently would be
+// refused), the three required disclosures, and the opt-in defaults. What
+// differs is who is in front of the screen, which is copy and one extra step.
+//
+// See planning-docs/student-access-permission/student-consent-onboarding-plan.md.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -20,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
 import { openUI } from "@/lib/uiEvents";
 import {
+  useAttestConsentInPerson,
   useConsentNotice,
   useConsentWizardContext,
   useSignConsent,
@@ -69,13 +83,29 @@ interface ConsentWizardProps {
    * /invitations/redeem and signs via /invitations/sign.
    */
   tokenCode?: string;
+  /**
+   * In-person attestation mode: the guardian contact the CLINICIAN is attesting
+   * for. Requires `studentId`. Switches the submit target to
+   * `/attest-in-person`, which forces `in_person_clinician_attested` server-side
+   * — the client never names an IDV method.
+   */
+  attestContactId?: string;
   /** Called when the wizard finishes successfully or the user closes it. */
   onClose: () => void;
   /** Called only after a successful sign — fires before onClose. */
   onSuccess?: () => void;
 }
 
-type Step = "identity" | "phoneOtp" | "idVerify" | "guardian" | "notice" | "optIns" | "signature" | "review";
+type Step =
+  | "identity"
+  | "phoneOtp"
+  | "idVerify"
+  | "guardian"
+  | "notice"
+  | "optIns"
+  | "signature"
+  | "attest"
+  | "review";
 
 /** What the parent signed with, captured as supplemental non-repudiation evidence. */
 export interface ConsentSignature {
@@ -86,17 +116,22 @@ export interface ConsentSignature {
   signedAt: string;
 }
 
-export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: ConsentWizardProps) {
+export function ConsentWizard({ studentId, tokenCode, attestContactId, onClose, onSuccess }: ConsentWizardProps) {
   const { t, language } = useLanguage();
   const { toast } = useToast();
   const { user } = useAuth();
   const { setActiveFeature } = useFeaturePanel();
 
-  // Mode resolution: token mode uses the public invitation hooks; session
-  // mode uses the authenticated wizard-context hook. Either path produces
-  // the same wizard-context shape via mergeContext below.
+  // Mode resolution: token mode uses the public invitation hooks; session and
+  // attest mode use the authenticated wizard-context hook (attest mode names
+  // the contact, since it is not the caller's own). Either path produces the
+  // same wizard-context shape via mergeContext below.
   const isTokenMode = !!tokenCode;
-  const sessionCtxQuery = useConsentWizardContext(isTokenMode ? undefined : studentId);
+  const isAttestMode = !isTokenMode && !!attestContactId;
+  const sessionCtxQuery = useConsentWizardContext(
+    isTokenMode ? undefined : studentId,
+    attestContactId,
+  );
   const tokenCtxQuery = useConsentInvitation(tokenCode);
 
   const ctx: WizardContextResponse | undefined = isTokenMode
@@ -138,6 +173,13 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
   const [drawnImage, setDrawnImage] = useState<string | null>(null);
   const signatureProvided = sigMode === "typed" ? typedName.trim().length >= 2 : !!drawnImage;
 
+  // Attest mode only — the clinician's own declaration. `guardianPresent` is
+  // the premise of the method, so the server types it as a literal `true` and
+  // refuses a payload that does not assert it; here it is simply required
+  // before the step will advance.
+  const [attestPresent, setAttestPresent] = useState(false);
+  const [attestNotes, setAttestNotes] = useState("");
+
   // Seed from existing contact data when ctx loads.
   useEffect(() => {
     const c = ctx?.guardianContact;
@@ -151,7 +193,12 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
 
   const sessionSign = useSignConsent(studentId ?? "");
   const tokenSign = useSignWithToken();
-  const signPending = isTokenMode ? tokenSign.isPending : sessionSign.isPending;
+  const attestSign = useAttestConsentInPerson(studentId ?? "");
+  const signPending = isTokenMode
+    ? tokenSign.isPending
+    : isAttestMode
+      ? attestSign.isPending
+      : sessionSign.isPending;
 
   // Secondary-factor steps, shown only in token mode and only for the channel
   // that needs them: SMS → phone OTP (non-repudiation leg); email → child-ID
@@ -176,14 +223,21 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
     if (requiresPhoneOtp) steps.push("phoneOtp");
     if (requiresIdVerification) steps.push("idVerify");
     if (!isSelf) steps.push("guardian");
-    steps.push("notice", "optIns", "signature", "review");
+    steps.push("notice", "optIns", "signature");
+    // The attestation comes AFTER the signature on purpose: the clinician hands
+    // the device over for the signature, takes it back, and only then declares
+    // what they saw. Declaring first would have them attesting to an act that
+    // has not happened yet.
+    if (isAttestMode) steps.push("attest");
+    steps.push("review");
     return steps;
-  }, [requiresPhoneOtp, requiresIdVerification, isSelf]);
+  }, [requiresPhoneOtp, requiresIdVerification, isSelf, isAttestMode]);
 
   const canProceedFromGuardian = isSelf || (govIdNumber.trim().length >= 4 && coGuardianAck);
   const canProceedFromNotice = purposeAck && voluntarinessAck && transfersAck;
   const canProceedFromPhoneOtp = !requiresPhoneOtp || phoneOtpVerified;
   const canProceedFromIdVerify = !requiresIdVerification || idVerified;
+  const canProceedFromAttest = !isAttestMode || attestPresent;
 
   const stepIndex = STEP_ORDER.indexOf(step);
   const progress = `${stepIndex + 1} / ${STEP_ORDER.length}`;
@@ -226,7 +280,37 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
       signedAt: new Date().toISOString(),
     };
     try {
-      if (isTokenMode && tokenCode) {
+      if (isAttestMode) {
+        // NOTE what is absent: no `identityVerificationMethod`, no
+        // `nonRepudiationMethod`, no `isSensitive`. The server owns all three
+        // on this endpoint — a client that could name its own IDV method could
+        // claim a legal regime it did not earn.
+        await attestSign.mutateAsync({
+          signedByContactId: ctx.guardianContact!.id,
+          locale: notice.locale,
+          consentTextVersion: notice.version,
+          consentTextHash: notice.hash,
+          signature,
+          attestation: {
+            guardianPresent: true,
+            identificationType: govIdType,
+            identificationCountry: govIdCountry.toUpperCase(),
+            notes: attestNotes.trim() || undefined,
+          },
+          guardianFields: {
+            coGuardianAcknowledged: coGuardianAck,
+            governmentIdNumber: govIdNumber.trim(),
+            governmentIdCountry: govIdCountry.toUpperCase(),
+          },
+          purposeAcknowledged: purposeAck,
+          voluntarinessAcknowledged: voluntarinessAck,
+          thirdPartyTransfersAcknowledged: transfersAck,
+          optInModelTraining: optTraining,
+          optInAdvertising: optAdvertising,
+          optInThirdPartyResearch: optResearch,
+          optInMarketingComms: optMarketing,
+        });
+      } else if (isTokenMode && tokenCode) {
         await tokenSign.mutateAsync({
           code: tokenCode,
           locale: notice.locale,
@@ -249,8 +333,12 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
         });
       }
       toast({
-        title: t("consent.wizard.toastSignedTitle"),
-        description: t("consent.wizard.toastSignedDescription"),
+        title: isAttestMode
+          ? t("consent.wizard.attest.toastTitle")
+          : t("consent.wizard.toastSignedTitle"),
+        description: isAttestMode
+          ? t("consent.wizard.attest.toastDescription")
+          : t("consent.wizard.toastSignedDescription"),
       });
       onSuccess?.();
       onClose();
@@ -349,7 +437,7 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
 
         <DialogBody>
           {step === "identity" && (
-            <IdentityStep ctx={ctx} />
+            <IdentityStep ctx={ctx} attestMode={isAttestMode} />
           )}
           {step === "phoneOtp" && tokenCode && (
             <PhoneOtpStep
@@ -376,6 +464,7 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
               setGovIdCountry={setGovIdCountry}
               coGuardianAck={coGuardianAck}
               setCoGuardianAck={setCoGuardianAck}
+              attestMode={isAttestMode}
             />
           )}
           {step === "notice" && (
@@ -410,12 +499,30 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
               setTypedName={setTypedName}
               drawnImage={drawnImage}
               setDrawnImage={setDrawnImage}
+              attestMode={isAttestMode}
+            />
+          )}
+          {step === "attest" && (
+            <AttestationStep
+              guardianName={ctx.guardianContact?.name ?? ""}
+              clinicianName={
+                ctx.user?.fullName ??
+                [ctx.user?.firstName, ctx.user?.lastName].filter(Boolean).join(" ")
+              }
+              govIdType={govIdType}
+              govIdCountry={govIdCountry}
+              present={attestPresent}
+              setPresent={setAttestPresent}
+              notes={attestNotes}
+              setNotes={setAttestNotes}
             />
           )}
           {step === "review" && (
             <ReviewStep
               ctx={ctx}
               notice={notice}
+              attestMode={isAttestMode}
+              attestNotes={attestNotes}
               coGuardianAck={coGuardianAck}
               govIdNumber={govIdNumber}
               govIdType={govIdType}
@@ -442,14 +549,19 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
                 (step === "idVerify" && !canProceedFromIdVerify) ||
                 (step === "guardian" && !canProceedFromGuardian) ||
                 (step === "notice" && !canProceedFromNotice) ||
-                (step === "signature" && !signatureProvided)
+                (step === "signature" && !signatureProvided) ||
+                (step === "attest" && !canProceedFromAttest)
               }
             >
               {t("common.next")}
             </Button>
           ) : (
             <Button onClick={handleSubmit} disabled={signPending}>
-              {signPending ? t("common.saving") : t("consent.wizard.signButton")}
+              {signPending
+                ? t("common.saving")
+                : isAttestMode
+                  ? t("consent.wizard.attest.submitButton")
+                  : t("consent.wizard.signButton")}
             </Button>
           )}
         </DialogFooter>
@@ -462,12 +574,14 @@ export function ConsentWizard({ studentId, tokenCode, onClose, onSuccess }: Cons
 // Steps
 // ============================================================================
 
-function IdentityStep({ ctx }: { ctx: WizardContextResponse }) {
+function IdentityStep({ ctx, attestMode }: { ctx: WizardContextResponse; attestMode?: boolean }) {
   const { t } = useLanguage();
   const userName = ctx.user?.fullName ?? [ctx.user?.firstName, ctx.user?.lastName].filter(Boolean).join(" ");
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground">{t("consent.wizard.identityIntro")}</p>
+      <p className="text-muted-foreground">
+        {attestMode ? t("consent.wizard.attest.identityIntro") : t("consent.wizard.identityIntro")}
+      </p>
       <div className="rounded-md border p-3 space-y-2">
         <div className="flex justify-between">
           <span className="text-sm text-muted-foreground">{t("consent.wizard.studentLabel")}</span>
@@ -485,8 +599,19 @@ function IdentityStep({ ctx }: { ctx: WizardContextResponse }) {
         </div>
       </div>
       <div className="rounded-md border p-3 space-y-2">
+        {/* In attest mode the signer is the GUARDIAN in the room; the logged-in
+            user is the clinician who witnesses it. Showing only "signing as
+            {clinician}" here would misdescribe who the record belongs to. */}
+        {attestMode && ctx.guardianContact && (
+          <div className="flex justify-between">
+            <span className="text-sm text-muted-foreground">{t("consent.wizard.attest.guardianLabel")}</span>
+            <span className="text-sm font-medium">{ctx.guardianContact.name}</span>
+          </div>
+        )}
         <div className="flex justify-between">
-          <span className="text-sm text-muted-foreground">{t("consent.wizard.signingAsLabel")}</span>
+          <span className="text-sm text-muted-foreground">
+            {attestMode ? t("consent.wizard.attest.attestedByLabel") : t("consent.wizard.signingAsLabel")}
+          </span>
           <span className="text-sm font-medium">{userName}</span>
         </div>
         {ctx.user?.email && (
@@ -724,13 +849,16 @@ interface GuardianStepProps {
   setGovIdCountry: (v: string) => void;
   coGuardianAck: boolean;
   setCoGuardianAck: (v: boolean) => void;
+  attestMode?: boolean;
 }
 
 function GuardianStep(p: GuardianStepProps) {
   const { t } = useLanguage();
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground">{t("consent.wizard.guardianIntro")}</p>
+      <p className="text-muted-foreground">
+        {p.attestMode ? t("consent.wizard.attest.guardianIntro") : t("consent.wizard.guardianIntro")}
+      </p>
       <div className="space-y-3">
         <div>
           <Label htmlFor="gov-id-type">{t("consent.wizard.govIdTypeLabel")}</Label>
@@ -774,7 +902,9 @@ function GuardianStep(p: GuardianStepProps) {
           className="mt-1"
         />
         <Label htmlFor="co-guardian-ack" className="cursor-pointer text-sm leading-relaxed">
-          {t("consent.wizard.coGuardianDeclaration")}
+          {p.attestMode
+            ? t("consent.wizard.attest.coGuardianDeclaration")
+            : t("consent.wizard.coGuardianDeclaration")}
         </Label>
       </div>
     </div>
@@ -934,6 +1064,7 @@ interface SignatureStepProps {
   setTypedName: (v: string) => void;
   drawnImage: string | null;
   setDrawnImage: (v: string | null) => void;
+  attestMode?: boolean;
 }
 
 // Type-to-sign or draw-to-sign. The ticket asks for a signature component
@@ -945,7 +1076,11 @@ function SignatureStep(p: SignatureStepProps) {
   const { t } = useLanguage();
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground">{t("consent.wizard.signature.intro")}</p>
+      <p className="text-muted-foreground">
+        {p.attestMode
+          ? t("consent.wizard.attest.signatureIntro")
+          : t("consent.wizard.signature.intro")}
+      </p>
       <div className="inline-flex rounded-md border p-0.5">
         <button
           type="button"
@@ -988,7 +1123,81 @@ function SignatureStep(p: SignatureStepProps) {
         <SignaturePad value={p.drawnImage} onChange={p.setDrawnImage} />
       )}
 
-      <p className="text-xs text-muted-foreground">{t("consent.wizard.signature.legal")}</p>
+      <p className="text-xs text-muted-foreground">
+        {p.attestMode
+          ? t("consent.wizard.attest.signatureLegal")
+          : t("consent.wizard.signature.legal")}
+      </p>
+    </div>
+  );
+}
+
+interface AttestationStepProps {
+  guardianName: string;
+  clinicianName: string;
+  govIdType: string;
+  govIdCountry: string;
+  present: boolean;
+  setPresent: (v: boolean) => void;
+  notes: string;
+  setNotes: (v: string) => void;
+}
+
+/**
+ * The clinician's own declaration — the last step before review, so it is made
+ * about a signature that has already happened rather than one that is promised.
+ *
+ * The ID NUMBER is not repeated here: it was entered on the guardian step and
+ * lives on the contact row. What this step records is the human act — the
+ * guardian was in front of me, and this is the document I looked at.
+ */
+function AttestationStep(p: AttestationStepProps) {
+  const { t } = useLanguage();
+  return (
+    <div className="space-y-4">
+      <p className="text-muted-foreground">{t("consent.wizard.attest.stepIntro")}</p>
+
+      <div className="rounded-md border p-3 space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">{t("consent.wizard.attest.guardianLabel")}</span>
+          <span className="font-medium">{p.guardianName}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">{t("consent.wizard.attest.documentLabel")}</span>
+          <span>
+            {t(`consent.wizard.govIdType.${p.govIdType}`)} ({p.govIdCountry})
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">{t("consent.wizard.attest.attestedByLabel")}</span>
+          <span className="font-medium">{p.clinicianName}</span>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 rounded-md border p-3">
+        <Checkbox
+          id="attest-present"
+          checked={p.present}
+          onCheckedChange={(v) => p.setPresent(v === true)}
+          className="mt-1"
+        />
+        <Label htmlFor="attest-present" className="cursor-pointer text-sm leading-relaxed">
+          {t("consent.wizard.attest.presenceDeclaration")}
+        </Label>
+      </div>
+
+      <div>
+        <Label htmlFor="attest-notes">{t("consent.wizard.attest.notesLabel")}</Label>
+        <Input
+          id="attest-notes"
+          value={p.notes}
+          onChange={(e) => p.setNotes(e.target.value)}
+          placeholder={t("consent.wizard.attest.notesPlaceholder")}
+          maxLength={2000}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">{t("consent.wizard.attest.legal")}</p>
     </div>
   );
 }
@@ -1091,6 +1300,8 @@ interface ReviewStepProps {
   optMarketing: boolean;
   signatureMode: "typed" | "drawn";
   typedName: string;
+  attestMode?: boolean;
+  attestNotes?: string;
 }
 
 function ReviewStep(p: ReviewStepProps) {
@@ -1109,7 +1320,7 @@ function ReviewStep(p: ReviewStepProps) {
       <div className="rounded-md border p-3 flex items-start gap-2">
         <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-600" />
         <div className="text-sm">
-          {t("consent.wizard.reviewIntro")}
+          {p.attestMode ? t("consent.wizard.attest.reviewIntro") : t("consent.wizard.reviewIntro")}
         </div>
       </div>
       <div className="rounded-md border p-3 space-y-2 text-sm">
@@ -1117,6 +1328,20 @@ function ReviewStep(p: ReviewStepProps) {
           <span className="text-muted-foreground">{t("consent.wizard.studentLabel")}</span>
           <span>{p.ctx.student.name}</span>
         </div>
+        {p.attestMode && (
+          <>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">{t("consent.wizard.attest.methodLabel")}</span>
+              <span>{t("consent.wizard.attest.methodValue")}</span>
+            </div>
+            {!!p.attestNotes?.trim() && (
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">{t("consent.wizard.attest.notesLabel")}</span>
+                <span className="text-end">{p.attestNotes.trim()}</span>
+              </div>
+            )}
+          </>
+        )}
         <div className="flex justify-between">
           <span className="text-muted-foreground">{t("consent.wizard.govIdLabel")}</span>
           <span>{p.govIdType} ({p.govIdCountry}) ···{p.govIdNumber.slice(-4)}</span>

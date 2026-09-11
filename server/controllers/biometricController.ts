@@ -16,8 +16,6 @@ import {
   getVoiceEmbeddingForStudent,
   removeVoiceEmbeddingForUser,
   removeVoiceEmbeddingForStudent,
-  findMatchingFace,
-  findMatchingVoice,
   getKnownPeopleForStudent,
   getPeopleDirectoryForStudent,
   getPersonFaceImageUrlForStudent,
@@ -36,7 +34,6 @@ import {
   updateBiometricData,
   getEntitiesForBiometricData,
   type FaceEmbedding,
-  type VoiceEmbedding,
   type EntityType,
 } from "../services/biometric";
 import { s3Service } from "../services/storage/s3-service";
@@ -377,100 +374,6 @@ export class BiometricController {
   // ============================================================================
   // MATCHING / IDENTIFICATION
   // ============================================================================
-
-  /**
-   * POST /api/biometric/match/face
-   * Find a matching face from the database
-   */
-  async matchFace(req: Request, res: Response): Promise<void> {
-    try {
-      const { embedding, studentId } = req.body;
-
-      if (!embedding || !Array.isArray(embedding)) {
-        res.status(400).json({ success: false, message: "Embedding array is required" });
-        return;
-      }
-      if (!studentId || typeof studentId !== "string") {
-        res.status(400).json({ success: false, message: "studentId is required" });
-        return;
-      }
-
-      // Matching is scoped to this student's known people; the caller must be
-      // authorized for the student (prevents a cross-tenant identification oracle).
-      const currentUser = req.user as any;
-      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isSystemAdmin) {
-        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
-        return;
-      }
-
-      const match = await findMatchingFace(embedding as FaceEmbedding, studentId);
-
-      if (match) {
-        res.json({
-          success: true,
-          matched: true,
-          result: {
-            entityType: match.entityType,
-            entityId: match.entityId,
-            name: match.name,
-            confidence: match.confidence,
-          },
-        });
-      } else {
-        res.json({ success: true, matched: false });
-      }
-    } catch (error: any) {
-      console.error("[BiometricController] matchFace error:", error);
-      res.status(500).json({ success: false, message: "Failed to match face" });
-    }
-  }
-
-  /**
-   * POST /api/biometric/match/voice
-   * Find a matching voice from the database
-   */
-  async matchVoice(req: Request, res: Response): Promise<void> {
-    try {
-      const { embedding, studentId } = req.body;
-
-      if (!embedding || !Array.isArray(embedding)) {
-        res.status(400).json({ success: false, message: "Embedding array is required" });
-        return;
-      }
-      if (!studentId || typeof studentId !== "string") {
-        res.status(400).json({ success: false, message: "studentId is required" });
-        return;
-      }
-
-      const currentUser = req.user as any;
-      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess && !currentUser.isSystemAdmin) {
-        res.status(403).json({ success: false, message: "Not authorized to access this student's data" });
-        return;
-      }
-
-      const match = await findMatchingVoice(embedding as VoiceEmbedding, studentId);
-
-      if (match) {
-        res.json({
-          success: true,
-          matched: true,
-          result: {
-            entityType: match.entityType,
-            entityId: match.entityId,
-            name: match.name,
-            confidence: match.confidence,
-          },
-        });
-      } else {
-        res.json({ success: true, matched: false });
-      }
-    } catch (error: any) {
-      console.error("[BiometricController] matchVoice error:", error);
-      res.status(500).json({ success: false, message: "Failed to match voice" });
-    }
-  }
 
   // ============================================================================
   // KNOWN PEOPLE (for frontend identification)

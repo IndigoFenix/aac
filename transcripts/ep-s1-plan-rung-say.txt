@@ -1,0 +1,165 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=6d3659f0+dirty
+# started=2026-09-08T20:42:06.288Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> scene
+SCENE  house-1 — nothing in view, 86 place(s) around you.
+  house-1 (house), here north, blue, you can see inside.
+  house-2 (house), here south, blue, shut to you.
+  house-3 (house), here north, blue, shut to you.
+  house-4 (house), here north, blue, shut to you.
+  44 houses, there east, all shut.
+  38 houses, close east, all shut.
+NOTE   about 1023 more people live in this city (1 district).
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   quiet after 1.4s.
+> say orrin + give + basket + to + mara
+OK     said: orrin + give + basket + to + mara
+SAY    orrin: "Give the basket to Mara."  [give.will + basket + to + mara]
+TOAST  ▶ party (1): orrin + give + basket + to + mara (feedback)
+ENTER  biscuit came into view here south.
+TICK   quiet after 0.9s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+TICK   quiet after 1.5s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+SAY    orrin: "I'm happy."  [i_me + happy]
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+EXIT   pip left view here west.
+EXIT   orrin left view here south.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say orrin + do
+OK     said: orrin + do
+TOAST  💬 "orrin + do" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+> say why
+OK     said: why
+TOAST  💬 "why" — The person is not here. (feedback)
+TICK   quiet after 0.8s.
+# ─────────────────────────────────────────
+# commands=35  presses=0  screens=1  sim=38.7s
+# events: TICK 35  OK 33  TOAST 33  SAY 4  EXIT 4  NOTE 2  ENTER 2  BOARD 1  SCENE 1

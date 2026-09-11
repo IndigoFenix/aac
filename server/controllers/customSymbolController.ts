@@ -178,21 +178,6 @@ class CustomSymbolController {
     }
   }
 
-  /** GET /api/custom-symbols/search?q=... */
-  async searchSymbols(req: Request, res: Response) {
-    try {
-      const query = req.query.q as string;
-      if (!query) return res.status(400).json({ message: "Query parameter 'q' required" });
-
-      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-      const symbols = await customSymbolRepository.searchSymbols(query, limit);
-      res.json(symbols);
-    } catch (error: any) {
-      console.error("[CustomSymbolController] searchSymbols error:", error);
-      res.status(500).json({ message: "Failed to search symbols" });
-    }
-  }
-
   /** GET /api/custom-symbols/my — user's symbols */
   async getMySymbols(req: Request, res: Response) {
     try {
@@ -241,44 +226,6 @@ class CustomSymbolController {
     } catch (error: any) {
       console.error("[CustomSymbolController] getPublicSymbols error:", error);
       res.status(500).json({ message: "Failed to get public symbols" });
-    }
-  }
-
-  /** GET /api/custom-symbols/by-key/:key — look up a symbol by its imageKey */
-  async getSymbolByKey(req: Request, res: Response) {
-    try {
-      const { key } = req.params;
-      const symbol = await customSymbolRepository.getSymbolByKey(key);
-      if (!symbol) return res.status(404).json({ message: "Symbol not found" });
-      res.json(symbol);
-    } catch (error: any) {
-      console.error("[CustomSymbolController] getSymbolByKey error:", error);
-      res.status(500).json({ message: "Failed to get symbol by key" });
-    }
-  }
-
-  /** POST /api/custom-symbols/resolve-keys — batch resolve multiple imageKeys at once */
-  async resolveKeys(req: Request, res: Response) {
-    try {
-      const { keys } = req.body;
-      if (!Array.isArray(keys) || keys.length === 0) {
-        return res.status(400).json({ message: "keys array required" });
-      }
-      // Cap at 100 keys per request
-      const lookupKeys = keys.slice(0, 100) as string[];
-      const resolved: Record<string, { id: string; symbolPath: string }> = {};
-      for (const key of lookupKeys) {
-        try {
-          const symbol = await customSymbolRepository.getSymbolByKey(key);
-          if (symbol) {
-            resolved[key] = { id: symbol.id, symbolPath: `/api/custom-symbols/${symbol.id}/image` };
-          }
-        } catch { /* skip individual failures */ }
-      }
-      res.json(resolved);
-    } catch (error: any) {
-      console.error("[CustomSymbolController] resolveKeys error:", error);
-      res.status(500).json({ message: "Failed to resolve keys" });
     }
   }
 

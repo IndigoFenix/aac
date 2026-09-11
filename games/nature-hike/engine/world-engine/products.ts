@@ -88,7 +88,27 @@ export interface NaturalProduct {
   method: AcquisitionMethod;
   /** Units one acquisition act releases, rolled uniformly min..max. */
   yield: { min: number; max: number };
-  /** `harvest` only: days until the source bears it again. */
+  /**
+   * `harvest` only: days until ONE source bears ONE more unit of this glyph.
+   *
+   * ⚖️ REAL DAYS, NEVER GAME DAYS (plant-growth-render-round.md PART 6,
+   * 2026-09-08). These were playable numbers — a berry bush replacing a berry
+   * every 2 days, an apple tree every 1 — and a playable number is a
+   * COMPRESSION that has been folded into the data, where no dial can find it
+   * again. The catalogue now says what a plant actually does (a bush replaces
+   * a berry unit in about a third of a growing season; a nut tree carries one
+   * mast a year), and the WORLD's `resource_compression` divides it at the
+   * point of use (`wildRegrowPeriodS`) — natural → usable, the block
+   * paradigm's own meaning of the dial. At the shipped GL preset's 7.5 a bush
+   * bears every 16 game-days and the countryside's per-hectare FLOW lands on
+   * `scale.ts REAL_FORAGE_HA_PER_PERSON`; at dial 1 it is the real plant.
+   *
+   * 🚨 THE FLOW IS THE ANCHORED QUANTITY, NOT THIS FIELD. A cadence here is
+   * only half of "what this ground feeds you"; the other half is how thickly
+   * the species stands (`planet/ecology.ts FORAGE_UNDERSTORY`). Change one and
+   * the other has to move back, or the countryside quietly stops matching the
+   * forage anchor.
+   */
   regrowDays?: number;
   /** The TOOL that speeds this take (city-founding: "more effective with an
    *  axe or pick, but can be done by hand"): holding the named glyph moves
@@ -355,7 +375,9 @@ const CATALOGUE: NaturalSource[] = [
     // noticing when you find one.
     rarity: 0.2,
     products: [
-      { glyph: "apple", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // ONE CROP A YEAR, replaced unit by unit over half of it (PART 6: real
+      // days, the dial compresses). At the GL dial 7.5 that is 24 game-days.
+      { glyph: "apple", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 180 },
       {
         glyph: "wood",
         use: "building",
@@ -398,7 +420,8 @@ const CATALOGUE: NaturalSource[] = [
     // plant and an occasional one.
     rarity: 0.2,
     products: [
-      { glyph: "banana", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // A bunch a year off one pseudostem — the apple's cadence (PART 6).
+      { glyph: "banana", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 180 },
     ],
   },
   {
@@ -419,7 +442,8 @@ const CATALOGUE: NaturalSource[] = [
     // 🍇 …and the wild vine, likewise.
     rarity: 0.2,
     products: [
-      { glyph: "grape", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // One vintage a year — the apple's cadence (PART 6).
+      { glyph: "grape", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 180 },
     ],
   },
   {
@@ -580,7 +604,12 @@ const CATALOGUE: NaturalSource[] = [
     // countryside's commonest food on every continent at once.
     rarity: 0.1,
     products: [
-      { glyph: "carrot", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // A root crop is SOWN, grown and lifted once a season — as a WILD plant
+      // (the hedgerow carrot the forager finds) that is one unit per third of
+      // a year. 🚨 The town FARM does NOT read this: `stepFarmSource` and
+      // `sowStarterStand` both hand `ripenWildArea` a flat FOOD_DAY_SEC, so a
+      // ploughed field still ripens on its own daily pulse (PART 6).
+      { glyph: "carrot", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 120 },
     ],
   },
 
@@ -640,7 +669,13 @@ const CATALOGUE: NaturalSource[] = [
     products: [
       // Berries come in FLUSHES, so the bearing is generous and the wait is two
       // days rather than the orchard's one.
-      { glyph: "berry", use: "food", method: "harvest", yield: { min: 2, max: 4 }, regrowDays: 2 },
+      // Berries come in FLUSHES, so the bearing is generous — but a bush
+      // replaces a picked unit over about a third of a growing season, not in
+      // two days (PART 6). At the GL dial 7.5: 16 game-days.
+      // ⚖️ PAIRED WITH THE SHRUB DENSITY (PART 6b): this doubled when
+      // `FORAGE_UNDERSTORY`'s bush row doubled, so the per-hectare flow the
+      // forage anchor pins did not move. Neither number is free on its own.
+      { glyph: "berry", use: "food", method: "harvest", yield: { min: 2, max: 4 }, regrowDays: 120 },
     ],
   },
   {
@@ -668,7 +703,11 @@ const CATALOGUE: NaturalSource[] = [
     products: [
       // A heavy take on a slow clock — one good autumn, carried through a
       // winter, which is what a nut is FOR.
-      { glyph: "nut", use: "food", method: "harvest", yield: { min: 2, max: 5 }, regrowDays: 4 },
+      // ONE MAST A YEAR, carried through a winter — which is what a nut is FOR,
+      // and now what the number says (PART 6). At the GL dial 7.5: 32
+      // game-days. Paired with the hazel density, exactly as berry is with
+      // bush (PART 6b).
+      { glyph: "nut", use: "food", method: "harvest", yield: { min: 2, max: 5 }, regrowDays: 240 },
     ],
   },
   // 🍄 THE MUSHROOM IS DESIGNED AND NOT SHIPPED — and the reason is a LAW, not
@@ -718,7 +757,8 @@ const CATALOGUE: NaturalSource[] = [
     },
     rarity: 0.75,
     products: [
-      { glyph: "onion", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 3 },
+      // A bulb splits and re-bulks over a season (PART 6). Dial 7.5: 20 days.
+      { glyph: "onion", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 150 },
     ],
   },
 ];

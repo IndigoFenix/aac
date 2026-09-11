@@ -1,0 +1,175 @@
+{
+  "world": "scripts/worlds/frontier-planet.spec.json",
+  "seed": 11,
+  "dt": 0.5,
+  "days": 10,
+  "dayLengthS": 240,
+  "script": null,
+  "frames": 4800,
+  "simSeconds": 2400,
+  "wallMs": 13516,
+  "simSecondsPerWallSecond": 177.57,
+  "bodies": 5,
+  "takes": 61,
+  "zeroYieldTakes": 3,
+  "takeSizeHistogram": {
+    "1": 1,
+    "0.2": 27,
+    "0.4": 1,
+    "0.6": 3,
+    "0.8": 1,
+    "1.2": 13,
+    "1.4": 3,
+    "1.6": 12
+  },
+  "takesOfSixOrMore": 0,
+  "takesBySource": {
+    "wild:tile-0--1": 18,
+    "wild:tile--1-0": 11,
+    "flora:hazel": 9,
+    "wild:tile-1-0": 9,
+    "wild:tile-0-1": 8,
+    "flora:bush": 6
+  },
+  "unitsByGoodKey": {
+    "food": 48.40000000000003
+  },
+  "foodUnits": 48.4,
+  "rationsPerDay": 4.84,
+  "parked": 0,
+  "reselected": 25,
+  "sleeps": 58,
+  "reaped": 0,
+  "haulAbandoned": 2,
+  "haulReissued": 0,
+  "starvationBodyDays": {
+    "3": 6.82,
+    "1.5": 17.98
+  },
+  "frozenBodySeconds": 20,
+  "frozenEpisodes": [],
+  "constructionBeatsS": {
+    "materialsStaged": null,
+    "houseFinished": null,
+    "anyFinished": null,
+    "familyMovesIn": null
+  },
+  "hungerAtEnd": {
+    "mean": 1.36,
+    "hungry": 4,
+    "deep": 0
+  },
+  "perDay": [
+    {
+      "day": 1,
+      "rations": 2.8,
+      "takes": 7,
+      "parked": 0,
+      "reselected": 1,
+      "sleeps": 2,
+      "hungryMean": 1.12,
+      "hungry": 4,
+      "bodies": 5
+    },
+    {
+      "day": 2,
+      "rations": 6,
+      "takes": 18,
+      "parked": 0,
+      "reselected": 5,
+      "sleeps": 8,
+      "hungryMean": 1.12,
+      "hungry": 2,
+      "bodies": 5
+    },
+    {
+      "day": 3,
+      "rations": 0,
+      "takes": 0,
+      "parked": 0,
+      "reselected": 10,
+      "sleeps": 15,
+      "hungryMean": 1.76,
+      "hungry": 4,
+      "bodies": 5
+    },
+    {
+      "day": 4,
+      "rations": 5.2,
+      "takes": 7,
+      "parked": 0,
+      "reselected": 11,
+      "sleeps": 21,
+      "hungryMean": 1.84,
+      "hungry": 3,
+      "bodies": 5
+    },
+    {
+      "day": 5,
+      "rations": 6,
+      "takes": 6,
+      "parked": 0,
+      "reselected": 14,
+      "sleeps": 25,
+      "hungryMean": 1.8,
+      "hungry": 2,
+      "bodies": 5
+    },
+    {
+      "day": 6,
+      "rations": 6,
+      "takes": 5,
+      "parked": 0,
+      "reselected": 16,
+      "sleeps": 33,
+      "hungryMean": 1.92,
+      "hungry": 3,
+      "bodies": 5
+    },
+    {
+      "day": 7,
+      "rations": 1.6,
+      "takes": 1,
+      "parked": 0,
+      "reselected": 16,
+      "sleeps": 41,
+      "hungryMean": 2.04,
+      "hungry": 4,
+      "bodies": 5
+    },
+    {
+      "day": 8,
+      "rations": 7.6,
+      "takes": 6,
+      "parked": 0,
+      "reselected": 20,
+      "sleeps": 47,
+      "hungryMean": 1.68,
+      "hungry": 2,
+      "bodies": 5
+    },
+    {
+      "day": 9,
+      "rations": 7,
+      "takes": 6,
+      "parked": 0,
+      "reselected": 22,
+      "sleeps": 51,
+      "hungryMean": 1.44,
+      "hungry": 3,
+      "bodies": 5
+    },
+    {
+      "day": 10,
+      "rations": 6.2,
+      "takes": 5,
+      "parked": 0,
+      "reselected": 25,
+      "sleeps": 58,
+      "hungryMean": 1.36,
+      "hungry": 4,
+      "bodies": 5
+    }
+  ],
+  "samples": 2400
+}

@@ -32,6 +32,21 @@ export interface SessionCtxInput {
  * Returns `undefined` when there's nothing usable (no userId AND not AAC).
  * Callers should treat that the same way the controllers do — preserve legacy
  * behavior by skipping the visibility filter.
+ *
+ * ⚠️ **Open, reported 2026-09-10 (authorization structural pass, phase 1).**
+ * Unlike `buildClinicianCtx`, the institute principal returned at the bottom of
+ * this function is built from the caller-supplied `instituteId` WITHOUT
+ * verifying membership — the exact shape that was closed on the HTTP path on
+ * 2026-08-26. It is not currently reachable: both entry points
+ * (`chatController` and `chatStreamController`) run
+ * `instituteService.verifyMembership` on the body's `instituteId` before the
+ * session is initialised, and the AAC/system-admin branches short-circuit
+ * above. It was left alone deliberately rather than fixed blind, because the
+ * obvious fix — returning `undefined` on a failed check — lands on a caller
+ * whose documented contract for `undefined` is "skip the visibility filter",
+ * i.e. it would trade a hypothetical forgery for a real fail-open. The right
+ * shape is the discriminated result `clinicianCtx.ts` now uses; doing it needs
+ * `sessionService`'s consumer changed in the same commit.
  */
 export async function buildSessionAccessCtx(
   input: SessionCtxInput,

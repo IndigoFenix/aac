@@ -12,7 +12,12 @@ import { generateImage } from "./tools/image-generator";
 import { extractFrame } from "./tools/video-frame-extractor";
 import { getFile, refreshFile, storeFile } from "./tools/media-file-cache";
 import { AgentAPIEndpoint } from "@shared/schema";
-import { GUIDED_SETUP_CONTEXT_KEY, type GuidedSetupToolArgs } from "@shared/guided-setup";
+import {
+  GUIDED_SETUP_CONTEXT_KEY,
+  type GuidedSetupSignal,
+  type GuidedSetupToolArgs,
+  type GuidedSetupView,
+} from "@shared/guided-setup";
 import { lookupOrangeBook, OrangeBookQuery } from "../fda/orange-book-service";
 import { findOutOfBoundsButtons, outOfBoundsKey } from "@shared/board-grid";
 import { describeOutOfBoundsButtons } from "../board-utils";
@@ -344,19 +349,34 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         return { success: false, reason: 'Guided setup is not active' };
       }
       const view = await deps.onGuidedSetup(args);
-      // The post-action view has to reach the CLIENT, not only the model: the
-      // rail renders the current step and any refusal off
-      // `contextData.guidedsetup`. Publishing it the way every memory tool
-      // does is the only route that survives the turn — ChatMessageManager
-      // deep-clones memoryValues at construction and merges ITS copy over the
-      // caller's at the end of the turn, so the write sessionService's own
-      // closure makes to the outer object is discarded. Without this the rail
-      // sits one turn behind the step the AI just advanced, and a refusal is
-      // never shown at all.
+      // The client refetches the VIEW when the turn ends. What it cannot
+      // refetch is what this action just decided: the `refused` reason (which
+      // is persisted nowhere at all — it is the rail's only way to say why a
+      // step would not move) and a roster proposal that lives on the chat
+      // session. Those ride the turn as the guided-setup SIGNAL.
+      //
+      // Publishing it the way every memory tool does is the only route that
+      // survives the turn — ChatMessageManager deep-clones memoryValues at
+      // construction and merges ITS copy over the caller's at the end of the
+      // turn, so the write sessionService's own closure makes to the outer
+      // object is discarded.
       if (view && typeof view === 'object') {
+        const v = view as GuidedSetupView;
         deps.memoryValuesRef.current = {
           ...deps.memoryValuesRef.current,
-          [GUIDED_SETUP_CONTEXT_KEY]: view,
+          [GUIDED_SETUP_CONTEXT_KEY]: {
+            ...(deps.memoryValuesRef.current?.[GUIDED_SETUP_CONTEXT_KEY] as
+              | GuidedSetupSignal
+              | undefined),
+            active: v.active !== false,
+            instituteId: v.instituteId,
+            studentId: v.studentId ?? null,
+            panel: v.panel,
+            refused: v.refused ?? null,
+            // Absent means "this action had nothing to say about the roster",
+            // which is not the same as "there is no proposal".
+            ...(v.roster !== undefined ? { roster: v.roster ?? null } : {}),
+          } satisfies GuidedSetupSignal,
         };
         // A roster PROPOSAL must outlive the turn: the user reviews the table
         // in the panel over several messages, and the REST confirm endpoint —

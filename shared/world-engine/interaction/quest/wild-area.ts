@@ -50,6 +50,9 @@ import {
   foodPlants, growthClassYield, isBodyProduct, naturalSourceOf, standYieldFraction,
   type NaturalProduct, type NaturalSource,
 } from "../../products.js";
+// 🌿 A BEARING SCALES WITH THE PLANT (the resource-packing round). `packing.ts`
+// is pure and imports nothing from this layer — the edge is one-way.
+import { itemsPerBearing } from "../../planet/packing.js";
 import {
   wildFeatureContainerId, type WildernessFeature,
 } from "./wilderness.js";
@@ -98,6 +101,17 @@ export interface WildStand {
   /** REGROW CLOCKS — glyph → absolute deadlines, one per source below its own
    *  bearing capacity. Sorted ascending. */
   regrowAt: Record<string, number[]>;
+  /**
+   * ⚖️ THE FRACTIONAL BEARING CARRY (glyph → 0..1, the resource-packing
+   * round). A bearing SCALES WITH THE PLANT (`planet/packing.ts
+   * itemsPerBearing`), so a cadence over this stand's whole population puts
+   * out a FRACTIONAL number of items. The whole part goes into stock; the
+   * remainder waits here for the next cadence, which is what lets a stand of
+   * tiny plants bear one item every N cadences — never a phantom unit, never
+   * a lost one (item conservation). Absent = 0, so every record ever folded
+   * reads as it always did.
+   */
+  bearCarry?: Record<string, number>;
 }
 
 /**
@@ -1114,6 +1128,7 @@ function cloneStand(st: WildStand): WildStand {
     cap: { ...st.cap },
     climbAt: st.climbAt.map((c) => ({ ...c })),
     regrowAt,
+    ...(st.bearCarry ? { bearCarry: { ...st.bearCarry } } : {}),
   };
 }
 
@@ -1643,11 +1658,14 @@ export function ripenWildArea(
   rec: WildAreaRecord,
   now: number,
   regrowPeriodS: (species: string, glyph: string) => number,
+  opts?: RipenOpts,
 ): WildAreaRecord {
+  const perPlant = opts?.perPlant === true;
   let moved = false;
   const stands = rec.stands.map((st) => {
     const src = naturalSourceOf(st.species);
-    if (!src || standPopulation(st) <= 0) return st;
+    const pop = standPopulation(st);
+    if (!src || pop <= 0) return st;
     let touched = false;
     const next = cloneStand(st);
     for (const p of src.products) {
@@ -1656,12 +1674,40 @@ export function ripenWildArea(
       const cap = next.cap[g] ?? 0;
       if (cap <= 0) continue;
       const per = Math.max(1e-3, regrowPeriodS(st.species, g));
+      // ⚖️ A BEARING SCALES WITH THE PLANT (the resource-packing round): one
+      // cadence over this stand puts out `pop × itemsPerBearing` items, which
+      // is FRACTIONAL — a stand of 30 bushes bears 15.97 berries a cadence, a
+      // stand of one bears 0.53. A source with no packing geometry answers 0,
+      // and 0 keeps the ORIGINAL law (one unit per plant), byte-identical.
+      const rate = itemsPerBearing(src, p);
+      const exact = pop * (rate > 0 ? rate : 1);
       const list = next.regrowAt[g] ?? [];
       const kept: number[] = [];
       for (const at of list) {
         if (at <= now && (next.stock[g] ?? 0) < cap) {
-          next.stock[g] = cap; // the pulse: the whole field bears again
+          // ⚖️ THE TWO LAWS, ONE WALK (PART 6). FIELD PULSE (default): one due
+          // deadline refills the stand to cap — a ploughed field IS harvested
+          // whole, and the books assert it that way. PER-PLANT (a WILD stand):
+          // the deadline matures ONE BEARING PER PLANT and re-arms, so a folded
+          // stand and a loaded feature bear at exactly the same rate.
+          //
+          // 🚨 THE CARRY IS ITEM CONSERVATION, not a rounding convenience: the
+          // whole part lands in stock and the remainder waits on the stand, so
+          // a tiny plant bears one item every N cadences and neither a phantom
+          // unit nor a real one is ever created here.
+          if (perPlant) {
+            const total = (next.bearCarry?.[g] ?? 0) + exact;
+            const whole = Math.floor(total);
+            (next.bearCarry ??= {})[g] = total - whole;
+            next.stock[g] = Math.min(cap, (next.stock[g] ?? 0) + whole);
+          } else {
+            next.stock[g] = cap;
+          }
           touched = true;
+          // A per-plant stand still below cap keeps ripening: roll the clock
+          // forward from the deadline (never from `now` — the pulse must not
+          // lose the remainder of a long absence).
+          if (perPlant && (next.stock[g] ?? 0) < cap && kept.length === 0) kept.push(at + per);
         } else if ((next.stock[g] ?? 0) < cap && kept.length === 0) {
           kept.push(at); // one live clock is all the pulse needs
         } else if (at > now && (next.stock[g] ?? 0) < cap) {
@@ -1688,6 +1734,30 @@ export function ripenWildArea(
   });
   if (!moved) return rec;
   return { ...rec, at: now, stands };
+}
+
+/**
+ * ⚖️ WHICH RIPENING LAW A RECORD RUNS (PART 6, 2026-09-08).
+ *
+ * 🚨 THE DEFECT THIS CLOSES. A loaded wilderness FEATURE matures one unit per
+ * `regrowDays` (`dueHarvestRegrowth`); a FOLDED tile record refilled every
+ * stand TO CAP on a flat one-day pulse — and since #49 the host was running
+ * that pulse over the whole neighbourhood, so the eight ring-1 tiles renewed
+ * **63.6 rations a day** against the 10.4 their own plants could bear. Walking
+ * away from a berry patch made it six times more productive, which is the
+ * felled-oak-re-seeds law wearing a different hat: two representations of one
+ * hectare must not disagree about what it grows.
+ *
+ * `perPlant` is the wild law and it is not the default, because the FARM record
+ * genuinely is the field pulse: `stepFarmSource` sizes its cap from the
+ * cultivated area's daily yield (`yieldPerM2Daily`) and `localYieldPerDay`
+ * reads that cap AS the per-day rate. Two different things, said out loud, each
+ * with one caller — rather than one law quietly wrong for half its callers.
+ */
+export interface RipenOpts {
+  /** True = mature one unit PER PLANT per period (a wild stand). Default/false
+   *  = refill to cap on the pulse (a sown field). */
+  perPlant?: boolean;
 }
 
 /**

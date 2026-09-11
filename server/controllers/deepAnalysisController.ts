@@ -10,7 +10,7 @@ import {
   deleteDeepAnalysis,
 } from "../services/deepAnalysisService";
 import { activityLogService } from "../services/activityLogService";
-import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { visibilityCtx } from "../services/sharing/clinicianCtx";
 import { studentService } from "../services/studentService";
 import { requireConsentForResponse, ConsentGateError } from "../services/consent/consentGate";
 
@@ -91,7 +91,9 @@ export class DeepAnalysisController {
         return;
       }
       const userId = req.user!.id;
-      const ctx = await buildClinicianCtx(req, baseline.studentId);
+      const ctxResult = await visibilityCtx(req, res, baseline.studentId);
+      if (!ctxResult.ok) return;
+      const ctx = ctxResult.ctx;
       // If the caller has no usable institute context, fall back to a direct
       // student-access check rather than serving the unfiltered baseline.
       // The previous behavior (`ctx ? get(id, ctx) : baseline`) returned the
@@ -128,7 +130,9 @@ export class DeepAnalysisController {
       // Same guard as `get`: with no usable institute context the service
       // degraded to an unfiltered WHERE student_id = $1, so any licensed
       // user could list any student's analyses by omitting ?instituteId.
-      const ctx = await buildClinicianCtx(req, studentId);
+      const ctxResult = await visibilityCtx(req, res, studentId);
+      if (!ctxResult.ok) return;
+      const ctx = ctxResult.ctx;
       if (!ctx) {
         const access = await studentService.verifyStudentAccess(studentId, req.user!.id);
         if (!access.hasAccess) {

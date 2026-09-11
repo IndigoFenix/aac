@@ -1,0 +1,43 @@
+{
+  "engine": "aivota-world",
+  "engineVersion": 1,
+  "uses": [],
+  "packs": [],
+  "game": {
+    "scope": "region",
+    "world": {
+      "size": {
+        "cols": 96,
+        "rows": 64
+      },
+      "geology": {
+        "seed": 42,
+        "epochs": 350
+      },
+      "settle": true,
+      "rain": 1.1,
+      "cell_m": 250,
+      "relief_m": 2000,
+      "latitude": 20,
+      "climate": {
+        "meanTempC": 15.5,
+        "wetness": 1.2
+      },
+      "premise": "founding",
+      "premise_stock": {
+        "wood": 14,
+        "stone": 6,
+        "basket": 2
+      },
+      "premise_population": 5
+    },
+    "avatar": "spirit",
+    "scale": {
+      "rotation": 360,
+      "sleep_fraction": 0.05,
+      "construction": 720,
+      "gap_compression": 10,
+      "resource_compression": 7.5
+    }
+  }
+}

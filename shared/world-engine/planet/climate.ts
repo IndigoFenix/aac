@@ -62,6 +62,7 @@
 
 import type { GridTopology } from "../kernel/cells/topology";
 import type { CellGrid } from "../kernel/cells/index";
+import type { SurfaceMetric } from "./surface-metric";
 
 /** Standard atmospheric lapse rate, °C per metre of elevation. */
 export const LAPSE_C_PER_M = 6.5 / 1000;
@@ -132,7 +133,8 @@ export function seaDistance(
 }
 
 export interface ClimateFieldOpts {
-  /** The planet lattice — pos3 required (latitude = asin(dir·+Y)). */
+  /** The lattice — pos3 required UNLESS `metric` is given (latitude =
+   *  asin(dir·+Y) on a sphere; `metric.latRad` on any other substrate). */
   topo: GridTopology;
   /** Substrate height, in height units. */
   height: ArrayLike<number>;
@@ -148,6 +150,16 @@ export interface ClimateFieldOpts {
   meanTempC?: number;
   /** Global rain multiplier (default 1). */
   wetness?: number;
+  /**
+   * ⚖️ THE REGION SEAM (planet-boot round S3b) — a baked FLAT substrate has
+   * no `pos3` to read latitude/pitch off, so a caller with a `SurfaceMetric`
+   * hands its `latRad`/`pitchM` here instead: `lat = metric.latRad(c)`
+   * replaces `asin(pos3(c).y)`, `pitchM = metric.pitchM` replaces
+   * `meanPitch(topo) × radiusM`, and the `pos3` throw below is skipped.
+   * Absent (every planet caller today) ⇒ byte-identical to the pre-S3b path
+   * — same formulas, read off `topo.pos3` directly.
+   */
+  metric?: Pick<SurfaceMetric, "latRad" | "pitchM">;
 }
 
 export interface ClimateFields {
@@ -179,8 +191,10 @@ function meanPitch(topo: GridTopology): number {
 
 /** Per-cell rain + temperature over the lattice — pure and deterministic. */
 export function climateFields(opts: ClimateFieldOpts): ClimateFields {
-  const { topo, height, seaHeight, radiusM } = opts;
-  if (!topo.pos3) throw new Error("climateFields: the topology has no pos3 (climate lives on curved lattices)");
+  const { topo, height, seaHeight, radiusM, metric } = opts;
+  if (!metric && !topo.pos3) {
+    throw new Error("climateFields: the topology has no pos3 (climate lives on curved lattices)");
+  }
   const meanTempC = opts.meanTempC ?? 14;
   const wetness = opts.wetness ?? 1;
   const metresPerUnit = Math.min(opts.metresPerUnit, THERMAL_M_PER_UNIT_CAP);
@@ -189,7 +203,7 @@ export function climateFields(opts: ClimateFieldOpts): ClimateFields {
   const rain = new Float64Array(n);
   const tempC = new Float64Array(n);
   const hops = seaDistance(topo, height, seaHeight);
-  const pitchM = meanPitch(topo) * radiusM;
+  const pitchM = metric ? metric.pitchM : meanPitch(topo) * radiusM;
 
   // The continental platform: median land height — thermal "sea level"
   // (see the header; the stylized height scale would otherwise put every
@@ -213,8 +227,7 @@ export function climateFields(opts: ClimateFieldOpts): ClimateFields {
   platformH = Math.max(platformH, seaHeight);
 
   for (let c = 0; c < n; c++) {
-    const dir = topo.pos3(c);
-    const lat = Math.asin(Math.max(-1, Math.min(1, dir[1])));
+    const lat = metric ? metric.latRad(c) : Math.asin(Math.max(-1, Math.min(1, topo.pos3!(c)[1])));
     const elevM = Math.max(0, height[c] - platformH) * metresPerUnit;
 
     tempC[c] = latitudeTempC(lat, meanTempC) - LAPSE_C_PER_M * elevM;

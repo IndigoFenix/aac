@@ -33,9 +33,20 @@ translation files against the *code* rather than against each other: t()/ts() ke
 en.ts, hardcoded JSX text and placeholder/title/aria-label attributes, toast copy, files that
 hand-roll localization with a `language === 'he' ? … : …` ternary, server `error:CODE` responses
 with no client `errors.CODE`, and locale values still byte-identical to English.
-`npm run scan:i18n:keys` runs only the two hard-error checks (exit 1 on failure — CI-friendly);
+`npm run scan:i18n:keys` runs only the three hard-error checks (exit 1 on failure — CI-friendly);
 `npm run scan:i18n:report` writes the full findings to planning-docs/i18n-coverage-report.md.
 Suppress a false positive with an `i18n-ignore` comment on the line or the line above it.
+
+🚨 THERE ARE TWO INTERPOLATION SYNTAXES AND THEY ARE NOT INTERCHANGEABLE. `t()` substitutes
+SINGLE braces (`{name}`) from its `params` argument; `adaptStudentLabel()` then substitutes only
+the six DOUBLE-brace student tokens (`{{STUDENT}} {{Student}} {{student}} {{STUDENTS}}
+{{Students}} {{students}}`) and returns everything else unchanged. So `"Reports for {{name}}"`
+reaches the screen as `Reports for {Sam Nella}` — braces and all. Neither older guard could see
+this (`validate-i18n` compares the locale files to EACH OTHER, so a token wrong in all 11 reads
+as consistent; `scan:i18n`'s key check only asks whether the key exists and is called). The
+`placeholders` check in `scan:i18n:keys` now errors on any other `{{token}}` in a locale file;
+its legal list is imported from `STUDENT_LABEL_TOKENS` in `client/src/lib/studentLabel.ts`, the
+same table the runtime substitutes from, so the two cannot drift.
 
 Note: `t()` returns the key itself when a key is missing, which is truthy — so the
 `t('x') || 'Fallback'` idiom is dead code. The fallback never renders; the raw key does.
@@ -85,11 +96,33 @@ Don't run test:llm or test:ai without being instructed to.
 
 ### Test layout & fast paths (avoid the ~25-min full `npm test` for routine work)
 Tests split by DB dependency — a DB-backed test needs jest's `globalSetup` (Postgres + Drizzle migrate); pure tests don't. Prefer the narrowest fast path, and use `-- <word>` to slice any of them (single word only — a multi-term `a|b` pattern breaks on Windows cmd.exe):
-- `npm run test:engine` — `server/tests/world-engine/` (anything importing `@shared/world-engine`). DB-free, the fastest domain. Put new world-engine tests in that folder.
+- `npm run test:engine` — the world-engine FAST HALF: `server/tests/world-engine/` minus the boot arcs. DB-free; 356 suites in ~9 min, and a `-- <word>` slice in seconds. Put new world-engine tests in that folder.
+- `npm run test:engine:arcs` — the BOOT ARCS: `server/tests/world-engine/*.arc.test.ts`, the 35 suites that call `bootTextQuest` and drive the real quest host (~60 s of boot each, ~16 min for the tier). Run per-LANDING, not per-tweak. `npm run test:engine:all` runs both in one process.
+  - 🚨 A suite that calls `bootTextQuest` MUST be named `*.arc.test.ts` — `arc-naming-guard.test.ts` fails the fast half otherwise, in both directions. A long play arc is better off in text mode (below) than in jest at all.
 - `npm run test:unit` — everything EXCEPT `integration/`. DB-free (`jest.config.unit.js` drops globalSetup). The pure-logic surface (board/agent/glyph/speech/prompt units + world-engine + mocked-LLM). ~13 min full; slice it.
 - `npm run test:integration` — `server/tests/integration/` only (Postgres/API). Run when touching DB/API.
 - `npm test` — the whole suite (both). Use before major merges.
 A test that needs the DB belongs in `integration/` (so `test:unit` can stay DB-free) — move it there rather than restoring globalSetup.
+
+TIERS (the user's law): per-tweak = the touched slice; per-landing = the domain (`test:engine`, plus
+`test:engine:arcs` if you touched what they cover); end of a major build = the full sweep + the bench.
+`jest.config.js` no longer sets `detectOpenHandles` — that flag forces jest onto ONE core, which is
+what made the engine sweep 48 minutes; it is opt-in now via `npm run test:engine:handles`. Workers
+default to 4 (measured on this box: 3 → 671 s, 4 → 536 s, 6 → 522 s); override with `JEST_MAX_WORKERS`.
+
+### Measuring a world-engine round (don't rebuild the harness)
+- `npm run arc:run -- --world scripts/worlds/frontier-planet.spec.json --seed 11 --dt 1/2 --days 10 --out <dir>`
+  (`scripts/dev/arc-run.ts`) boots the real quest host headless, plays the days, and writes
+  `arc.txt` + `metrics.json` + `console.log`: rations/day, take-size histogram, parked/re-selected,
+  sleeps, starvation body-days, frozen bodies, haul ABANDONED/RE-ISSUED, reaps, and the construction
+  beats (staged / finished / family moves in) with their sim times. `--script` takes TEXT MODE's own
+  commands, so a transcript's `> ` lines replay unchanged. Every number is read from the session or
+  parsed off the engine's own narration — **never instrument the engine for a metric.**
+- `npm run bench:ab` (`scripts/dev/bench-ab.ts`) records THE BENCH twice (dollhouse, seed 12, dt 1/20,
+  `scripts/dev/bench-cmds.txt`), proves byte-identity below the `# ───` fence, and diffs against
+  `transcripts/jx-doll-bench.txt`. `--revert <patch>` does the A/B by `git apply -R` / `git apply`,
+  proving restoration by sha1 of every touched file — **never `git stash`.** One bench recording is
+  ~7 minutes, so it is an end-of-build instrument, not a per-tweak one.
 
 ### Headless play verification — world-engine TEXT MODE (the AI's testing method)
 To verify world-engine behavior at PLAY level without a browser, drive text mode:
@@ -100,6 +133,11 @@ tagged-line protocol — `scene look self board say press build go approach watc
 buttons, garbled creature lines), not just crashes. Transcripts land in `transcripts/`
 and are byte-identical below the `# ───` fence for the same build+seed+commands — diff
 them for behavioral regressions; a transcript's `> ` lines replay via `--script`.
+A `solar_system`-rooted document with a founding premise (`scripts/worlds/frontier-planet.spec.json`,
+GENERATED from the world-lab preset by `npm run world:lower`) boots the REAL planet headless through
+the same `buildPlanetScope` the browser calls — cities, roads and trade partners included;
+`frontier-cell.spec.json` is that cell DECLARED (cheap, same record), `frontier-region.spec.json` a
+baked flat region (`buildRegionScope`, ~2 s).
 `--cheats` unlocks `/probe /convos /scope /stock /carry /truth` (output goes to the
 `.cheats.log` sidecar and marks the transcript — don't use it for UX-gap findings).
 Long play arcs belong HERE, not in jest: any suite that value-imports quest-host pays a

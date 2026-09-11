@@ -7,10 +7,15 @@
 // SIM. Every sim-relevant step of that boot is replicated here, in order:
 //
 //   ① loadWorldManifest(structuredClone(raw), [ECONOMY_MODULE])
-//   ② buildTownScope(loaded.game)  →  { spec, play, focus }
+//   ② THE SCOPE DISPATCH  →  { spec, play, focus }: `buildTownScope` for a town
+//      document, `buildPlanetScope` for a solar document declaring a founding
+//      premise (the planet arm — see the block below), then ONE read of what
+//      the ground says (`SiteEnvironment`, measured or declared)
 //   ③ spirit flag (avatarKind), session scale, culture, dollhouse focus index
-//   ④ createQuestHost3D({ view, presenter, voice: null, scheduleFrame, now, npcRng })
-//   ⑤ host.start(bundle.game, play, { spirit, dollhouse, scale, culture })
+//   ④ createQuestHost3D({ view, presenter, voice: null, scheduleFrame, now,
+//      npcRng, tradePartners?, groundAt?/waterAt? })
+//   ⑤ host.start(bundle.game, play, { spirit, dollhouse, wilderness, scale,
+//      culture, climate? })
 //   ⑥ the TEXT CAMERA — the three SIM effects of the spirit ladder's structure
 //      rung, and nothing else (see `applyCamera` below).
 //
@@ -27,7 +32,10 @@
 //     resident streaming deterministic;
 //   • crowd-budget / creature-tier LOD levers (render fidelity, per camera);
 //   • multiplayer (`QuestHostDeps.multiplayer`) — one local player here;
-//   • `groundAt` / `waterAt` samplers — the dollhouse town is flat.
+//   • `groundAt` / `waterAt` samplers — the seat is wired (the environment
+//     record carries them where a producer has a surface), but a MEASURED
+//     headless record carries none: the headless ground seam is flat, and it
+//     says so rather than inventing relief no frame would render.
 //
 // No React, no DOM, no games-bridge. The view is type-only where it can be.
 
@@ -48,10 +56,17 @@ import {
   homesteadWildMix, wildMixForBiome, type WildMixEntry,
 } from "../interaction/quest/wilderness.js";
 import type { ClimateSample } from "../products.js";
-import { buildTownScope } from "../interaction/town/town-play-game.js";
+import { buildTownScope, type BuiltTownScope } from "../interaction/town/town-play-game.js";
+import {
+  buildPlanetScope, buildRegionScope, declaredEnvironment,
+  type PlanetScope, type RegionScope, type SiteEnvironment,
+} from "../interaction/town/planet-scope.js";
+import type { TownPlay } from "../interaction/town/town-play.js";
+import { buildClusterWindow } from "../interaction/town/town-cluster.js";
 import type { SerializedTownDeltas } from "../kernel/town/construction.js";
 import { FOUNDING_AGE_DAYS } from "../kernel/town/plan.js";
 import { DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale } from "../scale.js";
+import { resolveSkillCatalogue } from "../kernel/town/skills.js";
 import { PLAYER_ID } from "../solver/space3d.js";
 import {
   WIDE_TICK_INNER_STEP_S,
@@ -60,27 +75,64 @@ import {
 } from "../world-host.js";
 import { createTextWorldView, type TextFocusFrame, type TextWorldView } from "./text-world-view.js";
 
-// ── 🌍 THE PLANET ARM, HEADLESS (forage-reach round, 2026-09-08) ────────────
+// ── 🌍 THE PLANET ARM, HEADLESS (planet-boot round S2, 2026-09-10) ──────────
 //
-// 🚨 THE HARNESS USED TO MEASURE A DIFFERENT WORLD FROM THE ONE THE PLAYER
-// PLAYS, and the whole PART 4 §6 forecast rested on the gap. A browser boot of
-// the founding premise mounts a town on a REAL CELL and hands `host.start` a
-// mix built from that cell's ecology (`games/world-lab/src/quest-boot.ts`:
-// `wildMixForBiome(biome, seed, climate, eco)` — PER-HECTARE densities). This
-// harness passed nothing, so `bootTextQuest` fell to the charter arm
-// (`homesteadWildMix`, absolute COUNTS) — and `perHa` is the ONE predicate the
-// founding mount reads to decide whether the near-stand relevance disc BINDS
-// and whether the neighbouring tiles MINT (quest-host: `mix.some(e => e.perHa
-// !== undefined)`). A counts world therefore has no disc and no tiles: it is a
-// world where the reach defect this round fixes cannot even be observed, which
-// is exactly why PART 4 §3 "measured" 2.05 rations/day and ruled reach out
-// while the GL player starved at 0.098.
+// ⚖️ THE USER'S LAW: *"Why can't text mode boot a planet world with cities
+// streamed as partners? Text mode isn't supposed to be different from visual
+// mode except for the visual rendering."*
 //
-// The seat is `TownPlayConfig.terrain: "planet"` — a key the town schema
-// ALREADY carries and the browser founding ALREADY sets (`city-towns.ts`
-// `terrain: "planet"`). A document that says it stands on planet ground gets
-// the planet scatter; every document that does not is byte-identical (the
-// dollhouse bench included, which is why `jx-doll-bench.txt` cannot move).
+// 🚨 WHAT THIS REPLACED. `bootTextQuest` used to refuse every scope but `town`,
+// and the planet world was faked in two places at once: a TOWN document
+// wearing `terrain: "planet"` stood in for the founding premise, and four
+// HAND-WRITTEN CONSTANTS in this file stood in for its cell (a wet temperate
+// wood: rain 1.0, 12 °C, `eco.tree` 0.35 ⇒ 15.05 oak/ha, a bush·apple·carrot·
+// hazel larder). The world the browser actually bakes has none of that. Its
+// founding cell is 12755 — a TROPICAL highland forest at 28.4 °C, `eco.tree`
+// 0.24 ⇒ 10.32 oak/ha, whose only cultivar is the banana — so every headless
+// measurement of "the frontier planet" was taken in a world that does not
+// exist, and the whole PART 4 §6 forage forecast rested on the gap.
+//
+// 🌍 SO THE PLANET ARM IS THE ENGINE CALL. A `scope: "solar_system"` document
+// declaring a founding premise boots through `interaction/town/planet-scope.ts
+// buildPlanetScope` — the ONE definition the browser's own mount calls (S3):
+// bake the home body, found on its forest cell, deposit the kit, measure the
+// charter/climate/biome/ecology, found the cities, lay the roads, project the
+// nearest three into town coordinates as trade partners. Nothing here samples,
+// guesses or re-derives; this file dispatches and wires seats.
+//
+// 📜 …AND THE SECOND PRODUCER IS THE DOCUMENT ITSELF. A planet bake is 24–29 s,
+// which no suite that only wants a founding CAMP should pay, so the same record
+// can be DECLARED as town-document fields (`climate`/`biome`/`eco`/`charter`/
+// `partners` — town-play-game.ts `CELL_FIELDS`) and read back by
+// `declaredEnvironment`. `scripts/worlds/frontier-cell.spec.json` is that
+// document, GENERATED from the real planet (`npm run world:lower --
+// --declare-cell`), so the cheap path and the real path describe one cell.
+//
+// ⚠️ `terrain: "planet"` NO LONGER SUMMONS A CELL. It is what it always said it
+// was — the ground character (`TownPlayConfig.terrain`) — and a town document
+// that declares it without declaring a cell now scatters from the CHARTER arm
+// like every other town document. That is a behaviour change for exactly one
+// shipped document, the old hand-written `frontier-planet.spec.json`, which
+// this round replaced. `frontier.spec.json` and `homestead.spec.json` declare
+// no terrain at all and are byte-identical.
+//
+// WHERE THE RECORD LANDS (`SiteEnvironment`, one shape, wired once):
+//   • `climate` TWICE — `TownPlayConfig.climate` (the books' farm yield) and
+//     `host.start({climate})` (the live farm). The same sample to both, or the
+//     abstract farm and the visible farm size the same ground differently.
+//   • `biome` + `eco` through the WILDERNESS MIX (`wildMixForBiome`) — and
+//     `perHa` is the predicate that decides whether the near-stand disc binds
+//     and whether the neighbouring tiles MINT (quest-host: `mix.some(e =>
+//     e.perHa !== undefined)`), so this is the difference between a countryside
+//     and an authored stand.
+//   • `partners` through `deps.tradePartners`.
+//   • `ground` through `deps.groundAt`/`waterAt` — a MEASURED headless record
+//     carries none (the headless ground seam is flat and says so); the seat is
+//     live for the browser producer.
+
+// ⚖️ kept exported for the resource-packing lane's temperate calibration anchor
+// (2026-09-10); no boot path reads them — the planet/declared arms measure the
+// real cell; deleted when that lane lands (planet-boot S4).
 
 /**
  * THE FOUNDING CELL, headless — the ONE sample behind every planet-arm text
@@ -139,7 +191,15 @@ export interface TextQuestOpts {
    *  mutates/normalizes what it is handed. */
   world: unknown;
   /** Seed for the injected NPC RNG. Default: the town document's own
-   *  `config.seed`, so a run is reproducible from the document alone. */
+   *  `config.seed`, so a run is reproducible from the document alone.
+   *
+   *  ⚠️ IT IS THE NPC RNG AND NOTHING ELSE. The WORLD's seed is the document's:
+   *  the town plan, the residents, the quests and the scatter are all built
+   *  from `play.config.seed` before this value is read, and on the planet arm
+   *  the substrate is not seeded by the document at all (the home system's seed
+   *  is a constant — `buildPlanetScope`). So `--seed 11` on the frontier planet
+   *  plays the SAME planet and the SAME camp as `--seed 1337` with a different
+   *  fold of NPC chatter, and a run that changes more than that has a bug. */
   seed?: number;
   /** Fixed frame step, seconds. Default 1/60 (text-mode.md D4).
    *
@@ -243,6 +303,27 @@ export interface TextQuestRun {
   clearLook(): void;
   readonly frameDt: number;
   readonly seed: number;
+  /**
+   * 🌍 THE PLANET THIS RUN STANDS ON — the whole boot record
+   * (`buildPlanetScope`: substrate, checksum, cell, site, environment, cities,
+   * states, routes, the wild mix, the town config), or null on every other arm.
+   *
+   * A SESSION READ, never instrumentation: the arc suites that want to know
+   * which cell they measured, what its charter said or which cities were
+   * streamed as partners read them off the same value the boot itself used. The
+   * alternative — an engine-side counter or a debug export — would be a metric
+   * the engine keeps for the tests, which is the one thing a measurement may
+   * never ask of it.
+   */
+  readonly planet: PlanetScope | null;
+  /**
+   * 🌍 THE REGION THIS RUN STANDS ON (planet-boot round S3b) — the flat
+   * sibling of `planet`, `buildRegionScope`'s whole record, or null on every
+   * other arm. ADDITIVE: kept a SEPARATE field rather than folded into
+   * `planet`'s type so no existing consumer of `run.planet` (typed
+   * `PlanetScope | null`) has to narrow a wider union it never asked for.
+   */
+  readonly region: RegionScope | null;
   dispose(): void;
 }
 
@@ -253,19 +334,76 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
   const loaded = loadWorldManifest(structuredClone(opts.world), [ECONOMY_MODULE]);
   if (!loaded.game) throw new Error("bootTextQuest: the document has no `game` settings");
   const game = loaded.game;
-  if (game.scope !== "town") {
-    throw new Error(`bootTextQuest: only the town scope boots headless (got "${game.scope}")`);
+
+  // ② THE SCOPE — one dispatch, three arms.
+  //    ⚖️ `planet` keeps its original `PlanetScope | null` shape (untouched —
+  //    S2's `planet-boot.arc.test.ts` and every other consumer reads it
+  //    unguarded); the region arm's own record is the ADDITIVE `region` seat
+  //    below, never merged into `planet`'s type.
+  let planet: PlanetScope | null = null;
+  let region: RegionScope | null = null;
+  let built: BuiltTownScope;
+  let play: TownPlay;
+  if (game.scope === "town") {
+    //    THE TOWN ARM. Same call, same certification, same deterministic build.
+    built = buildTownScope(game, "game", opts.deltas);
+    //    …and its WALKING WINDOW when the document says `cluster: N` — the same
+    //    hamlet ring world-lab's `bootLivingTown` composes, now one shared
+    //    definition (town-cluster.ts `buildClusterWindow`). Before this seat a
+    //    cluster world was BROWSER-ONLY: `cluster` parsed into the config and
+    //    nothing headless read it, so `npm run world:text` / `npm run arc:run`
+    //    could not boot one (trade-topology-round D-1). `cluster: 0` ⇒ the
+    //    identical `built.play`, so every shipped document is untouched.
+    //    The returned `windowShift` is unused here: the headless ground seam is
+    //    FLAT (no `groundAt`/`waterAt` samplers to shift back), and everything
+    //    downstream reads `play.stage.center`, which is already window-frame.
+    ({ play } = buildClusterWindow(built));
+  } else if (game.scope === "solar_system") {
+    // 🌍 THE PLANET ARM — the engine's own boot, entire (see the header block).
+    //
+    // The PREMISE is gated by `buildPlanetScope` and nowhere else: it owns
+    // `game.world`'s schema (`parseSolarWorld` + `PREMISE_FIELDS`), so a system
+    // document with no premise, or a premise this engine cannot start, is
+    // refused there with a path-exact message. A second premise test here would
+    // be a second opinion about what a solar document may say.
+    planet = buildPlanetScope(game);
+    built = planet.scope;
+    // 🚫 NO `buildClusterWindow` ON THIS ARM. The hamlet ring is a synthetic
+    // neighbourhood invented for a town that has no neighbours; a planet HAS
+    // them — 1757 cities and the roads between them — and they arrive as the
+    // partner rows below. Windowing a ring in beside them would be two answers
+    // to "who else is out there".
+    play = built.play;
+  } else if (game.scope === "region") {
+    // 🌍 THE REGION ARM (planet-boot round S3b) — a baked FLAT substrate, the
+    // third producer of the same `SiteEnvironment`. Mirrors the solar_system
+    // arm exactly: `buildRegionScope` owns `game.world`'s schema and the
+    // premise gate; no `buildClusterWindow` (a region has real neighbours
+    // too — real cities, real roads — so a synthetic hamlet ring beside them
+    // would again be two answers to "who else is out there").
+    region = buildRegionScope(game);
+    built = region.scope;
+    play = built.play;
+  } else {
+    throw new Error(`bootTextQuest: only the town and planet scopes boot headless (got "${game.scope}")`);
   }
 
-  // ② THE TOWN. Same call, same certification, same deterministic build.
-  const built = buildTownScope(game, "game", opts.deltas);
-  const play = built.play;
+  // ②b WHAT THE GROUND SAYS — ONE READ FOR ALL THREE ARMS (planet-boot §6a/S3b).
+  //    Measured off the substrate the planet or region arm baked, else
+  //    declared by the document's own fields. Null ⇒ no cell under this
+  //    boot: the charter arm, no partners, no climate — byte-identical to
+  //    every run that shipped.
+  const env: SiteEnvironment | null = planet?.env ?? region?.env ?? declaredEnvironment(play.config);
+  const ground = env?.ground;
 
   // ③ THE SESSION SHAPE the game hands `host.start` — verbatim from bootLivingTown.
   const spirit = avatarKind(game) === "spirit";
   //    The document's declared scale, else the street-clock DOLLHOUSE profile
   //    (the town machinery is paced to that 240 s day).
   const scale: WorldScale = game.scale ? resolveWorldScale(game.scale) : DOLLHOUSE_SCALE;
+  //    …and the world's SKILL TREE (`game.skills`), include-then-extend. No
+  //    shipped document declares one, so this is the catalogue verbatim.
+  const skills = resolveSkillCatalogue(game.skills);
   const culture = game.culture;
   const dollhouse = built.focus ? built.focus.house : undefined;
   //    The focus LOT in world coords — the ladder's `focusFrame`. (The host
@@ -386,6 +524,21 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
     // so a headless boot MUST inject. Same fold every other subsystem uses.
     npcRng: mulberry32(hashSeed(seed, "npc")),
     ...(wideTick ? { wideTick } : {}),
+    // 🏙️ WHO ELSE IS OUT THERE — the record's partner rows, straight onto the
+    //    host's own seat. The browser's founding mount passes exactly this
+    //    (`nearbyCityPartners` → `deps.tradePartners`); before this line a
+    //    headless founding had only the abstract `away:` partner, priced at the
+    //    fictional `AWAY_DISTANCE_M`, so every trade measurement taken here was
+    //    taken against a settlement that is not on the map.
+    ...(env ? { tradePartners: () => env.partners } : {}),
+    // ⛰️ …and the terrain samplers, for a producer that HAS a surface. Wrapped
+    //    rather than passed by reference so the record owns its own `this`.
+    ...(ground
+      ? {
+          groundAt: (x: number, y: number): number => ground.groundAt(x, y),
+          waterAt: (x: number, y: number): boolean => ground.waterAt(x, y),
+        }
+      : {}),
   });
 
   // ⑤ START. Exactly the argument list bootLivingTown passes.
@@ -414,20 +567,29 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
       ? {
           wilderness: {
             seed: play.config.seed,
-            // 🌍 THE PLANET ARM (see the header block at the top of this file):
-            // a document standing on planet ground scatters from a CELL, which
-            // is what makes the near-stand disc bind and the neighbouring tiles
-            // mint. Every other document keeps the charter arm, byte-identical.
+            // 🌍 THE CELL'S OWN COUNTRYSIDE (see the header block at the top of
+            // this file). A boot that knows what ground it stands on scatters
+            // from that ground's ECOLOGY — per-HECTARE densities, which is what
+            // makes the near-stand disc bind and the neighbouring tiles mint.
+            // A boot that does not keeps the CHARTER arm (absolute counts),
+            // byte-identical to every run that shipped.
             mix:
               opts.wildMix ??
-              (play.config.terrain === "planet"
-                ? planetCellWildMix(play.config.seed)
+              (env
+                ? wildMixForBiome(env.biome, play.config.seed, env.climate, env.eco)
                 : homesteadWildMix(play.plan.biome, play.config.seed)),
           },
         }
       : {}),
     scale,
+    skills,
     ...(culture ? { culture } : {}),
+    // 🌡️ THE LIVE FARM'S HALF of the climate sample. The books' half rides
+    //    `TownPlayConfig.climate` (the planet arm sets it in `planetScopeOn`;
+    //    a declared document carries it as a field), and the two must be the
+    //    SAME sample or the visible farm and the abstract farm size the same
+    //    ground differently.
+    ...(env ? { climate: env.climate } : {}),
   });
   if (!view) throw new Error("bootTextQuest: the host never built a view");
   const textView: TextWorldView = view;
@@ -558,6 +720,8 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
     },
     frameDt,
     seed,
+    planet,
+    region,
     dispose(): void {
       host.stop();
     },

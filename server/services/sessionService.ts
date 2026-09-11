@@ -60,6 +60,7 @@ import { getConsentStatus } from "./consent/consentGate";
 import {
   GUIDED_SETUP_CONTEXT_KEY,
   type GuidedSetupRequest,
+  type GuidedSetupSignal,
   type GuidedSetupToolArgs,
   type GuidedSetupView,
 } from "@shared/guided-setup";
@@ -1675,11 +1676,13 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
   }
 
-  // GUIDED SETUP, mid-turn binding. Assigned by the Guided Setup block below
-  // and fired at the END of every memory write, which is the first moment a
-  // student the model created THIS turn actually exists (see the block for
-  // why the flow may not wait for `selectStudent`).
-  let bindDiscoveredGuidedSetupStudent:
+  // GUIDED SETUP, mid-turn view refresh (and, while the flow is unbound, the
+  // binding that has to happen first). Assigned by the Guided Setup block
+  // below and fired at the END of every memory write — the first moment a
+  // student the model created THIS turn actually exists (see the block for why
+  // the flow may not wait for `selectStudent`), and equally the first moment a
+  // fact the model just wrote can change the step, the checklist or the gate.
+  let refreshGuidedSetupView:
     | ((values: FlatMemoryValues) => Promise<void>)
     | undefined;
   // The manager deep-clones chatState at construction and it is ITS copy that
@@ -1691,7 +1694,42 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   const onUpdateMemoryValues = async (newMemoryValues: FlatMemoryValues) => {
     // Extract and save memory values to the appropriate database objects based on prefix
     // Note: Context_ fields are NOT persisted - they live only in the session
-    
+
+    // ── Consent gate on the PERSIST path ───────────────────────────────────
+    //
+    // The `Student_*` / `Relationship_*` memory-schema `db` ops do NOT write to
+    // the database: they validate, then return the value, and THIS function
+    // persists the whole batch as one row write. So the `ConsentGateError` those
+    // ops now raise (student-memory-schema / relationship-memory-schema) is what
+    // the AI READS — it is not what stops the bytes. `memory-db-bridge` reports a
+    // failed DB op to the model but does not roll the in-memory value back, so
+    // without a refusal HERE the refused profile/notes would still be written at
+    // end of turn. `Student_CommunicationProfile` is the sharpest case: it is
+    // column-backed, and its only writer is the `db.update` below. Both gates are
+    // load-bearing; neither alone closes the hole.
+    //
+    // `getConsentStatus` mirrors `requireActiveConsent`'s decision tree exactly
+    // (flag off → allowed; active consent or a live legacy-grace window →
+    // allowed) without throwing — which is what we want at this point in the
+    // turn. The AI has already been told no; throwing here would additionally
+    // abort the persistence that follows (relationship memory, the guided-setup
+    // refresh) for a write we only need to DROP. Evaluated at most once per
+    // turn, and only when there is actually something to persist.
+    let studentPhiWritesAllowed: boolean | undefined;
+    const mayPersistStudentPhi = async (studentId: string): Promise<boolean> => {
+      if (studentPhiWritesAllowed === undefined) {
+        studentPhiWritesAllowed = (await getConsentStatus(studentId)).writesAllowed;
+        if (!studentPhiWritesAllowed) {
+          console.warn(
+            `[sessionService] consent gate: dropping Student_/Relationship_ memory writes ` +
+            `for student ${studentId} — no active consent record and no legacy grace.`,
+          );
+        }
+      }
+      return studentPhiWritesAllowed;
+    };
+
+
     // User memory (fields prefixed with User_)
     if (context.user) {
       const userMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.USER);
@@ -1716,7 +1754,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
         delete studentMemory["Student_CommunicationProfile"];
         const next = typeof incomingProfile === "string" ? incomingProfile : null;
         const current = (context.student as any).communicationProfile ?? null;
-        if ((next ?? null) !== (current ?? null)) {
+        // The column write the AI walked around on 2026-09-08. Gated.
+        if ((next ?? null) !== (current ?? null) && await mayPersistStudentPhi(context.student.id)) {
           await db
             .update(students)
             .set({ communicationProfile: next, updatedAt: new Date() })
@@ -1726,7 +1765,19 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       }
 
       const currentMemory = (context.student.chatMemory as Record<string, any>) || {};
-      if (Object.keys(studentMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(studentMemory)) {
+      // Dropping the whole chatMemory blob when the gate is shut is exactly the
+      // right scope, and does NOT touch the deliberate carve-outs of §7.4:
+      // basic identity lives on `students` columns via Context_Students (no
+      // Student_* memory field carries it), and Student_Contacts /
+      // Student_CustomApps / Student_Packages / Student_Incidents each persist
+      // through their OWN table ops, not this blob. The guided flow's guardian
+      // contact — the one write it is allowed to make during the consent wait —
+      // therefore still lands.
+      if (
+        Object.keys(studentMemory).length > 0 &&
+        JSON.stringify(currentMemory) !== JSON.stringify(studentMemory) &&
+        await mayPersistStudentPhi(context.student.id)
+      ) {
         await updateStudentMemory(context.student.id, studentMemory);
         context.student = { ...context.student, chatMemory: studentMemory };
       }
@@ -1736,7 +1787,14 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     if (context.userStudent) {
       const relationshipMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.RELATIONSHIP);
       const currentMemory = (context.userStudent.chatMemory as Record<string, any>) || {};
-      if (Object.keys(relationshipMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(relationshipMemory)) {
+      // Same gate: Relationship_Notes is session notes ABOUT this student, and
+      // this blob write is its persist path just as the block above is
+      // Student_Notes'.
+      if (
+        Object.keys(relationshipMemory).length > 0 &&
+        JSON.stringify(currentMemory) !== JSON.stringify(relationshipMemory) &&
+        await mayPersistStudentPhi(context.userStudent.studentId)
+      ) {
         await updateUserStudentMemory(context.userStudent.id, relationshipMemory);
         context.userStudent = { ...context.userStudent, chatMemory: relationshipMemory };
       }
@@ -1748,9 +1806,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // Last, because it READS what the writes above just landed: a student the
     // model created earlier in this same turn is now a row, so an unbound
     // GUIDED SETUP flow can find and adopt it without waiting for the model to
-    // call selectStudent.
-    if (bindDiscoveredGuidedSetupStudent) {
-      await bindDiscoveredGuidedSetupStudent(newMemoryValues);
+    // call selectStudent — and the facts just written (a guardian contact, a
+    // report, a birth date) are what the flow's step and gate are DERIVED from,
+    // so the view the rail is holding is stale until it is resolved again.
+    if (refreshGuidedSetupView) {
+      await refreshGuidedSetupView(newMemoryValues);
     }
   };
 
@@ -1992,7 +2052,18 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
         guidedSetupSection = resolved.section;
         // Reaches the client as contextData.guidedsetup. Never a memory FIELD,
         // so the AI is never offered it as something it can write.
-        memoryValues[GUIDED_SETUP_CONTEXT_KEY] = resolved.view;
+        //
+        // A SIGNAL, not the view — the rail fetches the view itself (see
+        // GuidedSetupSignal). `refused` is deliberately absent: a refusal
+        // belongs to the turn whose tool call produced it, and starting every
+        // turn without one is what clears last turn's banner.
+        memoryValues[GUIDED_SETUP_CONTEXT_KEY] = {
+          active: !resolved.done,
+          instituteId,
+          studentId: flowStudentId,
+          panel: resolved.view.panel,
+          roster: resolved.view.roster ?? null,
+        } satisfies GuidedSetupSignal;
         if (resolved.done) chatState.guidedSetup.active = false;
 
         onGuidedSetup = async (args: GuidedSetupToolArgs) => {
@@ -2011,12 +2082,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
             rows: args?.rows,
             rosterProposal: chatState.guidedSetup?.rosterProposal ?? null,
           });
-          // Keeps OUR copy current for callers that read the returned
-          // memoryValues directly. The copy the CLIENT sees is published by
-          // the tool router (defaultToolRegistry.guidedSetup) — the manager
-          // clones this object at construction and merges its own version
-          // over it at the end of the turn, so a write here alone is lost.
-          memoryValues[GUIDED_SETUP_CONTEXT_KEY] = view;
+          // The signal the CLIENT sees is published by the tool router
+          // (defaultToolRegistry.guidedSetup): the manager clones this object
+          // at construction and merges its own version over it at the end of
+          // the turn, so a write here would be lost anyway.
+          //
           // The flow can FINISH inside a tool call — `advance` or `skip` off
           // the last step is exactly how it normally ends. The chat resolution
           // above ran before the model spoke, so it deactivated nothing, and
@@ -2031,68 +2101,89 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
           return view;
         };
 
-        // Mid-turn binding. The section above is rendered ONCE, before the
-        // model runs, so a student created during this turn can only reach the
-        // PROMPT on the next one. The rail must not wait that long: it would
-        // sit on "No Patient Selected" for the whole turn that created the
-        // patient. This runs at the end of every memory write — the first
-        // moment the new row exists — and republishes the view.
-        if (!flowStudentId) {
-          // The bound view, once we have one. Re-applied on every later memory
-          // write of the same turn: the memory tool republishes from its OWN
-          // ref (which sessionService cannot reach), so a second manageMemory
-          // batch would otherwise put the unbound view back on the rail.
-          let reboundView: unknown | null = null;
+        // MID-TURN BIND + COMPLETION — installed for every live flow, bound or
+        // not, and fired at the end of every memory-write batch. It exists for
+        // two things that CHANGE THE SESSION:
+        //
+        //  - the flow is UNBOUND and the model creates the student. It binds to
+        //    the new row here — the first moment it exists — rather than
+        //    waiting for the model to call `selectStudent` (which it may simply
+        //    never do), and attaches the conversation to them.
+        //  - the flow FINISHES on a plain memory write. Re-resolving is what
+        //    stamps `record.completedAt` and flips the session inactive, so a
+        //    finished flow does not instruct the model for one more turn — and
+        //    so the client's next refetch sees a retired flow.
+        //
+        // It no longer publishes a view: the only thing written here is the
+        // session signal, MERGED so the tool router's `refused` / `roster`
+        // survive a later write batch in the same turn.
+        {
           // Captured: narrowing is lost inside the closure, and this is the row
           // the discovery path has to attach the conversation to.
           const sessionRow = session;
-          bindDiscoveredGuidedSetupStudent = async (values: FlatMemoryValues) => {
+          refreshGuidedSetupView = async (values: FlatMemoryValues) => {
             const flow = chatState.guidedSetup;
             if (!flow?.active) return;
-            if (flow.studentId) {
-              if (reboundView) values[GUIDED_SETUP_CONTEXT_KEY] = reboundView;
-              return;
-            }
-            try {
-              const discovered = await discoverGuidedSetupStudentId({
-                userId,
-                instituteId,
-                startedAt: flow.startedAt ?? null,
-                ignoreStudentId: flow.ignoreStudentId ?? null,
-              });
-              if (!discovered) return;
-              flow.studentId = discovered;
-              // The manager's own clone is the copy that gets persisted.
-              const liveFlow = liveChatStateRef.current?.guidedSetup;
-              if (liveFlow) liveFlow.studentId = discovered;
-              // Same FILL-IN as the bound path above. This is the turn that
-              // CREATED the student, so it is the only chance to attach the
-              // conversation to them before the row is written back; the
-              // guard inside the helper still refuses a session that already
-              // belongs to somebody else.
-              if (sessionRow) await fillInSessionSubject(sessionRow, { studentId: discovered });
+            // The manager's own clone is the copy that gets persisted, so
+            // every mutation below lands on both.
+            const liveFlow = liveChatStateRef.current?.guidedSetup;
 
-              const rebound = await resolveGuidedSetupForChat({
+            try {
+              let studentIdForView = flow.studentId ?? null;
+              if (!studentIdForView) {
+                const discovered = await discoverGuidedSetupStudentId({
+                  userId,
+                  instituteId,
+                  startedAt: flow.startedAt ?? null,
+                  ignoreStudentId: flow.ignoreStudentId ?? null,
+                });
+                // Still nothing to bind to: the unbound view published before
+                // the turn is still the correct one.
+                if (!discovered) return;
+                flow.studentId = discovered;
+                if (liveFlow) liveFlow.studentId = discovered;
+                // Same FILL-IN as the bound path above. This is the turn that
+                // CREATED the student, so it is the only chance to attach the
+                // conversation to them before the row is written back; the
+                // guard inside the helper still refuses a session that already
+                // belongs to somebody else.
+                if (sessionRow) await fillInSessionSubject(sessionRow, { studentId: discovered });
+                studentIdForView = discovered;
+              }
+
+              const refreshed = await resolveGuidedSetupForChat({
                 userId,
                 instituteId,
-                studentId: discovered,
+                studentId: studentIdForView,
                 lang: input.language,
                 // Not a first turn: the greeting already went out above.
                 firstTurn: false,
-                rosterProposal: flow.rosterProposal ?? null,
+                // A pending roster proposal has to ride every view or the
+                // review table vanishes from the panel. The router stores it
+                // on the MANAGER's chatState clone, which our closure copy
+                // never sees, so the live copy is the authority here.
+                rosterProposal: liveFlow?.rosterProposal ?? flow.rosterProposal ?? null,
               });
-              // `values` IS the manager's memoryValues object, so writing here
-              // is what reaches contextData.guidedsetup and the rail this turn;
-              // the outer copy is kept in step for callers that read it back.
-              reboundView = rebound.view;
-              values[GUIDED_SETUP_CONTEXT_KEY] = rebound.view;
-              memoryValues[GUIDED_SETUP_CONTEXT_KEY] = rebound.view;
-              if (rebound.done) {
+              // Deactivate both copies, exactly as the tool path does.
+              if (refreshed.done) {
                 flow.active = false;
                 if (liveFlow) liveFlow.active = false;
               }
+              // `values` IS the manager's memoryValues object, so writing here
+              // is what reaches contextData.guidedsetup. MERGED, never
+              // replaced: the tool router may already have put a `refused` or a
+              // fresh proposal here, and neither is reproducible from rows. A
+              // throw simply leaves the signal as it was — which is what the
+              // old `lastPublishedView` restore was reaching for.
+              values[GUIDED_SETUP_CONTEXT_KEY] = {
+                ...(values[GUIDED_SETUP_CONTEXT_KEY] as GuidedSetupSignal | undefined),
+                active: !refreshed.done,
+                instituteId,
+                studentId: studentIdForView,
+                panel: refreshed.view.panel,
+              } satisfies GuidedSetupSignal;
             } catch (err) {
-              console.warn("[getMessageManager] Guided Setup mid-turn binding failed:", err);
+              console.warn("[getMessageManager] Guided Setup mid-turn refresh failed:", err);
             }
           };
         }
@@ -2439,8 +2530,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   });
 
 
-  // GUIDED SETUP: the mid-turn binding writes the flow's student onto the
-  // manager's chatState, which is the copy onUpdateChatState persists.
+  // GUIDED SETUP: the mid-turn refresh writes the flow's student — and a
+  // finished flow's `active: false` — onto the manager's chatState, which is
+  // the copy onUpdateChatState persists.
   liveChatStateRef.current = messageManager.chatState;
 
   // Return both manager and memoryValues reference

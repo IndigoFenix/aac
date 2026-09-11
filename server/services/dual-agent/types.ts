@@ -170,6 +170,15 @@ export interface EnhancedPromptSections {
    */
   alarmConditions?: string;
   /**
+   * Three-agent system only: the Board Manager's TOPIC BANK — 8–12 specific,
+   * answerable things this user could talk about, produced by the session
+   * initializer (see session-plan.ts, `conversation_seeds`). Handed to the
+   * Board Manager only when ./conversation-stall says the exchange has gone
+   * subjectless, so a flattening conversation has somewhere concrete to go.
+   * Optional; undefined for sessions planned before the section existed.
+   */
+  conversationSeeds?: string;
+  /**
    * Three-agent system only: Board-Manager-specific guidance extracted by
    * the enhancer. Surface preferences (e.g. "always include a 'finished'
    * button for this student"). Empty in the single-agent path.

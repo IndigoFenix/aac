@@ -28,6 +28,7 @@ import {
 import type { AccessCtx } from "../sharing/visibility";
 import { promptNoteToday, stampPromptNote } from "./aac-memory-schema";
 import { assertPresenceSafe } from "./presence-context";
+import { requireConsentForMemoryWrite } from "../consent/consentGate";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -112,6 +113,36 @@ function stampStudentEntry(value: any): any {
  *  preferences make no presence claims and are left untouched. */
 const DATED_STUDENT_FIELDS = new Set(["Student_Notes", "Student_People"]);
 
+// ── Consent gate ───────────────────────────────────────────────────────────
+//
+// These fields are the AI's running record of the CHILD — how they
+// communicate, who is around them, what was observed in a session. That is
+// exactly the class of data an informed-consent record has to exist for, and
+// until 2026-09-10 nothing at the data layer said so: `requireConsentForMemoryWrite`
+// guarded the reports, the program and incidents only. Observed live (Ray
+// Cairo, 2026-09-08): sitting on a consent-BLOCKED step, the assistant
+// interviewed the user about the child's communication and wrote
+// `Student_CommunicationProfile` and `Student_CommunicationStyle`. The only
+// thing standing in its way was a line of prompt text, and prompt text does
+// not stop a wrong action.
+//
+// Same helper as the other three call sites, so the AI-readable
+// `ConsentGateError` message and the `[CONSENT STATUS]` prompt block keep
+// working unchanged; the flag and the legacy grace window are the helper's own.
+//
+// READS are untouched — the gate is write-only by design (§7.4: the consent
+// wizard itself needs to read basic identity).
+//
+// 🚨 This gate alone is NOT sufficient, and must not be treated as if it were.
+// The ops below do not write to the DB (see the note that follows); the actual
+// row write is `sessionService.onUpdateMemoryValues`, and the in-memory
+// processor applies a value even when its DB op threw. The refusal here is
+// what the AI SEES; the refusal that stops the bytes reaching Postgres is in
+// `onUpdateMemoryValues`. Both are load-bearing.
+async function requireConsentForStudentMemory(ctx: DBOperationContext): Promise<void> {
+  await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
+}
+
 // ── Write-back no-ops ──────────────────────────────────────────────────────
 // Individual mutations do NOT write to the DB. The in-memory processor handles
 // all mutations synchronously (no race conditions), and onUpdateMemoryValues
@@ -126,6 +157,7 @@ async function setStudentMemoryField(
   fieldId: string,
   value: any
 ): Promise<any> {
+  await requireConsentForStudentMemory(ctx);
   if (DATED_STUDENT_FIELDS.has(fieldId)) {
     assertPresenceSafe(value, ctx.all.sessionId, `this ${fieldId} entry`);
   }
@@ -138,26 +170,30 @@ async function addToStudentMemoryArray(
   fieldId: string,
   value: any
 ): Promise<any> {
+  await requireConsentForStudentMemory(ctx);
   if (!DATED_STUDENT_FIELDS.has(fieldId)) return value;
   assertPresenceSafe(value, ctx.all.sessionId, `this ${fieldId} entry`);
   return stampStudentEntry(value);
 }
 
-/** No-op: persistence handled by onUpdateMemoryValues. */
+/** No-op: persistence handled by onUpdateMemoryValues.
+ *  Gated all the same — removing an observation about a consent-pending child
+ *  is a modification of their record, and the other three schemas gate their
+ *  `delete` for the same reason. */
 async function deleteFromStudentMemoryArray(
-  _ctx: DBOperationContext,
+  ctx: DBOperationContext,
   _fieldId: string,
   _indexOrKey: string | number
 ): Promise<void> {
-  // No-op
+  await requireConsentForStudentMemory(ctx);
 }
 
 /** No-op: persistence handled by onUpdateMemoryValues. */
 async function clearStudentMemoryArray(
-  _ctx: DBOperationContext,
+  ctx: DBOperationContext,
   _fieldId: string
 ): Promise<void> {
-  // No-op
+  await requireConsentForStudentMemory(ctx);
 }
 
 // ============================================================================
@@ -329,8 +365,13 @@ export const STUDENT_COMMUNICATION_PROFILE_FIELD: AgentMemoryFieldWithDB = {
     read: readStudentCommunicationProfile,
     // Persistence is handled outside the chatMemory batching path —
     // see sessionService.onUpdateMemoryValues, which routes this field
-    // to the students.communication_profile column.
-    write: async (_ctx, value) => value,
+    // to the students.communication_profile column. That column write
+    // carries the SAME gate: a gate the AI can walk around by a different
+    // code path is not a gate, and this field's path is a different one.
+    write: async (ctx, value) => {
+      await requireConsentForStudentMemory(ctx);
+      return value;
+    },
   },
 };
 

@@ -19,6 +19,7 @@ import TermsOfService from "@/pages/terms-of-service";
 import PrivacyPolicy from "@/pages/privacy-policy";
 import CookiePolicy from "@/pages/cookie-policy";
 import ConsentSignPage from "@/pages/ConsentSignPage";
+import ConsentWithdrawPage from "@/pages/ConsentWithdrawPage";
 import AccessibilityStatement from "@/pages/accessibility-statement";
 import AIPolicy from "@/pages/ai-policy";
 import LoginPage from "@/pages/LoginPage";
@@ -28,6 +29,7 @@ import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { GuidedSetupProvider } from "./features/guided-setup/useGuidedSetup";
+import { ConsentProvider } from "./features/consent/ConsentProvider";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
 import { PersonChatProvider } from "./features/personChat/PersonChatContext";
@@ -170,6 +172,12 @@ function Router() {
 
       {/* Magic-link consent — public, token-authed (parents may not have accounts). */}
       <Route path="/consent/sign" component={ConsentSignPage} />
+      {/* Withdrawal of consent — public for the SAME reason. The guardian who
+          holds the right to withdraw is the one who signed by magic link, and
+          they have no account; requiring auth here would be a permanent refusal
+          of a statutory right (GDPR Art. 7(3)), not a security control. The page
+          never withdraws on load — see its header. */}
+      <Route path="/consent/withdraw" component={ConsentWithdrawPage} />
 
       {/* MFA Recovery routes */}
       <Route path="/mfa-recovery">
@@ -380,6 +388,12 @@ function App() {
                 <IdentityVerificationDialog />
                 <StudentLabelSync />
                 <StudentProvider>
+                  {/* Consent is read by the header indicator, the chat views
+                      and the student-info panel. It sits here, just inside
+                      StudentProvider, so those all share ONE observer per
+                      consent query keyed on the selected student — see
+                      features/consent/ConsentProvider.tsx for why that matters. */}
+                  <ConsentProvider>
                   <PersonChatProvider>
                   <CallProvider>
                   <FeaturePanelProvider>
@@ -403,6 +417,7 @@ function App() {
                   </FeaturePanelProvider>
                   </CallProvider>
                   </PersonChatProvider>
+                  </ConsentProvider>
                 </StudentProvider>
               </InstituteProvider>
             </AuthProvider>

@@ -94,8 +94,18 @@ interface PasswordResetEmailData {
   expiresAt: Date;
 }
 
+/**
+ * The slice of the SESv2 client this service actually calls. Narrowing to
+ * this shape (rather than depending on `SESv2Client` itself) gives tests a
+ * real injection point — `setSesClientForTesting` below — instead of forcing
+ * them to reach past the class with an `as any` cast on a private field.
+ */
+export interface SesSendClient {
+  send(command: SendEmailCommand): Promise<{ MessageId?: string }>;
+}
+
 export class EmailService {
-  private ses: SESv2Client | null = null;
+  private ses: SesSendClient | null = null;
   private isConfigured: boolean = false;
   private fromAddress: string;
   private replyToAddress: string;
@@ -112,6 +122,23 @@ export class EmailService {
   /** The From header this service sends under. Exposed for diagnostics/tests. */
   getFromAddress(): string {
     return this.fromAddress;
+  }
+
+  /**
+   * Test-only seam: replace the SES client with a stub (e.g. a recorder) so
+   * this service — including every caller that reaches it through the
+   * `emailService` singleton — can never make a live network call under
+   * test. This is an explicit method a caller opts into (`server/tests/
+   * setup.ts` calls it once, for every worker), not an `if (NODE_ENV ===
+   * 'test')` branch inside `sendEmail`: per `feedback_test_env_has_live_ses`,
+   * a shared helper must never guess it's in a test from the environment —
+   * the 30-call SES leak this closes happened precisely because no seam
+   * covered every path to this class, not because this class couldn't be
+   * told not to send.
+   */
+  setSesClientForTesting(client: SesSendClient): void {
+    this.ses = client;
+    this.isConfigured = true;
   }
 
   private getLogoUrl(): string {

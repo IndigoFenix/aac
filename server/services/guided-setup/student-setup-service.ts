@@ -28,9 +28,9 @@ import {
 } from "@shared/guided-setup";
 import { DEFAULT_LICENSE_PERMISSIONS, type LicensePermissions } from "@shared/license-permissions";
 
-import { applyAction, resolveFlowView, stepPosition } from "../chat/guided-flow/engine.js";
-import { renderGuidedSetupSection } from "../chat/guided-flow/prompt-section.js";
-import type { GuidedFlowActionInput, GuidedFlowView } from "../chat/guided-flow/types.js";
+import { applyAction, resolveFlowView, stepPosition } from "./flow-engine.js";
+import { renderGuidedSetupSection } from "./flow-prompt-section.js";
+import type { GuidedFlowActionInput, GuidedFlowView } from "./flow-types.js";
 import { getConsentStatus, isConsentGateEnabled } from "../consent/consentGate.js";
 import { instituteRepository, licenseRepository } from "../../repositories/index.js";
 import { instituteService } from "../instituteService.js";
@@ -363,7 +363,7 @@ export async function buildCtx(input: ResolveViewInput): Promise<StudentSetupCtx
 /** Widen the generic flow view into the client-facing contract shape. */
 export function toGuidedSetupView(
   ctx: StudentSetupCtx,
-  flowView: GuidedFlowView<GuidedSetupStepId>,
+  flowView: GuidedFlowView,
   opts: {
     active?: boolean;
     roster?: GuidedSetupRosterProposal | null;
@@ -422,7 +422,7 @@ export function toGuidedSetupView(
  */
 async function publishView(
   ctx: StudentSetupCtx,
-  flowView: GuidedFlowView<GuidedSetupStepId>,
+  flowView: GuidedFlowView,
   args: { userId: string; rosterProposal?: GuidedSetupRosterProposal | null },
 ): Promise<{ view: GuidedSetupView; done: boolean }> {
   const done = flowView.step === "done";
@@ -446,7 +446,7 @@ async function publishView(
 /** The `=== Section: Guided Setup ===` text for this ctx + view. */
 export function renderSection(
   ctx: StudentSetupCtx,
-  flowView: GuidedFlowView<GuidedSetupStepId>,
+  flowView: GuidedFlowView,
 ): string {
   // Rendered only when the engine has the current step locked, so `step="2/4"`
   // can never read on its own as an invitation to start step 2.
@@ -472,7 +472,7 @@ export function renderSection(
 export interface ViewResult {
   view: GuidedSetupView;
   ctx: StudentSetupCtx;
-  flowView: GuidedFlowView<GuidedSetupStepId>;
+  flowView: GuidedFlowView;
 }
 
 /**
@@ -618,7 +618,7 @@ export async function runToolAction(args: {
     action:
       verb === "skip"
         ? { action: "skip", step: step as GuidedSetupStepId | undefined }
-        : ({ action: verb } as GuidedFlowActionInput<GuidedSetupStepId>),
+        : ({ action: verb } as GuidedFlowActionInput),
   });
   return view;
 }
@@ -914,7 +914,7 @@ export async function resolveView(input: ResolveViewInput): Promise<ViewResult> 
 
 /** Run one flow action, persisting any record change. */
 export async function applyFlowAction(
-  input: ResolveViewInput & { action: GuidedFlowActionInput<GuidedSetupStepId> },
+  input: ResolveViewInput & { action: GuidedFlowActionInput },
 ): Promise<ViewResult> {
   await requireMembership(input.instituteId, input.userId);
   if (input.studentId) {

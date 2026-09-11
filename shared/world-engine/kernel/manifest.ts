@@ -35,6 +35,7 @@
  */
 
 import { parseWorldScaleSpec, type WorldScaleSpec } from "../scale.js";
+import { parseSkillsSpec, type SkillsSpec } from "./town/skills.js";
 import { parseTransportSpec, type TransportSpec } from "../freight.js";
 import { parseWorldCultureSpec, type WorldCultureSpec } from "../culture.js";
 
@@ -161,6 +162,13 @@ export interface GameSettings {
    *  planets. Compression is always a declaration, never a default —
    *  resolve with scale.ts `resolveWorldScale`. */
   scale: WorldScaleSpec | null;
+  /** THE SKILL TREE (`skills` — skill-learning-quality.md): rows the world
+   *  ADDS to (or overrides in) the shipped catalogue, `{ "<key>": { parent?,
+   *  mastery_hours?, gain? } }`. Null = the shipped tree verbatim, which is
+   *  what every current world uses — include-then-extend, so declaring one
+   *  row never restates the other six. Resolve with skills.ts
+   *  `resolveSkillCatalogue`. */
+  skills: SkillsSpec | null;
   /** TRANSPORT ASYMMETRY (`transport` — resources-and-trade.md §①): how much
    *  farther one hauling cost carries a good by water than by land
    *  (downstream/upstream multipliers; land is the unit). Null = the
@@ -248,8 +256,8 @@ function fail(path: string, msg: string): never {
 export function parseGameSettings(raw: unknown, path: string): GameSettings {
   if (!isObj(raw)) fail(path, "expected an object");
   for (const k of Object.keys(raw)) {
-    if (!["scope", "world", "initial_focus", "avatar", "avatar_species", "mods", "can_fly", "creative_mode", "entities", "scale", "transport", "culture"].includes(k)) {
-      fail(`${path}.${k}`, "unknown field (allowed: scope, world, initial_focus, avatar, avatar_species, mods, can_fly, creative_mode, entities, scale, transport, culture)");
+    if (!["scope", "world", "initial_focus", "avatar", "avatar_species", "mods", "can_fly", "creative_mode", "entities", "scale", "skills", "transport", "culture"].includes(k)) {
+      fail(`${path}.${k}`, "unknown field (allowed: scope, world, initial_focus, avatar, avatar_species, mods, can_fly, creative_mode, entities, scale, skills, transport, culture)");
     }
   }
 
@@ -362,6 +370,13 @@ export function parseGameSettings(raw: unknown, path: string): GameSettings {
     scale = parseWorldScaleSpec(raw.scale, `${path}.scale`);
   }
 
+  // THE SKILL TREE — shape gated by skills.ts (the owner of the vocabulary);
+  // absent or null = the shipped catalogue.
+  let skills: SkillsSpec | null = null;
+  if ("skills" in raw && raw.skills !== null) {
+    skills = parseSkillsSpec(raw.skills, `${path}.skills`);
+  }
+
   // TRANSPORT ASYMMETRY — shape gated by freight.ts (the owner of the
   // vocabulary); absent or null = the Earth-premodern anchor ratios.
   let transport: TransportSpec | null = null;
@@ -376,7 +391,7 @@ export function parseGameSettings(raw: unknown, path: string): GameSettings {
     culture = parseWorldCultureSpec(raw.culture, `${path}.culture`);
   }
 
-  return { scope: scope as GameScope, world: raw.world, initialFocus, avatar, avatarSpecies, mods, canFly, creativeMode, entities, scale, transport, culture };
+  return { scope: scope as GameScope, world: raw.world, initialFocus, avatar, avatarSpecies, mods, canFly, creativeMode, entities, scale, skills, transport, culture };
 }
 
 /**

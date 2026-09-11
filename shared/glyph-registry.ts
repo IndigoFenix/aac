@@ -2111,6 +2111,20 @@ const VOCAB: VocabularyItem[] = [
   { key: "how", tKey: "aac.glyph.how", pos: "modifier", categories: ["do"],
     modeChips: { do: ["common"] }, tone: "question", emoji: "❓", exposeToAi: true, expandsTo: "do.how",
     modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 100, corner: "top-right", hiddenFromCarousel: true } },
+  // `question` is the odd one out of this family: it names the ACT of asking
+  // rather than the thing being asked about, so it has no `expandsTo`. It
+  // exists because the AI reaches for it constantly — 61% of every glyph the
+  // validator still rejects is a `question` head or a `.question` modifier,
+  // each costing a full BoardManager retry. The prompt has told it not to for
+  // months and it keeps doing it, so the notation is now simply legal:
+  // `#question` remains the PROSODY tag, and this is the word.
+  // No `categories` / `modeChips` (the `why` precedent) — a valid key for the
+  // AI to compose with, not a new button in the student's builder tabs.
+  // Its ❓ emoji means `isNonReversibleItem` already refuses to mirror it in
+  // RTL, head or badge: a flipped question mark reads as a different sign.
+  { key: "question", tKey: "aac.glyph.question", pos: "noun", categories: [],
+    modeChips: {}, tone: "question", emoji: "❓", exposeToAi: true,
+    modifier: { appliesTo: ["person", "animal", "noun", "verb", "place", "time", "feeling"], transform: "badge", order: 94, corner: "top-right", hiddenFromCarousel: true } },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

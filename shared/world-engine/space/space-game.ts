@@ -24,6 +24,7 @@ import {
 import { sampleGalaxyParams } from "./galaxy-context";
 import { generateSystem, type SolarSystemModel, type SystemPlanet, type PlanetKind } from "./solar";
 import { validateFields, type FieldSpec, type GroupSpec } from "../kernel/spec-schema";
+import { parseStock } from "../interaction/town/town-play-game";
 
 function fail(path: string, msg: string): never {
   throw new Error(`${path}: ${msg}`);
@@ -130,7 +131,48 @@ export interface SolarWorldSpec {
   /** Pin the star (descending from a galaxy passes its record) — absent,
    *  the seed samples one. */
   star?: { massInit: number; age: number; feh: number };
+  /** ⚖️ THE SPEC SAYS THE PREMISE (planet-boot round S1). See
+   *  `PREMISE_FIELDS`. Absent = a system you merely fly. */
+  premise?: "founding";
+  /** The founders' kit — glyph → positive count, the SAME supply box a town
+   *  document declares (`parseStock`). */
+  premise_stock?: Record<string, number>;
+  /** How many settlers arrive (1..50). */
+  premise_population?: number;
 }
+
+/**
+ * ⚖️ THE PREMISE FIELDS — what a world SCOPE says about the game that starts
+ * inside it (planet-boot round §1; the user's law: *"Text mode isn't supposed
+ * to be different from visual mode except for the visual rendering"*).
+ *
+ * The world-lab's spirit boot read these three off `game.world` UNTYPED
+ * (`main.ts bootSpiritWorld`), so a solar document could declare a founding
+ * premise that no gate had ever seen: a mistyped `premise_stock` reached the
+ * site ledger as-is, and headless mode could not boot the premise at all
+ * because nothing in the engine knew it existed. Declaring them here makes the
+ * premise part of the DOCUMENT — one gate, one error string, both clients.
+ *
+ * Exported as a GROUP because the same three fields belong to every scope a
+ * premise can start in: `SOLAR_WORLD_FIELDS` below, and `REGION_WORLD_FIELDS`
+ * when the region producer lands (S3b). One declaration, appended twice.
+ *
+ * All optional ⇒ every shipped document parses byte-identically (a field with
+ * no `default` that is absent stays absent — `validateFields`).
+ */
+export const PREMISE_FIELDS: readonly FieldSpec[] = [
+  { key: "premise", kind: "enum", options: [{ value: "founding", label: "Founding" }],
+    facet: "interior", label: "Premise",
+    description: "The game that starts in this world. \"founding\": a settler party lands on the home planet's best forest cell and builds." },
+  // ONE VALIDATOR with the town scope's `stock` — the founders' kit and a
+  // settlement's supply box are the same object (town-play-game.ts parseStock).
+  { key: "premise_stock", kind: "custom", validate: parseStock,
+    facet: "interior", label: "Founders' kit",
+    description: "What the founding party carries — material glyph → count (e.g. { \"wood\": 14 }). Deposited straight onto the site's ledger: founders carry what the spec says and nothing else." },
+  { key: "premise_population", kind: "int", min: 1, max: 50,
+    facet: "interior", label: "Founding party",
+    description: "How many settlers arrive (1..50)." },
+];
 
 /** A pinned star's fields — the boundary a galaxy descent injects; absent, the
  *  seed samples one. massInit/age are required when `star` is given (a partial
@@ -155,6 +197,8 @@ export const SOLAR_WORLD_FIELDS: GroupSpec = {
       description: "Pin the star (a galaxy descent passes its record); absent, the seed samples one." },
     // `questCount` DELETED (Shape B ruling 3): quests live on town|structure
     // scopes only; the strict gate rejects it here as an unknown field.
+    // …and THE PREMISE (S1): what game starts in this system.
+    ...PREMISE_FIELDS,
   ],
 };
 

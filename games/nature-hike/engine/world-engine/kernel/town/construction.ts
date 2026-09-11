@@ -740,6 +740,26 @@ export interface CraftJob {
    *  spoken order outranks an automated one: it takes the slot, and an
    *  automated job that has not yet begun labour yields it. */
   spoken?: boolean;
+  /**
+   * 🧺 NOBODY SPOKE THIS ONE — A BODY'S OWN PLAN ASKED FOR IT (baskets
+   * makeable, 2026-09-09). The cid whose collection plan wanted an enabler the
+   * world does not contain, priced the making of one against what it would
+   * save over a day, and issued the bill to itself.
+   *
+   * ⚖️ WHY A SECOND FLAG AND NOT `spoken: true`. `spoken` means A PLAYER ASKED,
+   * and two readers must not be told that lie: the order-scoping law (*"a
+   * spoken order outranks an automated one within the house"* — a body's own
+   * want has no such claim on the family's slot) and the bill weight
+   * (`1 + compliance(relationToward(cid, issuer))` — nobody's compliance toward
+   * the player is at stake in a settler's own errand). What the two DO share is
+   * that both are the SETTLEMENT's business rather than the household's
+   * appetite, so both are enumerated by `craftBillsOf` and both run the pull
+   * lane — and the row goes out `spoken: false`, priced as the ordinary civic
+   * bill it is.
+   *
+   * Absent = spoken, automated, or any save before this field.
+   */
+  demand?: { issuer: string };
 }
 
 /** A QUEUED make-order (phase 4 — full craft queueing): what to make,
@@ -915,6 +935,12 @@ export interface SerializedTownDeltas {
    *  endpoints alias), persisted beside the agreements that feed them
    *  (rewrite 1b). Absent = none. */
   shellFurnPiles?: Record<string, Record<string, number>>;
+  /** 🪨 GROUND PILES (piles-not-boxes-round.md ruling 1), good head → the
+   *  stack the `pile:<head>` container aliases: the settlement's larder before
+   *  it has a larder. EMITTED ONLY WHEN NON-EMPTY (the `fellOrders` law), so
+   *  every save written before this round round-trips byte-identically.
+   *  Absent = the settlement has never put anything down. */
+  groundPiles?: Record<string, Record<string, number>>;
   /** QUEUED make-orders (phase 4), house index → the waiting line behind
    *  the one craft slot. Absent = none (every pre-phase-4 save). */
   craftQueue?: Record<string, QueuedCraft[]>;
@@ -1163,6 +1189,11 @@ export interface TownDeltas {
    *  `bfurn:<deltaKey>` endpoints alias, mutated in place; serialize with
    *  the deltas. */
   readonly shellFurnPiles: Map<string, Record<string, number>>;
+  /** 🪨 GROUND PILES (piles-not-boxes-round.md): good head → the live stack
+   *  the `pile:<head>` container aliases, mutated in place (the `stock`
+   *  pattern — the container registration keeps THIS object, never a copy);
+   *  serializes with the deltas, and only when something is in one. */
+  readonly groundPiles: Map<string, Record<string, number>>;
   /** QUEUED make-orders (phase 4): house index → the waiting line behind
    *  the one craft slot, mutated in place (the craftJobs pattern);
    *  serializes with the deltas. */
@@ -1304,6 +1335,12 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
   );
   const shellFurnPiles = new Map<string, Record<string, number>>(
     Object.entries(json?.shellFurnPiles ?? {}).map(([k, s]) => [k, { ...s }]),
+  );
+  // 🪨 ABSENT-TOLERANT BY CONSTRUCTION: a save with no `groundPiles` hydrates
+  // an empty map, and an empty map emits NOTHING (see `toJSON`) — so the
+  // round trip of every pre-round save is byte-identical.
+  const groundPiles = new Map<string, Record<string, number>>(
+    Object.entries(json?.groundPiles ?? {}).map(([k, s]) => [k, { ...s }]),
   );
   const craftQueue = new Map<number, QueuedCraft[]>(
     Object.entries(json?.craftQueue ?? {}).map(([k, q]) => [
@@ -1472,6 +1509,7 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
     laws,
     craftJobs,
     shellFurnPiles,
+    groundPiles,
     craftQueue,
     driftBank,
     herd,
@@ -1501,6 +1539,17 @@ export function createTownDeltas(json?: SerializedTownDeltas): TownDeltas {
       shellFurnPiles: Object.fromEntries(
         [...shellFurnPiles.entries()].map(([k, s]) => [k, { ...s }]),
       ),
+      // 🪨 EMIT-ONLY-WHEN-NON-EMPTY (the `fellOrders`/`herd` law below): a world
+      // that has never put anything on the ground serializes exactly the object
+      // it always did — which is what makes the field absent-tolerant in BOTH
+      // directions rather than only on the way in.
+      ...(groundPiles.size
+        ? {
+            groundPiles: Object.fromEntries(
+              [...groundPiles.entries()].map(([k, s]) => [k, { ...s }]),
+            ),
+          }
+        : {}),
       craftQueue: Object.fromEntries(
         [...craftQueue.entries()]
           .filter(([, q]) => q.length > 0)

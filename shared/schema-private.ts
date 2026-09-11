@@ -1959,17 +1959,34 @@ export const studentConsentRecords = pgTable("student_consent_records", {
 ]);
 
 /**
- * Consent invitations — token-based magic link a clinician sends to a parent
- * who doesn't have a user account. The parent clicks the link, fills the
- * wizard against the resolved (student, contact) tuple, and signs. The token
- * IS the auth — the parent doesn't need to log in.
+ * Consent invitations — token-based magic link sent to a parent who doesn't
+ * have a user account. The parent clicks the link, satisfies a second factor,
+ * and acts against the resolved (student, contact) tuple. The token IS the
+ * auth — the parent doesn't need to log in.
+ *
+ * ⚠️ TWO PURPOSES, ONE TABLE (`purpose`). `sign` mints the consent record;
+ * `withdraw` withdraws one that already exists. They deliberately share a table
+ * because they share EVERY hard part — 60-bit code generation, sha256-at-rest
+ * with a unique index, finite expiry, single-use `redeemedAt`, clinician
+ * `revokedAt`, the SMS-OTP scope id, and the `idVerifiedAt` / `idVerifyAttempts`
+ * brute-force cap. A parallel `consent_withdrawal_tokens` table would be a
+ * second copy of all of it, and the copy is what rots. `recipientType` already
+ * established that this row discriminates.
+ *
+ * 🚨 EVERY QUERY MUST FILTER ON `purpose`. A withdrawal token accepted by the
+ * sign flow (or vice versa) is a confused-deputy bug, so the service's
+ * `loadActiveByCode` takes the expected purpose and refuses a mismatch, and the
+ * clinician's "pending consent requests" list filters to `sign`.
  *
  * Channel: email or SMS. Either is set at creation time. The plaintext code
  * is shown to the clinician once (used to compose the link); only the hash
  * is persisted. After redemption + signing, redeemedAt is set and signedConsentId
- * points to the resulting student_consent_records row.
+ * points to the resulting student_consent_records row; on a `withdraw` row
+ * redeemedAt is stamped when the withdrawal commits and `targetConsentId` names
+ * the record it withdrew.
  *
- * See planning-docs/student-consent-onboarding-plan.md.
+ * See planning-docs/student-consent-onboarding-plan.md and
+ * docs/student-consent-implementation.md §5.3.
  */
 export const consentInvitations = pgTable("consent_invitations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1980,11 +1997,22 @@ export const consentInvitations = pgTable("consent_invitations", {
   contactId: varchar("contact_id").references(() => studentContacts.id),
   // Who the invitation is addressed to: a guardian or the student themselves.
   recipientType: text("recipient_type").default("guardian").notNull(),
+  // What the token authorises: 'sign' (default, every pre-existing row) or
+  // 'withdraw'. See the ⚠️ note above — this is a security discriminator, not
+  // a label.
+  purpose: text("purpose").default("sign").notNull(),
+  // The consent record a 'withdraw' token withdraws. Null on 'sign' rows.
+  // The token is bound to a RECORD, not merely to a student: a student may hold
+  // several records over time and a token must never reach a different one.
+  targetConsentId: varchar("target_consent_id").references(() => studentConsentRecords.id),
   sourceInstituteId: varchar("source_institute_id"),
 
   codeHash: text("code_hash").notNull(),
 
-  createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
+  // Null when the GUARDIAN minted the token themselves (the withdrawal
+  // request-link path) — they have no user account, which is the entire reason
+  // that path exists. Non-null for everything a clinician creates.
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
   channel: text("channel").notNull(), // 'email' | 'sms' | 'manual'
   sentTo: text("sent_to").notNull(),  // email address or E.164 phone (for audit)
 
@@ -2011,6 +2039,9 @@ export const consentInvitations = pgTable("consent_invitations", {
   index("idx_consent_invitations_pending")
     .on(table.studentId)
     .where(sql`redeemed_at IS NULL AND revoked_at IS NULL`),
+  // Withdrawal tokens are looked up per CONSENT RECORD (the re-issue throttle
+  // asks "is one already outstanding for this record?"), never per student.
+  index("idx_consent_invitations_target_consent").on(table.targetConsentId),
 ]);
 
 /**

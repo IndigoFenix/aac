@@ -228,7 +228,12 @@ export class InstituteController {
       );
 
       if (!result.success) {
-        res.status(result.error === "Only admins can update institute details" ? 403 : 404).json({
+        // Permission is decided by `requireInstituteRole("id", "admin")` on the
+        // route, using the SAME predicate the service re-checks, so the
+        // service's admin branch is unreachable here and the only failure left
+        // is a missing institute. This used to string-match the service's error
+        // text to choose a status, which broke on any rewording of it.
+        res.status(404).json({
           success: false,
           message: result.error,
         });
@@ -272,7 +277,12 @@ export class InstituteController {
       );
 
       if (!result.success) {
-        res.status(403).json({
+        // Permission is decided by `requireInstituteRole("id", "admin")` on the
+        // route, using the SAME predicate the service re-checks, so the
+        // service's admin branch is unreachable here. The only failure left is
+        // `repository.deleteInstitute` matching zero rows — i.e. the institute
+        // doesn't exist — so this is 404, not 403, mirroring updateInstitute.
+        res.status(404).json({
           success: false,
           message: result.error,
         });
@@ -366,7 +376,13 @@ export class InstituteController {
       );
 
       if (!result.success) {
-        res.status(result.error?.includes("admin") ? 403 : 404).json({
+        // Permission is on the route (`requireInstituteRole("id", "admin")`),
+        // so the service's admin branch is unreachable. The two remaining
+        // failures are NOT the same kind of thing, and `includes("admin")`
+        // conflated them: "Cannot remove the last admin" is a BUSINESS RULE
+        // (409 Conflict), "Member not found" is 404. Enumerated, so rewording a
+        // message can no longer change a status code.
+        res.status(result.error === "Cannot remove the last admin" ? 409 : 404).json({
           success: false,
           message: result.error,
         });
@@ -588,7 +604,14 @@ export class InstituteController {
       );
 
       if (!result.success) {
-        res.status(result.error?.includes("admin") ? 403 : 404).json({
+        // Permission is on the route, but this verb is keyed on an INVITE id
+        // and the service resolves the institute from the invite — so the two
+        // checks cover different institutes and are complementary, not
+        // redundant. A caller who is admin of the path institute but not of the
+        // invite's gets the SAME 404 as for a nonexistent invite, so the
+        // response cannot confirm that someone else's invite exists (the
+        // incident-controller precedent, 2026-09-10).
+        res.status(404).json({
           success: false,
           message: result.error,
         });

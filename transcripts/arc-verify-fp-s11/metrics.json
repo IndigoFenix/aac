@@ -1,0 +1,67 @@
+{
+  "world": "scripts/worlds/frontier-planet.spec.json",
+  "seed": 11,
+  "dt": 0.5,
+  "days": 1,
+  "dayLengthS": 240,
+  "script": null,
+  "frames": 480,
+  "simSeconds": 240,
+  "wallMs": 1227,
+  "simSecondsPerWallSecond": 195.6,
+  "bodies": 5,
+  "takes": 7,
+  "zeroYieldTakes": 1,
+  "takeSizeHistogram": {
+    "1": 1,
+    "0.2": 5,
+    "0.8": 1
+  },
+  "takesOfSixOrMore": 0,
+  "takesBySource": {
+    "flora:bush": 4,
+    "flora:hazel": 3
+  },
+  "unitsByGoodKey": {
+    "food": 2.8
+  },
+  "foodUnits": 2.8,
+  "rationsPerDay": 2.8,
+  "parked": 0,
+  "reselected": 1,
+  "sleeps": 2,
+  "reaped": 0,
+  "haulAbandoned": 0,
+  "haulReissued": 0,
+  "starvationBodyDays": {
+    "3": 0,
+    "1.5": 0
+  },
+  "frozenBodySeconds": 0,
+  "frozenEpisodes": [],
+  "constructionBeatsS": {
+    "materialsStaged": null,
+    "houseFinished": null,
+    "anyFinished": null,
+    "familyMovesIn": null
+  },
+  "hungerAtEnd": {
+    "mean": 1.12,
+    "hungry": 4,
+    "deep": 0
+  },
+  "perDay": [
+    {
+      "day": 1,
+      "rations": 2.8,
+      "takes": 7,
+      "parked": 0,
+      "reselected": 1,
+      "sleeps": 2,
+      "hungryMean": 1.12,
+      "hungry": 4,
+      "bodies": 5
+    }
+  ],
+  "samples": 240
+}

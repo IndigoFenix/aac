@@ -195,6 +195,8 @@ export function buildPlanetGeography(
     canFly: false,
     creativeMode: false,
     entities: null,
+    // The SHIPPED skill tree (no synthesized planet declares its own rows).
+    skills: null,
     // THE DECLARATION TRAVELS WITH THE PARAMS. `geographyParamsFromFeatures`
     // omits `world.founding` for a world that declared its gap precisely so
     // `planetFoundingOpts` can derive the scan — and it derives from THIS

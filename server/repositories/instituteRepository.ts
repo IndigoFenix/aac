@@ -114,7 +114,19 @@ export class InstituteRepository {
   }
 
   /**
-   * Get institutes with user's membership details
+   * Get institutes with user's membership details.
+   *
+   * ⚠️ A LIST, not a predicate. "May this user act in institute X" is
+   * {@link isUserMemberOfInstitute}; do NOT answer it with `.some(i => i.id === x)`
+   * over this or {@link getInstitutesByUserId} — that was two of the six
+   * implementations the 2026-09-10 audit counted, and one of them had acquired
+   * a `|| user.isAdmin` platform-flag bypass (finding F9).
+   *
+   * Note the two lists differ on support mode by design:
+   * `getInstitutesByUserId` REPLACES the list with the support institute (that
+   * is what scopes a support session's UI), while this one always reports the
+   * user's real memberships — the AI's institute-ref resolver needs the names
+   * the user actually has.
    */
   async getInstitutesWithMembershipByUserId(
     userId: string
@@ -208,12 +220,27 @@ export class InstituteRepository {
   }
 
   /**
-   * Get the link between a user and an institute
+   * Get the link between a user and an institute — ACTIVE OR NOT.
+   *
+   * ⚠️ This is a row accessor, not an authorization predicate. Removal from an
+   * institute is a SOFT delete (`removeUserFromInstitute` → `isActive: false`),
+   * so `!!getInstituteUserLink(...)` admits terminated staff. That was audit
+   * finding C9 (2026-09-10): `locationService` and `calendarService` used the
+   * row raw as a boolean and a removed member kept read/write on the
+   * institute's locations and edit/delete on its calendar events, contradicting
+   * SECURITY_ARCHITECTURE §5.6.
+   *
+   * To ask "may this user act here", use {@link isUserMemberOfInstitute} /
+   * {@link isUserAdminOfInstitute}. To ask "does this OTHER person hold a real
+   * membership row" (grantee checks, roster display), use
+   * {@link getActiveMembership}, which is deliberately support-blind.
    */
   async getInstituteUserLink(
     instituteId: string,
     userId: string
   ): Promise<InstituteUser | undefined> {
+    // A nullish id must never widen the query — see `isSupportSessionFor`.
+    if (!instituteId || !userId) return undefined;
     const [link] = await db
       .select()
       .from(instituteUsers)
@@ -224,6 +251,25 @@ export class InstituteRepository {
         )
       );
     return link || undefined;
+  }
+
+  /**
+   * The ACTIVE membership row, or undefined.
+   *
+   * The third-party membership question — "does this user hold a live
+   * `institute_users` row in this institute" — as opposed to the caller
+   * authorization question the two predicates below answer. It is deliberately
+   * blind to customer-support mode: a support session is break-glass over an
+   * INSTITUTE, and must not make an arbitrary *other* user look like a member
+   * (e.g. `packageController.addGrant`, where a grant must land on a real
+   * member, or the AI's roster reads).
+   */
+  async getActiveMembership(
+    instituteId: string,
+    userId: string
+  ): Promise<InstituteUser | undefined> {
+    const link = await this.getInstituteUserLink(instituteId, userId);
+    return link && link.isActive ? link : undefined;
   }
 
   /**
@@ -306,32 +352,76 @@ export class InstituteRepository {
     return !!updated;
   }
 
+  // ==================== The institute authorization predicate pair ====================
+  //
+  // `isUserMemberOfInstitute` and `isUserAdminOfInstitute` are THE answer to
+  // "may this user act in this institute". Everything else that used to answer
+  // it — a raw `getInstituteUserLink` truthiness test, a
+  // `getInstitutesByUserId().some(...)` scan, `instituteService.verifyMembership`
+  // reading the row itself — now routes through this pair (2026-09-10
+  // authorization structural pass, phase 1). Both check `isActive`; both are
+  // customer-support aware; both are nullish-safe.
+
+  /**
+   * Is there an ACTIVE customer-support session over exactly this institute?
+   *
+   * 🚨 This guard is the reason the check lives in a named helper rather than
+   * inline. `getActiveSupportInstituteId()` returns `undefined` outside a
+   * support session, so the naive form —
+   * `if (getActiveSupportInstituteId() === instituteId) return true` — is
+   * `undefined === undefined`, i.e. **true**, for any caller that passes a
+   * nullish institute id. That is precisely how the 2026-04 consent escalation
+   * worked (SECURITY_ARCHITECTURE §2.4): `PUT /api/consent/students/:id/authority`
+   * handed `undefined` to `isUserAdminOfInstitute` and every authenticated
+   * caller received institute-admin rights.
+   *
+   * The audit (finding F12) checked all call sites and found none that can pass
+   * `undefined` today — but every one of them was safe only by an ad-hoc
+   * truthiness guard somewhere up the stack, while the signature says
+   * `instituteId: string`, so `tsc` had no reason to object and the first caller
+   * to forward an optional property re-arms it. Making it structurally
+   * impossible is therefore the fix, not auditing callers again.
+   */
+  private isSupportSessionFor(instituteId: string): boolean {
+    if (!instituteId) return false;
+    const supportId = getActiveSupportInstituteId();
+    return !!supportId && supportId === instituteId;
+  }
+
+  /** Public form of {@link isSupportSessionFor} — see `instituteService.verifyMembership`. */
+  isCustomerSupportSessionFor(instituteId: string): boolean {
+    return this.isSupportSessionFor(instituteId);
+  }
+
   /**
    * Check if user is admin of an institute.
    * Returns true automatically if the user is in customer support mode for this institute.
+   * A nullish institute or user id is ALWAYS false, support session or not.
    */
   async isUserAdminOfInstitute(
     instituteId: string,
     userId: string
   ): Promise<boolean> {
+    if (!instituteId || !userId) return false;
     // Customer support agents are always admin of their support institute
-    if (getActiveSupportInstituteId() === instituteId) return true;
-    const link = await this.getInstituteUserLink(instituteId, userId);
-    return !!(link && link.isActive && link.isAdmin);
+    if (this.isSupportSessionFor(instituteId)) return true;
+    const link = await this.getActiveMembership(instituteId, userId);
+    return !!(link && link.isAdmin);
   }
 
   /**
    * Check if user is member of an institute.
    * Returns true automatically if the user is in customer support mode for this institute.
+   * A nullish institute or user id is ALWAYS false, support session or not.
    */
   async isUserMemberOfInstitute(
     instituteId: string,
     userId: string
   ): Promise<boolean> {
+    if (!instituteId || !userId) return false;
     // Customer support agents are always members of their support institute
-    if (getActiveSupportInstituteId() === instituteId) return true;
-    const link = await this.getInstituteUserLink(instituteId, userId);
-    return !!(link && link.isActive);
+    if (this.isSupportSessionFor(instituteId)) return true;
+    return !!(await this.getActiveMembership(instituteId, userId));
   }
 
   // ==================== Invite Operations ====================

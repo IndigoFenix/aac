@@ -10,7 +10,7 @@ For AWS infrastructure detail (VPC, IAM, KMS, ECS vs Lambda, WAF, CloudTrail) se
 
 | Field | Value |
 |---|---|
-| Last updated | 2026-08-26 (HIPAA remediation pass) |
+| Last updated | 2026-09-10 (authorization audit — §5.5.1, §5.8) |
 | Document owner | Aivota Engineering |
 | Review cadence | Quarterly, plus before any material processing change |
 | Source of truth | This file lives in the application repo and is updated alongside the code that implements it. |
@@ -188,7 +188,7 @@ Source institute admin                Guardian                Target institute a
 - **Files:** `server/services/sharing/`, `server/services/sharing/audit.ts`, `server/services/sharing/visibility.ts`.
 - **Pending-bundle pattern:** `studentShareInvites.pending_bundle` JSONB carries the share specification before guardian co-sign; rows in `objectShares`/`standingShares` only materialize after redemption. This avoids exposing intent to the target before the human checks complete. See [`memory/project_share_invite_bundle.md`].
 - **Audit:** `recordShareDerivedView` fires `view` events ONLY for cross-institute reads. Owned reads are not logged. See [`memory/project_share_audit_logging.md`].
-- **Identity verification:** consent operations gate on `IdvMethod` (in `shared/legal/idv-methods.ts`) chosen per regime — `verified_phone_otp` for sensitive medical (IL Privacy Protection Authority, Feb-2026), `gov_sso` when SSO is configured, `signed_form_upload` as fallback.
+- **Identity verification:** consent operations gate on `IdvMethod` (in `shared/legal/idv-methods.ts`) chosen per regime — `verified_phone_otp` for sensitive medical (IL Privacy Protection Authority, Feb-2026), `in_person_clinician_attested` when the guardian is at the clinic desk (§2.4), `gov_sso` when SSO is configured, `signed_form_upload` as fallback. The registry is the authority on which of these a regime accepts; call sites never hardcode the list.
 
 ### 2.4 Consent and minor-protection
 
@@ -205,6 +205,333 @@ Clinician initiates onboarding ──> SendConsentRequestDialog
 ```
 
 - **Files:** `server/services/consent/`, `shared/legal/`.
+- **What the consent WRITE-gate covers (widened 2026-09-10).** `CONSENT_GATE_ENABLED`
+  + the 90-day legacy grace window; one helper, `requireConsentForMemoryWrite` /
+  `requireActiveConsent` in `server/services/consent/consentGate.ts`. Covered:
+  report / program / incident memory writes and their finalize endpoints; AAC
+  live-session start; cross-institute share-invite create; **and, since
+  2026-09-10, the AI's record OF THE CHILD** — `Student_People`,
+  `Student_Interests`, `Student_CommunicationStyle`, `Student_Preferences`,
+  `Student_Notes`, the column-backed `Student_CommunicationProfile`,
+  `Relationship_Notes`, and the AI's door into `aac_settings`
+  (`Context_AACPrompt` / `Context_AACAutoPrompt` / `Context_AACSettings`, both
+  through `writeAACSettings` and through `institute-memory-schema`'s
+  `aacSettingsOps`). Until then those were guarded by **prompt text only** — a
+  `WAITING FOR CONSENT` block saying "No `Student_*` memory writes" — and on
+  2026-09-08 the assistant walked straight through it and wrote a communication
+  profile for a consent-blocked child. Prompt text is not an enforcement
+  mechanism. **Two enforcement points, both required:** the memory-schema op
+  (what the AI reads — an AI-legible `ConsentGateError`) and
+  `sessionService.onUpdateMemoryValues` (what stops the bytes), because those
+  schema ops do not write rows and `memory-db-bridge` does not roll a failed
+  op's value out of memory. **Reads are never gated**, and `student_contacts`
+  writes, consent-record creation, draft reports/programs and the non-AI
+  writers of `aac_settings` stay open by design — see
+  `docs/student-consent-implementation.md` §7.2/§7.4 for the full map and the
+  reasoning.
+- **One gate for the student-scoped reads (2026-09-09).** `/active`, `/history`,
+  `/authority` and `/invitations` all answer through a single
+  `assertStudentAccess` in `server/controllers/consentController.ts`: system
+  admin passes, everyone else must share an ACTIVE institute with the student.
+  ⚠️ **Renamed and relocated 2026-09-10** — the rules below are unchanged, but
+  they now live in `server/services/access/` and read
+  `assertSharesInstituteWithStudent` / `sharesInstituteWithStudent` /
+  `administersStudentInstitute`; §5.4.2 is the map. Everything this section says
+  about WHO is admitted still holds.
+  It is one function because it was four, and all four were wrong in the same
+  way — `instituteRepository.getInstitutesByStudentId` returns
+  `{ institute, enrollment }` rows while `getInstitutesByUserId` returns bare
+  `Institute[]`, and each copy compared `row.id` (`undefined`) against the
+  user's institute ids. `Set.has(undefined)` is false for everyone, so the gate
+  denied every non-system-admin — including the patient's own clinician — while
+  reading as correct. An `(m: any)` cast hid the mismatch from `tsc`; the helper
+  is deliberately cast-free so the compiler catches a recurrence.
+  The general rule this established — institute-derived authorization is derived
+  from the STUDENT's enrolments, never from an institute id the caller supplied —
+  is stated in **§5.5.1**, together with who may link a user to a student. The
+  2026-09-10 audit found `POST /api/students/:id/link` failing it as a live
+  privilege escalation.
+  Two further consequences of the same line, both now closed and pinned by
+  `server/tests/integration/consent-api.test.ts`:
+  - `GET .../active` had **no permission check at all** — any authenticated
+    user could read any student's consent record.
+  - `PUT .../authority` was **open to any authenticated user**, not closed:
+    the admin path passed `undefined` to `isUserAdminOfInstitute`, whose first
+    line is `if (getActiveSupportInstituteId() === instituteId) return true`
+    and which returns `undefined` outside a support session, so
+    `undefined === undefined` granted institute-admin rights to the caller.
+- **`GET .../wizard-context` — the parent path modelled explicitly (2026-09-10,
+  CLOSED).** This endpoint returns the student's name, birth date, country and
+  active consent record, and until this date its DEFAULT path checked only that
+  a session existed — its whole permission logic was `if (!userId) 401`, so
+  every authenticated account on the platform could read every student's. It was
+  deliberately excluded from the sweep above because gating it on
+  `assertStudentAccess` alone would have refused legitimate signers in
+  production. It is now gated on `assertWizardContextAccess`
+  (`consentController.ts`), which admits a caller when ANY of three holds:
+  - they share an ACTIVE institute with the student — the same
+    `userSharesInstituteWithStudent` the sweep's gate is built on, system admins
+    included; **or**
+  - a `student_contacts` row for that student carries their `linked_user_id`;
+    **or**
+  - an ACTIVE `user_students` link ties them to the student
+    (`studentRepository.userHasAccessToStudent`).
+
+  **Why not institute overlap alone.** The rule is not a guess at who the
+  parents are — it is the union of the predicates `POST .../sign` ALREADY
+  enforces, and `/sign` admits exactly two callers, neither of them "institute
+  member": guardian sign requires `contact.linked_user_id === caller`
+  (`contact_not_owned_by_caller` otherwise) and self sign requires an active
+  `user_students` link. A family-account student may be enrolled in no institute
+  at all. A read gate narrower than the write it prepares would hand a
+  legitimate signer a 403 on the consent they are entitled to sign, which is why
+  this endpoint was left open rather than gated wrong. There is no fourth
+  predicate and no second copy of any of the three; the contact half reuses the
+  row the handler loads for the response body anyway.
+
+  **What the constraint was NOT about.** The magic-link guardian — the parent
+  with no account at all — never reaches this endpoint. `ConsentSignPage`
+  renders the wizard in token mode, which resolves context through the public
+  `POST /api/consent/invitations/redeem` and signs through `/invitations/sign`.
+  The "may hold no institute membership" concern is real but applies to the
+  SESSION-authed parent (the family-account owner, and a linked co-guardian who
+  is not a member of the clinic), not the token-authed one.
+
+  **Enumeration-safe ordering.** The permission check runs BEFORE the student
+  row is read, so an unpermitted caller gets the same `403 permission_denied`
+  for a real student id and an invented one; the 404 is reachable only by a
+  caller who already passed the gate. The 401/403 bodies are byte-identical to
+  `assertStudentAccess`'s, so a refusal does not even say which gate refused.
+
+  Its `?contactId=` variant (added 2026-09-09 for the in-person attest path)
+  remains on `assertStudentAccess` — institute overlap, unchanged and NOT
+  widened by the three-way rule: naming another person's `studentContacts` row
+  is not something a bare session may do, so a linked guardian who passes the
+  default path is still refused when they name someone else's contact. Pinned in
+  both directions by `server/tests/integration/consent-api.test.ts`.
+- **Every PUBLIC consent route is rate-limited (2026-09-10).** The
+  unauthenticated, token-authed surface is
+  `/api/consent/invitations/{redeem,sign,request-otp,verify-otp,verify-id}` plus
+  the six `/api/consent/withdraw/*` routes. `redeem`, `sign` and all six
+  withdrawal routes carried `authRateLimiter` (10 req/min per IP, per-IP fixed
+  window); the three second-factor legs of the *signing* flow shipped without
+  one and now carry it too.
+  State plainly what it does and does not do. It is **not** what bounds the
+  guessing: `verify-id` checks the last 4 digits of a child's institute ID (a
+  10,000-value space) and is capped at 5 wrong attempts by
+  `CHILD_ID_MAX_VERIFY_ATTEMPTS`, after which the invitation locks until a
+  clinician re-issues; `verify-otp` is capped at 5 wrong codes per OTP; and
+  `request-otp` is capped at 5 sends per 10 minutes per (purpose, invitation,
+  phone) in `phoneOtpService`, with the destination read from the invitation's
+  contact row and **never** from the request — so it was not the uncapped SMS
+  amplifier an earlier note called it. What the limiter adds is the layer
+  *above* all of those: every one of those caps is keyed to a RESOLVED
+  invitation and is therefore blind to a request bearing a code that does not
+  exist, and the invitation code is 12 chars of a 31-symbol alphabet (~59 bits),
+  so junk-code probing is not a credential threat but *is* an unmetered
+  sha256-plus-indexed-select per request from an unauthenticated caller. The
+  per-IP limiter is the only control in front of that, and in front of the cost
+  of any cap that lives below it. 10/min is well above a real guardian
+  mistyping a code — they reach the 5-attempt application lock long before the
+  limiter — and the window is 60 s, so a tripped limiter clears itself while the
+  parent is still on the page. Wiring is pinned at the source level by
+  `server/tests/consent-route-guards.test.ts` (behavioural testing is not
+  possible: `authRateLimiter` self-skips under `NODE_ENV=test`), including a
+  catch-all that fails on any `/api/consent/*` route carrying neither
+  `requireAuth` nor `authRateLimiter`.
+- **The consent WRITES that are institute-scoped (2026-09-09).** There are
+  exactly two, they share ONE predicate, and both are narrower than "any
+  institute member may touch consent". (A THIRD consent write exists and is
+  neither institute-scoped nor session-authed at all — the public withdrawal
+  confirm, 2026-09-10, documented further below.) `POST
+  /api/consent/students/:studentId/attest-in-person` creates a clinician-attested
+  record (below), and `POST /api/consent/:consentId/revoke` withdraws **a record
+  of that kind and no other** (further below). Everything else in this section
+  is about reads.
+  `POST /api/consent/students/:studentId/attest-in-person` — the clinic-desk
+  path: the guardian is physically present, the clinician inspects their
+  identification, and the clinician records the consent from their own
+  authenticated session (`in_person_clinician_attested`, which
+  `shared/legal/idv-methods.ts` marks `providesBothLegs`). This is a legally
+  binding write, so its rules are spelled out:
+  - **Permission:** `attestPermissionFor` in `consentController.ts` — the
+    institute-overlap check of `assertStudentAccess`, i.e. ANY active member of
+    an institute the student is enrolled in, not institute admin. The treating
+    clinician sitting with the guardian at intake is usually not the admin, so
+    an admin gate would make the path unusable in the situation it exists for.
+    Reversible in one line: `ATTEST_REQUIRES_INSTITUTE_ADMIN` in
+    `consentController.ts`. Accountability is the audit trail (below), not the
+    role gate — the attester is identified either way.
+  - **The IDV method is server-owned.** Forced from a module constant; the
+    endpoint's zod schema has no key for it or for `nonRepudiationMethod` /
+    `isSensitive`, so a client-supplied value is stripped rather than honoured.
+    This is not cosmetic: methods are not interchangeable across regimes
+    (`gov_sso` is accepted for `us_coppa`, this one is not), so a client that
+    could name its own method could claim a regime it did not earn. Pinned by
+    `server/tests/integration/consent-attest-in-person.test.ts`.
+  - **US under-13 is refused.** `in_person_clinician_attested` is not one of
+    COPPA's enumerated verifiable-parental-consent methods, so the controller's
+    pre-flight through `checkIdvAcceptability` returns 422 `idv_not_acceptable`
+    with `details.regime = 'us_coppa'`. The pre-flight exists because
+    `consentService.signConsent` checks the notice (step 5) BEFORE IDV (step 9)
+    and notices exist only for IL — without it the refusal would surface as
+    `notice_not_found` and the legal rule would never be reached. The rule is
+    not duplicated: the same adapter is called, so adding a country stays data.
+  - **`/sign` is unchanged.** Its "only the contact's linked user may sign" rule
+    is correct for the parent flow and is pinned against regression in the same
+    suite. The attest path is a different endpoint, not a relaxation.
+  - **Evidence + audit:** the attesting clinician's user id is stored as
+    `identity_verification_evidence.attestingClinicianUserId` (queryable;
+    `studentConsentRecordRepository.listAttestedByUser` is the named query), and
+    the write emits TWO activity rows — `consent_signed` with
+    `details.identityVerificationMethod`, and `guardian_id_verified` on the
+    `student_contact` naming the attester. See §6.1.
+  - **Minimisation:** the government-ID number is written to the contact row and
+    deliberately NOT copied into the evidence jsonb — see §1.3, where that
+    column's plaintext storage is already an open finding. Only the document
+    type and issuing country are recorded as evidence, and no ID image or scan
+    is captured on this path.
+- **Revoking a consent — one narrow institute-scoped case (2026-09-09).**
+  `POST /api/consent/:consentId/revoke`. The rule is **"attest permission =
+  revoke permission"**, and the SCOPE is the security property:
+  - **It applies ONLY to a record whose `identity_verification_method` is
+    `in_person_clinician_attested`.** For every other record — a parent's own
+    session sign, a magic-link sign, a self-sign — the rule is exactly what it
+    was: the signing contact's linked user (or the student on a self-signed
+    record), or a system admin. An institute member has no revoke right over
+    those, and reading a student's consent (which any institute member may do)
+    has never implied a right to withdraw it.
+  - **Why the exception exists.** The attest path signs as a guardian contact
+    with no `linked_user_id` — that absence is the reason the endpoint exists —
+    so the signer rule can never admit the record's own data subject. Before
+    this change, a clinic-attested consent had exactly one revoker in the whole
+    system: a system admin. Every regime we implement grants a right of
+    withdrawal (IL PPL §11, GDPR Art. 7(3), COPPA §312.6), and the guardian has
+    no account, so the practical path is "tell the clinic" and the clinic must
+    be able to act.
+  - **Why NOT the broad reading.** "Any institute member may revoke any of that
+    student's consents" was considered and rejected: it would let a clinic
+    member tear up a consent the parent signed themselves, taking a right from
+    the person who holds it. That is a strictly larger widening than the hole
+    being closed. Pinned by
+    `server/tests/integration/consent-revoke-permission.test.ts`, on a student
+    the member demonstrably DOES have access to, so the refusal is about the
+    record and not about access.
+  - **One predicate.** The parity check is `attestPermissionFor` — the same
+    function, including the same `ATTEST_REQUIRES_INSTITUTE_ADMIN` constant,
+    that gates the attest write above. Flipping that constant tightens creation
+    and withdrawal together; there is no second copy to drift.
+    `revokePathFor(req, record)` holds all three rules and returns which one
+    admitted the caller.
+  - **Audit.** `consent_revoked` carries `details.revocation_path` —
+    `signer` | `system_admin` | `attest_parity` — on EVERY revocation, so a
+    clinic-performed withdrawal is a positive assertion in the row rather than
+    an inference from a missing key. The parity path also carries
+    `attested_by_user_id` and `identity_verification_method`, so one row answers
+    "who vouched for this guardian, and who tore it up". §6.1.
+  - **The cascade is unchanged** and fires on this path exactly as on the others
+    (shares revoked with `cascade_reason='consent_revoked'`, AAC sessions
+    terminated, failures non-fatal — the withdrawal is the binding act).
+  - ~~**Residual, not closed:** a signer with no user account still has no
+    self-serve withdrawal.~~ **CLOSED 2026-09-10 — see the next bullet.**
+- **A PUBLIC, TOKEN-AUTHED CONSENT WRITE (2026-09-10).** `POST
+  /api/consent/withdraw/confirm` revokes a consent record with **no session at
+  all**. It is the only unauthenticated write on the consent surface that
+  changes a `student_consent_records` row, so its rules are spelled out in full.
+  Full design: `docs/student-consent-implementation.md` §5.3.
+  - **Why it is public, and why `requireAuth` here would not be "more secure".**
+    The holder of the right to withdraw is a guardian who signed by magic link
+    (or was attested for at the desk). They have an email, a phone and no `users`
+    row — `revokePathFor`'s `signer` rule resolves through
+    `studentContacts.linkedUserId` and can never admit them, and the sign token
+    was consumed at sign time. On the reading below, requiring a session here
+    would be a permanent refusal of the right to withdraw rather than a control.
+    This is the same reasoning that already makes
+    `/api/consent/invitations/{redeem,sign,…}` public, and the same threat model.
+  - ⚠️ **THE DRIVING PREMISE IS AN INTERPRETATION, NOT A CITATION — do not
+    read the rest of this section as a stated legal rule.** Nothing in
+    `shared/legal/` imposes any withdrawal-specific bar: `idv-methods.ts` governs
+    what each regime accepts *for signing*, and none of the five minor-protection
+    regimes carries a withdrawal clause.
+    `planning-docs/student-access-permission/student-access-permission-laws.md`
+    and `planning-docs/ministry-of-education-approval/` are likewise silent, and
+    the only promise the system has ever made a signer
+    (`IL_2026_04.rightsStatement`) says "contact the clinic". Taking GDPR
+    Art. 7(3)'s "as easy to withdraw as to give" to mean *machine-driven
+    withdrawal that does not depend on an employee's cooperation* is a reading —
+    the one `docs/student-consent-implementation.md` §11 recorded, and the
+    strictest bar any implemented regime plausibly imposes, so the one built to.
+    COPPA §312.6 arguably permits a LOWER bar for revocation than §312.5(b)(2)'s
+    enumerated consent methods; that latitude is deliberately not taken. If the
+    premise is ever revisited, revisit this whole section with it rather than
+    treating the design below as legally compelled.
+  - **What stands in for the session, all of it required.** A single-use token,
+    sha256 at rest under a unique index, 72h expiry, bound to ONE consent record
+    (`consent_invitations.target_consent_id`) and one contact — never merely to a
+    student. Delivered ONLY to an email/phone already stored for that signer;
+    **a destination is never read from a request**. Plus the SAME second factor
+    the sign flow used for that channel, checked immediately before the commit
+    rather than merely offered. Plus an explicit `confirm: true`. Every route
+    carries `authRateLimiter`.
+  - **The bar is EQUAL, both directions.** Not harder than signing (per the
+    Art. 7(3) reading flagged above),
+    not easier (a forwarded receipt must not revoke a child's consent — the
+    withdrawal terminates a live AAC session for a child who depends on the
+    device). Parity is enforced by CALLING the sign flow's own functions —
+    `phoneOtpService` for the SMS leg, `getChildInstituteIdNumber` /
+    `normalizeIdLast4` / the same 5-attempt cap for the email leg — never by
+    re-stating the rule. Where the sign flow was token-only (email channel, no
+    institute ID on file) the withdrawal is token-only too, and that is derived
+    from the same predicate rather than asserted. When both channels exist the
+    link goes by SMS, the channel that carries a real possession factor, so the
+    withdrawal bar cannot drift below the signing bar for the same person.
+  - **Enumeration-safe by construction.** The receipt's entry point,
+    `POST /api/consent/withdraw/request-link`, always answers `200 {success:
+    true}` — for a real reference, an unknown UUID and garbage alike. It reveals
+    nothing about whether the record, student or contact exists, whether the
+    signer has an account, whether a channel is on file, or whether the consent
+    was already withdrawn. A token presented to the wrong flow answers
+    `code_not_found`, the same non-answer a random string gets.
+  - **The receipt carries a REFERENCE, not a token.** `#ref=<consentId>` buys one
+    thing: an email or SMS to an address you must already control — the
+    password-reset shape. A live token in the receipt was rejected: a receipt is
+    a document the guardian is told to KEEP and may forward, and a token in it
+    would be a multi-year standing capability to end a child's AAC session. It
+    would also contradict the 72h stale-link ceiling this system already applies
+    to sign links. A 10-minute per-record throttle stops a replayed receipt from
+    mailbombing the guardian.
+  - **One table, one lifecycle.** The token is a `consent_invitations` row with
+    `purpose='withdraw'` rather than a new table, so code generation, hashing,
+    expiry, single-use redemption, the OTP scope id and the attempt cap have
+    exactly one implementation. ⚠️ The consequence is that **`purpose` is a
+    security discriminator**: `loadActiveInvitationByCode(code, purpose)` refuses
+    a mismatch, and both directions are pinned in
+    `server/tests/integration/consent-withdrawal-token.test.ts`. A query on this
+    table that forgets the filter is a confused-deputy bug.
+  - **The client never revokes on load.** `client/src/pages/ConsentWithdrawPage
+    .tsx` states the consequences, gates the button behind a checkbox, and only
+    the token RESOLUTION runs on mount. Email scanners and link-prefetchers
+    follow URLs; the server's `z.literal(true)` on `confirm` is the second line.
+  - **Audit.** Fourth `revocation_path` value, `signer_token`, and the only one
+    where `userId` is NULL — that signer has no account. WHO is
+    `details.revoked_by_contact_id`; HOW is
+    `details.withdrawal_second_factor` (`phone_otp` | `child_id_last4` |
+    `token_only`). It is deliberately not folded into `signer`, which means "an
+    authenticated user who is the contact's linked account". §6.1.
+  - **The cascade is unchanged** and fires here exactly as on the other three
+    paths. The acting user id is null the whole way down; every
+    `revoked_by_user_id` column was already nullable, so this was a TypeScript
+    widening with no migration.
+  - **The clinic is told.** There is no in-app notification system in this
+    codebase and no clinician-readable activity feed (`/api/admin/activity-logs`
+    is gated on `isAdminIdentity`, i.e. Aivota staff), so this path emails the
+    student's institute ADMIN members. Scoped to THIS path only — the other three
+    revocations are performed by someone already logged in.
+  - **Re-issue is institute-admin, and is not a back door.** `POST
+    /api/consent/:consentId/withdrawal-link` lets the clinic re-send a link when
+    the guardian phones. The caller never sees the code and the link goes to the
+    guardian's stored channel, so §5.2's rule — a clinic member may not tear up a
+    parent-signed consent — is untouched.
 - **Regime selection:** `shared/legal/minor-protection.ts` chooses one of `us_coppa | eu_gdpr_minor | uk_ico_under13 | il_general | gdpr_superset_default` based on the institute's regime + child age.
 - **Recipients snapshot:** the third-party list shown at sign time is stamped into `studentConsentRecords.recipients` so audit can prove what the parent was told. Updates to the canonical list (`shared/legal/recipients.ts`) bump the consent-notice version; existing consents remain valid for *their* snapshot; new processing using a newly-added recipient requires re-consent.
 
@@ -351,8 +678,12 @@ before they can reach a prompt.
 
 Registered memory-schema fields are deliberately **exempt** — `Student_Incidents`
 and `Context_MedicalInfo` are governed by their own schema gates
-(`allowReadReports`, `canWriteObject`, `requireConsentForMemoryWrite`), and
-letting a substring regex second-guess those gates is exactly why this filter was
+(`allowReadReports`, `canWriteObject`, `requireConsentForMemoryWrite`), and since
+2026-09-10 the rest of `students.chat_memory` is too: every registered
+`Student_*` field now passes `requireConsentForMemoryWrite` on write, and the
+blob write in `sessionService.onUpdateMemoryValues` is itself gated, so an
+unregistered key that slips this filter still cannot reach the column for a
+consent-pending student (§2.4). And letting a substring regex second-guess those gates is exactly why this filter was
 once hard-disabled (`/incident/i` silently stripped the Monitor's own incident
 channel, and the whole check was turned off rather than scoped).
 `server/tests/sensitive-fields.test.ts` pins the exemption set against every
@@ -416,11 +747,253 @@ type AccessCtx =
   "separate system-admin audit" that did not exist — the most privileged reader
   left no trail at all.
 
-Memory-schema operations and PHI controllers gate every read through this context. Documented at [`memory/project_ai_access_ctx.md`].
+Memory-schema operations gate every read through this context. Documented at
+[`memory/project_ai_access_ctx.md`].
+
+⚠️ This section used to add "and PHI controllers". The 2026-09-10 authorization
+audit found that untrue of the **REST** surface: of 246 audited routes only a
+minority reach `AccessCtx` at all, and every critical finding sat on a route that
+never touches it. On the REST surface `AccessCtx` is a **cross-institute
+visibility refinement applied after** a student or institute gate has already
+run — not the gate itself. What the gate actually is, is §5.4.2.
+
+#### 5.4.1 One institute predicate, and a boundary that cannot fail open (2026-09-10)
+
+The 2026-09-10 authorization audit counted **six** implementations of "may this
+user touch this institute" and **three** of "is this user a member", two of the
+three wrong. Phase 1 of the structural pass converged them.
+
+**The predicate pair.** `instituteRepository.isUserMemberOfInstitute` and
+`isUserAdminOfInstitute` are the answer. Both check `isActive`, both honour a
+customer-support session, both refuse a nullish argument. Everything that used
+to answer the question separately now routes through them:
+`instituteService.verifyMembership` (the row-bearing form — same rules, plus the
+`institute_users` row for callers that need the role columns), the
+`getInstitutesByUserId().some(...)` list-then-scan in `routes.ts` and
+`calendarService`, and the raw `getInstituteUserLink` truthiness tests in
+`locationService`, `calendarService` and `institute-memory-schema` (§5.6).
+
+One deliberate exception, kept and named rather than merged:
+`instituteRepository.getActiveMembership` answers the **third-party** question —
+"does this *other* user hold a live membership row" (a package grantee, a roster
+entry) — and is therefore blind to support mode, because a break-glass session
+over an institute must not make an arbitrary user look like a member of it.
+`personChatRepository.personsShareInstitute` likewise stays its own thing: it is
+person-to-person, not user-to-institute.
+
+**Support mode is now answered identically everywhere.** `verifyMembership` used
+to read the raw row, so a support agent — who holds no membership row for the
+institute they are supporting — was refused by `GET /api/institutes/:id` and by
+guided setup while being admitted by the predicate pair everywhere else. That
+was not the safer answer, merely an inconsistent one: the agent could already
+read the institute's students, reports and boards. Support sessions are
+deliberate, time-boxed (§5.1) and audited with `details.viaSupportInstituteId`
+(§6.1), so the predicate pair's answer is the correct one and `verifyMembership`
+now agrees with it. On that path `membership` is `undefined` — there is no row.
+
+**The `undefined` support sentinel is structurally impossible (finding F12).**
+`getActiveSupportInstituteId()` returns `undefined` outside a support session, so
+the short-circuit `if (getActiveSupportInstituteId() === instituteId) return true`
+is `undefined === undefined` — **true** — for any caller that passes a nullish
+institute id. That is exactly how the 2026-04 `PUT .../authority` escalation
+worked (§2.4). The audit verified no live call site can pass `undefined` today,
+but every one of them was safe by an ad-hoc truthiness guard somewhere up the
+stack while the signature said `instituteId: string`, so nothing would have
+stopped the next one. The guard now lives inside the helper
+(`isSupportSessionFor`), and both predicates additionally refuse a nullish
+institute **or** user id before any lookup. Pinned DB-free by
+`server/tests/institute-predicate-guards.test.ts`, which also asserts that the
+pre-fix expression really did evaluate to `true`.
+
+**The boundary helper's fail-open sentinel — closed.** `buildClinicianCtx`
+returned `undefined` for BOTH "no institute is selected" and "the caller named an
+institute they are not a member of", and consumers read that one value three
+different ways: `packageController` as **deny**,
+`customAppRepository.getAssignedAppIds` as **no filter**, and
+`reportController.requireOwningInstitute` as **allow** (its cross-institute write
+gate opened). The AAC audit called this the real recurring bug. The boundary now
+returns a discriminated `ClinicianCtxResult`
+(`ctx` | `no_institute_selected` | `not_a_member`) and two controller helpers
+map it to the refusal each route intended:
+
+- `visibilityCtx` — for routes whose own student gate already ran and that use
+  the ctx only as a cross-institute refinement (reports, programs, incidents,
+  deep analysis). `no_institute_selected` passes an undefined ctx through
+  unchanged; `not_a_member` is **403**, not silently unfiltered.
+- `requireInstituteCtx` — for routes that cannot work without an institute
+  principal (packages, custom apps). 400 `INSTITUTE_NOT_SELECTED` for the first,
+  403 `NOT_INSTITUTE_MEMBER` for the second. Both were the same 400 before, so a
+  genuine refusal read to the client as a missing query parameter.
+
+`getAssignedAppIds`'s `ctx` parameter is now **required**: the optionality *was*
+the vulnerability, so it is gone at the type level rather than guarded. Callers
+name their principal — the AAC session passes the student it runs as, and a
+clinician with no institute selected passes a `student` principal once their
+direct access to the student is proven. Pinned by
+`server/tests/clinician-ctx-states.test.ts` and
+`server/tests/integration/institute-membership-authz.test.ts`.
+
+⚠️ **Still open, reported not fixed:** `buildSessionAccessCtx`
+(`services/sharing/sessionCtx.ts`), the AI's parallel boundary, builds its
+institute principal from the caller-supplied `instituteId` **without** verifying
+membership — the shape closed on the HTTP path on 2026-08-26. It is not
+currently reachable (`chatController` and `chatStreamController` both call
+`verifyMembership` on the body's value before initialising the session), and it
+was left alone rather than fixed blind because its consumer's contract for
+`undefined` is "skip the visibility filter" — returning `undefined` on a failed
+check would trade a hypothetical forgery for a real fail-open. It needs the same
+discriminated shape, with `sessionService` changed in the same commit.
+
+#### 5.4.2 The student gate — named policies in `server/services/access/` (2026-09-10)
+
+The same audit's §3 table listed **fifteen** distinct answers to "may this user
+touch this student" — three of them named `requireStudentAccess`, two named
+`assertStudentAccess`. Phase 1 of the structural pass moved the rules into one
+module without changing who any of them admits.
+
+**The module.** `server/services/access/` (`studentAccess.ts`, barrelled by
+`index.ts`). It hosts policies, not middleware; response bodies stay with the
+route. It is written **cast-free** — see the §2.4 `m.id` bug — and contains no
+`any`.
+
+| Export | Policy | Admits |
+|---|---|---|
+| `studentAccess(studentId, userId, {instituteId?})` | **BROAD** | active `user_students` link ∨ **any member** of a `family` institute the student is enrolled in ∨ **admin** of a `school`/`clinic` they are enrolled in |
+| `hasStudentAccess(studentId, userId)` | BROAD | null-safe boolean form; a missing id is a **denial** |
+| `requireStudentAccess(req, res, studentId, {shape, allowNoStudent?})` | BROAD | the 401/403-writing form; the caller supplies the bodies |
+| `sharesInstituteWithStudent(principal, studentId)` | **INSTITUTE OVERLAP** | system admin ∨ the caller is in any institute the student is actively enrolled in |
+| `assertSharesInstituteWithStudent(req, res, studentId)` | INSTITUTE OVERLAP | its 401/403-writing form |
+| `administersStudentInstitute(principal, studentId)` | INSTITUTE ADMIN | system admin ∨ admin of one of the **student's** institutes (§5.5.1) |
+| `wizardContextGrantFor` / `assertWizardContextAccess` | **UNION** | institute overlap ∨ linked `student_contacts` row ∨ active `user_students` link (§2.4) |
+
+**These are three policies, not one with options, and the differences are
+load-bearing.** A plain school STAFF member passes institute overlap and is
+**refused** by the broad policy; a linked caregiver whose student is enrolled
+nowhere passes the broad policy and is **refused** by institute overlap; a
+system admin passes institute overlap unconditionally and is not special-cased
+by the broad policy at all. The structural plan originally proposed collapsing
+the broad-policy wrappers onto the consent predicate; doing so would have
+changed who is allowed in both directions, so both survive as named policies
+with one implementation each. The full admit/deny matrix is pinned in
+`server/tests/integration/student-access-policies.test.ts`.
+
+**Who uses which.**
+
+- **Broad** — `boardController` (board read/write and student attachment),
+  `caretakerPinController` (all three PIN routes), `incidentController` (all
+  four), `voiceController` (synthesize / speak / chat). All four previously
+  carried their own copy; the caretaker and incident copies were logically
+  identical and separately written. Roughly sixty other call sites still call
+  `studentService.verifyStudentAccess` inline (biometrics, programs, photos,
+  devices, venue menus, guided setup, `packageController.canAccessStudent`, …).
+  Those are *uses* of the same single implementation rather than copies of the
+  rule, so they were left alone; moving them onto `studentAccess` is mechanical
+  and can happen route by route.
+- **Institute overlap** — every student-scoped consent read (`/active`,
+  `/history`, `/authority`, `/invitations`), the `?contactId=` wizard variant,
+  and the attest predicate.
+- **Institute admin** — `PUT .../authority`, consent invitation create / resend,
+  the `/history` "can this clinic re-send a withdrawal link" affordance and the
+  re-issue endpoint behind it, and the attest predicate's second half
+  (`ATTEST_REQUIRES_INSTITUTE_ADMIN`).
+- **Union** — `GET /api/consent/students/:id/wizard-context`, default path only.
+
+**`studentAccess` withholds the student row on denial.** `verifyStudentAccess`
+returns the `student` row alongside `hasAccess: false` (clinical audit, pattern
+6). No caller misused it, but the shape invites exactly one kind of mistake, so
+the new surface's result type makes `student` reachable only on the `true`
+branch. `verifyStudentAccess` itself is unchanged, so nothing that has not moved
+is affected.
+
+**Deliberately NOT merged in**, each a different right with one implementation:
+`callContacts.userMayActAsStudent` (a *calling* right — link ∨ active *callable*
+contact row), `services/packages/packageAccess.ts` (§1.2.1),
+`studentService.getStudentLinkAuthority` (link/unlink authority, §5.5.1),
+`recognition-service.getPersonFaceImageUrlForStudent` (a SQL-level restatement),
+and `studentRepository.getStudentsForUserInInstitute` — a **third, wider** rule
+that also grants via a **shared classroom**, the only place in the codebase that
+does. It is a list query rather than a predicate and was left where it is.
+
+**Enumeration.** Every adapter resolves permission before the resource lookup,
+so a refused caller cannot tell a real student id from an invented one. Where
+the resource id is not the student's — `PATCH`/`DELETE /api/incidents/:id`,
+whose student is only known from the row — the leak is closed from the other
+side instead: an incident the caller may not touch answers with the **same 404**
+as one that does not exist. That was clinical audit §2.9, and it was previously
+a 403 under a comment claiming otherwise.
 
 ### 5.5 Family/cross-institute access scoping
 
 Access checks key off the **selected** institute, not all institutes the user is in. A user who switches institutes loses share-derived access until the new institute has its own grants. Documented at [`memory/feedback_family_access_scoping.md`]. `buildClinicianCtx` verifies that the caller is actually a member of the `instituteId` it is handed, so the context cannot be forged by supplying someone else's institute.
+
+#### 5.5.1 Institute-derived authorization starts at the STUDENT (2026-09-10)
+
+**The rule.** When a check's shape is "the caller administers an institute,
+therefore they may act on this student", the candidate institutes MUST be
+derived from the student's own active enrolments
+(`instituteRepository.getInstitutesByStudentId`) and the caller tested against
+those. A request-supplied institute id — body, query string or selected-context
+— is never the authorization input. Proving the caller administers an institute
+they named, without proving the STUDENT belongs to it, proves nothing about the
+student: every admin on the platform administers *some* institute.
+
+**Who may link a user to a student.** `user_students` rows are authorization
+grants, not a contact list, so `POST /api/students/:id/link` and
+`DELETE /api/students/:id/link/:userId` answer through one predicate,
+`studentService.getStudentLinkAuthority(studentId, userId)`:
+
+- an **owner** — the caller holds an active `user_students` row with
+  `role === "owner"` for this student (the family's relationship to their
+  child); or
+- an **institute admin** — the caller administers a *school* or *clinic* the
+  student is **actively enrolled in**. Family institutes are not a route here;
+  a family member's authority is their own owner link.
+
+On top of that:
+
+- `role` is validated against `USER_STUDENT_ROLES`
+  (`owner | caregiver | therapist | teacher`, exported from
+  `server/services/studentService.ts` and pinned equal to the enum the AI's
+  memory schema publishes). An unknown role is a 400, never a silent default.
+  That list gates the ENDPOINT, not the column: `user_students.role` is bare
+  `text` and legitimately holds other values from older paths (`parent`,
+  `clinician`), while `verifyStudentAccess` grants on any ACTIVE link
+  regardless of role — `"owner"` is the only value ever read back as privilege.
+  The service-layer writers therefore stay permissive; rejecting a legacy role
+  string there would be a reliability regression, and the attacker-reachable
+  surface is the controller.
+- **An institute admin may never grant `owner`**, to themselves or to anyone.
+  Ownership carries full PHI access and the owner-only student delete; only an
+  existing owner can create another owner.
+- An institute admin may not re-link an existing owner either — re-linking is an
+  UPDATE, so without that guard an admin could demote the owner to `caregiver`
+  and then unlink them ("cannot unlink the owner" only protects a row that still
+  says owner).
+- The audit row records the **derived** institute, so the log says which
+  institute actually justified the write.
+
+**Found by the 2026-09-10 authorization audit.** Both handlers took the
+institute id off the request and never tied `:studentId` to it, and `role` went
+through as `role || "caregiver"`. Chained, that was a live privilege escalation:
+any admin of any school or clinic could POST their own institute id, their own
+user id and any student uuid with `role: "owner"` and receive full PHI access
+plus the owner-only delete; the unlink half let them strip a student's
+caregivers instead. Verified non-vacuous against the pre-fix code (HTTP 200,
+resulting role `owner`) and pinned in both directions by
+`server/tests/integration/student-link-authz.test.ts`.
+
+This is the same class of defect as §2.4's `m.id` bug — one check about
+institutes and students, re-typed per call site — so it is one exported
+predicate, not a fifth copy, and it is written cast-free
+(`for (const { institute } of enrollments)`) so `tsc` catches a recurrence.
+
+⚠️ **Still open at the time of writing:** the AI's door to the same table,
+`studentUsersOps` in `server/services/memory-schema/institute-memory-schema.ts`,
+carries a private `requireInstituteAdmin` with the identical shape — it trusts
+`ctx.all.instituteId` and never ties `ctx.all.studentId` to it — and its `add`
+and `update` ops pass `value.role` through without the owner restriction. The
+reachable student set there is already access-scoped, so it is narrower than the
+HTTP hole was, but it should be moved onto `getStudentLinkAuthority`.
 
 ### 5.6 Session revocation — devices and workforce termination
 
@@ -445,6 +1018,39 @@ Caveat worth recording: the socket sweep is per-process. Under the `hipaa`
 profile's multiple tasks, sockets held on the other tasks end at their next
 auth-bearing request rather than instantly.
 
+**The deactivation rule now actually holds (C9, closed 2026-09-10).** Removal
+from an institute is a **soft** delete — `instituteService.removeMember` →
+`instituteRepository.removeUserFromInstitute` sets `isActive: false` and leaves
+the `institute_users` row in place — so "is this user a member" and "is this row
+present" are different questions. Until this date three call sites asked the
+second one and acted on the answer:
+
+- `locationService.isInstituteMember` (`return !!link`) and
+  `locationService.canEdit` (`return !!link?.isAdmin`), and
+- `calendarService.canUserEditEvent` (`if (link?.isAdmin)`), plus
+- the AI's calendar-event writer in `institute-memory-schema` (the same
+  `!link?.isAdmin` test).
+
+A terminated staff member therefore kept read/write on that institute's
+`locations` and, if they had been an institute admin, edit and delete on its
+calendar events — across `GET/POST /api/locations`, `GET/PATCH/DELETE
+/api/locations/:id` and `PATCH/DELETE /api/calendar/events/:id`. That directly
+contradicted the paragraph above, which has claimed since it was written that
+workforce termination ends access immediately. Session eviction was doing its
+job; the resource gates were not.
+
+All four now go through the §5.4.1 predicate pair, which checks `isActive` — as
+`isUserMemberOfInstitute` and `isUserAdminOfInstitute` always did, which is why
+promoting them was the fix rather than patching each site. Found by the
+**2026-09-10 authorization audit** (`planning-docs/authz-audit-clinical.md`,
+finding C9) and pinned by
+`server/tests/integration/institute-membership-authz.test.ts`, whose
+non-vacuity assertion is in the test itself: after deactivation the membership
+row is still present and still carries `isAdmin: true` — precisely what the
+pre-change code read — while the predicates say no. Verified non-vacuous against
+the reverted source as well (the deactivated admin was ADMITTED to edit and
+delete another member's location, and to edit an institute calendar event).
+
 ### 5.7 Caretaker PIN on AAC devices
 
 The AAC device is signed in for a year and operated by a child, so the caretaker
@@ -457,6 +1063,112 @@ the PIN: the device can only ask "is a PIN set" and "did this guess match", and
 the verify endpoint is rate-limited (5 attempts / 15 min per IP + student). Set
 from the clinician panel by anyone with access to the student. Setting or
 changing it is audited.
+
+### 5.8 Platform-admin authority — a self-declared role confers nothing (2026-09-10)
+
+**What the two gates mean now.** Platform-admin authority is carried by
+COLUMNS, and only by columns:
+
+| Gate | Predicate | Who has it |
+|---|---|---|
+| `requireSystemAdmin` | `users.is_system_admin` | the two production admin rows, and any `admin_users`-backed backoffice session (`adminAuthService.adaptAdminAsUser` presents it with the flag set). A plain `is_admin` account is refused |
+| `requireAdminSection(key)` | `isAdminIdentity(user)` **and** the section is in `admin_users.permissions` | backoffice admins only — strictly narrower still, since a `users.is_admin` row is not an admin *identity* |
+
+There is **no general "is an admin" door.** `requireAdmin` — a third gate that
+admitted `users.is_admin` OR `users.is_system_admin` — was DELETED on 2026-09-10
+together with all 20 route registrations behind it (phase 0a of the
+authorization structural pass). None had a client call site: the backoffice
+drives the section gates exclusively and has no "users" section. Anything new
+under `/api/admin/*` names a section or `requireSystemAdmin`; re-introducing a
+bare admin tier is a regression, pinned by
+`server/tests/admin-privilege-claims.test.ts`. The three account/billing writes
+that had to survive moved onto sections: the access-review off switch
+(`PATCH /api/admin/users/:id`) and MFA enforcement onto `admins`, credit-package
+authoring onto `licenses`.
+
+**`users.user_type` is a profile label, not an authority, and no gate may test
+it.** It is written verbatim from the request body on the public registration
+path, so treating it as a claim is the same as accepting the claim from the
+attacker. `"admin"` remains a legal *value* — `adaptAdminAsUser` stamps it on
+the backoffice pseudo-identity and two production rows carry it — it simply
+means nothing. `shared/schema.ts` makes the distinction structural: the public
+`registerSchema` validates against `SELF_ASSIGNABLE_USER_TYPES`
+(`Teacher | Caregiver | SLP | Parent`), while `ALL_USER_TYPES` — which still
+includes `"admin"` — is used only by admin-authenticated update paths. A
+server-side insert of a legitimate admin is unaffected: it sets the flags, which
+no schema on any request path can reach.
+
+**The finding.** Found by the 2026-09-10 authorization audit
+(`planning-docs/authz-audit-admin.md`, finding C1) as a live, remotely
+exploitable privilege escalation reachable by an **anonymous** party in two HTTP
+requests:
+
+1. `POST /auth/register` with `"userType": "admin"` in the body —
+   `registerSchema`'s enum accepted it, `userService.registerUser` spread it into
+   the insert and `user_type = 'admin'` was persisted verbatim.
+2. Any of the `requireAdmin` routes — the gate read
+   `user.userType !== "admin"` as a privilege claim, so the self-issued value
+   passed. `GET /api/admin/users` then answered `res.json({ users })` over
+   `db.select().from(users)`, and the payload carried every account's bcrypt
+   hash and encrypted TOTP seed (see the allowlist note below).
+
+Step 2 is now impossible twice over: the `userType` clause was removed when the
+finding was fixed, and on 2026-09-10 the gate and every route it reached were
+deleted outright.
+
+Verified non-vacuous against the pre-fix tree: registration returned **HTTP
+200** and wrote the row, a `user_type='admin'` / `is_admin=false` /
+`is_system_admin=false` row **passed `requireAdmin`**, and the
+`GET /api/admin/users/:id` payload contained `"password":"$2b$12$…"` and
+`"mfaSecret":"…"`. Pinned in both directions by
+`server/tests/admin-privilege-claims.test.ts` (DB-free) and
+`server/tests/integration/admin-privilege-escalation.test.ts` (DB-backed,
+asserting the persisted ROW). Since the 0a deletion those suites also pin the
+absence: `requireAdmin` is not exported, and `adminController` carries no
+platform-user handler and no unbounded `system_settings` writer.
+
+**Production was verified unexploited.** 14 user rows; exactly two privileged
+(`opher@aivota.ai`, `daniel@aivota.ai`), both carrying `is_admin = true` AND
+`is_system_admin = true`, and both the only rows in `admin_users`. No account
+depended on the `userType` clause, so removing it locks nobody out and **no data
+migration is required**. Two legitimate rows still carry `user_type = 'admin'`;
+that is now inert data. A backfill normalising them is optional cosmetics, not a
+control, and is deliberately not proposed.
+
+**`requireSystemAdmin` did not share this weakness** — it never tested
+`userType`, and `is_system_admin` cannot be set from a request body. Its own,
+unrelated weakness is still open: `adaptAdminAsUser`
+(`server/services/adminAuthService.ts`) stamps `isSystemAdmin: true` on **every**
+`admin_users` row regardless of that row's `permissions`, so a section-scoped
+backoffice admin passes it (audit finding F1, with F2's three fail-open `["*"]`
+permission defaults). Those are their own round.
+
+**Admin user endpoints emit a positive allowlist — and then stopped existing.**
+`GET /api/admin/users`, `GET /api/admin/users/:id` and the general
+`PATCH /api/admin/users/:id` first stopped emitting raw `users` rows (they
+emitted `ADMIN_USER_VIEW_FIELDS`) and were then deleted entirely on 2026-09-10,
+so no route serialises a `users` row any more. `server/services/userView.ts` is
+KEPT, with its pins in `admin-privilege-claims.test.ts`, as the required shape
+for any future route that needs to: it is a positive list, and a denylist would
+not have held, because those rows come back from
+`userRepository.getAllUsers()` via `hydrateRecords("users", …)`, which is the
+external-storage **rehydrator**, and `server/external-storage/registry.ts`
+declares the `users` core tier as `[…,"password","mfaSecret",…]` — so the
+credential columns are actively pulled back INTO the row object, and any new
+sensitive column would be too. Excluded by construction: `password`,
+`mfaSecret`, `chatMemory`, `googleId`, `externalStorage`, and anything added to
+the table in future. The students attached to each user row are reduced to
+`{ id, name, createdAt }` by the same mechanism — the account-management screen
+needs to know WHICH children an account reaches, not their `birthDate`, `gender`
+or `chatMemory`.
+
+**Related, reported not fixed:** `requireSLPPlan` exists in two copies
+(`server/middleware/auth.ts` and `server/userAuth.ts`) and both admit on a
+self-declared `userType === "SLP"`; the `userAuth.ts` copy also tests
+`userType === 'Admin'`, a capital-A string that is not a legal value of the
+column anywhere and is therefore dead. That gate is a subscription/feature check,
+not a privilege boundary — but "the plan gate believes the registration body" is
+the same shape as this finding and should be closed on its own terms.
 
 ## 6. Audit Logging
 
@@ -486,7 +1198,7 @@ Schema: `event_type, subject_type1/id1, subject_type2/id2, instituteId, userId, 
   `{ format }`. Board exports emit it today; the CSV/gridset/snappkg export
   routes and Dropbox backups are **not yet wired to it** (open).
 - **Share lifecycle:** `created`, `guardian_approved`, `redeemed`, `accepted`, `declined`, `revoked`, `expired` for `studentShareInvites`; `granted` / `revoked` for `standingShares`.
-- **Consent lifecycle:** `consent_signed`, `consent_revoked`, `consent_re_signed`, `guardian_id_verified`, `minor_threshold_crossed` for `studentConsentRecords`.
+- **Consent lifecycle:** `consent_signed`, `consent_revoked`, `consent_re_signed`, `guardian_id_verified`, `minor_threshold_crossed` for `studentConsentRecords`. `consent_revoked.details.revocation_path` is one of `signer` / `system_admin` / `attest_parity` / `signer_token`; on `signer_token` (§2.4, the public withdrawal) `userId` is NULL because that signer has no account, and `details.revoked_by_contact_id` + `details.withdrawal_second_factor` carry who withdrew and how they proved it. `guardian_id_verified` is emitted by the in-person attestation path (§2.4): subject 1 is the `student_contact`, subject 2 the student, `userId` the attesting clinician, and `details` carries `attestingClinicianUserId`, `identityVerificationMethod`, `guardianPresent` and the inspected document's type/country. An attestation therefore leaves two rows — this one for the attesting act, and `consent_signed` for the record — and both are distinguishable from a self-signed consent by `details.identityVerificationMethod`.
 - **Auth events:** `auth_login_success`, `auth_login_failure`, `auth_logout`, `auth_mfa_challenge`, `auth_mfa_success`, `auth_mfa_failure`, `auth_password_reset_requested`, `auth_password_reset_completed`. Logged with IP and user-agent in `details` for forensics; failures log `attemptedEmail` instead of `userId` (privacy-preserving).
 - **Erasure lifecycle:** `student_erasure_requested`, `student_erasure_cancelled`, `student_erasure_completed`. Exempt from retention pruning (compliance evidence — see §6.3).
 - **Content-package publication:** `package_published`, `package_unpublished`, `package_approved`, `package_rejected`. The `package_published` row carries the publisher's attestation (`{ noPersonImages, at, byUserId }`) and the board count — it is the record that content leaving the owning institute did so by an affirmative act of a named person, not a default or an automated one. See §1.2.1.

@@ -2652,7 +2652,12 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
         try {
           const perms = await licenseService.getUserPermissions(this.userId);
           if (perms.customAppsEnabled) {
-            const apps = await customAppRepository.getAssignedAppsForStudent(this.studentId);
+            // The AAC session IS the student — student principal, stated rather
+            // than left to an absent-ctx fallback (see getAssignedAppIds).
+            const apps = await customAppRepository.getAssignedAppsForStudent(
+              this.studentId,
+              { kind: "student", studentId: this.studentId },
+            );
             availableCustomApps = apps.map((a) => ({
               id: a.id,
               name: a.name,

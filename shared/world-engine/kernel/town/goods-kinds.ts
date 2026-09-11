@@ -15,7 +15,7 @@ import { RARE_IMPORT_KIND } from "./trade.js";
 import { GARMENT_WEARABLE_HEADS, GARMENT_COLORS } from "../../creatures/clothing.js";
 import { headOf, variantKindsOf } from "../../variations.js";
 import { foodGlyphs } from "../../products.js";
-import { NEED_FILL_DAYS } from "../../scale.js";
+import { NEED_FILL_DAYS, RATION_KCAL } from "../../scale.js";
 
 /** WHICH GOOD VARIES IN WHICH variation dimension(s) — the generic replacement
  *  for hand-writing each good's `head × values` product. Clothing varies in
@@ -152,10 +152,48 @@ export const SATIATION_DAYS: Readonly<Record<string, number>> = {
   meal: 1,
 };
 
+// ── 🍎 THE REAL FOUNDATION UNDER THE CLASS VALUE (resource-packing round) ──
+//
+// The table above is a CONTENT ladder: every raw food clears 0.2 person-days,
+// whatever it is. The catalogue can now say what a unit is actually worth
+// (`products.ts NaturalProduct.kcalPerItem`), and this is the seat that reads
+// it — so the ladder has a real number underneath it instead of only a
+// convention.
+
+/**
+ * THE GAMEPLAY MULTIPLIER over the real calorie foundation.
+ *
+ * Chosen so a REAL apple — 95 kcal ÷ `RATION_KCAL` = 0.0475 person-days — reads
+ * as the shipped 0.2. That is the multiplier the user asked for, stated once
+ * and derived from a real item rather than assumed: a game apple fills 4.2×
+ * what an apple fills, which is the same kind of compression
+ * `resource_compression` is, one rung over.
+ */
+export const ITEM_SATIATION_GAMEPLAY = 4.2105;
+
+/** Person-days one unit REALLY clears: its calories over one person-day's. */
+export function realSatiationDaysOf(kcalPerItem: number): number {
+  return kcalPerItem > 0 ? kcalPerItem / RATION_KCAL : 0;
+}
+
+/** The real figure at the gameplay multiplier — what the shipped ladder would
+ *  say if it read the catalogue's calories per item instead of a class. */
+export function gameplaySatiationDaysOf(kcalPerItem: number): number {
+  return realSatiationDaysOf(kcalPerItem) * ITEM_SATIATION_GAMEPLAY;
+}
+
 /**
  * Person-days one unit of `glyph` clears. COOKED FIRST: a `.hot` variant is a
  * meal whatever it was raw (a hot cookie is a meal, `MEAL_KINDS`), which is
  * also why the cook's transform is worth walking to — one stew is five apples.
+ *
+ * 🚨 THE CLASS VALUE STANDS, AND THE KCAL FIGURES ARE REPORTED ONLY. Read
+ * through `gameplaySatiationDaysOf`, the catalogue's own calories give berry
+ * 0.105, nut 0.396, carrot 0.053, onion 0.008 — a 50× spread that leaves the
+ * band the user accepted ("fruits are roughly similar"), so applying them here
+ * would be a content change nobody asked for, dressed as realism. The apple is
+ * the calibration point and it lands exactly on 0.2; the rest are available to
+ * whichever round decides to spend them.
  */
 export const satiationDaysOf = (glyph: string): number => {
   const head = headOf(glyph);

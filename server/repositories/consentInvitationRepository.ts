@@ -61,18 +61,96 @@ export class ConsentInvitationRepository {
     return row || undefined;
   }
 
-  async listPendingForStudent(studentId: string): Promise<ConsentInvitation[]> {
+  /**
+   * Pending invitations for a student, of ONE purpose.
+   *
+   * 🚨 The purpose filter is not cosmetic and the default is not arbitrary.
+   * This feeds the clinician's "Pending consent requests" list, whose Revoke
+   * button cancels the row. Without the filter a guardian's outstanding
+   * WITHDRAWAL link would appear there as a consent request, and a clinician
+   * tidying the list would cancel the data subject's route to withdrawing —
+   * silently, and while believing they were retiring a stale sign link. Callers
+   * that genuinely want withdrawal tokens ask for them by name.
+   */
+  async listPendingForStudent(
+    studentId: string,
+    purpose: "sign" | "withdraw" = "sign",
+  ): Promise<ConsentInvitation[]> {
     return db
       .select()
       .from(consentInvitations)
       .where(
         and(
           eq(consentInvitations.studentId, studentId),
+          eq(consentInvitations.purpose, purpose),
           isNull(consentInvitations.redeemedAt),
           isNull(consentInvitations.revokedAt),
           gt(consentInvitations.expiresAt, new Date()),
         ),
       );
+  }
+
+  /**
+   * Live (unredeemed, unrevoked, unexpired) withdrawal tokens for ONE consent
+   * record. The re-issue throttle reads this: a guardian who taps the receipt's
+   * link twice must not mint two mails, and an attacker who holds the receipt
+   * must not be able to mailbomb the guardian's own inbox by replaying it.
+   */
+  async listPendingWithdrawalsForConsent(
+    consentId: string,
+  ): Promise<ConsentInvitation[]> {
+    return db
+      .select()
+      .from(consentInvitations)
+      .where(
+        and(
+          eq(consentInvitations.targetConsentId, consentId),
+          eq(consentInvitations.purpose, "withdraw"),
+          isNull(consentInvitations.redeemedAt),
+          isNull(consentInvitations.revokedAt),
+          gt(consentInvitations.expiresAt, new Date()),
+        ),
+      );
+  }
+
+  /**
+   * The invitation that produced a given consent record, if it was signed
+   * through one. This is how a SELF-consent record (no guardian contact at all)
+   * gets a withdrawal destination: the student's own email/phone is on the
+   * invitation's `sentTo`, normalised at creation time, and nowhere else.
+   */
+  async getBySignedConsentId(
+    consentId: string,
+  ): Promise<ConsentInvitation | undefined> {
+    const [row] = await db
+      .select()
+      .from(consentInvitations)
+      .where(eq(consentInvitations.signedConsentId, consentId));
+    return row || undefined;
+  }
+
+  /**
+   * Stamp a WITHDRAWAL token as spent. Mirrors `markRedeemed` (same single-use
+   * guard, same race semantics) but leaves `signedConsentId` alone — that column
+   * means "the record this token CREATED", and a withdrawal token creates
+   * nothing. What it acted on is `targetConsentId`, set at mint time.
+   */
+  async markWithdrawalRedeemed(
+    id: string,
+  ): Promise<ConsentInvitation | undefined> {
+    const [row] = await db
+      .update(consentInvitations)
+      .set({ redeemedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(consentInvitations.id, id),
+          eq(consentInvitations.purpose, "withdraw"),
+          isNull(consentInvitations.redeemedAt),
+          isNull(consentInvitations.revokedAt),
+        ),
+      )
+      .returning();
+    return row || undefined;
   }
 
   async markRedeemed(

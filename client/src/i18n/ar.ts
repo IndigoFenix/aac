@@ -66,9 +66,9 @@ export const ar = {
   // ============================================================================
   identity: {
     verificationRequired: "مطلوب التحقق من الهوية",
-    verificationNeeded: "{{institute}} يتطلب التحقق عبر {{provider}}. يرجى التحقق من هويتك للوصول إلى هذه المؤسسة.",
-    verificationExpired: "انتهت صلاحية التحقق عبر {{provider}} لـ {{institute}}. يرجى إعادة التحقق من هويتك.",
-    verifyNow: "التحقق عبر {{provider}}",
+    verificationNeeded: "{institute} يتطلب التحقق عبر {provider}. يرجى التحقق من هويتك للوصول إلى هذه المؤسسة.",
+    verificationExpired: "انتهت صلاحية التحقق عبر {provider} لـ {institute}. يرجى إعادة التحقق من هويتك.",
+    verifyNow: "التحقق عبر {provider}",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const ar = {
     genderOther: "آخر",
     primaryLanguage: "اللغة الأساسية",
     dateOfBirth: "تاريخ الميلاد",
-    ageDisplay: "العمر: {{age}} سنوات",
+    ageDisplay: "العمر: {age} سنوات",
     systemType: "النظام التعليمي",
     frameworkTala: "TALA (إسرائيل)",
     frameworkIep: "IEP (الولايات المتحدة)",
@@ -1081,9 +1081,9 @@ export const ar = {
     clearUnsavedDesc: "لديك تغييرات غير محفوظة. هل تريد الحفظ قبل مسح اللوحة؟",
     discardAndClear: "تجاهل ومسح",
     saveAndClear: "حفظ ومسح",
-    generatingIcons: "جارٍ إنشاء الرموز، المتبقي: {{remaining}}",
+    generatingIcons: "جارٍ إنشاء الرموز، المتبقي: {remaining}",
     iconsGenerated: "تم إنشاء جميع الرموز بنجاح",
-    iconsFailed: "فشل إنشاء {{count}} رمز/رموز",
+    iconsFailed: "فشل إنشاء {count} رمز/رموز",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const ar = {
     importWarning: "الاستيراد سيستبدل اللوحة الحالية. بعض ميزات Grid3 قد لا يتم استيرادها بشكل مثالي.",
     importButton: "استيراد",
     importSuccess: "تم استيراد اللوحة",
-    importSuccessDesc: "تم استيراد \\\"{{name}}\\\" من Dropbox",
+    importSuccessDesc: "تم استيراد \\\"{name}\\\" من Dropbox",
     importFailed: "فشل الاستيراد",
     noFilesFound: "لم يتم العثور على ملفات لوحات في مجلد Dropbox الخاص بك.",
   },
@@ -1349,6 +1349,8 @@ export const ar = {
     noStudentsDesc: "أضف أول {{STUDENT}} للبدء",
     noResults: "لم يتم العثور على {{STUDENTS}}",
     noResultsDesc: "جرب تعديل بحثك أو المرشحات",
+    selectInstituteFirst: "اختر مؤسسة أولاً لإضافة {{student}}",
+    selectInstituteEmpty: "اختر مؤسسة لرؤية {{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const ar = {
     gasOverallScoreDesc: "التقدم الإجمالي عبر أهداف GAS. 50 = المتوقع.",
     gasAtOrAbove: "عند المستوى المتوقع أو أعلى",
     gasBelow: "تحت المستوى المتوقع",
-    gasGoalsCounted: "استناداً إلى {{count}} من أهداف GAS ذات البيانات المسجلة.",
+    gasGoalsCounted: "استناداً إلى {count} من أهداف GAS ذات البيانات المسجلة.",
     goalCompletion: "إتمام الأهداف",
     goalsByDomain: "الأهداف حسب المجال",
     timeline: "الجدول الزمني",
@@ -1779,7 +1781,7 @@ export const ar = {
     title: "بيانات التقدم",
     noDataPoints: "لم يتم تسجيل بيانات بعد",
     collectedBy: "جُمعت بواسطة",
-    moreCount: "+{{count}} سجلات إضافية",
+    moreCount: "+{count} سجلات إضافية",
 
     numericValue: "قيمة رقمية",
     numericPlaceholder: "مثال: 85",
@@ -2206,7 +2208,7 @@ export const ar = {
 
   reports: {
     title: "التقارير",
-    subtitle: "تقارير {{name}}",
+    subtitle: "تقارير {name}",
     noStudent: "يرجى اختيار {{STUDENT}} لعرض التقارير",
     noStudentSelected: "لم يتم اختيار {{STUDENT}}",
     selectStudentFirst: "يرجى اختيار {{STUDENT}} لعرض تقاريره",
@@ -2243,10 +2245,12 @@ export const ar = {
     finalizeTitle: "إنهاء التقرير",
     finalizeWarning: "بمجرد الإنهاء، لا يمكن تعديل هذا التقرير. ستحتاج إلى إنشاء مراجعة جديدة لإجراء تغييرات.",
     finalizeCannotUndo: "لا يمكن التراجع عن هذا الإجراء.",
+    consentWarning: "الإنهاء محظور: لا يوجد سجل موافقة مستنيرة في الملف. يجب على أحد الوالدين أو الوصي القانوني توقيع نموذج الموافقة أولاً.",
+    finalizeFailed: "تعذر إنهاء التقرير.",
 
     confirmCreate: {
       title: "إنشاء تقرير جديد",
-      description: "سيؤدي هذا إلى إنشاء تقرير {{type}} جديد. سيتم أرشفة أي تقرير نشط حالي.",
+      description: "سيؤدي هذا إلى إنشاء تقرير {type} جديد. سيتم أرشفة أي تقرير نشط حالي.",
       confirm: "إنشاء"
     },
 
@@ -2365,7 +2369,7 @@ export const ar = {
     },
 
     empty: {
-      title: "لا توجد تقارير {{type}}",
+      title: "لا توجد تقارير {type}",
       description: "أنشئ تقريراً جديداً للبدء."
     },
 
@@ -2988,7 +2992,7 @@ export const ar = {
     selectOrGenerate: "حدد تحليلاً أو أنشئ تحليلاً جديداً.",
     selectStudent: "حدد {{STUDENT}} لإنشاء تحليل معمق.",
     untitled: "تحليل بدون عنوان",
-    inProgress: "قيد التنفيذ (الخطوة {{STEP}})...",
+    inProgress: "قيد التنفيذ (الخطوة {STEP})...",
     delete: "حذف",
     confirmDelete: "حذف هذا التحليل بشكل نهائي؟",
     error: "خطأ",
@@ -3074,7 +3078,7 @@ export const ar = {
       categoryPages: "التجميع في فئات",
       dietaryTags: "إظهار ملصقات غذائية",
       dietaryTagsDesc: "لك أنت، لا للطالب. هذه الملصقات غير موثوقة ولا تصفّي شيئًا.",
-      autoNow: "الآن: {{value}}",
+      autoNow: "الآن: {value}",
     },
     review: {
       title: "قوائم بحاجة إلى مراجعة",
@@ -3171,9 +3175,15 @@ export const ar = {
     LICENSE_ALREADY_PAID: "تم دفع رسوم هذا الترخيص بالفعل.",
     LICENSE_NOT_PURCHASABLE: "لا يمكن دفع رسوم هذا الترخيص عبر الإنترنت. يرجى التواصل معنا.",
     PADDLE_NOT_CONFIGURED: "الدفع عبر الإنترنت غير متاح حاليًا. حاول مرة أخرى لاحقًا أو تواصل معنا.",
+    consent_required: "يلزم وجود سجل موافقة مستنيرة سارٍ قبل أن يتم إنهاء هذا التقرير.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "معلومات الموافقة غير متاحة",
+      loadFailedDescription: "تعذّر تحميل سجلات الموافقة لهذا {{student}}. هذا لا يعني عدم وجودها — بل إن الطلب فشل.",
+      retry: "إعادة المحاولة",
+    },
     authority: {
       title: "صلاحية الموافقة",
       description: "افتراضيًا، يُحدَّد مَن يمنح الموافقة وفقًا لسن الرشد للطالب. يمكن تجاوز ذلك هنا إذا كان الطالب بالغًا وما زال تحت الوصاية، أو إذا كان قاصرًا يمنح الموافقة بنفسه.",
@@ -3306,6 +3316,27 @@ export const ar = {
         attemptsRemaining: "تبقّى {count} محاولة/محاولات.",
         locked: "عدد كبير من المحاولات الخاطئة. يرجى طلب رابط جديد من العيادة.",
       },
+      attest: {
+        identityIntro: "أنت تسجل هذه الموافقة شخصيًا بحضور ولي الأمر. تحقق من التفاصيل أدناه قبل المتابعة.",
+        guardianLabel: "ولي الأمر الموقّع",
+        attestedByLabel: "شهد به",
+        guardianIntro: "سجّل وثيقة الهوية التي أبرزها لك ولي الأمر. أدخلها تمامًا كما تظهر في الوثيقة.",
+        coGuardianDeclaration: "يؤكد ولي الأمر أنه الوصي القانوني وأن لديه صلاحية منح هذه الموافقة نيابة عن أي وصي آخر.",
+        signatureIntro: "سلّم الجهاز إلى ولي الأمر الآن. يجب أن يكون التوقيع توقيعه هو.",
+        signatureLegal: "بالتوقيع، يؤكد ولي الأمر أنه الوصي القانوني ويمنح هذه الموافقة.",
+        stepIntro: "أخيرًا، أكّد ما شاهدته. تُحفظ هذه الإفادة مع سجل الموافقة وتذكر اسمك بصفتك المعالج الشاهد.",
+        documentLabel: "الوثيقة التي جرى فحصها",
+        presenceDeclaration: "أؤكد أن ولي الأمر كان حاضرًا معي شخصيًا، وأنني فحصت وثيقة الهوية المسجلة أعلاه، وأنها تطابق الشخص الذي وقّع.",
+        notesLabel: "ملاحظات (اختياري)",
+        notesPlaceholder: "مثال: جواز سفر صالح حتى 2031، الاسم مطابق",
+        legal: "يُحفظ اسمك وحساب المستخدم الخاص بك ووقت هذه الشهادة كدليل في سجل الموافقة.",
+        reviewIntro: "راجع السجل قبل الحفظ. بعد الحفظ لا يمكن تعديله — يمكن إلغاؤه والتوقيع من جديد فقط.",
+        methodLabel: "جرى التحقق عبر",
+        methodValue: "شهادة المعالج بحضور شخصي",
+        submitButton: "تسجيل الموافقة",
+        toastTitle: "تم تسجيل الموافقة",
+        toastDescription: "تم حفظ الموافقة الحضورية مع شهادتك.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const ar = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "سجل الموافقات",
       activeBadge: "نشطة",
@@ -3364,6 +3447,11 @@ export const ar = {
       revokeReasonPlaceholder: "السبب (اختياري)",
       toastRevoked: "تم إلغاء الموافقة",
       toastRevokeFailed: "تعذّر الإلغاء",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const ar = {
       reverificationDays: "إعادة التحقق (أيام)",
       autoProvision: "إنشاء حسابات جديدة تلقائيًا",
       autoProvisionDesc: "عندما يصادق المستخدم عبر مزود الهوية هذا ولا يملك حسابًا في Aivota، أنشئ حسابًا من بيانات SSO واربطه. مطلوب لمزودي الهوية المؤسسيين (مثل بوابة سَپَّاكِيم لوزارة التربية الإسرائيلية) حيث يتوقع المستخدمون الوصول وهم مسجلو الدخول مسبقًا.",
-      days: "{{count}} أيام",
+      days: "{count} أيام",
       never: "أبداً",
       neverPlaceholder: "اتركه فارغاً لعدم إعادة التحقق أبداً",
       discoveryUrl: "عنوان الاكتشاف",
@@ -4076,8 +4164,8 @@ export const ar = {
     noInstitute: "انضم إلى مؤسسة لبدء إجراء المكالمات",
     loadingContacts: "جارٍ تحميل جهات الاتصال…",
     noContacts: "لم يتم العثور على جهات اتصال",
-    callPerson: "اتصل بـ {{name}}",
-    callPersonAuto: "الاتصال بـ {{name}} تلقائيًا",
+    callPerson: "اتصل بـ {name}",
+    callPersonAuto: "الاتصال بـ {name} تلقائيًا",
     students: "الطلاب",
     online: "متصل",
     offline: "غير متصل",
@@ -4157,7 +4245,7 @@ export const ar = {
     title: "جهات الاتصال",
     panelTitle: "جهات اتصال الطالب",
     description: "الأشخاص الذين يعرفهم الطالب — الآباء، زملاء الصف، المعالجون.",
-    forStudent: "جهات اتصال لـ {{name}}",
+    forStudent: "جهات اتصال لـ {name}",
     empty: "لم يتم تسجيل جهات اتصال بعد.",
     add: "إضافة جهة اتصال",
     new: "جهة اتصال جديدة",
@@ -4351,7 +4439,7 @@ export const ar = {
       title: "إلغاء جميع الأذونات؟",
       description: "سيتم إلغاء جميع المشاركات النشطة — لكل عنصر والدائمة — التي منحتها لهذه المؤسسة بخصوص هذا الطالب. لا يمكن التراجع عن هذا الإجراء.",
       confirm: "إلغاء الكل",
-      toastSuccess: "تم إلغاء {{count}} مشاركة.",
+      toastSuccess: "تم إلغاء {count} مشاركة.",
     },
     inbox: {
       pendingHeader: "الدعوات المعلّقة",
@@ -4372,8 +4460,8 @@ export const ar = {
     },
     standing: {
       expired: "منتهية الصلاحية",
-      expiresInDays: "تنتهي الصلاحية خلال {{days}} يومًا",
-      expiresOn: "تنتهي الصلاحية في {{date}}",
+      expiresInDays: "تنتهي الصلاحية خلال {days} يومًا",
+      expiresOn: "تنتهي الصلاحية في {date}",
       renewedToast: "تم تجديد المشاركة الدائمة لسنة واحدة.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const ar = {
     field: {
       codeExpires: "انتهاء صلاحية الرمز",
       shareExpires: "انتهاء صلاحية المشاركة",
-      sensitiveCount: "{{count}} عنصرًا حسّاسًا",
+      sensitiveCount: "{count} عنصرًا حسّاسًا",
     },
     bundle: {
       objects: "العناصر",
@@ -4471,9 +4559,9 @@ export const ar = {
     notifications: {
       bellLabel: "دعوات المشاركة",
       newInviteTitle: "دعوة مشاركة جديدة",
-      newInviteBody: "{{count}} دعوة تنتظر موافقتك.",
+      newInviteBody: "{count} دعوة تنتظر موافقتك.",
       expiringTitle: "مشاركة تقترب من انتهاء الصلاحية",
-      expiringBody: "{{count}} مشاركة دائمة ستنتهي قريبًا — راجعها وجدّدها.",
+      expiringBody: "{count} مشاركة دائمة ستنتهي قريبًا — راجعها وجدّدها.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const ar = {
       addGuardian: "إضافة جهة اتصال ولي الأمر",
       requestsSent: "تم إرسال {count}، وتعذّر إرسال {failed}",
       sendRequests: "إرسال طلبات الموافقة ({count})",
+      stage: "الموافقة",
+      explainTitle: "الخطوة التالية: موافقة أحد الوالدين أو ولي الأمر",
+      explainBody: "قبل أن نتمكن من تسجيل أي شيء عن صحة هذا {{student}} أو برنامجه أو طريقة تواصله، يجب أن يمنح أحد الوالدين أو ولي الأمر القانوني موافقة خطية. حتى الآن لم تُحفظ سوى البيانات الأساسية. أما بقية الخطوات فتُفتح تلقائيًا بمجرد توقيع الموافقة.",
+      signCaption: "أنت مسجَّل كولي الأمر، لذا يمكنك قراءة الموافقة وتوقيعها بنفسك — يستغرق ذلك دقيقة تقريبًا.",
+      familyNoGuardianCaption: "نحتاج أولًا إلى ولي أمر مسجَّل. أضف نفسك (أو الوالد الآخر) كولي أمر لهذا {{student}}، وعندها سيظهر هنا زر لتوقيع الموافقة.",
+      sendRequest: "إرسال طلب الموافقة",
+      sendCaption: "سنرسل إلى ولي الأمر رابطًا خاصًا عبر البريد الإلكتروني. سيقرأ الموافقة ويوقّعها عبر الإنترنت — ولا يُطلب منك شيء آخر.",
+      sentCaption: "تم إرسال الرابط إلى ولي الأمر. وتُفتح بقية الخطوات بمجرد توقيعه، ويمكنك العودة لاحقًا.",
+      sentOne: "تم إرسال رابط الموافقة إلى ولي الأمر.",
+      sendFailed: "تعذّر إرسال رابط الموافقة. تحقق من أن لدى ولي الأمر عنوان بريد إلكتروني صالحًا ثم حاول مرة أخرى.",
+      attestInPerson: "ولي الأمر موجود هنا — وقّعا معًا",
+      attestCaption: "إذا كان الوالد أو ولي الأمر معك الآن، يمكنكما قراءة الموافقة معًا وتوقيعه على هذا الجهاز. أنت تتحقق من هويته، ولا حاجة إلى رابط.",
     },
     notes: {
       documentsNotStored: "تُقرأ المستندات ولا تُخزَّن — يُحفظ فقط ما استُخرج منها من معلومات.",

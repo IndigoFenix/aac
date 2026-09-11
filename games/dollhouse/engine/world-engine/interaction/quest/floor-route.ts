@@ -154,6 +154,134 @@ export function standableVia(
   return standClear(state, nudged, bodyR) ? nudged : null;
 }
 
+function polyLen(pts: ReadonlyArray<Vec2>): number {
+  let n = 0;
+  for (let i = 1; i < pts.length; i++) n += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
+  return n;
+}
+
+/**
+ * ⚖️ HOW MUCH LONGER THAN THE DIRECT ROUTE A ROAD LEG MAY BE — the bound, and
+ * its derivation. It is geometry with ONE measured input, not a dial.
+ *
+ * A road plan is `hop_a + onStreet + hop_b`, and each part is bounded:
+ *
+ * ① **THE ON-STREET WALK IS RECTILINEAR.** A street net is laid AROUND blocks,
+ *    so the shortest walk it can offer goes along block edges, and for any two
+ *    points in the plane the rectilinear distance is at most √2 times the
+ *    straight one (equality on the 45° diagonal). So
+ *    `onStreet ≤ √2 · d(entry, exit)`, and `d(entry, exit) ≤ direct + hops`.
+ * ② **REACHING THE NET COSTS TWO HOPS.** `roadRoute` starts and ends off the
+ *    centreline (a body stands in a yard, a bill sits in a room), so the plan
+ *    pays `from → entry` and `exit → to`. After the nearest entry/exit choice
+ *    in `roadLegVia` those are MINIMAL — no vertex of the route is nearer to
+ *    either end — so they are a price, not a detour.
+ *
+ * Writing `H` for the hop share `(hop_a + hop_b) / direct`, ① and ② give
+ * `road/direct ≤ √2 + (1 + √2)·H`. **A bound of 2 therefore admits every
+ * block-faithful street route whose doorsteps cost `H ≤ (2 − √2)/(1 + √2) =
+ * 0.243`** — and that is the one number the world supplies:
+ *
+ * MEASURED (dollhouse seed 12, dt 1/20, 900 sim-s, all 1153 legs the arc
+ * splices): where the road is inside the rectilinear bound (848 legs) the two
+ * hops cost a **mean 0.20** of the leg's own direct route. The bound is set at
+ * the town's own measured doorstep depth. Where the road is outside 2 (84 legs)
+ * the hops cost a **mean 1.40** — plans that spend more walking TO the road
+ * than the whole trip is long, which is the projector defect ① below, not a
+ * street. **1069 of 1153 legs (92.7 %) pass unchanged**; the 84 that do not
+ * include a 37.7 m trip planned as 352.1 m.
+ *
+ * Stated as a FACTOR on a measured route and never as a distance, so it cannot
+ * rot with world scale: the frontier (207 legs, seed 11) tops out at 1.57 and
+ * loses ONE leg to it.
+ */
+export const ROAD_DETOUR_MAX = 2;
+
+/**
+ * ⚖️ A ROAD ROUTE IS ONLY WORTH WALKING WHERE IT IS STILL A SHORTCUT.
+ *
+ * `roadLeg` splices `roadRoute`'s street centreline into every outdoor leg ≥ 8 m
+ * — "people take roads, not chords across the block" (2026-07-12). It never
+ * asked what the road COST. MEASURED (dollhouse seed 12, dt 1/20): a civic haul
+ * to the annex `h_206_a0` — body at (183.7, 315.8), site at (175.9, 262.1),
+ * **54.3 m due north** — was planned as a **165.2 m** street route that runs
+ * SOUTH-EAST first (out to 227.0, 314.1, i.e. 87 m from the site) before it
+ * ever turns back. The claimant's window expired six times over; the row cycled
+ * nine claims for one arrival.
+ *
+ * Two independent things make a road route go the wrong way, and this answers
+ * both:
+ *
+ * ① **THE ENTRY VERTEX IS NOT THE NEAREST ONE.** `project` (kernel/town/
+ *    streets.ts) scans `net.streets` and never `net.links`, so a body standing
+ *    ON one of the graph's shortcut links — a real road the route itself emits
+ *    — is projected onto a STREET 8–15 m away (measured: all 6 dollhouse links
+ *    have interior vertices 8.4–15.1 m from the nearest street). The route then
+ *    walks out to that street, back along the link OVER the body's own
+ *    position, past the destination, out to the destination's projection, and
+ *    back: 71.6 m for a 12.6 m walk. So the entry and exit are chosen HERE as
+ *    the route's nearest vertices to `from` and `to` — never a fixed first/last
+ *    — and a prefix/suffix is only cut when the straight that replaces it is
+ *    ground the mover can walk, so the trim can never invent a route through a
+ *    wall.
+ * ② **THE STREETS GENUINELY DO NOT GO THERE.** After ①, `h_206_a0` is still a
+ *    137.8 m on-street walk for a 54.3 m trip: the town's tree simply has no
+ *    edge across those blocks. Then the road is not a shortcut and taking it is
+ *    a lie — so it is dropped and the caller plans the direct leg it would have
+ *    planned before the 2026-07-12 rule existed. `ROAD_DETOUR_MAX` above says
+ *    where the line is and why.
+ *
+ * Returns the vias to splice (possibly none). Pure; the endpoints are never
+ * touched — the caller's `to` keeps its exact spot, arrival and dwell.
+ */
+export function roadLegVia(
+  state: WorldState,
+  from: Vec2,
+  to: Vec2,
+  via: ReadonlyArray<Vec2>,
+  bodyR: number = DEFAULT_BODY_R,
+): Vec2[] {
+  if (via.length === 0) return [];
+  // ① THE NEAREST ENTRY AND EXIT. First-nearest wins a tie: the earlier vertex
+  //    is always the shorter plan.
+  let entry = 0;
+  let exit = 0;
+  let dEntry = Infinity;
+  let dExit = Infinity;
+  for (let i = 0; i < via.length; i++) {
+    const da = Math.hypot(via[i]!.x - from.x, via[i]!.y - from.y);
+    if (da < dEntry) {
+      dEntry = da;
+      entry = i;
+    }
+    const db = Math.hypot(via[i]!.x - to.x, via[i]!.y - to.y);
+    if (db < dExit) {
+      dExit = db;
+      exit = i;
+    }
+  }
+  // The route's closest approach to the DESTINATION comes before its closest
+  // approach to the START: it doubles back over itself end to end and there is
+  // no stretch of it that carries the body forward. Walk the direct leg.
+  if (exit < entry) return [];
+  const { plan: PLAN_R } = planGeom(bodyR);
+  const ok = (p: Vec2) => structuresWalkable(state, p, PLAN_R) && fixturesWalkable(state, p, PLAN_R);
+  // A cut is only taken when the straight replacing it is walkable ground — the
+  // trim must never turn a road route into a line through a building.
+  if (entry > 0 && !corridorClear(state, from, via[entry]!, ok)) entry = 0;
+  if (exit < via.length - 1 && !corridorClear(state, via[exit]!, to, ok)) exit = via.length - 1;
+  const kept = via.slice(entry, exit + 1);
+  // ② IS WHAT IS LEFT STILL A SHORTCUT? The chord is a floor on the direct
+  //    route's length, so a plan inside the bound on the CHORD is inside it on
+  //    the route too — and that is nearly every leg, which is what keeps the
+  //    direct plan (a grid BFS) off the common path.
+  const roadLen = polyLen([from, ...kept, to]);
+  const chord = Math.hypot(to.x - from.x, to.y - from.y);
+  if (roadLen <= ROAD_DETOUR_MAX * chord) return kept;
+  const direct = polyLen([from, ...routeIndoorAware(state, from, to, bodyR)]);
+  return roadLen <= ROAD_DETOUR_MAX * direct ? kept : [];
+}
+
 /**
  * THE INDOOR LEG PLANNER — one leg `from → to`, door-threaded
  * (routeThroughDoors), its transit pairs fitted onto standable ground and

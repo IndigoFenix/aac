@@ -37,6 +37,7 @@ import { SharesPanel } from '@/features/SharesPanel';
 import { InsuranceBridgePanel } from '@/features/InsuranceBridgePanel';
 import { DownloadsPanel } from '@/features/DownloadsPanel';
 import { GuidedSetupRail } from '@/features/guided-setup/GuidedSetupRail';
+import { useGuidedSetup } from '@/features/guided-setup/useGuidedSetup';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
@@ -57,12 +58,12 @@ export function MainLayout() {
     isFullScreenFeature,
     mobileChatMode,
     setMobileChatMode,
-    sharedState,
   } = useFeaturePanel();
 
-  // A Guided Setup view is parked in sharedState by useGuidedSetup / the chat's
-  // contextData channel. Its presence is what puts the rail above the panel.
-  const hasGuidedSetup = Boolean(sharedState.guidedSetup?.view);
+  // The rail sits above the panel whenever the provider has a view to render
+  // (a live flow, or a selected student with an unfinished record).
+  const { view: guidedSetupView } = useGuidedSetup();
+  const hasGuidedSetup = Boolean(guidedSetupView);
 
   const { isRTL, t } = useLanguage();
   const isMobile = useIsMobile();

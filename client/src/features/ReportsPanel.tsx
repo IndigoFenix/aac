@@ -11,6 +11,7 @@ import { useChat } from '@/hooks/useChat';
 import { useInstitute } from '@/hooks/useInstitute';
 import { IcdCodePicker } from '@/components/insurance/IcdCodePicker';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useConsent } from '@/features/consent/ConsentProvider';
 import { cn } from '@/lib/utils';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -26,12 +27,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import {
   FileText,
@@ -42,7 +42,6 @@ import {
   Trash2,
   Edit,
   Loader2,
-  MoreHorizontal,
   Heart,
   GraduationCap,
   Archive,
@@ -324,6 +323,43 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const [selectedReportType, setSelectedReportType] = useState<ReportType | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // ── Consent awareness for Finalize ────────────────────────────────────────
+  //
+  // Finalizing is gated server-side (reportController → requireConsentForResponse
+  // → HTTP 412 `consent_required`). Drafts are deliberately UNGATED
+  // (docs/student-consent-implementation.md §7.4), so a clinician can edit all
+  // day and only learn at the Finalize click that it is refused. This surfaces
+  // the risk beforehand.
+  //
+  // 🚨 Read-only, through the provider's context: `useActiveConsent` and friends
+  // are `@internal ConsentProvider only` — a second observer on those query keys
+  // is the mechanism behind the 124-requests-per-page-view loop documented in
+  // features/consent/ConsentProvider.tsx. ReportsPanel is mounted under
+  // <ConsentProvider> (App.tsx → ConsentProvider → Router → Dashboard →
+  // MainLayout → ReportsPanel), so `useConsent()` resolves.
+  //
+  // The signal is `consent.gate.writesAllowed` — the SERVER's own answer,
+  // computed by `getConsentStatus` (server/services/consent/consentGate.ts) and
+  // shipped on the `/active` response, so it rides a request the provider
+  // already makes. Never re-derive it from `active.data === null`: the refusal
+  // is `CONSENT_GATE_ENABLED && !hasActiveConsent && !inLegacyGrace`, and an
+  // absent record on a gate-off install, or on a student still inside the
+  // 90-day legacy grace window, finalizes just fine. Disabling on the record
+  // alone would break a working button for both.
+  //
+  // UNKNOWN LEAVES IT ENABLED. `gate.data` is undefined when the read FAILED
+  // and when the server predates the field; "we could not load consent" is not
+  // "there is no consent", so in either case the button stays live and the 412
+  // speaks. The disable is a courtesy — enforcement is and stays server-side.
+  const consent = useConsent();
+  const finalizeBlocked =
+    !!student?.id &&
+    consent.studentId === student.id &&
+    consent.active.isSettled &&
+    !consent.active.isError &&
+    consent.gate.data?.writesAllowed === false;
 
   // Queries
   const { data: currentReports, isLoading, error } = useCurrentReports(student?.id, currentInstitute?.id);
@@ -508,7 +544,19 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
       setSelectedReport(null);
       setSelectedReportType(null);
     } catch (error) {
-      // Error handled by mutation
+      // Error handled by the mutation's own onError toast.
+      //
+      // ⚠️ The 412 `consent_required` body never reaches here: the finalize
+      // mutations in hooks/useReportsApi.tsx do
+      // `if (!response.ok) throw new Error('Failed to finalize medical record')`,
+      // discarding both the status and the server's `code`, and then toast that
+      // hardcoded English string. So this catch cannot tell a consent refusal
+      // from a 500, and the pre-click warning above is the only consent-specific
+      // signal the clinician gets. The client string for that refusal now exists
+      // as `errors.consent_required` (all 11 locales); wiring it is a three-line
+      // change in useReportsApi.tsx — read the body, carry `code` on the Error,
+      // and toast `t('errors.' + code)` when the code has a key. That file is
+      // outside this change's ownership.
     }
   };
 
@@ -530,25 +578,93 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
     }
   };
 
-  const handleDeleteReport = async (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {
+  // Delete is now a first-class button on the card rather than the last item of
+  // a dropdown, so it asks first. `reports.confirmDelete.*` already existed in
+  // every locale file, unused, for exactly this dialog.
+  const handleDeleteReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {
+    setSelectedReport(report);
+    setSelectedReportType(type);
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedReport || !selectedReportType) return;
+
     try {
-      switch (type) {
+      switch (selectedReportType) {
         case 'medical':
-          await deleteMedicalRecord.mutateAsync(report.id);
+          await deleteMedicalRecord.mutateAsync(selectedReport.id);
           break;
         case 'functional':
-          await deleteFunctionalReport.mutateAsync(report.id);
+          await deleteFunctionalReport.mutateAsync(selectedReport.id);
           break;
         case 'educational':
-          await deleteEducationalReport.mutateAsync(report.id);
+          await deleteEducationalReport.mutateAsync(selectedReport.id);
           break;
       }
+      setShowDeleteDialog(false);
+      setSelectedReport(null);
+      setSelectedReportType(null);
     } catch (error) {
       // Error handled by mutation
     }
   };
 
   // Render helpers
+  //
+  // Finalize, carrying its own reason when the gate would refuse it.
+  //
+  // A DISABLED button fires no pointer events, so a Tooltip wrapped straight
+  // around it never opens — hence the focusable wrapper span, which also makes
+  // the reason reachable by keyboard. Same icon+tooltip dialect as
+  // ConsentMissingIndicator, so a clinician meets one consent affordance rather
+  // than two. When the gate allows (or the read failed, or the server did not
+  // answer) the button renders plain and un-wrapped.
+  const renderFinalizeButton = (
+    report: MedicalRecord | FunctionalReport | EducationalReport,
+    type: ReportType,
+  ) => {
+    const button = (
+      <Button
+        size="sm"
+        disabled={finalizeBlocked}
+        onClick={() => handleFinalizeReport(report, type)}
+        data-testid="reports-finalize"
+      >
+        <Lock className="w-4 h-4 me-2" />
+        {t('reports.finalize')}
+      </Button>
+    );
+
+    if (!finalizeBlocked) return button;
+
+    return (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className="inline-flex items-center gap-1 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-400"
+              data-testid="reports-consent-warning"
+            >
+              {/* `pointer-events-none` on the disabled button so the wrapper,
+                  not the button, owns the hover the tooltip listens for. */}
+              <span className="pointer-events-none">{button}</span>
+              <AlertTriangle
+                className="w-4 h-4 text-amber-600 dark:text-amber-400"
+                aria-label={t('reports.consentWarning')}
+                role="img"
+              />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="text-xs max-w-[260px]">{t('reports.consentWarning')}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
   const renderStatusBadge = (status: ReportStatus) => (
     <Badge className={cn('gap-1', STATUS_COLORS[status])}>
       {STATUS_ICONS[status]}
@@ -611,7 +727,17 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                 )}
               </div>
 
-              {/* Actions */}
+              {/*
+                Actions — every action is a button on the row. They used to hide
+                behind an overflow (…) dropdown, which buried Finalize (the
+                action that ends a report's editable life) two clicks deep.
+
+                `flex-wrap` + `gap-2` so the row reflows inside the resizable
+                panel; Delete carries `ms-auto` (logical, so it lands at the
+                trailing edge in LTR *and* RTL) to keep the destructive action
+                away from the constructive ones. The gating conditions are
+                untouched — this is presentation, not permission.
+              */}
               <div className="flex flex-wrap items-center gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => handleViewReport(report, type)}>
                   <Eye className="w-4 h-4 me-2" />
@@ -623,39 +749,24 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                     {t('common.edit')}
                   </Button>
                 )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" aria-label="Report actions">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
-                    {canFinalize && (
-                      <DropdownMenuItem onClick={() => handleFinalizeReport(report, type)}>
-                        <Lock className="w-4 h-4 me-2" />
-                        {t('reports.finalize')}
-                      </DropdownMenuItem>
-                    )}
-                    {canCreateRevision && (
-                      <DropdownMenuItem onClick={() => handleCreateRevision(report, type)}>
-                        <Copy className="w-4 h-4 me-2" />
-                        {t('reports.createRevision')}
-                      </DropdownMenuItem>
-                    )}
-                    {canDelete && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={() => handleDeleteReport(report, type)}
-                        >
-                          <Trash2 className="w-4 h-4 me-2" />
-                          {t('common.delete')}
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {canFinalize && renderFinalizeButton(report, type)}
+                {canCreateRevision && (
+                  <Button variant="outline" size="sm" onClick={() => handleCreateRevision(report, type)}>
+                    <Copy className="w-4 h-4 me-2" />
+                    {t('reports.createRevision')}
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ms-auto text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => handleDeleteReport(report, type)}
+                  >
+                    <Trash2 className="w-4 h-4 me-2" />
+                    {t('common.delete')}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -696,11 +807,30 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                         : new Date(report.createdAt).toLocaleDateString()}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => handleViewReport(report, type)}>
+                  {/*
+                    Archived rows carry NO hidden-action pattern — no dropdown,
+                    no Finalize (these are already final/superseded) and no
+                    Delete (canDelete is draft-only). Both actions were already
+                    on the row; they were only unlabelled, so they now say what
+                    they are to a screen reader and on hover.
+                  */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={t('common.view')}
+                      title={t('common.view')}
+                      onClick={() => handleViewReport(report, type)}
+                    >
                       <Eye className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => handleCreateRevision(report, type)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={t('reports.createRevision')}
+                      title={t('reports.createRevision')}
+                      onClick={() => handleCreateRevision(report, type)}
+                    >
                       <Copy className="w-4 h-4" />
                     </Button>
                   </div>
@@ -1072,13 +1202,24 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
               {t('reports.finalizeWarning')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 space-y-2">
             <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-950 rounded-md">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 {t('reports.finalizeCannotUndo')}
               </p>
             </div>
+            {/* Belt and braces: the card's Finalize is disabled in this state,
+                but the dialog is also reachable from elsewhere, and the 412 is
+                the real enforcement — see the note beside `finalizeBlocked`. */}
+            {finalizeBlocked && (
+              <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 rounded-md">
+                <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500" />
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  {t('reports.consentWarning')}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowFinalizeDialog(false)}>
@@ -1098,6 +1239,39 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                 <Loader2 className="w-4 h-4 me-2 animate-spin" />
               )}
               {t('reports.finalize')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Report Dialog — Delete is a row button now, so it confirms. */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>{t('reports.confirmDelete.title')}</DialogTitle>
+            <DialogDescription>
+              {t('reports.confirmDelete.description')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={
+                deleteMedicalRecord.isPending ||
+                deleteFunctionalReport.isPending ||
+                deleteEducationalReport.isPending
+              }
+            >
+              {(deleteMedicalRecord.isPending ||
+                deleteFunctionalReport.isPending ||
+                deleteEducationalReport.isPending) && (
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              )}
+              {t('reports.confirmDelete.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

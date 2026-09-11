@@ -30,6 +30,27 @@
  * TYPE, which erases. `BARTER_WANT_MIN` lives here for the same reason and is
  * re-exported under its established name by barter.ts — ONE definition, the
  * name every caller already uses.
+ *
+ * ⚠️ THAT LAW STILL BINDS, and now binds this file's own imports too: the two
+ * modules added by the trade-topology round — `landed-cost.ts` (the pricer)
+ * and `allocate.ts` (the one conserving allocator) — import NOTHING but true
+ * leaves, which is why they may be named here. See landed-cost.ts's header
+ * for the cycle that pricing.ts would have closed (trade → complementary →
+ * landed-cost → pricing → scope-shape → goods-kinds → trade, with a top-level
+ * read at the far end) if the pricer had been allowed to import it.
+ *
+ * ── ⚖️ THE THIRD GATE (trade-topology round, R-2): WORTHWHILE ─────────────
+ * WANT says a town is short of it; FREIGHT says the road does not destroy it;
+ * neither asks whether the trip is worth MAKING. A bulky good half-way to its
+ * own reach clears both and still costs more hand-seconds to land than doing
+ * without it costs — the trade destroys value, which is the one thing the
+ * economy arc's §0 pricing exists to notice. So a row now also carries what
+ * it is WORTH — `advantageS`, seconds per unit, from landed-cost.ts — and a
+ * good stays on a lane only while that is positive. The list's ORDER is that
+ * number too (ties by input index), so the hold is dealt by landed cost
+ * rather than by appetite: a dense good outbids a bulky one it merely tied
+ * with on shortage. `want` is unchanged and stays for every reader that needs
+ * a 0..1.
  */
 
 import {
@@ -38,6 +59,16 @@ import {
   freightOf,
 } from "../../freight.js";
 import { dailyTravelM, type WorldScale } from "../../scale.js";
+// ⚖️ R-1/R-2 — the lane-pricer. A leaf (freight + scale only); see its header.
+import {
+  landedUnitCostS,
+  laneAdvantageS,
+  laneValueS,
+  localUnitCostS,
+} from "./landed-cost.js";
+// ⚖️ ONE conserving allocator (allocate.ts imports nothing). This is the SAME
+// call trade.ts's `allotmentSplit` wraps — never a second apportionment.
+import { allocate } from "./allocate.js";
 // TYPE ONLY (erased at build) — barter.ts owns the named interface; this leaf
 // borrows the shape without taking a runtime edge back up the graph.
 import type { BarterSignals } from "./barter.js";
@@ -157,11 +188,11 @@ export function freightArrivalFraction(good: string, legM: number, scale: WorldS
   return clamp01(deliveredFraction(scale, freightOf(good), m / perDay));
 }
 
-/** The two sides of one pair's trade, best first (by LANDED weight — see
- *  `ComplementaryRow.want`). */
+/** The two sides of one pair's trade, best first (by LANDED ADVANTAGE — see
+ *  `ComplementaryRow.advantageS`). */
 export interface ComplementaryTrade {
-  /** Goods THEY can spare that WE are short of — ranked by our own need, as it
-   *  arrives over this road. */
+  /** Goods THEY can spare that WE are short of, and that are worth the trip —
+   *  ranked by what one unit GAINS us landed over this road. */
   imports: string[];
   /** The mirror: what we can spare that they need, same reading. */
   exports: string[];
@@ -177,12 +208,32 @@ export interface ComplementaryRow {
    *
    * The ADMISSION test is still the raw shortage against `BARTER_WANT_MIN`, so
    * membership of the list is unchanged; what the road eats is priced into the
-   * BID instead, which is what `importUnitsPerVisit` splits the hold by. A
-   * durable good's fraction is 1, so its weight IS its shortage and every
-   * shipped line is untouched; a staple over a long leg bids lower than its
-   * hunger, because a cart of it arrives smaller than it left.
+   * BID instead. A durable good's fraction is 1, so its weight IS its
+   * shortage; a staple over a long leg weighs lower than its hunger, because a
+   * cart of it arrives smaller than it left.
+   *
+   * ⚖️ NO LONGER THE RANKING KEY (trade-topology round, R-2): `advantageS` is.
+   * This is RETAINED — unchanged, to the bit — because it is the row's 0..1
+   * reading and several readers want a fraction rather than a duration.
    */
   want: number;
+  /**
+   * ⚖️ WHAT THE ROW IS WORTH, in HAND-SECONDS PER UNIT (trade-topology round,
+   * R-1/R-2): `local − landed`, i.e. what doing without one unit costs the
+   * needing side, minus what having one landed over `legM` costs it.
+   *
+   *   local     = localUnitCostS(needing side's shortage)
+   *   producer  = localUnitCostS(sparing side's shortage) — their own books,
+   *               and the NAMED SEAT the regional skill slice adds to
+   *   landed    = (producer + freight) / delivered
+   *
+   * Always > 0 on a row that is on a list: the sign IS the third membership
+   * gate (`netValueS`'s own sign), so a good the road makes dearer than doing
+   * without never appears at all. Unlike `want` it is a DURATION, which is
+   * what lets rows of one lane sum into a number comparable with another
+   * lane's (`laneValueS`) and with every other cost the engine keeps.
+   */
+  advantageS: number;
 }
 
 /** The ranking BEFORE it is flattened to two name lists. */
@@ -203,8 +254,8 @@ export interface ComplementaryRanking {
  * PAIR's facts, not one side's.
  *
  * DETERMINISTIC: pure arithmetic over the two signal reads and the freight
- * rows; ties break toward the earlier good in `goods`, the same rule
- * `defaultTakeGood` uses.
+ * rows; ranked by landed advantage, ties breaking toward the earlier good in
+ * `goods`, the same rule `defaultTakeGood` uses.
  */
 export function complementaryTrade(
   us: BarterSignals,
@@ -230,10 +281,26 @@ export function complementaryTrade(
  *
  * ⚖️ AND THE BID IS THE LANDED ONE (import-displacement round, Stage B): the
  * weight is `want × freightArrivalFraction`, so a good the road half-eats bids
- * half as hard for the same hold. Order and hold volume both move with it —
- * intended: that IS cargo re-ranked by landed cost. Membership does not (the
- * two gates above are untouched), so a durable line ships exactly what it
- * shipped.
+ * half as hard for the same hold.
+ *
+ * ⚖️ AND THE BID IS NOW A PRICE (trade-topology round, R-1/R-2): `advantageS`,
+ * in hand-seconds per unit, off landed-cost.ts. It is the RANKING KEY and the
+ * third membership gate, and it subsumes Stage B's re-rank rather than
+ * repeating it — the same `deliveredFraction` divides the landed cost, so a
+ * good the road half-eats is still twice as dear, and now the freight and the
+ * PRODUCER's own cost are in the number too.
+ *
+ * WHICH ARM EACH PARTNER KIND TAKES — the answer is NEITHER, and that is the
+ * design. A cluster neighbour hands in real books (`townShortage`); a
+ * condensed city or an `away:` stub hands in `stubPartnerSignals`' proxy.
+ * Both are a `BarterSignals`, i.e. both answer `shortage(good)`, so BOTH are
+ * priced by the identical line below: a partner's cost per unit is
+ * `localUnitCostS(their shortage)` whoever they are. The only difference is
+ * where that shortage came from, and this module is not entitled to know —
+ * which is exactly what keeps a stub from needing its own pricing arm.
+ *
+ * TIES break by input index (the `defaultTakeGood` rule), unchanged. Two goods
+ * tie in `advantageS` only when their shortages AND their freight rows agree.
  */
 export function complementaryRanking(
   us: BarterSignals,
@@ -243,23 +310,119 @@ export function complementaryRanking(
   scale: WorldScale,
 ): ComplementaryRanking {
   const rank = (need: BarterSignals, spare: BarterSignals): ComplementaryRow[] => {
-    const rows: Array<{ good: string; want: number; i: number }> = [];
+    const rows: Array<ComplementaryRow & { i: number }> = [];
     const seen = new Set<string>();
     goods.forEach((good, i) => {
       if (seen.has(good)) return;
       seen.add(good);
-      if (clamp01(spare.shortage(good)) >= BARTER_WANT_MIN) return; // not spare
+      const theirs = clamp01(spare.shortage(good));
+      if (theirs >= BARTER_WANT_MIN) return; // not spare
       const want = clamp01(need.shortage(good));
       if (want < BARTER_WANT_MIN) return; // nobody on this side wants it
       if (!freightSurvivesLeg(good, legM, scale)) return; // the road eats it
-      // ⚖️ LANDED, NOT WISHED FOR (Stage B). The bid is what the good is worth
-      // ON THE CART — the shortage it would relieve, times the share of the
-      // load that gets there. The gate above stays the floor; this is the
-      // slope, so a hold is dealt by landed cost instead of by raw appetite.
-      rows.push({ good, want: want * freightArrivalFraction(good, legM, scale), i });
+      // ⚖️ IS IT WORTH MAKING THE TRIP FOR? (R-2) What one unit relieves here,
+      // minus what one unit costs landed — the producer's own books plus the
+      // road, over what survives it. Non-positive ⇒ the trade destroys value
+      // and the good is not on this lane, however badly it is wanted.
+      const advantageS = laneAdvantageS(
+        localUnitCostS(want, scale),
+        landedUnitCostS({
+          legM,
+          scale,
+          freight: freightOf(good),
+          producerUnitCostS: localUnitCostS(theirs, scale),
+        }),
+      );
+      if (!(advantageS > 0)) return;
+      // ⚖️ LANDED, NOT WISHED FOR (Stage B). The 0..1 weight is retained for
+      // readers that want a fraction; the ranking key is the price above.
+      rows.push({
+        good,
+        want: want * freightArrivalFraction(good, legM, scale),
+        advantageS,
+        i,
+      });
     });
-    rows.sort((a, b) => b.want - a.want || a.i - b.i);
-    return rows.map((r) => ({ good: r.good, want: r.want }));
+    rows.sort((a, b) => b.advantageS - a.advantageS || a.i - b.i);
+    return rows.map((r) => ({ good: r.good, want: r.want, advantageS: r.advantageS }));
   };
   return { imports: rank(us, them), exports: rank(them, us) };
+}
+
+// ---------------------------------------------------------------------------
+// ⑤ THE LANE RANKING — which NEIGHBOUR, not just which goods
+// ---------------------------------------------------------------------------
+
+/** One neighbour we could bind, as the pricer needs to see it: a key, the
+ *  road between us, and whatever reads its books (real or stub — see
+ *  `complementaryRanking`'s header on why one arm serves both). */
+export interface LaneCandidate {
+  key: string;
+  /** One-way ROAD metres. A candidate with no road of its own is priced at
+   *  the `away:` fiction's own distance by the caller (R-6) — never here. */
+  legM: number;
+  signals: BarterSignals;
+}
+
+/** One priced lane: what it would carry, dealt, and what that is worth. */
+export interface LaneRank {
+  key: string;
+  legM: number;
+  /** Σ advantage × units over the IMPORT rows — hand-seconds per visit. */
+  valueS: number;
+  imports: ComplementaryRow[];
+  exports: ComplementaryRow[];
+  /** The visit's hold, dealt across the import goods by advantage. */
+  units: Map<string, number>;
+}
+
+/**
+ * ⚖️ RANK THE NEIGHBOURS BY WHAT A LANE TO EACH IS WORTH (trade-topology
+ * round, R-3) — the read a bind decision is made from, and nothing else:
+ * pure, no session, no places, no side effects.
+ *
+ * The value of a lane is the value of what it BRINGS US (imports only). Our
+ * exports are the partner's own gain and are ranked, by perspective
+ * consistency, in the partner's own call — counting them here would double
+ * every lane by a number nobody on this side pays.
+ *
+ * DISTANCE NEVER FORMS A LANE. It is already inside `valueS` twice (freight
+ * seconds, and what the road eats), so it needs no separate term; it appears
+ * below only to break ties between lanes of EQUAL value, nearest first, and
+ * then the caller's own order. A candidate with no complementary good at all
+ * scores 0 and still appears — a bind with an empty crate is a real outcome
+ * (R-4), and dropping it would resurrect the authored fallback in a world
+ * that has neighbours.
+ */
+export function rankLanes(
+  us: BarterSignals,
+  candidates: readonly LaneCandidate[],
+  goods: readonly string[],
+  scale: WorldScale,
+  allotment: number,
+): LaneRank[] {
+  const ranked = candidates.map((c, i) => {
+    const pair = complementaryRanking(us, c.signals, goods, c.legM, scale);
+    // The hold, dealt by advantage — the SAME `allocate` call trade.ts's
+    // `allotmentSplit` wraps, so a lane's preview and the caravan's own split
+    // are one definition and cannot disagree.
+    const shares = allocate({
+      mode: "largest-remainder",
+      weights: pair.imports.map((r) => r.advantageS),
+      total: allotment,
+    });
+    const units = new Map<string, number>(
+      pair.imports.map((r, j) => [r.good, shares[j] ?? 0]),
+    );
+    const valueS = laneValueS(
+      pair.imports.map((r) => ({
+        good: r.good,
+        advantageS: r.advantageS,
+        units: units.get(r.good) ?? 0,
+      })),
+    );
+    return { key: c.key, legM: c.legM, valueS, imports: pair.imports, exports: pair.exports, units, i };
+  });
+  ranked.sort((a, b) => b.valueS - a.valueS || a.legM - b.legM || a.i - b.i);
+  return ranked.map(({ i: _i, ...lane }) => lane);
 }

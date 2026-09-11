@@ -25,7 +25,10 @@ const LICENSE_TAX_CATEGORY: TaxCategory = "saas";
  *   PADDLE_ENVIRONMENT        "sandbox" (default) | "production"
  *   PADDLE_API_KEY_SANDBOX    server-side API key for the sandbox account
  *   PADDLE_API_KEY            server-side API key for the live account
- *   PADDLE_WEBHOOK_SECRET     webhook signing secret (for verifyWebhook)
+ *   PADDLE_WEBHOOK_SECRET_SANDBOX  webhook signing secret, sandbox destination
+ *   PADDLE_WEBHOOK_SECRET     webhook signing secret, live destination — and the
+ *                             FALLBACK in sandbox when the sandbox one is unset,
+ *                             so deployments predating the split keep verifying
  *
  * Note: the browser checkout (paddle-js) needs a *client-side token*, which is
  * a different credential from the server API key and lives on the client.
@@ -220,12 +223,27 @@ class PaddleService {
   // ---- Webhooks ----------------------------------------------------------
 
   /**
+   * Signing secret for the notification destination of the ACTIVE environment.
+   *
+   * Sandbox and live destinations are separate objects in Paddle with separate
+   * secrets, so mixing them means every signature fails. In sandbox we prefer
+   * PADDLE_WEBHOOK_SECRET_SANDBOX but fall back to PADDLE_WEBHOOK_SECRET, which
+   * is what sandbox deployments configured before this split still carry.
+   * Production reads PADDLE_WEBHOOK_SECRET only — never a sandbox secret.
+   */
+  get webhookSecret(): string | undefined {
+    return this.environment === Environment.production
+      ? process.env.PADDLE_WEBHOOK_SECRET
+      : process.env.PADDLE_WEBHOOK_SECRET_SANDBOX || process.env.PADDLE_WEBHOOK_SECRET;
+  }
+
+  /**
    * Verify and parse a webhook payload. Pass the *raw* request body string and
    * the `paddle-signature` header. Returns the parsed event, or throws if the
    * signature is invalid.
    */
   async verifyWebhook(rawBody: string, signature: string) {
-    const secret = process.env.PADDLE_WEBHOOK_SECRET;
+    const secret = this.webhookSecret;
     if (!secret) {
       throw new Error("PADDLE_WEBHOOK_SECRET not configured");
     }

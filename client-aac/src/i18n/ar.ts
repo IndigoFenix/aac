@@ -903,6 +903,7 @@ export const ar: Translations = {
       when: "متى",
       why: "لماذا",
       how: "كيف",
+      question: "سؤال",
       someone: "شخص ما",
       near: "قريب",
       far: "بعيد",

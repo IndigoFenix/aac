@@ -49,9 +49,11 @@ import {
 } from "../interaction/quest/wilderness.js";
 import type { ClimateSample } from "../products.js";
 import { buildTownScope } from "../interaction/town/town-play-game.js";
+import { buildClusterWindow } from "../interaction/town/town-cluster.js";
 import type { SerializedTownDeltas } from "../kernel/town/construction.js";
 import { FOUNDING_AGE_DAYS } from "../kernel/town/plan.js";
 import { DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale } from "../scale.js";
+import { resolveSkillCatalogue } from "../kernel/town/skills.js";
 import { PLAYER_ID } from "../solver/space3d.js";
 import {
   WIDE_TICK_INNER_STEP_S,
@@ -259,13 +261,26 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
 
   // ② THE TOWN. Same call, same certification, same deterministic build.
   const built = buildTownScope(game, "game", opts.deltas);
-  const play = built.play;
+  //    …and its WALKING WINDOW when the document says `cluster: N` — the same
+  //    hamlet ring world-lab's `bootLivingTown` composes, now one shared
+  //    definition (town-cluster.ts `buildClusterWindow`). Before this seat a
+  //    cluster world was BROWSER-ONLY: `cluster` parsed into the config and
+  //    nothing headless read it, so `npm run world:text` / `npm run arc:run`
+  //    could not boot one (trade-topology-round D-1). `cluster: 0` ⇒ the
+  //    identical `built.play`, so every shipped document is untouched.
+  //    The returned `windowShift` is unused here: the headless ground seam is
+  //    FLAT (no `groundAt`/`waterAt` samplers to shift back), and everything
+  //    downstream reads `play.stage.center`, which is already window-frame.
+  const { play } = buildClusterWindow(built);
 
   // ③ THE SESSION SHAPE the game hands `host.start` — verbatim from bootLivingTown.
   const spirit = avatarKind(game) === "spirit";
   //    The document's declared scale, else the street-clock DOLLHOUSE profile
   //    (the town machinery is paced to that 240 s day).
   const scale: WorldScale = game.scale ? resolveWorldScale(game.scale) : DOLLHOUSE_SCALE;
+  //    …and the world's SKILL TREE (`game.skills`), include-then-extend. No
+  //    shipped document declares one, so this is the catalogue verbatim.
+  const skills = resolveSkillCatalogue(game.skills);
   const culture = game.culture;
   const dollhouse = built.focus ? built.focus.house : undefined;
   //    The focus LOT in world coords — the ladder's `focusFrame`. (The host
@@ -427,6 +442,7 @@ export function bootTextQuest(opts: TextQuestOpts): TextQuestRun {
         }
       : {}),
     scale,
+    skills,
     ...(culture ? { culture } : {}),
   });
   if (!view) throw new Error("bootTextQuest: the host never built a view");

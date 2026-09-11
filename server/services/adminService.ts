@@ -1,12 +1,17 @@
 import {
   userRepository,
   interpretationRepository,
-  settingsRepository,
   creditRepository,
-  apiProviderRepository,
 } from "../repositories";
-import { type User, type SubscriptionPlan } from "@shared/schema";
 
+/**
+ * What used to live here — the platform-user list/update, the system-prompt
+ * pair, the generic `system_settings` get/put, subscription plans,
+ * interpretations-with-users and the api-provider CRUD — were thin pass-throughs
+ * for the `requireAdmin` routes deleted on 2026-09-10 (authorization structural
+ * pass, phase 0a). The repositories they called are still reached by their other
+ * callers; only these wrappers went.
+ */
 export class AdminService {
   // Dashboard stats
   async getDashboardStats(): Promise<{
@@ -22,80 +27,6 @@ export class AdminService {
       users: usersStats,
       interpretations: interpretationsStats,
     };
-  }
-
-  // User management
-  async getAllUsersWithStudents(): Promise<any[]> {
-    const users = await userRepository.getAllUsers();
-    const { studentRepository } = await import("../repositories");
-
-    const usersWithStudents = await Promise.all(
-      users.map(async (user) => {
-        const students = await studentRepository.getStudentsByUserId(user.id);
-        return {
-          ...user,
-          students: students || [],
-        };
-      })
-    );
-
-    return usersWithStudents;
-  }
-
-  async updateUserAdmin(
-    userId: string,
-    updates: {
-      firstName?: string;
-      lastName?: string;
-      email?: string;
-      userType?: string;
-      subscriptionType?: string;
-      isActive?: boolean;
-    }
-  ): Promise<User | undefined> {
-    const allowedFields = [
-      "firstName",
-      "lastName",
-      "email",
-      "userType",
-      "subscriptionType",
-      "isActive",
-    ];
-    const validUserTypes = ["Parent", "Caregiver", "Teacher", "SLP", "admin"];
-    const filteredUpdates: any = {};
-
-    for (const field of allowedFields) {
-      if ((updates as any)[field] !== undefined) {
-        if (
-          field === "userType" &&
-          !validUserTypes.includes((updates as any)[field])
-        ) {
-          throw new Error("Invalid user type");
-        }
-        filteredUpdates[field] = (updates as any)[field];
-      }
-    }
-
-    // Update fullName if firstName or lastName changed
-    if (
-      filteredUpdates.firstName !== undefined ||
-      filteredUpdates.lastName !== undefined
-    ) {
-      const user = await userRepository.getUser(userId);
-      if (user) {
-        const firstName =
-          filteredUpdates.firstName !== undefined
-            ? filteredUpdates.firstName
-            : user.firstName;
-        const lastName =
-          filteredUpdates.lastName !== undefined
-            ? filteredUpdates.lastName
-            : user.lastName;
-        filteredUpdates.fullName = `${firstName || ""} ${lastName || ""}`.trim();
-      }
-    }
-
-    return userRepository.updateUser(userId, filteredUpdates);
   }
 
   // Credits management
@@ -117,46 +48,6 @@ export class AdminService {
     return creditRepository.getUserCreditTransactions(userId);
   }
 
-  // System prompt management
-  async getSystemPrompt(): Promise<string> {
-    return settingsRepository.getSystemPrompt();
-  }
-
-  async updateSystemPrompt(prompt: string): Promise<void> {
-    return settingsRepository.updateSystemPrompt(prompt);
-  }
-
-  // Settings management
-  async getSetting(key: string, defaultValue?: string): Promise<string | null> {
-    return settingsRepository.getSetting(key, defaultValue);
-  }
-
-  async updateSetting(key: string, value: string): Promise<void> {
-    return settingsRepository.updateSetting(key, value);
-  }
-
-  // Subscription plans
-  async getAllSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-    return settingsRepository.getAllSubscriptionPlans();
-  }
-
-  // Interpretations
-  async getAllInterpretationsWithUsers(limit?: number) {
-    return interpretationRepository.getAllInterpretationsWithUsers(limit);
-  }
-
-  // API providers
-  async getApiProviders() {
-    return apiProviderRepository.getApiProviders();
-  }
-
-  async createApiProvider(provider: any) {
-    return apiProviderRepository.createApiProvider(provider);
-  }
-
-  async updateApiProvider(id: string, updates: any) {
-    return apiProviderRepository.updateApiProvider(id, updates);
-  }
 }
 
 export const adminService = new AdminService();

@@ -309,6 +309,11 @@ export interface BoardManagerInvocationInput {
   /** Recent bus events for conversation continuity. The Coordinator
    *  caps this to a sensible window (e.g. last 10–20 events). */
   recentEvents: AgentEvent[];
+  /** Set when ./conversation-stall says the exchange has gone subjectless
+   *  and the session has seeds to spend. Rendered at the END of the turn
+   *  message — the model attends most there, and this outranks the beat's
+   *  ordinary action hint. */
+  stallDirective?: string;
 
   /** Current button labels on the main board (for de-dup / "still
    *  appropriate?" reasoning). Legacy fallback when `currentBoardButtons`
@@ -623,6 +628,12 @@ export function renderInvocationContext(input: BoardManagerInvocationInput): str
   }
   if (hint) lines.push("", hint);
   lines.push(`</this_invocation>`);
+
+  // The stall note goes after the action hint: the hint says WHICH tool,
+  // this says what to put in it.
+  if (input.stallDirective?.trim()) {
+    lines.push("", input.stallDirective.trim());
+  }
 
   // LAST, and outside <this_invocation>: a correction outranks the beat's
   // action hint, and the model attends most to the end of the turn message.

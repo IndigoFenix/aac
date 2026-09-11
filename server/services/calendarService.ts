@@ -179,12 +179,18 @@ class CalendarService {
    *  - Event creator: always.
    *  - Institute admin on the event's institute: for events with instituteId set.
    * No other path grants edit.
+   *
+   * 🚨 The admin half goes through `instituteRepository.isUserAdminOfInstitute`,
+   * the one institute predicate. It used to read `getInstituteUserLink` and test
+   * `link?.isAdmin` raw, which ignores `isActive` — audit finding C9
+   * (2026-09-10): removal from an institute is a soft delete, so a terminated
+   * admin kept edit/delete on every one of that institute's calendar events,
+   * contradicting §5.6. Do not reintroduce a raw link test here.
    */
   async canUserEditEvent(event: CalendarEvent, userId: string): Promise<boolean> {
     if (event.createdByUserId === userId) return true;
     if (event.instituteId) {
-      const link = await instituteRepository.getInstituteUserLink(event.instituteId, userId);
-      if (link?.isAdmin) return true;
+      if (await instituteRepository.isUserAdminOfInstitute(event.instituteId, userId)) return true;
     }
     return false;
   }
@@ -302,8 +308,12 @@ class CalendarService {
 
     // ── Selected institute path ──
     if (selectedInstituteId) {
-      const userInstitutes = await instituteRepository.getInstitutesByUserId(userId);
-      const userIsMember = userInstitutes.some((i) => i.id === selectedInstituteId);
+      // The one institute predicate, not a `getInstitutesByUserId().some(...)`
+      // list-then-scan (which was a separate definition of "member").
+      const userIsMember = await instituteRepository.isUserMemberOfInstitute(
+        selectedInstituteId,
+        userId,
+      );
       if (userIsMember) {
         instituteIds.push(selectedInstituteId);
         // Classrooms the user belongs to within the selected institute.
@@ -492,8 +502,8 @@ class CalendarService {
 
     // 3. Event institute FK matches a user institute
     if (event.instituteId) {
-      const userInstitutes = await instituteRepository.getInstitutesByUserId(userId);
-      if (userInstitutes.some((i) => i.id === event.instituteId)) return true;
+      // The one institute predicate — see `buildVisibilityCriteria`.
+      if (await instituteRepository.isUserMemberOfInstitute(event.instituteId, userId)) return true;
     }
 
     // 4. Event classroom FK matches a user classroom

@@ -15,12 +15,7 @@ import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
 import { UserStudent } from '@shared/schema';
-import {
-  useActiveConsent,
-  useConsentAuthority,
-  useConsentHistory,
-  usePendingInvitations,
-} from '@/hooks/useConsentApi';
+import { useConsentDetail } from '@/features/consent/ConsentProvider';
 import { ConsentWizard } from '@/features/consent/ConsentWizard';
 import { SendConsentRequestDialog } from '@/features/consent/SendConsentRequestDialog';
 import { PendingInvitationsList } from '@/features/consent/PendingInvitationsList';
@@ -146,26 +141,34 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   const { student, refetchStudent } = useStudent();
   const [consentWizardOpen, setConsentWizardOpen] = useState(false);
   const [sendConsentDialogOpen, setSendConsentDialogOpen] = useState(false);
-  const consentQuery = useActiveConsent(student?.id);
-  const consentMissing = !!student?.id && !consentQuery.isLoading && !consentQuery.data?.consent;
-
   // ── One settle for the whole consent block ────────────────────────────────
   // The banner, its invitation list, the authority card and the history card
   // are four independent requests, and each one rendered NOTHING until it
   // landed — so opening a patient grew the page four separate times, shoving
-  // everything below on each. These duplicate hook calls hit the same query
-  // keys the children use, so react-query serves them from one request; they
-  // are read here only to know when the block as a whole is decided. Nothing
-  // in the block renders until all four are, at which point it settles once.
-  const consentAuthorityQuery = useConsentAuthority(student?.id);
-  const consentHistoryQuery = useConsentHistory(student?.id);
-  const consentInvitationsQuery = usePendingInvitations(student?.id);
-  const consentBlockSettled =
+  // everything below on each. Nothing in the block renders until all four are
+  // decided, at which point it settles once.
+  //
+  // The four reads live in ConsentProvider (features/consent/ConsentProvider.tsx),
+  // NOT in this component and not in its children: this panel is where a
+  // consumer declares it needs the detail slices, and every child reads the
+  // same context. That is what stopped the request loop — an errored query
+  // used to be re-fetched by each child observer that mounted, which flipped
+  // it back to pending and un-settled the block, which unmounted the children.
+  //
+  // "Decided" includes ERRORED (`isSettled`), so a failure settles the block
+  // permanently instead of holding a skeleton forever — and `blockFailed` is
+  // then rendered as a failure, because a consent read that did not answer is
+  // not the same fact as a student with no consent, no invitations and no
+  // history.
+  const consent = useConsentDetail();
+  const consentBlockSettled = consent.blockSettled;
+  const consentBlockFailed = consent.blockFailed;
+  const consentMissing =
     !!student?.id &&
-    !consentQuery.isLoading &&
-    !consentAuthorityQuery.isLoading &&
-    !consentHistoryQuery.isLoading &&
-    !consentInvitationsQuery.isLoading;
+    consent.studentId === student.id &&
+    consent.active.isSettled &&
+    !consent.active.isError &&
+    !consent.active.data;
 
   // ── Guided Setup: this student's own unfinished setup ─────────────────────
   // The rail's automatic banner honours "not now" (`dismissedAt`); this button
@@ -178,7 +181,7 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
     isBusy: guidedBusy,
     isChatBusy: guidedChatBusy,
     isActive: guidedActive,
-    probedStudentId: guidedProbedStudentId,
+    isViewPending: guidedViewPending,
     continueSetup,
   } = useGuidedSetup();
   const guidedForStudent =
@@ -190,12 +193,11 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
     // A flow already running for this student has the whole rail on screen;
     // a second "continue" card under it would just be a second way to resend.
     !guidedActive;
-  // The genuine "we don't know yet" window: `probedStudentId` lags one settle
-  // behind selecting a student (a GET, or a live view arriving). Holding a
-  // same-sized placeholder here — instead of nothing — is what keeps this
-  // card, which sits above everything else, from shoving the rest of the
-  // panel down after the first paint.
-  const guidedPending = !!student?.id && guidedProbedStudentId !== student.id;
+  // The genuine "we don't know yet" window: the guided view for the selected
+  // student is still being fetched. Holding a same-sized placeholder here —
+  // instead of nothing — is what keeps this card, which sits above everything
+  // else, from shoving the rest of the panel down after the first paint.
+  const guidedPending = !!student?.id && guidedViewPending;
   const {
     institutes,
     currentInstitute,
@@ -551,8 +553,36 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
             <Skeleton className="h-[74px] w-full rounded-lg" aria-hidden="true" />
           )}
 
+          {/* One or more consent reads FAILED. Say so. The alternative — the
+              block's cards each hiding themselves on error — reads as "this
+              student has no consent, no invitations and no history", which is
+              a claim nobody established. */}
+          {consentBlockFailed && (
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardContent
+                className={cn(
+                  'pt-6 pb-6 flex items-start gap-3',
+                  isRTL && 'flex-row-reverse text-right',
+                )}
+              >
+                <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="font-medium text-foreground">
+                    {t('consent.block.loadFailedTitle')}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {ts('consent.block.loadFailedDescription')}
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={consent.retry}>
+                  {t('consent.block.retry')}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Consent banner — surfaces when student has no active consent record */}
-          {consentBlockSettled && consentMissing && (
+          {consentBlockSettled && !consentBlockFailed && consentMissing && (
             <Card className="border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20">
               <CardContent className="pt-6 pb-6 flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />

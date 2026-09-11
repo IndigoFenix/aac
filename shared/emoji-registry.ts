@@ -355,8 +355,37 @@ const EXTRA_EMOJIS: Record<string, string> = {
  */
 const EMOJI_PATTERN = /^(?:[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F100}-\u{1F1FF}\u{FE0F}\u{200D}])+$/u;
 
+/**
+ * True when `key` is a single character — which is therefore something we can
+ * draw as itself, with no image behind it.
+ *
+ * `EMOJI_PATTERN` enumerates ranges, and the ranges will always trail Unicode
+ * — ©, ™, 〰 and a scattering of dingbats fall outside it today, and whatever
+ * lands next will too. The consequence of a miss is not cosmetic: an
+ * unmatched character is treated as a generation-eligible imageKey, so the
+ * validator demands a fallback for something that already draws itself.
+ *
+ * LETTERS AND DIGITS COUNT. A button that means `א` should BE an `א`, not a
+ * generated picture of one: the letterform is the icon. (The compositor
+ * already treats a bare number this way, rendering it through the numeral
+ * glyph; the validator did not, and would ask for a fallback for `7`.)
+ *
+ * The rule is simply arity: a snake_case key that needs art is never one
+ * character long, so one grapheme is always something renderable. Combiners
+ * are ignored when counting — they only ever ride a character already
+ * covered by the pattern.
+ */
+export function isSingleCharGlyph(key: string): boolean {
+  if (!key) return false;
+  const chars = [...key].filter((ch) => {
+    const cp = ch.codePointAt(0)!;
+    return cp !== VARIATION_SELECTOR_16 && cp !== ZWJ;
+  });
+  return chars.length === 1;
+}
+
 export function isEmoji(key: string): boolean {
-  return !!key && EMOJI_PATTERN.test(key);
+  return !!key && (EMOJI_PATTERN.test(key) || isSingleCharGlyph(key));
 }
 
 /**
@@ -532,7 +561,15 @@ export function shouldMirror(rtl: boolean, subject: MirrorSubject): boolean {
   if (!rtl) return false;
   if (isFaceKey(subject.key)) return false;
   if (subject.item && isNonReversibleItem(subject.item)) return false;
-  return !isNonReversibleEmoji(subject.emoji ?? subject.item?.emoji ?? "");
+  const emoji = subject.emoji ?? subject.item?.emoji ?? "";
+  // A character we accept only because it is one character (see
+  // `isSingleCharGlyph`) is one we cannot identify — and mirroring is a claim
+  // about what a picture DEPICTS. With no idea what it shows, leave it
+  // upright. That matters most for the letters and digits this admits: a
+  // mirrored `א` or `7` is a different sign, not a turned-around one, while
+  // an upright pictograph merely misses a flourish.
+  if (isSingleCharGlyph(emoji) && !EMOJI_PATTERN.test(emoji)) return false;
+  return !isNonReversibleEmoji(emoji);
 }
 
 /** A key naming a contact's photo, in either the glyph or the board spelling. */

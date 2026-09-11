@@ -66,9 +66,9 @@ export const en = {
   // ============================================================================
   identity: {
     verificationRequired: "Identity Verification Required",
-    verificationNeeded: "{{institute}} requires verification through {{provider}}. Please verify your identity to access this organization.",
-    verificationExpired: "Your {{provider}} verification for {{institute}} has expired. Please re-verify your identity.",
-    verifyNow: "Verify with {{provider}}",
+    verificationNeeded: "{institute} requires verification through {provider}. Please verify your identity to access this organization.",
+    verificationExpired: "Your {provider} verification for {institute} has expired. Please re-verify your identity.",
+    verifyNow: "Verify with {provider}",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const en = {
     genderOther: "Other",
     primaryLanguage: "Primary Language",
     dateOfBirth: "Date of Birth",
-    ageDisplay: "Age: {{age}} years",
+    ageDisplay: "Age: {age} years",
     systemType: "Educational System",
     frameworkTala: "TALA (Israel)",
     frameworkIep: "IEP (US)",
@@ -1081,9 +1081,9 @@ export const en = {
     clearUnsavedDesc: "You have unsaved changes. Would you like to save before clearing the board?",
     discardAndClear: "Discard & Clear",
     saveAndClear: "Save & Clear",
-    generatingIcons: "Generating icons, remaining: {{remaining}}",
+    generatingIcons: "Generating icons, remaining: {remaining}",
     iconsGenerated: "All icons generated successfully",
-    iconsFailed: "{{count}} icon(s) failed to generate",
+    iconsFailed: "{count} icon(s) failed to generate",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const en = {
     importWarning: "Importing will replace the current board. Some Grid3 features may not import perfectly.",
     importButton: "Import",
     importSuccess: "Board Imported",
-    importSuccessDesc: "\"{{name}}\" imported from Dropbox",
+    importSuccessDesc: "\"{name}\" imported from Dropbox",
     importFailed: "Import Failed",
     noFilesFound: "No board files found in your Dropbox folder.",
   },
@@ -1349,6 +1349,8 @@ export const en = {
     noStudentsDesc: "Add your first {{STUDENT}} to get started",
     noResults: "No {{STUDENTS}} found",
     noResultsDesc: "Try adjusting your search or filters",
+    selectInstituteFirst: "Select an organization first to add a {{student}}",
+    selectInstituteEmpty: "Select an organization to see {{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const en = {
     gasOverallScoreDesc: "Aggregate progress across GAS-scored goals. 50 = expected.",
     gasAtOrAbove: "at or above expected",
     gasBelow: "below expected",
-    gasGoalsCounted: "Based on {{count}} GAS goal(s) with recorded data.",
+    gasGoalsCounted: "Based on {count} GAS goal(s) with recorded data.",
     goalCompletion: "Goal Completion",
     goalsByDomain: "Goals by Domain",
     timeline: "Timeline",
@@ -1779,7 +1781,7 @@ export const en = {
     title: "Progress Data",
     noDataPoints: "No data recorded yet",
     collectedBy: "Collected by",
-    moreCount: "+{{count}} more records",
+    moreCount: "+{count} more records",
 
     numericValue: "Numeric Value",
     numericPlaceholder: "e.g., 85",
@@ -2206,7 +2208,7 @@ export const en = {
 
   reports: {
     title: "Reports",
-    subtitle: "Reports for {{name}}",
+    subtitle: "Reports for {name}",
     noStudent: "Please select a {{STUDENT}} to view reports",
     noStudentSelected: "No {{STUDENT}} Selected",
     selectStudentFirst: "Please select a {{STUDENT}} to view their reports",
@@ -2243,10 +2245,12 @@ export const en = {
     finalizeTitle: "Finalize Report",
     finalizeWarning: "Once finalized, this report cannot be edited. You will need to create a new revision to make changes.",
     finalizeCannotUndo: "This action cannot be undone.",
+    consentWarning: "Finalizing is blocked: no informed-consent record is on file. A parent or guardian needs to sign the consent form first.",
+    finalizeFailed: "Could not finalize the report.",
 
     confirmCreate: {
       title: "Create New Report",
-      description: "This will create a new {{type}} report. Any existing active report will be archived.",
+      description: "This will create a new {type} report. Any existing active report will be archived.",
       confirm: "Create"
     },
 
@@ -2365,7 +2369,7 @@ export const en = {
     },
 
     empty: {
-      title: "No {{type}} reports",
+      title: "No {type} reports",
       description: "Create a new report to get started."
     },
 
@@ -2988,7 +2992,7 @@ export const en = {
     selectOrGenerate: "Select an analysis, or generate a new one.",
     selectStudent: "Select a {{STUDENT}} to generate a deep analysis.",
     untitled: "Untitled Analysis",
-    inProgress: "In progress (step {{STEP}})...",
+    inProgress: "In progress (step {STEP})...",
     delete: "Delete",
     confirmDelete: "Delete this analysis permanently?",
     error: "Error",
@@ -3074,7 +3078,7 @@ export const en = {
       categoryPages: "Group into categories",
       dietaryTags: "Show dietary labels",
       dietaryTagsDesc: "For you, not the {{student}}. These labels are unreliable and never filter anything.",
-      autoNow: "Now: {{value}}",
+      autoNow: "Now: {value}",
     },
     review: {
       title: "Menus to check",
@@ -3171,9 +3175,15 @@ export const en = {
     LICENSE_ALREADY_PAID: "This license is already paid up.",
     LICENSE_NOT_PURCHASABLE: "This license cannot be paid for online. Please contact us.",
     PADDLE_NOT_CONFIGURED: "Online payment is not available right now. Please try again later or contact us.",
+    consent_required: "An active informed-consent record is required before this report can be finalized.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "Consent information unavailable",
+      loadFailedDescription: "We couldn't load this {{student}}'s consent records. That is not the same as having none on file — the request failed.",
+      retry: "Try again",
+    },
     authority: {
       title: "Consent authority",
       description: "By default, who consents is decided by the student's age of majority. Override it here if an adult student remains under legal guardianship, or a minor consents for themselves.",
@@ -3306,6 +3316,27 @@ export const en = {
         attemptsRemaining: "{count} attempt(s) remaining.",
         locked: "Too many incorrect attempts. Please ask the clinic to send you a new link.",
       },
+      attest: {
+        identityIntro: "You are recording this consent in person, with the guardian present. Check the details below before you continue.",
+        guardianLabel: "Guardian signing",
+        attestedByLabel: "Attested by",
+        guardianIntro: "Record the identification document the guardian has shown you. Enter it exactly as it appears on the document.",
+        coGuardianDeclaration: "The guardian confirms that they are the legal guardian and have the authority to give this consent on behalf of any other guardian.",
+        signatureIntro: "Hand the device to the guardian now. This signature must be their own.",
+        signatureLegal: "By signing, the guardian confirms that they are the legal guardian and authorizes this consent.",
+        stepIntro: "Finally, confirm what you saw. This declaration is stored with the consent record and names you as the attesting clinician.",
+        documentLabel: "Document inspected",
+        presenceDeclaration: "I confirm that the guardian was physically present with me, that I inspected the identification recorded above, and that it matches the person who signed.",
+        notesLabel: "Notes (optional)",
+        notesPlaceholder: "e.g. passport valid to 2031, name matches",
+        legal: "Your name, user account and the time of this attestation are stored as evidence on the consent record.",
+        reviewIntro: "Check the record before you save it. Once saved it cannot be edited — only revoked and signed again.",
+        methodLabel: "Verified by",
+        methodValue: "In-person clinician attestation",
+        submitButton: "Record consent",
+        toastTitle: "Consent recorded",
+        toastDescription: "The in-person consent has been saved with your attestation.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const en = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "Consent history",
       activeBadge: "Active",
@@ -3364,6 +3447,11 @@ export const en = {
       revokeReasonPlaceholder: "Reason (optional)",
       toastRevoked: "Consent revoked",
       toastRevokeFailed: "Could not revoke",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const en = {
       reverificationDays: "Re-verification (days)",
       autoProvision: "Auto-provision new users",
       autoProvisionDesc: "When a user authenticates via this IdP and has no Aivota account, create one from the SSO claims and link it. Required for institutional IdPs (e.g. IL MoE Sapakim) where users expect to land already-logged-in.",
-      days: "{{count}} days",
+      days: "{count} days",
       never: "Never",
       neverPlaceholder: "Leave empty for never",
       discoveryUrl: "Discovery URL",
@@ -4076,8 +4164,8 @@ export const en = {
     noInstitute: "Join an organization to start calling",
     loadingContacts: "Loading contacts…",
     noContacts: "No contacts found",
-    callPerson: "Call {{name}}",
-    callPersonAuto: "Call {{name}} automatically",
+    callPerson: "Call {name}",
+    callPersonAuto: "Call {name} automatically",
     students: "Students",
     online: "Online",
     offline: "Offline",
@@ -4157,7 +4245,7 @@ export const en = {
     title: "Contacts",
     panelTitle: "Student Contacts",
     description: "People the student knows — parents, classmates, therapists.",
-    forStudent: "Contacts for {{name}}",
+    forStudent: "Contacts for {name}",
     empty: "No contacts recorded yet.",
     add: "Add Contact",
     new: "New Contact",
@@ -4351,7 +4439,7 @@ export const en = {
       title: "Revoke all access?",
       description: "All active shares — per-object and standing — that you granted to this institute for this student will be revoked. This cannot be undone.",
       confirm: "Revoke all",
-      toastSuccess: "Revoked {{count}} share(s).",
+      toastSuccess: "Revoked {count} share(s).",
     },
     inbox: {
       pendingHeader: "Pending invites",
@@ -4372,8 +4460,8 @@ export const en = {
     },
     standing: {
       expired: "Expired",
-      expiresInDays: "Expires in {{days}} days",
-      expiresOn: "Expires {{date}}",
+      expiresInDays: "Expires in {days} days",
+      expiresOn: "Expires {date}",
       renewedToast: "Standing share renewed for 1 year.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const en = {
     field: {
       codeExpires: "Code expires",
       shareExpires: "Share expires",
-      sensitiveCount: "{{count}} sensitive item(s)",
+      sensitiveCount: "{count} sensitive item(s)",
     },
     bundle: {
       objects: "Objects",
@@ -4471,9 +4559,9 @@ export const en = {
     notifications: {
       bellLabel: "Share invites",
       newInviteTitle: "New share invite",
-      newInviteBody: "{{count}} invite(s) awaiting your approval.",
+      newInviteBody: "{count} invite(s) awaiting your approval.",
       expiringTitle: "Share approaching expiry",
-      expiringBody: "{{count}} standing share(s) expire soon — review and renew.",
+      expiringBody: "{count} standing share(s) expire soon — review and renew.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const en = {
       addGuardian: "Add guardian contact",
       requestsSent: "{count} sent, {failed} could not be sent",
       sendRequests: "Send consent requests ({count})",
+      stage: "Consent",
+      explainTitle: "Next: approval from a parent or guardian",
+      explainBody: "Before anything about this {{student}}'s health, program or way of communicating can be recorded, a parent or legal guardian has to give written approval. Only the basic details are saved so far. The remaining steps open on their own the moment the approval is signed.",
+      signCaption: "You are the guardian on record, so you can read and sign the approval yourself — it takes about a minute.",
+      familyNoGuardianCaption: "First we need a guardian on record. Add yourself (or the other parent) as this {{student}}'s guardian, and a Sign consent button will appear here.",
+      sendRequest: "Send consent request",
+      sendCaption: "We'll email the guardian a private link. They read the approval and sign it online — nothing else is needed from you.",
+      sentCaption: "The link has been sent to the guardian. The remaining steps open as soon as it is signed, so you can safely come back later.",
+      sentOne: "Consent link sent to the guardian.",
+      sendFailed: "The consent link could not be sent. Check that the guardian has a valid email address, then try again.",
+      attestInPerson: "The guardian is here — sign together",
+      attestCaption: "If the parent or guardian is with you right now, you can read the approval together and have them sign on this device. You confirm their identification, and no link is needed.",
     },
     notes: {
       documentsNotStored: "Documents are read, not stored — only the facts taken from them are kept.",

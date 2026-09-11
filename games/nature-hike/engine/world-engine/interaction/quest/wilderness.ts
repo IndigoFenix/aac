@@ -50,7 +50,7 @@ import { FAUNA_BODY_PREFIX, FLORA_BODY_PREFIX } from "../../kernel/town/scope.js
 // scatter reads the biosphere's density law rather than keeping a second
 // per-biome table beside it; `planet/ecology.ts` is worldgen composition and
 // imports nothing from this layer, so the edge is one-way.
-import { DEFAULT_BIOSPHERE, standDensityPerHa } from "../../planet/ecology.js";
+import { SCATTER_BIOSPHERE, standDensityPerHa } from "../../planet/ecology.js";
 import { listSpecies, speciesCanSpeak } from "../../creatures/species.js";
 import { getVocabularyItem } from "@shared/glyph-registry.js";
 
@@ -888,17 +888,31 @@ export function wildMixForBiome(
   return eco ? admitted.map((e) => withEcoDensity(e, eco)) : admitted;
 }
 
-/** One mix line as a DENSITY: the biosphere's own abundance where it has an
- *  opinion (a species whose `model` is this line's source), the line's legacy
- *  count re-read at the reference area where it has none. */
+/**
+ * One mix line as a DENSITY: the biosphere's own abundance where it has an
+ * opinion (a species whose `model` is this line's source), the line's legacy
+ * count re-read at the reference area where it has none.
+ *
+ * 🌿 THE FORAGE LAYER JOINED THE DENSITY LAW (PART 6, 2026-09-08). This asked
+ * `DEFAULT_BIOSPHERE` — the three BAKED species — so `oak` scaled with the
+ * wood and every food plant fell to `legacyPerHa(count)`, i.e. to
+ * `forageBase`'s biome counts read at a fixed 3.61 ha. That made the SCATTER
+ * COUNT the food authority on the ecological path, and it is why the shipped
+ * forest cell stood 15.05 oaks/ha over 3.32 food plants/ha: a wood with no
+ * understory. `SCATTER_BIOSPHERE` adds the understory rows — density × canopy
+ * abundance, the same one law — so the larder now thickens and thins with the
+ * wood it grows in. `forageBase`'s counts still answer for every caller with
+ * NO baked ecology (a preset town, a flat test world, the charter arm), which
+ * is where an absolute count was always the honest form.
+ */
 function withEcoDensity(
   e: WildMixEntry,
   eco: Readonly<Record<string, number>>,
 ): WildMixEntry {
-  const ecological = DEFAULT_BIOSPHERE.some((s) => s.model === e.species && s.standPerHa);
+  const ecological = SCATTER_BIOSPHERE.some((s) => s.model === e.species && s.standPerHa);
   return {
     ...e,
-    perHa: ecological ? standDensityPerHa(e.species, eco) : legacyPerHa(e.count),
+    perHa: ecological ? standDensityPerHa(e.species, eco, SCATTER_BIOSPHERE) : legacyPerHa(e.count),
   };
 }
 
@@ -980,10 +994,19 @@ export interface WildernessParams {
    * Absent ⇒ byte-identical to every scatter ever laid.
    */
   keep?: { x: number; y: number; r: number };
-  /** ⚖️ INERT (S3 review): abundance is DIAL-FREE — never pass the session's
-   *  `resourceCompression` here; the conversion dial applies only at
-   *  effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson. The seat
-   *  stays for tests that pin the invariance. */
+  /** ⚖️ INERT, AND NOW FOR A STATED REASON (S3 review; re-argued PART 6,
+   *  2026-09-08). Abundance is DIAL-FREE: how thickly a species stands is
+   *  ecology (`FORAGE_UNDERSTORY`), and a rolled STOCK is a fact about one
+   *  plant, so neither may read the conversion dial — a 7.5× roll here would
+   *  put 30 berries on a waist-high bush and, through the same `bodyStockOf`
+   *  call, 7.5× the timber in every oak.
+   *
+   *  🚨 THE WILD-FOOD SEAT MOVED, IT DID NOT VANISH. The dial's honest target
+   *  in the countryside is the FLOW — how fast a picked plant bears again —
+   *  and that now lives at `wildRegrowPeriodS`, which the host feeds
+   *  `session.scale.resourceCompression`. Everything else it reaches is
+   *  unchanged (effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson).
+   *  This seat stays for the tests that pin the roll's invariance. */
   conversionDial?: number;
 }
 
@@ -1130,11 +1153,60 @@ export interface HarvestRegrowth {
   /** Replacement ledger (entries only for glyphs still below capacity). */
   regrowAt: Record<string, number>;
 }
+/**
+ * ⚖️ HOW LONG ONE WILD PLANT TAKES TO REPLACE ONE UNIT — the ONE expression of
+ * it, and the seat the conversion dial finally sits in (PART 6, 2026-09-08).
+ *
+ * `regrowDays` is a REAL cadence now (products.ts: a bush replaces a berry over
+ * a third of a season, a hazel carries one mast a year), so the compression a
+ * playable world wants has to be applied HERE rather than baked into the data.
+ * `resource_compression` is the natural→usable dial — *"a single value that
+ * multiplies the conversion of natural resources to usable ones"* — and a
+ * plant's bearing rate is exactly that conversion, so the dial DIVIDES the
+ * period: at the GL preset's 7.5, a 120-day bush bears every 16 game-days.
+ *
+ * 🚫 IT DOES NOT TOUCH STANDING STOCK, deliberately, and that is why
+ * `buildWilderness` still rolls at dial 1. The dial belongs on the FLOW (what
+ * the ground yields per day), not on the CAP: multiplying a bush's rolled
+ * berries by 7.5 would put 30 berries on a waist-high shrub, and — the reason
+ * that matters beyond looks — `bodyStockOf` rolls off the same call, so every
+ * oak on the planet would have carried 7.5× its timber. The wood is unchanged;
+ * only how fast the fruit comes back moved.
+ *
+ * ⏱️ `dayS` IS THE CALLER'S DAY. The host hands `FOOD_DAY_SEC` — the metabolic
+ * day, the same clock `needFillS("hunger")` measures a meal interval on (every
+ * shipped world declares `metabolism: 1`, where the two coincide). Two clocks,
+ * one of them the eater's: a forager's larder refills on the clock that says
+ * when he is hungry, not on the sun.
+ */
+export function wildRegrowPeriodS(
+  p: { regrowDays?: number },
+  dayS: number,
+  conversionDial = 1,
+): number {
+  const dial = conversionDial > 0 ? conversionDial : 1;
+  return Math.max(1e-3, ((p.regrowDays ?? 1) * dayS) / dial);
+}
+
+/** The same period, addressed by species + glyph — what a RECORD's ripening
+ *  walk needs (it holds stands, not products). Unknown pairs answer one day at
+ *  the dial, which is `regrowDays ?? 1`'s own convention. */
+export function wildRegrowPeriodOf(
+  species: string,
+  glyph: string,
+  dayS: number,
+  conversionDial = 1,
+): number {
+  const p = harvestProductsOf(species).find((q) => q.glyph === glyph);
+  return wildRegrowPeriodS(p ?? {}, dayS, conversionDial);
+}
+
 export function dueHarvestRegrowth(
   source: WildSource,
   liveStock: Record<string, number>,
   now: number,
   dayS: number,
+  conversionDial = 1,
 ): HarvestRegrowth | null {
   const pending = source.regrowAt;
   if (!pending) return null;
@@ -1145,7 +1217,7 @@ export function dueHarvestRegrowth(
     let at = pending[p.glyph];
     if (at === undefined) continue;
     const cap = source.harvestCap?.[p.glyph] ?? 0;
-    const period = Math.max(1e-3, (p.regrowDays ?? 1) * dayS);
+    const period = wildRegrowPeriodS(p, dayS, conversionDial);
     let have = liveStock[p.glyph] ?? 0;
     while (at <= now && have < cap) {
       have++;
@@ -1168,11 +1240,12 @@ export function armHarvestRegrow(
   glyph: string,
   now: number,
   dayS: number,
+  conversionDial = 1,
 ): void {
   if (source.regrowAt?.[glyph] !== undefined) return;
   const p = harvestProductsOf(source.species).find((q) => q.glyph === glyph);
   if (!p) return;
-  (source.regrowAt ??= {})[glyph] = now + Math.max(1e-3, (p.regrowDays ?? 1) * dayS);
+  (source.regrowAt ??= {})[glyph] = now + wildRegrowPeriodS(p, dayS, conversionDial);
 }
 
 // ── ⚖️ S&D S3 H2 — THE TIMBER GROWTH CLOCK ─────────────────────────────────
@@ -1283,7 +1356,8 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
   const clears = [{ x: clearAt.x, y: clearAt.y, r: clearR }, ...(params.clears ?? [])];
   // ⚖️ S3 review: abundance is DIAL-FREE — params.conversionDial is an
   // inert seat (see ScatterOpts); the one-application law lives at
-  // effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson.
+  // effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson, and — since
+  // PART 6 — at `wildRegrowPeriodS`, the countryside's FLOW.
   const dial = 1;
 
   /**

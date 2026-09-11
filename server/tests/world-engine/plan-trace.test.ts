@@ -21,10 +21,21 @@ import {
   pursue,
   pursueTraced,
   planSteps,
+  OPERATOR_GRAPH,
   type PlanTrace,
   type Predicate,
 } from "@shared/world-engine/interaction/behavior/action-planner.js";
+import { validateOperators } from "@shared/world-engine/kernel/means-ends.js";
 import type { GoalSpec } from "@shared/world-engine/interaction/behavior/rules.js";
+import type { GoalStep } from "@shared/world-engine/interaction/behavior/goal-selection.js";
+
+/** Narrow a traced plan to its SUCCESS arm. ⚖️ D7 widened the traced entries
+ *  from `… | null` to `… | { steps: null; blockedAt }`, so the old `!` no
+ *  longer narrows; the blocked pins below assert on the other arm directly. */
+function planned(res: ReturnType<typeof planStepsTraced>): { steps: GoalStep[]; trace: PlanTrace } {
+  expect(res.steps).not.toBeNull();
+  return res as { steps: GoalStep[]; trace: PlanTrace };
+}
 
 // The SAME tiny world the action-planner suite uses, so a trace pin and a step
 // pin are talking about the same plan: bear at origin, apple loose at (10,0), a
@@ -101,7 +112,7 @@ describe("consume, far, loose on the floor — the headline chain near → holdi
   const target: Predicate = { kind: "consumed", item: "apple1", at: ["table"] };
 
   it("the STEPS are exactly what the untraced planner emits (nothing moved)", () => {
-    const traced = planStepsTraced(goal, "bear", dining())!;
+    const traced = planned(planStepsTraced(goal, "bear", dining()));
     expect(traced.steps).toEqual([
       { kind: "moveTo", pos: { x: 10, y: 0 } }, // to the apple
       { kind: "pick", itemId: "apple1" }, // hold it
@@ -122,7 +133,7 @@ describe("consume, far, loose on the floor — the headline chain near → holdi
   });
 
   it("length matches, the parent chain terminates at the goal target, and has no cycles", () => {
-    const { steps, trace } = planStepsTraced(goal, "bear", dining())!;
+    const { steps, trace } = planned(planStepsTraced(goal, "bear", dining()));
     expectWellFormed(steps, trace, target);
     // The chain the creature would SPEAK, from the step it is on right now.
     expect(chainOf(trace, 0)).toEqual([NEAR_APPLE, HOLD_APPLE, target]);
@@ -133,7 +144,7 @@ describe("consume, far, loose on the floor — the headline chain near → holdi
     // no separate predicate for it, and inventing one would be a lie (header).
     const plain: GoalSpec = { kind: "consume", item: { id: "apple1" } };
     const plainTarget: Predicate = { kind: "consumed", item: "apple1" };
-    const { steps, trace } = planStepsTraced(plain, "bear", resolver())!;
+    const { steps, trace } = planned(planStepsTraced(plain, "bear", resolver()));
     expect(steps).toEqual([{ kind: "moveTo", pos: { x: 10, y: 0 } }, { kind: "eat", itemId: "apple1" }]);
     expect(trace).toEqual([{ serves: plainTarget }, { serves: plainTarget }]);
     expectWellFormed(steps, trace, plainTarget);
@@ -157,14 +168,14 @@ describe("fetch / give / putIn from the three states the planner suite pins", ()
 
   for (const { name, goal, target } of cases) {
     it(`${name} — loose: trace length equals step length, chain ends at the goal`, () => {
-      const { steps, trace } = planStepsTraced(goal, "bear", resolver())!;
+      const { steps, trace } = planned(planStepsTraced(goal, "bear", resolver()));
       expect(steps).toEqual(planSteps(goal, "bear", resolver()));
       expectWellFormed(steps, trace, target);
       expect(trace[0]).toEqual({ serves: NEAR_APPLE, parent: HOLD_APPLE });
     });
 
     it(`${name} — already in hand: the pruned precondition drops BOTH its step and its edge`, () => {
-      const { steps, trace } = planStepsTraced(goal, "bear", resolver("bear"))!;
+      const { steps, trace } = planned(planStepsTraced(goal, "bear", resolver("bear")));
       expect(steps).toEqual(planSteps(goal, "bear", resolver("bear")));
       expect(trace.length).toBe(steps.length);
       // The walk-to-the-apple and the pick are gone; so are their two edges.
@@ -174,14 +185,22 @@ describe("fetch / give / putIn from the three states the planner suite pins", ()
     });
 
     it(`${name} — held by ANOTHER creature: no plan, and therefore no trace`, () => {
-      expect(planStepsTraced(goal, "bear", resolver("mara"))).toBeNull();
+      // ⚖️ D7 PIN MOVE — the traced entry no longer answers a bare `null`: it
+      // NAMES the predicate that failed. `holding` is the deepest arm that
+      // returned null in all three cases (the give and the putIn regress it
+      // first), so the reason survives the branch roll-back that used to eat it.
+      // The trace itself is still empty and `planSteps` is untouched.
+      expect(planStepsTraced(goal, "bear", resolver("mara"))).toEqual({
+        steps: null,
+        blockedAt: HOLD_APPLE,
+      });
       expect(planTrace(goal, "bear", resolver("mara"))).toBeNull();
       expect(planSteps(goal, "bear", resolver("mara"))).toBeNull();
     });
   }
 
   it("fetch already in hand is an EMPTY plan and an empty trace", () => {
-    const { steps, trace } = planStepsTraced({ kind: "fetch", item: { id: "apple1" } }, "bear", resolver("bear"))!;
+    const { steps, trace } = planned(planStepsTraced({ kind: "fetch", item: { id: "apple1" } }, "bear", resolver("bear")));
     expect(steps).toEqual([]);
     expect(trace).toEqual([]);
   });
@@ -193,7 +212,14 @@ describe("fetch / give / putIn from the three states the planner suite pins", ()
     const noMara: WorldResolver = { ...resolver(), positionOf: (id) => (id === "bear" ? { x: 0, y: 0 } : null) };
     const goal: GoalSpec = { kind: "give", item: { id: "apple1" }, to: "mara" };
     expect(planSteps(goal, "bear", noMara)).toBeNull();
-    expect(planStepsTraced(goal, "bear", noMara)).toBeNull();
+    // ⚖️ D7 PIN MOVE — the edges are still rolled back (that is the pin's own
+    // subject), and the REASON is now kept beside them: the `holding` sub-plan
+    // SUCCEEDED here, so the deepest arm that actually failed is `possessed`
+    // itself (there is no Mara to give it to), not the pickup.
+    expect(planStepsTraced(goal, "bear", noMara)).toEqual({
+      steps: null,
+      blockedAt: { kind: "possessed", item: "apple1", by: "mara" },
+    });
     // …and the collector is not shared across calls: the next plan is clean.
     expect(planTrace({ kind: "fetch", item: { id: "apple1" } }, "bear", noMara)).toEqual([
       { serves: NEAR_APPLE, parent: HOLD_APPLE },
@@ -204,7 +230,7 @@ describe("fetch / give / putIn from the three states the planner suite pins", ()
   it("take-from: a hand-to-hand pickup is two steps of ONE predicate (no near rung)", () => {
     const goal: GoalSpec = { kind: "fetch", item: { id: "apple1" }, from: { kind: "creature", id: "mara" } };
     const target: Predicate = { kind: "holding", item: "apple1", takeFrom: "mara" };
-    const { steps, trace } = planStepsTraced(goal, "bear", resolver("mara"))!;
+    const { steps, trace } = planned(planStepsTraced(goal, "bear", resolver("mara")));
     expect(steps).toEqual([
       { kind: "moveTo", pos: { x: 6, y: 0 } },
       { kind: "pick", itemId: "apple1", from: "mara" },
@@ -280,7 +306,7 @@ describe("the rest of the operator vocabulary traces the predicate its arm owns"
 
   for (const { name, goal, r, last } of cases) {
     it(`${name}: steps unchanged, trace aligned, terminal edge is the goal target`, () => {
-      const { steps, trace } = planStepsTraced(goal, "bear", r)!;
+      const { steps, trace } = planned(planStepsTraced(goal, "bear", r));
       expect(steps).toEqual(planSteps(goal, "bear", r));
       expectWellFormed(steps, trace, last);
       expect(trace[trace.length - 1]).toEqual({ serves: last });
@@ -425,5 +451,117 @@ describe("determinism — the trace is as reproducible as the steps", () => {
       const b = planStepsTraced(goal, "bear", r);
       expect(b).toEqual(a);
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE SCHEMA AS DATA (emergent-plans-round.md D3) — the table is a MIRROR of
+// the switch, and this is the mirror's own guarantee: the graph is acyclic and
+// 3 rows deep by MEASUREMENT, and every causal edge the regression ACTUALLY
+// emits over this suite's fixtures is a row of the table. Drift is a failure
+// here rather than a lie in the `why` chain.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("OPERATOR_GRAPH mirrors the switch — validated, and checked against the traces", () => {
+  it("is acyclic with a longest chain of 3 rows (`in → holding → near`)", () => {
+    const r = validateOperators(OPERATOR_GRAPH);
+    expect(r.acyclic).toBe(true);
+    expect(r.longestPath).toBe(3);
+    expect(r.unreachable).toEqual([]);
+  });
+
+  it("every observed `parent → serves` pair over the suite's fixtures IS a schema edge", () => {
+    // Every goal/resolver pair this file plans, in one list. A regression that
+    // grows a new precondition edge without a row lands here first.
+    const fixtures: { goal: GoalSpec; r: WorldResolver }[] = [
+      { goal: { kind: "consume", item: { id: "apple1" }, at: ["table"] }, r: dining() },
+      { goal: { kind: "consume", item: { id: "apple1" } }, r: resolver() },
+      { goal: { kind: "consume", item: { id: "apple1" }, at: ["table"] }, r: dining("bear") },
+      { goal: { kind: "fetch", item: { id: "apple1" } }, r: resolver() },
+      { goal: { kind: "fetch", item: { id: "apple1" } }, r: resolver("bear") },
+      { goal: { kind: "fetch", item: { id: "apple1" }, from: { kind: "creature", id: "mara" } }, r: resolver("mara") },
+      { goal: { kind: "give", item: { id: "apple1" }, to: "mara" }, r: resolver() },
+      { goal: { kind: "give", item: { id: "apple1" }, to: "mara" }, r: resolver("bear") },
+      { goal: { kind: "putIn", item: { id: "apple1" }, container: { kind: "named", id: "box" } }, r: resolver() },
+      { goal: { kind: "putIn", item: { id: "apple1" }, container: { kind: "named", id: "box" } }, r: resolver("bear") },
+      { goal: { kind: "transform", item: { id: "apple1" }, state: "hot" }, r: resolver() },
+      { goal: { kind: "toggle", device: { id: "apple1" }, state: "on" }, r: resolver() },
+      { goal: { kind: "wear", item: { id: "apple1" } }, r: resolver() },
+      { goal: { kind: "color", item: { id: "apple1" }, color: "red" }, r: resolver() },
+      { goal: { kind: "rest", place: { kind: "named", id: "bed" } }, r: resolver() },
+      { goal: { kind: "setOpen", place: { kind: "named", id: "box" }, open: true }, r: resolver() },
+      { goal: { kind: "converse", target: "mara" }, r: resolver() },
+      { goal: { kind: "goTo", place: { kind: "named", id: "box" } }, r: resolver() },
+      { goal: { kind: "takeUnits", from: { kind: "named", id: "market" }, category: "food", units: 2 }, r: resolver() },
+      { goal: { kind: "putUnits", into: { kind: "named", id: "box" }, category: "food", units: 1 }, r: resolver() },
+      { goal: { kind: "processUnits", at: { kind: "named", id: "oven" }, category: "food", add: "hot" }, r: resolver() },
+      { goal: { kind: "equipUnits", category: "cloth" }, r: resolver() },
+      { goal: { kind: "dropUnits", category: "food", units: 1 }, r: resolver() },
+      { goal: { kind: "consumeUnits", category: "food", at: ["table"] }, r: dining() },
+    ];
+
+    const observed = new Set<string>();
+    const served = new Set<string>();
+    for (const { goal, r } of fixtures) {
+      const trace = planTrace(goal, "bear", r);
+      if (!trace) continue;
+      for (const e of trace) {
+        served.add(e.serves.kind);
+        if (e.parent !== undefined) observed.add(`${e.parent.kind}→${e.serves.kind}`);
+      }
+    }
+    // The fixtures really do exercise the regression (a silently empty set
+    // would make this test pass by saying nothing).
+    expect(observed.size).toBeGreaterThan(0);
+
+    const edges = new Set(
+      OPERATOR_GRAPH.flatMap((op) => op.needs.map((need) => `${op.achieves}→${need}`)),
+    );
+    for (const pair of [...observed].sort()) expect([...edges]).toContain(pair);
+    // …and the headline chain is one of them, both rungs.
+    expect(observed.has("holding→near")).toBe(true);
+    expect(observed.has("consumed→holding")).toBe(true);
+    // Every predicate any step served has a row of its own.
+    const achieved = new Set(OPERATOR_GRAPH.map((op) => op.achieves));
+    for (const kind of [...served].sort()) expect([...achieved]).toContain(kind);
+  });
+});
+
+describe("blockedAt names the DEEPEST failed arm (D7 — preconditions are the response)", () => {
+  it("an unlocatable item blocks at `near`, not at the `holding` above it", () => {
+    const nowhere: WorldResolver = { ...resolver(), itemPosition: () => null };
+    expect(planStepsTraced({ kind: "fetch", item: { id: "apple1" } }, "bear", nowhere)).toEqual({
+      steps: null,
+      blockedAt: NEAR_APPLE,
+    });
+  });
+
+  it("a station that grants no such state blocks at `facet` — the arm that asked for it", () => {
+    const noStation: WorldResolver = { ...resolver(), stationFor: () => null };
+    expect(
+      planStepsTraced({ kind: "transform", item: { id: "apple1" }, state: "hot" }, "bear", noStation),
+    ).toEqual({ steps: null, blockedAt: { kind: "facet", item: "apple1", state: "hot" } });
+  });
+
+  it("a goal that is not an item errand names NOTHING — there is no predicate to name", () => {
+    const gone: WorldResolver = { ...resolver(), resolveItem: () => null };
+    expect(planStepsTraced({ kind: "fetch", item: { id: "apple1" } }, "bear", gone)).toEqual({ steps: null });
+    expect(pursueTraced({ kind: "fetch", item: { id: "apple1" } }, "bear", gone)).toEqual({ kind: "blocked" });
+  });
+
+  it("`pursueTraced` carries it onto `blocked`, and `pursue` still answers the bare shape", () => {
+    const r = resolver("mara");
+    const goal: GoalSpec = { kind: "fetch", item: { id: "apple1" } };
+    expect(pursueTraced(goal, "bear", r)).toEqual({ kind: "blocked", blockedAt: HOLD_APPLE });
+    expect(pursue(goal, "bear", r)).toEqual({ kind: "blocked" });
+  });
+
+  it("a DEAD SUB-BRANCH inside a plan that SUCCEEDS records nothing", () => {
+    // The dining leg regresses `holding` and, when that fails, falls through to
+    // eating where it lies. The abandoned branch's failure must be discarded
+    // exactly as its edges are — a successful plan has no `blockedAt`.
+    const served = planStepsTraced({ kind: "consume", item: { id: "apple1" }, at: ["table"] }, "bear", dining());
+    expect(served.steps).not.toBeNull();
+    expect(served.blockedAt).toBeUndefined();
   });
 });

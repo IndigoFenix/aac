@@ -334,6 +334,17 @@ import {
   type PressPacing,
 } from "./press-pacing";
 import { decideIdleTransition, idleThresholdScaleForBand } from "./idle-watchdog";
+import { scoreBoardContent, scoreButtonContent } from "./board-content-signal";
+import {
+  initialStallState,
+  noteBoardBuilt,
+  noteMorePress,
+  noteButtonPress,
+  noteSeedsSpent,
+  isStalling,
+  STALL_THRESHOLD,
+  type StallState,
+} from "./conversation-stall";
 import {
   resolveSlpMode,
   allowsIdleRest,
@@ -427,7 +438,11 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
     topic: "open conversation",
     speakerCompanion: "The user just opened the conversation with you. Greet them warmly and invite them to talk.",
     speakerFacilitator: "The user just opened the conversation with you. Greet them warmly and invite them to talk.",
-    boardManager: "Palette: open-conversation starters — general topics the user might pick from (their interests, their day, their feelings, things they might want to ask you).",
+    // "General topics" is what this used to ask for, and it got exactly
+    // that: boards of "I want to talk about something else" / "I want to ask
+    // a question" — speech acts with no subject, which die one press later.
+    // Openers must NAME things, on the same standard as ASSIST below.
+    boardManager: "The user just opened the conversation with you. Rebuild the board with conversation openers they can press. Every opener must NAME something — a person, a place, an activity, a thing they like, something that happened. Draw them from this user's known interests, recent topics and today's events in memory; a board of concrete openers about three different subjects beats a board of eight ways to say 'let's talk'. NEVER build a button whose whole content is the wish to talk ('something else', 'ask a question', 'tell you something') — the user cannot be answered when they press it. Include one or two ways for them to ask about YOU or about the person with them, and one way to say they don't want to talk right now.",
   },
   ASSIST: {
     setMode: "facilitator",
@@ -447,7 +462,7 @@ const HOME_INTENTS: Record<string, HomeIntent> = {
     topic: "interests",
     speakerCompanion: "The user wants to talk about their interests. Mention one you remember and ask them about it.",
     speakerFacilitator: null,
-    boardManager: "Palette: the user's known interests / hobbies / favorite topics from memory. If memory is thin, offer broad categories the user can pick from.",
+    boardManager: "Palette: this user's known interests / hobbies / favorite topics from memory, each as a concrete named subject. Prefer a specific angle over the bare interest — the user already told us they like it, so 'which dinosaur is best' goes somewhere 'I like dinosaurs' does not. If memory is thin, offer specific things a person this age might have an opinion about rather than category headings.",
   },
   FEELINGS: {
     topic: "feelings",
@@ -1902,6 +1917,15 @@ export class AgentCoordinator {
 
   // State mirrors (so each BoardMgr invocation has a snapshot)
   private currentBoardLabels: string[] = [];
+  /** Rolling evidence that the conversation has gone subjectless. Feeds the
+   *  [STALLED] note that hands the BoardManager its conversation seeds.
+   *  Never blocks or rejects a board — see ./conversation-stall. */
+  private stallState: StallState = initialStallState();
+  /** The armed [STALLED] note. Held rather than consumed at invocation time
+   *  so it survives a BoardManager retry chain — a board rejected by the
+   *  validator must not cost the user their seed. Cleared in
+   *  `applyBoardRebuilt`, the same way `pendingForceRebuildDirective` is. */
+  private pendingStallDirective: string | null = null;
   /**
    * Full button objects of the current MAIN board. Tracked alongside
    * `currentBoardLabels` so `add_board_button` can run `smartMergeButtons`
@@ -3999,7 +4023,12 @@ export class AgentCoordinator {
       try {
         const perms = await licenseService.getUserPermissions(this.userId);
         if (perms.customAppsEnabled) {
-          const apps = await customAppRepository.getAssignedAppsForStudent(this.studentId);
+          // The AAC session IS the student — student principal, stated rather
+          // than left to an absent-ctx fallback (see getAssignedAppIds).
+          const apps = await customAppRepository.getAssignedAppsForStudent(
+            this.studentId,
+            { kind: "student", studentId: this.studentId },
+          );
           state.availableCustomApps = apps.map((a) => ({
             id: a.id,
             name: a.name,
@@ -4140,6 +4169,7 @@ export class AgentCoordinator {
         // Button utterances match the student's receptive language level.
         languageLevel: languageLevelFromInt((student?.aacSettings as any)?.languageLevel),
         boardManagerGuidance: sections?.boardManagerGuidance,
+        conversationSeeds: sections?.conversationSeeds,
         sentenceInterpretationExamples: sections?.sentenceInterpretationExamples,
         boardManagerExamples: sections?.boardManagerExamples,
       },
@@ -4171,6 +4201,14 @@ export class AgentCoordinator {
     //    handler also calls noteEngagementActivity, but that's gated
     //    behind the await; we need the timer cancellation NOW.
     this.noteEngagementActivity();
+
+    // 0. A press on a button that NAMES something is the board doing its
+    //    job; it cools the stall evidence. A press on a subjectless button
+    //    tells us nothing — they had no better option.
+    {
+      const pressed = this.currentBoardButtons.find((x) => x.label === label);
+      if (pressed) this.stallState = noteButtonPress(this.stallState, scoreButtonContent(pressed));
+    }
 
     // 0a. "More" button — the user wants more options on the current
     //     board, NOT to say "[MORE]" aloud or to trigger a conversational
@@ -4205,6 +4243,11 @@ export class AgentCoordinator {
         description: "The user pressed More — they couldn't find the right button on the current board. Call add_board_button or rebuild_board with FRESH alternative options (different angles on the same topic, related but not previously offered). Do NOT speak; this is a board-only request.",
       };
       this.recordEvent(moreHint);
+      // The strongest stall signal the system gets: eight buttons were on
+      // screen and none was the thing they wanted.
+      const moreStall = noteMorePress(this.stallState);
+      this.stallState = moreStall.state;
+      flowNote("COORDINATOR", `Stall evidence (+): ${moreStall.reason} — score ${this.stallState.score}/${STALL_THRESHOLD}.`);
       // Tell Speaker silently so it knows the press happened but does
       // not respond — this is not a conversational turn.
       this.speaker?.sendContextInjection(`[MORE] The user pressed More — they want more button options. Do NOT speak; let BoardManager refresh the surface.`);
@@ -9348,6 +9391,39 @@ export class AgentCoordinator {
     // it against an explicit "don't"; a model finishing the search does.
     //
     // A STUDENT press is never asked — their press IS the ask.
+    // The Word Finder is a MODE, not a client-rendered app — the same shape as
+    // social_trainer below. It has no APP_REGISTRY entry (it is core, never a
+    // togglable tile), so an `open_app("word_finder")` used to fall all the
+    // way through to the custom-app lookup and come back "not found": the
+    // model reached for the one surface that finds a word nobody can name,
+    // and got a refusal. It is a legal target now.
+    //
+    // Placed ABOVE the confirm gate below deliberately: that gate exists to
+    // stop an app from stealing the screen while a search is running, and
+    // opening the Word Finder while the Word Finder is open is not that.
+    if (appId === "word_finder") {
+      if (this.guessingState) {
+        settle(true, `[APP OPEN] word_finder — already open; the search is still running.`);
+        return;
+      }
+      // Route through the ordinary entry so nothing is special-cased: same
+      // engine seeding, same interests/age personalization, same
+      // `guessing_mode` broadcast. That broadcast is also what lights the
+      // Find-word button on the client, so an AI-opened search looks exactly
+      // like a pressed one — the user can see which control was used, and
+      // press it again to leave.
+      //
+      // `data` is a free-text hint; handleGuessingEnter only honours it when
+      // it parses as a real suggestion key, and otherwise seeds as usual.
+      this.handleGuessingEnter({
+        type: "guessing_enter",
+        ...(event.data ? { seedKey: event.data } : {}),
+      } as Extract<ClientMessage, { type: "guessing_enter" }>);
+      flowNote("COORDINATOR", `open_app("word_finder") — entering Word Finder (source: ${triggerSource}).`);
+      settle(true, `[APP OPEN] word_finder — the Word Finder is now open and the user is narrowing down a word.`);
+      return;
+    }
+
     if (triggerSource === "ai" && this.guessingState) {
       const verdict = decideWordFinderOpen(this.pendingWordFinderOpen, appId, Date.now());
       if (verdict.kind === "ask") {
@@ -10918,6 +10994,48 @@ ${customDetail}` : ""));
     return this.currentInterlocutorRegister;
   }
 
+  /**
+   * Score a board the AI just authored and fold it into the stall evidence.
+   * Called on the paths where the BoardManager WROTE the buttons; a
+   * clinician-authored pre-built board is not the AI failing to name a topic,
+   * so `set_board` does not come through here.
+   */
+  private noteBoardPushed(buttons: readonly { label: string; glyph?: string; glyphFallback?: string; buttonType?: string }[]): void {
+    const signal = scoreBoardContent(buttons);
+    const { state, reason } = noteBoardBuilt(this.stallState, signal);
+    this.stallState = state;
+    if (reason) {
+      flowNote("COORDINATOR", `Stall evidence (+): ${reason} — score ${state.score}/${STALL_THRESHOLD}.`);
+    }
+  }
+
+  /**
+   * The [STALLED] note for this invocation, or null. Returns non-null only
+   * when the evidence has accumulated AND the session actually has seeds to
+   * spend — with no seed bank the note would just be scolding.
+   *
+   * Calling this SPENDS the stall: the score resets, so the next rebuild
+   * does not spend a second seed on the same flat patch.
+   */
+  private armStallDirectiveIfDue(): void {
+    if (this.pendingStallDirective) return; // already armed, awaiting a board
+    if (!isStalling(this.stallState)) return;
+    const cache = this.sessionId ? dualAgentService.getSessionCache(this.sessionId) : undefined;
+    const seeds = cache?.state?.enhancedSections?.conversationSeeds?.trim();
+    // With no seed bank the note would be scolding with nothing to offer.
+    if (!seeds) return;
+    const tried = this.stallState.seenHeads.slice(-16);
+    this.stallState = noteSeedsSpent(this.stallState);
+    this.pendingStallDirective = `[STALLED] The last few boards have offered no subject to talk about — the user has nothing specific they can say. Spend ONE seed from <conversation_seeds> on this rebuild.${
+      tried.length > 0 ? `
+Already tried this session (pick a seed that is not about these): ${tried.join(", ")}.` : ""
+    }`;
+    flowNote(
+      "COORDINATOR",
+      `[STALLED] directive armed for BM (injection #${this.stallState.seedInjections}; already tried: ${tried.join(", ") || "nothing yet"}).`,
+    );
+  }
+
   private async invokeBoardManager(triggeringEvents: AgentEvent[]): Promise<void> {
     if (!this.boardManager) return;
     // Profile gate — resting means no board mutations. Observer keeps
@@ -11041,6 +11159,15 @@ ${customDetail}` : ""));
       // applyBoardRebuilt once BM actually honors it (or replaced when
       // a different home press arrives).
       const forceRebuildDirective = this.pendingForceRebuildDirective;
+      // Conversation seeds, when the evidence says the exchange has gone
+      // subjectless. Skipped while a mode owns the surface (the builder and
+      // word-finder are not conversations) and while a force-rebuild
+      // directive already names this turn's palette — spending a seed there
+      // would burn it on a board the user just asked for.
+      if (!this.builderState && !this.guessingState && !forceRebuildDirective) {
+        this.armStallDirectiveIfDue();
+      }
+      const stallDirective = this.pendingStallDirective;
 
       // Retry feedback rides the TURN message, not the system suffix — a suffix
       // would cost the whole prompt again at the uncached rate on exactly the
@@ -11069,6 +11196,12 @@ ${customDetail}` : ""));
         model: this.boardManagerHttpModel,
         signal: controller.signal,
         forceRebuildDirective: forceRebuildDirective ?? undefined,
+        // Conversation seeds, when the evidence says the exchange has gone
+        // subjectless. Skipped while a mode owns the surface (the builder
+        // and word-finder are not conversations) and while a force-rebuild
+        // directive is already naming this turn's palette — spending a seed
+        // there would burn it on a board the user just asked for.
+        stallDirective: stallDirective ?? undefined,
         interlocutorRegister: this.resolveInterlocutorRegister(),
         // Force-rebuild turns want VARIETY across repeated presses —
         // especially the "I'm talking" → facilitator opener on a fresh
@@ -11633,6 +11766,11 @@ ${customDetail}` : ""));
     if (this.pendingForceRebuildDirective) {
       this.pendingForceRebuildDirective = null;
     }
+    // Same lifecycle for the stall note: a board landed, so the seed was
+    // either spent or declined. Either way it is not owed to the next turn.
+    if (this.pendingStallDirective) {
+      this.pendingStallDirective = null;
+    }
     // Partition: suggestion buttons (whose `glyph` is a valid
     // `suggestion:dim:value` key) are trusted system-expanded content
     // — they bypass the validator (which would reject them as unknown
@@ -11829,6 +11967,9 @@ ${customDetail}` : ""));
 
     this.currentBoardLabels = merged.map(b => b.label);
     this.currentBoardButtons = merged.map(b => ({ ...b } as MergeButton));
+    // Does this board name anything the user could talk ABOUT? Evidence
+    // only — the board ships either way.
+    this.noteBoardPushed(merged as MergeButton[]);
     // Remember who this board's buttons are addressed to. Always default
     // to DEVICE unless BoardManager explicitly set a different target;
     // never inherit from a prior transcript speaker. (BoardManager is
@@ -12042,6 +12183,7 @@ ${customDetail}` : ""));
     }
     this.currentBoardLabels = merged.map(m => m.label);
     this.currentBoardButtons = merged.map(m => ({ ...m }));
+    this.noteBoardPushed(merged as MergeButton[]);
     if (event.target !== undefined) this.currentBoardTarget = event.target;
     this.send({
       type: "board",

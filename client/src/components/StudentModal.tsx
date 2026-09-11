@@ -363,7 +363,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
               />
               {formData.birthDate && (
                 <p className="text-xs text-muted-foreground">
-                  {(t('student.ageDisplay') || 'Age: {{age}} years').replace('{{age}}', String(calculateAge(formData.birthDate)))}
+                  {t('student.ageDisplay', { age: calculateAge(formData.birthDate) ?? '' })}
                 </p>
               )}
             </div>

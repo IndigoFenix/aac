@@ -40,7 +40,21 @@ export type ConsentInvitationErrorCode =
   | "child_id_not_on_file"
   | "child_id_verify_locked"
   | "child_id_mismatch"
-  | "child_id_verification_required";
+  | "child_id_verification_required"
+  // ── Withdrawal-token flow (consentWithdrawalService) ──────────────────────
+  // Same taxonomy on purpose: a withdrawal token has the same lifecycle as a
+  // sign token (not found / expired / used / revoked / OTP / child-ID), so it
+  // shares the error type and the ONE status map in consentController. Only
+  // the four codes below are new, and each names a state a sign token cannot
+  // be in.
+  /** The consent record the token points at no longer exists. */
+  | "consent_not_found"
+  /** Already withdrawn — by this token's holder, the clinic, or an admin. */
+  | "consent_already_revoked"
+  /** The signer HAS a user account, so the session revoke path is theirs. */
+  | "withdrawal_not_available"
+  /** The confirm call did not carry the explicit human confirmation. */
+  | "confirmation_required";
 
 const OTP_PURPOSE = "consent_invitation";
 
@@ -163,6 +177,10 @@ class ConsentInvitationService {
       studentId: args.studentId,
       contactId: isSelf ? null : args.contactId!,
       recipientType,
+      // Explicit even though it is the column default: this row and a
+      // withdrawal row are the same shape, and the one that grants the power to
+      // CREATE a consent record should say so in the insert.
+      purpose: "sign",
       sourceInstituteId: args.sourceInstituteId,
       createdByUserId: args.createdByUserId,
       channel: args.channel,
@@ -180,7 +198,15 @@ class ConsentInvitationService {
     // Dispatch — non-fatal on send failure; clinician can re-issue or share manually.
     if (args.channel === "email") {
       try {
-        await emailService.sendEmail({
+        // `sendEmail` RETURNS a result; it does not throw on a rejected send
+        // (its signature is `Promise<{ success; error? }>`). Awaiting it inside
+        // a try/catch and discarding the value therefore caught nothing: SES
+        // rejecting the address — unverified sender, bounce, throttle,
+        // misconfiguration — produced no log line at all, while the invitation
+        // row and the clinician's UI both reported success and the guardian
+        // received nothing. The SMS branch below already checks its soft
+        // failure; this is the same check for the other channel.
+        const result = await emailService.sendEmail({
           to: sentTo,
           subject: "Informed-consent request for your child's clinical record",
           text: `A consent request has been created for ${student.name}.\n\nClick to review and sign:\n${redemptionUrl}\n\nThis link expires on ${expiresAt.toISOString().split("T")[0]}.`,
@@ -188,6 +214,11 @@ class ConsentInvitationService {
                 `<p><a href="${redemptionUrl}">Click here to review and sign</a></p>` +
                 `<p>This link expires on ${expiresAt.toISOString().split("T")[0]}.</p>`,
         });
+        if (!result.success) {
+          console.error(
+            `[consentInvitationService] Email send returned failure invitation=${invitation.id} error=${result.error ?? "unknown"}`,
+          );
+        }
       } catch (err) {
         console.error("[consentInvitationService] Email dispatch failed:", err);
       }
@@ -696,33 +727,105 @@ class ConsentInvitationService {
    * last-4 is compared server-side.
    */
   private async getChildInstituteIdNumber(inv: ConsentInvitation): Promise<string | null> {
-    if (!inv.sourceInstituteId) return null;
-    const [row] = await db
-      .select({ idNumber: instituteStudents.idNumber })
-      .from(instituteStudents)
-      .where(
-        and(
-          eq(instituteStudents.instituteId, inv.sourceInstituteId),
-          eq(instituteStudents.studentId, inv.studentId),
-        ),
-      );
-    const v = row?.idNumber?.trim();
-    return v ? v : null;
+    return getChildInstituteIdNumber(inv.sourceInstituteId, inv.studentId);
   }
 
   private async loadActiveByCode(code: string): Promise<ConsentInvitation> {
-    const inv = await consentInvitationRepository.getByCode(code);
-    if (!inv) throw new ConsentInvitationError("code_not_found");
-    if (inv.revokedAt) throw new ConsentInvitationError("code_revoked");
-    if (inv.redeemedAt) throw new ConsentInvitationError("code_already_used");
-    if (inv.expiresAt.getTime() <= Date.now()) {
-      throw new ConsentInvitationError("code_expired");
-    }
-    return inv;
+    return loadActiveInvitationByCode(code, "sign");
   }
 }
 
-function escapeHtml(s: string): string {
+/**
+ * Resolve a live token by its plaintext code, for ONE purpose.
+ *
+ * 🚨 THE PURPOSE CHECK IS A SECURITY CHECK, not bookkeeping. `consent_invitations`
+ * now holds both sign tokens and withdrawal tokens (schema-private.ts), and the
+ * two grant different powers over the same student. Without this, a withdrawal
+ * token POSTed to `/api/consent/invitations/sign` would be a valid credential
+ * for creating a consent record — a textbook confused deputy.
+ *
+ * A purpose mismatch answers `code_not_found`, deliberately: the caller learns
+ * only "this is not a code for this flow", never that the code exists and is
+ * live for a different one. That is the same non-answer a random string gets,
+ * which is what keeps the surface enumeration-safe.
+ *
+ * Shared by `consentInvitationService` (sign) and `consentWithdrawalService`
+ * (withdraw) so the expiry / revoked / single-use rules cannot drift between
+ * them — that drift is precisely what a second token table would have invited.
+ */
+export async function loadActiveInvitationByCode(
+  code: string,
+  purpose: "sign" | "withdraw",
+): Promise<ConsentInvitation> {
+  const inv = await consentInvitationRepository.getByCode(code);
+  if (!inv) throw new ConsentInvitationError("code_not_found");
+  if (inv.purpose !== purpose) throw new ConsentInvitationError("code_not_found");
+  if (inv.revokedAt) throw new ConsentInvitationError("code_revoked");
+  if (inv.redeemedAt) throw new ConsentInvitationError("code_already_used");
+  if (inv.expiresAt.getTime() <= Date.now()) {
+    throw new ConsentInvitationError("code_expired");
+  }
+  return inv;
+}
+
+/**
+ * The invitation TTL ceiling, shared with the withdrawal flow.
+ *
+ * PPA Feb-2026: consent links for sensitive medical data must be short-lived.
+ * The withdrawal link takes the SAME 72h window rather than a shorter one —
+ * GDPR Art. 7(3) says withdrawal must be no harder than consent, and a
+ * withdrawal link that expired sooner than the sign link that created the
+ * record would be exactly that.
+ */
+export const CONSENT_LINK_MAX_TTL_HOURS = MAX_TTL_HOURS;
+
+/** Mask all but the last 4 digits of an E.164 phone. Shared with withdrawal. */
+export { maskPhone };
+
+/**
+ * The child's institute ID number for a (institute, student) pair, or null when
+ * none is on file / no institute is known. NEVER returned to a client — only
+ * its last 4 characters are compared server-side.
+ *
+ * Module-level and exported so the WITHDRAWAL flow gates on the identical
+ * predicate the SIGN flow gates on. GDPR Art. 7(3) requires withdrawal to be no
+ * harder than consent; the only way to guarantee that for the email channel is
+ * for both to ask the same function whether a knowledge factor exists at all.
+ * A second copy could answer differently — e.g. by defaulting to "required"
+ * where the sign path defaults to "not available" — and the difference would be
+ * a legal defect, not a bug report.
+ */
+export async function getChildInstituteIdNumber(
+  sourceInstituteId: string | null,
+  studentId: string,
+): Promise<string | null> {
+  if (!sourceInstituteId) return null;
+  const [row] = await db
+    .select({ idNumber: instituteStudents.idNumber })
+    .from(instituteStudents)
+    .where(
+      and(
+        eq(instituteStudents.instituteId, sourceInstituteId),
+        eq(instituteStudents.studentId, studentId),
+      ),
+    );
+  const v = row?.idNumber?.trim();
+  return v ? v : null;
+}
+
+/**
+ * Normalize an ID (stored or user-supplied) to its comparable last-4. Exported
+ * for the same reason as `getChildInstituteIdNumber`: sign and withdraw must
+ * compare identically or one of them is stricter than the other.
+ */
+export function normalizeIdLast4(s: string): string {
+  return normalizeLast4(s);
+}
+
+/** How many wrong last-4 guesses a token tolerates. Shared with withdrawal. */
+export const CHILD_ID_MAX_VERIFY_ATTEMPTS = MAX_ID_VERIFY_ATTEMPTS;
+
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

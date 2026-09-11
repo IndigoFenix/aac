@@ -66,9 +66,9 @@ export const yue = {
   // ============================================================================
   identity: {
     verificationRequired: "需要身份驗證",
-    verificationNeeded: "{{institute}}要求透過{{provider}}進行驗證。請驗證你嘅身份嚟存取呢個機構。",
-    verificationExpired: "你喺{{institute}}嘅{{provider}}驗證已經過期。請重新驗證你嘅身份。",
-    verifyNow: "透過{{provider}}驗證",
+    verificationNeeded: "{institute}要求透過{provider}進行驗證。請驗證你嘅身份嚟存取呢個機構。",
+    verificationExpired: "你喺{institute}嘅{provider}驗證已經過期。請重新驗證你嘅身份。",
+    verifyNow: "透過{provider}驗證",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const yue = {
     genderOther: "其他",
     primaryLanguage: "主要語言",
     dateOfBirth: "出生日期",
-    ageDisplay: "年齡：{{age}}歲",
+    ageDisplay: "年齡：{age}歲",
     systemType: "教育制度",
     frameworkTala: "TALA（以色列）",
     frameworkIep: "IEP（美國）",
@@ -1081,9 +1081,9 @@ export const yue = {
     clearUnsavedDesc: "你有未儲存嘅更改。清除板之前要儲存咩？",
     discardAndClear: "放棄同清除",
     saveAndClear: "儲存同清除",
-    generatingIcons: "生成緊圖示，剩餘：{{remaining}}",
+    generatingIcons: "生成緊圖示，剩餘：{remaining}",
     iconsGenerated: "所有圖示已成功生成",
-    iconsFailed: "{{count}}個圖示生成失敗",
+    iconsFailed: "{count}個圖示生成失敗",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const yue = {
     importWarning: "匯入會取代而家嘅板。部份 Grid3 功能可能匯入唔到。",
     importButton: "匯入",
     importSuccess: "板已匯入",
-    importSuccessDesc: "已經由 Dropbox 匯入「{{name}}」",
+    importSuccessDesc: "已經由 Dropbox 匯入「{name}」",
     importFailed: "匯入失敗",
     noFilesFound: "喺你嘅 Dropbox 資料夾度搵唔到板檔案。",
   },
@@ -1349,6 +1349,8 @@ export const yue = {
     noStudentsDesc: "加你第一個{{STUDENT}}嚟開始",
     noResults: "搵唔到{{STUDENTS}}",
     noResultsDesc: "試吓調整搜尋條件或者篩選器",
+    selectInstituteFirst: "先揀機構先可以加返{{student}}",
+    selectInstituteEmpty: "揀機構先可以睇到{{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const yue = {
     gasOverallScoreDesc: "GAS 評分目標嘅整體進度。50 = 預期。",
     gasAtOrAbove: "達到或高於預期",
     gasBelow: "低於預期",
-    gasGoalsCounted: "基於 {{count}} 個有記錄數據嘅 GAS 目標。",
+    gasGoalsCounted: "基於 {count} 個有記錄數據嘅 GAS 目標。",
     goalCompletion: "目標完成率",
     goalsByDomain: "按領域分類嘅目標",
     timeline: "時間線",
@@ -1779,7 +1781,7 @@ export const yue = {
     title: "進度資料",
     noDataPoints: "仲未有記錄資料",
     collectedBy: "採集人",
-    moreCount: "+{{count}}條更多記錄",
+    moreCount: "+{count}條更多記錄",
 
     numericValue: "數值",
     numericPlaceholder: "例如 85",
@@ -2206,7 +2208,7 @@ export const yue = {
 
   reports: {
     title: "報告",
-    subtitle: "{{name}}嘅報告",
+    subtitle: "{name}嘅報告",
     noStudent: "請揀{{STUDENT}}嚟睇報告",
     noStudentSelected: "未揀{{STUDENT}}",
     selectStudentFirst: "請先揀{{STUDENT}}嚟睇佢哋嘅報告",
@@ -2243,10 +2245,12 @@ export const yue = {
     finalizeTitle: "定稿報告",
     finalizeWarning: "一旦定稿，呢份報告就編輯唔到。你需要建立新嘅修訂版嚟改。",
     finalizeCannotUndo: "呢個操作撤銷唔到。",
+    consentWarning: "定稿被封鎖：檔案入面冇知情同意記錄。要先由家長或法定監護人簽署同意書。",
+    finalizeFailed: "無法定稿呢份報告。",
 
     confirmCreate: {
       title: "建立新報告",
-      description: "呢個會建立一份新嘅{{type}}報告。任何現有嘅活躍報告會被歸檔。",
+      description: "呢個會建立一份新嘅{type}報告。任何現有嘅活躍報告會被歸檔。",
       confirm: "建立"
     },
 
@@ -2365,7 +2369,7 @@ export const yue = {
     },
 
     empty: {
-      title: "仲未有{{type}}報告",
+      title: "仲未有{type}報告",
       description: "建立新報告嚟開始。"
     },
 
@@ -2988,7 +2992,7 @@ export const yue = {
     selectOrGenerate: "揀一個分析或生成新分析。",
     selectStudent: "揀一個{{STUDENT}}嚟生成深度分析。",
     untitled: "未命名嘅分析",
-    inProgress: "進行中（第 {{STEP}} 步）...",
+    inProgress: "進行中（第 {STEP} 步）...",
     delete: "刪除",
     confirmDelete: "永久刪除呢個分析？",
     error: "錯誤",
@@ -3074,7 +3078,7 @@ export const yue = {
       categoryPages: "分類分頁",
       dietaryTags: "顯示飲食標籤",
       dietaryTagsDesc: "係俾你睇，唔係俾學生。呢啲標籤唔可靠，亦都唔會篩走任何嘢。",
-      autoNow: "而家：{{value}}",
+      autoNow: "而家：{value}",
     },
     review: {
       title: "要檢查嘅餐牌",
@@ -3171,9 +3175,15 @@ export const yue = {
     LICENSE_ALREADY_PAID: "呢個授權已經付咗款。",
     LICENSE_NOT_PURCHASABLE: "呢個授權唔可以喺網上付款，請聯絡我哋。",
     PADDLE_NOT_CONFIGURED: "而家未能網上付款，請稍後再試或聯絡我哋。",
+    consent_required: "喺定稿呢份報告之前，需要有效嘅知情同意記錄。",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "攔唔到同意資料",
+      loadFailedDescription: "載入唔到呢位 {{student}} 嘅同意記錄。唔係話冇記錄，係個要求失敗咗。",
+      retry: "再試一次",
+    },
     authority: {
       title: "同意權限",
       description: "預設情況下，由邊個同意係根據學生嘅法定成年年齡決定。如果成年學生仍然喺法定監護之下，或者未成年人自行同意，可以喺呢度覆寫呢個設定。",
@@ -3306,6 +3316,27 @@ export const yue = {
         attemptsRemaining: "仲有 {count} 次機會。",
         locked: "錯誤次數太多。請向診所索取新嘅連結。",
       },
+      attest: {
+        identityIntro: "你而家係當面記錄呢份同意書，監護人喺場。繼續之前請核對以下資料。",
+        guardianLabel: "簽署嘅監護人",
+        attestedByLabel: "見證人",
+        guardianIntro: "記錄監護人出示嘅身份證明文件。請完全照文件上嘅內容輸入。",
+        coGuardianDeclaration: "監護人確認佢係法定監護人，並且有權代表其他監護人作出呢項同意。",
+        signatureIntro: "而家將裝置交畀監護人。簽名必須由佢本人簽。",
+        signatureLegal: "簽署即表示監護人確認佢係法定監護人，並授權呢項同意。",
+        stepIntro: "最後，確認你所見到嘅情況。呢份聲明會同同意記錄一齊儲存，並列明你係見證嘅治療師。",
+        documentLabel: "已查驗嘅文件",
+        presenceDeclaration: "本人確認監護人當時親身喺場，本人已查驗上述登記嘅身份證明文件，並與簽署人相符。",
+        notesLabel: "備註（選填）",
+        notesPlaceholder: "例如：護照有效至 2031 年，姓名相符",
+        legal: "你嘅姓名、用戶帳戶同今次見證嘅時間會作為證據儲存喺同意記錄入面。",
+        reviewIntro: "儲存前請核對記錄。一經儲存就唔可以修改，只可以撤銷再重新簽署。",
+        methodLabel: "驗證方式",
+        methodValue: "治療師當面見證",
+        submitButton: "記錄同意",
+        toastTitle: "已記錄同意",
+        toastDescription: "當面取得嘅同意已連同你嘅見證一齊儲存。",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const yue = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "同意記錄",
       activeBadge: "生效中",
@@ -3364,6 +3447,11 @@ export const yue = {
       revokeReasonPlaceholder: "原因（可選）",
       toastRevoked: "同意已撤銷",
       toastRevokeFailed: "無法撤銷",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const yue = {
       reverificationDays: "重新驗證（日）",
       autoProvision: "自動建立新用戶",
       autoProvisionDesc: "當用戶經呢個 IdP 認證但冇 Aivota 帳戶時,系統會喺 SSO 聲明度建立並連結帳戶。對於機構 IdP（例如 IL MoE Sapakim）係必要嘅,因為用戶期望直接登入。",
-      days: "{{count}}日",
+      days: "{count}日",
       never: "永遠唔使",
       neverPlaceholder: "留空代表永遠唔使",
       discoveryUrl: "發現 URL",
@@ -4076,8 +4164,8 @@ export const yue = {
     noInstitute: "加入機構就可以開始通話",
     loadingContacts: "正喺度載入聯絡人…",
     noContacts: "搵唔到聯絡人",
-    callPerson: "打俾 {{name}}",
-    callPersonAuto: "自動致電 {{name}}",
+    callPerson: "打俾 {name}",
+    callPersonAuto: "自動致電 {name}",
     students: "學生",
     online: "在線",
     offline: "離線",
@@ -4157,7 +4245,7 @@ export const yue = {
     title: "聯絡人",
     panelTitle: "學生聯絡人",
     description: "學生認識嘅人 — 父母、同學、治療師。",
-    forStudent: "{{name}} 嘅聯絡人",
+    forStudent: "{name} 嘅聯絡人",
     empty: "尚未記錄聯絡人。",
     add: "新增聯絡人",
     new: "新聯絡人",
@@ -4351,7 +4439,7 @@ export const yue = {
       title: "撤銷全部存取權限？",
       description: "你為呢位學生授予呢個組織嘅所有生效共享（按物件同長期）都會被撤銷。呢個動作冇得復原。",
       confirm: "全部撤銷",
-      toastSuccess: "已撤銷 {{count}} 項共享。",
+      toastSuccess: "已撤銷 {count} 項共享。",
     },
     inbox: {
       pendingHeader: "待處理邀請",
@@ -4372,8 +4460,8 @@ export const yue = {
     },
     standing: {
       expired: "已過期",
-      expiresInDays: "{{days}} 日之後過期",
-      expiresOn: "{{date}} 過期",
+      expiresInDays: "{days} 日之後過期",
+      expiresOn: "{date} 過期",
       renewedToast: "長期共享已續期 1 年。",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const yue = {
     field: {
       codeExpires: "代碼過期時間",
       shareExpires: "共享過期時間",
-      sensitiveCount: "{{count}} 項敏感內容",
+      sensitiveCount: "{count} 項敏感內容",
     },
     bundle: {
       objects: "物件",
@@ -4471,9 +4559,9 @@ export const yue = {
     notifications: {
       bellLabel: "共享邀請",
       newInviteTitle: "新嘅共享邀請",
-      newInviteBody: "有 {{count}} 個邀請等緊你批准。",
+      newInviteBody: "有 {count} 個邀請等緊你批准。",
       expiringTitle: "共享就快到期",
-      expiringBody: "有 {{count}} 項長期共享就快到期——請查看同續期。",
+      expiringBody: "有 {count} 項長期共享就快到期——請查看同續期。",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const yue = {
       addGuardian: "新增監護人聯絡方式",
       requestsSent: "已發送 {count} 份，{failed} 份寄唔到",
       sendRequests: "發送同意書請求（{count}）",
+      stage: "同意",
+      explainTitle: "下一步：家長或監護人嘅授權",
+      explainBody: "喺記錄呢位{{student}}嘅健康、課程或者溝通方式之前，必須有家長或者法定監護人畀書面授權。而家只係儲咗基本資料。一簽咗授權，其餘步驟就會自動開放。",
+      signCaption: "你係登記咗嘅監護人，所以可以自己睇同簽署授權 — 大概一分鐘就搞掂。",
+      familyNoGuardianCaption: "首先要有一位登記嘅監護人。將自己（或者另一位家長）加做呢位{{student}}嘅監護人，呢度就會出現簽署同意書嘅按鈕。",
+      sendRequest: "發送同意書請求",
+      sendCaption: "我哋會用電郵寄一條私人連結畀監護人。佢睇完授權喺網上簽名就得，你唔使再做其他嘢。",
+      sentCaption: "連結已經寄咗畀監護人。佢一簽名，其餘步驟就會開放，你可以遲啲再返嚟。",
+      sentOne: "同意書連結已經寄咗畀監護人。",
+      sendFailed: "寄唔到同意書連結。請確認監護人有有效嘅電郵地址，然後再試。",
+      attestInPerson: "監護人喺度 — 一齊簽署",
+      attestCaption: "如果家長或監護人而家喺你身邊，你哋可以一齊睇份同意書，再喺呢部裝置上簽名。身份由你核實，唔使發連結。",
     },
     notes: {
       documentsNotStored: "文件只會讀取，唔會儲存——只保留由文件抽取出嚟嘅資料。",

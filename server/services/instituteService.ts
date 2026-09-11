@@ -210,8 +210,11 @@ export class InstituteService {
     instituteId: string,
     userId: string
   ): Promise<{ success: boolean; error?: string }> {
-    // Check if user is the last admin
-    const membership = await instituteRepository.getInstituteUserLink(
+    // Check if user is the last admin. `getActiveMembership`, not the raw link:
+    // a row that has already been deactivated is not a membership to leave, and
+    // answering "You are not a member" is the honest reply rather than silently
+    // re-deactivating it.
+    const membership = await instituteRepository.getActiveMembership(
       instituteId,
       userId
     );
@@ -550,18 +553,48 @@ export class InstituteService {
   // ==================== Utility Methods ====================
 
   /**
-   * Check if user has access to institute
+   * Check if user has access to institute.
+   *
+   * The row-bearing form of `instituteRepository.isUserMemberOfInstitute` /
+   * `isUserAdminOfInstitute`: same rules, plus the `institute_users` row for
+   * callers that need the role/rights columns. It is NOT a fourth definition of
+   * membership — the rules are the predicates', and both halves are answered
+   * from one lookup.
+   *
+   * **Support mode (changed 2026-09-10, authorization structural pass).** This
+   * used to read the raw row and stop there, so a customer-support agent — who
+   * holds no `institute_users` row for the institute they are supporting — was
+   * REFUSED here while the predicate pair admitted them everywhere else. Two
+   * answers to one question, and the refusing one was not the safer one: it
+   * only meant a support agent could read the institute's students, boards and
+   * reports (all on the predicate pair) but not the institute row itself, nor
+   * open guided setup. Support sessions are deliberate, time-boxed (60 min,
+   * §5.1) break-glass and every action they take is audited with
+   * `details.viaSupportInstituteId` (§6.1), so the predicate pair's answer is
+   * the correct one and this now agrees with it.
+   *
+   * `membership` is therefore `undefined` on the support path — there is no row
+   * to return. Callers that need a REAL membership row for a THIRD party (a
+   * package grantee, a roster entry) must use
+   * `instituteRepository.getActiveMembership`, which is support-blind by design.
    */
   async verifyMembership(
     instituteId: string,
     userId: string
   ): Promise<{ isMember: boolean; isAdmin: boolean; membership?: InstituteUser }> {
-    const membership = await instituteRepository.getInstituteUserLink(
+    if (!instituteId || !userId) return { isMember: false, isAdmin: false };
+
+    const membership = await instituteRepository.getActiveMembership(
       instituteId,
       userId
     );
 
-    if (!membership || !membership.isActive) {
+    if (!membership) {
+      // Customer support agents are members (and admins) of their support
+      // institute — same short-circuit, same guard, as the predicate pair.
+      if (instituteRepository.isCustomerSupportSessionFor(instituteId)) {
+        return { isMember: true, isAdmin: true };
+      }
       return { isMember: false, isAdmin: false };
     }
 
@@ -580,12 +613,46 @@ export class InstituteService {
   }
 
   /**
-   * Resolve student access for an error-bearing caller, distinguishing
-   * "no such student" from "exists but you lack access". The old code returned
-   * "You do not have access to this student" for BOTH, which was misleading —
-   * e.g. when an AI referenced a stale/placeholder id that doesn't resolve to
-   * any student, the message implied a permissions problem rather than a bad id.
-   * (UUID keyspace isn't enumerable, so distinguishing the two leaks nothing useful.)
+   * Resolve student access for an error-bearing caller.
+   *
+   * ⚠️ NOT a new student predicate — a thin wrapper on
+   * `studentRepository.userHasAccessToStudent` (an active `user_students` link,
+   * and nothing else) kept only because these enrolment writers report failures
+   * as message strings rather than as HTTP status codes.
+   *
+   * **Why it is not on `server/services/access/studentAccess.ts`.** That module
+   * landed in the same pass and deliberately publishes two policies, neither of
+   * which is this one: `studentAccess` is the BROAD rule (link ∨ any member of a
+   * family institute ∨ admin of a school/clinic the student attends) and
+   * `sharesInstituteWithStudent` is institute overlap. Moving these four
+   * enrolment writers onto either would change WHO may enrol a student into an
+   * institute — in `studentAccess`'s case, every admin of every institute the
+   * student already attends — and this pass changes where checks live, not who
+   * passes them. If a narrow, link-only policy is ever named over there, move
+   * onto it; do not substitute `studentAccess` for it. Either way, do not let
+   * this grow a rule of its own — that is how the audit came to count twelve.
+   *
+   * **Enumeration: the two messages are DELIBERATE here** (user ruling,
+   * 2026-09-10), and this call is a documented exception to the platform's
+   * 403-before-404 standard (§2.4, `wizard-context`).
+   *
+   * The audit closed the split, arguing that "the UUID keyspace is not
+   * enumerable" defends against SCANNING but not against a caller who already
+   * holds an id (from a URL, an old export, a shared screen) and wants it
+   * confirmed. That argument is sound in general and is why the standard is
+   * what it is. It was overruled FOR THIS CALL because:
+   *
+   *   - `assignStudentToInstitute` already refuses anyone who is not a member
+   *     of the institute (checked above this call), so the audience is staff;
+   *   - a hit confirms only EXISTENCE — no name, no data;
+   *   - the distinction was itself a bug fix. `permissions.test.ts` records the
+   *     incident: the AI passed the placeholder `'michael_rozner'`, got "you do
+   *     not have access", and the debugging went looking for a permissions
+   *     problem that did not exist. That cost was real and measured; the leak
+   *     here is close to theoretical.
+   *
+   * Do NOT generalise this exception. Anywhere the caller is not already
+   * proven staff for the resource, the answers must be identical.
    */
   private async checkStudentAccess(
     requestingUserId: string,
@@ -593,13 +660,14 @@ export class InstituteService {
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     const access = await studentRepository.userHasAccessToStudent(requestingUserId, studentId);
     if (access.hasAccess) return { ok: true };
-    const exists = await studentRepository.getStudentById(studentId);
-    return {
-      ok: false,
-      error: exists
-        ? "You do not have access to this student"
-        : `No student found with id "${studentId}"`,
-    };
+
+    // Distinguish "that id is not a student" from "it is, and you cannot see
+    // it" — see the exception recorded above.
+    const student = await studentRepository.getStudentById(studentId);
+    if (!student) {
+      return { ok: false, error: `No student found with id "${studentId}"` };
+    }
+    return { ok: false, error: "You do not have access to this student" };
   }
 
   /**

@@ -34,7 +34,7 @@
 
 import { FOOD_DAY_SEC } from "./goods.js";
 import type { TradeRoute } from "./trade.js";
-import { IMPORT_ALLOTMENT } from "./trade.js";
+import { allotmentSplit, IMPORT_ALLOTMENT } from "./trade.js";
 import { journeyTimeS, priceOf } from "./pricing.js";
 import { costTotalS } from "./scope-shape.js";
 import { ERRAND_WALK_MPS } from "../../scale.js";
@@ -790,14 +790,33 @@ export function tradeRouteAgreementInputs(
     exportScale?: number;
     issuer?: string;
     now?: number;
+    /** ⚖️ TRADE-TOPOLOGY ⑤ — THE ONE NUMBER, HANDED IN. `TownTrade
+     *  .importUnitsPerVisit` is the single definition of "units of `good` one
+     *  visit lands" (the crate the player opens and the shelf the households
+     *  shop both read it), and since G3 it is a LARGEST-REMAINDER split
+     *  weighted by the cargo ranking. This agreement row had a SECOND, flat
+     *  definition of the same quantity (`floor(IMPORT_ALLOTMENT / n)`), which
+     *  silently dropped the remainder and ignored the weights. Pass the line's
+     *  own accessor and the two can no longer disagree.
+     *
+     *  Absent ⇒ the conserving EQUAL-weight split, which for the shipped
+     *  3-kind authored list is the identical 2/2/2 the floor produced — but
+     *  which, unlike the floor, does not lose units on a 4-kind cargo. */
+    importUnitsOf?: (good: string) => number;
   },
 ): PostTransferInput[] {
   // ⚖️ The allotment splits across the kinds THIS ROUTE carries — the authored
   // list is only what an unbound line brings (R&T ⑤ T2), so reading its length
   // here would mis-split a derived cargo. Identical for the authored list.
-  const per = Math.floor(IMPORT_ALLOTMENT / Math.max(1, route.imports.length));
   const imports: Record<string, number> = {};
-  for (const k of route.imports) imports[k] = per;
+  if (opts?.importUnitsOf) {
+    for (const k of route.imports) imports[k] = opts.importUnitsOf(k);
+  } else {
+    // No line in hand: the same conserving allocator the line itself uses,
+    // at equal weights (trade.ts owns the one definition of the policy).
+    const share = allotmentSplit(route.imports.map(() => 1), IMPORT_ALLOTMENT);
+    route.imports.forEach((k, i) => { imports[k] = share[i] ?? 0; });
+  }
   imports[route.rare.kind] = (imports[route.rare.kind] ?? 0) + route.rare.perVisit;
   // ⚖️ G2 — THE EXPORT LEG SPLITS TOO (the latent this row shipped with): the
   // import line above divides ONE allotment across the kinds it carries, and

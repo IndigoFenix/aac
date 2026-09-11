@@ -364,6 +364,14 @@ function buildOpenAppTool(
   const customIds = customApps.map(a => a.id).join(", ");
   const sections = [builtInIds ? `Built-in app IDs: ${builtInIds}.` : ""];
   if (customIds) sections.push(`Custom game IDs: ${customIds}.`);
+  // The Word Finder is a MODE, not an app tile, so it appears in no app list
+  // and used to fail as "not found" when the model reached for it. It is a
+  // legal target: opening it is right when the user is plainly hunting for a
+  // word you cannot supply. Constant text — no prompt-cache churn.
+  sections.push(
+    `Also valid: "word_finder" — opens the Word Finder, which narrows down a word the user cannot reach directly. `
+    + `Open it when they are visibly searching for something and the board cannot offer it; not merely because a topic is hard.`,
+  );
   return {
     name: "open_app",
     description: `Open an interactive app or custom game on the user's screen. See the "Apps" section in the system prompt for details. ${sections.filter(Boolean).join(" ")}`,

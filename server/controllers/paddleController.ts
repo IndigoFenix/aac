@@ -6,7 +6,10 @@ import {
   type PaddleEventLike,
 } from "../services/paddleFulfillmentService";
 import { paddleEventRepository } from "../repositories/paddleEventRepository";
-import { notifyPaddleFulfillmentProblem } from "../services/providerAlertService";
+import {
+  notifyPaddleFulfillmentProblem,
+  notifyPaddleApiKeyExpiry,
+} from "../services/providerAlertService";
 
 export class PaddleController {
   /** Public config for paddle-js (client token + environment). */
@@ -113,6 +116,27 @@ export class PaddleController {
             eventId: event.eventId,
             eventType: event.eventType,
             detail: outcome.reason,
+          });
+        }
+        // A Paddle API key cannot be created without an expiry, so the live key
+        // WILL lapse. Fulfillment has nothing to do for these events, but an
+        // expired key silently kills checkout creation while webhooks keep
+        // flowing — so the ignored branch is the only place we can ring a bell.
+        if (event.eventType === "api_key.expiring" || event.eventType === "api_key.expired") {
+          // `data` here is untyped: the SDK has no entity for api_key.*, so it
+          // hands back a GenericEvent. Read BOTH spellings — 3.8.0's
+          // GenericEvent camel-cases the payload (`expiresAt`), but the wire
+          // format is snake_case and a version that stops converting must not
+          // silently blank the date out of the alert.
+          const keyData = (event.data ?? null) as Record<string, unknown> | null;
+          const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+          const keyName = str(keyData?.name);
+          const expiresAt = str(keyData?.expiresAt) ?? str(keyData?.expires_at);
+          notifyPaddleApiKeyExpiry({
+            kind: event.eventType === "api_key.expired" ? "expired" : "expiring",
+            eventId: event.eventId,
+            keyName,
+            expiresAt,
           });
         }
       } else {

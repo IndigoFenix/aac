@@ -7,7 +7,10 @@ import { whisperService } from "../services/voice/whisper-service";
 import { type VoiceType } from "../services/voice/google-tts-service";
 import { ttsFacade, type ResolvedVoice } from "../services/voice/tts-facade";
 import { onMessage, FeatureType } from "../services/sessionService";
-import { studentService } from "../services";
+import {
+  requireStudentAccess,
+  type StudentAccessDenialShape,
+} from "../services/access";
 import { studentRepository } from "../repositories";
 import { voiceRecordRepository } from "../repositories/voiceRecordRepository";
 import { ChatPersona } from "@shared/schema";
@@ -34,6 +37,12 @@ const voiceChatSchema = z.object({
   formValues: z.any().optional(),
 });
 
+/** The bodies THIS surface answers with; the rule is shared. */
+const VOICE_DENIAL: StudentAccessDenialShape = {
+  unauthenticated: { error: "error:AUTH_REQUIRED" },
+  forbidden: { error: "error:STUDENT_ACCESS_DENIED" },
+};
+
 /**
  * Helper to send SSE events
  */
@@ -59,66 +68,23 @@ export class VoiceController {
    * Why: `speak`/`synthesize` resolve the STUDENT's cloned voice and spend the
    * student's ElevenLabs quota; `voiceChat` loads the student's memory into a
    * prompt. None of that may hinge on a studentId alone.
+   *
+   * The RULE is the shared broad student policy (`server/services/access/`);
+   * only the response bodies and the `allowNoStudent` relaxation are local. That
+   * relaxation is unique to this controller — everywhere else a missing student
+   * id is a refusal — so it is spelled out rather than inferred from
+   * `undefined`.
    */
   private async assertStudentAccess(
     req: Request,
     res: Response,
     studentId: string | undefined,
   ): Promise<boolean> {
-    const userId = req.user?.id;
-    if (!userId) {
-      res.status(401).json({ error: "error:AUTH_REQUIRED" });
-      return false;
-    }
-    if (!studentId) return true;
-    const { hasAccess } = await studentService.verifyStudentAccess(studentId, userId);
-    if (!hasAccess) {
-      res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * POST /api/aac/voice/transcribe
-   * Convert audio to text using Whisper
-   *
-   * Input: Audio file (multipart/form-data), optional languageHint
-   * Output: { text: string, language: string }
-   */
-  async transcribe(req: Request, res: Response): Promise<void> {
-    try {
-      const audioFile = (req as any).file as Express.Multer.File | undefined;
-      if (!audioFile) {
-        res.status(400).json({ error: "error:NO_AUDIO" });
-        return;
-      }
-
-      // Parse body fields
-      const { languageHint } = transcribeSchema.parse(req.body);
-
-      console.log(
-        `[VoiceController] Transcribing audio: ${audioFile.size} bytes, type: ${audioFile.mimetype}`
-      );
-
-      const result = await whisperService.transcribe(
-        audioFile.buffer,
-        audioFile.mimetype,
-        { languageHint }
-      );
-
-      res.json({
-        text: result.text,
-        language: result.language,
-        duration: result.duration,
-      });
-    } catch (error: any) {
-      console.error("[VoiceController] Transcription error:", error);
-      res.status(500).json({
-        error: "error:TRANSCRIBE_FAILED",
-        details: error.message || String(error),
-      });
-    }
+    const userId = await requireStudentAccess(req, res, studentId, {
+      shape: VOICE_DENIAL,
+      allowNoStudent: true,
+    });
+    return userId !== undefined;
   }
 
   /**

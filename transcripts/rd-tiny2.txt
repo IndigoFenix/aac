@@ -1,0 +1,34 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=6d3659f0+dirty
+# started=2026-09-08T23:01:06.756Z
+# ─────────────────────────────────────────
+> wait 10
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+TICK   waited 10.0s.
+> wait 10
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+TICK   waited 10.0s.
+> wait 10
+ENTER  pip came into view here south.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+TICK   waited 10.0s.
+# ─────────────────────────────────────────
+# commands=5  presses=0  screens=1  sim=50.1s
+# events: ENTER 6  TICK 5  EXIT 4  SAY 3  BOARD 1  NOTE 1

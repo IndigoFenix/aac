@@ -29,7 +29,7 @@ import {
   type GuidedFlowView,
   type GuidedGateResult,
   type GuidedStep,
-} from "../chat/guided-flow/types.js";
+} from "./flow-types.js";
 import { GS, termForAccount } from "./terms.js";
 import type {
   StudentAacFacts,
@@ -187,6 +187,21 @@ export function missingBasicsFacts(ctx: StudentSetupCtx): string[] {
 const STEP_ONE_ONLY_LINE =
   `- Ask only for these facts now. ${GS.STEP_MEDICAL}, ${GS.STEP_PROGRAM}, ${GS.STEP_AAC} and ${GS.STEP_CONTACTS} come later, after ${GS.CONSENT}.`;
 
+/**
+ * The heads-up that stops CONSENT being a wall the user walks into.
+ *
+ * User, 2026-09-09: "Flow from adding basic student details to adding guardian
+ * contact and solving consent needs to be more clear. Assume the user has no
+ * idea what they're doing." Step 1 named the BUTTON and nothing else, so the
+ * first the user heard of consent was the turn the flow stopped dead. Said
+ * WHILE step 1 is still running, it is a warning; said after, it is an excuse.
+ *
+ * Account-neutral on purpose — a family signs it, an institution sends it, and
+ * the branch that differs is the block that owns it (`awaitingConsentBlock`).
+ */
+const CONSENT_NEXT_LINE =
+  `- Say ${GS.CONSENT} from a parent or ${GS.GUARDIAN} comes next: no health, ${GS.STEP_PROGRAM} or ${GS.STEP_AAC} detail may be recorded before it.`;
+
 /** Keep an institute or user name from blowing the 130-char line budget. */
 function short(value: string, max = 60): string {
   const clean = value.replace(/\s+/g, " ").trim();
@@ -204,7 +219,7 @@ function short(value: string, max = 60): string {
  * status, and a second opinion here is how the prompt and the rail end up
  * disagreeing about the same turn.
  */
-export function isCurrentStepLocked(view: GuidedFlowView<GuidedSetupStepId>): boolean {
+export function isCurrentStepLocked(view: GuidedFlowView): boolean {
   if (view.step === "done") return false;
   return view.steps.find((s) => s.id === view.step)?.status === "locked";
 }
@@ -216,7 +231,7 @@ export function isCurrentStepLocked(view: GuidedFlowView<GuidedSetupStepId>): bo
  * always means the same thing.
  */
 export function currentStepBlockedBy(
-  view: GuidedFlowView<GuidedSetupStepId>,
+  view: GuidedFlowView,
 ): string | undefined {
   return isCurrentStepLocked(view) ? "consent" : undefined;
 }
@@ -288,7 +303,8 @@ function basicsBlock(ctx: StudentSetupCtx): string {
     // The consent wizard picks the notice by country, and country silently
     // defaults to IL. Ask when the language does not already settle it.
     `- Ask which ${GS.COUNTRY} the ${ctx.term} lives in unless it is obvious. Save country: IL or US only.`,
-    `- ${GS.CONSENT} is signed by the user from a button in the ${GS.SIDE_PANEL} — never collect ID numbers here.`,
+    CONSENT_NEXT_LINE,
+    `- They sign it themselves from a button in the ${GS.SIDE_PANEL}. Never collect ID numbers here.`,
     STEP_ONE_ONLY_LINE,
   ].join("\n");
 }
@@ -380,6 +396,7 @@ function rosterBlock(ctx: StudentSetupCtx): string {
       `- Only if they say they have no list, or name one ${who} directly, add that one instead:`,
       `- Context_Students add { firstName, lastName, birthDate, gender, primaryLanguage },`,
       `  with instituteIds: ["${ctx.instituteId}"], then selectStudent(<new id>).`,
+      CONSENT_NEXT_LINE,
       STEP_ONE_ONLY_LINE,
     ].join("\n");
   }
@@ -391,6 +408,7 @@ function rosterBlock(ctx: StudentSetupCtx): string {
     `- If they are adding several instead, offer to take a whole list (spreadsheet, PDF or photo):`,
     `  read it, then call guidedSetup(proposeRoster) with one row per ${who}; mark unreadable fields null.`,
     `- Do NOT create ${who}S yourself while a table is pending. The user confirms it in the ${GS.SIDE_PANEL}.`,
+    CONSENT_NEXT_LINE,
     STEP_ONE_ONLY_LINE,
   ].join("\n");
 }
@@ -401,9 +419,16 @@ function rosterBlock(ctx: StudentSetupCtx): string {
  * Only institutions get it: a family ${GS.GUARDIAN} is the signed-in user, and
  * mailing yourself a magic link instead of pressing the button in front of you
  * is a worse flow, not a shortcut.
+ *
+ * And NOT while a request is already out. The rail refuses a resend for a
+ * reason its GATE_NEEDS_REQUEST comment states plainly — a second link to the
+ * same guardian is not a nudge, it is two live magic links for one child — so
+ * a prompt line offering the very call the button withholds is the UI and the
+ * assistant disagreeing about policy in front of the user.
  */
 function consentRequestLine(ctx: StudentSetupCtx): string | null {
   if (ctx.account === "family") return null;
+  if (ctx.gate === "request_sent") return null;
   const contact = ctx.basics.consentContact;
   if (!contact || (!contact.hasEmail && !contact.hasPhone)) return null;
   const channel = contact.hasEmail ? "email" : "sms";
@@ -433,35 +458,84 @@ function hasContactableGuardian(ctx: StudentSetupCtx): boolean {
  * offer, to go and find something to talk about. Observed live: the assistant
  * interviewed the user about a consent-pending patient's communication and
  * wrote `Student_CommunicationProfile` and `Student_CommunicationStyle`. Those
- * are student chat-memory fields; `requireConsentForMemoryWrite` covers only
- * the reports, the program and incidents, so NOTHING refused the write.
+ * are student chat-memory fields; at the time `requireConsentForMemoryWrite`
+ * covered only the reports, the program and incidents, so NOTHING refused the
+ * write. (Closed 2026-09-10: every `Student_*` chat-memory field, the
+ * column-backed communication profile, `Relationship_Notes` and the AI's door
+ * into `aac_settings` are now gated at the schema layer AND at the persist
+ * layer — docs/student-consent-implementation.md §7.2. The prompt block below
+ * is no longer the only thing in the way, but it stays: an assistant that
+ * merely collides with a refusal it was never warned about produces a worse
+ * conversation than one that knows what is shut and why.)
  *
  * The prohibition therefore has to be stated in the prompt, and it has to name
  * the path that was actually taken — not just "reports".
+ *
+ * Rewritten 2026-09-09 on the user's report: "Flow from adding basic student
+ * details to adding guardian contact and solving consent needs to be more
+ * clear. Assume the user has no idea what they're doing." The old block was ONE
+ * imperative — press this button — with no account of what CONSENT is, why the
+ * conversation stopped, who signs it or what it opens. It also sent EVERY
+ * family user to a "Sign consent" button the rail renders only for
+ * `sign_required`/`revoked`; a family whose guardian auto-create failed
+ * (`gate: "none"`) went hunting for a control that was not on screen.
+ *
+ * Five branches now, one per real situation — see `resolveGate`:
+ *  - family + sign_required/revoked → they ARE the guardian; they sign;
+ *  - family + none  → they are not on the contact list yet; add themselves;
+ *  - institution + request_sent → a link is out; wait, do not send another;
+ *  - institution with nobody contactable → ASK for the guardian in the chat and
+ *    save the contact, because there is nothing to send a link to;
+ *  - institution with a contactable guardian → send the link.
+ *
+ * That fourth branch is the ONE place a `Student_*` write is instructed while
+ * the gate is shut, so the blanket prohibition keeps its exact wording and the
+ * exception is stated separately, last, and named: the guardian contact, and
+ * nothing else. A carve-out any broader than that re-opens the Ray Cairo
+ * failure above, which nothing at the DB layer refuses.
  */
 function awaitingConsentBlock(ctx: StudentSetupCtx): string {
   const who = ctx.term;
-  const action =
+  const contactable = hasContactableGuardian(ctx);
+  const needsGuardian = ctx.account !== "family" && ctx.gate !== "request_sent" && !contactable;
+  const action: string[] =
     ctx.account === "family"
-      ? `- Tell the user to press "Sign consent" in the ${GS.SIDE_PANEL} and complete the form there.`
+      ? ctx.gate === "none"
+        ? [
+            `- They are not listed as the ${GS.GUARDIAN} yet. Tell them to add themselves in the ${GS.CONTACTS_PANEL}.`,
+            `- The "Sign consent" button appears in the ${GS.SIDE_PANEL} once they are. Do not send them looking for it yet.`,
+          ]
+        : [
+            `- Tell them THEY are the ${GS.GUARDIAN} here: press "Sign consent" in the ${GS.SIDE_PANEL} and complete the short form.`,
+          ]
       : ctx.gate === "request_sent"
-        ? `- A ${GS.CONSENT} request is already pending with the ${GS.GUARDIAN}. Tell the user we are waiting for it.`
-        : hasContactableGuardian(ctx)
-          ? `- Point the user at "Send consent requests" in the ${GS.SIDE_PANEL} — it sends one link per ${who}.`
-          : `- This ${who} has no guardian contact with an email or phone yet. Nothing can be sent.`;
-  const addGuardian =
-    ctx.account !== "family" && ctx.gate !== "request_sent" && !hasContactableGuardian(ctx)
-      ? `- Add a guardian with an email or phone in the ${GS.CONTACTS_PANEL}, then send the ${GS.CONSENT} link.`
-      : null;
+        ? [
+            `- A ${GS.CONSENT} request is already pending with the ${GS.GUARDIAN}. Do not offer to send another.`,
+            `  Say we are waiting; the ${who} unlocks the moment it is signed.`,
+          ]
+        : needsGuardian
+          ? [
+              `- ASK for the ${GS.GUARDIAN} now: their name, their ${GS.RELATIONSHIP}, and an email or phone. One at a time.`,
+              `  Save: Student_Contacts add { name, relationship, role: "parent_guardian", contactEmail, contactPhone }.`,
+              `- Then tell them to press "Send consent request" in the ${GS.SIDE_PANEL}: it sends that ${GS.GUARDIAN} a link to sign.`,
+            ]
+          : [
+              `- Tell them to press "Send consent request" in the ${GS.SIDE_PANEL}: it sends that ${GS.GUARDIAN} a link to sign.`,
+            ];
   const send = consentRequestLine(ctx);
   return [
     `WAITING FOR ${GS.CONSENT}`,
-    `- Nothing beyond ${GS.STEP_BASICS} may be collected or recorded for this ${who} until ${GS.CONSENT} is active.`,
-    action,
-    ...(addGuardian ? [addGuardian] : []),
+    `- EXPLAIN first: a parent or ${GS.GUARDIAN} must approve in writing before anything about this ${who}'s`,
+    `  health, ${GS.STEP_PROGRAM} or communication is recorded. Only the ${GS.STEP_BASICS} facts from step 1 are stored so far.`,
+    ...action,
     ...(send ? [send] : []),
+    `- ${GS.STEP_MEDICAL}, ${GS.STEP_PROGRAM}, ${GS.STEP_AAC} and ${GS.STEP_CONTACTS} all open the moment ${GS.CONSENT} is active. Say so.`,
+    `- Nothing beyond ${GS.STEP_BASICS} may be collected or recorded for this ${who} until ${GS.CONSENT} is active.`,
     `- Never collect ID numbers, health details, documents, notes, interests, communication profile or style.`,
     `- No Student_* memory writes. You may only finish step 1 facts, explain ${GS.CONSENT} and answer questions.`,
+    ...(needsGuardian
+      ? [`- The ONE exception is that ${GS.GUARDIAN} contact above: add it, and nothing else, while ${GS.CONSENT} is shut.`]
+      : []),
   ].join("\n");
 }
 
@@ -620,7 +694,7 @@ function doneBlock(ctx: StudentSetupCtx): string {
 // Steps
 // ---------------------------------------------------------------------------
 
-const basicsStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
+const basicsStep: GuidedStep = {
   id: "basics",
   panel: GUIDED_SETUP_PANEL_BY_STEP.basics,
   skippable: false,
@@ -656,7 +730,7 @@ const basicsStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
       .join("\n"),
 };
 
-const medicalStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
+const medicalStep: GuidedStep = {
   id: "medical",
   panel: GUIDED_SETUP_PANEL_BY_STEP.medical,
   skippable: true,
@@ -670,7 +744,7 @@ const medicalStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
   promptBlock: (ctx, view) => `${rulesBlock(ctx, isCurrentStepLocked(view))}\n${medicalBlock(ctx)}`,
 };
 
-const programStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
+const programStep: GuidedStep = {
   id: "program",
   panel: GUIDED_SETUP_PANEL_BY_STEP.program,
   skippable: true,
@@ -687,7 +761,7 @@ const programStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
   promptBlock: (ctx, view) => `${rulesBlock(ctx, isCurrentStepLocked(view))}\n${programBlock(ctx)}`,
 };
 
-const aacStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
+const aacStep: GuidedStep = {
   id: "aac",
   panel: GUIDED_SETUP_PANEL_BY_STEP.aac,
   skippable: true,
@@ -712,19 +786,21 @@ const aacStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
  * STEP 5 — CONTACTS.
  *
  * Completion is `peopleAdded > 0`: at least one active contact that a PERSON
- * decided to add. Two rows deliberately do not count (see
- * `loadContactFacts`): an `autoAdded` row the AAC Monitor guessed from a
- * session, and the guardian row the system writes for a family admin who
- * created the student through the form. The second is the one that matters
- * here — it lands with `autoAdded = false`, so counting rows, or even counting
- * non-auto-added rows, would let a family flow finish step 5 without asking a
- * single question.
+ * decided to add IN ANSWER TO THIS STEP. Three rows deliberately do not count
+ * (see `loadContactFacts`): an `autoAdded` row the AAC Monitor guessed from a
+ * session, the guardian row the system writes for a family admin who created
+ * the student through the form, and the guardian the CONSENT stage asked an
+ * institution user for. The last two are the ones that matter — both land with
+ * `autoAdded = false` and are otherwise ordinary human-entered contacts, so
+ * counting rows, or even counting non-auto-added rows, would let a flow finish
+ * step 5 without asking a single question. The block below asks who ELSE is in
+ * the person's life; a row the flow itself asked for is not an answer to it.
  *
  * Skippable, like steps 2-4: plenty of children are set up by one person who
  * has nobody else to list yet. Behind the same consent gate as the rest —
  * the people around a child are personal data about third parties.
  */
-const contactsStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
+const contactsStep: GuidedStep = {
   id: "contacts",
   panel: GUIDED_SETUP_PANEL_BY_STEP.contacts,
   skippable: true,
@@ -734,7 +810,7 @@ const contactsStep: GuidedStep<StudentSetupCtx, GuidedSetupStepId> = {
   promptBlock: (ctx, view) => `${rulesBlock(ctx, isCurrentStepLocked(view))}\n${contactsBlock(ctx)}`,
 };
 
-export const studentSetupFlow: GuidedFlowDefinition<StudentSetupCtx, GuidedSetupStepId> = {
+export const studentSetupFlow: GuidedFlowDefinition = {
   id: GUIDED_SETUP_FLOW_ID,
   donePanel: GUIDED_SETUP_DONE_PANEL,
   steps: [basicsStep, medicalStep, programStep, aacStep, contactsStep],
@@ -748,7 +824,7 @@ export const studentSetupFlow: GuidedFlowDefinition<StudentSetupCtx, GuidedSetup
 /** The prompt body for the current step, or the completion block when finished. */
 export function renderStudentSetupBlock(
   ctx: StudentSetupCtx,
-  view: GuidedFlowView<GuidedSetupStepId>,
+  view: GuidedFlowView,
 ): string {
   if (view.step === "done") return doneBlock(ctx);
   const step = studentSetupFlow.steps.find((s) => s.id === view.step);

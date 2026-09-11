@@ -127,15 +127,49 @@ describe("paddleService delegation", () => {
   });
 });
 
+// Sandbox and live notification destinations are separate Paddle objects with
+// separate signing secrets, so reading the wrong one fails EVERY signature —
+// and the endpoint answers a flat 400, which is indistinguishable from forgery.
+describe("paddleService webhook secret selection", () => {
+  beforeEach(() => {
+    delete process.env.PADDLE_WEBHOOK_SECRET;
+    delete process.env.PADDLE_WEBHOOK_SECRET_SANDBOX;
+  });
+
+  it("prefers the sandbox secret in sandbox", () => {
+    process.env.PADDLE_WEBHOOK_SECRET_SANDBOX = "whsec_sandbox";
+    process.env.PADDLE_WEBHOOK_SECRET = "whsec_live";
+    expect(paddleService.environment).toBe("sandbox");
+    expect(paddleService.webhookSecret).toBe("whsec_sandbox");
+  });
+
+  it("falls back to PADDLE_WEBHOOK_SECRET in sandbox when the sandbox one is unset", () => {
+    // Deployments that predate the split carry only the unsuffixed name.
+    process.env.PADDLE_WEBHOOK_SECRET = "whsec_legacy";
+    expect(paddleService.webhookSecret).toBe("whsec_legacy");
+  });
+
+  it("reads only PADDLE_WEBHOOK_SECRET in production, never the sandbox one", () => {
+    process.env.PADDLE_ENVIRONMENT = "production";
+    process.env.PADDLE_WEBHOOK_SECRET_SANDBOX = "whsec_sandbox";
+    expect(paddleService.webhookSecret).toBeUndefined();
+
+    process.env.PADDLE_WEBHOOK_SECRET = "whsec_live";
+    expect(paddleService.webhookSecret).toBe("whsec_live");
+  });
+});
+
 describe("paddleService webhook verification", () => {
   it("throws when no webhook secret is configured", async () => {
     delete process.env.PADDLE_WEBHOOK_SECRET;
+    delete process.env.PADDLE_WEBHOOK_SECRET_SANDBOX;
     await expect(
       paddleService.verifyWebhook("{}", "sig"),
     ).rejects.toThrow("PADDLE_WEBHOOK_SECRET");
   });
 
   it("unmarshals with the configured secret", async () => {
+    delete process.env.PADDLE_WEBHOOK_SECRET_SANDBOX;
     process.env.PADDLE_WEBHOOK_SECRET = "whsec_test";
     webhooksUnmarshal.mockResolvedValue({ eventType: "transaction.completed" });
     const event = await paddleService.verifyWebhook("{raw}", "sig123");

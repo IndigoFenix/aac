@@ -11,7 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { useCreateConsentInvitation, useConsentAuthority } from "@/hooks/useConsentApi";
+import { useCreateConsentInvitation } from "@/hooks/useConsentApi";
+import { useConsentDetail } from "@/features/consent/ConsentProvider";
 import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
 import { openUI } from "@/lib/uiEvents";
 
@@ -85,8 +86,10 @@ export function SendConsentRequestDialog({
 
   // Resolve who may sign — for a self-consenting (adult) student the request is
   // addressed to the student themselves, not a guardian contact.
-  const authorityQuery = useConsentAuthority(studentId);
-  const resolvedSigner = authorityQuery.data?.resolved?.signerType ?? null;
+  // Reads the shared observer rather than opening its own — see
+  // features/consent/ConsentProvider.tsx.
+  const { authority } = useConsentDetail();
+  const resolvedSigner = authority.data?.resolved?.signerType ?? null;
 
   const [contactId, setContactId] = useState<string>("");
   const [recipientType, setRecipientType] = useState<"guardian" | "self">("guardian");

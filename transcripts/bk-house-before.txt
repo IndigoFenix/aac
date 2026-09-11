@@ -1,0 +1,22 @@
+# world=scripts/worlds/frontier.spec.json seed=11 dt=0.5 days=6
+# t=0 ring-1 food units=0  baskets=30  wood=588
+day  1  rations/day=123.60  takes=   1  baskets=30  wood=588  ring1=0  sleeps=3
+day  2  rations/day= 34.40  takes=   2  baskets=30  wood=588  ring1=0  sleeps=15
+day  3  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=23
+day  4  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=28
+day  5  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=39
+day  6  rations/day=  0.00  takes=   2  baskets=30  wood=588  ring1=0  sleeps=45
+
+# takes=2  parked=0  re-selected=0  sleeps=45
+# rations delivered=158.00 over 6 days = 26.33/day
+# units per take: 172u×1 618u×1
+# baskets by day: 30,30,30,30,30,30
+# wood by day: 588,588,588,588,588,588
+# basket bills posted=0  first at t=-
+# starvation body-days: >=1.5=0.0  >=1=0.0  (bodies=5)
+# ring-1 food units at end=0
+# delivered lines=0
+# craft toasts=0
+# construction toasts=0
+# buildings=[]
+# baskets end=30  carts end=0  wood end=588

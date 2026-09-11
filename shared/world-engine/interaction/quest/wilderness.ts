@@ -50,7 +50,13 @@ import { FAUNA_BODY_PREFIX, FLORA_BODY_PREFIX } from "../../kernel/town/scope.js
 // scatter reads the biosphere's density law rather than keeping a second
 // per-biome table beside it; `planet/ecology.ts` is worldgen composition and
 // imports nothing from this layer, so the edge is one-way.
-import { DEFAULT_BIOSPHERE, standDensityPerHa } from "../../planet/ecology.js";
+import { DEFAULT_BIOSPHERE, SCATTER_BIOSPHERE, standDensityPerHa } from "../../planet/ecology.js";
+// 🌿 THE PACKING PASS (resource-packing round). `planet/packing.ts` is pure and
+// imports only the catalogue, the anchor and the satiation seat — nothing from
+// this layer — so the edge is one-way, exactly like `planet/ecology.js` above.
+import {
+  itemsPerBearing, packMemberOf, packStands, packSupplyAt, type PackMember,
+} from "../../planet/packing.js";
 import { listSpecies, speciesCanSpeak } from "../../creatures/species.js";
 import { getVocabularyItem } from "@shared/glyph-registry.js";
 
@@ -74,6 +80,8 @@ export interface WildernessFeature {
    *  armed by a live take, advanced and retired by regrowth. Session
    *  state, like the live stock the host keeps. */
   regrowAt?: Record<string, number>;
+  /** ⚖️ THE FRACTIONAL BEARING CARRY (glyph → 0..1) — see `WildSource`. */
+  bearCarry?: Record<string, number>;
   /** ⚖️ S&D S3 H2 — GROWTH-CLASS index into the species' `growth.classes`
    *  (products.ts). Absent = the SCATTER default: a freshly-laid feature
    *  stands MATURE (the catalogue's own last class) — byte-identical to
@@ -607,14 +615,28 @@ function climateAdmitsEntry(e: WildMixEntry, climate: ClimateSample): boolean {
  * empty: the legacy no-cell callers are exactly the ones the user was looking
  * at ("most areas just have trees"), and answering them with no forage at all
  * would leave the complaint standing everywhere it was made.
+ *
+ * 🌿 `keepZero` — MEMBERSHIP IS `fit > 0`, NOT A ROUNDED COUNT (the
+ * resource-packing round). On the PACKED arm the count is not the answer: the
+ * packing pass decides how many, so dropping a line because `base × rarity ×
+ * suitability` rounded below 0.5 would delete a plant the cell genuinely
+ * admits BEFORE the only thing qualified to count it ever sees it — which is
+ * how the wild grape (rarity 0.2) had never once stood on a temperate cell.
+ * Off (the default) the legacy rounding stands, byte-identical, for every
+ * caller the pass cannot run for.
  */
-function forageLines(base: number, climate?: ClimateSample): WildMixEntry[] {
+function forageLines(
+  base: number,
+  climate?: ClimateSample,
+  keepZero = false,
+): WildMixEntry[] {
   if (base <= 0) return [];
   const out: WildMixEntry[] = [];
   for (const src of wildFoodPlants(climate)) {
     const weight = climate ? nicheSuitabilityOf(src, climate) : 1;
-    const count = Math.round(base * sourceRarityOf(src) * weight);
-    if (count > 0) out.push({ species: src.species, count });
+    const fit = sourceRarityOf(src) * weight;
+    const count = Math.round(base * fit);
+    if (count > 0 || (keepZero && fit > 0)) out.push({ species: src.species, count });
   }
   return out;
 }
@@ -854,7 +876,11 @@ export function wildMixForBiome(
   // original complaint restated more quietly. Barren feeds nobody (0, below).
   // Which plants and how many of EACH are the species' own rows' business.
   const forageBase = biome === 1 ? 10 : biome === 2 || biome === 3 ? 6 : 0;
-  const larder = mergeForage(pick, biome === 1 ? 2 : 1, forageLines(forageBase, climate));
+  // 🌿 THE PACKED ARM (resource-packing round): a real cell — a climate sample
+  // AND a baked ecology — is counted by `planet/packing.ts`, so membership here
+  // must not pre-round anything out of the mix (see `forageLines`).
+  const packed = !!climate && !!eco;
+  const larder = mergeForage(pick, biome === 1 ? 2 : 1, forageLines(forageBase, climate, packed));
   let mix: WildMixEntry[];
   switch (biome) {
     case 1: // forest
@@ -885,20 +911,87 @@ export function wildMixForBiome(
   // can. Barren is unaffected (it names no animals), and so is every
   // no-climate caller: with no sample the switch's answer is returned as-is.
   const admitted = climate ? mix.filter((e) => climateAdmitsEntry(e, climate)) : mix;
-  return eco ? admitted.map((e) => withEcoDensity(e, eco)) : admitted;
+  if (!eco) return admitted;
+  // ⚖️ THREE ARMS, AND ONLY THE NEW ONE MOVED. No eco ⇒ absolute counts (above).
+  // Eco but no climate ⇒ the per-line density law, verbatim — the pass needs a
+  // cell's rain/fertility/niche and there is none, so every such caller is
+  // byte-identical to what it has always scattered. Both ⇒ the packing pass.
+  return climate ? packedDensities(admitted, climate, eco) : admitted.map((e) => withEcoDensity(e, eco));
 }
 
-/** One mix line as a DENSITY: the biosphere's own abundance where it has an
- *  opinion (a species whose `model` is this line's source), the line's legacy
- *  count re-read at the reference area where it has none. */
+/** A line the BAKE owns: its model is claimed by one of the three baked
+ *  biosphere species (`oak`, `grass`), whose `eco_<key>` field is the one
+ *  authority on how thickly it stands. The packing pass never places these —
+ *  two authorities for one number is the drift this round exists to end, and
+ *  the canopy is also the pass's own INPUT (`packSupplyAt`'s `cover`). */
+function bakedModel(species: string): boolean {
+  return DEFAULT_BIOSPHERE.some((s) => s.model === species && !!s.standPerHa);
+}
+
+/**
+ * 🌿 THE WHOLE MIX, PACKED AT ONCE (resource-packing round).
+ *
+ * ⚖️ ONE PASS FOR THE WHOLE COMMUNITY, never a per-line answer: the plants
+ * COMPETE, so how many hazels stand is not a fact about hazels — it is a fact
+ * about hazels *and* the bushes and crab apples drawing on the same hectare's
+ * light and water. That is why the old per-line `standDensityPerHa` map could
+ * only ever be right at the one cell it was balanced at, and why adding a
+ * fifth plant to a cell here does not add a fifth plant's worth of food: it
+ * divides the same hectare five ways.
+ *
+ * Non-plant lines (rock, sheep, cow) and the BAKED canopy keep today's path
+ * exactly — the pass has no opinion about outcrops or flocks, and the bake
+ * owns the wood.
+ */
+function packedDensities(
+  lines: WildMixEntry[],
+  climate: ClimateSample,
+  eco: Readonly<Record<string, number>>,
+): WildMixEntry[] {
+  const members: PackMember[] = [];
+  const slot = new Map<string, number>();
+  for (const e of lines) {
+    if (slot.has(e.species) || bakedModel(e.species)) continue;
+    const src = naturalSourceOf(e.species);
+    if (!src || src.kind !== "plant") continue;
+    const m = packMemberOf(src, climate);
+    if (!m) continue;
+    slot.set(e.species, members.length);
+    members.push(m);
+  }
+  if (!members.length) return lines.map((e) => withEcoDensity(e, eco));
+  const packed = packStands(members, packSupplyAt(climate, eco));
+  return lines.map((e) => {
+    const j = slot.get(e.species);
+    return j === undefined ? withEcoDensity(e, eco) : { ...e, perHa: packed[j]!.perHa };
+  });
+}
+
+/**
+ * One mix line as a DENSITY: the biosphere's own abundance where it has an
+ * opinion (a species whose `model` is this line's source), the line's legacy
+ * count re-read at the reference area where it has none.
+ *
+ * 🌿 THE FORAGE LAYER JOINED THE DENSITY LAW (PART 6, 2026-09-08). This asked
+ * `DEFAULT_BIOSPHERE` — the three BAKED species — so `oak` scaled with the
+ * wood and every food plant fell to `legacyPerHa(count)`, i.e. to
+ * `forageBase`'s biome counts read at a fixed 3.61 ha. That made the SCATTER
+ * COUNT the food authority on the ecological path, and it is why the shipped
+ * forest cell stood 15.05 oaks/ha over 3.32 food plants/ha: a wood with no
+ * understory. `SCATTER_BIOSPHERE` adds the understory rows — density × canopy
+ * abundance, the same one law — so the larder now thickens and thins with the
+ * wood it grows in. `forageBase`'s counts still answer for every caller with
+ * NO baked ecology (a preset town, a flat test world, the charter arm), which
+ * is where an absolute count was always the honest form.
+ */
 function withEcoDensity(
   e: WildMixEntry,
   eco: Readonly<Record<string, number>>,
 ): WildMixEntry {
-  const ecological = DEFAULT_BIOSPHERE.some((s) => s.model === e.species && s.standPerHa);
+  const ecological = SCATTER_BIOSPHERE.some((s) => s.model === e.species && s.standPerHa);
   return {
     ...e,
-    perHa: ecological ? standDensityPerHa(e.species, eco) : legacyPerHa(e.count),
+    perHa: ecological ? standDensityPerHa(e.species, eco, SCATTER_BIOSPHERE) : legacyPerHa(e.count),
   };
 }
 
@@ -980,10 +1073,19 @@ export interface WildernessParams {
    * Absent ⇒ byte-identical to every scatter ever laid.
    */
   keep?: { x: number; y: number; r: number };
-  /** ⚖️ INERT (S3 review): abundance is DIAL-FREE — never pass the session's
-   *  `resourceCompression` here; the conversion dial applies only at
-   *  effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson. The seat
-   *  stays for tests that pin the invariance. */
+  /** ⚖️ INERT, AND NOW FOR A STATED REASON (S3 review; re-argued PART 6,
+   *  2026-09-08). Abundance is DIAL-FREE: how thickly a species stands is
+   *  ecology (`FORAGE_UNDERSTORY`), and a rolled STOCK is a fact about one
+   *  plant, so neither may read the conversion dial — a 7.5× roll here would
+   *  put 30 berries on a waist-high bush and, through the same `bodyStockOf`
+   *  call, 7.5× the timber in every oak.
+   *
+   *  🚨 THE WILD-FOOD SEAT MOVED, IT DID NOT VANISH. The dial's honest target
+   *  in the countryside is the FLOW — how fast a picked plant bears again —
+   *  and that now lives at `wildRegrowPeriodS`, which the host feeds
+   *  `session.scale.resourceCompression`. Everything else it reaches is
+   *  unchanged (effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson).
+   *  This seat stays for the tests that pin the roll's invariance. */
   conversionDial?: number;
 }
 
@@ -1116,47 +1218,144 @@ export interface WildSource {
   species: string;
   harvestCap?: Record<string, number>;
   regrowAt?: Record<string, number>;
+  /**
+   * ⚖️ THE FRACTIONAL BEARING CARRY (glyph → 0..1, the resource-packing round).
+   *
+   * A bearing SCALES WITH THE PLANT (`planet/packing.ts itemsPerBearing`): a
+   * berry bush puts out 0.53 items a cadence and a hazel 2.46. A stack is
+   * whole units, so the remainder has to live somewhere between cadences — a
+   * tiny plant bears one item every N cadences, and the carry is what makes
+   * that true without EVER minting a phantom unit or losing a real one (item
+   * conservation, the same law the folded stand's own carry serves).
+   *
+   * 🚨 IT IS ADVANCED BY `dueHarvestRegrowth` ITSELF, which is the one place
+   * in this file that writes a source besides `armHarvestRegrow`. The carry
+   * has to survive between calls or a plant that bears less than one unit a
+   * cadence would never bear at all — every call would floor its 0.53 to zero
+   * and throw the remainder away — and the host's applier writes back only
+   * `add` and `regrowAt`. Absent = 0, so every feature ever built reads as it
+   * always did.
+   */
+  bearCarry?: Record<string, number>;
 }
 
 /** REGROWTH DUE by `now` — PURE: reads the source's ledger + the LIVE
  *  stock (the host's copy, not the initial roll), returns the units that
  *  have matured and the advanced ledger. The quest host — the one stack
- *  mutator — applies both. One unit matures per regrow period; a long
- *  absence catches up whole periods but stops at capacity, where the
- *  ledger entry retires. Null = nothing pending. */
+ *  mutator — applies both. ONE BEARING matures per regrow period — the
+ *  PLANT'S OWN (`planet/packing.ts itemsPerBearing`, 0.53 items off a berry
+ *  bush and 2.46 off a hazel), with the fraction carried on the source; a long
+ *  absence catches up whole periods but stops at capacity, where the ledger
+ *  entry retires. Null = nothing pending. */
 export interface HarvestRegrowth {
   /** glyph → units matured since the last look (host adds to live stock). */
   add: Record<string, number>;
   /** Replacement ledger (entries only for glyphs still below capacity). */
   regrowAt: Record<string, number>;
+  /** The advanced fractional carry (`WildSource.bearCarry`), already written
+   *  back onto the source — reported so a caller can see it without having to
+   *  re-derive the bearing rate. */
+  bearCarry: Record<string, number>;
 }
+/**
+ * ⚖️ HOW LONG ONE WILD PLANT TAKES TO REPLACE ONE UNIT — the ONE expression of
+ * it, and the seat the conversion dial finally sits in (PART 6, 2026-09-08).
+ *
+ * `regrowDays` is a REAL cadence now (products.ts: a bush replaces a berry over
+ * a third of a season, a hazel carries one mast a year), so the compression a
+ * playable world wants has to be applied HERE rather than baked into the data.
+ * `resource_compression` is the natural→usable dial — *"a single value that
+ * multiplies the conversion of natural resources to usable ones"* — and a
+ * plant's bearing rate is exactly that conversion, so the dial DIVIDES the
+ * period: at the GL preset's 7.5, a 120-day bush bears every 16 game-days.
+ *
+ * 🚫 IT DOES NOT TOUCH STANDING STOCK, deliberately, and that is why
+ * `buildWilderness` still rolls at dial 1. The dial belongs on the FLOW (what
+ * the ground yields per day), not on the CAP: multiplying a bush's rolled
+ * berries by 7.5 would put 30 berries on a waist-high shrub, and — the reason
+ * that matters beyond looks — `bodyStockOf` rolls off the same call, so every
+ * oak on the planet would have carried 7.5× its timber. The wood is unchanged;
+ * only how fast the fruit comes back moved.
+ *
+ * ⏱️ `dayS` IS THE CALLER'S DAY. The host hands `FOOD_DAY_SEC` — the metabolic
+ * day, the same clock `needFillS("hunger")` measures a meal interval on (every
+ * shipped world declares `metabolism: 1`, where the two coincide). Two clocks,
+ * one of them the eater's: a forager's larder refills on the clock that says
+ * when he is hungry, not on the sun.
+ */
+export function wildRegrowPeriodS(
+  p: { regrowDays?: number },
+  dayS: number,
+  conversionDial = 1,
+): number {
+  const dial = conversionDial > 0 ? conversionDial : 1;
+  return Math.max(1e-3, ((p.regrowDays ?? 1) * dayS) / dial);
+}
+
+/** The same period, addressed by species + glyph — what a RECORD's ripening
+ *  walk needs (it holds stands, not products). Unknown pairs answer one day at
+ *  the dial, which is `regrowDays ?? 1`'s own convention. */
+export function wildRegrowPeriodOf(
+  species: string,
+  glyph: string,
+  dayS: number,
+  conversionDial = 1,
+): number {
+  const p = harvestProductsOf(species).find((q) => q.glyph === glyph);
+  return wildRegrowPeriodS(p ?? {}, dayS, conversionDial);
+}
+
 export function dueHarvestRegrowth(
   source: WildSource,
   liveStock: Record<string, number>,
   now: number,
   dayS: number,
+  conversionDial = 1,
 ): HarvestRegrowth | null {
   const pending = source.regrowAt;
   if (!pending) return null;
+  const src = naturalSourceOf(source.species);
   let changed = false;
   const add: Record<string, number> = {};
   const regrowAt: Record<string, number> = {};
+  const carried: Record<string, number> = {};
   for (const p of harvestProductsOf(source.species)) {
     let at = pending[p.glyph];
     if (at === undefined) continue;
     const cap = source.harvestCap?.[p.glyph] ?? 0;
-    const period = Math.max(1e-3, (p.regrowDays ?? 1) * dayS);
+    const period = wildRegrowPeriodS(p, dayS, conversionDial);
+    // ⚖️ A BEARING SCALES WITH THE PLANT (the resource-packing round). One
+    // cadence puts out `itemsPerBearing` units — 0.53 off a berry bush, 2.46
+    // off a hazel — and the fraction is carried on the source. A row with no
+    // packing geometry (a ewe's wool, a cow's milk, any source that never
+    // declared a crown) answers 0, and 0 means the ORIGINAL law: one unit per
+    // period, byte-identical.
+    const rate = src ? itemsPerBearing(src, p) : 0;
+    const perPeriod = rate > 0 ? rate : 1;
+    let carry = source.bearCarry?.[p.glyph] ?? 0;
     let have = liveStock[p.glyph] ?? 0;
     while (at <= now && have < cap) {
-      have++;
-      add[p.glyph] = (add[p.glyph] ?? 0) + 1;
+      carry += perPeriod;
+      while (carry >= 1 && have < cap) {
+        carry -= 1;
+        have++;
+        add[p.glyph] = (add[p.glyph] ?? 0) + 1;
+      }
       at += period;
       changed = true;
     }
+    if (carry > 0) carried[p.glyph] = carry;
     if (have < cap) regrowAt[p.glyph] = at;
     else changed = true; // full again — the entry retires
   }
-  return changed ? { add, regrowAt } : null;
+  if (!changed) return null;
+  // 🚨 THE CARRY IS PERSISTED HERE — see `WildSource.bearCarry`. The host's
+  // applier (`quest-host.ts regrowWildStock`) writes back `add` and
+  // `regrowAt`; a fraction that did not survive to the next call would floor
+  // a small plant's bearing to nothing forever.
+  if (Object.keys(carried).length) source.bearCarry = carried;
+  else delete source.bearCarry;
+  return { add, regrowAt, bearCarry: carried };
 }
 
 /** Arm the regrow clock after a LIVE take: the glyph's next unit matures
@@ -1168,11 +1367,12 @@ export function armHarvestRegrow(
   glyph: string,
   now: number,
   dayS: number,
+  conversionDial = 1,
 ): void {
   if (source.regrowAt?.[glyph] !== undefined) return;
   const p = harvestProductsOf(source.species).find((q) => q.glyph === glyph);
   if (!p) return;
-  (source.regrowAt ??= {})[glyph] = now + Math.max(1e-3, (p.regrowDays ?? 1) * dayS);
+  (source.regrowAt ??= {})[glyph] = now + wildRegrowPeriodS(p, dayS, conversionDial);
 }
 
 // ── ⚖️ S&D S3 H2 — THE TIMBER GROWTH CLOCK ─────────────────────────────────
@@ -1283,7 +1483,8 @@ export function buildWilderness(params: WildernessParams): WildernessContent {
   const clears = [{ x: clearAt.x, y: clearAt.y, r: clearR }, ...(params.clears ?? [])];
   // ⚖️ S3 review: abundance is DIAL-FREE — params.conversionDial is an
   // inert seat (see ScatterOpts); the one-application law lives at
-  // effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson.
+  // effectiveInPerOut / storehouseRawParAt / farmAcresPerPerson, and — since
+  // PART 6 — at `wildRegrowPeriodS`, the countryside's FLOW.
   const dial = 1;
 
   /**

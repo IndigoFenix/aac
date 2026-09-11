@@ -295,7 +295,8 @@ export class ShareInviteRepository {
   /** Single-share revocation (granular — used to drop one object grant). */
   async revokeObjectShare(
     id: string,
-    revokedByUserId: string,
+    /** Nullable column; null = the revoker has no user account. */
+    revokedByUserId: string | null,
     now: Date = new Date(),
   ): Promise<ObjectShare | undefined> {
     const [row] = await db
@@ -308,7 +309,8 @@ export class ShareInviteRepository {
 
   async revokeStandingShare(
     id: string,
-    revokedByUserId: string,
+    /** Nullable column; null = the revoker has no user account. */
+    revokedByUserId: string | null,
     now: Date = new Date(),
   ): Promise<StandingShare | undefined> {
     const [row] = await db

@@ -1,0 +1,121 @@
+{
+  "world": "scripts/worlds/frontier.spec.json",
+  "seed": 11,
+  "dt": 0.5,
+  "days": 6,
+  "dayLengthS": 240,
+  "script": "scripts/dev/arc-build-house.txt",
+  "frames": 2880,
+  "simSeconds": 1440,
+  "wallMs": 60092,
+  "simSecondsPerWallSecond": 23.96,
+  "bodies": 0,
+  "takes": 15,
+  "zeroYieldTakes": 0,
+  "takeSizeHistogram": {
+    "1": 15
+  },
+  "takesOfSixOrMore": 0,
+  "takesBySource": {
+    "furn_24_chest_food": 11,
+    "furn_8_chest_food": 3,
+    "furn_3_chest_food": 1
+  },
+  "unitsByGoodKey": {
+    "food": 15
+  },
+  "foodUnits": 15,
+  "rationsPerDay": 2.5,
+  "parked": 0,
+  "reselected": 0,
+  "sleeps": 36,
+  "reaped": 0,
+  "haulAbandoned": 0,
+  "haulReissued": 0,
+  "starvationBodyDays": {
+    "3": 0,
+    "1.5": 0
+  },
+  "frozenBodySeconds": 0,
+  "frozenEpisodes": [],
+  "constructionBeatsS": {
+    "materialsStaged": 734.5,
+    "houseFinished": 930.5,
+    "anyFinished": 930.5,
+    "familyMovesIn": 960
+  },
+  "hungerAtEnd": {
+    "mean": 0,
+    "hungry": 0,
+    "deep": 0
+  },
+  "perDay": [
+    {
+      "day": 1,
+      "rations": 0,
+      "takes": 0,
+      "parked": 0,
+      "reselected": 0,
+      "sleeps": 0,
+      "hungryMean": 0,
+      "hungry": 0,
+      "bodies": 0
+    },
+    {
+      "day": 2,
+      "rations": 4,
+      "takes": 4,
+      "parked": 0,
+      "reselected": 0,
+      "sleeps": 11,
+      "hungryMean": 0,
+      "hungry": 0,
+      "bodies": 0
+    },
+    {
+      "day": 3,
+      "rations": 1,
+      "takes": 1,
+      "parked": 0,
+      "reselected": 0,
+      "sleeps": 12,
+      "hungryMean": 0,
+      "hungry": 0,
+      "bodies": 0
+    },
+    {
+      "day": 4,
+      "rations": 0,
+      "takes": 0,
+      "parked": 0,
+      "reselected": 0,
+      "sleeps": 17,
+      "hungryMean": 0,
+      "hungry": 0,
+      "bodies": 0
+    },
+    {
+      "day": 5,
+      "rations": 7,
+      "takes": 7,
+      "parked": 0,
+      "reselected": 0,
+      "sleeps": 25,
+      "hungryMean": 0,
+      "hungry": 0,
+      "bodies": 0
+    },
+    {
+      "day": 6,
+      "rations": 3,
+      "takes": 3,
+      "parked": 0,
+      "reselected": 0,
+      "sleeps": 36,
+      "hungryMean": 0,
+      "hungry": 0,
+      "bodies": 0
+    }
+  ],
+  "samples": 1440
+}

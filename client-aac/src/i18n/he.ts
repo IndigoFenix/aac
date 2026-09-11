@@ -903,6 +903,7 @@ export const he: Translations = {
       when: "מתי",
       why: "למה",
       how: "איך",
+      question: "שאלה",
       someone: "מישהו",
       near: "קרוב",
       far: "רחוק",

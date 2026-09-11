@@ -1,0 +1,24 @@
+{
+  "engine": "aivota-world",
+  "engineVersion": 1,
+  "uses": [],
+  "packs": [],
+  "game": {
+    "scope": "town",
+    "world": {
+      "seed": 12,
+      "days": 120,
+      "cluster": 2,
+      "hamlets": [
+        { "population": 60 },
+        { "population": 200 }
+      ],
+      "syntax": "b",
+      "locale": "en"
+    },
+    "initial_focus": {
+      "type": "house"
+    },
+    "avatar": "spirit"
+  }
+}

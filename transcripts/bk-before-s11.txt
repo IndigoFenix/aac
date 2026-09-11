@@ -1,0 +1,23 @@
+# world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=10
+# t=0 ring-1 food units=2427  baskets=2  wood=133
+day  1  rations/day=  2.80  takes=   7  baskets=2  wood=133  ring1=2427  sleeps=2
+day  2  rations/day=  5.20  takes=  20  baskets=2  wood=133  ring1=2408  sleeps=7
+day  3  rations/day=  0.00  takes=  20  baskets=2  wood=133  ring1=2408  sleeps=14
+day  4  rations/day=  4.00  takes=  28  baskets=2  wood=133  ring1=2389  sleeps=19
+day  5  rations/day=  3.60  takes=  33  baskets=2  wood=133  ring1=2371  sleeps=24
+day  6  rations/day=  0.00  takes=  33  baskets=2  wood=133  ring1=2371  sleeps=32
+day  7  rations/day=  3.80  takes=  40  baskets=2  wood=133  ring1=2352  sleeps=38
+day  8  rations/day=  4.40  takes=  48  baskets=2  wood=133  ring1=2330  sleeps=44
+day  9  rations/day=  0.00  takes=  48  baskets=2  wood=133  ring1=2330  sleeps=52
+day 10  rations/day=  2.00  takes=  52  baskets=2  wood=133  ring1=2320  sleeps=57
+
+# takes=52  parked=23  re-selected=23  sleeps=57
+# rations delivered=25.80 over 10 days = 2.58/day
+# units per take: 1u×33 2u×3 4u×4 5u×1 6u×8 7u×3
+# baskets by day: 2,2,2,2,2,2,2,2,2,2
+# wood by day: 133,133,133,133,133,133,133,133,133,133
+# basket bills posted=0  first at t=-
+# starvation body-days: >=1.5=20.5  >=1=24.4  (bodies=5)
+# ring-1 food units at end=2320
+# delivered lines=0
+# craft toasts=0

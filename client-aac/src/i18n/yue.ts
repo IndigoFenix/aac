@@ -903,6 +903,7 @@ export const yue: Translations = {
       when: "幾時",
       why: "點解",
       how: "點樣",
+      question: "問題",
       someone: "有人",
       near: "近",
       far: "遠",

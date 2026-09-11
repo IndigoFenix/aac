@@ -22,6 +22,57 @@ import { activityLogs } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import type { ChangeMap } from '../../services/activityChanges.js';
 import { AAC_SETTINGS_FIELD } from '../../services/memory-schema/aac-settings-memory-schema.js';
+import { studentContacts, students } from '@shared/schema';
+import { createHash } from 'node:crypto';
+import { consentService } from '../../services/consent/consentService.js';
+import { lookupConsentNotice, renderNoticeForHashing } from '@shared/legal/consent-notices/index.js';
+
+/**
+ * Give the student an ACTIVE consent record.
+ *
+ * The AI's AAC-settings write is gated by `requireConsentForMemoryWrite` as of
+ * 2026-09-10 (`autoAacPrompt` is the assistant's free-text notes about the
+ * child, so the whole field is PHI). Before that this fixture did not need
+ * consent and the test wrote straight through; now a consent-pending student
+ * is correctly refused, so the fixture has to reflect what production does —
+ * an AI write only ever happens once a guardian has signed.
+ */
+async function grantConsent(studentId: string, ownerId: string): Promise<void> {
+  // signConsent refuses without both: the minor-protection regime is computed
+  // from age, and the notice is looked up by country (only IL exists today,
+  // so any other value fails `notice_not_found`). `makeStudent` sets neither.
+  await db
+    .update(students)
+    .set({ birthDate: '2018-06-13', country: 'IL' })
+    .where(eq(students.id, studentId));
+
+  const [contact] = await db.insert(studentContacts).values({
+    studentId,
+    name: 'Test Guardian',
+    relationship: 'parent_guardian',
+    role: 'parent_guardian',
+    linkedUserId: ownerId,
+    isLegalGuardian: true,
+  }).returning();
+
+  const notice = lookupConsentNotice({ country: 'IL', locale: 'en' })!;
+  const hash = createHash('sha256').update(renderNoticeForHashing(notice.content)).digest('hex');
+  await consentService.signConsent({
+    studentId,
+    signedByContactId: contact.id,
+    locale: 'en',
+    consentTextVersion: notice.version,
+    consentTextHash: hash,
+    thirdPartyRecipients: [],
+    purposeAcknowledged: true,
+    voluntarinessAcknowledged: true,
+    thirdPartyTransfersAcknowledged: true,
+    identityVerificationMethod: 'in_person_clinician_attested',
+    identityVerificationEvidence: { attestingClinicianUserId: 'fixture' },
+    nonRepudiationMethod: 'in_person_clinician_attested',
+    nonRepudiationEvidence: { attestingClinicianUserId: 'fixture' },
+  } as any);
+}
 
 /** activityLogService.log is fire-and-forget — poll rather than read straight back. */
 async function waitForLog(subjectId: string): Promise<any> {
@@ -103,6 +154,7 @@ describe('activity log — field-level changes', () => {
     it('writes an AI-attributed audit row naming the changed field', async () => {
       const owner = await makeUser();
       const { student } = await makeStudent(owner.id);
+      await grantConsent(student.id, owner.id);
 
       const ctx: any = {
         all: {

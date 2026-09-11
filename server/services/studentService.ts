@@ -90,6 +90,54 @@ export const AAC_SETTINGS_FIELDS = new Set([
   "pressResponseDelay", "interruptOnNewPress",
 ]);
 
+// ==================== User-student link roles ====================
+
+/**
+ * The vocabulary `POST /api/students/:id/link` will accept for
+ * `user_students.role`.
+ *
+ * This is not a new list: it is the enum the AI's own memory schema already
+ * publishes for a user-student link (`userStudentLinkSchema` in
+ * `server/services/memory-schema/institute-memory-schema.ts`), lifted to a
+ * place the HTTP layer can import. The column itself is bare `text` with a
+ * `caregiver` default and a comment ending in "etc.", so before 2026-09-10
+ * `POST /api/students/:id/link` wrote whatever string the caller sent —
+ * including `owner`, the role that carries the delete right.
+ * `server/tests/integration/student-link-authz.test.ts` pins the two lists
+ * equal so they cannot drift.
+ *
+ * ⚠️ It is a gate on the PUBLIC endpoint, NOT a closed domain for the column.
+ * Rows written by other paths legitimately hold values outside it (`parent`,
+ * `clinician`, and whatever production accumulated while the column was free
+ * text), and `verifyStudentAccess` grants access on any ACTIVE link regardless
+ * of role — only `"owner"` is ever read back as privilege. So the service
+ * writers below stay permissive on purpose: turning a legacy role string into a
+ * 500 would be a reliability regression wearing a security badge, and the
+ * attacker-reachable surface is the controller.
+ */
+export const USER_STUDENT_ROLES = ["owner", "caregiver", "therapist", "teacher"] as const;
+export type UserStudentRole = (typeof USER_STUDENT_ROLES)[number];
+
+/**
+ * Roles an INSTITUTE ADMIN may grant. `owner` is deliberately absent:
+ * ownership is the family's relationship to their child (it carries the
+ * owner-only student delete and is the thing `unlinkUser` refuses to remove),
+ * and an admin handing it to themselves IS the escalation this rule exists to
+ * stop. Only an existing owner may create another owner.
+ */
+export const INSTITUTE_ADMIN_GRANTABLE_ROLES: readonly UserStudentRole[] =
+  USER_STUDENT_ROLES.filter((role) => role !== "owner");
+
+export function isUserStudentRole(value: unknown): value is UserStudentRole {
+  return typeof value === "string" && (USER_STUDENT_ROLES as readonly string[]).includes(value);
+}
+
+/** What justified a link write. See `getStudentLinkAuthority`. */
+export type StudentLinkAuthority =
+  | { grant: "owner" }
+  | { grant: "institute_admin"; instituteId: string }
+  | null;
+
 /**
  * Split a mixed update body into student fields and AAC settings fields.
  * Accepts both new-style (no prefix) and old-style (aac* prefix) field names.
@@ -510,11 +558,86 @@ export class StudentService {
 
   // ==================== User-AAC User Link Operations ====================
 
+  /**
+   * LINK AUTHORITY (2026-09-10) — who may add or remove a `user_students` row.
+   *
+   * This is the ONE answer for both `POST /api/students/:id/link` and
+   * `DELETE /api/students/:id/link/:userId`, and it exists because those two
+   * handlers each carried their own copy and both copies were wrong in the
+   * same way: they read `instituteId` OFF THE REQUEST, proved the caller
+   * administered THAT institute and (on link) that the target belonged to it —
+   * and never once asked whether the STUDENT was enrolled in it. Any admin of
+   * any school or clinic could therefore name their own institute, their own
+   * user id and any student uuid in the system and walk away with a link.
+   *
+   * The fix is the direction of the derivation, not a tighter validation of the
+   * caller's id: the candidate institutes come from the STUDENT's active
+   * enrolments, and the only question asked of the caller is whether they
+   * administer one of them. A request-supplied institute id is never consulted,
+   * so there is no confusion left to exploit.
+   *
+   * The rule is stated in §5.5.1 of docs/SECURITY_ARCHITECTURE.md.
+   *
+   * 🚨 `getInstitutesByStudentId` returns `{ institute, enrollment }` rows, NOT
+   * bare institutes. Destructure `{ institute }`; reading `.id` off the row is
+   * `undefined` and is precisely the bug §2.4 of docs/SECURITY_ARCHITECTURE.md
+   * records (four copies of a membership check silently denying everyone for
+   * 4.5 months, hidden from `tsc` by an `(m: any)` cast). This body is
+   * deliberately cast-free.
+   *
+   * Returns `null` when the caller has no authority at all. Institute grants
+   * carry the DERIVED institute id so the audit log records the institute that
+   * actually justified the write rather than one the caller typed.
+   */
+  async getStudentLinkAuthority(
+    studentId: string,
+    userId: string,
+  ): Promise<StudentLinkAuthority> {
+    // A direct, active `owner` link — the family's relationship to their child.
+    const ownLink = await studentRepository.getUserStudentLink(userId, studentId);
+    if (ownLink?.isActive && ownLink.role === "owner") {
+      return { grant: "owner" };
+    }
+
+    // Otherwise: admin of a school/clinic the student is ACTUALLY enrolled in.
+    // Family institutes are excluded here exactly as they were before — a
+    // family member's authority comes from their own `owner` link above.
+    const enrollments = await instituteRepository.getInstitutesByStudentId(studentId);
+    for (const { institute } of enrollments) {
+      if (institute.type !== "school" && institute.type !== "clinic") continue;
+      if (await instituteRepository.isUserAdminOfInstitute(institute.id, userId)) {
+        return { grant: "institute_admin", instituteId: institute.id };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Create or refresh a user's link to a student.
+   *
+   * IDEMPOTENT since 2026-09-10. This used to be a bare INSERT, so re-linking
+   * an already-linked user left TWO rows for the same (user, student) pair —
+   * and `getUserStudentLink` takes an arbitrary one of them. Re-linking the
+   * real owner as a `caregiver` therefore had a coin-flip chance of demoting
+   * them: `verifyStudentAccess` would report `role: "caregiver"`, the
+   * owner-only delete would refuse them, and `unlinkUser`'s "cannot unlink the
+   * owner" guard would stop protecting their row.
+   */
   async linkUserToStudent(
     userId: string,
     studentId: string,
     role: string = "caregiver"
   ): Promise<UserStudent> {
+    const existing = await studentRepository.getUserStudentLink(userId, studentId);
+    if (existing) {
+      const updated = await studentRepository.updateUserStudentLink(existing.id, {
+        role,
+        isActive: true,
+      } as UpdateUserStudent);
+      if (!updated) throw new Error("Failed to update user-student link");
+      return updated;
+    }
     return studentRepository.createUserStudentLink({
       userId,
       studentId,

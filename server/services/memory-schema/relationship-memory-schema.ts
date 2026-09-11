@@ -17,6 +17,7 @@ import {
   type AgentMemoryFieldObjectWithDB,
   type DBOperationContext,
 } from "../chat/memory-types";
+import { requireConsentForMemoryWrite } from "../consent/consentGate";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -71,6 +72,12 @@ async function setRelationshipMemoryField(
   if (!userId || !studentId) {
     throw new Error(`Cannot write to ${fieldId}: missing userId or studentId in context`);
   }
+
+  // Consent gate. `Relationship_Notes` is "general notes about sessions with
+  // this student" — the same observational record as `Student_Notes`, one
+  // table over. Leaving it open would have left the AI a second, identical
+  // door into a consent-pending child's record (2026-09-10 closeout, item A).
+  await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
 
   // Get current relationship
   const [relationship] = await db

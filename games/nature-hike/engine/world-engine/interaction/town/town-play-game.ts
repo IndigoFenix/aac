@@ -68,6 +68,8 @@ export const TOWN_WORLD_FIELDS: GroupSpec = {
       description: "The ground the town sits on (a boundary a parent region can supply)." },
     { key: "cluster", kind: "int", min: 0, max: 4, facet: "interior", label: "Neighbor hamlets",
       description: "Extra living towns streamed into the same walking session (0..4)." },
+    { key: "hamlets", kind: "custom", validate: parseHamlets, facet: "interior", label: "Hamlet overrides",
+      description: "Per-hamlet settings for the `cluster` ring, index-aligned (0..4 entries): { population, days, seed, charter }. Omitted entries keep the ring's defaults." },
     // E4 (nations P3): the numeraire routes commodity quotes once trade is
     // dense — validated against the compiled economy at build. Absent = barter.
     { key: "numeraire", kind: "string", invalidMessage: "must be a commodity key string",
@@ -93,6 +95,56 @@ function parseStock(raw: unknown, path: string): Record<string, number> {
     out[glyph] = v;
   }
   return out;
+}
+
+/** PER-HAMLET OVERRIDES for the `cluster` ring (trade-topology-round U-1):
+ *  index-aligned entries of the SAME town config the primary takes. The
+ *  author's word is `population`; the config's founding seam says `startPop`,
+ *  remapped here exactly as `parseTownWorld` remaps the primary's. */
+function parseHamlets(raw: unknown, path: string): NonNullable<TownPlayConfig["hamlets"]> {
+  if (!Array.isArray(raw)) fail(path, "expected an array of per-hamlet settings (index-aligned with `cluster`)");
+  if (raw.length > 4) fail(path, `too many entries (max 4, one per hamlet; got ${raw.length})`);
+  return raw.map((entry, i) => {
+    const at = `${path}[${i}]`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail(at, "expected an object (allowed: population, days, seed, charter)");
+    }
+    const e = entry as Record<string, unknown>;
+    const out: NonNullable<TownPlayConfig["hamlets"]>[number] = {};
+    for (const k of Object.keys(e)) {
+      if (!["population", "days", "seed", "charter"].includes(k)) {
+        fail(`${at}.${k}`, "unknown field (allowed: population, days, seed, charter)");
+      }
+    }
+    const int = (key: string, min: number, max: number): number => {
+      const v = e[key];
+      if (typeof v !== "number" || !Number.isFinite(v) || !Number.isInteger(v) || v < min || v > max) {
+        fail(`${at}.${key}`, `must be an integer in ${min}..${max}`);
+      }
+      return v;
+    };
+    if ("population" in e) out.startPop = int("population", 1, 10000);
+    if ("days" in e) out.days = int("days", 0, 5000);
+    if ("seed" in e) out.seed = int("seed", 0, 0xffffffff);
+    if ("charter" in e) {
+      const c = e.charter;
+      if (!c || typeof c !== "object" || Array.isArray(c)) {
+        fail(`${at}.charter`, "expected an object of endowment scalars (farmland, ore_access, timberland)");
+      }
+      const cr = c as Record<string, unknown>;
+      for (const [k, v] of Object.entries(cr)) {
+        if (!["farmland", "ore_access", "timberland"].includes(k)) {
+          fail(`${at}.charter.${k}`, "unknown field (allowed: farmland, ore_access, timberland)");
+        }
+        if (typeof v !== "number" || !Number.isFinite(v)) fail(`${at}.charter.${k}`, "must be a finite number");
+      }
+      for (const k of ["farmland", "ore_access"]) {
+        if (!(k in cr)) fail(`${at}.charter.${k}`, "required — a charter declares farmland and ore_access");
+      }
+      out.charter = cr as unknown as NonNullable<TownPlayConfig["charter"]>;
+    }
+    return out;
+  });
 }
 
 /** Deep gate for a town-scoped `world` object. */

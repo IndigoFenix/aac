@@ -1,0 +1,10 @@
+# arc-run world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=1 dayS=240
+day   1  rations=   2.80  takes=   7  parked=  0 resel=  1  sleeps=  2  hungry=4/5 mean=1.12
+
+# takes=7 (zero-yield=1)  ≥6u=0  sizes=0.2u×5 0.8u×1 1u×1
+# food units=2.80 over 1 days = 2.8/day
+# parked=0  re-selected=1  sleeps=2  reaped=0  haul ABANDONED=0 RE-ISSUED=0
+# starvation body-days ≥1.5=0  ≥3=0
+# frozen body-seconds=0  episodes>60s=0
+# construction beats: materialsStaged=-  houseFinished=-  anyFinished=-  familyMovesIn=-
+# wall=1.2s  sim/wall=195.6×  bodies=5

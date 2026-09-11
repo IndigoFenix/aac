@@ -64,6 +64,42 @@ export type ProductUse = "food" | "drink" | "building" | "raw";
  */
 export type AcquisitionMethod = "harvest" | "kill" | "deplete";
 
+// ── 🌿 HOW MUCH A SQUARE METRE OF PLANT MAKES (resource-packing round) ──────
+//
+// ⚖️ THE PLANT FACTS LIVE HERE, and this module is the PURE LEAF, so the yield
+// table lives here too rather than in `scale.ts` (which it could not import
+// anyway). The packing pass (`planet/packing.ts`) reads it; nothing here reads
+// the pass.
+//
+// The class is the plant's PRODUCTION HABIT, not its taxonomy: what a square
+// metre of its own canopy/rosette makes in edible kcal over one year, GROSS
+// (before the forager's share — `scale.ts REAL_FORAGE_CAPTURE_FRACTION`).
+
+/** A plant's edible-production habit — the coarse band its real yield sits in. */
+export type ForageYieldClass = "shrub_fruit" | "mast" | "tree_fruit" | "herb_root";
+
+/**
+ * GROSS edible production, kcal per m² of the plant's own crown disc per YEAR.
+ * Every figure is a real-world reading, shown as its own arithmetic so the
+ * class band can be checked rather than believed.
+ *
+ * 🚫 NOT A BALANCE TABLE. A species whose real number falls outside its class
+ * band declares `yieldKcalPerM2Yr` on its own product row instead of the band
+ * being widened to swallow it.
+ */
+export const REAL_FORAGE_YIELD_KCAL_PER_M2_YR: Readonly<Record<ForageYieldClass, number>> = {
+  // bramble / blueberry thicket ~1.0 kg/m²/yr fresh fruit × ~500 kcal/kg
+  shrub_fruit: 500,
+  // wild hazel ~1.5 kg nuts-in-shell a bush, 45 % kernel = 0.6 kg kernel
+  // spread over a 7.1 m² crown × 6280 kcal/kg
+  mast: 533,
+  // WILD crab apple ~10 kg over a 4.5 m crown (15.9 m²) × 520 kcal/kg — a
+  // wild tree, deliberately not an orchard tree (which is several times this)
+  tree_fruit: 260,
+  // wild carrot: one ~30 g taproot per 0.07 m² of rosette × 410 kcal/kg
+  herb_root: 174,
+};
+
 export interface NaturalProduct {
   /** The stack glyph one take mints ("wood", "wool", "apple", "milk"). */
   glyph: string;
@@ -88,13 +124,51 @@ export interface NaturalProduct {
   method: AcquisitionMethod;
   /** Units one acquisition act releases, rolled uniformly min..max. */
   yield: { min: number; max: number };
-  /** `harvest` only: days until the source bears it again. */
+  /**
+   * `harvest` only: days until ONE source bears ONE more unit of this glyph.
+   *
+   * ⚖️ REAL DAYS, NEVER GAME DAYS (plant-growth-render-round.md PART 6,
+   * 2026-09-08). These were playable numbers — a berry bush replacing a berry
+   * every 2 days, an apple tree every 1 — and a playable number is a
+   * COMPRESSION that has been folded into the data, where no dial can find it
+   * again. The catalogue now says what a plant actually does (a bush replaces
+   * a berry unit in about a third of a growing season; a nut tree carries one
+   * mast a year), and the WORLD's `resource_compression` divides it at the
+   * point of use (`wildRegrowPeriodS`) — natural → usable, the block
+   * paradigm's own meaning of the dial. At the shipped GL preset's 7.5 a bush
+   * bears every 16 game-days and the countryside's per-hectare FLOW lands on
+   * `scale.ts REAL_FORAGE_HA_PER_PERSON`; at dial 1 it is the real plant.
+   *
+   * 🚨 THE FLOW IS THE ANCHORED QUANTITY, NOT THIS FIELD. A cadence here is
+   * only half of "what this ground feeds you"; the other half is how thickly
+   * the species stands (`planet/ecology.ts FORAGE_UNDERSTORY`). Change one and
+   * the other has to move back, or the countryside quietly stops matching the
+   * forage anchor.
+   */
   regrowDays?: number;
   /** The TOOL that speeds this take (city-founding: "more effective with an
    *  axe or pick, but can be done by hand"): holding the named glyph moves
    *  `multiplier` units per act instead of one. Spec data, never an engine
    *  constant — a new tool is a new row here, not new machinery. */
   tool?: { glyph: string; multiplier: number };
+  /**
+   * 🍎 WHAT ONE UNIT IS WORTH IN KCAL — the real food value of ONE ITEM of
+   * this glyph (one apple, one 100 g punnet of berries).
+   *
+   * ⚖️ REPORTED, NOT YET APPLIED. `goods-kinds.ts realSatiationDaysOf` turns
+   * this into person-days (`kcal / RATION_KCAL`) and it is the REAL foundation
+   * under the shipped class value — but `satiationDaysOf` keeps its content
+   * table (0.2 days for every raw food), because the user's ruling is that
+   * "fruits are roughly similar" and the kcal-derived spread (a berry 0.105, a
+   * nut 0.396) leaves that band. See `ITEM_SATIATION_GAMEPLAY`.
+   */
+  kcalPerItem?: number;
+  /**
+   * PER-SPECIES OVERRIDE of `REAL_FORAGE_YIELD_KCAL_PER_M2_YR[yieldClass]`,
+   * declared ONLY where the real reading falls outside its class band. The
+   * class stays the plant's habit; this says its own number.
+   */
+  yieldKcalPerM2Yr?: number;
 }
 
 export type NaturalSourceKind = "plant" | "animal" | "mineral";
@@ -263,11 +337,56 @@ export interface NaturalSource {
    *  imbalance alone writes the trade map: tin scarce + iron common = the
    *  Bronze Age's whole geography. */
   rarity?: number;
+  /**
+   * 🌿 THE LIGHT-DRAIN DISC, metres — THE RADIUS OF ONE STAND, i.e. of the
+   * thing the engine actually PLACES. For a tree that is its crown; for a
+   * CLUMPING herb (a wild-carrot patch, an allium clump) it is the clump, not
+   * one leaf rosette, because a clump is what stands there and what a forager
+   * walks to.
+   *
+   * ⚖️ THIS IS WHAT MAKES DENSITY DERIVABLE (resource-packing round). A plant
+   * occupies ground and drinks light; how many fit in a hectare is then
+   * arithmetic (`planet/packing.ts`) rather than a hand-balanced count. ABSENT
+   * ⇒ this row carries no packing geometry and the pass leaves it alone.
+   */
+  crownRadiusM?: number;
+  /** The WATER + NUTRIENT drain disc, metres — the root plate, wider than the
+   *  crown for every plant that has to find its own water. Absent ⇒ 0. */
+  rootRadiusM?: number;
+  /** This plant's edible-production habit — the band in
+   *  `REAL_FORAGE_YIELD_KCAL_PER_M2_YR` its real yield sits in. A product row
+   *  may override the band's number with its own `yieldKcalPerM2Yr`. */
+  yieldClass?: ForageYieldClass;
 }
 
 /** A source's worldgen abundance weight (1 = common — the default). */
 export function sourceRarityOf(src: NaturalSource): number {
   return src.rarity ?? 1;
+}
+
+/** The ground disc ONE stand of this source shades, m². 0 when the row
+ *  declares no crown — "no packing geometry" said as a number. */
+export function crownAreaM2(src: NaturalSource): number {
+  const r = src.crownRadiusM ?? 0;
+  return r > 0 ? Math.PI * r * r : 0;
+}
+
+/** The ground disc ONE stand of this source drinks from, m². 0 when unset. */
+export function rootAreaM2(src: NaturalSource): number {
+  const r = src.rootRadiusM ?? 0;
+  return r > 0 ? Math.PI * r * r : 0;
+}
+
+/** GROSS edible production of one m² of this source's crown, kcal/yr: the
+ *  product row's own override, else the source's class band, else 0 (a row
+ *  that never said what it makes makes nothing — the honest answer, and the
+ *  same convention `standDensityPerHa` uses for an unscattered species). */
+export function forageYieldKcalPerM2Yr(
+  src: NaturalSource,
+  product: NaturalProduct,
+): number {
+  if (product.yieldKcalPerM2Yr !== undefined) return product.yieldKcalPerM2Yr;
+  return src.yieldClass ? REAL_FORAGE_YIELD_KCAL_PER_M2_YR[src.yieldClass] : 0;
 }
 
 // The catalogue. Order is load-bearing where glyph lists are derived from it
@@ -285,6 +404,16 @@ const CATALOGUE: NaturalSource[] = [
     // never this number alone. The box `feature` stays as the fallback
     // presentation for sources that lose their body.
     bodyHeightM: 23.8,
+    // 🌳 THE CANOPY'S GEOMETRY, STATED BUT NOT PACKED. A mature open-grown oak
+    // spreads 15–25 m (crown radius 7.5–12.5 m) with a root plate wider still;
+    // 9.0 / 13.0 is a woodland stem near the low end of that. The packing pass
+    // deliberately does NOT place oaks — the BAKED `eco_tree` field is the
+    // canopy's one authority (`ecology.ts TREE`, 43/ha at full suitability) and
+    // two authorities for one number is the drift this round exists to end.
+    // The numbers are here because the pass reads `cover` off that same field
+    // and a reader must be able to see what a canopy stand costs.
+    crownRadiusM: 9.0,
+    rootRadiusM: 13.0,
     feature: { icon: "🌳", radiusM: 0.7 },
     products: [
       {
@@ -335,6 +464,12 @@ const CATALOGUE: NaturalSource[] = [
     species: "apple_tree",
     kind: "plant",
     bodyHeightM: 3.4,
+    // 🍏 A WILD CRAB APPLE'S SPREAD is 4–8 m; 4.49 m (radius 2.246) is the low
+    // end — a forest-edge tree crowded by the wood it stands in, which is where
+    // this row's niche puts it. Roots reach ~1.4× the crown on a fruit tree.
+    crownRadiusM: 2.246,
+    rootRadiusM: 3.167,
+    yieldClass: "tree_fruit",
     // COOL TEMPERATE ORCHARD. Read against ecology.ts TREE (rain lo .45 /
     // opt 1.0, tempC 0/18/34): the apple stands on the forest's moisture
     // floor but peaks DRY of it (opt 0.9) and stops warm at 25 °C, far
@@ -355,7 +490,9 @@ const CATALOGUE: NaturalSource[] = [
     // noticing when you find one.
     rarity: 0.2,
     products: [
-      { glyph: "apple", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // ONE CROP A YEAR, replaced unit by unit over half of it (PART 6: real
+      // days, the dial compresses). At the GL dial 7.5 that is 24 game-days.
+      { glyph: "apple", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 180, kcalPerItem: 95 },
       {
         glyph: "wood",
         use: "building",
@@ -383,6 +520,13 @@ const CATALOGUE: NaturalSource[] = [
     species: "banana_plant",
     kind: "plant",
     bodyHeightM: 3.4,
+    // 🍌 A banana's leaf crown is ~4 m across and its corm/root plate about the
+    // same — a pseudostem holds no wide woody root. A WILD banana is seedy and
+    // low-yield: at the `tree_fruit` band it works out ~1.4× a crab apple per
+    // m², which is inside the band, so no override.
+    crownRadiusM: 2.0,
+    rootRadiusM: 2.0,
+    yieldClass: "tree_fruit",
     // TROPICAL WET, FROST-DEAD. The hard `lo: 19` IS the join's headline
     // case: no temperate mean carries a banana, which is the plant the
     // unfiltered pick used to stand on a cold homestead. One-sided on the
@@ -398,13 +542,22 @@ const CATALOGUE: NaturalSource[] = [
     // plant and an occasional one.
     rarity: 0.2,
     products: [
-      { glyph: "banana", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // A bunch a year off one pseudostem — the apple's cadence (PART 6).
+      { glyph: "banana", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 180, kcalPerItem: 105 },
     ],
   },
   {
     species: "grape_vine",
     kind: "plant",
     bodyHeightM: 3.4,
+    // 🍇 A wild vine drapes whatever it climbs — ~4 m of canopy — over a deep,
+    // narrow root. It is the one row that leaves its class band: a wild vine
+    // carries ~2 kg of fruit over that 4 m canopy (12.6 m²) at 690 kcal/kg =
+    // 110 kcal/m²/yr, 2.4× UNDER `tree_fruit`. The habit is still tree_fruit;
+    // the number is declared on the product row (`yieldKcalPerM2Yr`).
+    crownRadiusM: 2.0,
+    rootRadiusM: 2.5,
+    yieldClass: "tree_fruit",
     // WARM DRYISH TEMPERATE — the Mediterranean slot, and the reason the
     // three fruits are not interchangeable. Its rain window is GRASS's
     // (.2/.5/1.1) nudged wet: the vine takes the steppe's dry middle where
@@ -419,7 +572,16 @@ const CATALOGUE: NaturalSource[] = [
     // 🍇 …and the wild vine, likewise.
     rarity: 0.2,
     products: [
-      { glyph: "grape", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // One vintage a year — the apple's cadence (PART 6).
+      {
+        glyph: "grape", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 180,
+        // one 100 g bunch = 69 kcal
+        kcalPerItem: 69,
+        // 🍇 THE ONE OVERRIDE (see `crownRadiusM` above): a wild vine makes ~2 kg
+        // over a 4 m canopy (12.6 m²) at 690 kcal/kg = 110, against the
+        // `tree_fruit` band's 260. Declared, not averaged away.
+        yieldKcalPerM2Yr: 110,
+      },
     ],
   },
   {
@@ -540,6 +702,12 @@ const CATALOGUE: NaturalSource[] = [
     species: "carrot_plant",
     kind: "plant",
     bodyHeightM: 0.4,
+    // 🥕 A wild-carrot PATCH is ~1 m across, and the patch is what stands there
+    // (one rosette is 0.3 m and is not a thing you walk to). Root plate barely
+    // wider than the crown — a taproot goes down, not out.
+    crownRadiusM: 0.5,
+    rootRadiusM: 0.55,
+    yieldClass: "herb_root",
     // HARDY GENERALIST ROOT CROP — the food plant a founding can put in the
     // ground almost anywhere, and the reason "a growing biome with no
     // bearer" is not a normal outcome of the filter. The widest windows in
@@ -580,7 +748,12 @@ const CATALOGUE: NaturalSource[] = [
     // countryside's commonest food on every continent at once.
     rarity: 0.1,
     products: [
-      { glyph: "carrot", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 1 },
+      // A root crop is SOWN, grown and lifted once a season — as a WILD plant
+      // (the hedgerow carrot the forager finds) that is one unit per third of
+      // a year. 🚨 The town FARM does NOT read this: `stepFarmSource` and
+      // `sowStarterStand` both hand `ripenWildArea` a flat FOOD_DAY_SEC, so a
+      // ploughed field still ripens on its own daily pulse (PART 6).
+      { glyph: "carrot", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 120, kcalPerItem: 25 },
     ],
   },
 
@@ -621,6 +794,13 @@ const CATALOGUE: NaturalSource[] = [
     // blueprint measures 1.94 m off `buildSkeleton` bounds and is scaled to
     // this, exactly as the apple tree's 6.34 m build is stood at 3.4.)
     bodyHeightM: 1.2,
+    // 🫐 A bramble/blueberry clump spreads 1.5–2.5 m; 2.0 m across (radius 1.0)
+    // is the middle of it, and it is THE SCALE ANCHOR of the packing round —
+    // every other crown was solved against the targets with this one held at
+    // its real value. Shallow fibrous roots, barely past the canopy.
+    crownRadiusM: 1.0,
+    rootRadiusM: 1.2,
+    yieldClass: "shrub_fruit",
     feature: { icon: "🌳", radiusM: 0.45 },
     // THE FOREST EDGE, read against ecology.ts TREE (rain lo .45) and GRASS
     // (rain .2/.5/1.1): the floor sits BETWEEN them (0.3), which is the ground
@@ -640,7 +820,13 @@ const CATALOGUE: NaturalSource[] = [
     products: [
       // Berries come in FLUSHES, so the bearing is generous and the wait is two
       // days rather than the orchard's one.
-      { glyph: "berry", use: "food", method: "harvest", yield: { min: 2, max: 4 }, regrowDays: 2 },
+      // Berries come in FLUSHES, so the bearing is generous — but a bush
+      // replaces a picked unit over about a third of a growing season, not in
+      // two days (PART 6). At the GL dial 7.5: 16 game-days.
+      // ⚖️ PAIRED WITH THE SHRUB DENSITY (PART 6b): this doubled when
+      // `FORAGE_UNDERSTORY`'s bush row doubled, so the per-hectare flow the
+      // forage anchor pins did not move. Neither number is free on its own.
+      { glyph: "berry", use: "food", method: "harvest", yield: { min: 2, max: 4 }, regrowDays: 120, kcalPerItem: 50 },
     ],
   },
   {
@@ -652,6 +838,13 @@ const CATALOGUE: NaturalSource[] = [
     // wood with (3.4) and a sixth of the oak's crown, which is what "grows
     // under the canopy" has to look like from the ground.
     bodyHeightM: 4,
+    // 🌰 Corylus spreads 3–5 m; 2.94 m across (radius 1.472) is the LOW end —
+    // a suppressed understorey stem, which is exactly what this row's own note
+    // says a hazel is ("an inhabitant of the wood TREE makes"). A multi-stemmed
+    // shrub-tree's roots run ~1.33× the crown.
+    crownRadiusM: 1.472,
+    rootRadiusM: 1.958,
+    yieldClass: "mast",
     feature: { icon: "🌳", radiusM: 0.55 },
     // CLOSED TEMPERATE FOREST. Wetter at the floor than TREE (0.55 vs 0.45) and
     // WARMER at the floor than TREE's 0 °C (lo 2): a hazel is an inhabitant of
@@ -668,7 +861,11 @@ const CATALOGUE: NaturalSource[] = [
     products: [
       // A heavy take on a slow clock — one good autumn, carried through a
       // winter, which is what a nut is FOR.
-      { glyph: "nut", use: "food", method: "harvest", yield: { min: 2, max: 5 }, regrowDays: 4 },
+      // ONE MAST A YEAR, carried through a winter — which is what a nut is FOR,
+      // and now what the number says (PART 6). At the GL dial 7.5: 32
+      // game-days. Paired with the hazel density, exactly as berry is with
+      // bush (PART 6b).
+      { glyph: "nut", use: "food", method: "harvest", yield: { min: 2, max: 5 }, regrowDays: 240, kcalPerItem: 188 },
     ],
   },
   // 🍄 THE MUSHROOM IS DESIGNED AND NOT SHIPPED — and the reason is a LAW, not
@@ -704,6 +901,12 @@ const CATALOGUE: NaturalSource[] = [
     // 0.5 m — the blade tuft is ankle-high and the flower stalk carries it to
     // knee height, which is the only reason you can see one in long grass.
     bodyHeightM: 0.5,
+    // 🧅 An allium CLUMP is ~1.2 m across — bulbs split and re-bulk in place,
+    // so the clump is the stand. A bulb keeps its water underground and its
+    // roots no wider than the leaf spread.
+    crownRadiusM: 0.6,
+    rootRadiusM: 0.6,
+    yieldClass: "herb_root",
     feature: { icon: "🌱", radiusM: 0.2 },
     // GRASS'S OWN WINDOW, NUDGED DRY. Its floor (0.15) is below GRASS's 0.2 and
     // level with the sheep's, because a bulb keeps its water underground and
@@ -718,7 +921,8 @@ const CATALOGUE: NaturalSource[] = [
     },
     rarity: 0.75,
     products: [
-      { glyph: "onion", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 3 },
+      // A bulb splits and re-bulks over a season (PART 6). Dial 7.5: 20 days.
+      { glyph: "onion", use: "food", method: "harvest", yield: { min: 1, max: 3 }, regrowDays: 150, kcalPerItem: 4 },
     ],
   },
 ];

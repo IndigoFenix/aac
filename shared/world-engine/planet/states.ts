@@ -14,7 +14,8 @@
 // village's state is simply the label of its region's tier-0 cell.
 
 import { costClaims, edgeCost } from "../kernel/civ/travel.js";
-import { chaikinSphere, planetTravelOpts } from "./routes.js";
+import { chaikinSphere, travelOptsOf } from "./routes.js";
+import { sphereWorld, type SettledWorld } from "./surface-metric.js";
 import type { BuiltPlanet } from "./planet-game.js";
 import type { PlanetCity } from "./cities.js";
 
@@ -56,15 +57,20 @@ export interface PlanetStatesOpts {
 }
 
 /**
- * Claim the planet for its capitals. One multi-source Dijkstra over the
- * tier-0 substrate plus one adjacency scan — PURE (the grid is never
- * written) and deterministic in (built, cities, opts).
+ * ⚖️ THE SUBSTRATE-AGNOSTIC CLAIM (planet-boot round S3b) — DATA PATH ONLY:
+ * the two lines that read `metresPerCell` (`travel`/`mpc` below) now come
+ * off ANY `SettledWorld`'s metric, through `travelOptsOf`. Everything past
+ * that (Dijkstra, adjacency scan) was already generic over `grid` and never
+ * touched a sphere fact. `planetStates` below is the sphere wrapper.
+ *
+ * `claimAt`/`stateBorders` further down are left SPHERE-ONLY, documented —
+ * they are render/read consumers with no region caller this round.
  */
-export function planetStates(
-  built: BuiltPlanet, cities: readonly PlanetCity[], opts: PlanetStatesOpts = {},
+export function statesOn(
+  world: SettledWorld, cities: readonly PlanetCity[], opts: PlanetStatesOpts = {},
 ): PlanetStates {
-  const grid = built.grid;
-  const travel = planetTravelOpts(built);
+  const grid = world.grid;
+  const travel = travelOptsOf(world.metric);
   const mpc = travel.metresPerCell ?? 1000;
   const cap = opts.maxClaimCostM !== undefined ? opts.maxClaimCostM / mpc : Infinity;
   const { owner, dist } = costClaims(grid, cities.map(c => c.cell), travel, cap);
@@ -100,6 +106,15 @@ export function planetStates(
   }
   const adjacency = [...cheapest.values()].sort((p, q) => p.a - q.a || p.b - q.b);
   return { stateOf: owner, costM, adjacency, borderCells };
+}
+
+/** Claim the planet for its capitals — the sphere wrapper of `statesOn`.
+ *  Unchanged signature/behaviour; `planetTravelOpts(built)` and
+ *  `travelOptsOf(sphereWorld(built).metric)` are the same two numbers. */
+export function planetStates(
+  built: BuiltPlanet, cities: readonly PlanetCity[], opts: PlanetStatesOpts = {},
+): PlanetStates {
+  return statesOn(sphereWorld(built), cities, opts);
 }
 
 export interface StatePairOpts {

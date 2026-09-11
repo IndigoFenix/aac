@@ -503,7 +503,9 @@ export interface TextCheatHost {
    *  drops — a held bag is "the shelf, not the goods". Without it `/carry` said
    *  "(nothing)" for a body walking home with an empty basket. */
   handsOf?(cid: string): { objId: string; glyph: string; bag: boolean } | null;
-  debugProbe?(): string;
+  /** ⚖️ THE STATUS LINE — and, with a cid, that body's SKILLS
+   *  (skill-learning-round.md §2.6): `key=level(mult×)`, sorted, cheats-only. */
+  debugProbe?(cid?: string): string;
   /** ⚖️ WHY-CHAINS §4 — the creature's REAL task chain, walked (`/why <id>`).
    *  THE DEGENERATION INSTRUMENT: what is this body actually under orders to
    *  do? A pure read — deriving a chain moves nothing (law ③). */

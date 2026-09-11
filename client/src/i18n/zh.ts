@@ -66,9 +66,9 @@ export const zh = {
   // ============================================================================
   identity: {
     verificationRequired: "需要身份验证",
-    verificationNeeded: "{{institute}}要求通过{{provider}}进行验证。请验证您的身份以访问该组织。",
-    verificationExpired: "您在{{institute}}的{{provider}}验证已过期。请重新验证您的身份。",
-    verifyNow: "通过{{provider}}验证",
+    verificationNeeded: "{institute}要求通过{provider}进行验证。请验证您的身份以访问该组织。",
+    verificationExpired: "您在{institute}的{provider}验证已过期。请重新验证您的身份。",
+    verifyNow: "通过{provider}验证",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const zh = {
     genderOther: "其他",
     primaryLanguage: "主要语言",
     dateOfBirth: "出生日期",
-    ageDisplay: "年龄：{{age}}岁",
+    ageDisplay: "年龄：{age}岁",
     systemType: "教育体系",
     frameworkTala: "TALA（以色列）",
     frameworkIep: "IEP（美国）",
@@ -1081,9 +1081,9 @@ export const zh = {
     clearUnsavedDesc: "您有未保存的更改。清除看板前要保存吗？",
     discardAndClear: "放弃并清除",
     saveAndClear: "保存并清除",
-    generatingIcons: "正在生成图标，剩余：{{remaining}}",
+    generatingIcons: "正在生成图标，剩余：{remaining}",
     iconsGenerated: "所有图标已成功生成",
-    iconsFailed: "{{count}}个图标生成失败",
+    iconsFailed: "{count}个图标生成失败",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const zh = {
     importWarning: "导入将替换当前看板。某些 Grid3 功能可能无法完美导入。",
     importButton: "导入",
     importSuccess: "看板已导入",
-    importSuccessDesc: "已从 Dropbox 导入“{{name}}”",
+    importSuccessDesc: "已从 Dropbox 导入“{name}”",
     importFailed: "导入失败",
     noFilesFound: "在您的 Dropbox 文件夹中未找到看板文件。",
   },
@@ -1349,6 +1349,8 @@ export const zh = {
     noStudentsDesc: "添加您的第一个{{STUDENT}}以开始",
     noResults: "未找到{{STUDENTS}}",
     noResultsDesc: "请调整搜索条件或筛选器",
+    selectInstituteFirst: "请先选择一个机构以添加{{student}}",
+    selectInstituteEmpty: "选择一个机构以查看{{students}}",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const zh = {
     gasOverallScoreDesc: "GAS 评分目标的总体进度。50 = 预期。",
     gasAtOrAbove: "达到或高于预期",
     gasBelow: "低于预期",
-    gasGoalsCounted: "基于 {{count}} 个有记录数据的 GAS 目标。",
+    gasGoalsCounted: "基于 {count} 个有记录数据的 GAS 目标。",
     goalCompletion: "目标完成率",
     goalsByDomain: "按领域分类的目标",
     timeline: "时间线",
@@ -1779,7 +1781,7 @@ export const zh = {
     title: "进度数据",
     noDataPoints: "暂无记录数据",
     collectedBy: "采集人",
-    moreCount: "+{{count}}条更多记录",
+    moreCount: "+{count}条更多记录",
 
     numericValue: "数值",
     numericPlaceholder: "例如 85",
@@ -2206,7 +2208,7 @@ export const zh = {
 
   reports: {
     title: "报告",
-    subtitle: "{{name}}的报告",
+    subtitle: "{name}的报告",
     noStudent: "请选择{{STUDENT}}以查看报告",
     noStudentSelected: "未选择{{STUDENT}}",
     selectStudentFirst: "请先选择{{STUDENT}}以查看其报告",
@@ -2243,10 +2245,12 @@ export const zh = {
     finalizeTitle: "定稿报告",
     finalizeWarning: "一旦定稿，此报告将无法编辑。您需要创建新的修订版来进行更改。",
     finalizeCannotUndo: "此操作无法撤消。",
+    consentWarning: "定稿已被阻止：档案中没有知情同意记录。需要先由家长或法定监护人签署同意书。",
+    finalizeFailed: "无法定稿该报告。",
 
     confirmCreate: {
       title: "创建新报告",
-      description: "这将创建一份新的{{type}}报告。任何现有的活跃报告将被归档。",
+      description: "这将创建一份新的{type}报告。任何现有的活跃报告将被归档。",
       confirm: "创建"
     },
 
@@ -2365,7 +2369,7 @@ export const zh = {
     },
 
     empty: {
-      title: "暂无{{type}}报告",
+      title: "暂无{type}报告",
       description: "创建新报告以开始。"
     },
 
@@ -2988,7 +2992,7 @@ export const zh = {
     selectOrGenerate: "选择一项分析或生成新分析。",
     selectStudent: "选择一名{{STUDENT}}以生成深度分析。",
     untitled: "未命名的分析",
-    inProgress: "进行中（第 {{STEP}} 步）...",
+    inProgress: "进行中（第 {STEP} 步）...",
     delete: "删除",
     confirmDelete: "永久删除此分析？",
     error: "错误",
@@ -3074,7 +3078,7 @@ export const zh = {
       categoryPages: "按类别分组",
       dietaryTags: "显示饮食标签",
       dietaryTagsDesc: "供您查看，而非学生。这些标签不可靠，也不会过滤任何内容。",
-      autoNow: "当前：{{value}}",
+      autoNow: "当前：{value}",
     },
     review: {
       title: "待检查的菜单",
@@ -3171,9 +3175,15 @@ export const zh = {
     LICENSE_ALREADY_PAID: "此许可证已经付款。",
     LICENSE_NOT_PURCHASABLE: "此许可证无法在线支付，请与我们联系。",
     PADDLE_NOT_CONFIGURED: "目前无法在线支付，请稍后再试或与我们联系。",
+    consent_required: "在定稿此报告之前，需要有效的知情同意记录。",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "无法获取同意信息",
+      loadFailedDescription: "无法加载该 {{student}} 的同意记录。这并不表示没有记录，而是请求失败了。",
+      retry: "重试",
+    },
     authority: {
       title: "同意权限",
       description: "默认情况下，由谁同意取决于学生的法定成年年龄。如果成年学生仍处于法定监护之下，或未成年人自行同意，可在此处覆盖该设置。",
@@ -3306,6 +3316,27 @@ export const zh = {
         attemptsRemaining: "还剩 {count} 次尝试。",
         locked: "错误次数过多。请让诊所重新发送链接。",
       },
+      attest: {
+        identityIntro: "您正在当面记录这份同意书，监护人在场。继续之前请核对以下信息。",
+        guardianLabel: "签署的监护人",
+        attestedByLabel: "见证人",
+        guardianIntro: "记录监护人出示的身份证明文件。请完全照文件上的内容输入。",
+        coGuardianDeclaration: "监护人确认其为法定监护人，并有权代表其他监护人作出此项同意。",
+        signatureIntro: "现在请将设备交给监护人。签名必须由本人签署。",
+        signatureLegal: "签署即表示监护人确认其为法定监护人，并授权此项同意。",
+        stepIntro: "最后，请确认您所见到的情况。此声明将与同意记录一并保存，并载明您为见证的治疗师。",
+        documentLabel: "已查验的文件",
+        presenceDeclaration: "本人确认监护人当时亲自在场，本人已查验上述登记的身份证明文件，且与签署人相符。",
+        notesLabel: "备注（选填）",
+        notesPlaceholder: "例如：护照有效期至 2031 年，姓名相符",
+        legal: "您的姓名、用户账户及本次见证的时间将作为证据保存在同意记录中。",
+        reviewIntro: "保存前请核对记录。一经保存便无法修改，只能撤销后重新签署。",
+        methodLabel: "验证方式",
+        methodValue: "治疗师当面见证",
+        submitButton: "记录同意",
+        toastTitle: "已记录同意",
+        toastDescription: "当面取得的同意已连同您的见证一并保存。",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const zh = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "同意记录",
       activeBadge: "生效中",
@@ -3364,6 +3447,11 @@ export const zh = {
       revokeReasonPlaceholder: "原因（可选）",
       toastRevoked: "同意已撤销",
       toastRevokeFailed: "无法撤销",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const zh = {
       reverificationDays: "重新验证（天）",
       autoProvision: "自动创建新用户",
       autoProvisionDesc: "当用户通过此 IdP 进行身份验证但没有 Aivota 帐户时,从 SSO 声明中创建帐户并进行关联。对于机构 IdP(例如 IL MoE Sapakim)是必需的,因为用户期望直接登录到达。",
-      days: "{{count}}天",
+      days: "{count}天",
       never: "从不",
       neverPlaceholder: "留空表示从不",
       discoveryUrl: "发现 URL",
@@ -4076,8 +4164,8 @@ export const zh = {
     noInstitute: "加入组织即可开始通话",
     loadingContacts: "正在加载联系人…",
     noContacts: "未找到联系人",
-    callPerson: "呼叫 {{name}}",
-    callPersonAuto: "自动呼叫 {{name}}",
+    callPerson: "呼叫 {name}",
+    callPersonAuto: "自动呼叫 {name}",
     students: "学生",
     online: "在线",
     offline: "离线",
@@ -4157,7 +4245,7 @@ export const zh = {
     title: "联系人",
     panelTitle: "学生联系人",
     description: "学生认识的人 — 父母、同学、治疗师。",
-    forStudent: "{{name}} 的联系人",
+    forStudent: "{name} 的联系人",
     empty: "尚未记录联系人。",
     add: "添加联系人",
     new: "新联系人",
@@ -4351,7 +4439,7 @@ export const zh = {
       title: "撤销全部访问权限？",
       description: "您授予该组织、针对此学生的所有有效共享（按对象共享和长期共享）都将被撤销。此操作无法撤消。",
       confirm: "全部撤销",
-      toastSuccess: "已撤销 {{count}} 项共享。",
+      toastSuccess: "已撤销 {count} 项共享。",
     },
     inbox: {
       pendingHeader: "待处理邀请",
@@ -4372,8 +4460,8 @@ export const zh = {
     },
     standing: {
       expired: "已过期",
-      expiresInDays: "{{days}} 天后过期",
-      expiresOn: "{{date}} 过期",
+      expiresInDays: "{days} 天后过期",
+      expiresOn: "{date} 过期",
       renewedToast: "长期共享已续期 1 年。",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const zh = {
     field: {
       codeExpires: "代码过期时间",
       shareExpires: "共享过期时间",
-      sensitiveCount: "{{count}} 项敏感内容",
+      sensitiveCount: "{count} 项敏感内容",
     },
     bundle: {
       objects: "对象",
@@ -4471,9 +4559,9 @@ export const zh = {
     notifications: {
       bellLabel: "共享邀请",
       newInviteTitle: "新的共享邀请",
-      newInviteBody: "有 {{count}} 项邀请等待您批准。",
+      newInviteBody: "有 {count} 项邀请等待您批准。",
       expiringTitle: "共享即将到期",
-      expiringBody: "有 {{count}} 项长期共享即将到期——请查看并续期。",
+      expiringBody: "有 {count} 项长期共享即将到期——请查看并续期。",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const zh = {
       addGuardian: "添加监护人联系方式",
       requestsSent: "已发送 {count} 份，{failed} 份未能发送",
       sendRequests: "发送同意书请求（{count}）",
+      stage: "同意",
+      explainTitle: "下一步：家长或监护人的授权",
+      explainBody: "在记录这位{{student}}的健康、课程或沟通方式的任何信息之前，必须由家长或法定监护人给予书面授权。目前只保存了基本资料。授权一经签署，其余步骤会自动开启。",
+      signCaption: "您是登记在册的监护人，因此可以自己阅读并签署授权，大约需要一分钟。",
+      familyNoGuardianCaption: "首先需要一位登记的监护人。请把自己（或另一位家长）添加为这位{{student}}的监护人，这里就会出现签署同意书的按钮。",
+      sendRequest: "发送同意书请求",
+      sendCaption: "我们会通过电子邮件向监护人发送一个私人链接。监护人阅读授权后在线签署即可，您无需再做其他事情。",
+      sentCaption: "链接已发送给监护人。对方签署后，其余步骤即会开启，您可以稍后再回来。",
+      sentOne: "同意书链接已发送给监护人。",
+      sendFailed: "无法发送同意书链接。请确认监护人有有效的电子邮件地址，然后重试。",
+      attestInPerson: "监护人在场 — 一起签署",
+      attestCaption: "如果家长或监护人现在就在您身边，你们可以一起阅读这份同意书，并让其在本设备上签名。身份由您核实，无需发送链接。",
     },
     notes: {
       documentsNotStored: "文档仅供读取，不会存储——只保留从中提取的信息。",

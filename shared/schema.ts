@@ -1175,12 +1175,39 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+/**
+ * The `users.user_type` values a person may choose FOR THEMSELVES — i.e. the
+ * set an unauthenticated `POST /auth/register` body may name.
+ *
+ * `"admin"` is deliberately absent. Until 2026-09-10 it was a member of this
+ * enum and the (now deleted) `requireAdmin` gate accepted
+ * `userType === "admin"` as a privilege claim, so two anonymous HTTP requests
+ * (register with `{"userType":"admin"}`, then `GET /api/admin/users` — also now
+ * deleted) reached the whole platform-admin surface. `user_type`
+ * is a self-declared profile label written verbatim from the request body; the
+ * columns that MEAN privilege are `users.is_admin` / `users.is_system_admin`
+ * (plus the `admin_users` table), and only a server-side insert can set them.
+ * See docs/SECURITY_ARCHITECTURE.md §5.8.
+ */
+export const SELF_ASSIGNABLE_USER_TYPES = ["Teacher", "Caregiver", "SLP", "Parent"] as const;
+
+/**
+ * Every value `users.user_type` may legally hold. `"admin"` remains legal as
+ * DATA — `adminAuthService.adaptAdminAsUser` stamps it on the backoffice
+ * pseudo-identity and two production rows carry it — it simply confers nothing.
+ * Admin-only update paths validate against this; the public register path
+ * validates against `SELF_ASSIGNABLE_USER_TYPES` above. (Named `ALL_*` because
+ * `USER_TYPES` further down this file is a pre-existing label->value map with
+ * the same members; this is the ordered tuple `z.enum` needs.)
+ */
+export const ALL_USER_TYPES = ["admin", ...SELF_ASSIGNABLE_USER_TYPES] as const;
+
 export const registerSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   password: passwordSchema,
-  userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"], {
+  userType: z.enum(SELF_ASSIGNABLE_USER_TYPES, {
     errorMap: () => ({ message: "Please select a valid user type" }),
   }),
 });
@@ -1188,7 +1215,7 @@ export const registerSchema = z.object({
 export const updateUserSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"]).optional(),
+  userType: z.enum(ALL_USER_TYPES).optional(),
   credits: z.number().optional(),
   subscriptionType: z.string().optional(),
   subscriptionExpiresAt: z.date().optional(),

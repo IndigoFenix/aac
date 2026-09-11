@@ -12,11 +12,11 @@ import { useEffect, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  useConsentAuthority,
   useSetConsentAuthority,
   type ConsentAuthorityMode,
   type GuardianshipBasis,
 } from "@/hooks/useConsentApi";
+import { useConsentDetail } from "@/features/consent/ConsentProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +51,9 @@ const BASIS_VALUES: GuardianshipBasis[] = [
 export function ConsentAuthorityPanel({ studentId }: ConsentAuthorityPanelProps) {
   const { t } = useLanguage();
   const { toast } = useToast();
-  const query = useConsentAuthority(studentId);
+  // Reads the shared observer rather than opening its own — see
+  // features/consent/ConsentProvider.tsx.
+  const { authority } = useConsentDetail();
   const setAuthority = useSetConsentAuthority(studentId);
   const [open, setOpen] = useState(false);
 
@@ -61,21 +63,25 @@ export function ConsentAuthorityPanel({ studentId }: ConsentAuthorityPanelProps)
   const [notes, setNotes] = useState("");
 
   // Seed local form from the server once loaded.
+  const authorityData = authority.data;
   useEffect(() => {
-    if (!query.data) return;
-    setMode(query.data.consentAuthority);
-    setBasis((query.data.guardianshipBasis as GuardianshipBasis) ?? "");
-    setReviewDate(query.data.guardianshipReviewDate ?? "");
+    if (!authorityData) return;
+    setMode(authorityData.consentAuthority);
+    setBasis((authorityData.guardianshipBasis as GuardianshipBasis) ?? "");
+    setReviewDate(authorityData.guardianshipReviewDate ?? "");
     setNotes(
-      typeof (query.data.guardianshipEvidence as any)?.notes === "string"
-        ? ((query.data.guardianshipEvidence as any).notes as string)
+      typeof (authorityData.guardianshipEvidence as any)?.notes === "string"
+        ? ((authorityData.guardianshipEvidence as any).notes as string)
         : "",
     );
-  }, [query.data]);
+  }, [authorityData]);
 
-  if (query.isLoading) return null;
+  // Hold off until there is an answer, and stay out of the way when there
+  // isn't one: this card renders the local form defaults ("auto"), which on a
+  // failed read would show a determination nobody made.
+  if (!authority.isSettled || authority.isError) return null;
 
-  const resolved = query.data?.resolved ?? null;
+  const resolved = authorityData?.resolved ?? null;
   const isGuardianRequired = mode === "guardian_required";
 
   const handleSave = async () => {

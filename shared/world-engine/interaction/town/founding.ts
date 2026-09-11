@@ -240,6 +240,22 @@ export interface FoundSiteOpts {
    *  door, the track they walked in on. See `foundSite` for what is done
    *  with it. Absent/empty = a lone founder in trackless wilderness. */
   network?: ReadonlyArray<{ x: number; y: number }>;
+  /**
+   * ⚖️ THE FOUNDERS' KIT (planet-boot round S1) — what the party CARRIED IN,
+   * deposited straight onto the new site's ledger.
+   *
+   * 🚨 `depositSiteStock`'s MATERIAL FILTER IS DELIBERATELY NOT APPLIED. That
+   * filter exists for goods picked off the ground mid-play (a yard is a
+   * builder's yard, not a pantry); a kit is a DECLARATION — founders carry
+   * what the spec says and nothing else (the #43 rider law), baskets included.
+   * This is `games/world-lab/src/main.ts stepFoundingPremise`'s own three
+   * lines, promoted from the app to the one place a site comes into being, so
+   * the browser and headless mode cannot found with different supplies.
+   *
+   * Absent ⇒ byte-identical to every founding that shipped. A zero or
+   * negative count is ignored (nothing to carry), never a negative stack.
+   */
+  stock?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -272,6 +288,11 @@ export function foundSite(opts: FoundSiteOpts): FoundedSite {
   const door = opts.door ?? at;
   const lane = accessLane(at, door, opts.network ?? []);
   if (lane) deltas.addSeed({ kind: "spine", lanes: [lane] });
+  // THE KIT (see `FoundSiteOpts.stock`) — onto the yard the alias makes one
+  // ledger, before anyone can read it.
+  for (const [g, n] of Object.entries(opts.stock ?? {})) {
+    if (n > 0) deltas.stock[g] = (deltas.stock[g] ?? 0) + n;
+  }
   return {
     key: opts.key ?? `site-${(opts.seed >>> 0).toString(36)}`,
     seed: opts.seed,

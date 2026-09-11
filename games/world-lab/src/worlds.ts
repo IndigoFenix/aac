@@ -132,6 +132,55 @@ export const TEST_WORLDS: NamedWorld[] = [
     },
   },
   {
+    id: "frontier-region",
+    name: "Frontier Region — the baked flat fixture",
+    world: {
+      // ⚖️ THE THIRD PRODUCER (planet-boot round S3b) — the SAME founding
+      // premise, on a baked FLAT region instead of the sphere: real cells,
+      // sites, cities, routes and partners, no planet, no 24–29 s bake. The
+      // user: "it's not that important, but it is a feature we'll want in
+      // the spec. Could also help with faster testing since we don't have
+      // to build the whole planet every time."
+      //
+      // `cell_m` is THE FIXTURE (a real-substrate stand-in for the hamlet
+      // ring, ledger §6b) — searched over {250, 500, 1000} on this seed/size:
+      // 250 lands the founding cell at fertility 8 (farmable — the crop's
+      // own suitability is > 0), its three nearest cities 1.77/2.02/2.26 km
+      // out (the freight-viable 1-3 km band) with a DIFFERENT node among
+      // them (mouth vs none); 500 and 1000 land on a fertility-1 cell whose
+      // farm suitability is EXACTLY 0 (`sourceSuitabilityAt` on the crop
+      // species) — `createTownWorld` refuses a zero-efficiency process
+      // outright, so neither of those boots at all. See
+      // `<S>/planet-s3b-landing.md` for the full search table.
+      tree: {
+        kind: "region",
+        params: {
+          size: { cols: 96, rows: 64 },
+          geology: { seed: 42, epochs: 350 },
+          settle: true,
+          rain: 1.1,
+          cell_m: 250,
+          relief_m: 2000,
+          latitude: 20,
+          climate: { meanTempC: 15.5, wetness: 1.2 },
+          premise: "founding",
+          // Same declared kit as the planet preset (the #43 rider law).
+          premise_stock: { wood: 14, stone: 6, basket: 2 },
+          premise_population: 5,
+        },
+      },
+      session: {
+        avatar: "spirit",
+        scale: {
+          ...STREET_CLOCK,
+          construction: 720,
+          gap_compression: 10,
+          resource_compression: 7.5,
+        },
+      },
+    },
+  },
+  {
     id: "earthlike-system",
     name: "Earthlike System — a defined star + planets",
     world: {

@@ -70,8 +70,32 @@ export default {
   globalSetup: '<rootDir>/server/tests/global-setup.ts',
   testTimeout: 30000,
   verbose: true,
-  detectOpenHandles: true,
+  // ⚠️ `detectOpenHandles` FORCES BAND MODE. @jest/core's `shouldRunInBand()`
+  // returns true whenever it is set, so the configured workers are never used
+  // and the whole sweep runs on ONE core — measured 2026-09-05 on the
+  // `creature` slice: 280.8 s serial vs 154.4 s at `--maxWorkers=4`. It is a
+  // DEBUGGING tool ("which handle kept the process alive"), not a run mode, so
+  // it is opt-in now:
+  //     JEST_OPEN_HANDLES=1 npm run test:engine -- <word>
+  // `forceExit` stays beside it: it papers over exactly the handles this flag
+  // would name, and un-papering them is its own round, not this one.
+  detectOpenHandles: process.env.JEST_OPEN_HANDLES === '1',
   forceExit: true,
+  // MEASURED on this 4-core box, 2026-09-09, the whole world-engine fast half
+  // (356 suites) at three worker counts:
+  //     3 workers → 671 s     4 → 536 s     6 → 522 s
+  // 6 wins by 2.6 % — inside the noise, and it wants half again as much RAM on
+  // a box that had 7.6 GB free. 4 is the default; raise it per-run with
+  // `JEST_MAX_WORKERS=6 npm run test:engine` when the box is quiet.
+  maxWorkers: process.env.JEST_MAX_WORKERS
+    ? (/%$/.test(process.env.JEST_MAX_WORKERS)
+        ? process.env.JEST_MAX_WORKERS
+        : Number(process.env.JEST_MAX_WORKERS))
+    : 4,
+  // A boot-arc worker grew 1.0 → 2.5 GB across a long in-band run and its late
+  // suites ran ~1.5× slower. Recycle a worker that balloons once its current
+  // file is done; a respawn is a couple of seconds, a swapping box is minutes.
+  workerIdleMemoryLimit: '2GB',
   collectCoverageFrom: [
     'server/services/memory-schema/**/*.ts',
     '!server/tests/**',

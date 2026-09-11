@@ -76,6 +76,10 @@ export interface BoardManagerPromptConfig extends BaseStudentContext {
   /** From EnhancedPromptSections — Board-Manager-only guidance (e.g.
    *  "always include a 'finished' button for this student"). */
   boardManagerGuidance?: string;
+  /** From EnhancedPromptSections — the session's TOPIC BANK. Session-stable,
+   *  so it rides the cacheable base; the per-turn [STALLED] note that tells
+   *  the model to spend one rides the invocation context instead. */
+  conversationSeeds?: string;
   /** Builder grammar examples shared with SPEAKER — used for the
    *  sentence-builder suggestion path. */
   sentenceInterpretationExamples?: string;
@@ -143,7 +147,7 @@ export function buildBoardManagerPrompt(config: BoardManagerPromptConfig): Board
     enabledApps, availableCustomApps, homeActions, permittedWebsites, photoLibrary,
     autoSymbolsEnabled = false, singleGlyphButtons = false,
     glyphInputTranslation = false, languageLevel,
-    gestureOverrides, safetyNotes, boardManagerGuidance,
+    gestureOverrides, safetyNotes, boardManagerGuidance, conversationSeeds,
     sentenceInterpretationExamples, boardManagerExamples,
   } = config;
 
@@ -189,7 +193,21 @@ Choosing which tool:
   - Conversation shifted (different topic/speaker/beat) → \`rebuild_board\`.
   - Ambient observation worth surfacing (object, person entering) → \`add_context_button\`.
   - Nothing else fits → \`no_change(reason)\`. NEVER while the ${T.board} is EMPTY — an empty screen leaves the user voiceless; build openers instead.
-</role>${genderBlock ? `\n\n${genderBlock}` : ""}${classroomBlock(studentName, classroom)}${boardManagerGuidance ? `\n\n<board_manager_guidance>\n${boardManagerGuidance}\n</board_manager_guidance>` : ""}
+</role>${genderBlock ? `\n\n${genderBlock}` : ""}${classroomBlock(studentName, classroom)}${boardManagerGuidance ? `\n\n<board_manager_guidance>\n${boardManagerGuidance}\n</board_manager_guidance>` : ""}${conversationSeeds ? `\n\n<conversation_seeds>
+Specific things [${studentName}] could talk about, prepared for this session. Each line is a topic, ${T.button} openers for it, and what to offer once one is pressed.
+
+${conversationSeeds}
+
+These are a RESERVE, not a script. Ignore them while the conversation has a subject of its own — a seed that interrupts something real is worse than no seed.
+
+Spend one when a \`[STALLED]\` note arrives, and follow these rules:
+  - Spend exactly ONE. A board carrying two seeds is a menu of topics, which is the same dead end as no topic.
+  - Build the seed's openers as ordinary ${T.button}s. Never announce the topic switch and never voice the seed yourself — these are the USER's words to pick from.
+  - Keep one or two ${T.button}s from the current beat so they can decline it.
+  - Skip any seed whose subject the note lists as already tried, and pick a different one.
+  - The seed's second move (after →) is what your NEXT board should offer if they take it.
+  - If no seed fits what is actually happening, invent a topic in the same shape — specific, answerable, naming something real. A seed you write yourself beats a stale one; a subjectless ${T.button} beats neither.
+</conversation_seeds>` : ""}
 
 <when_to_act>
 The TARGET label on the incoming tagged event decides whether to build a board and what kind.

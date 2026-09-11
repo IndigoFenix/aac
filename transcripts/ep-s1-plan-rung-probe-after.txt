@@ -1,0 +1,204 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=6d3659f0+dirty
+# started=2026-09-08T19:42:28.273Z
+# ─────────────────────────────────────────
+> wait 15
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+ENTER  pip came into view here south.
+ENTER  mara came into view here south.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+EXIT   orrin left view there south.
+EXIT   mara left view here north.
+ENTER  mara came into view here north.
+ENTER  pip came into view here west.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+EXIT   mara left view here west.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+EXIT   orrin left view there south.
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+> wait 15
+TOAST  🏗️ the people stake out a market (feedback)
+CLOSE  the board closed.
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 4 block for the cupboard (feedback)
+TOAST  🪚 milling 3 block for the chest (feedback)
+TOAST  🪚 milling 2 block for the barrel (feedback)
+TOAST  🪚 milling 4 block for the bed (feedback)
+TICK   waited 15.0s.
+> /why orrin
+CHEAT  /why orrin
+> /why mara
+CHEAT  /why mara
+> /why pip
+CHEAT  /why pip
+> /why biscuit
+CHEAT  /why biscuit
+# ─────────────────────────────────────────
+# commands=80  presses=0  screens=1  sim=240.1s
+# events: CHEAT 64  TICK 16  EXIT 12  ENTER 10  TOAST 7  SAY 3  BOARD 1  NOTE 1  CLOSE 1

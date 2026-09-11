@@ -2,7 +2,7 @@
 //
 // The real reads behind the student_setup flow's derived completion. Nothing
 // here decides anything — it only reports what exists, so `isComplete` stays a
-// pure function of the ctx (see chat/guided-flow/engine.ts).
+// pure function of the ctx (see flow-engine.ts).
 //
 // Every student-scoped read takes (studentId, instituteId): a family institute
 // grants blanket access to its members, so the caller must have already
@@ -77,9 +77,9 @@ export interface StudentProgramFacts {
 /**
  * Step 5 — the people around this person.
  *
- * `peopleAdded` is deliberately NOT "how many contacts exist". Two kinds of row
- * arrive without anybody deciding to add a person, and neither may finish the
- * step on its own:
+ * `peopleAdded` is deliberately NOT "how many contacts exist". Three kinds of
+ * row arrive without anybody answering step 5's question, and none of them may
+ * finish the step on its own:
  *
  *  - `autoAdded` rows, which the AAC's Monitor creates from what it observed in
  *    a session and a human has not yet confirmed;
@@ -89,6 +89,10 @@ export interface StudentProgramFacts {
  *    (it is a system row, not an AI guess), so an `autoAdded` test alone would
  *    let a family flow declare step 5 finished before it asked a single
  *    question.
+ *  - the guardian the CONSENT stage asked an institution user for, so the
+ *    request had somewhere to go. It is a plain human-entered contact on the
+ *    row — nothing distinguishes it but being the row `loadConsentContact`
+ *    picks — and counting it let step 5 satisfy itself before it was reached.
  *
  * What the step is actually asking for is who ELSE is in this person's life, so
  * that is what it counts.
@@ -96,7 +100,10 @@ export interface StudentProgramFacts {
 export interface StudentContactFacts {
   /** Active contacts of every kind — informational, never a completion test. */
   total: number;
-  /** Active contacts that are neither auto-added nor the user's own guardian row. */
+  /**
+   * Active contacts that are none of: auto-added, the user's own guardian row,
+   * the consent guardian. One row per exclusion, never a class of row.
+   */
   peopleAdded: number;
 }
 
@@ -278,6 +285,11 @@ export async function loadBasicsFacts(
       ),
     );
 
+  // Both guardian facts come off ONE read: "is there a guardian at all" and
+  // "which guardian gets the link" are the same rows asked two ways, and this
+  // runs inside a chat turn against a `max: 3` pool.
+  const contacts = await loadActiveContactRows(studentId);
+
   return {
     inInstitute: !!link,
     name: row.name ?? null,
@@ -288,75 +300,146 @@ export async function loadBasicsFacts(
     primaryLanguage: row.primaryLanguage ?? null,
     country: row.country ?? null,
     framework: row.framework ?? null,
-    hasGuardian: await hasGuardianContact(studentId),
-    consentContact: await loadConsentContact(studentId),
+    hasGuardian: contacts.some(isGuardian),
+    consentContact: toConsentFacts(pickConsentContact(contacts)),
   };
 }
 
 /**
- * The first guardian contact of this student that carries an email or a phone.
+ * ONE READ of this student's active contacts, and the fields every rule in this
+ * file needs from them.
  *
- * One is enough: the flow offers a single "send the request" action, and a
- * list of every contact in a prompt block is both a line-budget problem and a
- * way to have the model pick the wrong parent.
+ * `student_contacts` carries no institute column, so the student id is the
+ * scope and `isActive` is the soft-delete (the caller has already verified
+ * access for this institute — memory: feedback_family_access_scoping).
+ *
+ * Deliberately reads whole rows rather than asking the database a question per
+ * rule. Three of them — "is there a guardian", "which guardian gets the consent
+ * link", "how many people did somebody actually add" — are the SAME rows read
+ * three ways, they are a handful of rows per student, and the pool is `max: 3`
+ * (server/db.ts): every extra round trip inside a chat turn is a connection
+ * somebody else is waiting for.
  */
-export async function loadConsentContact(
-  studentId: string,
-): Promise<ConsentContactFacts | null> {
-  const [row] = await db
+async function loadActiveContactRows(studentId: string) {
+  return db
     .select({
       id: studentContacts.id,
       name: studentContacts.name,
+      relationship: studentContacts.relationship,
+      role: studentContacts.role,
+      linkedUserId: studentContacts.linkedUserId,
       contactEmail: studentContacts.contactEmail,
       contactPhone: studentContacts.contactPhone,
+      autoAdded: studentContacts.autoAdded,
+      createdAt: studentContacts.createdAt,
     })
     .from(studentContacts)
-    .where(
-      and(
-        eq(studentContacts.studentId, studentId),
-        eq(studentContacts.isActive, true),
-        or(
-          eq(studentContacts.role, "parent_guardian"),
-          sql`lower(coalesce(${studentContacts.relationship}, '')) ~ '(parent|guardian|mother|father|mom|dad)'`,
-          sql`${studentContacts.linkedUserId} is not null`,
-        ),
-        or(
-          sql`coalesce(${studentContacts.contactEmail}, '') <> ''`,
-          sql`coalesce(${studentContacts.contactPhone}, '') <> ''`,
-        ),
-      ),
-    )
-    .limit(1);
+    .where(and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)));
+}
+
+type ContactRow = Awaited<ReturnType<typeof loadActiveContactRows>>[number];
+
+const GUARDIAN_WORDS = /(parent|guardian|mother|father|mom|dad)/;
+
+function filled(value: string | null): boolean {
+  return !!value && value.trim() !== "";
+}
+
+/**
+ * Reads as a guardian: the `parent_guardian` role, a relationship that says so
+ * in words, or a contact linked to a real user account.
+ *
+ * ONE definition, in one place, on purpose. It used to be the same regex
+ * hand-written into two queries, and `loadContactFacts` now has to agree with
+ * `pickConsentContact` EXACTLY — a copy that drifted would silently either
+ * double-count the consent guardian or drop a contact a person really added.
+ */
+function isGuardian(row: ContactRow): boolean {
+  return (
+    row.role === "parent_guardian" ||
+    GUARDIAN_WORDS.test((row.relationship ?? "").toLowerCase()) ||
+    !!row.linkedUserId
+  );
+}
+
+/** Carries an address a consent link could actually be sent to. */
+function isReachable(row: ContactRow): boolean {
+  return filled(row.contactEmail) || filled(row.contactPhone);
+}
+
+/**
+ * WHICH guardian is offered the consent link. Exactly one, deterministically.
+ *
+ * One is enough: the flow offers a single "send the request" action, and a list
+ * of every contact in a prompt block is both a line-budget problem and a way to
+ * have the model pick the wrong parent.
+ *
+ * The ORDER is load-bearing, not decoration. This was a `limit(1)` with no
+ * `ORDER BY`, and Postgres promises nothing there: on a student with two
+ * contactable guardians, the row named in the prompt block, the row the rail's
+ * "Send consent request" button targets (`parked()` publishes this id) and the
+ * row step 5 discounts could all be DIFFERENT rows, and two calls inside one
+ * request could disagree — worse than picking the same "wrong" parent every
+ * time. The rule, most significant first:
+ *
+ *  1. an explicit `role = 'parent_guardian'` over a guessed one (a relationship
+ *     that merely reads as parental, or any linked account, is weaker evidence);
+ *  2. a row with an email over a phone-only row — email is the channel
+ *     `consentRequestLine` chooses whenever it can, and the one that needs no
+ *     SMS provider configured;
+ *  3. the oldest row, so the guardian already on file wins over one added later
+ *     and the pick stops moving as contacts accumulate;
+ *  4. `id`, so the order is TOTAL — two rows written in one statement share a
+ *     `created_at` to the microsecond, and that is exactly the tie that made
+ *     this non-deterministic. Sorting in TypeScript rather than SQL also keeps
+ *     the tiebreak out of the database's collation.
+ */
+function pickConsentContact(rows: ContactRow[]): ContactRow | null {
+  const eligible = rows.filter((r) => isGuardian(r) && isReachable(r));
+  if (eligible.length === 0) return null;
+  const rank = (r: ContactRow) => [
+    r.role === "parent_guardian" ? 0 : 1,
+    filled(r.contactEmail) ? 0 : 1,
+    r.createdAt instanceof Date ? r.createdAt.getTime() : 0,
+  ];
+  return eligible.slice().sort((a, b) => {
+    const [ra, rb] = [rank(a), rank(b)];
+    for (let i = 0; i < ra.length; i++) {
+      if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    }
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  })[0];
+}
+
+function toConsentFacts(row: ContactRow | null): ConsentContactFacts | null {
   if (!row) return null;
   return {
     id: row.id,
     name: row.name ?? "",
-    hasEmail: !!row.contactEmail && row.contactEmail.trim() !== "",
-    hasPhone: !!row.contactPhone && row.contactPhone.trim() !== "",
+    hasEmail: filled(row.contactEmail),
+    hasPhone: filled(row.contactPhone),
   };
 }
 
 /**
- * A contactable guardian: role `parent_guardian`, a relationship that reads as
+ * The guardian contact a consent request can be sent to, or null.
+ *
+ * Kept as its own entry point because tests and future callers ask this
+ * question on its own; `loadBasicsFacts` derives it from the rows it has
+ * already read rather than calling this and paying for a second query.
+ */
+export async function loadConsentContact(
+  studentId: string,
+): Promise<ConsentContactFacts | null> {
+  return toConsentFacts(pickConsentContact(await loadActiveContactRows(studentId)));
+}
+
+/**
+ * A guardian: role `parent_guardian`, a relationship that reads as
  * parent/guardian, or a contact linked to a real user account.
  */
 export async function hasGuardianContact(studentId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: studentContacts.id })
-    .from(studentContacts)
-    .where(
-      and(
-        eq(studentContacts.studentId, studentId),
-        eq(studentContacts.isActive, true),
-        or(
-          eq(studentContacts.role, "parent_guardian"),
-          sql`lower(coalesce(${studentContacts.relationship}, '')) ~ '(parent|guardian|mother|father|mom|dad)'`,
-          sql`${studentContacts.linkedUserId} is not null`,
-        ),
-      ),
-    )
-    .limit(1);
-  return !!row;
+  return (await loadActiveContactRows(studentId)).some(isGuardian);
 }
 
 /** Guardian contacts that carry an email or a phone (a consent request can be sent). */
@@ -560,24 +643,38 @@ export async function loadAacFacts(studentId: string): Promise<StudentAacFacts> 
  * guardian row. Passing it is not optional in practice: without it a family
  * student created through the StudentModal form arrives at step 5 already
  * "complete", and the step never asks anything.
+ *
+ * The consent guardian is discounted the same way, and for the same reason.
+ * The consent stage ASKS an institution user for a guardian ("their name, their
+ * relationship, and an email or phone") so the request can be sent at all, and
+ * saves it through the same `Student_Contacts add` op — so it arrives here
+ * looking exactly like a person somebody chose to add. Observed live: a clinic
+ * patient with no contacts, the assistant took one guardian during the consent
+ * wait, and step 5's dot went DONE before the step was ever reached. Step 5
+ * asks who ELSE is in this person's life, so the row the flow itself asked for
+ * is by construction not an answer to it.
+ *
+ * EXACTLY ONE row comes out — whichever `loadConsentContact` currently picks.
+ * A co-parent, a second guardian, any other contactable parent the user
+ * deliberately adds at step 5 still counts, or a family with only the other
+ * parent left to list could never finish the step.
  */
 export async function loadContactFacts(
   studentId: string,
   userId: string,
 ): Promise<StudentContactFacts> {
-  const rows = await db
-    .select({
-      id: studentContacts.id,
-      autoAdded: studentContacts.autoAdded,
-      linkedUserId: studentContacts.linkedUserId,
-    })
-    .from(studentContacts)
-    .where(
-      and(eq(studentContacts.studentId, studentId), eq(studentContacts.isActive, true)),
-    );
+  // The SAME read the guardian rules use, and the same pick applied to it — no
+  // second query, and no second copy of "which row is the consent one". A copy
+  // is how the prompt block, the rail's send button and this count would come
+  // to disagree; a second query is a third connection out of a pool of three,
+  // inside a chat turn (see loadActiveContactRows).
+  const rows = await loadActiveContactRows(studentId);
+  const consentContactId = pickConsentContact(rows)?.id ?? null;
 
   return {
     total: rows.length,
-    peopleAdded: rows.filter((r) => !r.autoAdded && r.linkedUserId !== userId).length,
+    peopleAdded: rows.filter(
+      (r) => !r.autoAdded && r.linkedUserId !== userId && r.id !== consentContactId,
+    ).length,
   };
 }

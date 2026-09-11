@@ -1,0 +1,22 @@
+# world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=10 dense=×4
+# forageRadiusM=182.4  nearStand=30
+# t=0 ring-1 food units=5060  (tile--1--1=628 tile--1-0=632 tile--1-1=641 tile-0--1=649 tile-0-1=641 tile-1--1=615 tile-1-0=623 tile-1-1=631)
+# t=0 records=20 population=5440  loaded features=22
+day   1  rations/day=  1.60  takes=   4  blocked=  5  hungry=4/5 mean=1.28 deep=0  ring1=5060  sleeps=1
+day   2  rations/day=  7.00  takes=  25  blocked=  9  hungry=2/5 mean=1.08 deep=0  ring1=5046  sleeps=8
+day   3  rations/day=  0.60  takes=  28  blocked= 12  hungry=4/5 mean=1.68 deep=2  ring1=5046  sleeps=11
+day   4  rations/day=  4.00  takes=  37  blocked= 12  hungry=3/5 mean=1.92 deep=2  ring1=5030  sleeps=16
+day   5  rations/day=  3.00  takes=  41  blocked= 15  hungry=3/5 mean=2.48 deep=3  ring1=5015  sleeps=21
+day   6  rations/day=  0.00  takes=  41  blocked= 18  hungry=5/5 mean=3.28 deep=3  ring1=5015  sleeps=28
+day   7  rations/day=  3.40  takes=  47  blocked= 20  hungry=4/5 mean=3.60 deep=3  ring1=4998  sleeps=34
+day   8  rations/day=  3.20  takes=  52  blocked= 20  hungry=4/5 mean=4.16 deep=3  ring1=4982  sleeps=36
+day   9  rations/day=  2.60  takes=  58  blocked= 23  hungry=4/5 mean=4.60 deep=3  ring1=4969  sleeps=42
+day  10  rations/day=  1.00  takes=  59  blocked= 25  hungry=5/5 mean=5.24 deep=3  ring1=4964  sleeps=46
+
+# takes=59 (zero-yield=6)  blocked mid-flight=25
+# rations delivered=26.40 over 10 days = 2.64/day
+# take spread by source: tile-0-1=10  tile-0--1=10  tile-1-0=6  flora:bush:wild:bush_53=4  flora:hazel:wild:hazel_17=4  tile--1-0=4  flora:apple_tree:wild:apple_tree_5=3  flora:bush:wild:bush_86=3  flora:bush:wild:bush_20=3  flora:bush:wild:bush_70=2  flora:bush:wild:bush_4=2  flora:bush:wild:bush_57=2  flora:bush:wild:bush_89=2  flora:hazel:wild:hazel_3=2  flora:hazel:wild:hazel_18=1  flora:bush:wild:bush_90=1
+# crowd frames (two hunger-errand settlers inside one arrival disc, sampled 1/s) = 241 of 2400
+# starvation body-days=25  sleeps=46
+# final hungry=5/5 mean=5.24 deep=3
+# ring-1 food units at end=4964

@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { programService, studentService } from "../services";
 import { activityLogService } from "../services/activityLogService";
-import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { visibilityCtx } from "../services/sharing/clinicianCtx";
 import { canWriteObject } from "../services/sharing/visibility";
 import { requireConsentForResponse } from "../services/consent/consentGate";
 import { summarizeChanges, changeDetails } from "../services/activityChanges";
@@ -21,7 +21,6 @@ import {
   insertAccommodationSchema,
   updateAccommodationSchema,
   insertProgressReportSchema,
-  updateProgressReportSchema,
   insertGoalProgressEntrySchema,
   insertDataPointSchema,
   insertTransitionPlanSchema,
@@ -33,7 +32,6 @@ import {
   insertMeetingSchema,
   updateMeetingSchema,
   insertConsentFormSchema,
-  updateConsentFormSchema,
 } from "@shared/schema";
 
 export class ProgramController {
@@ -53,21 +51,6 @@ export class ProgramController {
     } catch (error: any) {
       console.error("Error fetching overview:", error);
       res.status(500).json({ success: false, message: "Failed to fetch overview" });
-    }
-  }
-
-  /**
-   * GET /api/programs/students
-   * Get all students with their current program summary
-   */
-  async getStudentsWithPrograms(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const students = await programService.getStudentsWithProgramSummary(currentUser.id);
-      res.json({ success: true, students });
-    } catch (error: any) {
-      console.error("Error fetching students with programs:", error);
-      res.status(500).json({ success: false, message: "Failed to fetch students" });
     }
   }
 
@@ -142,7 +125,11 @@ export class ProgramController {
         return;
       }
 
-      const ctx = await buildClinicianCtx(req, studentId);
+      const ctxResult = await visibilityCtx(req, res, studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       const programs = await programService.getProgramsByStudentId(studentId, ctx);
       res.json({ success: true, programs });
     } catch (error: any) {
@@ -167,7 +154,11 @@ export class ProgramController {
         return;
       }
 
-      const ctx = await buildClinicianCtx(req, studentId);
+      const ctxResult = await visibilityCtx(req, res, studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       const program = await programService.getCurrentProgram(studentId, ctx);
       if (!program) {
         res.status(404).json({ success: false, message: "No active program found" });
@@ -197,7 +188,9 @@ export class ProgramController {
       }
 
       // Re-fetch through visibility helper so cross-institute share rules apply.
-      const ctx = await buildClinicianCtx(req, program.studentId);
+      const ctxResult = await visibilityCtx(req, res, program.studentId);
+      if (!ctxResult.ok) return;
+      const ctx = ctxResult.ctx;
       const visibleProgram = await programService.getProgramById(id, ctx);
       if (!visibleProgram) {
         res.status(403).json({ success: false, message: "Access denied to this program" });
@@ -226,7 +219,11 @@ export class ProgramController {
         return;
       }
 
-      const ctx = await buildClinicianCtx(req, program.studentId);
+      const ctxResult = await visibilityCtx(req, res, program.studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       const programDetails = await programService.getProgramWithDetails(id, ctx);
       if (!programDetails) {
         res.status(404).json({ success: false, message: "Program not found" });
@@ -258,7 +255,9 @@ export class ProgramController {
       // Writes allowed when the institute owns the program OR holds a
       // permission='write' share covering it. canWriteObject collapses both
       // checks; student/admin principals always pass.
-      const ctx = await buildClinicianCtx(req, program.studentId);
+      const ctxResult = await visibilityCtx(req, res, program.studentId);
+      if (!ctxResult.ok) return;
+      const ctx = ctxResult.ctx;
       if (ctx?.kind === "institute"
           && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
         res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
@@ -310,7 +309,11 @@ export class ProgramController {
         return;
       }
 
-      const ctx = await buildClinicianCtx(req, program.studentId);
+      const ctxResult = await visibilityCtx(req, res, program.studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       if (ctx?.kind === "institute"
           && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
         res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
@@ -359,7 +362,11 @@ export class ProgramController {
         return;
       }
 
-      const ctx = await buildClinicianCtx(req, program.studentId);
+      const ctxResult = await visibilityCtx(req, res, program.studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       if (ctx?.kind === "institute"
           && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
         res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
@@ -404,7 +411,11 @@ export class ProgramController {
         return;
       }
 
-      const ctx = await buildClinicianCtx(req, program.studentId);
+      const ctxResult = await visibilityCtx(req, res, program.studentId);
+
+      if (!ctxResult.ok) return;
+
+      const ctx = ctxResult.ctx;
       if (ctx?.kind === "institute"
           && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
         res.status(403).json({ success: false, message: "Cannot delete a program owned by another institute" });
@@ -1387,36 +1398,6 @@ export class ProgramController {
     }
   }
 
-  /**
-   * DELETE /api/data-points/:id
-   * Delete a data point
-   */
-  async deleteDataPoint(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      // For simplicity, we'll just delete without complex access checks
-      // In production, you'd want to verify access through the goal->program chain
-      const deleted = await programService.deleteDataPoint(id);
-      if (deleted) {
-        res.json({ success: true, message: "Data point deleted successfully" });
-
-        activityLogService.log({
-          userId: currentUser.id,
-          eventType: "delete",
-          subjectType1: "data_point",
-          subjectId1: id,
-        });
-      } else {
-        res.status(404).json({ success: false, message: "Data point not found" });
-      }
-    } catch (error: any) {
-      console.error("Error deleting data point:", error);
-      res.status(500).json({ success: false, message: "Failed to delete data point" });
-    }
-  }
-
   // ==========================================================================
   // PROGRESS REPORT ENDPOINTS
   // ==========================================================================
@@ -1488,53 +1469,6 @@ export class ProgramController {
     } catch (error: any) {
       console.error("Error creating progress report:", error);
       res.status(500).json({ success: false, message: "Failed to create progress report" });
-    }
-  }
-
-  /**
-   * PATCH /api/progress-reports/:id
-   * Update a progress report
-   */
-  async updateProgressReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const report = await programService.getProgressReportById(id);
-      if (!report) {
-        res.status(404).json({ success: false, message: "Progress report not found" });
-        return;
-      }
-
-      const { hasAccess } = await programService.verifyProgramAccess(report.programId, currentUser.id);
-      if (!hasAccess) {
-        res.status(403).json({ success: false, message: "Access denied" });
-        return;
-      }
-
-      const validatedData = updateProgressReportSchema.parse(req.body);
-      const updated = await programService.updateProgressReport(id, validatedData);
-
-      if (updated) {
-        res.json({ success: true, message: "Progress report updated successfully", report: updated });
-
-        activityLogService.log({
-          userId: currentUser.id,
-          eventType: "update",
-          subjectType1: "progress_report",
-          subjectId1: id,
-          details: changeDetails(summarizeChanges("progress_reports", report as any, validatedData as any)),
-        });
-      } else {
-        res.status(404).json({ success: false, message: "Progress report not found" });
-      }
-    } catch (error: any) {
-      console.error("Error updating progress report:", error);
-      if (error.name === "ZodError") {
-        res.status(400).json({ success: false, message: "Invalid report data", errors: error.errors });
-        return;
-      }
-      res.status(500).json({ success: false, message: "Failed to update progress report" });
     }
   }
 
@@ -1921,51 +1855,6 @@ export class ProgramController {
     }
   }
 
-  /**
-   * PATCH /api/consents/:id
-   * Update a consent form
-   */
-  async updateConsentForm(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const consent = await programService.getConsentFormById(id);
-      if (!consent) {
-        res.status(404).json({ success: false, message: "Consent form not found" });
-        return;
-      }
-
-      const { hasAccess } = await programService.verifyProgramAccess(consent.programId, currentUser.id);
-      if (!hasAccess) {
-        res.status(403).json({ success: false, message: "Access denied" });
-        return;
-      }
-
-      const validatedData = updateConsentFormSchema.parse(req.body);
-      const updated = await programService.updateConsentForm(id, validatedData);
-
-      if (updated) {
-        res.json({ success: true, message: "Consent form updated successfully", consent: updated });
-
-        activityLogService.log({
-          userId: currentUser.id,
-          eventType: "update",
-          subjectType1: "consent_form",
-          subjectId1: id,
-        });
-      } else {
-        res.status(404).json({ success: false, message: "Consent form not found" });
-      }
-    } catch (error: any) {
-      console.error("Error updating consent form:", error);
-      if (error.name === "ZodError") {
-        res.status(400).json({ success: false, message: "Invalid consent form data", errors: error.errors });
-        return;
-      }
-      res.status(500).json({ success: false, message: "Failed to update consent form" });
-    }
-  }
 }
 
 export const programController = new ProgramController();

@@ -49,9 +49,16 @@ const isUserMemberOfInstitute = jest.fn(
 const getInstituteUserLink = jest.fn(async (instituteId: string, userId: string) =>
   MEMBERSHIPS.some((m) => m.institute.id === instituteId) ? { instituteId, userId, isAdmin: true } : null,
 );
+// The admin half of the same pair. The AI's institute-calendar writer used to
+// read `getInstituteUserLink` and test `link?.isAdmin` raw, which ignores
+// `isActive` — the AI-path sibling of audit finding C9 (2026-09-10). It now
+// goes through the one predicate, so that is what this suite asserts on.
+const isUserAdminOfInstitute = jest.fn(
+  async (instituteId: string, _userId: string) => MEMBERSHIPS.some((m) => m.institute.id === instituteId),
+);
 jest.unstable_mockModule("../repositories/instituteRepository", () => ({
   InstituteRepository: class {},
-  instituteRepository: { isUserMemberOfInstitute, getInstituteUserLink },
+  instituteRepository: { isUserMemberOfInstitute, isUserAdminOfInstitute, getInstituteUserLink },
 }));
 
 const createEvent = jest.fn(async (data: any, _u: string) => ({ id: "event-uuid", ...data, locations: [] }));
@@ -98,6 +105,7 @@ beforeEach(() => {
   isUserMemberOfInstitute.mockClear();
   getUserInstitutesWithMembership.mockClear();
   getInstituteUserLink.mockClear();
+  isUserAdminOfInstitute.mockClear();
   createEvent.mockClear();
 });
 
@@ -199,7 +207,7 @@ describe("creating an institute calendar event", () => {
   it("accepts the institute by name", async () => {
     await ops.add!(ctxFor(CLINIC.id), { ...EVENT, instituteId: CLINIC.name }, {});
 
-    expect(getInstituteUserLink).toHaveBeenCalledWith(CLINIC.id, "user-1");
+    expect(isUserAdminOfInstitute).toHaveBeenCalledWith(CLINIC.id, "user-1");
     expect(createEvent.mock.calls[0][0].instituteId).toBe(CLINIC.id);
   });
 

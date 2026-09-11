@@ -903,6 +903,7 @@ export const ko: Translations = {
       when: "언제",
       why: "왜",
       how: "어떻게",
+      question: "질문",
       someone: "누군가",
       near: "가까이",
       far: "멀리",

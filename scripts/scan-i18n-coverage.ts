@@ -24,13 +24,22 @@
  *      missing key is silently shown to the user instead.
  *   6. Non-English values byte-identical to English in a non-Latin-script
  *      locale (he/ar/ru/zh/yue/ko) — copied but never translated.
+ *   7. A `{{token}}` in a locale value that isn't one of the six student-label
+ *      tokens. There are TWO interpolation syntaxes and they are not
+ *      interchangeable: t() substitutes SINGLE braces from its `params`
+ *      argument, and adaptStudentLabel() then substitutes only the DOUBLE-brace
+ *      student tokens. So `"Reports for {{name}}"` renders on screen as
+ *      "Reports for {Sam Nella}" — braces and all. Neither of the other two
+ *      guards can see this: validate-i18n compares the locale files to each
+ *      other (a token wrong in all 11 reads as consistent) and check 1 compares
+ *      keys to call sites (the key exists and is called).
  *
  * Parsing is done with the TypeScript compiler API, not regex, so JSX text
  * nodes and attribute values are identified structurally.
  *
  * Usage:
  *   npm run scan:i18n              # all checks, exits 1 on any error
- *   npm run scan:i18n:keys         # just the two hard-error checks — good for CI
+ *   npm run scan:i18n:keys         # just the hard-error checks — good for CI
  *   npm run scan:i18n:report       # everything + planning-docs/i18n-coverage-report.md
  *   npx tsx scripts/scan-i18n-coverage.ts --bundle=client-aac --only=literals
  *
@@ -40,6 +49,7 @@
  *   inline     files hand-rolling localization with a locale ternary  [warn]
  *   fallbacks  unreachable `t(...) || 'literal'`                      [warn]
  *   errors     server error:CODE with no client errors.CODE           [error]
+ *   placeholders  {{token}} in a locale value that nothing substitutes [error]
  *   locales    locale value byte-identical to English                 [warn]
  *   unused     en.ts key nothing references (opt-in via --unused)     [info]
  *
@@ -69,6 +79,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as ts from "typescript";
 import { fileURLToPath, pathToFileURL } from "url";
+// The six legal double-brace tokens, imported rather than re-listed: this is
+// the same table adaptStudentLabel() substitutes from, so the check and the
+// runtime cannot drift apart.
+import { STUDENT_LABEL_TOKENS } from "../client/src/lib/studentLabel.js";
 
 const __filename_ = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename_), "..");
@@ -210,7 +224,15 @@ const ENGLISH_FUNCTION_WORDS =
 // FINDINGS
 // ============================================================================
 
-type Check = "keys" | "literals" | "inline" | "fallbacks" | "errors" | "locales" | "unused";
+type Check =
+  | "keys"
+  | "literals"
+  | "inline"
+  | "fallbacks"
+  | "errors"
+  | "placeholders"
+  | "locales"
+  | "unused";
 type Severity = "error" | "warn" | "info";
 
 interface Finding {
@@ -242,7 +264,9 @@ function opt(name: string): string | undefined {
   return hit ? hit.slice(name.length + 3) : undefined;
 }
 
-const ALL_CHECKS: Check[] = ["keys", "literals", "inline", "fallbacks", "errors", "locales", "unused"];
+const ALL_CHECKS: Check[] = [
+  "keys", "literals", "inline", "fallbacks", "errors", "placeholders", "locales", "unused",
+];
 const onlyList = opt("only")?.split(",").map((s) => s.trim()).filter(Boolean) as Check[] | undefined;
 const skipList = opt("skip")?.split(",").map((s) => s.trim()).filter(Boolean) as Check[] | undefined;
 const bundleFilter = opt("bundle");
@@ -952,7 +976,121 @@ function scanServerErrorCodes(enKeys: FlatBundle): void {
 }
 
 // ============================================================================
-// CHECK 4: LOCALE VALUES IDENTICAL TO ENGLISH
+// CHECK 4: UNSUBSTITUTED {{token}} IN A LOCALE VALUE
+// ============================================================================
+
+/** The six tokens adaptStudentLabel() actually replaces. Imported, never re-listed. */
+const LEGAL_DOUBLE_BRACE = new Set<string>(Object.keys(STUDENT_LABEL_TOKENS));
+
+/** Any `{{...}}` at all — the contents are compared against the legal set. */
+const DOUBLE_BRACE_RE = /\{\{([^{}]*)\}\}/g;
+
+/**
+ * A locale file is data, not code, so the AST-based `suppressed()` helper does
+ * not apply. Same rule though: `i18n-ignore` in a comment on the line or the
+ * line above, or `i18n-ignore-file` in the first 10 lines.
+ */
+function localeLineSuppressed(lines: string[], idx: number): boolean {
+  if (lines[idx]?.includes("i18n-ignore")) return true;
+  const above = (lines[idx - 1] ?? "").trim();
+  return /^(\/\/|\/\*|\*)/.test(above) && above.includes("i18n-ignore");
+}
+
+interface PlaceholderHit {
+  tokens: Set<string>;
+  locales: Set<string>;
+  file: string;
+  line: number;
+  /** Set once en.ts has supplied the file/line, so no other locale overrides it. */
+  anchored: boolean;
+  sample: string;
+}
+
+/**
+ * `t()` interpolates SINGLE braces (`{name}`) from its params; adaptStudentLabel
+ * then interpolates only the six DOUBLE-brace student tokens. A double-brace
+ * token that is neither reaches the screen with its braces intact.
+ *
+ * Reported once per KEY rather than once per (locale, token): the same mistake
+ * mirrored across 11 files is one defect to fix, not 11 findings to wade through.
+ */
+function scanPlaceholderTokens(bundle: BundleConfig): void {
+  const dir = bundle.i18nDir!;
+  const hits = new Map<string, PlaceholderHit>();
+
+  for (const file of localeFiles(dir)) {
+    const locale = file.replace(/\.ts$/, "");
+    const relPath = `${dir}/${file}`;
+    const lines = fs.readFileSync(path.join(ROOT, dir, file), "utf-8").split("\n");
+    if (lines.slice(0, 10).some((l) => l.includes("i18n-ignore-file"))) continue;
+
+    // line (1-based) -> dotted key, so a finding names the key, not just a line
+    const lineToKey = new Map<number, string>();
+    for (const [key, line] of keyLineMap(dir, file)) lineToKey.set(line, key);
+
+    for (let i = 0; i < lines.length; i++) {
+      const bad: string[] = [];
+      DOUBLE_BRACE_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = DOUBLE_BRACE_RE.exec(lines[i])) !== null) {
+        const token = m[1].trim();
+        if (!LEGAL_DOUBLE_BRACE.has(token)) bad.push(m[0]);
+      }
+      if (bad.length === 0) continue;
+      if (localeLineSuppressed(lines, i)) continue;
+
+      const key = lineToKey.get(i + 1) ?? `${relPath}:${i + 1}`;
+      let hit = hits.get(key);
+      if (!hit) {
+        hit = {
+          tokens: new Set(),
+          locales: new Set(),
+          file: relPath,
+          line: i + 1,
+          anchored: false,
+          sample: lines[i].trim().slice(0, 90),
+        };
+        hits.set(key, hit);
+      }
+      for (const b of bad) hit.tokens.add(b);
+      hit.locales.add(locale);
+      // Anchor the finding at en.ts when the key is wrong there too — that is
+      // the file a developer edits first.
+      if (locale === "en" && !hit.anchored) {
+        hit.file = relPath;
+        hit.line = i + 1;
+        hit.sample = lines[i].trim().slice(0, 90);
+        hit.anchored = true;
+      }
+    }
+  }
+
+  for (const [key, hit] of hits) {
+    const tokens = [...hit.tokens].sort();
+    const singles = tokens.map((tk) => tk.slice(1, -1)).join(", ");
+    report({
+      check: "placeholders",
+      code: "unsubstituted-placeholder",
+      severity: "error",
+      bundle: bundle.name,
+      file: hit.file,
+      line: hit.line,
+      message:
+        `"${key}" uses ${tokens.join(", ")} — nothing substitutes double braces except the ` +
+        `student-label tokens (${[...LEGAL_DOUBLE_BRACE].join(", ")}). ` +
+        `t() interpolates single braces, so write ${singles}. ` +
+        `Present in: ${[...hit.locales].sort().join(", ")}.`,
+      snippet: hit.sample,
+    });
+  }
+
+  if (hits.size > 0) {
+    console.log(`    ${hits.size} key(s) with an unsubstituted {{token}}`);
+  }
+}
+
+// ============================================================================
+// CHECK 5: LOCALE VALUES IDENTICAL TO ENGLISH
 // ============================================================================
 
 async function scanLocaleValues(bundle: BundleConfig, enKeys: FlatBundle): Promise<void> {
@@ -1069,6 +1207,12 @@ async function main(): Promise<void> {
       console.log(`  unused keys: ${unused.length}`);
     }
 
+    // Raw-text check: runs off the locale files themselves, so it still works
+    // when en.ts failed to import.
+    if (bundle.i18nDir && enabled("placeholders")) {
+      scanPlaceholderTokens(bundle);
+    }
+
     if (enKeys && enabled("locales")) {
       await scanLocaleValues(bundle, enKeys);
     }
@@ -1101,6 +1245,7 @@ const CHECK_TITLES: Record<Check, string> = {
   inline: "Files that hand-roll localization with a locale ternary",
   fallbacks: "Unreachable `t(...) || 'literal'` fallbacks",
   errors: "Server error codes with no client translation",
+  placeholders: "Locale values with a {{token}} nothing substitutes",
   locales: "Locale values identical to English (probably untranslated)",
   unused: "Keys in en.ts that nothing references",
 };

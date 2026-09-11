@@ -18,15 +18,23 @@ class LocationService {
   // deletes additionally require the institute admin role OR being the creator
   // (mirrors the calendar event edit gate).
 
+  //
+  // 🚨 Both gates go through the ONE institute predicate pair
+  // (`instituteRepository.isUserMemberOfInstitute` / `isUserAdminOfInstitute`).
+  // They used to read `getInstituteUserLink` and use the row raw as a boolean,
+  // which ignores `isActive` — audit finding C9 (2026-09-10). Removal from an
+  // institute is a soft delete, so a terminated staff member kept read/write on
+  // every one of that institute's locations, contradicting §5.6's claim that
+  // workforce termination ends access immediately. Do not reintroduce a raw
+  // link test here.
+
   private async isInstituteMember(userId: string, instituteId: string): Promise<boolean> {
-    const link = await instituteRepository.getInstituteUserLink(instituteId, userId);
-    return !!link;
+    return instituteRepository.isUserMemberOfInstitute(instituteId, userId);
   }
 
   private async canEdit(location: Location, userId: string): Promise<boolean> {
     if (location.createdByUserId === userId) return true;
-    const link = await instituteRepository.getInstituteUserLink(location.instituteId, userId);
-    return !!link?.isAdmin;
+    return instituteRepository.isUserAdminOfInstitute(location.instituteId, userId);
   }
 
   /** List active locations for an institute the user belongs to. */

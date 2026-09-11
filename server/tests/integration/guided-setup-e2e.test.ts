@@ -37,24 +37,26 @@
  *    null student. The real client re-sends with `studentId` on the NEXT turn;
  *    this suite does exactly that, so the null→value fill-in in
  *    getMessageManager stays covered.
- *  - THE POST-ACTION VIEW MUST REACH THE CLIENT, and it only does because the
- *    TOOL ROUTER publishes it. ChatMessageManager DEEP-CLONES the memory values
- *    it is handed (chat-handler.ts:222, `JSON.parse(JSON.stringify(...))`) and
- *    `onMessage` merges the manager's copy OVER the original, so anything
+ *  - THE SESSION'S FLOW STATE MUST REACH THE CLIENT, and it only does because
+ *    the TOOL ROUTER publishes it. ChatMessageManager DEEP-CLONES the memory
+ *    values it is handed (chat-handler.ts:222, `JSON.parse(JSON.stringify(...))`)
+ *    and `onMessage` merges the manager's copy OVER the original, so anything
  *    written to the outer object mid-turn is silently discarded. That is why
  *    the `guidedSetup` case in tool-router.ts publishes through
  *    `memoryValuesRef.current` + `onUpdateMemoryValues`, exactly like every
  *    memory tool: that path reassigns `this.memoryValues`, so it survives the
- *    merge. Write the view to the outer `memoryValues` instead and the symptom
- *    is not an error — it is a rail that lags one turn behind the step the AI
- *    just moved, and a refusal the user never sees. Both are asserted here:
- *    the exact step on EVERY turn, and the refusal on turn 2.
+ *    merge. Lose it and the symptom is not an error — it is a rail that never
+ *    learns the turn ended, and a refusal the user never sees. Both are
+ *    asserted here: the signal on EVERY turn, and the refusal on turn 2.
  *
- * Because that path is now sound, `contextData.guidedsetup` is this suite's
- * primary evidence for the walk. The service (`serverStep`) and the tool
- * results the model saw are kept as cross-checks — they answer a different
- * question (is the step DERIVED from rows, and did the MODEL see the refusal)
- * and would not catch a publishing regression on their own.
+ * WHAT RIDES THE TURN IS A `GuidedSetupSignal`, NOT THE VIEW. The rail fetches
+ * the view from `GET /api/guided-setup/students/:id` and refetches when a turn
+ * ends, so every DERIVED field (step, gate, parked, record) is asserted here
+ * against the service — `serverStep` / `guided.resolveView`, which is literally
+ * the function that endpoint calls. The signal carries only what a refetch
+ * cannot reproduce: `active`, the bound `studentId`, the `panel` (which tracks
+ * the step, so the per-turn progression is still visible on the wire) and the
+ * turn-local `refused`.
  *
  * The consent gate is OFF here (family account, no consent collected) so the
  * flow is exercised end to end; the gate itself is pinned in guided-setup.test.ts.
@@ -80,7 +82,14 @@ jest.unstable_mockModule("../../services/smsService", () => ({
 }));
 
 import { truncateAll, db } from "../helpers/db.js";
-import { makeUser, makeInstitute, makeLicense, licenseService } from "../helpers/factories.js";
+import {
+  makeUser,
+  makeInstitute,
+  makeLicense,
+  makeStudent,
+  enrollStudent,
+  licenseService,
+} from "../helpers/factories.js";
 import { installFakeLlm, uninstallFakeLlm, type FakeLlmHandles } from "../helpers/llm-mock.js";
 import {
   aacSettings,
@@ -88,11 +97,17 @@ import {
   medicalRecords,
   programs,
   students,
+  studentContacts,
   chatSessions,
 } from "@shared/schema";
 import type { ChatMessage } from "@shared/schema";
-import { GUIDED_SETUP_KICKOFF } from "@shared/guided-setup";
-import { GUIDED_FLOW_SECTION_HEADER } from "../../services/chat/guided-flow/prompt-section.js";
+import {
+  GUIDED_SETUP_DONE_PANEL,
+  GUIDED_SETUP_KICKOFF,
+  GUIDED_SETUP_PANEL_BY_STEP,
+  type GuidedSetupStepId,
+} from "@shared/guided-setup";
+import { GUIDED_FLOW_SECTION_HEADER } from "../../services/guided-setup/flow-prompt-section.js";
 import { eq } from "drizzle-orm";
 
 type SessionModule = typeof import("../../services/sessionService.js");
@@ -387,28 +402,44 @@ function expectGuidedCallOutcome(
   );
 }
 
+/** The full view the client's own GET would return right now. */
+async function serverView(
+  userId: string,
+  instituteId: string,
+  studentId: string,
+): Promise<Record<string, unknown>> {
+  const { view } = await guided.resolveView({ userId, instituteId, studentId });
+  return view as unknown as Record<string, unknown>;
+}
+
 /**
- * The view the CLIENT receives on one turn: present at all, naming this flow,
- * and sitting on exactly the step this turn should have left it on.
+ * The signal the CLIENT receives on one turn: present at all, and naming the
+ * panel of exactly the step this turn should have left the flow on.
  *
  * `expectedStep` is the POST-action step — what the last `guidedSetup` call of
- * the turn produced, not what the turn opened on. Asserting it here is the
- * regression guard for the publishing path described in the docblock.
+ * the turn produced, not what the turn opened on. The signal does not carry
+ * the step (the client refetches the view for that), but it carries the
+ * step's PANEL, which is derived from it — so this is still the regression
+ * guard for the publishing path described in the docblock: a signal that never
+ * arrives, or one carrying the pre-action panel, fails here.
  */
-function expectGuidedView(
+function expectGuidedSignal(
   turn: { contextData?: Record<string, unknown> },
   label: string,
-  expectedStep: string,
+  expectedStep: GuidedSetupStepId | "done",
 ): Record<string, unknown> {
-  const view = turn.contextData?.guidedsetup as Record<string, unknown> | undefined;
-  // Named so a missing view says WHICH turn dropped it: the guided block is
+  const signal = turn.contextData?.guidedsetup as Record<string, unknown> | undefined;
+  // Named so a missing signal says WHICH turn dropped it: the guided block is
   // wrapped in its own try/catch and would otherwise vanish without a sound.
-  expect(`${label}: ${view ? "has guided view" : "NO Context_GuidedSetup"}`).toBe(
-    `${label}: has guided view`,
+  expect(`${label}: ${signal ? "has guided signal" : "NO Context_GuidedSetup"}`).toBe(
+    `${label}: has guided signal`,
   );
-  expect(view!.flow).toBe("student_setup");
-  expect(`${label} step=${String(view!.step)}`).toBe(`${label} step=${expectedStep}`);
-  return view!;
+  const expectedPanel =
+    expectedStep === "done"
+      ? GUIDED_SETUP_DONE_PANEL
+      : GUIDED_SETUP_PANEL_BY_STEP[expectedStep];
+  expect(`${label} panel=${String(signal!.panel)}`).toBe(`${label} panel=${expectedPanel}`);
+  return signal!;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,8 +483,9 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
 
   it("walks basics → medical → program → aac → contacts → done, keeping the block last and the diagnosis out", async () => {
     const { owner, institute } = await setupFamilyAccount();
-    /** The step the CLIENT was handed on each turn, in order. */
-    const clientSteps: string[] = [];
+    /** The panel the CLIENT was handed on each turn, in order — the step's
+     *  own panel, and the only step-shaped thing the signal carries. */
+    const clientPanels: string[] = [];
     const base = {
       userId: owner.id,
       instituteId: institute.id,
@@ -522,12 +554,14 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     // model never called `selectStudent`, the flow stayed unbound, and with no
     // student in the ctx nothing could tell it which identity facts were still
     // outstanding. Binding may not depend on the model making a UI call.
-    const view1 = expectGuidedView(turn1, "turn1", "medical");
-    clientSteps.push(String(view1.step));
-    expect(view1.account).toBe("family");
-    expect(view1.term).toBe("CHILD");
+    const signal1 = expectGuidedSignal(turn1, "turn1", "medical");
+    clientPanels.push(String(signal1.panel));
     // Bound on the CREATING turn, with no studentId on the request at all.
-    expect(view1.studentId).toBeTruthy();
+    // This is the whole reason the signal carries a studentId: the client has
+    // no other way to learn who the flow attached itself to, and it is what
+    // points its refetch at the right patient.
+    expect(signal1.studentId).toBeTruthy();
+    expect(signal1.active).toBe(true);
     expectGuidedSectionLastOnEveryCall(mark, "turn1");
 
     const sessionId = turn1.sessionId!;
@@ -578,9 +612,9 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     });
 
     expect(turn2.message.content).not.toBe("error:UNEXPECTED_ERROR");
-    const view2 = expectGuidedView(turn2, "turn2", "medical");
-    clientSteps.push(String(view2.step));
-    expect(view2.studentId).toBe(student.id);
+    const signal2 = expectGuidedSignal(turn2, "turn2", "medical");
+    clientPanels.push(String(signal2.panel));
+    expect(signal2.studentId).toBe(student.id);
     expectGuidedSectionLastOnEveryCall(mark, "turn2");
 
     // A REFUSAL MUST REACH BOTH AUDIENCES. Nothing has been collected for step
@@ -590,11 +624,18 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     // publishing path, so it is the direct guard on that regression.
     const refusal = { action: "advance", reason: "stepIncomplete" };
     expect(lastToolRefusal(turn2)).toEqual(refusal);
-    expect(view2.refused).toEqual(refusal);
+    // The rail's half. A refusal is produced by the tool action and persisted
+    // NOWHERE, so it is the one thing a refetch could never bring back — this
+    // is the direct guard on it still riding the turn that caused it.
+    expect(signal2.refused).toEqual(refusal);
 
-    // Cross-check: the step the client was handed is DERIVED from the rows, not
-    // merely echoed back by the tool it just called.
+    // The step the client's own refetch will report is DERIVED from the rows,
+    // not merely echoed back by the tool the model just called.
     expect(await serverStep(owner.id, institute.id, student.id)).toBe("medical");
+    // The account facts the rail renders come from that same refetch.
+    const view2 = await serverView(owner.id, institute.id, student.id);
+    expect(view2.account).toBe("family");
+    expect(view2.term).toBe("CHILD");
 
     // =====================================================================
     // TURN 3 — the medical record, then advance. `Context_Reports` is an object
@@ -624,7 +665,7 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     });
 
     expect(turn3.message.content).not.toBe("error:UNEXPECTED_ERROR");
-    clientSteps.push(String(expectGuidedView(turn3, "turn3", "program").step));
+    clientPanels.push(String(expectGuidedSignal(turn3, "turn3", "program").panel));
     // The medical write already completed step 2, so the derived step is
     // "program" before `advance` even runs — `advance` then legitimately
     // refuses `programMissing` (nothing created yet) rather than silently
@@ -691,7 +732,7 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     });
 
     expect(turn4.message.content).not.toBe("error:UNEXPECTED_ERROR");
-    clientSteps.push(String(expectGuidedView(turn4, "turn4", "aac").step));
+    clientPanels.push(String(expectGuidedSignal(turn4, "turn4", "aac").panel));
     // activateProgram AND advance both ran in this turn; only the LAST one
     // reaches contextData.guidedsetup, so check both individually. The host
     // action (activateProgram) must succeed outright. The trailing `advance`
@@ -808,14 +849,21 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     expect(`turn5 skip active: ${JSON.stringify(afterSkip?.active)}`).toBe(
       "turn5 skip active: false",
     );
-    const view5 = expectGuidedView(turn5, "turn5", "done");
-    expect(`turn5 view active: ${JSON.stringify(view5.active)}`).toBe("turn5 view active: false");
-    expect(typeof (view5.record as { completedAt?: unknown } | null)?.completedAt).toBe("string");
-    // The stamp is on the ROW, not just in the payload — this is the turn that
-    // wrote it, one turn earlier than it used to be written.
+    const signal5 = expectGuidedSignal(turn5, "turn5", "done");
+    expect(`turn5 signal active: ${JSON.stringify(signal5.active)}`).toBe(
+      "turn5 signal active: false",
+    );
+    // The stamp is on the ROW, not just in a payload — this is the turn that
+    // wrote it, one turn earlier than it used to be written, and it is what
+    // the client's refetch reads back as `record.completedAt`.
     expect(typeof (await state.readRecord(student.id, institute.id))?.completedAt).toBe("string");
+    const view5 = await serverView(owner.id, institute.id, student.id);
+    expect(`turn5 refetched active: ${JSON.stringify(view5.active)}`).toBe(
+      "turn5 refetched active: false",
+    );
+    expect(typeof (view5.record as { completedAt?: unknown } | null)?.completedAt).toBe("string");
 
-    clientSteps.push(String(view5.step));
+    clientPanels.push(String(signal5.panel));
     // The last step really is finished — derived from the rows, the record and
     // the recorded skip, not from anything the model asserted about itself.
     expect(await serverStep(owner.id, institute.id, student.id)).toBe("done");
@@ -867,8 +915,8 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     // completing tool call, and the stamped record stops `hasUnfinishedRecord`
     // from resuming it — the two halves of "it let go", checked together
     // because either one alone would keep the block alive.
-    expect(`turn6 guided view: ${turn6.contextData?.guidedsetup ? "present" : "none"}`).toBe(
-      "turn6 guided view: none",
+    expect(`turn6 guided signal: ${turn6.contextData?.guidedsetup ? "present" : "none"}`).toBe(
+      "turn6 guided signal: none",
     );
     expectNoGuidedSectionOnAnyCall(mark, "turn6");
 
@@ -877,11 +925,12 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     // order, on the turn that produced it — no lag, no skipped step, no step
     // repeated because a mid-turn view was dropped on the way out.
     // =====================================================================
-    // Turn 1 is "medical", not "basics": the whole of step 1 landed in that
-    // turn's single `add`, and the rail no longer lags a turn behind the rows.
-    // Five entries, not six: turn 6 publishes nothing because the flow ended on
-    // turn 5, which is the point.
-    expect(clientSteps).toEqual(["medical", "medical", "program", "aac", "done"]);
+    // By PANEL, which is derived from the step (GUIDED_SETUP_PANEL_BY_STEP) and
+    // is what the signal carries. Turn 1 is the medical step's panel, not step
+    // 1's: the whole of step 1 landed in that turn's single `add`, and the rail
+    // no longer lags a turn behind the rows. Five entries, not six: turn 6
+    // publishes nothing because the flow ended on turn 5, which is the point.
+    expect(clientPanels).toEqual(["reports", "reports", "progress", "aacsettings", "students"]);
 
     const finalRecord = await state.readRecord(student.id, institute.id);
     expect(typeof finalRecord?.completedAt).toBe("string");
@@ -941,4 +990,228 @@ describe("Guided Setup — a scripted LLM walks the family flow end to end", () 
     // scripted call went unused.
     expect(llm.structured.calls).toHaveLength(enqueued);
   }, 120_000);
+});
+
+/**
+ * THE RAIL MUST NOT LAG BEHIND A PLAIN MEMORY WRITE.
+ *
+ * The rail refetches its view when a turn ends, so what this pins is the two
+ * halves that make that refetch land on the right answer: the turn PUBLISHES A
+ * SIGNAL (without one the client never invalidates, and a `staleTime: Infinity`
+ * cache is stale forever), and the service resolves the NEW gate off the rows
+ * the write just created.
+ *
+ * Neither is free. The refresh hook in getMessageManager's
+ * `onUpdateMemoryValues` used to be installed only while the flow was UNBOUND —
+ * so a bound flow's turn that wrote a fact and called no host action left the
+ * rail a whole turn stale, and the only reason that was survivable is that the
+ * model habitually calls `guidedSetup` after a write.
+ *
+ * Reproduced live (clinic, 2026-09-09): a patient at gate `none`, step 2
+ * consent-locked, so the only legal move was `manageMemory` writing the
+ * guardian. The write flipped the gate to `sign_required` — a direct GET said
+ * so — while the rail still rendered "No guardian contact yet" and the
+ * assistant's reply pointed at a "Send consent request" button the stale view
+ * was not drawing. Only a page reload fixed it.
+ *
+ * The gate is ON here (the whole point) and the account is an institution, so
+ * `sign_required` is reached the way a clinic reaches it. Nothing may send:
+ * the guardian gets a CONTACT ROW, never a request.
+ */
+describe("Guided Setup — a memory write republishes the view on a BOUND flow", () => {
+  let original: string | undefined;
+
+  beforeEach(async () => {
+    original = process.env[ENV_FLAG];
+    process.env[ENV_FLAG] = "true";
+    callId = 0;
+    enqueued = 0;
+    sendEmail.mockClear();
+    sendSms.mockClear();
+    llm = installFakeLlm();
+    await truncateAll();
+  });
+
+  afterEach(async () => {
+    uninstallFakeLlm();
+    if (original === undefined) delete process.env[ENV_FLAG];
+    else process.env[ENV_FLAG] = original;
+    await truncateAll();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A clinic patient with step 1's facts on file and no guardian at all —
+   * exactly the row the live failure sat on. `withRecord` decides whether a
+   * guided flow exists to resume: without one, no flow is active on the turn
+   * and nothing may resolve a view.
+   */
+  async function setupClinicPatient(opts: { withRecord: boolean }) {
+    const owner = await makeUser({ firstName: "Yael", lastName: "Clinician" });
+    const { institute } = await makeInstitute(owner.id, { type: "clinic" });
+    await makeLicense({
+      instituteId: institute.id,
+      permissions: { maxStudents: 5, aacEnabled: true, dashboardLevel: 1 },
+    });
+    const { student } = await makeStudent(owner.id, {
+      firstName: "Sam",
+      lastName: "Nella",
+      country: "IL",
+      gender: "male",
+      primaryLanguage: "he",
+    });
+    await enrollStudent(institute.id, student.id, owner.id);
+    await db
+      .update(students)
+      .set({ birthDate: "2016-05-05" })
+      .where(eq(students.id, student.id));
+    if (opts.withRecord) {
+      // A resumable record is what makes the NEXT turn's flow active AND
+      // bound: `hasUnfinishedRecord` finds it and the request's studentId is
+      // adopted, with no `guidedSetup` field on the request at all.
+      await state.writeRecord(
+        student.id,
+        institute.id,
+        state.newRecord({ userId: owner.id }),
+      );
+    }
+    return { owner, institute, student };
+  }
+
+  /** The guardian write the assistant makes when the consent prompt asks for one. */
+  function guardianOp() {
+    return memoryOps({
+      action: "add",
+      path: "/Student_Contacts",
+      key: "guardian",
+      value: {
+        name: "Dana Nella",
+        relationship: "mother",
+        role: "parent_guardian",
+        contactEmail: "dana.nella@test.local",
+      },
+    });
+  }
+
+  it("a guardian written with manageMemory moves the published gate none → sign_required in the SAME turn", async () => {
+    const { owner, institute, student } = await setupClinicPatient({ withRecord: true });
+    const base = {
+      userId: owner.id,
+      instituteId: institute.id,
+      activeFeature: "students" as const,
+      replyType: "text" as const,
+      language: "he",
+    };
+
+    // Non-vacuity: the flow really is standing at the closed gate with nobody
+    // to sign, which is the state that renders "No guardian contact yet".
+    const before = await guided.resolveView({
+      userId: owner.id,
+      instituteId: institute.id,
+      studentId: student.id,
+    });
+    expect(before.view.gate).toBe("none");
+    const beforeRow = (before.view.parked ?? []).find((p) => p.studentId === student.id);
+    expect(beforeRow?.consentContactId ?? null).toBeNull();
+
+    const mark = llm.structured.calls.length;
+    // ONE memory write and a reply. No `guidedSetup` action anywhere in the
+    // turn — that is the whole scenario: the tool router never runs, so the
+    // refresh hook is the only thing that can republish.
+    enqueueTools(guardianOp());
+    enqueueText("שמרתי את פרטי האפוטרופוס.");
+
+    const turn = await sessionService.onMessage({
+      ...base,
+      studentId: student.id,
+      messages: [{ role: "user", content: "אמא שלו היא דנה", timestamp: Date.now() }],
+    });
+
+    expect(turn.message.content).not.toBe("error:UNEXPECTED_ERROR");
+
+    // The write really landed — otherwise "the gate moved" would be a fact
+    // about a view resolved over nothing.
+    const [contact] = await db
+      .select({ id: studentContacts.id, email: studentContacts.contactEmail })
+      .from(studentContacts)
+      .where(eq(studentContacts.studentId, student.id));
+    expect(contact?.email).toBe("dana.nella@test.local");
+
+    // HALF ONE: the turn told the client something happened. No signal, no
+    // invalidation, and a `staleTime: Infinity` cache never asks again.
+    const signal = turn.contextData?.guidedsetup as Record<string, unknown> | undefined;
+    expect(`published signal: ${signal ? "present" : "MISSING"}`).toBe(
+      "published signal: present",
+    );
+    expect(signal!.active).toBe(true);
+    // The id the client's refetch is keyed on. A signal naming nobody sends the
+    // rail to the wrong patient's view, or to none at all.
+    expect(signal!.studentId).toBe(student.id);
+
+    // HALF TWO: what that refetch now returns — `resolveView` is literally the
+    // function GET /api/guided-setup/students/:id calls.
+    //
+    // THE REGRESSION. Before the fix this was still "none" with a null
+    // contact id — the rail's "Add guardian contact" state — for the whole
+    // turn that created the guardian.
+    const view = await serverView(owner.id, institute.id, student.id);
+    expect(view.flow).toBe("student_setup");
+    expect(view.studentId).toBe(student.id);
+    expect(`refetched gate: ${String(view.gate)}`).toBe("refetched gate: sign_required");
+    // The contact id the "Send consent request" button needs. The rail reads
+    // it off the BOUND student's own row in `parked` (GuidedSetupRail:
+    // `boundParked`) — `consentContactId` lives nowhere else on the view — so
+    // that is where a stale view shows up as a button with nothing to send.
+    const parkedRows = (view.parked ?? []) as Array<Record<string, unknown>>;
+    const boundRow = parkedRows.find((p) => p.studentId === student.id);
+    expect(`bound parked row: ${boundRow ? "present" : "MISSING"}`).toBe(
+      "bound parked row: present",
+    );
+    expect(`parked gate: ${String(boundRow!.gate)}`).toBe("parked gate: sign_required");
+    expect(boundRow!.consentContactId).toBe(contact.id);
+    expect(view.step).toBe(await serverStep(owner.id, institute.id, student.id));
+    // The flow is still guiding, and its block is still last.
+    expectGuidedSectionLastOnEveryCall(mark, "guardian turn");
+    expect(llm.structured.calls).toHaveLength(enqueued);
+  }, 60_000);
+
+  it("no guided flow on the turn: the same write publishes no view and resolves nothing", async () => {
+    const { owner, institute, student } = await setupClinicPatient({ withRecord: false });
+    const base = {
+      userId: owner.id,
+      instituteId: institute.id,
+      activeFeature: "students" as const,
+      replyType: "text" as const,
+      language: "he",
+    };
+
+    enqueueTools(guardianOp());
+    enqueueText("שמרתי.");
+
+    const turn = await sessionService.onMessage({
+      ...base,
+      studentId: student.id,
+      messages: [{ role: "user", content: "אמא שלו היא דנה", timestamp: Date.now() }],
+    });
+
+    expect(turn.message.content).not.toBe("error:UNEXPECTED_ERROR");
+    // The write still happened — this is an ordinary clinician turn.
+    const [contact] = await db
+      .select({ id: studentContacts.id })
+      .from(studentContacts)
+      .where(eq(studentContacts.studentId, student.id));
+    expect(contact?.id).toBeTruthy();
+
+    // No flow, so no signal…
+    expect(`guided signal: ${turn.contextData?.guidedsetup ? "present" : "none"}`).toBe(
+      "guided signal: none",
+    );
+    // …and no resolution AT ALL. `resolveForChat` creates the onboarding
+    // record when a student has none, so a record appearing here would be the
+    // fingerprint of a refresh that fired on a session with no wizard running
+    // — the cost this hook must never impose on ordinary turns.
+    expect(await state.readRecord(student.id, institute.id)).toBeNull();
+    expect(llm.structured.calls).toHaveLength(enqueued);
+  }, 60_000);
 });

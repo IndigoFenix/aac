@@ -903,6 +903,7 @@ export const ru: Translations = {
       when: "Когда",
       why: "Почему",
       how: "Как",
+      question: "Вопрос",
       someone: "Кто-то",
       near: "Близко",
       far: "Далеко",

@@ -88,10 +88,12 @@ jest.unstable_mockModule("../services/paddleFulfillmentService.js", () => ({
 }));
 
 const notifyPaddleFulfillmentProblem = jest.fn<any>();
+const notifyPaddleApiKeyExpiry = jest.fn<any>();
 // The alert path ends in SES and the test env carries live credentials — a
 // real module here would EMAIL on every failure case below.
 jest.unstable_mockModule("../services/providerAlertService.js", () => ({
   notifyPaddleFulfillmentProblem,
+  notifyPaddleApiKeyExpiry,
   resetPaddleAlertThrottle: () => {},
 }));
 
@@ -207,6 +209,9 @@ function eventBody(over: Record<string, unknown> = {}): string {
 beforeAll(async () => {
   process.env.PADDLE_ENVIRONMENT = "sandbox";
   process.env.PADDLE_API_KEY_SANDBOX = "pdl_sdbx_test_key";
+  // Sandbox prefers PADDLE_WEBHOOK_SECRET_SANDBOX; clear it so the secret this
+  // suite signs with is the one verifyWebhook actually picks.
+  delete process.env.PADDLE_WEBHOOK_SECRET_SANDBOX;
   process.env.PADDLE_WEBHOOK_SECRET = WEBHOOK_SECRET;
   ({ paddleController } = await import("../controllers/paddleController.js"));
   ({ applyPaddleWebhookRawBody } = await import("../middleware/paddle-webhook-raw.js"));
@@ -218,6 +223,8 @@ beforeEach(() => {
   setStatus.mockClear();
   reopenFailed.mockClear();
   handleEvent.mockClear();
+  notifyPaddleFulfillmentProblem.mockClear();
+  notifyPaddleApiKeyExpiry.mockClear();
   handleEvent.mockImplementation(async () => ({ status: "processed", actions: ["ok"] }));
 });
 
@@ -356,6 +363,74 @@ describe("paddle webhook — outcomes", () => {
     });
 
     expect(notifyPaddleFulfillmentProblem).not.toHaveBeenCalled();
+    expect(notifyPaddleApiKeyExpiry).not.toHaveBeenCalled();
+  });
+
+  // A Paddle API key cannot exist without an expiry date, and the notification
+  // destination is subscribed to ALL events, so these arrive as "unhandled event
+  // type" → ignored. Nothing else would ever notice: an expired key breaks
+  // checkout creation while webhooks keep verifying under the signing secret.
+  it("alerts on an ignored api_key.expiring, carrying the key name and expiry", async () => {
+    handleEvent.mockImplementation(async () => ({
+      status: "ignored",
+      reason: "unhandled event type: api_key.expiring",
+    }));
+
+    const body = eventBody({
+      event_type: "api_key.expiring",
+      data: {
+        id: "apikey_01live",
+        name: "Aivota production",
+        status: "active",
+        expires_at: "2026-12-08T00:00:00.000000Z",
+        last_used_at: "2026-09-08T12:00:00.000000Z",
+      },
+    });
+    await withApp(async (port) => {
+      const res = await post(port, body, { "paddle-signature": sign(body) });
+      expect(res.status).toBe(200);
+    });
+
+    // The ignored bookkeeping is unchanged — the alert is additive.
+    expect(setStatus).toHaveBeenCalledWith(
+      "evt_01test",
+      "ignored",
+      "unhandled event type: api_key.expiring",
+    );
+    expect(notifyPaddleApiKeyExpiry).toHaveBeenCalledTimes(1);
+    // The body above is Paddle's snake_case wire format; SDK 3.8.0's
+    // GenericEvent camel-cases it on the way through, so the controller has to
+    // accept either spelling or the expiry date vanishes from the email.
+    expect(notifyPaddleApiKeyExpiry).toHaveBeenCalledWith({
+      kind: "expiring",
+      eventId: "evt_01test",
+      keyName: "Aivota production",
+      expiresAt: "2026-12-08T00:00:00.000000Z",
+    });
+    // Not a payment event: the fulfillment doorbell must stay silent.
+    expect(notifyPaddleFulfillmentProblem).not.toHaveBeenCalled();
+  });
+
+  it("alerts with kind \"expired\" on an ignored api_key.expired", async () => {
+    handleEvent.mockImplementation(async () => ({
+      status: "ignored",
+      reason: "unhandled event type: api_key.expired",
+    }));
+
+    const body = eventBody({
+      event_type: "api_key.expired",
+      data: { id: "apikey_01live", name: "Aivota production", status: "expired" },
+    });
+    await withApp(async (port) => {
+      const res = await post(port, body, { "paddle-signature": sign(body) });
+      expect(res.status).toBe(200);
+    });
+
+    expect(notifyPaddleApiKeyExpiry).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "expired", eventId: "evt_01test", keyName: "Aivota production" }),
+    );
+    // No expires_at on the wire → null, not undefined or a crash.
+    expect((notifyPaddleApiKeyExpiry.mock.calls[0] as any[])[0].expiresAt).toBeNull();
   });
 
   it("returns 500 and marks the row failed when fulfillment throws", async () => {

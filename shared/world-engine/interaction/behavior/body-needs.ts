@@ -69,6 +69,7 @@
 import {
   energyTemplate,
   hungerTemplate,
+  provisionTemplate,
   relieveTemplate,
   securityTemplate,
   socialTemplate,
@@ -189,6 +190,31 @@ export function restClear(level: number, quality: number): number {
   return Math.max(0, level - quality);
 }
 
+/**
+ * 🪨 WHAT THE CAMP EATS IN A DAY, and what it wants standing by (ruling 2 of
+ * piles-not-boxes-round.md).
+ *
+ * ⚖️ TWO CLOCKS (`feedback_two_clocks_metabolic_vs_solar`, user 2026-09-08).
+ * The draw is `bodyNeedRate("hunger") × dayLengthS × bodies` — the METABOLIC
+ * rate against the solar day, which is exactly the horizon `noteEnablerDemand`
+ * already computes for ONE body (`dayWant`). Nothing here is a new pacing
+ * constant and nothing multiplies a need by `dayLengthS` a second time: a 24-min
+ * day changes WHEN the camp restocks, never HOW MUCH it eats.
+ *
+ * `below` = ONE day's draw — the floor the pile must not fall through, which is
+ * the same statement a household's `surplusUnits` buffer makes about its pantry.
+ * `upTo` = TWO days' — the cap a provisioning trip fills to, so a settler that
+ * has walked to a stand comes back with a day in hand rather than a bite.
+ *
+ * Floored at one whole ration: a larder that wants less than a meal is the
+ * single-berry trip defect restated one rung up.
+ */
+export function campLarderDraw(scale: WorldScale, bodies: number): { below: number; upTo: number } {
+  const perDay = needRate(scale, "hunger") * scale.dayLengthS * Math.max(0, bodies);
+  const below = Math.max(1, Math.ceil(perDay));
+  return { below, upTo: below * 2 };
+}
+
 /** THE HOMELESS BODY'S ROWS — what a settler at a camp wants, as data.
  *
  *  Deliberately the SAME template factories a resident carries, at the SAME
@@ -231,12 +257,42 @@ export function bodyNeedTemplates(
      *  pure module cannot read. The caller walks it. Absent = 0 (nobody scares
      *  me ⇒ the base rate). */
     maxFear?: number;
+    /**
+     * 🪨 THE CAMP'S LARDER, OPT-IN (piles-not-boxes-round.md ruling 2). Present
+     * ⇒ this body carries the EXISTING `provisionTemplate` row for the good its
+     * hunger row eats, against the camp's ground pile: *fetch until the pile
+     * holds a day's draw, fill to two*. Absent returns EXACTLY the rows this
+     * function has always returned, so a world that has not asked for a camp
+     * larder (the dollhouse, nature-hike) cannot have its decide ladder moved.
+     *
+     * `bodies` is how many mouths the camp is feeding — the caller counts them
+     * (this module has no session).
+     *
+     * 🚫 AND IT NAMES NO GOOD. The head comes off the HUNGER ROW this function
+     * just built (`item.category`), so a world whose bodies eat something else
+     * provisions that instead, with no change here and none at the call site.
+     */
+    larder?: { bodies: number };
   },
 ): NeedTemplate[] {
   const out: NeedTemplate[] = [
     hungerTemplate("food", needRate(scale, "hunger"), []),
     energyTemplate(needRate(scale, "energy")),
   ];
+  if (opts.larder) {
+    // ⚖️ THE ROW IS THE RESIDENTS' ROW, UNCHANGED — same shape, same acquire
+    // order (source, then storage, then loose), same priority 3, which is
+    // BELOW hunger's 5 by construction, so the LIVELOCK INVARIANT above holds
+    // for a settler exactly as it holds for a family: hunger acquires food and
+    // outranks every deposit-shaped row for it, so the pair cannot spin.
+    // `exclusive` keeps ONE provisioner per good at a time, as it does in a
+    // house — five settlers must not all walk out for the same larder.
+    const goodKey = out.find((t) => t.key.startsWith("hunger:"))?.item.category ?? "";
+    if (goodKey) {
+      const { below, upTo } = campLarderDraw(scale, opts.larder.bodies);
+      out.push({ ...provisionTemplate(goodKey, below, upTo), exclusive: true });
+    }
+  }
   if (opts.pullOn) out.push(relieveTemplate());
   if (opts.social) {
     // ⚠️ RATE-SCALED, NEVER THRESHOLD-SCALED. `0.5 + dial` spans ×0.5 … ×1.5 of

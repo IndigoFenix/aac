@@ -165,6 +165,15 @@ export function createSpaceFlight(
     citiedBodies.add(body.id);
     const built = body.geography;
     if (!built || built.sites.length === 0) return;
+    // ⚖️ BARE, AND PINNED BARE (planet-boot round). Every producer of this
+    // planet's city list calls `planetCities` with NO options — here,
+    // `trade-roads.ts createTradeRoads`, `planet/refine.ts`, and the engine's
+    // own `interaction/town/planet-scope.ts civOf` — so all four found the
+    // same 1757 capitals and a homestead's neighbours are the same cities
+    // whether the world is rendered or narrated.
+    // `server/tests/world-engine/planet-scope.test.ts` pins that count, so an
+    // opts argument added HERE and not there (or the reverse) is a red, not a
+    // silent divergence. Add one in all four places, or in none.
     addCityEntries(body, planetCities(built));
   }
 

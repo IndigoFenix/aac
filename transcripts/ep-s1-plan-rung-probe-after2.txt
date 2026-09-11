@@ -1,0 +1,75 @@
+# world-text v1   proto=1
+# world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
+# engine=6d3659f0+dirty
+# started=2026-09-08T20:12:55.922Z
+# ─────────────────────────────────────────
+> wait 40
+BOARD  __town__: house  [home]
+  1. build  [build]  "Build."
+NOTE   1 choice(s), the whole list.
+ENTER  orrin came into view here west.
+SAY    orrin: "I'm happy."  [i_me + happy]
+ENTER  biscuit came into view here south.
+SAY    biscuit: "Are you okay?"  [you + ok#question]
+SAY    orrin: "I'm happy."  [i_me + happy]
+EXIT   pip left view here west.
+EXIT   orrin left view here west.
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+TICK   waited 40.0s.
+> say mara + give + basket + to + orrin
+OK     said: mara + give + basket + to + orrin
+TOAST  ▶ party (1): mara + give + basket + to + orrin (feedback)
+TICK   quiet after 0.8s.
+> /why mara
+CHEAT  /why mara
+> wait 2
+TICK   waited 2.0s.
+> /why mara
+CHEAT  /why mara
+> wait 3
+TICK   waited 3.0s.
+> /why mara
+CHEAT  /why mara
+> wait 5
+ENTER  pip came into view here south.
+ENTER  mara came into view there south.
+ENTER  biscuit came into view there south.
+ENTER  orrin came into view there south.
+EXIT   pip left view here west.
+EXIT   biscuit left view there south.
+EXIT   orrin left view there west.
+TICK   waited 5.0s.
+> /why mara
+CHEAT  /why mara
+> wait 5
+EXIT   mara left view here north.
+ENTER  mara came into view here north.
+ENTER  biscuit came into view here south.
+ENTER  pip came into view here west.
+ENTER  orrin came into view there west.
+TICK   waited 5.0s.
+> /why mara
+CHEAT  /why mara
+> say orrin + give + basket + to + mara
+OK     said: orrin + give + basket + to + mara
+SAY    orrin: "Give the basket to Mara."  [give.will + basket + to + mara]
+TOAST  ▶ party (1): orrin + give + basket + to + mara (feedback)
+EXIT   mara left view here west.
+EXIT   biscuit left view here south.
+EXIT   pip left view here west.
+EXIT   orrin left view here south.
+TICK   quiet after 1.5s.
+> /why orrin
+CHEAT  /why orrin
+> wait 3
+TICK   waited 3.0s.
+> /why orrin
+CHEAT  /why orrin
+> wait 5
+TICK   waited 5.0s.
+> /why orrin
+CHEAT  /why orrin
+# ─────────────────────────────────────────
+# commands=17  presses=0  screens=1  sim=65.3s
+# events: EXIT 12  ENTER 10  TICK 9  CHEAT 8  SAY 4  OK 2  TOAST 2  BOARD 1  NOTE 1

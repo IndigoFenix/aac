@@ -3,18 +3,17 @@
 // Simplified RTL support using dir attribute at container level
 
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
 import { useInstitute } from '@/hooks/useInstitute';
 import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { apiRequest, apiUrl } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { openUI } from '@/lib/uiEvents';
 import { useGuidedSetup } from '@/features/guided-setup/useGuidedSetup';
+import { useStudentLabel } from '@/hooks/useStudentLabel';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -62,21 +61,22 @@ interface StudentWithProgress {
   nextDeadline?: string;
   age?: number;
   role?: string;
-  gender?: string;
-  birthDate?: string;
-  backgroundContext?: string;
-  framework?: string;
-  country?: string;
+  gender?: string | null;
+  birthDate?: string | null;
+  backgroundContext?: string | null;
+  framework?: string | null;
+  country?: string | null;
   biometricDataId?: string | null;
 }
 
 export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const { t, isRTL } = useLanguage();
+  const { ts } = useStudentLabel();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const { user } = useAuth();
-  const { students, selectStudent } = useStudent();
-  const { currentPermissions } = useInstitute();
+  const { students, selectStudent, isLoading } = useStudent();
+  const { currentInstitute, institutes, selectInstitute, currentPermissions } = useInstitute();
+  const instituteId = currentInstitute?.id;
   const dashboardLevel = currentPermissions?.dashboardLevel ?? 0;
   const showProgress = dashboardLevel === -1 || dashboardLevel > 0;
   const { aiRefreshing } = useChat();
@@ -96,26 +96,17 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
-  // Fetch students with progress data
-  const { data: studentsData, isLoading } = useQuery({
-    queryKey: ['/api/students'],
-    queryFn: async () => {
-      const response = await apiRequest('GET', '/api/students');
-      const data = await response.json();
-      return data?.success && Array.isArray(data.students) ? data.students : [];
-    },
-    enabled: !!user,
-  });
-
-  // Use API data or fallback to students with mock progress
-  const studentsWithProgress: StudentWithProgress[] = (studentsData || []).length > 0 
-  ? studentsData 
-  : students.map(u => ({
-      ...u,
-      progress: 0,
-      currentPhase: '---',
-      nextDeadline: '---',
-    }));
+  // `useStudent()` already scopes `students` to the selected institute (and
+  // clears it when none is selected), so it is the only source of truth here.
+  // There used to be a second, unscoped `/api/students` query; the server is
+  // fail-closed without an instituteId, so that query always resolved to
+  // `[]` and its result was silently discarded in favor of `students` anyway.
+  const studentsWithProgress: StudentWithProgress[] = students.map(u => ({
+    ...u,
+    progress: 0,
+    currentPhase: '---',
+    nextDeadline: '---',
+  }));
 
   // Filter students
   const filteredStudents = studentsWithProgress.filter(student => {
@@ -161,7 +152,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   // real form is still one click away: the rail offers "use a form instead",
   // which fires openUI('createStudent').
   const handleCreateStudent = () => {
-    if (newStudentBusy) return;
+    if (newStudentBusy || !instituteId) return;
     void startGuidedSetup();
   };
 
@@ -218,7 +209,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
           <Button
             className="gap-2 bg-primary text-primary-foreground shadow-md"
             onClick={handleCreateStudent}
-            disabled={newStudentBusy}
+            disabled={newStudentBusy || !instituteId}
+            title={!instituteId ? ts('students.selectInstituteFirst') : undefined}
           >
             {guidedLaunching ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -276,7 +268,66 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
       {/* Student List */}
       <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
         <div className="p-4 space-y-3">
-          {filteredStudents.map((student) => (
+          {!instituteId ? (
+            <div className={cn(
+              'text-center py-12',
+              isDark ? 'text-slate-400' : 'text-slate-600'
+            )}>
+              <User className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium">{ts('students.selectInstituteEmpty')}</p>
+              {institutes.length > 0 && (
+                <div className="mt-4 flex justify-center">
+                  <select
+                    className={cn(
+                      'max-w-[220px] text-sm border border-input bg-background rounded-md px-3 py-2',
+                      'focus:outline-none focus:ring-2 focus:ring-primary'
+                    )}
+                    dir="auto"
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) selectInstitute(e.target.value);
+                    }}
+                  >
+                    <option value="" disabled>{t('header.selectInstitute')}</option>
+                    {institutes.map((institute) => (
+                      <option key={institute.id} value={institute.id}>{institute.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          ) : isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className={cn(
+              'text-center py-12',
+              isDark ? 'text-slate-400' : 'text-slate-600'
+            )}>
+              <User className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium">
+                {searchQuery
+                  ? (t('students.noResults') || 'No students match your search')
+                  : (t('students.noStudents') || 'No students yet')}
+              </p>
+              {!searchQuery && (
+                <Button
+                  className="mt-4"
+                  onClick={handleCreateStudent}
+                  disabled={newStudentBusy}
+                >
+                  {guidedLaunching ? (
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 me-2" />
+                  )}
+                  {t('students.addFirst')}
+                </Button>
+              )}
+            </div>
+          ) : (
+          filteredStudents.map((student) => (
             <Card
               key={student.id}
               dir={isRTL ? 'rtl' : 'ltr'}
@@ -421,40 +472,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                 </div>
               </CardContent>
             </Card>
-          ))}
-
-          {isLoading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
-
-          {!isLoading && filteredStudents.length === 0 && (
-            <div className={cn(
-              'text-center py-12',
-              isDark ? 'text-slate-400' : 'text-slate-600'
-            )}>
-              <User className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">
-                {searchQuery 
-                  ? (t('students.noResults') || 'No students match your search')
-                  : (t('students.noStudents') || 'No students yet')}
-              </p>
-              {!searchQuery && (
-                <Button
-                  className="mt-4"
-                  onClick={handleCreateStudent}
-                  disabled={newStudentBusy}
-                >
-                  {guidedLaunching ? (
-                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                  ) : (
-                    <Plus className="w-4 h-4 me-2" />
-                  )}
-                  {t('students.addFirst')}
-                </Button>
-              )}
-            </div>
+          ))
           )}
         </div>
       </ScrollArea>

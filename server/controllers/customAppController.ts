@@ -3,7 +3,9 @@ import { z } from "zod";
 import { customAppRepository } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
 import { validateCustomAppDefinitionForType } from "@shared/custom-app-validator";
-import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { resolveClinicianCtx } from "../services/sharing/clinicianCtx";
+import type { AccessCtx } from "../services/sharing/visibility";
+import { studentService } from "../services/studentService";
 
 const saveAppSchema = z.object({
   name: z.string().min(1),
@@ -91,7 +93,32 @@ export class CustomAppController {
   async getAvailableAppsForStudent(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
-      const ctx = await buildClinicianCtx(req, studentId);
+      // 🚨 The fail-open sentinel, closed 2026-09-10. This read used to pass
+      // `buildClinicianCtx`'s nullable straight through, and an absent ctx meant
+      // "no visibility filter" — so naming an institute you are not a member of
+      // (`?instituteId=<anyone>`) got the student's assignments with the
+      // cross-institute rules switched OFF, the same `undefined` that
+      // `packageController` read as deny. The three states are now separate:
+      const resolved = await resolveClinicianCtx(req, studentId);
+      if (resolved.kind === "not_a_member") {
+        res.status(403).json({ error: "error:NOT_INSTITUTE_MEMBER" });
+        return;
+      }
+      let ctx: AccessCtx;
+      if (resolved.kind === "ctx") {
+        ctx = resolved.ctx;
+      } else {
+        // No institute selected — legitimate on this route (the AAC settings
+        // screen does not send one). The caller's DIRECT access to the student
+        // governs, and the principal is the student: same rows as the old
+        // unfiltered read for anyone who passes, and none for anyone who does not.
+        const { hasAccess } = await studentService.verifyStudentAccess(studentId, req.user!.id);
+        if (!hasAccess) {
+          res.status(403).json({ error: "error:STUDENT_FORBIDDEN" });
+          return;
+        }
+        ctx = { kind: "student", studentId };
+      }
       const [apps, assignedIds] = await Promise.all([
         customAppRepository.getAvailableAppsForStudent(studentId),
         customAppRepository.getAssignedAppIds(studentId, ctx),

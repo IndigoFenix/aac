@@ -24,7 +24,7 @@ import { describe, it, expect } from "@jest/globals";
 import type { CellGrid } from "@shared/world-engine/kernel/cells/index.js";
 import {
   applyEcology, ecoAbundanceAt, ecoFieldName, standDensityPerHa, standCountFor,
-  DEFAULT_BIOSPHERE, TREE, GRASS,
+  DEFAULT_BIOSPHERE, SCATTER_BIOSPHERE, TREE, GRASS,
 } from "@shared/world-engine/planet/ecology.js";
 import {
   buildWilderness, wildMixForBiome, LEGACY_SCATTER_SIDE_M,
@@ -155,7 +155,15 @@ describe("② one density law — the two tree authorities cannot disagree", () 
     // 🚫 NO BALANCE MOVED. Rock, sheep and cow have no biosphere row to read,
     // so their densities are the switch's own counts re-expressed at
     // LEGACY_SCATTER_SIDE_M — a founding-age town scatters exactly what it
-    // always did on every line except the trees.
+    // always did on every line the density law has no opinion about.
+    //
+    // 🌿 THE SET IS DERIVED, NOT LISTED (PART 6, 2026-09-08). This used to
+    // filter `!== "oak"`, which was the same set by accident: oak was the only
+    // model a biosphere row claimed. The forage layer now claims four more
+    // (`FORAGE_UNDERSTORY`), so a hardcoded "oak" quietly asserted that the
+    // understory had NOT joined the density law — the exact opposite of what
+    // this round landed. Asking `SCATTER_BIOSPHERE` keeps the sentence the
+    // comment above actually makes, whatever the biosphere grows to.
     const eco = { tree: 0.12, grass: 0.65, horse: 0.79 }; // a grazer-range cell
     const withEco = buildWilderness({
       seed: 4242, side: LEGACY_SCATTER_SIDE_M, mix: wildMixForBiome(3, 4242, undefined, eco),
@@ -163,13 +171,23 @@ describe("② one density law — the two tree authorities cannot disagree", () 
     const legacy = buildWilderness({
       seed: 4242, side: LEGACY_SCATTER_SIDE_M, mix: wildMixForBiome(3, 4242),
     });
+    const ecological = new Set(
+      SCATTER_BIOSPHERE.filter((sp) => sp.standPerHa && sp.model).map((sp) => sp.model!),
+    );
+    expect(ecological.has("oak")).toBe(true);      // the canopy, since 2026-09-02
+    expect(ecological.has("bush")).toBe(true);     // …and the understory, since PART 6
     const tally = (w: typeof withEco): Record<string, number> => {
       const t: Record<string, number> = {};
-      for (const f of w.features) if (f.species !== "oak") t[f.species] = (t[f.species] ?? 0) + 1;
+      for (const f of w.features) if (!ecological.has(f.species)) t[f.species] = (t[f.species] ?? 0) + 1;
       for (const c of w.creatures) if (c.species) t[c.species] = (t[c.species] ?? 0) + 1;
       return t;
     };
     expect(tally(withEco)).toEqual(tally(legacy));
+    // …and the other half of the same sentence, said out loud: every line the
+    // density law DOES claim reads the cell instead of the switch's count.
+    const countOf = (w: typeof withEco, sp: string): number =>
+      w.features.filter((f) => f.species === sp).length;
+    expect(countOf(withEco, "bush")).not.toBe(countOf(legacy, "bush"));
   });
 
   it("⚖️ NOTHING REACHABLE WITHOUT AN ECOLOGY MOVED — the legacy arm, verbatim", () => {

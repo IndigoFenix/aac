@@ -2,8 +2,8 @@
  * Guided Setup — the server ↔ client contract for the chat-driven student
  * onboarding flow (plan: planning-docs/student-onboarding-flow-plan.md).
  *
- * Server: server/services/chat/guided-flow/* (generic engine) and
- *         server/services/guided-setup/* (the student_setup flow).
+ * Server: server/services/guided-setup/* — the flow engine (flow-*.ts) and
+ *         the student_setup flow it runs.
  * Client: client/src/features/guided-setup/*.
  *
  * Everything here is a TYPE or a constant. No logic. Both sides import from
@@ -26,6 +26,8 @@ export const GUIDED_SETUP_KICKOFF = "[GUIDED SETUP] start" as const;
  * The memory key the server sets every turn while the flow is active. It
  * reaches the client, lower-cased and stripped of the prefix, as
  * `contextData.guidedsetup` (see sessionService.extractContextFromMemoryValues).
+ *
+ * It carries a `GuidedSetupSignal`, NOT a `GuidedSetupView` — see that type.
  */
 export const GUIDED_SETUP_CONTEXT_KEY = "Context_GuidedSetup" as const;
 export const GUIDED_SETUP_CONTEXT_DATA_KEY = "guidedsetup" as const;
@@ -245,6 +247,40 @@ export interface GuidedSetupView {
    * "never started" without a second request.
    */
   record?: Pick<GuidedSetupRecord, "source" | "startedAt" | "completedAt" | "dismissedAt"> | null;
+}
+
+/**
+ * WHAT RIDES THE CHAT RESPONSE (`Context_GuidedSetup` → `contextData.guidedsetup`).
+ *
+ * NOT the view. The view is an ordinary react-query query over
+ * `GET /api/guided-setup/students/:id`, invalidated when a turn ends — every
+ * field of it is DERIVED from rows, so a refetch reproduces it exactly.
+ *
+ * This is the remainder: the part of a running flow that lives in
+ * `chat_sessions.state.guidedSetup` (or, for `refused`, nowhere at all) and
+ * that no GET can therefore reproduce. Four values, and only four:
+ *
+ *  - `active`   — a flow is running in THIS chat. NOT the same fact as
+ *                 `view.active`, which is merely "this student's setup is
+ *                 unfinished" and is true on a GET for anyone mid-profile.
+ *  - `studentId`— who the flow BOUND to, which can happen mid-turn by
+ *                 discovery when the model never calls `selectStudent`.
+ *  - `roster`   — a proposal awaiting confirmation. Session state; the GET
+ *                 always answers `roster: null`.
+ *  - `refused`  — the reason a flow action was rejected. Produced by a tool
+ *                 call and persisted nowhere, so it is TURN-LOCAL: it rides
+ *                 the turn that produced it and no other.
+ *
+ * `panel` is derived (it is `view.panel`) but rides along because the panel
+ * switch is an EVENT — it fires on the turn, not on every re-render of a view.
+ */
+export interface GuidedSetupSignal {
+  active: boolean;
+  instituteId: string;
+  studentId: string | null;
+  panel?: FeatureType;
+  roster?: GuidedSetupRosterProposal | null;
+  refused?: GuidedSetupRefusal | null;
 }
 
 /**

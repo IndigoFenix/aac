@@ -1,5 +1,10 @@
 import type { Request, Response } from "express";
 import { studentService } from "../services";
+import {
+  isUserStudentRole,
+  INSTITUTE_ADMIN_GRANTABLE_ROLES,
+  USER_STUDENT_ROLES,
+} from "../services/studentService";
 import { instituteRepository, InvalidAacSettingError } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
 import { changeDetails, type ChangeMap } from "../services/activityChanges";
@@ -292,48 +297,88 @@ export class StudentController {
 
   /**
    * POST /api/students/:id/link
-   * Link another user to an student
+   * Link another user to an student.
+   *
+   * 🚨 AUTHORIZATION IS DERIVED FROM THE STUDENT, NEVER FROM THE REQUEST
+   * (2026-09-10). `instituteId` may still arrive in the body — the clinician
+   * client sends its selected institute — but it is IGNORED. Until this date
+   * it was the authorization input: the handler proved the caller administered
+   * the institute they named and that the target belonged to it, and never
+   * asked whether the STUDENT was enrolled in it. Any admin of any school or
+   * clinic could therefore name their own institute, their own user id and any
+   * student uuid, and `role` was written through unvalidated — so the link they
+   * granted themselves could be `owner`, which carries full PHI access and the
+   * owner-only student delete. See `studentService.getStudentLinkAuthority`
+   * and §5.5.1 of docs/SECURITY_ARCHITECTURE.md.
    */
   async linkUser(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const studentId = req.params.id;
-      const { targetUserId, role, instituteId } = req.body;
+      const { targetUserId, role } = req.body;
 
       if (!targetUserId) {
         res.status(400).json({ success: false, message: "Target user ID is required" });
         return;
       }
 
-      // Authorization: student owner OR institute admin (school/clinic)
-      const { hasAccess, link: currentLink } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      const isOwner = hasAccess && currentLink?.role === "owner";
-      let isInstituteAdmin = false;
-
-      if (!isOwner && instituteId) {
-        const institute = await instituteRepository.getInstituteById(instituteId);
-        if (institute && (institute.type === 'school' || institute.type === 'clinic')) {
-          isInstituteAdmin = await instituteRepository.isUserAdminOfInstitute(instituteId, currentUser.id);
-          // Also verify the target user is a member of the same institute
-          if (isInstituteAdmin) {
-            const targetIsMember = await instituteRepository.isUserMemberOfInstitute(instituteId, targetUserId);
-            if (!targetIsMember) {
-              res.status(400).json({ success: false, message: "Target user is not a member of this institute" });
-              return;
-            }
-          }
-        }
-      }
-
-      if (!isOwner && !isInstituteAdmin) {
+      // Authorization FIRST, and before the requested role is even looked at,
+      // so a caller with no authority learns nothing about the student or the
+      // role vocabulary.
+      const authority = await studentService.getStudentLinkAuthority(studentId, currentUser.id);
+      if (!authority) {
         res.status(403).json({ success: false, message: "Only student owners or institute admins can link users" });
         return;
+      }
+
+      const requestedRole = role ?? "caregiver";
+      if (!isUserStudentRole(requestedRole)) {
+        res.status(400).json({
+          success: false,
+          message: `Invalid role. Must be one of: ${USER_STUDENT_ROLES.join(", ")}`,
+        });
+        return;
+      }
+
+      // Ownership is the family's relationship to their child. An institute
+      // admin may grant every other role but never this one — granting it to
+      // themselves is the escalation, and granting it to a colleague is the
+      // same escalation one step removed.
+      if (
+        authority.grant !== "owner" &&
+        !INSTITUTE_ADMIN_GRANTABLE_ROLES.includes(requestedRole)
+      ) {
+        res.status(403).json({ success: false, message: "Only a student owner can grant the owner role" });
+        return;
+      }
+
+      if (authority.grant === "institute_admin") {
+        // The target must belong to the institute that justified the write —
+        // the DERIVED one, which the student is provably enrolled in.
+        const targetIsMember = await instituteRepository.isUserMemberOfInstitute(
+          authority.instituteId,
+          targetUserId,
+        );
+        if (!targetIsMember) {
+          res.status(400).json({ success: false, message: "Target user is not a member of this institute" });
+          return;
+        }
+
+        // Re-linking is an UPDATE (see linkUserToStudent), so without this an
+        // admin could demote the real owner to `caregiver` and then unlink
+        // them — "cannot unlink the owner" only protects a row that still says
+        // owner.
+        const existing = await studentService.getUserStudentLink(targetUserId, studentId);
+        if (existing?.role === "owner") {
+          res.status(403).json({ success: false, message: "Only a student owner can change the owner's link" });
+          return;
+        }
       }
 
       const link = await studentService.linkUserToStudent(
         targetUserId,
         studentId,
-        role || "caregiver"
+        requestedRole
       );
 
       res.json({
@@ -343,14 +388,15 @@ export class StudentController {
       });
 
       activityLogService.log({
-        instituteId: instituteId ?? null,
+        // The institute that JUSTIFIED the write, not one the caller typed.
+        instituteId: authority.grant === "institute_admin" ? authority.instituteId : null,
         userId: currentUser.id,
         eventType: "link",
         subjectType1: "student",
         subjectId1: studentId,
         subjectType2: "user",
         subjectId2: targetUserId,
-        details: { role: role || "caregiver" },
+        details: { role: requestedRole, grant: authority.grant },
       });
     } catch (error: any) {
       console.error("Error linking user:", error);
@@ -362,28 +408,22 @@ export class StudentController {
 
   /**
    * DELETE /api/students/:id/link/:userId
-   * Remove a user's link to an student
+   * Remove a user's link to an student.
+   *
+   * 🚨 Same rule and same history as `linkUser` (2026-09-10): the query-string
+   * `instituteId` used to be the authorization input and the student was never
+   * tied to it, so any school/clinic admin could strip a student's caregivers —
+   * every non-owner link, for any student in the system. Authority now comes
+   * from `getStudentLinkAuthority`, which starts at the student's enrolments.
    */
   async unlinkUser(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const studentId = req.params.id;
       const targetUserId = req.params.userId;
-      const instituteId = req.query.instituteId as string | undefined;
 
-      // Authorization: student owner OR institute admin (school/clinic)
-      const { hasAccess, link: currentLink } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      const isOwner = hasAccess && currentLink?.role === "owner";
-      let isInstituteAdmin = false;
-
-      if (!isOwner && instituteId) {
-        const institute = await instituteRepository.getInstituteById(instituteId);
-        if (institute && (institute.type === 'school' || institute.type === 'clinic')) {
-          isInstituteAdmin = await instituteRepository.isUserAdminOfInstitute(instituteId, currentUser.id);
-        }
-      }
-
-      if (!isOwner && !isInstituteAdmin) {
+      const authority = await studentService.getStudentLinkAuthority(studentId, currentUser.id);
+      if (!authority) {
         res.status(403).json({ success: false, message: "Only student owners or institute admins can unlink users" });
         return;
       }
@@ -401,7 +441,7 @@ export class StudentController {
         res.json({ success: true, message: "User unlinked successfully" });
 
         activityLogService.log({
-          instituteId: instituteId ?? null,
+          instituteId: authority.grant === "institute_admin" ? authority.instituteId : null,
           userId: currentUser.id,
           eventType: "unlink",
           subjectType1: "student",

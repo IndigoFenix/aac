@@ -11,7 +11,18 @@ import { db } from "../db";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 export interface RevokeArgs {
-  revokedByUserId: string;
+  /**
+   * NULL when the revoker has no user account.
+   *
+   * That is not an edge case, it is the normal clinic path: a guardian who
+   * signed by magic link (or was attested for at the desk) has an email and a
+   * phone and no `users` row, and `student_consent_records.revoked_by_user_id`
+   * is a FK to `users`. The column has always been nullable; only the TypeScript
+   * signature assumed an account. WHO withdrew is then carried by the audit row
+   * (`revocation_path` + `revoked_by_contact_id`, §8) rather than by this
+   * column — a null here means "not a user of this system", never "unknown".
+   */
+  revokedByUserId: string | null;
   reason?: string;
   at?: Date;
 }
@@ -82,6 +93,36 @@ export class StudentConsentRecordRepository {
       .select()
       .from(studentConsentRecords)
       .where(eq(studentConsentRecords.studentId, studentId))
+      .orderBy(desc(studentConsentRecords.signedAt));
+  }
+
+  /**
+   * Every consent record a given clinician attested in person.
+   *
+   * There is no `attested_by_user_id` COLUMN: the consent plan specifies the
+   * attester's id as an `identity_verification_evidence` key
+   * (`attestingClinicianUserId`), and the schema comment on
+   * `identityVerificationMethod` is explicit that this jsonb pair is where
+   * method-specific evidence lives so that adding a method stays data rather
+   * than a migration. jsonb is queryable, so nothing is buried — but an auditor
+   * should not have to know the key path by heart, so the query lives here as a
+   * named call. Filtering on the method as well as the key keeps the result set
+   * to attestations even if a future method reuses the key.
+   */
+  async listAttestedByUser(
+    attestingUserId: string,
+    opts: { method?: string } = {},
+  ): Promise<StudentConsentRecord[]> {
+    const method = opts.method ?? "in_person_clinician_attested";
+    return db
+      .select()
+      .from(studentConsentRecords)
+      .where(
+        and(
+          eq(studentConsentRecords.identityVerificationMethod, method),
+          sql`${studentConsentRecords.identityVerificationEvidence}->>'attestingClinicianUserId' = ${attestingUserId}`,
+        ),
+      )
       .orderBy(desc(studentConsentRecords.signedAt));
   }
 

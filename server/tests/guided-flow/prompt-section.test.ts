@@ -20,8 +20,8 @@ import { buildPromptAndTools } from "../../services/chat/prompt-kit.js";
 import {
   GUIDED_FLOW_SECTION_HEADER,
   renderGuidedSetupSection,
-} from "../../services/chat/guided-flow/prompt-section.js";
-import { resolveFlowView, stepPosition } from "../../services/chat/guided-flow/engine.js";
+} from "../../services/guided-setup/flow-prompt-section.js";
+import { resolveFlowView, stepPosition } from "../../services/guided-setup/flow-engine.js";
 import {
   AI_NAME_SUGGESTIONS,
   AI_NAME_SUGGESTION_LINE,
@@ -38,6 +38,7 @@ import {
 } from "../../services/guided-setup/student-setup-flow.js";
 import { isResumableRecord } from "../../services/guided-setup/student-setup-binding.js";
 import {
+  GUIDED_SETUP_CONTEXT_KEY,
   GUIDED_SETUP_PANEL_BY_STEP,
   GUIDED_SETUP_SKIPPABLE_STEPS,
   GUIDED_SETUP_STEP_ORDER,
@@ -145,6 +146,31 @@ const THROUGH_AAC: Partial<StudentSetupCtx> = {
   aac: { ...EMPTY_AAC, enabled: true },
   record: AAC_REVIEWED,
 };
+
+/**
+ * The one line of the WAITING block that is allowed to name the locked steps.
+ *
+ * User, 2026-09-09: "Assume the user has no idea what they're doing and needs
+ * everything clearly explained." A person told only that they are blocked, and
+ * never what being unblocked gives them, has no reason to go and do the work —
+ * so the block says what CONSENT opens, in the same "comes later" framing the
+ * step-1 blocks have used since the Mira Vance fix.
+ *
+ * It is a NAME, not an ask, and it is the ONLY mention permitted while a step
+ * is locked: the pins below strip this line and then assert that step-2
+ * vocabulary appears nowhere else. Widen that carve-out and the Ray Cairo
+ * failure — a consent-pending patient interviewed about their diagnoses — has
+ * its opening back.
+ */
+const UNLOCKS_LINE =
+  `- ${GS.STEP_MEDICAL}, ${GS.STEP_PROGRAM}, ${GS.STEP_AAC} and ${GS.STEP_CONTACTS} ` +
+  `all open the moment ${GS.CONSENT} is active. Say so.`;
+
+const withoutUnlocksLine = (text: string): string =>
+  text
+    .split("\n")
+    .filter((line) => line !== UNLOCKS_LINE)
+    .join("\n");
 
 /** The row exists but only carries what one hasty `add` supplied. */
 const PARTIAL_BASICS = {
@@ -409,7 +435,13 @@ describe("student_setup prompt blocks", () => {
     expect(pending).toContain("created, skipped and failed");
   });
 
-  it("sends an institution with a contactable guardian to the panel's batch button", () => {
+  /**
+   * The block is always about the ONE bound student, so it points at the rail's
+   * SINGULAR "Send consent request" button. The plural "Send consent requests"
+   * is the roster batch and belongs to nobody's step block — naming it here
+   * sent a user looking for a list-wide control in a one-student flow.
+   */
+  it("sends an institution with a contactable guardian to the panel's single-student button", () => {
     const basics = {
       ...COMPLETE_BASICS,
       hasGuardian: true,
@@ -423,12 +455,13 @@ describe("student_setup prompt blocks", () => {
     const school = sectionFor(
       makeCtx({ account: "school", studentId: "s1", gate: "sign_required", basics }),
     );
-    expect(school).toContain("Send consent requests");
+    expect(school).toContain('press "Send consent request" in the SIDE PANEL');
+    expect(school).not.toContain("Send consent requests");
     // A family guardian is the signed-in user; they press Sign consent instead.
     const family = sectionFor(
       makeCtx({ account: "family", studentId: "s1", gate: "sign_required", basics }),
     );
-    expect(family).not.toContain("Send consent requests");
+    expect(family).not.toContain("Send consent request");
   });
 
   /**
@@ -439,13 +472,21 @@ describe("student_setup prompt blocks", () => {
   describe("an institution with no contactable guardian yet", () => {
     const noGuardianBasics = { ...COMPLETE_BASICS };
 
-    it("never names the button, and points at the Contacts panel instead", () => {
+    /**
+     * The original pin: a patient with NO guardian contact must never be sent
+     * to a button the rail does not render for them. It used to be met by
+     * pointing at the Contacts panel; since 2026-09-09 the block does better
+     * and ASKS for the guardian in the conversation it is already having. The
+     * property that mattered — no phantom button, a concrete next move — is
+     * unchanged, so it is asserted the same way.
+     */
+    it("never names the batch button, and asks for the guardian instead", () => {
       const text = sectionFor(
         makeCtx({ account: "clinic", studentId: "s1", gate: "none", basics: noGuardianBasics }),
       );
       expect(text).not.toContain("Send consent requests");
-      expect(text).toContain("Contacts panel");
-      expect(text).toContain("no guardian contact");
+      expect(text).toContain(`ASK for the ${GS.GUARDIAN} now`);
+      expect(text).toContain("Student_Contacts add");
     });
 
     it("still says a request is pending, not that a guardian is missing, once one is sent", () => {
@@ -458,11 +499,12 @@ describe("student_setup prompt blocks", () => {
         }),
       );
       expect(text).toContain("already pending");
-      expect(text).not.toContain("Contacts panel");
+      expect(text).not.toContain(`ASK for the ${GS.GUARDIAN} now`);
+      expect(text).not.toContain("Student_Contacts add");
       expect(text).not.toContain("Send consent requests");
     });
 
-    it("a contactable guardian still gets the ordinary button line, not the Contacts hint", () => {
+    it("a contactable guardian gets the send line, and is never asked for a guardian again", () => {
       const basics = {
         ...noGuardianBasics,
         hasGuardian: true,
@@ -476,18 +518,29 @@ describe("student_setup prompt blocks", () => {
       const text = sectionFor(
         makeCtx({ account: "clinic", studentId: "s1", gate: "sign_required", basics }),
       );
-      expect(text).toContain("Send consent requests");
-      expect(text).not.toContain("Contacts panel");
-      expect(text).not.toContain("no guardian contact");
+      expect(text).toContain('press "Send consent request" in the SIDE PANEL');
+      expect(text).not.toContain("Send consent requests");
+      expect(text).not.toContain(`ASK for the ${GS.GUARDIAN} now`);
+      expect(text).not.toContain("Student_Contacts add");
     });
 
-    it("leaves the family branch untouched — always 'Sign consent' in the SIDE PANEL", () => {
+    /**
+     * The family branch forks on the gate now. A family admin IS the guardian,
+     * so `sign_required` still means "press Sign consent" — but `none` means
+     * the auto-created guardian contact never landed, and the rail renders no
+     * Sign consent button at all until it does.
+     */
+    it("a family with a guardian on file still presses 'Sign consent' in the SIDE PANEL", () => {
       const text = sectionFor(
-        makeCtx({ account: "family", studentId: "s1", gate: "none", basics: noGuardianBasics }),
+        makeCtx({
+          account: "family",
+          studentId: "s1",
+          gate: "sign_required",
+          basics: noGuardianBasics,
+        }),
       );
-      expect(text).toContain("Sign consent");
-      expect(text).toContain(GS.SIDE_PANEL);
-      expect(text).not.toContain("Contacts panel");
+      expect(text).toContain(`press "Sign consent" in the ${GS.SIDE_PANEL}`);
+      expect(text).not.toContain(GS.CONTACTS_PANEL);
       expect(text).not.toContain("Send consent requests");
     });
   });
@@ -554,6 +607,50 @@ describe("student_setup prompt blocks", () => {
     });
   });
 
+  /**
+   * The wall must be announced BEFORE it is hit (user, 2026-09-09). Step 1 used
+   * to name the CONSENT button and nothing else, so the first a novice heard of
+   * a guardian approval was the turn the flow stopped. Said while step 1 is
+   * still running it is a warning; said afterwards it is an excuse.
+   */
+  describe("step 1 warns that CONSENT comes next", () => {
+    const NEXT =
+      `- Say ${GS.CONSENT} from a parent or ${GS.GUARDIAN} comes next: no health, ${GS.STEP_PROGRAM} or ` +
+      `${GS.STEP_AAC} detail may be recorded before it.`;
+
+    it("carries the warning on the family basics block, with the signing line after it", () => {
+      const text = sectionFor(makeCtx());
+      expect(text).toContain(NEXT);
+      expect(text).toContain(
+        `- They sign it themselves from a button in the ${GS.SIDE_PANEL}. Never collect ID numbers here.`,
+      );
+      // The prohibition that shared the old line survives the split.
+      expect(text).toContain("Never collect ID numbers here.");
+    });
+
+    it("carries it on both non-pending roster variants", () => {
+      for (const account of ["school", "clinic"] as GuidedSetupAccount[]) {
+        for (const instituteHasStudents of [false, true]) {
+          expect(sectionFor(makeCtx({ account, instituteHasStudents }))).toContain(NEXT);
+        }
+      }
+    });
+
+    /**
+     * The AWAITING CONFIRMATION variant stays exempt for the same reason it is
+     * exempt from STEP_ONE_ONLY_LINE: while the review table is open the whole
+     * block is "write nothing, talk about the rows", and another bullet blunts
+     * it.
+     */
+    it("leaves the AWAITING CONFIRMATION variant alone", () => {
+      expect(sectionFor(makeCtx({ account: "school", rosterPending: true }))).not.toContain(NEXT);
+    });
+
+    it("stays inside the 130-character budget", () => {
+      expect(NEXT.length).toBeLessThanOrEqual(MAX_LINE);
+    });
+  });
+
   it("asks step 1 for the country, because the consent wizard silently defaults to IL", () => {
     const text = sectionFor(makeCtx());
     expect(text).toContain(GS.COUNTRY);
@@ -615,11 +712,15 @@ describe("student_setup rules — a LOCKED current step", () => {
     // The exact phrasings that produced the live failure.
     expect(text).not.toContain("first question");
     expect(text).not.toContain("step by step");
+    // MEDICAL INFO is named once, in the line that says what CONSENT opens, and
+    // nowhere else — see UNLOCKS_LINE.
+    expect(text).toContain(UNLOCKS_LINE);
+    const rest = withoutUnlocksLine(text);
     for (const word of [GS.DIAGNOSIS, GS.MEDICATIONS, GS.ALERTS, GS.STEP_MEDICAL]) {
-      expect(text).not.toContain(word);
+      expect(rest).not.toContain(word);
     }
     for (const word of ["diagnos", "medicat", "allerg", "seizure"]) {
-      expect(text.toLowerCase()).not.toContain(word);
+      expect(rest.toLowerCase()).not.toContain(word);
     }
     // …and the step block underneath is still the waiting one.
     expect(text).toContain(`WAITING FOR ${GS.CONSENT}`);
@@ -764,11 +865,12 @@ describe("student_setup — a RESUMED student whose current step is locked", () 
     // The live symptom: a resumed patient was greeted with a request for the
     // clinic's patient LIST, which is the unbound step-1 opening.
     expect(text).not.toContain("from a list they send");
+    const rest = withoutUnlocksLine(text);
     for (const word of [GS.DIAGNOSIS, GS.MEDICATIONS, GS.ALERTS, GS.STEP_MEDICAL]) {
-      expect(text).not.toContain(word);
+      expect(rest).not.toContain(word);
     }
     for (const word of ["diagnos", "medicat", "allerg", "seizure"]) {
-      expect(text.toLowerCase()).not.toContain(word);
+      expect(rest.toLowerCase()).not.toContain(word);
     }
   });
 
@@ -1123,7 +1225,15 @@ describe("student_setup — a blocked flow may not go information-gathering", ()
     expect(text).not.toContain("Meanwhile you may correct step 1 facts");
   });
 
-  it("keeps the waiting block to five bullets in every branch", () => {
+  /**
+   * docs/PROMPT_WRITING.md: 4-5 bullets is the guidance, 8 the maximum. The
+   * rewritten block explains as well as forbids, so it needs more than five —
+   * but 8 is the wall, and the count must be honest: a bullet's wrapped
+   * continuation (a line starting with two spaces) belongs to the bullet above
+   * it, and the old loop stopped counting at the first one.
+   */
+  it("keeps the waiting block inside the 8-bullet maximum in every branch", () => {
+    const worst: Array<[string, number]> = [];
     for (const account of ["family", "school", "clinic"] as GuidedSetupAccount[]) {
       for (const gate of ["none", "sign_required", "request_sent", "revoked"] as GuidedSetupGate[]) {
         for (const contact of [null, { id: "c1", name: "G", hasEmail: true, hasPhone: false }]) {
@@ -1136,11 +1246,241 @@ describe("student_setup — a blocked flow may not go information-gathering", ()
           const start = lines.findIndex((l) => l === `WAITING FOR ${GS.CONSENT}`);
           expect(start).toBeGreaterThanOrEqual(0);
           let bullets = 0;
-          for (let i = start + 1; i < lines.length && lines[i].startsWith("- "); i += 1) bullets += 1;
-          expect(bullets).toBeLessThanOrEqual(5);
+          for (let i = start + 1; i < lines.length; i += 1) {
+            if (lines[i].startsWith("- ")) bullets += 1;
+            else if (!lines[i].startsWith("  ")) break;
+          }
+          worst.push([`${account}/${gate}/${contact ? "contact" : "none"}`, bullets]);
         }
       }
     }
+    expect(worst.filter(([, n]) => n > 8)).toEqual([]);
+    // …and the count is real: at least one branch is genuinely above five.
+    expect(Math.max(...worst.map(([, n]) => n))).toBeGreaterThan(5);
+  });
+});
+
+/**
+ * WAITING FOR CONSENT, rewritten 2026-09-09 (user): "Flow from adding basic
+ * student details to adding guardian contact and solving consent needs to be
+ * more clear. Assume the user has no idea what they're doing and needs
+ * everything clearly explained."
+ *
+ * The old block was one imperative — press this button — and it was wrong for
+ * two of the five situations it covered: it sent EVERY family user to a "Sign
+ * consent" button the rail renders only for `sign_required`/`revoked`, and it
+ * told an institution with nobody on file to go and find the Contacts panel
+ * rather than simply asking for the guardian in the conversation it was already
+ * having.
+ *
+ * Each branch is pinned on the move it must NAME and the move it must NOT, so a
+ * future reword cannot quietly hand one branch another's button.
+ */
+describe("student_setup WAITING FOR CONSENT — one branch per real situation", () => {
+  const CONTACT = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    name: "Guardian",
+    hasEmail: true,
+    hasPhone: false,
+  };
+
+  const waiting = (over: Partial<StudentSetupCtx> = {}) =>
+    sectionFor(makeCtx({ studentId: "s1", basics: COMPLETE_BASICS, gate: "none", ...over }));
+
+  const withGuardian = (over: Partial<StudentSetupCtx> = {}) =>
+    waiting({
+      basics: { ...COMPLETE_BASICS, hasGuardian: true, consentContact: CONTACT },
+      ...over,
+    });
+
+  /** The five situations `resolveGate` can actually produce, as fixtures. */
+  const branches: Array<[string, Partial<StudentSetupCtx>]> = [
+    ["family/sign_required", { account: "family", gate: "sign_required" }],
+    ["family/revoked", { account: "family", gate: "revoked" }],
+    ["family/none", { account: "family", gate: "none" }],
+    ["institution/no-guardian", { account: "clinic", gate: "none" }],
+    [
+      "institution/request_sent",
+      {
+        account: "school",
+        gate: "request_sent",
+        basics: { ...COMPLETE_BASICS, hasGuardian: true, consentContact: CONTACT },
+      },
+    ],
+    [
+      "institution/contactable",
+      {
+        account: "school",
+        gate: "sign_required",
+        basics: { ...COMPLETE_BASICS, hasGuardian: true, consentContact: CONTACT },
+      },
+    ],
+  ];
+
+  it("explains WHY the flow stopped in every branch, before naming any button", () => {
+    for (const [label, over] of branches) {
+      const text = waiting(over);
+      const term = termForAccount(over.account ?? "family");
+      expect(text).toContain(
+        `- EXPLAIN first: a parent or ${GS.GUARDIAN} must approve in writing before anything about this ${term}'s`,
+      );
+      expect(text).toContain(
+        `  health, ${GS.STEP_PROGRAM} or communication is recorded. Only the ${GS.STEP_BASICS} facts from step 1 are stored so far.`,
+      );
+      // The explanation comes first — a novice reading top-down meets the
+      // reason before the instruction.
+      const explain = text.indexOf("- EXPLAIN first:");
+      const header = text.indexOf(`WAITING FOR ${GS.CONSENT}`);
+      expect(`${label}: ${explain > header}`).toBe(`${label}: true`);
+    }
+  });
+
+  it("says what CONSENT unlocks in every branch", () => {
+    for (const [label, over] of branches) {
+      expect(`${label}: ${waiting(over).includes(UNLOCKS_LINE)}`).toBe(`${label}: true`);
+    }
+  });
+
+  /**
+   * A family admin IS the guardian: they sign it themselves, in the panel. They
+   * are never asked to add a guardian, and never shown the institution's send
+   * button.
+   */
+  it("family + sign_required/revoked: press Sign consent, and no guardian to add", () => {
+    for (const gate of ["sign_required", "revoked"] as GuidedSetupGate[]) {
+      const text = waiting({ account: "family", gate });
+      expect(text).toContain(
+        `- Tell them THEY are the ${GS.GUARDIAN} here: press "Sign consent" in the ${GS.SIDE_PANEL} and complete the short form.`,
+      );
+      expect(text).not.toContain(GS.CONTACTS_PANEL);
+      expect(text).not.toContain("Send consent request");
+      expect(text).not.toContain("Student_Contacts add");
+    }
+  });
+
+  /**
+   * The failure case the old block could not see. A family student gets its
+   * guardian contact auto-created (`autoCreateGuardianContactForFamilyAdmin`),
+   * so `gate: "none"` means that write did not land — and the rail renders NO
+   * Sign consent button until it does. Telling them to press it is telling them
+   * to find something that is not on screen.
+   */
+  it("family + none: add yourself in the Contacts panel, do not press a button that is not there", () => {
+    const text = waiting({ account: "family", gate: "none" });
+    expect(text).toContain(
+      `- They are not listed as the ${GS.GUARDIAN} yet. Tell them to add themselves in the ${GS.CONTACTS_PANEL}.`,
+    );
+    expect(text).toContain(
+      `- The "Sign consent" button appears in the ${GS.SIDE_PANEL} once they are. Do not send them looking for it yet.`,
+    );
+    expect(text).not.toContain('press "Sign consent"');
+    expect(text).not.toContain("Send consent request");
+    expect(text).not.toContain("Student_Contacts add");
+  });
+
+  /**
+   * An institution student created through the chat has no contacts at all, so
+   * there is nothing to send a link TO. The one move that helps is to ask —
+   * which is also the one place a `Student_*` write is permitted while the gate
+   * is shut.
+   */
+  it("institution + no contactable guardian: ask for the guardian and save the contact", () => {
+    for (const account of ["school", "clinic"] as GuidedSetupAccount[]) {
+      for (const gate of ["none", "sign_required", "revoked"] as GuidedSetupGate[]) {
+        const text = waiting({ account, gate });
+        expect(text).toContain(
+          `- ASK for the ${GS.GUARDIAN} now: their name, their ${GS.RELATIONSHIP}, and an email or phone. One at a time.`,
+        );
+        expect(text).toContain(
+          '  Save: Student_Contacts add { name, relationship, role: "parent_guardian", contactEmail, contactPhone }.',
+        );
+        expect(text).toContain(
+          `- Then tell them to press "Send consent request" in the ${GS.SIDE_PANEL}: it sends that ${GS.GUARDIAN} a link to sign.`,
+        );
+        // The rail has no Sign consent button for an institution at all.
+        expect(text).not.toContain("Sign consent");
+        expect(text).not.toContain("Send consent requests");
+      }
+    }
+  });
+
+  it("institution + a contactable guardian: send the link, never re-ask for the guardian", () => {
+    const text = withGuardian({ account: "school", gate: "sign_required" });
+    expect(text).toContain(
+      `- Tell them to press "Send consent request" in the ${GS.SIDE_PANEL}: it sends that ${GS.GUARDIAN} a link to sign.`,
+    );
+    expect(text).not.toContain("Student_Contacts add");
+    expect(text).not.toContain(`ASK for the ${GS.GUARDIAN} now`);
+    expect(text).not.toContain("Sign consent");
+    // The "if they ask, here is the call" line survives, institution-only.
+    expect(text).toContain("guidedSetup(requestConsent");
+  });
+
+  it("institution + request_sent: we are waiting, and nobody is told to send again", () => {
+    const text = withGuardian({ account: "clinic", gate: "request_sent" });
+    expect(text).toContain(
+      `- A ${GS.CONSENT} request is already pending with the ${GS.GUARDIAN}. Do not offer to send another.`,
+    );
+    expect(text).toContain(`  Say we are waiting; the ${GS.PATIENT} unlocks the moment it is signed.`);
+    expect(text).not.toContain('press "Send consent request"');
+    expect(text).not.toContain("Student_Contacts add");
+    expect(text).not.toContain(`ASK for the ${GS.GUARDIAN} now`);
+    // Nor the tool call itself. The rail withholds a resend here on purpose
+    // (GATE_NEEDS_REQUEST: a second link is two live magic links for one
+    // child), so "do not offer to send another" followed by the exact call to
+    // send another was the prompt contradicting both itself and the button.
+    expect(text).not.toContain("guidedSetup(requestConsent");
+  });
+
+  /**
+   * THE CARVE-OUT, and the reason this suite exists at all.
+   *
+   * `Student_Contacts` IS a `Student_*` path, and the Ray Cairo session proved
+   * nothing at the DB layer refuses a `Student_*` write for a consent-pending
+   * student — `requireConsentForMemoryWrite` covers reports, program and
+   * incidents only. So the guardian contact is the ONE exception, it is stated
+   * as one, and it exists in exactly one branch. Any other branch that grows a
+   * `Student_Contacts add` has re-opened the hole.
+   */
+  it("permits exactly one Student_* write, in exactly one branch, and says so", () => {
+    const carveOut =
+      `- The ONE exception is that ${GS.GUARDIAN} contact above: add it, and nothing else, ` +
+      `while ${GS.CONSENT} is shut.`;
+    const asking = waiting({ account: "clinic", gate: "none" });
+    expect(asking).toContain("- No Student_* memory writes.");
+    expect(asking).toContain(carveOut);
+
+    for (const [label, over] of branches) {
+      if (label === "institution/no-guardian") continue;
+      const text = waiting(over);
+      expect(`${label}: ${text.includes("Student_Contacts")}`).toBe(`${label}: false`);
+      expect(`${label}: ${text.includes(carveOut)}`).toBe(`${label}: false`);
+      expect(`${label}: ${text.includes("- No Student_* memory writes.")}`).toBe(`${label}: true`);
+    }
+  });
+
+  it("keeps the blanket prohibitions in every branch", () => {
+    for (const [label, over] of branches) {
+      const text = waiting(over);
+      const term = termForAccount(over.account ?? "family");
+      for (const line of [
+        `- Nothing beyond ${GS.STEP_BASICS} may be collected or recorded for this ${term} until ${GS.CONSENT} is active.`,
+        "- Never collect ID numbers, health details, documents, notes, interests, communication profile or style.",
+        `- No Student_* memory writes. You may only finish step 1 facts, explain ${GS.CONSENT} and answer questions.`,
+      ]) {
+        expect(`${label}: ${text.includes(line)}`).toBe(`${label}: true`);
+      }
+    }
+  });
+
+  it("keeps every branch inside the 130-character prompt budget", () => {
+    const offenders: string[] = [];
+    for (const [label, over] of branches) {
+      for (const line of waiting(over).split("\n")) {
+        if (line.length > MAX_LINE) offenders.push(`${label}: ${line}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -1225,6 +1565,43 @@ describe("buildPromptAndTools — trailingSection", () => {
   it("adds nothing when no section is supplied", () => {
     const build = buildPromptAndTools(baseCtx());
     expect(build.endInstructions ?? "").not.toContain(GUIDED_FLOW_SECTION_HEADER);
+  });
+
+  /**
+   * THE AI'S INSTRUCTIONS DO NOT TRAVEL THROUGH `memoryValues`.
+   *
+   * `Context_GuidedSetup` is a CLIENT channel — it carries the chat session's
+   * flow signal to the rail and nothing else. The model's copy of the flow is
+   * `trailingSection`, resolved and rendered separately. When the view
+   * publication was cut back to a signal the obvious way to break the
+   * assistant was to assume the two were one path, so both directions are
+   * pinned: no key, full section; a key present, byte-identical prompt.
+   */
+  it("renders with no Context_GuidedSetup in memoryValues at all", () => {
+    const section = sectionFor(makeCtx());
+    const ctx = baseCtx();
+    expect(Object.keys(ctx.memoryValues)).not.toContain(GUIDED_SETUP_CONTEXT_KEY);
+    const build = buildPromptAndTools({ ...ctx, trailingSection: section, guidedSetupEnabled: true });
+    const full = build.instructions + "\n" + (build.endInstructions ?? "");
+    expect(full).toContain(GUIDED_FLOW_SECTION_HEADER);
+    expect(full.trimEnd().endsWith(section.trimEnd())).toBe(true);
+    expect(
+      build.tools.some((t) => t.type === "function" && t.function.name === GUIDED_SETUP_TOOL_NAME),
+    ).toBe(true);
+  });
+
+  it("is byte-identical whether or not the client's signal is in memoryValues", () => {
+    const section = sectionFor(makeCtx());
+    const without = buildPromptAndTools({ ...baseCtx(), trailingSection: section });
+    const with_ = buildPromptAndTools({
+      ...baseCtx(),
+      memoryValues: {
+        [GUIDED_SETUP_CONTEXT_KEY]: { active: true, instituteId: "i", studentId: null },
+      },
+      trailingSection: section,
+    });
+    expect(with_.instructions).toBe(without.instructions);
+    expect(with_.endInstructions ?? "").toBe(without.endInstructions ?? "");
   });
 
   it("offers the guidedSetup tool only when the flow is enabled", () => {

@@ -66,9 +66,9 @@ export const ko = {
   // ============================================================================
   identity: {
     verificationRequired: "본인 확인 필요",
-    verificationNeeded: "{{institute}}에서 {{provider}}를 통한 인증을 요구합니다. 이 기관에 접근하려면 본인 확인을 해주세요.",
-    verificationExpired: "{{institute}}에 대한 {{provider}} 인증이 만료되었습니다. 본인 확인을 다시 해주세요.",
-    verifyNow: "{{provider}}로 인증",
+    verificationNeeded: "{institute}에서 {provider}를 통한 인증을 요구합니다. 이 기관에 접근하려면 본인 확인을 해주세요.",
+    verificationExpired: "{institute}에 대한 {provider} 인증이 만료되었습니다. 본인 확인을 다시 해주세요.",
+    verifyNow: "{provider}로 인증",
   },
 
   // ============================================================================
@@ -378,7 +378,7 @@ export const ko = {
     genderOther: "기타",
     primaryLanguage: "주요 언어",
     dateOfBirth: "생년월일",
-    ageDisplay: "나이: {{age}}세",
+    ageDisplay: "나이: {age}세",
     systemType: "교육 체계",
     frameworkTala: "TALA (이스라엘)",
     frameworkIep: "IEP (미국)",
@@ -1081,9 +1081,9 @@ export const ko = {
     clearUnsavedDesc: "저장되지 않은 변경사항이 있습니다. 보드를 지우기 전에 저장하시겠습니까?",
     discardAndClear: "버리고 지우기",
     saveAndClear: "저장 후 지우기",
-    generatingIcons: "아이콘 생성 중, 남은 수: {{remaining}}",
+    generatingIcons: "아이콘 생성 중, 남은 수: {remaining}",
     iconsGenerated: "모든 아이콘이 성공적으로 생성되었습니다",
-    iconsFailed: "{{count}}개의 아이콘 생성에 실패했습니다",
+    iconsFailed: "{count}개의 아이콘 생성에 실패했습니다",
   },
 
   // ============================================================================
@@ -1104,7 +1104,7 @@ export const ko = {
     importWarning: "가져오기하면 현재 보드가 교체됩니다. 일부 Grid3 기능은 완벽하게 가져올 수 없을 수 있습니다.",
     importButton: "가져오기",
     importSuccess: "보드 가져오기 완료",
-    importSuccessDesc: 'Dropbox에서 "{{name}}"을(를) 가져왔습니다',
+    importSuccessDesc: 'Dropbox에서 "{name}"을(를) 가져왔습니다',
     importFailed: "가져오기 실패",
     noFilesFound: "Dropbox 폴더에서 보드 파일을 찾을 수 없습니다.",
   },
@@ -1349,6 +1349,8 @@ export const ko = {
     noStudentsDesc: "첫 번째 {{STUDENT}}를 추가하여 시작하세요",
     noResults: "{{STUDENTS}}를 찾을 수 없습니다",
     noResultsDesc: "검색 조건이나 필터를 조정해보세요",
+    selectInstituteFirst: "{{student}}를 추가하려면 먼저 기관을 선택하세요",
+    selectInstituteEmpty: "{{students}}를 보려면 기관을 선택하세요",
   },
 
   // ============================================================================
@@ -1460,7 +1462,7 @@ export const ko = {
     gasOverallScoreDesc: "GAS로 점수화된 목표 전반의 집계 진행률. 50 = 예상됨.",
     gasAtOrAbove: "예상 수준 이상",
     gasBelow: "예상 수준 이하",
-    gasGoalsCounted: "기록된 데이터가 있는 {{count}}개의 GAS 목표 기준.",
+    gasGoalsCounted: "기록된 데이터가 있는 {count}개의 GAS 목표 기준.",
     goalCompletion: "목표 완료율",
     goalsByDomain: "영역별 목표",
     timeline: "타임라인",
@@ -1779,7 +1781,7 @@ export const ko = {
     title: "진행 데이터",
     noDataPoints: "아직 기록된 데이터가 없습니다",
     collectedBy: "수집자",
-    moreCount: "+{{count}}개의 추가 기록",
+    moreCount: "+{count}개의 추가 기록",
 
     numericValue: "수치 값",
     numericPlaceholder: "예: 85",
@@ -2206,7 +2208,7 @@ export const ko = {
 
   reports: {
     title: "보고서",
-    subtitle: "{{name}}의 보고서",
+    subtitle: "{name}의 보고서",
     noStudent: "보고서를 보려면 {{STUDENT}}를 선택해주세요",
     noStudentSelected: "{{STUDENT}} 미선택",
     selectStudentFirst: "보고서를 보려면 먼저 {{STUDENT}}를 선택해주세요",
@@ -2243,10 +2245,12 @@ export const ko = {
     finalizeTitle: "보고서 확정",
     finalizeWarning: "확정 후에는 이 보고서를 편집할 수 없습니다. 변경하려면 새 수정본을 만들어야 합니다.",
     finalizeCannotUndo: "이 작업은 되돌릴 수 없습니다.",
+    consentWarning: "최종 확정이 차단되었습니다: 동의서 기록이 없습니다. 먼저 부모 또는 법적 보호자가 동의서에 서명해야 합니다.",
+    finalizeFailed: "보고서를 최종 확정하지 못했습니다.",
 
     confirmCreate: {
       title: "새 보고서 작성",
-      description: "새 {{type}} 보고서를 작성합니다. 기존 활성 보고서는 보관됩니다.",
+      description: "새 {type} 보고서를 작성합니다. 기존 활성 보고서는 보관됩니다.",
       confirm: "작성"
     },
 
@@ -2365,7 +2369,7 @@ export const ko = {
     },
 
     empty: {
-      title: "{{type}} 보고서 없음",
+      title: "{type} 보고서 없음",
       description: "새 보고서를 작성하여 시작하세요."
     },
 
@@ -2988,7 +2992,7 @@ export const ko = {
     selectOrGenerate: "분석을 선택하거나 새로 생성하세요.",
     selectStudent: "심층 분석을 생성하려면 {{STUDENT}}을(를) 선택하세요.",
     untitled: "제목 없는 분석",
-    inProgress: "진행 중 (단계 {{STEP}})...",
+    inProgress: "진행 중 (단계 {STEP})...",
     delete: "삭제",
     confirmDelete: "이 분석을 영구적으로 삭제하시겠습니까?",
     error: "오류",
@@ -3074,7 +3078,7 @@ export const ko = {
       categoryPages: "카테고리로 묶기",
       dietaryTags: "식이 라벨 표시",
       dietaryTagsDesc: "학생이 아니라 보호자용입니다. 이 라벨은 신뢰할 수 없고 아무것도 걸러내지 않습니다.",
-      autoNow: "현재: {{value}}",
+      autoNow: "현재: {value}",
     },
     review: {
       title: "확인할 메뉴",
@@ -3171,9 +3175,15 @@ export const ko = {
     LICENSE_ALREADY_PAID: "이 라이선스는 이미 결제되었습니다.",
     LICENSE_NOT_PURCHASABLE: "이 라이선스는 온라인으로 결제할 수 없습니다. 문의해 주세요.",
     PADDLE_NOT_CONFIGURED: "현재 온라인 결제를 이용할 수 없습니다. 잠시 후 다시 시도하거나 문의해 주세요.",
+    consent_required: "이 보고서를 최종 확정하려면 유효한 동의서 기록이 필요합니다.",
   },
 
   consent: {
+    block: {
+      loadFailedTitle: "동의 정보를 불러올 수 없음",
+      loadFailedDescription: "이 {{student}}의 동의 기록을 불러오지 못했습니다. 기록이 없다는 뜻이 아니라 요청이 실패한 것입니다.",
+      retry: "다시 시도",
+    },
     authority: {
       title: "동의 권한",
       description: "기본적으로 누가 동의하는지는 학생의 성년 연령에 따라 결정됩니다. 성인 학생이 여전히 법적 후견 하에 있거나 미성년자가 스스로 동의하는 경우 여기에서 재정의하세요.",
@@ -3306,6 +3316,27 @@ export const ko = {
         attemptsRemaining: "{count}회 시도 남음.",
         locked: "잘못된 시도가 너무 많습니다. 클리닉에 새 링크를 요청해 주세요.",
       },
+      attest: {
+        identityIntro: "보호자가 함께 있는 상태에서 이 동의를 직접 기록하고 있습니다. 계속하기 전에 아래 정보를 확인하세요.",
+        guardianLabel: "서명하는 보호자",
+        attestedByLabel: "확인자",
+        guardianIntro: "보호자가 제시한 신분증을 기록하세요. 문서에 표시된 그대로 입력하세요.",
+        coGuardianDeclaration: "보호자는 자신이 법적 보호자이며 다른 보호자를 대신하여 이 동의를 제공할 권한이 있음을 확인합니다.",
+        signatureIntro: "이제 기기를 보호자에게 건네주세요. 서명은 보호자 본인의 것이어야 합니다.",
+        signatureLegal: "서명함으로써 보호자는 자신이 법적 보호자임을 확인하고 이 동의를 승인합니다.",
+        stepIntro: "마지막으로 확인한 내용을 선언하세요. 이 선언은 동의 기록과 함께 저장되며 귀하가 확인한 임상가로 기재됩니다.",
+        documentLabel: "확인한 문서",
+        presenceDeclaration: "보호자가 저와 함께 실제로 자리에 있었고, 위에 기록된 신분증을 확인했으며, 서명한 사람과 일치함을 확인합니다.",
+        notesLabel: "메모(선택)",
+        notesPlaceholder: "예: 여권 2031년까지 유효, 이름 일치",
+        legal: "귀하의 이름, 사용자 계정 및 이 확인 시각이 동의 기록에 증거로 저장됩니다.",
+        reviewIntro: "저장하기 전에 기록을 확인하세요. 저장 후에는 수정할 수 없으며, 철회한 뒤 다시 서명해야 합니다.",
+        methodLabel: "확인 방법",
+        methodValue: "임상가의 대면 확인",
+        submitButton: "동의 기록",
+        toastTitle: "동의가 기록되었습니다",
+        toastDescription: "대면으로 받은 동의가 귀하의 확인과 함께 저장되었습니다.",
+      },
     },
 
     missing: {
@@ -3346,6 +3377,58 @@ export const ko = {
       },
     },
 
+    withdraw: {
+      title: "Withdraw consent",
+      invalidLink: "Invalid link",
+      missingCode: "This link is missing its code. Please use the original link from the email or message you received.",
+      linkProblem: "We couldn't open this withdrawal link",
+      loading: "Loading",
+      requestTitle: "Withdraw the consent you gave",
+      requestIntro: "To make sure it's really you, we'll send a one-time link to the email address or phone number the clinic already has on file for you. Nothing changes until you confirm on the page that link opens.",
+      requestButton: "Send me a withdrawal link",
+      sending: "Sending...",
+      linkSentTitle: "Check your email or phone",
+      linkSentBody: "If this reference matches an active consent, we've sent a one-time withdrawal link to the email address or phone number on file. It can be used once and expires in 72 hours. If nothing arrives, contact the clinic.",
+      forStudent: "For",
+      signedBy: "Signed by",
+      signedOn: "Signed on",
+      effectsTitle: "What withdrawing does:",
+      effectProcessing: "Processing stops. The clinic can no longer record or process your child's data under this consent.",
+      effectAac: "The AAC assistant stops using your child's data, and any session running right now is ended immediately.",
+      effectShares: "Every active data share with another institution is revoked.",
+      effectRecords: "Reports, programs and incident records can no longer be finalized until a new consent is signed.",
+      effectPast: "Withdrawing does not undo processing that already happened, and it does not delete existing records. To ask for deletion, contact the clinic.",
+      otpIntro: "We'll send a one-time code to the phone number on file",
+      sendOtp: "Send me a code",
+      resendOtp: "Send it again",
+      otpLabel: "Verification code",
+      otpPlaceholder: "6 digits",
+      otpWrong: "That code isn't right.",
+      verify: "Verify",
+      childIdIntro: "To make sure it's really you, enter the last 4 digits of your child's ID number as given to the clinic.",
+      childIdLabel: "Last 4 digits",
+      childIdWrong: "That doesn't match the ID on file.",
+      childIdLocked: "Too many incorrect attempts. Ask the clinic to send a new link.",
+      attemptsRemaining: "attempts left",
+      factorGenericError: "Verification failed. Try again or contact the clinic.",
+      reasonLabel: "Reason for withdrawing (optional)",
+      reasonPlaceholder: "You can leave this blank",
+      acknowledge: "I understand what withdrawing does, and I am withdrawing the consent I gave for my child.",
+      confirmButton: "Withdraw my consent",
+      submitting: "Withdrawing...",
+      doneTitle: "Your consent has been withdrawn",
+      doneBody: "Processing has stopped, active data shares were revoked, and any running AAC session was ended. The clinic has been notified. If you want to consent again later, the clinic can send you a new request.",
+      error: {
+        notFound: "This link is no longer valid. Ask the clinic to send a new one.",
+        expired: "This link has expired. Ask the clinic to send a new one.",
+        used: "This link has already been used. If the consent is still active, ask the clinic for a new link.",
+        revoked: "This link was cancelled by the clinic. Contact them if you have questions.",
+        alreadyWithdrawn: "This consent has already been withdrawn. Nothing more to do.",
+        factorRequired: "Finish the verification step before withdrawing.",
+        generic: "Something went wrong. Please try again or contact the clinic.",
+      },
+    },
+
     history: {
       title: "동의 이력",
       activeBadge: "활성",
@@ -3364,6 +3447,11 @@ export const ko = {
       revokeReasonPlaceholder: "사유(선택)",
       toastRevoked: "동의가 철회되었습니다",
       toastRevokeFailed: "철회할 수 없습니다",
+      sendWithdrawalLink: "Send withdrawal link",
+      withdrawalLinkHint: "Sends a one-time link to the email or phone already on file for the person who signed, so they can withdraw it themselves.",
+      withdrawalLinkSent: "Withdrawal link sent",
+      withdrawalLinkSentTo: "Sent to",
+      withdrawalLinkFailed: "Could not send withdrawal link",
     },
 
     pending: {
@@ -3749,7 +3837,7 @@ export const ko = {
       reverificationDays: "재인증 (일)",
       autoProvision: "신규 사용자 자동 프로비저닝",
       autoProvisionDesc: "이 IdP를 통해 인증한 사용자가 Aivota 계정이 없을 경우 SSO 클레임으로부터 계정을 생성하고 연결합니다. 사용자가 이미 로그인된 상태로 도착하기를 기대하는 기관 IdP(예: IL MoE Sapakim)에 필요합니다.",
-      days: "{{count}}일",
+      days: "{count}일",
       never: "안 함",
       neverPlaceholder: "안 함으로 설정하려면 비워두세요",
       discoveryUrl: "디스커버리 URL",
@@ -4076,8 +4164,8 @@ export const ko = {
     noInstitute: "통화를 시작하려면 조직에 가입하세요",
     loadingContacts: "연락처 불러오는 중…",
     noContacts: "연락처를 찾을 수 없습니다",
-    callPerson: "{{name}}에게 전화 걸기",
-    callPersonAuto: "{{name}}에게 자동으로 전화",
+    callPerson: "{name}에게 전화 걸기",
+    callPersonAuto: "{name}에게 자동으로 전화",
     students: "학생",
     online: "온라인",
     offline: "오프라인",
@@ -4157,7 +4245,7 @@ export const ko = {
     title: "연락처",
     panelTitle: "학생 연락처",
     description: "학생이 아는 사람들 — 부모, 급우, 치료사.",
-    forStudent: "{{name}}의 연락처",
+    forStudent: "{name}의 연락처",
     empty: "아직 등록된 연락처가 없습니다.",
     add: "연락처 추가",
     new: "새 연락처",
@@ -4351,7 +4439,7 @@ export const ko = {
       title: "모든 접근 권한을 철회할까요?",
       description: "이 학생에 대해 해당 조직에 부여한 모든 활성 공유(항목별 및 상시)가 철회됩니다. 이 작업은 되돌릴 수 없습니다.",
       confirm: "전체 철회",
-      toastSuccess: "공유 {{count}}건을 철회했습니다.",
+      toastSuccess: "공유 {count}건을 철회했습니다.",
     },
     inbox: {
       pendingHeader: "대기 중인 초대",
@@ -4372,8 +4460,8 @@ export const ko = {
     },
     standing: {
       expired: "만료됨",
-      expiresInDays: "{{days}}일 후 만료",
-      expiresOn: "{{date}}에 만료",
+      expiresInDays: "{days}일 후 만료",
+      expiresOn: "{date}에 만료",
       renewedToast: "상시 공유를 1년 갱신했습니다.",
     },
     status: {
@@ -4403,7 +4491,7 @@ export const ko = {
     field: {
       codeExpires: "코드 만료",
       shareExpires: "공유 만료",
-      sensitiveCount: "민감 항목 {{count}}건",
+      sensitiveCount: "민감 항목 {count}건",
     },
     bundle: {
       objects: "항목",
@@ -4471,9 +4559,9 @@ export const ko = {
     notifications: {
       bellLabel: "공유 초대",
       newInviteTitle: "새 공유 초대",
-      newInviteBody: "승인을 기다리는 초대가 {{count}}건 있습니다.",
+      newInviteBody: "승인을 기다리는 초대가 {count}건 있습니다.",
       expiringTitle: "곧 만료되는 공유",
-      expiringBody: "상시 공유 {{count}}건이 곧 만료됩니다 — 확인하고 갱신하세요.",
+      expiringBody: "상시 공유 {count}건이 곧 만료됩니다 — 확인하고 갱신하세요.",
     },
   },
 
@@ -5023,6 +5111,18 @@ export const ko = {
       addGuardian: "보호자 연락처 추가",
       requestsSent: "{count}건 발송, {failed}건 실패",
       sendRequests: "동의 요청 보내기 ({count})",
+      stage: "동의",
+      explainTitle: "다음 단계: 부모 또는 보호자의 승인",
+      explainBody: "이 {{student}}의 건강, 프로그램, 의사소통 방식에 관한 내용을 기록하려면 먼저 부모 또는 법적 보호자의 서면 승인이 필요합니다. 지금까지는 기본 정보만 저장되어 있습니다. 승인이 서명되는 즉시 나머지 단계가 저절로 열립니다.",
+      signCaption: "보호자로 등록되어 있으므로 승인 내용을 직접 읽고 서명하실 수 있습니다 — 1분 정도면 됩니다.",
+      familyNoGuardianCaption: "먼저 등록된 보호자가 필요합니다. 본인(또는 다른 부모)을 이 {{student}}의 보호자로 추가하면 여기에 동의 서명 버튼이 나타납니다.",
+      sendRequest: "동의 요청 보내기",
+      sendCaption: "보호자에게 개인 링크를 이메일로 보냅니다. 보호자가 승인 내용을 읽고 온라인으로 서명하면 되며, 그 밖에 하실 일은 없습니다.",
+      sentCaption: "보호자에게 링크를 보냈습니다. 보호자가 서명하는 즉시 나머지 단계가 열리므로 나중에 다시 오셔도 됩니다.",
+      sentOne: "보호자에게 동의 링크를 보냈습니다.",
+      sendFailed: "동의 링크를 보내지 못했습니다. 보호자의 이메일 주소가 올바른지 확인한 뒤 다시 시도하세요.",
+      attestInPerson: "보호자가 함께 있습니다 — 같이 서명하기",
+      attestCaption: "부모 또는 보호자가 지금 함께 있다면 승인 내용을 같이 읽고 이 기기에서 서명받을 수 있습니다. 신분증은 귀하가 확인하며 링크는 필요하지 않습니다.",
     },
     notes: {
       documentsNotStored: "문서는 읽기만 하고 저장하지 않습니다. 문서에서 추출한 정보만 보관됩니다.",

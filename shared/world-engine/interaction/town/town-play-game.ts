@@ -29,7 +29,7 @@ import {
 import { certifyCreatureQuestWorld } from "@shared/world-engine/interaction/quest/creature-quests.js";
 import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan.js";
 import { DOLLHOUSE_SCALE, resolveWorldScale } from "@shared/world-engine/scale.js";
-import { validateFields, type GroupSpec } from "../../kernel/spec-schema.js";
+import { validateFields, type FieldSpec, type GroupSpec } from "../../kernel/spec-schema.js";
 import type { SerializedTownDeltas } from "@shared/world-engine/kernel/town/construction.js";
 
 function fail(path: string, msg: string): never {
@@ -39,6 +39,56 @@ function fail(path: string, msg: string): never {
 export interface TownScopeWorldSpec {
   config: TownPlayConfig;
 }
+
+/** The five numbers of a `ClimateSample` (products.ts), in its own units. */
+const CLIMATE_FIELDS: readonly FieldSpec[] = [
+  { key: "rain", kind: "number", min: 0, max: 10, required: true, facet: "interior", label: "Rain" },
+  { key: "tempC", kind: "number", min: -80, max: 80, required: true, facet: "interior", label: "Temperature (°C)" },
+  { key: "elevation", kind: "number", min: 0, max: 63, required: true, facet: "interior", label: "Elevation" },
+  { key: "fertility", kind: "number", min: 0, max: 15, required: true, facet: "interior", label: "Fertility" },
+  // ⚠️ REQUIRED HERE though `ClimateSample.ore` is optional (absent = 0): a
+  // DECLARED cell is a transcript of a measurement, and a measurement that
+  // found no ore says 0. Absence would mean "this document forgot", which is
+  // exactly the half-declared shape the all-five gate exists to refuse.
+  { key: "ore", kind: "number", min: 0, max: 15, required: true, facet: "interior", label: "Exposed ore" },
+];
+
+/**
+ * 📜 THE DECLARED-CELL FIELDS — the `SiteEnvironment` record, as document
+ * fields (planet-boot round §6a).
+ *
+ * ⚖️ WHY A DOCUMENT MAY SAY THIS AT ALL. There is ONE record of what the ground
+ * under a settlement says (`interaction/town/planet-scope.ts SiteEnvironment`)
+ * and it has three producers: MEASURED off a baked planet, MEASURED off a baked
+ * region, or DECLARED here. The third exists because a headless boot that only
+ * wants a founding CAMP should not pay 25 seconds of planetary geology to learn
+ * five numbers — and because before it existed the alternative was four
+ * hand-written constants in the harness (`text-quest.ts PLANET_CELL_*`) that
+ * described a temperate wood the browser bakes nowhere.
+ *
+ * 🚨 A DECLARED CELL IS GENERATED, NEVER TYPED (feedback_game_spec_json_is_
+ * generated): `npm run world:lower -- --declare-cell` bakes the planet once and
+ * writes what `measuredEnvironment` measured. `declared-cell.test.ts` asserts
+ * the checked-in file equals a fresh generation byte-for-byte, so a hand edit
+ * is a red, not a drift.
+ *
+ * All optional and `facet: "interior"` ⇒ every shipped document parses
+ * byte-identically (an absent field with no `default` stays absent).
+ */
+const CELL_FIELDS: readonly FieldSpec[] = [
+  { key: "climate", kind: "object", fields: CLIMATE_FIELDS, facet: "interior",
+    objectMessage: "expected an object (the cell's climate sample)",
+    label: "Cell climate",
+    description: "What the founding cell can grow (`climateSampleAt`): rain, tempC, elevation, fertility, ore. The SAME sample reaches the books (the farm's yield per acre) and the live farm." },
+  { key: "biome", kind: "int", min: 0, max: 8, facet: "interior", label: "Cell biome",
+    description: "The substrate's biome index (DEFAULT_BIOSPHERE order; 0 barren, 1 forest, 2 meadow, 3 grazer range) — what the countryside scatter is made of." },
+  { key: "eco", kind: "custom", validate: parseEco, facet: "interior", label: "Cell ecology",
+    description: "Per-species abundance at the cell, species key → 0..1 (`ecoAbundanceAt`) — the per-HECTARE densities the scatter reads." },
+  { key: "charter", kind: "custom", validate: parseCharter, facet: "interior", label: "Charter",
+    description: "The settlement's endowment box: { farmland, ore_access, timberland? }. Measured off the substrate, not chosen." },
+  { key: "partners", kind: "custom", validate: parsePartners, facet: "interior", label: "Trade partners",
+    description: "The nearest settlements as boot-supplied trade rows: { key, at {x,y}, geo?, distanceM } in this town's own sim coordinates, nearest first." },
+];
 
 /** The town scope's `world` descriptor. Field order IS the allowed-list order
  *  the unknown-field message reports. */
@@ -68,6 +118,8 @@ export const TOWN_WORLD_FIELDS: GroupSpec = {
       description: "The ground the town sits on (a boundary a parent region can supply)." },
     { key: "cluster", kind: "int", min: 0, max: 4, facet: "interior", label: "Neighbor hamlets",
       description: "Extra living towns streamed into the same walking session (0..4)." },
+    { key: "hamlets", kind: "custom", validate: parseHamlets, facet: "interior", label: "Hamlet overrides",
+      description: "Per-hamlet settings for the `cluster` ring, index-aligned (0..4 entries): { population, days, seed, charter }. Omitted entries keep the ring's defaults." },
     // E4 (nations P3): the numeraire routes commodity quotes once trade is
     // dense — validated against the compiled economy at build. Absent = barter.
     { key: "numeraire", kind: "string", invalidMessage: "must be a commodity key string",
@@ -77,11 +129,129 @@ export const TOWN_WORLD_FIELDS: GroupSpec = {
       description: "The settlement's supply box — material glyph → count (e.g. { \"wood\": 12 }), seeded into the builder's yard." },
     { key: "wilderness", kind: "boolean", facet: "boundary", label: "Wilderness",
       description: "Gatherable trees/rocks scattered over the chart. Default: on at age 0, off for an established town." },
+    // ── 📜 THE DECLARED CELL (planet-boot round S2): what the ground under
+    //    this settlement SAYS about itself, when nothing is standing on a
+    //    baked substrate to measure it. See `TownPlayConfig.biome` and
+    //    `planet-scope.ts declaredEnvironment` — all five or none.
+    ...CELL_FIELDS,
   ],
 };
 
-/** The declared supply box: glyph → positive count. */
-function parseStock(raw: unknown, path: string): Record<string, number> {
+/** Per-species abundance, 0..1 — `ecoAbundanceAt`'s own shape. Dynamic keys
+ *  (the species catalogue is content), so a `custom` validator rather than a
+ *  field list. */
+function parseEco(raw: unknown, path: string): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    fail(path, "expected an object of per-species abundance (species → 0..1)");
+  }
+  const out: Record<string, number> = {};
+  for (const [species, v] of Object.entries(raw)) {
+    if (typeof v !== "number" || !Number.isFinite(v)) fail(`${path}.${species}`, "must be a finite number");
+    if (v < 0 || v > 1) fail(`${path}.${species}`, "out of range (0..1)");
+    out[species] = v;
+  }
+  return out;
+}
+
+/** THE ONE CHARTER VALIDATOR. Lifted out of `parseHamlets` (planet-boot round
+ *  S2) the moment a second field wanted the same object: a hamlet override's
+ *  charter and a declared cell's charter are the same endowment box, so they
+ *  must reject the same way and say the same thing. */
+function parseCharter(raw: unknown, path: string): NonNullable<TownPlayConfig["charter"]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    fail(path, "expected an object of endowment scalars (farmland, ore_access, timberland)");
+  }
+  const cr = raw as Record<string, unknown>;
+  for (const [k, v] of Object.entries(cr)) {
+    if (!["farmland", "ore_access", "timberland"].includes(k)) {
+      fail(`${path}.${k}`, "unknown field (allowed: farmland, ore_access, timberland)");
+    }
+    if (typeof v !== "number" || !Number.isFinite(v)) fail(`${path}.${k}`, "must be a finite number");
+  }
+  for (const k of ["farmland", "ore_access"]) {
+    if (!(k in cr)) fail(`${path}.${k}`, "required — a charter declares farmland and ore_access");
+  }
+  return cr as unknown as NonNullable<TownPlayConfig["charter"]>;
+}
+
+/** How many partner rows a boot may declare — `nearbyCityPartners` streams 3
+ *  and a cluster ring is 4; 8 is slack, not a policy. */
+const MAX_DECLARED_PARTNERS = 8;
+
+/** The boot-supplied trade rows (`QuestHostDeps.tradePartners`), path-exact. */
+function parsePartners(raw: unknown, path: string): NonNullable<TownPlayConfig["partners"]> {
+  if (!Array.isArray(raw)) fail(path, "expected an array of partner rows (nearest first)");
+  if (raw.length > MAX_DECLARED_PARTNERS) {
+    fail(path, `too many entries (max ${MAX_DECLARED_PARTNERS}; got ${raw.length})`);
+  }
+  return raw.map((entry, i) => {
+    const at = `${path}[${i}]`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail(at, "expected an object (allowed: key, at, geo, distanceM)");
+    }
+    const e = entry as Record<string, unknown>;
+    for (const k of Object.keys(e)) {
+      if (!["key", "at", "geo", "distanceM"].includes(k)) {
+        fail(`${at}.${k}`, "unknown field (allowed: key, at, geo, distanceM)");
+      }
+    }
+    if (typeof e.key !== "string" || !e.key.length) fail(`${at}.key`, "must be a non-empty settlement key string");
+    const p = e.at;
+    if (!p || typeof p !== "object" || Array.isArray(p)) {
+      fail(`${at}.at`, "expected an object of sim coordinates ({ x, y })");
+    }
+    const pt = p as Record<string, unknown>;
+    for (const k of Object.keys(pt)) {
+      if (!["x", "y"].includes(k)) fail(`${at}.at.${k}`, "unknown field (allowed: x, y)");
+    }
+    for (const k of ["x", "y"] as const) {
+      if (typeof pt[k] !== "number" || !Number.isFinite(pt[k])) fail(`${at}.at.${k}`, "must be a finite number");
+    }
+    // `geo` is what a distant town's GROUND says it can sell — absent is a
+    // legitimate answer (a boot tier that knows where a partner is and nothing
+    // else), and the barter clerk then reads its pure-hash proxy.
+    const geo: NonNullable<TownPlayConfig["partners"]>[number]["geo"] = {};
+    if ("geo" in e) {
+      const g = e.geo;
+      if (!g || typeof g !== "object" || Array.isArray(g)) {
+        fail(`${at}.geo`, "expected an object (allowed: node, farmland, ore)");
+      }
+      const gr = g as Record<string, unknown>;
+      for (const k of Object.keys(gr)) {
+        if (!["node", "farmland", "ore"].includes(k)) {
+          fail(`${at}.geo.${k}`, "unknown field (allowed: node, farmland, ore)");
+        }
+      }
+      if ("node" in gr) {
+        if (gr.node !== null && (typeof gr.node !== "string" || !gr.node.length)) {
+          fail(`${at}.geo.node`, "must be a node-type string or null");
+        }
+        geo.node = gr.node as NonNullable<TownPlayConfig["partners"]>[number]["geo"]["node"];
+      }
+      for (const k of ["farmland", "ore"] as const) {
+        if (!(k in gr)) continue;
+        if (typeof gr[k] !== "number" || !Number.isFinite(gr[k])) fail(`${at}.geo.${k}`, "must be a finite number");
+        geo[k] = gr[k] as number;
+      }
+    }
+    // 🚨 A ROW WITHOUT A DISTANCE IS PRICED AT THE ABSTRACT `AWAY_DISTANCE_M`
+    // and loses to every row that brought a real one — so a DECLARED row must
+    // bring one. (The host's own seat keeps `distanceM` optional for boots that
+    // genuinely do not know; a document that measured a cell does.)
+    if (typeof e.distanceM !== "number" || !Number.isFinite(e.distanceM) || e.distanceM <= 0) {
+      fail(`${at}.distanceM`, "must be a positive number of metres (the road's length, else the chord)");
+    }
+    return { key: e.key, at: { x: pt.x as number, y: pt.y as number }, geo, distanceM: e.distanceM };
+  });
+}
+
+/** The declared supply box: glyph → positive count.
+ *
+ *  EXPORTED for the SOLAR document's `premise_stock` (space-game.ts
+ *  `PREMISE_FIELDS`): the founders' kit and a town's declared stock are the
+ *  same object — one validator, one error string, one shape. A second copy
+ *  over there would be a second answer to "what is a supply box". */
+export function parseStock(raw: unknown, path: string): Record<string, number> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     fail(path, "expected an object of material stacks (glyph → count)");
   }
@@ -95,6 +265,43 @@ function parseStock(raw: unknown, path: string): Record<string, number> {
   return out;
 }
 
+/** PER-HAMLET OVERRIDES for the `cluster` ring (trade-topology-round U-1):
+ *  index-aligned entries of the SAME town config the primary takes. The
+ *  author's word is `population`; the config's founding seam says `startPop`,
+ *  remapped here exactly as `parseTownWorld` remaps the primary's. */
+function parseHamlets(raw: unknown, path: string): NonNullable<TownPlayConfig["hamlets"]> {
+  if (!Array.isArray(raw)) fail(path, "expected an array of per-hamlet settings (index-aligned with `cluster`)");
+  if (raw.length > 4) fail(path, `too many entries (max 4, one per hamlet; got ${raw.length})`);
+  return raw.map((entry, i) => {
+    const at = `${path}[${i}]`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail(at, "expected an object (allowed: population, days, seed, charter)");
+    }
+    const e = entry as Record<string, unknown>;
+    const out: NonNullable<TownPlayConfig["hamlets"]>[number] = {};
+    for (const k of Object.keys(e)) {
+      if (!["population", "days", "seed", "charter"].includes(k)) {
+        fail(`${at}.${k}`, "unknown field (allowed: population, days, seed, charter)");
+      }
+    }
+    const int = (key: string, min: number, max: number): number => {
+      const v = e[key];
+      if (typeof v !== "number" || !Number.isFinite(v) || !Number.isInteger(v) || v < min || v > max) {
+        fail(`${at}.${key}`, `must be an integer in ${min}..${max}`);
+      }
+      return v;
+    };
+    if ("population" in e) out.startPop = int("population", 1, 10000);
+    if ("days" in e) out.days = int("days", 0, 5000);
+    if ("seed" in e) out.seed = int("seed", 0, 0xffffffff);
+    // ONE CHARTER VALIDATOR (planet-boot S2) — the same endowment box the
+    // DECLARED cell's `charter` field takes, so the two cannot drift apart in
+    // what they accept or in what they say when they refuse.
+    if ("charter" in e) out.charter = parseCharter(e.charter, `${at}.charter`);
+    return out;
+  });
+}
+
 /** Deep gate for a town-scoped `world` object. */
 export function parseTownWorld(raw: unknown, path: string): TownScopeWorldSpec {
   const v = validateFields(raw, TOWN_WORLD_FIELDS, path) as Record<string, unknown>;
@@ -104,6 +311,9 @@ export function parseTownWorld(raw: unknown, path: string): TownScopeWorldSpec {
     v.startPop = v.population;
     delete v.population;
   }
+  // 📜 The DECLARED CELL rides through unrenamed — `climate`, `biome`, `eco`,
+  // `charter` and `partners` are `TownPlayConfig`'s own words, so the gate's
+  // output IS the config and `declaredEnvironment` reads it straight off.
   return { config: v as unknown as TownPlayConfig };
 }
 
@@ -275,6 +485,50 @@ function parseTownEntities(
   return out;
 }
 
+/**
+ * THE TOWN BUILD ITSELF, from a CONFIG — the tail `buildTownScope` used to
+ * inline (scale → deltas → `buildTownPlay` → certification).
+ *
+ * ⚖️ ONE TOWN BUILD, TWO ENTRANCES (planet-boot round S1). A town reached from
+ * a DOCUMENT comes through `buildTownScope`, which gates `game.world` against
+ * `TOWN_WORLD_FIELDS` first. A town reached from a FOUNDED SITE on a planet
+ * (`interaction/town/planet-scope.ts` → `siteTownConfig`) has no such document:
+ * its config is MEASURED off the substrate, so there is nothing to validate and
+ * the solar document's own gate already ran. Both must nonetheless build and
+ * CERTIFY identically — so the four lines that do that live here once, and the
+ * planet arm calls them instead of growing a second copy that drifts.
+ *
+ * Mutates `config` exactly as the inlined tail did (scale + deltas ride the
+ * config into `buildTownPlay`), so a document build is byte-identical.
+ */
+export function buildTownScopeFromConfig(
+  config: TownPlayConfig,
+  scale: GameSettings["scale"],
+  label = "game",
+  restoreDeltas?: SerializedTownDeltas,
+): { spec: TownScopeWorldSpec; play: TownPlay } {
+  // SPACE-TIME COMPRESSION sizes the plan's SERVICE DISTRICTS (needs-aware
+  // construction): faster-draining needs ⇒ smaller walk radius ⇒ denser
+  // markets and wells. A silent doc gets the street clock — the town
+  // scope's documented fallback while goods.ts is hard-paced to the 240 s
+  // day (scale.ts DOLLHOUSE_SCALE).
+  config.scale = scale ? resolveWorldScale(scale) : DOLLHOUSE_SCALE;
+  // #49 — the save, if one was handed in. It rides the config exactly as
+  // `siteTownConfig`'s does, so `buildTownPlay` → `createTownDeltas` is the
+  // one restore path and this seat adds no second one.
+  if (restoreDeltas) config.deltas = restoreDeltas;
+
+  const play = buildTownPlay(config);
+  // The quest bundle drawn from the town's residents/goods must PROVE itself
+  // (the goal-tree gauntlet + the greedy-sim playthrough) — a town whose
+  // quests aren't winnable is refused, not shipped.
+  const cert = certifyCreatureQuestWorld(play.bundle.game);
+  if (!cert.ok) {
+    fail(`${label}.world`, `town failed ${cert.stage} certification: ${cert.errors.join("; ")}`);
+  }
+  return { spec: { config }, play };
+}
+
 /** Build the living town a `scope: "town"` document describes. Deterministic
  *  end to end (same seed ⇒ same town). */
 export function buildTownScope(
@@ -322,25 +576,9 @@ export function buildTownScope(
   // its workstations from the resolved placement. The kernel already gated the
   // culture block's shape (parseWorldCultureSpec); this is a pass-through.
   if (settings.culture?.architecture) spec.config.architecture = settings.culture.architecture;
-  // SPACE-TIME COMPRESSION sizes the plan's SERVICE DISTRICTS (needs-aware
-  // construction): faster-draining needs ⇒ smaller walk radius ⇒ denser
-  // markets and wells. A silent doc gets the street clock — the town
-  // scope's documented fallback while goods.ts is hard-paced to the 240 s
-  // day (scale.ts DOLLHOUSE_SCALE).
-  spec.config.scale = settings.scale ? resolveWorldScale(settings.scale) : DOLLHOUSE_SCALE;
-  // #49 — the save, if one was handed in. It rides the config exactly as
-  // `siteTownConfig`'s does, so `buildTownPlay` → `createTownDeltas` is the
-  // one restore path and this seat adds no second one.
-  if (restoreDeltas) spec.config.deltas = restoreDeltas;
-
-  const play = buildTownPlay(spec.config);
-  // The quest bundle drawn from the town's residents/goods must PROVE itself
-  // (the goal-tree gauntlet + the greedy-sim playthrough) — a town whose
-  // quests aren't winnable is refused, not shipped.
-  const cert = certifyCreatureQuestWorld(play.bundle.game);
-  if (!cert.ok) {
-    fail(`${label}.world`, `town failed ${cert.stage} certification: ${cert.errors.join("; ")}`);
-  }
+  // …then the build itself — scale, the #49 save seat, `buildTownPlay` and the
+  // quest certification (`buildTownScopeFromConfig`, shared with the planet arm).
+  const { play } = buildTownScopeFromConfig(spec.config, settings.scale, label, restoreDeltas);
   // Focus resolves against the BUILT town (it names one of its houses) — and a
   // defined family must live exactly where the focus (and the build) put it.
   const focus = resolveTownFocus(play, settings.initialFocus, label);

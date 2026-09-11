@@ -5,8 +5,20 @@ import { instituteRepository } from "../repositories/instituteRepository";
 import { studentRepository } from "../repositories/studentRepository";
 import { analyticsService } from "../services/analyticsService";
 import { activityLogService } from "../services/activityLogService";
-import { studentService } from "../services/studentService";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+/**
+ * THE BROAD student policy, in one place for the whole codebase
+ * (`server/services/access/`). This controller used to carry its own two-line
+ * wrapper over `studentService.verifyStudentAccess`; the rule is now named and
+ * shared, so it cannot drift from the caretaker-PIN / incident / voice copies
+ * it was identical to.
+ *
+ * It already grants a customer-support agent access to their support institute's
+ * students (via the AsyncLocalStorage short-circuit in
+ * `instituteRepository.isUserAdminOfInstitute`), so support mode needs no
+ * special case anywhere in this controller.
+ */
+import { hasStudentAccess } from "../services/access";
 import { canEditPackage, resolvePackagePermission } from "../services/packages/packageAccess";
 import type { AccessCtx } from "../services/sharing/visibility";
 import type { BoardLibraryEntry, BoardLibraryGroup } from "@shared/board-library";
@@ -56,8 +68,8 @@ async function canReadPackageBoard(
 
   const studentId = typeof req.query.studentId === "string" ? req.query.studentId : undefined;
   if (studentId) {
-    const { hasAccess } = await studentService.verifyStudentAccess(studentId, req.user!.id);
-    if (hasAccess && (await boardRepository.isBoardInStudentPackages(board.id, studentId))) {
+    const permitted = await hasStudentAccess(studentId, req.user?.id);
+    if (permitted && (await boardRepository.isBoardInStudentPackages(board.id, studentId))) {
       return true;
     }
   }
@@ -90,19 +102,6 @@ async function boardCtx(
       userId: req.user!.id,
     }
   );
-}
-
-/**
- * May this caller act for this student? Wraps `verifyStudentAccess`, which
- * already grants a customer-support agent access to their support institute's
- * students (via the AsyncLocalStorage short-circuit in
- * `instituteRepository.isUserAdminOfInstitute`) — so support mode needs no
- * special case anywhere in this controller.
- */
-async function hasStudentAccess(req: Request, studentId: string | null | undefined): Promise<boolean> {
-  if (!studentId) return false;
-  const { hasAccess } = await studentService.verifyStudentAccess(studentId, req.user!.id);
-  return hasAccess;
 }
 
 /**
@@ -154,7 +153,7 @@ async function canWritePackageBoard(req: Request, board: BoardPrincipals): Promi
 async function canWriteBoard(req: Request, board: BoardPrincipals): Promise<boolean> {
   if (board.scope === "package") return canWritePackageBoard(req, board);
   if (board.userId === req.user!.id) return true;
-  if (await hasStudentAccess(req, board.studentId)) return true;
+  if (await hasStudentAccess(board.studentId, req.user?.id)) return true;
   if (!board.studentId && board.instituteId) {
     return instituteRepository.isUserMemberOfInstitute(board.instituteId, req.user!.id);
   }
@@ -194,7 +193,7 @@ export class BoardController {
 
       // Attaching a board to a student is a PHI write — prove access to that
       // student first, or the studentId is just an unchecked id from the body.
-      if (studentId && !(await hasStudentAccess(req, studentId))) {
+      if (studentId && !(await hasStudentAccess(studentId, req.user?.id))) {
         res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
         return;
       }
@@ -311,7 +310,7 @@ export class BoardController {
       });
 
       if (studentId) {
-        if (!(await hasStudentAccess(req, studentId))) {
+        if (!(await hasStudentAccess(studentId, req.user?.id))) {
           res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
           return;
         }
@@ -411,7 +410,7 @@ export class BoardController {
       // The list is scoped by STUDENT, not by author, so access to the student
       // is what authorises the read. Without this gate the route would hand a
       // child's boards to anyone who could guess their id.
-      if (!(await hasStudentAccess(req, studentId))) {
+      if (!(await hasStudentAccess(studentId, req.user?.id))) {
         res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
         return;
       }
@@ -445,7 +444,7 @@ export class BoardController {
       // device could list a package board in the picker but never load its IR.
       const mayRead =
         board.userId === req.user!.id ||
-        (await hasStudentAccess(req, board.studentId)) ||
+        (await hasStudentAccess(board.studentId, req.user?.id)) ||
         (await canReadPackageBoard(req, board));
       if (!mayRead) {
         res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
@@ -477,7 +476,7 @@ export class BoardController {
         // Anything else stays a 404 so we don't confirm the row exists.
         const mayRead =
           board.userId === req.user!.id ||
-          (await hasStudentAccess(req, board.studentId)) ||
+          (await hasStudentAccess(board.studentId, req.user?.id)) ||
           (await canReadPackageBoard(req, board));
         res.status(mayRead ? 403 : 404).json({
           error: mayRead ? "error:BOARD_READ_ONLY" : "error:BOARD_NOT_FOUND",
@@ -508,7 +507,7 @@ export class BoardController {
           res.status(409).json({ error: "error:BOARD_ALREADY_ASSIGNED" });
           return;
         }
-        if (!(await hasStudentAccess(req, parsed.data.studentId))) {
+        if (!(await hasStudentAccess(parsed.data.studentId, req.user?.id))) {
           res.status(403).json({ error: "error:STUDENT_ACCESS_DENIED" });
           return;
         }
@@ -534,59 +533,6 @@ export class BoardController {
     }
   }
 
-  /**
-   * POST /api/export/gridset
-   * Export board as gridset format
-   */
-  async exportGridset(req: Request, res: Response): Promise<void> {
-    return this.exportBoard(req, res, "gridset");
-  }
-
-  /**
-   * POST /api/export/snappkg
-   * Export board as snap package format
-   */
-  async exportSnappkg(req: Request, res: Response): Promise<void> {
-    return this.exportBoard(req, res, "snappkg");
-  }
-
-  /**
-   * A board authored for a student is PHI, and an export is that PHI leaving
-   * the system as a file — so every export is an `export` audit row (with the
-   * student when the board names one), in addition to the product analytics.
-   */
-  private async exportBoard(req: Request, res: Response, format: "gridset" | "snappkg"): Promise<void> {
-    try {
-      const { boardData, promptId } = req.body;
-
-      // Track download analytics if promptId is provided
-      if (promptId) {
-        try {
-          await analyticsService.trackEvent("board_downloaded", req.user!.id, promptId, {
-            format,
-            boardName: boardData.name,
-          });
-        } catch (analyticsError) {
-          console.error("Failed to track download analytics:", analyticsError);
-        }
-      }
-
-      const studentId: string | null = typeof boardData?.studentId === "string" ? boardData.studentId : null;
-      activityLogService.log({
-        userId: req.user!.id,
-        eventType: "export",
-        subjectType1: "board",
-        subjectId1: typeof boardData?.id === "string" ? boardData.id : null,
-        subjectType2: studentId ? "student" : null,
-        subjectId2: studentId,
-        details: { format },
-      });
-
-      res.json({ success: true, data: boardData });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  }
 }
 
 export const boardController = new BoardController();

@@ -40,7 +40,6 @@ import {
   studentController,
   guidedSetupController,
   inviteCodeController,
-  savedLocationController,
   adminController,
   creditPackageController,
   paddleController,
@@ -68,18 +67,18 @@ import {
 
 import {
   requireAuth,
-  requireAdmin,
   requireSystemAdmin,
   requireSLPPlan,
   requireLicensePermission,
   validateCSRF,
   requireAdminSection,
+  requireInstituteRole,
 } from "./middleware";
 import { authRateLimiter, passwordResetRateLimiter, caretakerPinRateLimiter } from "./middleware/security";
 import { phiReadAudit } from "./middleware/phi-read-audit";
 
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
-import { apiProviderRepository } from "./repositories";
+import { apiProviderRepository, instituteRepository } from "./repositories";
 import { accessReviewController } from "./controllers/accessReviewController";
 import { chatController } from "./controllers/chatController";
 import { chatStreamController } from "./controllers/chatStreamController";
@@ -487,13 +486,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/institutes", requireAuth, (req, res) =>
     instituteController.getInstitutes(req, res)
   );
-  app.get("/api/institutes/:id", requireAuth, (req, res) =>
+  app.get("/api/institutes/:id", requireAuth, requireInstituteRole("id", "member"), (req, res) =>
     instituteController.getInstitute(req, res)
   );
   app.post("/api/institutes", requireAuth, (req, res) =>
     instituteController.createInstitute(req, res)
   );
-  app.patch("/api/institutes/:id", requireAuth, (req, res, next) => {
+  app.patch("/api/institutes/:id", requireAuth, requireInstituteRole("id", "admin"), (req, res, next) => {
     // Only use multer when the request is multipart (logo upload)
     if (req.is('multipart/form-data')) {
       upload.single("logo")(req, res, next);
@@ -503,7 +502,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }, (req, res) =>
     instituteController.updateInstitute(req as any, res)
   );
-  app.delete("/api/institutes/:id", requireAuth, (req, res) =>
+  app.delete("/api/institutes/:id", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.deleteInstitute(req, res)
   );
   
@@ -511,10 +510,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/institutes/:id/members", requireAuth, (req, res) =>
     instituteController.getMembers(req, res)
   );
-  app.patch("/api/institutes/:id/members/:userId", requireAuth, (req, res) =>
+  app.patch("/api/institutes/:id/members/:userId", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.updateMember(req, res)
   );
-  app.delete("/api/institutes/:id/members/:userId", requireAuth, (req, res) =>
+  app.delete("/api/institutes/:id/members/:userId", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.removeMember(req, res)
   );
   app.post("/api/institutes/:id/leave", requireAuth, (req, res) =>
@@ -524,36 +523,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AKIM §2.8 periodic access review for one institute. Institute-admin gated
   // (the same check updateMember/removeMember make) because the list exists to
   // drive those two actions. Reading it is itself logged as a `view`.
-  app.get("/api/institutes/:id/access-review", requireAuth, (req, res) =>
+  app.get("/api/institutes/:id/access-review", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     accessReviewController.getInstituteReview(req, res)
   );
   
   // Institute Invites (admin actions)
-  app.post("/api/institutes/:id/invites", requireAuth, (req, res) =>
+  app.post("/api/institutes/:id/invites", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.sendInvite(req, res)
   );
-  app.get("/api/institutes/:id/invites", requireAuth, (req, res) =>
+  app.get("/api/institutes/:id/invites", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.getInvites(req, res)
   );
-  app.delete("/api/institutes/:id/invites/:inviteId", requireAuth, (req, res) =>
+  app.delete("/api/institutes/:id/invites/:inviteId", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.cancelInvite(req, res)
   );
-  app.post("/api/institutes/:id/invites/:inviteId/resend", requireAuth, (req, res) =>
+  app.post("/api/institutes/:id/invites/:inviteId/resend", requireAuth, requireInstituteRole("id", "admin"), (req, res) =>
     instituteController.resendInvite(req, res)
   );
 
   // Institute student routes
-  app.get('/api/institutes/:id/students', requireAuth, instituteController.getStudents.bind(instituteController));
-  app.post('/api/institutes/:id/students', requireAuth, instituteController.addStudent.bind(instituteController));
-  app.patch('/api/institutes/:id/students/:studentId', requireAuth, instituteController.updateStudent.bind(instituteController));
+  app.get('/api/institutes/:id/students', requireAuth, requireInstituteRole("id", "member"), instituteController.getStudents.bind(instituteController));
+  // addStudent and removeStudent are NOT converted here: their service checks
+  // are compound (member-of-institute AND student-access; admin-of-institute
+  // OR student-access, respectively) rather than the single predicate
+  // requireInstituteRole gates on. See authz-structural-pass-plan.md Phase 2
+  // notes / the "needs a human" list in the 2026-09-10 report.
+  app.post('/api/institutes/:id/students', requireAuth, requireInstituteRole("id", "member"), instituteController.addStudent.bind(instituteController));
+  app.patch('/api/institutes/:id/students/:studentId', requireAuth, requireInstituteRole("id", "member"), instituteController.updateStudent.bind(instituteController));
   app.delete('/api/institutes/:id/students/:studentId', requireAuth, instituteController.removeStudent.bind(instituteController));
 
   // Student institutes route
   app.get('/api/students/:studentId/institutes', requireAuth, instituteController.getStudentInstitutes.bind(instituteController));
 
   // Classroom routes
-  app.get('/api/institutes/:instituteId/classrooms', requireAuth, classroomController.getClassrooms.bind(classroomController));
-  app.post('/api/institutes/:instituteId/classrooms', requireAuth, classroomController.createClassroom.bind(classroomController));
+  app.get('/api/institutes/:instituteId/classrooms', requireAuth, requireInstituteRole("instituteId", "member"), classroomController.getClassrooms.bind(classroomController));
+  app.post('/api/institutes/:instituteId/classrooms', requireAuth, requireInstituteRole("instituteId", "admin"), classroomController.createClassroom.bind(classroomController));
   app.get('/api/classrooms/:classroomId', requireAuth, classroomController.getClassroom.bind(classroomController));
   app.patch('/api/classrooms/:classroomId', requireAuth, classroomController.updateClassroom.bind(classroomController));
   app.delete('/api/classrooms/:classroomId', requireAuth, classroomController.deleteClassroom.bind(classroomController));
@@ -730,6 +734,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/consent/students/:studentId/sign", requireAuth, (req, res) =>
     consentController.signConsent(req, res)
   );
+  // In-person clinician attestation. A SEPARATE endpoint on purpose: /sign's
+  // "only the contact's linked user may sign" rule is correct for the parent
+  // flow and is left untouched. See consentController.attestInPerson.
+  app.post("/api/consent/students/:studentId/attest-in-person", requireAuth, (req, res) =>
+    consentController.attestInPerson(req, res)
+  );
   app.post("/api/consent/:consentId/revoke", requireAuth, (req, res) =>
     consentController.revokeConsent(req, res)
   );
@@ -751,17 +761,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/consent/invitations/sign", authRateLimiter, (req, res) =>
     consentController.signInvitation(req, res)
   );
-  app.post("/api/consent/invitations/request-otp", (req, res) =>
+  // The three second-factor legs of the SAME public flow, and they carry the
+  // same limiter as `redeem`/`sign` above and as all six `withdraw/*` routes
+  // below (2026-09-10 — they shipped without one).
+  //
+  // What it adds on top of the application caps, precisely, because it is NOT
+  // "this is what stops the brute force":
+  //   - `verify-id`  already locks an invitation after 5 wrong last-4 guesses
+  //     (`CHILD_ID_MAX_VERIFY_ATTEMPTS`), and `verify-otp` after 5 wrong codes.
+  //     Those caps are what bound the 10,000-value / 1,000,000-value guess.
+  //   - `request-otp` already caps SMS at 5 per 10 min per (purpose,
+  //     invitation, phone) in `phoneOtpService`, and the destination is read
+  //     from the invitation's contact, never from the request.
+  //   - Every one of those caps is keyed to a RESOLVED invitation, so none of
+  //     them can see a request bearing a code that does not exist. Unbounded
+  //     probing with junk codes reaches a sha256 + an indexed select per
+  //     request, unmetered, from an unauthenticated caller — the per-IP limiter
+  //     is the only control in front of that, and in front of the DB cost of
+  //     any future cap that lives below it.
+  // 10/min per IP is comfortably above a real guardian mistyping a 6-digit OTP
+  // (they hit the 5-attempt application lock long before it), and the window is
+  // 60 s, so even a tripped limiter clears itself while the parent is still on
+  // the page. `authRateLimiter` also self-skips under NODE_ENV=test.
+  app.post("/api/consent/invitations/request-otp", authRateLimiter, (req, res) =>
     consentController.requestPhoneOtp(req, res)
   );
-  app.post("/api/consent/invitations/verify-otp", (req, res) =>
+  app.post("/api/consent/invitations/verify-otp", authRateLimiter, (req, res) =>
     consentController.verifyPhoneOtp(req, res)
   );
-  app.post("/api/consent/invitations/verify-id", (req, res) =>
+  app.post("/api/consent/invitations/verify-id", authRateLimiter, (req, res) =>
     consentController.verifyChildId(req, res)
   );
   app.post("/api/consent/invitations/:id/revoke", requireAuth, (req, res) =>
     consentController.revokeInvitation(req, res)
+  );
+
+  // ---- Self-serve withdrawal for a signer with NO user account (§5.3) ----
+  // PUBLIC BY DESIGN, exactly like the sign endpoints above and for the same
+  // reason: the holder of the right to withdraw is a guardian who signed by
+  // magic link and has no account, so `requireAuth` here would be a permanent
+  // refusal of a statutory right (GDPR Art. 7(3)), not a security control.
+  // What stands in for the session: a single-use token, hashed at rest, bound
+  // to ONE consent record, delivered only to a channel already on file, the
+  // same second factor the sign flow used for that channel, and an explicit
+  // human confirmation. All rate-limited.
+  //
+  // `request-link` is the one the RECEIPT email points at. It always answers
+  // 200 with the same body — it must never reveal whether a reference names a
+  // real record.
+  app.post("/api/consent/withdraw/request-link", authRateLimiter, (req, res) =>
+    consentController.requestWithdrawalLink(req, res)
+  );
+  app.post("/api/consent/withdraw/context", authRateLimiter, (req, res) =>
+    consentController.getWithdrawalContext(req, res)
+  );
+  app.post("/api/consent/withdraw/request-otp", authRateLimiter, (req, res) =>
+    consentController.requestWithdrawalOtp(req, res)
+  );
+  app.post("/api/consent/withdraw/verify-otp", authRateLimiter, (req, res) =>
+    consentController.verifyWithdrawalOtp(req, res)
+  );
+  app.post("/api/consent/withdraw/verify-id", authRateLimiter, (req, res) =>
+    consentController.verifyWithdrawalChildId(req, res)
+  );
+  app.post("/api/consent/withdraw/confirm", authRateLimiter, (req, res) =>
+    consentController.confirmWithdrawal(req, res)
+  );
+  // The clinic re-issues a withdrawal link (the guardian phoned / lost the
+  // email). Institute-admin gated in the controller. The caller never sees the
+  // code — it goes to the guardian's stored channel.
+  app.post("/api/consent/:consentId/withdrawal-link", requireAuth, (req, res) =>
+    consentController.reissueWithdrawalLink(req, res)
   );
 
 
@@ -771,9 +841,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/programs/overview", requireAuth, (req, res) =>
     programController.getOverview(req, res)
   );
-  app.get("/api/programs/students", requireAuth, (req, res) =>
-    programController.getStudentsWithPrograms(req, res)
-  );
+  // `GET /api/programs/students` deleted 2026-09-10 (phase 0a/0b): superseded by
+  // `/api/programs/overview` above, which is what the client calls.
 
   // Program CRUD
   app.get("/api/programs/:id", requireAuth, (req, res) =>
@@ -891,9 +960,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/goals/:goalId/data-points", requireAuth, (req, res) =>
     programController.createDataPoint(req, res)
   );
-  app.delete("/api/data-points/:id", requireAuth, (req, res) =>
-    programController.deleteDataPoint(req, res)
-  );
+  // `DELETE /api/data-points/:id` deleted 2026-09-10 (phase 0b). No call site,
+  // and it was clinical audit finding C5: the handler took an id and deleted the
+  // row with no access check of any kind, in a family where every sibling route
+  // loads the parent goal and calls `verifyProgramAccess` first.
 
   // Progress Reports
   app.get("/api/programs/:programId/progress-reports", requireAuth, (req, res) =>
@@ -902,9 +972,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/programs/:programId/progress-reports", requireAuth, (req, res) =>
     programController.createProgressReport(req, res)
   );
-  app.patch("/api/progress-reports/:id", requireAuth, (req, res) =>
-    programController.updateProgressReport(req, res)
-  );
+  // `PATCH /api/progress-reports/:id` deleted 2026-09-10 (phase 0b): no call
+  // site — the client only POSTs `/api/programs/:programId/progress-reports`.
 
   // Program team (new path — contact ↔ program junction). Replaces the old
   // team-members endpoints. Frontend picks existing studentContacts rather
@@ -946,9 +1015,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/programs/:programId/consents", requireAuth, (req, res) =>
     programController.createConsentForm(req, res)
   );
-  app.patch("/api/consents/:id", requireAuth, (req, res) =>
-    programController.updateConsentForm(req, res)
-  );
+  // `PATCH /api/consents/:id` deleted 2026-09-10 (phase 0b): `/api/consents`
+  // appears in no client tree. (These are the IEP consent FORMS on a program,
+  // not the `/api/consent/*` guardian-consent surface.)
 
   // ============= GUIDED SETUP ROUTES =============
   // Chat-driven "add a student" onboarding. Same auth as POST /api/students;
@@ -1282,15 +1351,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= SAVED LOCATIONS ROUTES =============
-  app.get("/api/saved-locations", requireAuth, (req, res) =>
-    savedLocationController.getSavedLocations(req, res)
-  );
-  app.post("/api/saved-locations", requireAuth, (req, res) =>
-    savedLocationController.createSavedLocation(req, res)
-  );
-  app.delete("/api/saved-locations/:id", requireAuth, (req, res) =>
-    savedLocationController.deleteSavedLocation(req, res)
-  );
+  // Deleted 2026-09-10 (phase 0b). The `savedLocations` table and its schemas
+  // were removed from `@shared/schema` some time ago and the repository was left
+  // as a stub over `null as any`, so all three routes threw on every call. Two
+  // unreferenced mutations in `client/src/components/GlobalAuthModals.tsx`
+  // (`createSavedLocationMutation` / `deleteSavedLocationMutation`) still name
+  // the paths but are wired to no control — left in place, see the round report.
+  // `GET /api/locations` is the live location surface.
 
   // ============= INVITE CODE ROUTES =============
   app.post("/api/invite-codes", requireAuth, (req, res) =>
@@ -1387,14 +1454,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     boardController.updateBoard(req, res)
   );
 
-  // Export endpoints
-  app.post("/api/export/gridset", requireAuth, (req, res) =>
-    boardController.exportGridset(req, res)
-  );
-
-  app.post("/api/export/snappkg", requireAuth, (req, res) =>
-    boardController.exportSnappkg(req, res)
-  );
+  // `POST /api/export/gridset` and `/api/export/snappkg` deleted 2026-09-10
+  // (phase 0b): no call site in any client, and both echoed the request body
+  // back rather than producing a file. Dropbox's own export path
+  // (`services/dropboxRoutes.ts`) is unaffected.
 
   // ============= CUSTOM APPS (GAMES) ROUTES =============
   // Goal-tree quest games are authored conversationally by the chat AI
@@ -1631,10 +1694,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============= VOICE ROUTES (AAC) =============
-  // Transcribe audio to text using Whisper
-  app.post("/api/aac/voice/transcribe", requireAuth, aacUpload.single("audio"), (req, res) =>
-    voiceController.transcribe(req, res)
-  );
+  // `POST /api/aac/voice/transcribe` deleted 2026-09-10 (phase 0b): no call
+  // site; `/api/video-caption/transcribe` is the live transcription route.
   // Text-to-speech using Google TTS (returns audio blob directly)
   app.post("/api/aac/voice/synthesize", requireAuth, (req, res) =>
     voiceController.synthesize(req, res)
@@ -1678,55 +1739,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/aac/youtube/resolve-channel", requireAuth, async (req, res) => {
-    try {
-      const { input } = req.body || {};
-      if (typeof input !== "string" || !input.trim()) {
-        return res.status(400).json({ error: "input required" });
-      }
-      const { resolveChannelIdFromUrl, fetchChannelMetadata } = await import(
-        "./services/youtube/channel-search"
-      );
-      const channelId = await resolveChannelIdFromUrl(input);
-      if (!channelId) return res.status(404).json({ error: "Could not resolve channel ID from URL." });
-      const metadata = await fetchChannelMetadata(channelId);
-      return res.json({
-        channelId,
-        title: metadata.title,
-        description: metadata.description,
-      });
-    } catch (err: any) {
-      console.error("[routes] resolve-channel failed:", err?.message || err);
-      return res.status(500).json({ error: "Resolver failed" });
-    }
-  });
-
-  // Resolve a YouTube video URL / videoId to a canonical 11-char videoId AND
-  // fetch its display title + description + thumbnail. No API key required
-  // (public watch-page scrape). Used by the pinned-videos clinician UI.
-  app.post("/api/aac/youtube/resolve-video", requireAuth, async (req, res) => {
-    try {
-      const { input } = req.body || {};
-      if (typeof input !== "string" || !input.trim()) {
-        return res.status(400).json({ error: "input required" });
-      }
-      const { resolveVideoIdFromUrl, fetchVideoMetadata } = await import(
-        "./services/youtube/channel-search"
-      );
-      const videoId = resolveVideoIdFromUrl(input);
-      if (!videoId) return res.status(404).json({ error: "Could not resolve video ID from URL." });
-      const metadata = await fetchVideoMetadata(videoId);
-      return res.json({
-        videoId,
-        title: metadata.title,
-        description: metadata.description,
-        thumbnailUrl: metadata.thumbnailUrl,
-      });
-    } catch (err: any) {
-      console.error("[routes] resolve-video failed:", err?.message || err);
-      return res.status(500).json({ error: "Resolver failed" });
-    }
-  });
+  // `POST /api/aac/youtube/resolve-channel` and `/resolve-video` deleted
+  // 2026-09-10 (phase 0b): no call site — both are subsumed by the unified
+  // `POST /api/aac/youtube/resolve` below, which is what the clinician UI calls.
+  // The service functions they used (`resolveChannelIdFromUrl`,
+  // `resolveVideoIdFromUrl`, `fetchChannelMetadata`, `fetchVideoMetadata`) are
+  // still called by that resolver and are untouched.
 
   // List recent videos from a YouTube channel (RSS-backed). Public data;
   // the client already knows the channelId because the server sent the
@@ -1950,9 +1968,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/custom-symbols/generate", requireAuth, (req, res) =>
     customSymbolController.generateSymbol(req, res)
   );
-  app.get("/api/custom-symbols/search", requireAuth, (req, res) =>
-    customSymbolController.searchSymbols(req, res)
-  );
+  // `GET /api/custom-symbols/search` deleted 2026-09-10 (phase 0b): no call
+  // site, and it was one of the AAC audit's no-check rows — a free-text query
+  // over every `custom_symbols` row, unscoped by owner, student or institute.
   app.get("/api/custom-symbols/my", requireAuth, (req, res) =>
     customSymbolController.getMySymbols(req, res)
   );
@@ -1968,12 +1986,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/unapproved", requireAdminSection("public-symbols"), (req, res) =>
     customSymbolController.getUnapprovedSymbols(req, res)
   );
-  app.get("/api/custom-symbols/by-key/:key", requireAuth, (req, res) =>
-    customSymbolController.getSymbolByKey(req, res)
-  );
-  app.post("/api/custom-symbols/resolve-keys", requireAuth, (req, res) =>
-    customSymbolController.resolveKeys(req, res)
-  );
+  // `GET /api/custom-symbols/by-key/:key` and `POST .../resolve-keys` deleted
+  // 2026-09-10 (phase 0b): no call site. The live client path for the same
+  // question is the SSE route below (`/watch?keys=`), which resolves the same
+  // batch and then keeps streaming as symbols finish generating.
   app.get("/api/custom-symbols/watch", requireAuth, (req, res) =>
     customSymbolController.watchSymbols(req, res)
   );
@@ -2022,6 +2038,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // Association update/delete
+  // 🚨 These six are LIVE, despite the 2026-09-10 AAC audit §4.1 listing all six
+  // as dead. `client/src/features/SymbolsPanel.tsx:192,198` builds the path as
+  // `/api/custom-symbols/${type}-associations/${assocId}` with type
+  // user|student|institute, so no literal path fragment appears anywhere to grep
+  // for. They are still no-check routes and need FIXING, not deleting.
   app.patch("/api/custom-symbols/user-associations/:assocId", requireAuth, (req, res) =>
     customSymbolController.updateUserAssociation(req, res)
   );
@@ -2086,13 +2107,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     biometricController.removeStudentVoice(req, res)
   );
 
-  // Biometric matching (for recognition)
-  app.post("/api/biometric/match/face", requireAuth, (req, res) =>
-    biometricController.matchFace(req, res)
-  );
-  app.post("/api/biometric/match/voice", requireAuth, (req, res) =>
-    biometricController.matchVoice(req, res)
-  );
+  // `POST /api/biometric/match/face` and `/match/voice` deleted 2026-09-10
+  // (phase 0b): dead over HTTP. Face matching happens in the browser against
+  // the `known-people` payload below, and voice matching happens server-side
+  // inside the agent coordinator — both call `findMatchingFace` /
+  // `findMatchingVoice` in `services/biometric/recognition-service` directly,
+  // which is untouched.
 
   // Known people for AAC frontend identification (session + verified student access)
   app.get("/api/aac/students/:studentId/known-people", requireAuth, (req, res) =>
@@ -2323,7 +2343,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const callId = req.params.callId;
       const person = await personRepository.getOrCreateForUser(user.id);
       const isMember = await callService.isParticipant(callId, person.id);
-      if (!isMember && !user.isAdmin && !user.isSystemAdmin) {
+      // `user.isAdmin` is `users.is_admin` — the PLATFORM column, which shares
+      // its name with the institute-scoped `institute_users.is_admin` and means
+      // something else entirely. It was a bypass on a resource check (audit
+      // finding F9) and is gone; platform-admin authority is `is_system_admin`
+      // and the section gates only (§5.8).
+      if (!isMember && !user.isSystemAdmin) {
         res.status(403).json({ success: false, message: "Not a participant in this call" });
         return;
       }
@@ -2342,10 +2367,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const instituteId = req.params.instituteId;
-      // Only members of the institute may enumerate its games.
-      const institutes = await instituteService.getUserInstitutes(user.id);
-      const isMember = institutes.some((i) => i.id === instituteId);
-      if (!isMember && !user.isAdmin && !user.isSystemAdmin) {
+      // Only members of the institute may enumerate its games. The ONE
+      // institute predicate — this was a `getUserInstitutes().some(...)`
+      // list-then-scan (a fourth definition of "member") with a `user.isAdmin`
+      // bypass, which is the PLATFORM `users.is_admin` column and not the
+      // institute-scoped flag it shares a name with (audit finding F9).
+      const isMember = await instituteRepository.isUserMemberOfInstitute(instituteId, user.id);
+      if (!isMember && !user.isSystemAdmin) {
         res.status(403).json({ success: false, message: "No access to this organization" });
         return;
       }
@@ -2364,44 +2392,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // Users
-  app.get("/api/admin/users", requireAdmin, (req, res) =>
-    adminController.getUsers(req, res)
-  );
-  app.get("/api/admin/users/:id", requireAdmin, (req, res) =>
-    adminController.getUser(req, res)
-  );
-  // An `isActive` change is claimed FIRST: deactivation has to evict live
-  // sessions and record the before/after, which the general profile update
-  // below does neither of. Anything else falls straight through to it.
-  app.patch("/api/admin/users/:id", requireAdmin, (req, res, next) =>
+  //
+  // The read/update/delete surface over platform `users` rows was DELETED on
+  // 2026-09-10 (authorization structural pass, phase 0a). It had no client call
+  // site — there is no "users" admin section and no backoffice screen for it —
+  // and `GET /api/admin/users` was the payload of audit finding C1. What
+  // survives is the pair of ACCOUNT-STATE writes that other live code reads:
+  // the access-review off switch and the MFA-enforcement flag. Both moved from
+  // `requireAdmin` to the `admins` section, the same gate their sibling
+  // `GET /api/admin/access-review` already carried.
+  app.patch("/api/admin/users/:id", requireAuth, requireAdminSection("admins"), (req, res, next) =>
     accessReviewController.setUserActive(req, res, next)
   );
-  app.patch("/api/admin/users/:id", requireAdmin, (req, res) =>
-    adminController.updateUser(req, res)
-  );
-  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { userRepository } = await import("./repositories/userRepository");
-      const deleted = await userRepository.deleteUser(id);
-      if (deleted) {
-        res.json({ success: true, message: "User deleted successfully" });
-        activityLogService.log({
-          userId: (req as any).user?.id,
-          eventType: "delete",
-          subjectType1: "user",
-          subjectId1: id,
-        });
-      } else {
-        res.status(404).json({ success: false, message: "User not found" });
-      }
-    } catch (error: any) {
-      console.error("Admin delete user error:", error);
-      res.status(500).json({ success: false, message: "Failed to delete user" });
-    }
-  });
-  // MFA enforcement
-  app.patch("/api/admin/users/:id/mfa-enforcement", requireAdmin, (req, res) =>
+  // MFA enforcement. The only writer of `users.mfa_enforced_by_admin`, which
+  // the login path (authController) and the client Settings screen both read.
+  app.patch("/api/admin/users/:id/mfa-enforcement", requireAuth, requireAdminSection("admins"), (req, res) =>
     adminController.setMfaEnforcement(req, res)
   );
 
@@ -2428,13 +2433,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     adminUsersController.remove(req, res)
   );
 
-  // System prompt
-  app.get("/api/admin/prompt", requireAdmin, (req, res) =>
-    adminController.getSystemPrompt(req, res)
-  );
-  app.put("/api/admin/prompt", requireAdmin, (req, res) =>
-    adminController.updateSystemPrompt(req, res)
-  );
+  // `GET/PUT /api/admin/prompt` deleted 2026-09-10 (phase 0a): no call site, and
+  // the PUT was already a no-op against the prompt the system actually uses
+  // (services/system-prompts.ts).
 
   // LLM Config (must come before /api/admin/settings/:key to avoid param match)
   app.get("/api/admin/settings/llm_configs", requireAuth, requireAdminSection("models"), (req, res) =>
@@ -2469,38 +2470,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     adminController.getCrmSessionLog(req, res)
   );
 
-  // Settings
-  app.get("/api/admin/settings/:key", requireAdmin, (req, res) =>
-    adminController.getSetting(req, res)
-  );
-  app.put("/api/admin/settings/:key", requireAdmin, (req, res) =>
-    adminController.updateSetting(req, res)
-  );
-
-  // Subscription plans
-  app.get("/api/admin/subscription-plans", requireAdmin, (req, res) =>
-    adminController.getSubscriptionPlans(req, res)
-  );
-
-  // Interpretations
-  app.get("/api/admin/interpretations", requireAdmin, (req, res) =>
-    adminController.getInterpretations(req, res)
-  );
-  app.get("/api/admin/interpretations/:id", requireAdmin, (req, res) =>
-    adminController.getInterpretation(req, res)
-  );
-
-
-  // API providers
-  app.get("/api/admin/api-providers", requireAdmin, (req, res) =>
-    adminController.getApiProviders(req, res)
-  );
-  app.post("/api/admin/api-providers", requireAdmin, (req, res) =>
-    adminController.createApiProvider(req, res)
-  );
-  app.patch("/api/admin/api-providers/:id", requireAdmin, (req, res) =>
-    adminController.updateApiProvider(req, res)
-  );
+  // Deleted 2026-09-10 (phase 0a), all dead and all behind the old `requireAdmin`
+  // tier:
+  //   GET/PUT /api/admin/settings/:key   — an unbounded key-value write over
+  //     `system_settings` with no allowlist; it reached every live LLM routing
+  //     row (`llm_clinician`, `llm_aac_*`, …) around the section-gated
+  //     `settings/llm_configs` pair above, skipping their catalogue check and
+  //     their activity-log row. Audit finding F4.
+  //   GET /api/admin/subscription-plans
+  //   GET /api/admin/interpretations, /interpretations/:id — already broken:
+  //     the `interpretations` table is gone from @shared/schema and
+  //     `interpretationRepository` is a stub over `null as any`, so both threw.
+  //   GET/POST/PATCH /api/admin/api-providers[/:id]
 
   // Session history (admins with the "sessions" section permission). Tightened
   // from requireAdmin to admin-section gating — only the AdminDashboard
@@ -2755,17 +2736,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     contactController.remove(req, res)
   );
 
-  // Credit packages (admin)
-  app.get("/api/admin/credit-packages", requireAdmin, (req, res) =>
-    creditPackageController.getCreditPackages(req, res)
-  );
-  app.post("/api/admin/credit-packages", requireAdmin, (req, res) =>
+  // Credit packages (admin). `GET /api/admin/credit-packages` was deleted
+  // 2026-09-10 (phase 0a) — it was the same handler as the live
+  // `GET /api/credit-packages` above. The writes stayed: `credit_packages` is
+  // read at fulfilment time by the Paddle webhook
+  // (`paddleFulfillmentService.getCreditPackageByPaddlePriceId`) and these are
+  // its only writers, so deleting them would leave a live billing table with no
+  // way to author a row. Moved off `requireAdmin` onto the `licenses` section,
+  // per the phase-0 mapping.
+  app.post("/api/admin/credit-packages", requireAuth, requireAdminSection("licenses"), (req, res) =>
     creditPackageController.createCreditPackage(req, res)
   );
-  app.patch("/api/admin/credit-packages/:id", requireAdmin, (req, res) =>
+  app.patch("/api/admin/credit-packages/:id", requireAuth, requireAdminSection("licenses"), (req, res) =>
     creditPackageController.updateCreditPackage(req, res)
   );
-  app.delete("/api/admin/credit-packages/:id", requireAdmin, (req, res) =>
+  app.delete("/api/admin/credit-packages/:id", requireAuth, requireAdminSection("licenses"), (req, res) =>
     creditPackageController.deleteCreditPackage(req, res)
   );
 

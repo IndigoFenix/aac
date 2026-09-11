@@ -1,0 +1,15 @@
+# world=scripts/worlds/frontier-planet.spec.json seed=11 dt=0.5 days=3 dense=×1
+# t=0 ring-1 food units=2427  (tile--1--1=307 tile--1-0=309 tile--1-1=296 tile-0--1=296 tile-0-1=314 tile-1--1=300 tile-1-0=293 tile-1-1=312)
+# t=0 records=20 population=3280  loaded features=17  dayS=240
+day   1  rations/day=  2.80  takes=   7  blocked=  0 resel=  1  hungry=3/5 mean=1.08 deep=0  ring1=2427  sleeps=2
+day   2  rations/day=  5.00  takes=  20  blocked=  0 resel=  5  hungry=3/5 mean=1.28 deep=0  ring1=2408  sleeps=7
+day   3  rations/day=  0.00  takes=  20  blocked=  0 resel=  9  hungry=4/5 mean=1.96 deep=0  ring1=2408  sleeps=14
+
+# takes=20 (zero-yield=2)  blocked mid-flight (route parked)=0  re-selected=9
+# rations delivered=7.80 over 3 days = 2.60/day
+# take spread by source: flora:hazel:wild:hazel_17=3  flora:bush:wild:bush_20=3  tile-0--1=3  flora:bush:wild:bush_4=2  flora:hazel:wild:hazel_22=2  flora:hazel:wild:hazel_26=2  tile--1-0=2  flora:bush:wild:bush_53=1  flora:hazel:wild:hazel_1=1  tile-1-0=1
+# crowd frames (two hunger-errand settlers inside one arrival disc, sampled 1/s) = 366 of 720
+# crowd variants: e1.3=340  e2.6=366  p1.3=340  p2.6=366
+# starvation body-days by threshold: ≥1=8.5  ≥2=1.6  ≥3=0.0  ≥1.5=3.4  ≥2.5=0.2  sleeps=14
+# final hungry=4/5 mean=1.96 deep=0
+# ring-1 food units at end=2408

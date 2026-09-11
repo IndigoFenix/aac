@@ -98,9 +98,14 @@ export function runCheat(name: string, arg: string | undefined, ctx: CheatCtx): 
       // player sees a site, never the row behind it), so it lives here.
       if (!host?.orderBook) return missing("orderBook");
       return { ok: true, marker, lines: dump(host.orderBook()) };
-    case "probe":
+    case "probe": {
+      // ⚖️ `/probe` alone is the session status line; `/probe <who>` appends
+      // that body's SKILLS (skill-learning-round.md §2.6). A text id resolves
+      // to its sim id, exactly as `/carry` and `/why` resolve theirs.
       if (!host?.debugProbe) return missing("debugProbe");
-      return { ok: true, marker, lines: dump(host.debugProbe()) };
+      const who = arg ? (ctx.simIdOf(arg) ?? arg) : undefined;
+      return { ok: true, marker, lines: dump(host.debugProbe(who)) };
+    }
     case "wild": {
       // ⚖️ S&D S4 — the wild stand in whichever form it is in, and (with a
       // verb) the LOD fold itself. 🚨 `/wild fold|load|cycle` MOVES the world

@@ -18,7 +18,7 @@
 // Everything here is DB-free: the registry is pure, and the Student_* memory
 // ops are write-back no-ops whose only real work is the two guards below.
 
-import { describe, it, expect, afterEach } from "@jest/globals";
+import { describe, it, expect, afterEach, beforeAll, afterAll } from "@jest/globals";
 import {
   PresenceLedger,
   renderPresenceLists,
@@ -351,6 +351,26 @@ describe("contact provenance", () => {
 // ── the memory ops that consume all of the above ────────────────────────────
 
 describe("Student_Notes / Student_People write guards", () => {
+  // These ops acquired a SECOND guard on 2026-09-10 — the consent gate
+  // (`requireConsentForMemoryWrite`, docs/student-consent-implementation.md
+  // §7.2). It runs first and, when `CONSENT_GATE_ENABLED=true`, queries the
+  // database for the student's consent record — which this suite has no
+  // business doing: it is DB-free by design and `STUDENT` is a made-up id, not
+  // a row. Pin the flag OFF so what is exercised here stays the PRESENCE
+  // guards. The consent gate has its own suite
+  // (`integration/consent-gate-student-memory.test.ts`), where the same ops are
+  // driven against real students under all three gate states.
+  const FLAG = "CONSENT_GATE_ENABLED";
+  let priorFlag: string | undefined;
+  beforeAll(() => {
+    priorFlag = process.env[FLAG];
+    delete process.env[FLAG];
+  });
+  afterAll(() => {
+    if (priorFlag === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = priorFlag;
+  });
+
   const add = (field: typeof STUDENT_NOTES_FIELD, value: unknown, sessionId?: string) =>
     field.db!.add!(makeCtx({ sessionId }), value, {} as any);
 

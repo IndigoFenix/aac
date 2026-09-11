@@ -18,6 +18,7 @@ import {
 } from "../kernel/cells/index.js";
 import { hinterlandJobs, cityLicense, type CityLicense } from "../kernel/civ/jobs.js";
 import { TIER_POP_CAP, type SettlementTier } from "../scale.js";
+import { sphereWorld, type SettledWorld } from "./surface-metric.js";
 
 /** GRID PERSONS one TIER-1 founding raises — a hamlet's worth, against the
  *  capital's hundred (`planet-game.ts PLANET_FOUND_POP`). The region and
@@ -360,20 +361,32 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
 }
 
 /**
+ * ⚖️ THE SUBSTRATE-AGNOSTIC FOUNDING (planet-boot round S3b) — `citiesOn` is
+ * `foundCitiesFromSites` fed a `SettledWorld`'s own geometry
+ * (`world.metric.posOf`) instead of a sphere's `pos3` directly, so a baked
+ * flat region founds its villages through the identical function a planet
+ * founds its capitals with. `planetCities` below is its sphere WRAPPER —
+ * same call, same numbers (`world.metric.posOf === pos3` for a sphere world,
+ * since `sphereMetric.posOf` IS `pos3`), never a second implementation.
+ */
+export function citiesOn(world: SettledWorld, opts: PlanetCityOpts = {}): PlanetCity[] {
+  return foundCitiesFromSites({
+    ...opts,
+    sites: world.sites,
+    grid: world.grid,
+    seedBase: world.seedBase,
+    dirOf: world.metric.posOf,
+  });
+}
+
+/**
  * Found the planet's cities from its settled substrate. Sites arrive ranked
  * (worldgen's score) and spacing-disjoint; we keep the best that can feed
  * themselves. Deterministic per built planet.
  */
 export function planetCities(built: BuiltPlanet, opts: PlanetCityOpts = {}): PlanetCity[] {
-  const pos3 = built.topo.pos3;
-  if (!pos3) {
+  if (!built.topo.pos3) {
     throw new Error("planetCities: the topology has no pos3 — cities live on curved worlds");
   }
-  return foundCitiesFromSites({
-    ...opts,
-    sites: built.sites,
-    grid: built.grid,
-    seedBase: built.spec.geology.seed,
-    dirOf: cell => pos3(cell),
-  });
+  return citiesOn(sphereWorld(built), opts);
 }

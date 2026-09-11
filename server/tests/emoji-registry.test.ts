@@ -12,6 +12,8 @@ import {
   rtlMirrorStyle,
   isFaceKey,
   resolveEmoji,
+  isEmoji,
+  isSingleCharGlyph,
 } from "../../shared/emoji-registry.js";
 import { getVocabularyItem } from "../../shared/glyph-registry.js";
 
@@ -220,5 +222,82 @@ describe("rtlMirrorStyle — the DOM form of the same rule", () => {
 
   it("tolerates an absent subject", () => {
     expect(rtlMirrorStyle(true, undefined)).toEqual({ transform: "scaleX(-1)" });
+  });
+});
+
+describe("isEmoji — the single-character fallback", () => {
+  it("still accepts everything the enumerated ranges cover", () => {
+    for (const e of ["🐦", "🍕", "❓", "🌳", "🇮🇱", "👨‍👩‍👧"]) {
+      expect(isEmoji(e)).toBe(true);
+    }
+  });
+
+  it("accepts single symbols the ranges miss, so they never route to image generation", () => {
+    // The ranges will always trail Unicode; one character is never a
+    // snake_case key that needs art.
+    for (const sym of ["©", "™", "〰", "→", "?"]) {
+      expect(isEmoji(sym)).toBe(true);
+      expect(isSingleCharGlyph(sym)).toBe(true);
+    }
+  });
+
+  it("accepts a LETTER or a DIGIT — the letterform is the icon", () => {
+    // A button that means `א` should be an `א`, not a generated picture of
+    // one. Applies in every script, and to bare numbers (which the
+    // compositor already drew through the numeral glyph while the validator
+    // was still asking for a fallback).
+    for (const ch of ["א", "a", "A", "7", "ع", "の", "字"]) {
+      expect(isEmoji(ch)).toBe(true);
+      expect(isSingleCharGlyph(ch)).toBe(true);
+    }
+  });
+
+  it("still sends real word keys to image generation", () => {
+    for (const word of ["bird", "i_me", "volcano", "ab", "7up", ""]) {
+      expect(isSingleCharGlyph(word)).toBe(false);
+    }
+    expect(isEmoji("bird")).toBe(false);
+  });
+
+  it("does not mistake a multi-character sequence for one glyph", () => {
+    expect(isSingleCharGlyph("🇮🇱")).toBe(false);       // two regional indicators
+    expect(isSingleCharGlyph("👨‍👩‍👧")).toBe(false);  // ZWJ family
+    expect(isSingleCharGlyph("?!")).toBe(false);
+  });
+
+  it("leaves a single character UPRIGHT in RTL", () => {
+    // Mirroring is a claim about what a picture depicts. A mirrored `א` or
+    // `7` is a different sign, not a turned-around one.
+    for (const ch of ["©", "™", "→", "〰", "א", "7", "a"]) {
+      expect(shouldMirror(true, { emoji: ch })).toBe(false);
+    }
+    // Emoji the ranges DO cover keep their existing behaviour.
+    expect(shouldMirror(true, { emoji: "🚶" })).toBe(true);
+  });
+});
+
+describe("the `question` vocabulary item", () => {
+  const item = getVocabularyItem("question");
+
+  it("exists as a real key, so `question` and `.question` stop costing a retry", () => {
+    expect(item).toBeDefined();
+    expect(item!.emoji).toBe("❓");
+  });
+
+  it("works as a head word AND as a modifier", () => {
+    expect(item!.pos).toBe("noun");
+    expect(item!.modifier).toBeDefined();
+    expect(item!.modifier!.appliesTo).toContain("noun");
+    expect(item!.modifier!.appliesTo).toContain("verb");
+  });
+
+  it("never flips in RTL, in either position", () => {
+    expect(isNonReversibleItem(item!)).toBe(true);
+    expect(shouldMirror(true, { key: "question", item: item! })).toBe(false);
+  });
+
+  it("stays out of the builder tabs — a key for the AI, not a new button", () => {
+    expect(item!.categories).toEqual([]);
+    expect(item!.modeChips).toEqual({});
   });
 });

@@ -268,7 +268,7 @@ export function DeepAnalysisPanel(_props: DeepAnalysisPanelProps) {
                 )}
                 {(selected.status === "running" || selected.status === "pending" || selected.status === "paused") && (
                   <div className="text-xs text-muted-foreground">
-                    {t("deepAnalysis.inProgress").replace("{{STEP}}", String(selected.stepCount ?? 0))}
+                    {t("deepAnalysis.inProgress", { STEP: selected.stepCount ?? 0 })}
                   </div>
                 )}
               </header>

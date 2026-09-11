@@ -221,22 +221,6 @@ class CustomSymbolRepository {
     return result.length;
   }
 
-  async searchSymbols(query: string, limit = 20): Promise<CustomSymbol[]> {
-    const pattern = `%${query}%`;
-    return db.select().from(customSymbols)
-      .where(
-        and(
-          eq(customSymbols.isApproved, true),
-          or(
-            ilike(customSymbols.key, pattern),
-            ilike(customSymbols.description, pattern),
-          ),
-        ),
-      )
-      .orderBy(desc(customSymbols.createdAt))
-      .limit(limit);
-  }
-
   async countAllAssociationsForSymbol(symbolId: string): Promise<number> {
     const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(userSymbolAssociations).where(eq(userSymbolAssociations.symbolId, symbolId));
     const [studentCount] = await db.select({ count: sql<number>`count(*)` }).from(studentSymbolAssociations).where(eq(studentSymbolAssociations.symbolId, symbolId));

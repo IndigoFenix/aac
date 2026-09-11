@@ -1,7 +1,7 @@
 # world-text v1   proto=1
 # world=game.spec  seed=12  locale=en  grid=8  dt=0.0500  settle=0.75s/8.0s
-# engine=196d0da5+dirty
-# started=2026-09-08T14:43:51.154Z
+# engine=6d3659f0+dirty
+# started=2026-09-09T13:22:19.239Z
 # ─────────────────────────────────────────
 > wait 10
 BOARD  __town__: house  [home]
@@ -114,7 +114,7 @@ EXIT   biscuit left view here south.
 EXIT   orrin left view there west.
 EXIT   pip left view here north.
 ENTER  biscuit came into view here south.
-ENTER  orrin came into view there west.
+ENTER  orrin came into view here west.
 SAY    biscuit: "I'm bored."  [i_me + bored]
 ENTER  pip came into view here north.
 SAY    orrin: "Why do you want food?"  [why + food]
@@ -145,9 +145,9 @@ SELF   you are in house-1.
   you are a bodiless spirit here.
 EXIT   orrin left view here north.
 EXIT   pip left view here north.
-TICK   quiet after 1.0s.
+TICK   quiet after 0.8s.
 > /scope
 ERR    cheat channel disabled (--cheats).
 # ─────────────────────────────────────────
-# commands=17  presses=0  screens=1  sim=238.3s
+# commands=17  presses=0  screens=1  sim=238.1s
 # events: TICK 16  EXIT 15  ENTER 14  NOTE 8  SCENE 7  SAY 7  BOARD 1  OK 1  TOAST 1  SELF 1  ERR 1

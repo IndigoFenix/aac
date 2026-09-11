@@ -78,6 +78,23 @@ export interface TownPlayConfig {
    *  the window on the chart goes BEYOND one town). 0-4; default 0. Each
    *  neighbor is a full living town at a walkable offset. */
   cluster?: number;
+  /** PER-HAMLET OVERRIDES for that ring (`buildClusterWindow`, user call U-1 of
+   *  the trade-topology round). Index-aligned with the ring seats: entry `i`
+   *  spreads OVER seat `i`'s default config (`{seed: seed+101+37i, key:
+   *  "hamlet-<i+1>", startPop: 60, days: 160, questCount: 0}`), so it is the
+   *  SAME TownPlayConfig this town takes, applied per neighbour — not a
+   *  goods/partner list. Absent (or a seat with no entry) ⇒ the byte-identical
+   *  ring that shipped. Extra entries beyond `cluster` are ignored.
+   *
+   *  The document says `world.hamlets: [{ population?, days?, seed?, charter? }]`
+   *  and the gate remaps `population` → `startPop` exactly as it does for the
+   *  primary (town-play-game.ts). */
+  hamlets?: Array<{
+    startPop?: number;
+    days?: number;
+    seed?: number;
+    charter?: { farmland: number; ore_access: number; timberland?: number };
+  }>;
   /** The site's endowment — what the substrate chartered. */
   charter?: { farmland: number; ore_access: number; timberland?: number };
   /** Founding population (primary species). */

@@ -69,6 +69,13 @@ interface DynamicBoardProps {
   /** Button id a remote clinician is hovering on their mirrored view (their
    *  "cursor") — ringed so the student sees where the clinician is pointing. */
   highlightButtonId?: string | null;
+  /** True while the Word Finder is open. A `button_type: "wordfinder"` tile
+   *  then renders in its PRESSED state — because the search can be opened by
+   *  the AI (`open_app("word_finder")`) and not only by a tap, and a mode the
+   *  child did not start is one they need to be able to SEE they are in, on
+   *  the control that leaves it. Mirrors the builder's Find-word button,
+   *  which has always drawn `active={guessingActive}`. */
+  guessingActive?: boolean;
   /** Button id the child just pressed — shows an ambient processing/speaking cue. */
   busyButtonId?: string | null;
   /** Which phase of the busy cue to show on `busyButtonId`. */
@@ -274,6 +281,7 @@ export default function DynamicBoard({
   symbolUpdate,
   aiButtonPress,
   highlightButtonId,
+  guessingActive,
   busyButtonId,
   busyPhase,
   onButtonClick,
@@ -919,7 +927,9 @@ export default function DynamicBoard({
           key={`btn-${kind}-${index}`}
           cornerSpace={cornerSpace}
           background={bg}
-          className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
+          className={`flex flex-col items-center justify-center rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}${
+            kind === "wordfinder" && guessingActive ? " ring-4 ring-violet-400" : ""
+          }`}
           style={{ padding: 5 }}
           onClick={() => handleButtonClick(button)}
           domProps={{
@@ -927,6 +937,7 @@ export default function DynamicBoard({
             "data-speech": labelText,
             "data-mirror-id": button.id,
             "data-testid": `board-${kind}`,
+            ...(kind === "wordfinder" ? { "data-active": guessingActive ? "true" : "false" } : {}),
           }}
           motionProps={{
             initial: isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 },

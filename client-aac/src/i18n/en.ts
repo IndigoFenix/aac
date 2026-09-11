@@ -903,6 +903,7 @@ export const en = {
       when: "When",
       why: "Why",
       how: "How",
+      question: "Question",
       someone: "Someone",
       near: "Near",
       far: "Far",

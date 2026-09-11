@@ -198,6 +198,13 @@ export type GoingDest =
 export type ReasonLink =
   | { kind: "activity"; clause: PhraseSpec } // link 0 — what I am doing
   | { kind: "because"; clause: PhraseSpec } // one why-step up
+  // ⚖️ THE PLAN RUNG (emergent-plans-round.md D6). One rung of the body's own
+  // regression tree: the sub-goal this step SERVES ("…so that I eat the
+  // apple"). Spoken with `in_order_to`, not `because` — a plan edge points
+  // FORWARD to the end it buys, and the connective is the difference between
+  // explaining a cause and naming a purpose. Both words already ship in all
+  // four rulesets, so law ④ is untouched.
+  | { kind: "purpose"; clause: PhraseSpec }
   | { kind: "authority"; clause: PhraseSpec } // "you asked"
   | { kind: "motive"; clause: PhraseSpec } // "I am hungry" / "I want X"
   | { kind: "end" }; // existential — the DONT_KNOW shape
@@ -2213,9 +2220,16 @@ export function selectAct(
       const effect = links[walk.depth];
       const cause = links[walk.depth + 1];
       if (!effect || effect.kind === "end" || !cause || cause.kind === "end") return stop;
+      // ⚖️ THE CONNECTIVE IS THE LINK'S OWN (emergent-plans-round.md D6). A
+      // PLAN rung points forward to the end it buys — "I get the apple SO THAT
+      // I eat the apple" — while every other rung points back at a cause. Both
+      // connectives are core vocabulary in all four rulesets (`in_order_to`:
+      // en "so that", he "כדי ש", es/pt "para que"), and `in_order_to` is
+      // already spoken once above (the remedy→goal line), so no new lexicon.
+      const conn = cause.kind === "purpose" ? "in_order_to" : "because";
       return {
         events: [],
-        responseGlyph: at(causalPhrase(effect.clause, "because", cause.clause), level),
+        responseGlyph: at(causalPhrase(effect.clause, conn, cause.clause), level),
         ui: { ...ui, whyChain: { cid: walk.cid, depth: walk.depth + 1 } },
       };
     }

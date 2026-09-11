@@ -18,12 +18,9 @@ import { furnitureUsePoseDump, type UseDumpWorld } from "@shared/world-engine/fu
 import {
   DOLLHOUSE_SCALE, resolveWorldScale, type WorldScale, type WorldScaleSpec,
 } from "@shared/world-engine/scale";
-import { buildPlanetWorld } from "@shared/world-engine/planet/planet-game";
-import { createWalkChart } from "@shared/world-engine/planet/walk-chart";
 import { FOUNDING_AGE_DAYS } from "@shared/world-engine/kernel/town/plan";
 import type { PartnerGeography } from "@shared/world-engine/kernel/town/barter";
-import { buildTownPlay } from "@shared/world-engine/interaction/town/town-play";
-import { clusterStages, widenSpecWindow } from "@shared/world-engine/interaction/town/town-cluster";
+import { buildClusterWindow } from "@shared/world-engine/interaction/town/town-cluster";
 import { buildTownScope } from "@shared/world-engine/interaction/town/town-play-game";
 import type { TownPlay } from "@shared/world-engine/interaction/town/town-play";
 import {
@@ -587,75 +584,16 @@ export function bootLivingTown(
   // window on the chart goes beyond one town): each neighbor is a full
   // living town at a walkable offset, its stage translated + merged with
   // the primary's (town-cluster.ts). The primary keeps quests/cast/goods.
-  let play = built.play;
-  let windowShift = { x: 0, y: 0 }; // primary-town coords → window coords
+  // ONE DEFINITION of the ring, in shared (`town-cluster.ts
+  // buildClusterWindow`). The headless boot (headless/text-quest.ts) is its
+  // second caller, which is what makes a cluster world reachable from
+  // `npm run world:text` / `npm run arc:run` at all (trade-topology-round D-1).
+  // The window comes back UNBOUND — the ring stopped choosing a trade partner;
+  // the engine binds by landed cost at the first caravan bucket (S2b).
   const clusterN = Math.max(0, Math.min(4, Math.floor(built.spec.config.cluster ?? 0)));
-  if (clusterN > 0) {
-    const WINDOW = 4000; // metres — a comfortable walking window
-    const primaryAt = { x: WINDOW * 0.35, y: WINDOW * 0.35 };
-    windowShift = {
-      x: primaryAt.x - built.play.stage.center.x,
-      y: primaryAt.y - built.play.stage.center.y,
-    };
-    // Deterministic hamlet ring, ~1.1-1.7 km out — demo-walkable (REAL
-    // region spacing is a day's walk; the window is the mechanism, the
-    // distances are content).
-    const neighbors = [];
-    for (let i = 0; i < clusterN; i++) {
-      const nPlay = buildTownPlay({
-        seed: built.spec.config.seed + 101 + i * 37,
-        key: `hamlet-${i + 1}`,
-        startPop: 60,
-        days: 160,
-        questCount: 0,
-      });
-      const ang = (i / clusterN) * Math.PI * 1.4 + 0.4;
-      const r = 1100 + 300 * i;
-      neighbors.push({
-        stage: nPlay.stage,
-        at: { x: primaryAt.x + Math.cos(ang) * r, y: primaryAt.y + Math.sin(ang) * r },
-        tag: `n${i + 1}`,
-        // Reserved house range → neighbor residents keep the resident id
-        // PROTOCOL, so the host's dialogue layer gives them real minds.
-        houseBase: 1000 * (i + 1),
-        // Its live context — the composite stage resolves a neighbor
-        // resident's OWN books/geometry through it (TownStage.cluster).
-        play: nPlay,
-      });
-    }
-    const windowSpec = widenSpecWindow(
-      built.play.stage.spec, built.play.stage.center, primaryAt, WINDOW, WINDOW,
-    );
-    const composite = clusterStages(
-      windowSpec,
-      { stage: built.play.stage, at: primaryAt, tag: "t0" },
-      neighbors,
-    );
-    // TRAVEL COST becomes REAL: bind the caravan line to the NEAREST hamlet —
-    // the gate re-aims toward it and the rare import scales by true distance.
-    // Coordinates: the trade geometry lives in the PRIMARY's own frame (its
-    // caravan streams through the primary's offset frame), so the partner
-    // binds in that frame; only the DEPOT anchor — which the host reads
-    // directly for the crates — is lifted into window coordinates.
-    const tr = composite.trade;
-    if (tr && neighbors.length) {
-      const nearest = neighbors.reduce((a, b) =>
-        Math.hypot(a.at.x - primaryAt.x, a.at.y - primaryAt.y) <=
-        Math.hypot(b.at.x - primaryAt.x, b.at.y - primaryAt.y)
-          ? a
-          : b,
-      );
-      tr.bindPartner({
-        key: nearest.play?.config.key ?? nearest.tag,
-        at: { x: nearest.at.x - windowShift.x, y: nearest.at.y - windowShift.y },
-      });
-      composite.trade = {
-        ...tr,
-        depot: { x: tr.depot.x + windowShift.x, y: tr.depot.y + windowShift.y },
-      };
-    }
-    play = { ...built.play, stage: composite };
-  }
+  // `windowShift` = primary-town coords → window coords (the ground samplers
+  // below shift back through it, so the chart anchor stays the primary plaza).
+  const { play, windowShift } = buildClusterWindow(built);
 
   // The session's ground: "hills" = deterministic rolling relief;
   // "planet" = REAL terrain — the earthlike world is baked, its best site
@@ -663,14 +601,29 @@ export function bootLivingTown(
   // (The sim stays plan-view 2D either way — the engine's ground seam.)
   // Window coords shift back to primary-town coords before sampling, so the
   // chart anchor stays the primary plaza.
-  const rawGround = built.spec.config.terrain === "hills"
-    ? { groundAt: rollingHills(built.spec.config.seed), waterAt: undefined }
-    : built.spec.config.terrain === "planet"
-      ? planetSiteGround(built.spec.config.seed)
+  //
+  // 🚫 `terrain: "planet"` GETS NO GROUND HERE ANY MORE (planet-boot round S3).
+  // It used to bake a SECOND planet — `planetSiteGround`, faceN 24, geology
+  // seed = the TOWN's seed, radius hardcoded 6_371_000 — and stand the town on
+  // `sites[0]` of that. That planet was not the planet: the world the browser
+  // flies is the home system's `Ap2` at faceN 48 and radius 6,384,755.56 m,
+  // baked from `bodySeed("Ap2", 1337)`. So a standalone `terrain: "planet"`
+  // document stood its town on a hillside belonging to a world that exists
+  // nowhere else, at 25 s a boot, and called it "real ground". ONE planet boot
+  // now (`interaction/town/planet-scope.ts`), reached from a SOLAR document
+  // that declares its premise; a bare town document that merely says
+  // `terrain: "planet"` is declaring that its rect is CONTENT on a planet (no
+  // walls, no edge — `town-stage onPlanet`), which is what the flag is for,
+  // and it boots FLAT. R-1: never a second `buildPlanetWorld` literal.
+  const rawGround: { groundAt: (x: number, y: number) => number; waterAt?: (x: number, y: number) => boolean } | undefined =
+    built.spec.config.terrain === "hills"
+      ? { groundAt: rollingHills(built.spec.config.seed) }
       : undefined;
   const groundAt = rawGround
     ? (x: number, y: number) => rawGround.groundAt(x - windowShift.x, y - windowShift.y)
     : undefined;
+  // No shipped ground provider here has a waterline any more (rolling hills is
+  // relief only); the seam stays so a provider that grows one needs no plumbing.
   const waterAt = rawGround?.waterAt
     ? (x: number, y: number) => rawGround.waterAt!(x - windowShift.x, y - windowShift.y)
     : undefined;
@@ -735,53 +688,6 @@ export function bootLivingTown(
     } : {}),
   }, board);
 }
-
-/** REAL planet ground for a `terrain: "planet"` town: bake the earthlike
- *  world at REAL radius, chart its most fertile founding site (walk-chart's
- *  tangent frame), and stand the town on it — sim (x, y) is the chart, the
- *  height is the planet's own render sampler. Deterministic in the seed.
- *  The town's stage ORIGIN sits at the chart anchor (the site cell), so the
- *  town stands on the real site. (Its plaza is an OUTPUT of the street tree
- *  now — growth-phase-B — landing wherever the walks made a junction
- *  busiest, near the middle but never decreed there.) */
-function planetSiteGround(seed: number): {
-  groundAt: (x: number, y: number) => number;
-  waterAt: (x: number, y: number) => boolean;
-} {
-  const built = buildPlanetWorld({
-    scope: "planet",
-    world: {
-      topology: { kind: "cube-sphere", faceN: 24 },
-      geology: { seed, epochs: 350, continentR: 0.38 },
-      settle: true,
-      radius: 6_371_000,
-    },
-    initialFocus: null,
-    avatar: false,
-    avatarSpecies: "human",
-    mods: [],
-    canFly: false,
-    creativeMode: false,
-    entities: null,
-    scale: null, // realism — the bake stands on a real-radius earthlike
-    culture: null,
-  });
-  const site = built.sites[0];
-  const chart = createWalkChart(built.surface, built.spec.radius, built.topo.pos3!(site.cell));
-  // The stage's town coords are centred at stage.center (~side/2, side/2);
-  // shift so the CHART anchor is the town centre, not the manifold corner.
-  return {
-    groundAt: (x, y) => chart.groundAt(x - PLANET_TOWN_CENTER, y - PLANET_TOWN_CENTER),
-    // SEA is where the RAW surface dips below the waterline (the chart's
-    // groundAt clamps to ≥0 relative land — water needs the unclamped read).
-    waterAt: (x, y) =>
-      built.surface.heightAt(chart.dirAt(x - PLANET_TOWN_CENTER, y - PLANET_TOWN_CENTER)) < 0,
-  };
-}
-// A town manifold is ~1 km; its centre in stage coords. Kept as a constant
-// mirror of town-stage's side/2 (probed; a mismatch only shifts which patch
-// of hillside the town stands on — still real ground).
-const PLANET_TOWN_CENTER = 500;
 
 /** Deterministic rolling relief for a `terrain: "hills"` town — a few
  *  metres of rise over street-scale wavelengths. */

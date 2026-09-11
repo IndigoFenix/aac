@@ -21,6 +21,7 @@
 // A basket holding eight units of grain still only shows a couple of props.
 // `INSTANCE_SLOTS` is the convention every container in the game already uses.
 
+import { BLOCK_GLYPH, rawsForRefined } from "../../products.js";
 import { blockCosts, furnitureBlocks } from "./block-bill.js";
 import { furnitureKindOfGlyph, STATION_PROPERTIES, type StationKind } from "./stations.js";
 
@@ -81,6 +82,32 @@ export interface PortableContainerDef extends ContainerDef {
  *  you push in front of you is about 1.4 m end to end. */
 export const CART_HALF_EXTENT_M = 0.7;
 
+/** A carried basket's half-extent, world metres — the same dimension, one
+ *  scale down: a hand basket is about 0.4 m across. See the `basket` row. */
+export const BASKET_HALF_EXTENT_M = 0.2;
+
+/**
+ * 🧺 WHAT A WOVEN VESSEL COSTS — the RAW behind one block, read off the
+ * catalogue rather than written down here (`wood → block`, `inPerOut: 2`).
+ *
+ * ⚖️ WHY THE RAW AND NOT THE BLOCK. A cart is CARPENTERED: planks, so its bill
+ * is blocks and somebody has to mill them first. A basket is WOVEN — withies,
+ * green rods off the same timber — so it never pays the refining step. Billing
+ * it in the raw is the whole of "cheaper than the cart's family without a
+ * second number to guess": one block's worth of stuff, bought one rung earlier
+ * in the chain.
+ *
+ * DERIVED at module scope from `products.ts`, which is a leaf module with no
+ * imports of its own — so the ratio here and the ratio a mill charges are one
+ * fact. The `?? ` arms are the honest defaults for a catalogue that declared no
+ * building raw at all (nothing ships that way; a bare table would otherwise
+ * mint a recipe consuming `undefined`).
+ */
+const BLOCK_RAW = (() => {
+  const p = rawsForRefined(BLOCK_GLYPH).find((q) => q.use === "building");
+  return { glyph: p?.glyph ?? "wood", perBlock: p?.refinesTo?.inPerOut ?? 2 };
+})();
+
 /** Whole objects a container shows in/on itself — the town-stage convention,
  *  unchanged. Not the unit cap; see the header. */
 export const INSTANCE_SLOTS = 2;
@@ -119,9 +146,43 @@ export const INSTANCE_SLOTS = 2;
  *   • The bill is DERIVED, not painted: a 0.7 m half-extent through the rule
  *     furniture already bills by (`furnitureBlocks`) = 4 blocks = 8 wood ≈ half
  *     a felled oak. A bigger cart would cost more without anybody guessing.
+ *
+ * 🧺 …AND THE BASKET IS MAKEABLE TOO (user ruling 2026-09-09: *"making baskets
+ * makeable would be a better solution"*, taken over shipping a bigger founding
+ * kit — the ⚖️ rider law stands, founders still carry what the spec says).
+ *
+ * THE MEASURED COMPLAINT (plant-growth-render-round.md PART 5e). The frontier
+ * camp ships TWO baskets for FIVE settlers, so **108 of 117** bag lookups saw
+ * no idle basket and a bare-handed forager's room is ONE ITEM — 0.20 rations.
+ * Five baskets reach 4.86 rations/day against two baskets' 3.80 *with half the
+ * trips*. The enabler seat was never the bottleneck; the world containing only
+ * two of the thing was, and the world had no way to make a third.
+ *
+ * THE BILL, DERIVED END TO END and stated once here:
+ *     furnitureBlocks(BASKET_HALF_EXTENT_M = 0.2 m) = round(1.2) = **1 block**
+ *     woven, so billed in the RAW that block is milled from:
+ *     1 × BLOCK_RAW.perBlock = **2 wood**, at the workbench.
+ * That is one quarter of the cart's 8-wood bill for one third of its room —
+ * the honest shape for a smaller vessel made one rung earlier in the chain,
+ * and a bigger basket would cost more without anybody guessing a number.
+ *
+ * 🚨 IT STAYS `seeded: true`, and that is not an oversight. Seeding says *the
+ * world lays these down, so a poster may assume one exists* — `container-seeds
+ * .ts` still does, and `haulTripUnits()` still reads 8 off this row. Being
+ * makeable and being stocked are independent facts; the cart is the row that
+ * proves the second can be false, not a rule that they must agree.
  */
 export const PORTABLE_CONTAINERS: Readonly<Record<string, PortableContainerDef>> = {
-  basket: { capacity: 8, relation: "in", hold: "carry", seeded: true },
+  basket: {
+    capacity: 8,
+    relation: "in",
+    hold: "carry",
+    seeded: true,
+    craft: {
+      at: "workbench",
+      consumes: { [BLOCK_RAW.glyph]: furnitureBlocks(BASKET_HALF_EXTENT_M) * BLOCK_RAW.perBlock },
+    },
+  },
   satchel: { capacity: 5, relation: "in", hold: "wear", seeded: true },
   cart: {
     capacity: 24,
@@ -176,9 +237,9 @@ export function haulTripUnits(): number {
 }
 
 /**
- * THE RECIPE FOR A BAG, or null when nothing makes one (a basket is woven, not
- * carpentered — a fibre craft, when the world has a weaver). Takes a glyph or a
- * bare symbol: a red cart is still a cart.
+ * THE RECIPE FOR A BAG, or null when nothing makes one (the satchel: a sewn
+ * thing, when the world has a leatherworker). Takes a glyph or a bare symbol:
+ * a red cart is still a cart.
  *
  * The single reader is `craftRecipeOf` (interaction/content/makeable.ts), which
  * is where the three — soon four — makeable families meet.

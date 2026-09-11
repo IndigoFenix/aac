@@ -234,7 +234,8 @@ note at the top of this file).
 | `PADDLE_API_KEY_SANDBOX` | Server-side API key, **sandbox** account. |
 | `PADDLE_CLIENT_TOKEN` | Client-side token for paddle-js, **live**. A different credential from the API key and safe to expose to the browser — it is served to the client by `GET /api/paddle/config`. |
 | `PADDLE_CLIENT_TOKEN_TEST` | Client-side token, **sandbox**. |
-| `PADDLE_WEBHOOK_SECRET` | Signing secret for the notification destination. Not derived from the API key — copy it from the Paddle dashboard when the destination is created, and note it is shown once. |
+| `PADDLE_WEBHOOK_SECRET` | Signing secret for the **live** notification destination. Not derived from the API key — copy it from the Paddle dashboard when the destination is created, and note it is shown once. |
+| `PADDLE_WEBHOOK_SECRET_SANDBOX` | Signing secret for the **sandbox** notification destination. Sandbox and live destinations are separate objects with separate secrets, so mixing them fails every signature. Optional: in sandbox the server falls back to `PADDLE_WEBHOOK_SECRET` when this is unset, so deployments predating the split keep working. Production never reads it. |
 
 **Webhook URL** — register this as the notification destination in the Paddle
 dashboard (Developer tools → Notifications):

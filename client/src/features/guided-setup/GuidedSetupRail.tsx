@@ -23,9 +23,10 @@ import { cn } from '@/lib/utils';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Check, Info, Loader2, Minus } from 'lucide-react';
+import { AlertTriangle, Check, Info, Loader2, Minus, ShieldCheck } from 'lucide-react';
 
 import type {
+  GuidedSetupAccount,
   GuidedSetupConsentBatchItem,
   GuidedSetupGate,
   GuidedSetupParkedStudent,
@@ -35,6 +36,13 @@ import type {
   GuidedSetupStepView,
 } from '@shared/guided-setup';
 
+import {
+  consentBranch,
+  consentStageState,
+  offersInPersonAttestation,
+  GATE_NEEDS_REQUEST,
+  type ConsentStageState,
+} from './consent-branch';
 import { RosterReviewTable } from './RosterReviewTable';
 import { useGuidedSetup } from './useGuidedSetup';
 
@@ -47,8 +55,13 @@ import { useGuidedSetup } from './useGuidedSetup';
  * a plain flex row inside a `dir`-aware container, so no directional icon is
  * involved and RTL reads right-to-left on its own.
  */
+// A COMPLETED step is green, not primary-tinted: `current` is already the solid
+// primary fill, so a primary-tinted `done` sat too close to it to scan at a
+// glance — which is the whole job of this row. Green matches the vocabulary the
+// consent panels already use for "settled" (`ConsentHistoryPanel`), and carries
+// explicit dark variants because the tinted greens vanish on a dark ground.
 const STATUS_DOT: Record<Exclude<GuidedSetupStepStatus, 'hidden'>, string> = {
-  done: 'bg-primary/15 text-primary border-primary/40',
+  done: 'bg-green-50 text-green-600 border-green-500/50 dark:bg-green-950/30 dark:text-green-400 dark:border-green-500/40',
   current: 'bg-primary text-primary-foreground border-primary',
   locked: 'bg-muted text-muted-foreground border-border',
   skipped: 'bg-muted text-muted-foreground border-border',
@@ -96,6 +109,206 @@ const GATE_VARIANT: Record<Exclude<GuidedSetupGate, 'off'>, 'default' | 'seconda
 };
 
 // ============================================================================
+// CONSENT STAGE MARKER
+// ============================================================================
+
+/**
+ * Same 7×7 token-only treatment as StepDot, so the two read as one row — but a
+ * shield instead of a number, because this is NOT one of the numbered steps and
+ * must not shift their numbering. It sits between step 1 and step 2 purely so
+ * the user can see the gate coming while they are still filling in basics,
+ * instead of finishing step 1 and hitting an invisible wall.
+ *
+ * No directional icon is involved (the logical-arrow rule doesn't apply to a
+ * shield), and the row is a plain flex row inside a `dir`-aware container, so
+ * RTL orders itself.
+ */
+const CONSENT_STAGE_DOT: Record<ConsentStageState, string> = {
+  // Same green as a completed numbered step — the consent stage reads as one of
+  // them, so it must settle the same way.
+  done: 'bg-green-50 text-green-600 border-green-500/50 dark:bg-green-950/30 dark:text-green-400 dark:border-green-500/40',
+  attention: 'bg-destructive/10 text-destructive border-destructive/50',
+  pending: 'bg-muted text-muted-foreground border-border',
+};
+
+function ConsentStageDot({ gate }: { gate: GuidedSetupGate }) {
+  const { t } = useLanguage();
+  const state = consentStageState(gate);
+  if (!state) return null;
+
+  return (
+    <div className="flex flex-col items-center gap-1 min-w-0">
+      <div
+        className={cn(
+          'w-7 h-7 rounded-full border flex items-center justify-center shrink-0',
+          CONSENT_STAGE_DOT[state],
+        )}
+        aria-hidden="true"
+      >
+        <ShieldCheck className="w-4 h-4" />
+      </div>
+      <span
+        className={cn(
+          'text-xs truncate max-w-[7rem]',
+          state === 'attention' ? 'font-medium text-foreground' : 'text-muted-foreground',
+        )}
+      >
+        {t('guidedSetup.consent.stage')}
+      </span>
+      {/* The gate badge's own wording, so the screen reader hears the same
+          sentence the sighted user reads off the header. */}
+      <span className="sr-only">{t(`guidedSetup.consent.badge.${gate}`)}</span>
+    </div>
+  );
+}
+
+// ============================================================================
+// CONSENT EXPLAINER CARD
+// ============================================================================
+
+/**
+ * What consent IS, why the flow stopped, and the ONE thing to do about it.
+ *
+ * The branch comes from `consentBranch` (consent-branch.ts), which is total:
+ * every reachable (account, gate, contact) triple yields either a button or an
+ * explicit "nothing to do but wait". Before it existed an institution that
+ * added one student in chat and then added a guardian landed on `sign_required`
+ * with a contact id and got NO affordance at all — not the family-only Sign
+ * button, not the roster-only batch button, not the gate-`none`-only Add
+ * guardian button — while the assistant told them to press one.
+ *
+ * Styled like the Info hint lines elsewhere in the rail rather than the shadcn
+ * Alert, whose absolutely-positioned icon assumes a full-size card and
+ * misaligns at this compact size.
+ */
+function ConsentCard({
+  account,
+  gate,
+  studentId,
+  consentContactId,
+  isBusy,
+  onSign,
+  onAddGuardian,
+  onSendRequest,
+  onAttestInPerson,
+}: {
+  account: GuidedSetupAccount;
+  gate: GuidedSetupGate;
+  studentId: string | null;
+  consentContactId: string | null | undefined;
+  isBusy: boolean;
+  onSign: () => void;
+  onAddGuardian: () => void;
+  onSendRequest: (contactId: string) => Promise<boolean>;
+  onAttestInPerson: (contactId: string) => void;
+}) {
+  const { t } = useLanguage();
+  const { ts } = useStudentLabel();
+  const [sendResult, setSendResult] = useState<'ok' | 'failed' | null>(null);
+
+  const branch = consentBranch({ account, gate, studentId, consentContactId });
+  if (!branch) return null;
+
+  return (
+    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1.5">
+      <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+        <ShieldCheck className="w-4 h-4 shrink-0" aria-hidden="true" />
+        {t('guidedSetup.consent.explainTitle')}
+      </p>
+      <p className="text-xs text-muted-foreground">{ts('guidedSetup.consent.explainBody')}</p>
+
+      {branch.kind === 'sign' && (
+        <>
+          <p className="text-xs text-muted-foreground">{t('guidedSetup.consent.signCaption')}</p>
+          <Button size="sm" variant="outline" onClick={onSign}>
+            {t('guidedSetup.consent.sign')}
+          </Button>
+        </>
+      )}
+
+      {branch.kind === 'addGuardianFamily' && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            {ts('guidedSetup.consent.familyNoGuardianCaption')}
+          </p>
+          <Button size="sm" variant="outline" onClick={onAddGuardian}>
+            {t('guidedSetup.consent.addGuardian')}
+          </Button>
+        </>
+      )}
+
+      {branch.kind === 'addGuardianInstitution' && (
+        <>
+          <p className="text-xs text-muted-foreground">{t('guidedSetup.consent.noGuardian')}</p>
+          <Button size="sm" variant="outline" onClick={onAddGuardian}>
+            {t('guidedSetup.consent.addGuardian')}
+          </Button>
+        </>
+      )}
+
+      {branch.kind === 'sendRequest' && (
+        <>
+          <p className="text-xs text-muted-foreground">{t('guidedSetup.consent.sendCaption')}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isBusy}
+            onClick={() => {
+              void onSendRequest(branch.contactId).then((ok) =>
+                setSendResult(ok ? 'ok' : 'failed'),
+              );
+            }}
+          >
+            {isBusy && <Loader2 className="w-3.5 h-3.5 me-1.5 animate-spin" />}
+            {t('guidedSetup.consent.sendRequest')}
+          </Button>
+          {/* A successful send flips the gate to `request_sent`, so this line is
+              usually replaced by the wait caption on the next view. It still
+              earns its place: the view arrives a beat later, and a failure
+              never moves the gate at all. */}
+          {sendResult === 'ok' && (
+            <p className="text-xs text-muted-foreground">{t('guidedSetup.consent.sentOne')}</p>
+          )}
+          {sendResult === 'failed' && (
+            <p className="text-xs text-destructive">{t('guidedSetup.consent.sendFailed')}</p>
+          )}
+        </>
+      )}
+
+      {/* The second move on the same branch: the guardian is not at the other
+          end of an email, they are at the desk. Secondary styling because the
+          link is the common case — but it is a real button, not a hint, because
+          a clinic that has the parent in the room should never be told to email
+          them. See offersInPersonAttestation in consent-branch.ts. */}
+      {offersInPersonAttestation(branch) && (
+        <div className="pt-1.5 border-t border-border/60 space-y-1.5">
+          <p className="text-xs text-muted-foreground">
+            {t('guidedSetup.consent.attestCaption')}
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="px-0 h-auto text-xs underline underline-offset-2"
+            onClick={() => onAttestInPerson(branch.contactId)}
+          >
+            {t('guidedSetup.consent.attestInPerson')}
+          </Button>
+        </div>
+      )}
+
+      {/* No button on purpose — a second magic link for the same child is not a
+          nudge. See GATE_NEEDS_REQUEST. */}
+      {branch.kind === 'wait' && (
+        <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+          {t('guidedSetup.consent.sentCaption')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // REFUSAL BANNER
 // ============================================================================
 
@@ -122,12 +335,8 @@ const SUPPRESSED_REFUSAL_REASONS: ReadonlySet<string> = new Set<GuidedSetupRefus
 // PARKED LIST (institutions)
 // ============================================================================
 
-/**
- * A gate a consent request can actually MOVE. `request_sent` is excluded on
- * purpose: a second link to the same guardian is not a nudge, it is two live
- * magic links for one child. `active` and `off` need nothing.
- */
-const GATE_NEEDS_REQUEST: readonly GuidedSetupGate[] = ['none', 'sign_required', 'revoked'];
+// `GATE_NEEDS_REQUEST` lives in consent-branch.ts now: the batch button here and
+// the single-send button in the card must agree on what a request can move.
 
 function ParkedList({
   parked,
@@ -257,6 +466,19 @@ export function GuidedSetupRail() {
     [requestConsentBatch, t],
   );
 
+  /**
+   * The single-student send behind the consent card's button. A batch of one is
+   * the supported shape — there is no separate endpoint — and the boolean it
+   * hands back is what the card's confirmation line keys off.
+   */
+  const sendOneRequest = useCallback(
+    async (studentId: string, contactId: string): Promise<boolean> => {
+      const results = await requestConsentBatch([{ studentId, contactId, channel: 'email' }]);
+      return !!results && results.every((r) => r.ok) && results.length > 0;
+    },
+    [requestConsentBatch],
+  );
+
   if (!view) return null;
 
   const record = view.record ?? null;
@@ -329,18 +551,10 @@ export function GuidedSetupRail() {
   const importedIds = new Set((rosterCreated ?? []).map((c) => c.studentId));
   const importedParked = (view.parked ?? []).filter((p) => importedIds.has(p.studentId));
 
-  const canSignConsent =
-    view.account === 'family' &&
-    !!view.studentId &&
-    (view.gate === 'sign_required' || view.gate === 'revoked');
-
-  // The bound student has nobody a consent request could reach yet: `gate:
-  // "none"` means there is no pending request either, so the only actionable
-  // move is adding a contact — the batch button in ParkedList only ever
-  // appears for a student the server gave us a consentContactId for.
+  // The BOUND student's own parked row — the one place `consentContactId` is
+  // published. Reading this row is fine; rendering any OTHER student's row is
+  // the regression the parked-list comment below guards against.
   const boundParked = view.parked?.find((p) => p.studentId === view.studentId) ?? null;
-  const needsGuardianContact =
-    isInstitution && !!view.studentId && view.gate === 'none' && !boundParked?.consentContactId;
 
   return (
     <div className="shrink-0 border-b border-border bg-card px-4 py-3 space-y-3">
@@ -356,25 +570,19 @@ export function GuidedSetupRail() {
           </p>
         </div>
 
+        {/* Status only. The "Sign consent" button used to live here as well, and
+            it is now the consent card's own primary action — one gate, one
+            button, in the one place that also explains what it is for. */}
         {view.gate !== 'off' && (
-          <div className="flex items-center gap-2">
-            <Badge variant={GATE_VARIANT[view.gate] ?? 'secondary'}>
-              {t(`guidedSetup.consent.badge.${view.gate}`)}
-            </Badge>
-            {canSignConsent && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => openUI('consentWizard', { studentId: view.studentId })}
-              >
-                {t('guidedSetup.consent.sign')}
-              </Button>
-            )}
-          </div>
+          <Badge variant={GATE_VARIANT[view.gate] ?? 'secondary'}>
+            {t(`guidedSetup.consent.badge.${view.gate}`)}
+          </Badge>
         )}
       </div>
 
-      {/* Stepper */}
+      {/* Stepper. The consent marker is spliced in after `basics` — the gate
+          sits between step 1 and step 2 — and is NOT counted: `index` still
+          comes from the visible-step array, so the numbered steps stay 1..N. */}
       {visibleSteps.length > 0 && (
         <div className="flex items-start gap-2">
           {visibleSteps.map((step, i) => (
@@ -382,6 +590,12 @@ export function GuidedSetupRail() {
               <StepDot step={step} index={i} />
               {i < visibleSteps.length - 1 && (
                 <div className="h-px flex-1 bg-border mt-3.5" aria-hidden="true" />
+              )}
+              {step.id === 'basics' && view.gate !== 'off' && i < visibleSteps.length - 1 && (
+                <>
+                  <ConsentStageDot gate={view.gate} />
+                  <div className="h-px flex-1 bg-border mt-3.5" aria-hidden="true" />
+                </>
               )}
             </div>
           ))}
@@ -410,6 +624,27 @@ export function GuidedSetupRail() {
         </ul>
       )}
 
+      {/* What the gate is, and the one move that clears it. Renders nothing when
+          the gate is off, once consent is active, or before step 1 has created a
+          student (so the roster-review screen below is never pushed down by it).
+          The old standalone "Add guardian contact" block is folded in here — two
+          of them on screen read as two different requests.
+          Placed directly under the stepper: the consent marker there is what
+          tells the user the flow has stopped, and this is the answer to it. */}
+      <ConsentCard
+        account={view.account}
+        gate={view.gate}
+        studentId={view.studentId}
+        consentContactId={boundParked?.consentContactId}
+        isBusy={isBusy}
+        onSign={() => openUI('consentWizard', { studentId: view.studentId })}
+        onAddGuardian={() => setActiveFeature('contacts')}
+        onSendRequest={(contactId) => sendOneRequest(view.studentId as string, contactId)}
+        onAttestInPerson={(contactId) =>
+          openUI('consentWizard', { studentId: view.studentId, attestContactId: contactId })
+        }
+      />
+
       {/* Institution step 1: the roster the AI proposed, awaiting review. */}
       {isInstitution && view.step === 'basics' && !!view.roster && (
         <RosterReviewTable proposal={view.roster} />
@@ -433,20 +668,6 @@ export function GuidedSetupRail() {
           onSendRequests={(items) => void sendRequests(items)}
           sentSummary={sentSummary}
         />
-      )}
-
-      {/* No guardian to send a consent request to yet — the only action left
-          is adding one, in the Contacts panel. */}
-      {needsGuardianContact && (
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground flex items-start gap-1.5">
-            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-            {t('guidedSetup.consent.noGuardian')}
-          </p>
-          <Button size="sm" variant="outline" onClick={() => setActiveFeature('contacts')}>
-            {t('guidedSetup.consent.addGuardian')}
-          </Button>
-        </div>
       )}
 
       {/* Notes shown while collecting medical information */}

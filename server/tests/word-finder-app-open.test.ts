@@ -33,6 +33,7 @@ import {
   WORD_FINDER_OPEN_CONFIRM_MS,
 } from "../services/dual-agent/word-finder-open-gate";
 import { renderEventLine } from "../services/dual-agent/prompts/board-manager";
+import { buildToolDeclarations } from "../services/dual-agent/tool-declarations";
 import type { AppOpenRequestedEvent } from "../services/dual-agent/agent-events";
 
 const T0 = 1_700_000_000_000;
@@ -97,5 +98,62 @@ describe("what the Board Manager is told", () => {
     // The exact regression: the board must not be built for a screen that
     // never appeared.
     expect(line).not.toMatch(/^\[APP OPEN\]/);
+  });
+});
+
+/**
+ * The Word Finder as an open_app TARGET.
+ *
+ * It is a mode, not an app tile, so it appears in no app list — and the
+ * Speaker reached for it anyway (`open_app("word_finder")`, 2026-08-19),
+ * getting `[APP OPEN FAILED] app word_finder not found`. The child had just
+ * pressed a "Find word" button to escape a board with nothing on it, and the
+ * one surface built to find an unreachable word refused to open.
+ *
+ * `app_id` is a free-form string, so the model could always SEND it; what it
+ * could not do was know the id was real. That is what this pins.
+ */
+describe("open_app advertises the Word Finder", () => {
+  const declarationsFor = (apps: Array<{ id: string; name: string; description: string }>) =>
+    buildToolDeclarations({
+      enabledApps: apps as any,
+      availableBoards: [],
+      availableCustomApps: [],
+      permittedWebsites: [],
+      homeActions: [],
+    } as any);
+
+  const openAppTool = (apps: Array<{ id: string; name: string; description: string }> = []) => {
+    const tools = declarationsFor(apps);
+    for (const t of tools) {
+      const found = (t as any).functionDeclarations?.find((f: any) => f.name === "open_app");
+      if (found) return found;
+    }
+    return undefined;
+  };
+
+  test("names word_finder alongside whatever apps the student has", () => {
+    const tool = openAppTool([{ id: "drawing", name: "Drawing", description: "draw" }]);
+    expect(tool).toBeDefined();
+    expect(tool.description).toContain("word_finder");
+  });
+
+  test("KNOWN GAP: with every app switched off, open_app is not declared at all", () => {
+    // `open_app` is gated on the student having at least one built-in or
+    // custom app (tool-declarations.ts — `hasBuiltInApps || hasCustomApps`),
+    // so a student with everything toggled off cannot have the Word Finder
+    // opened FOR them either. In practice `drawing` and `music` default on
+    // (shared/app-defaults.ts), so this is the deliberately-emptied case, not
+    // the common one. Pinned so the gap is visible rather than surprising.
+    expect(openAppTool([])).toBeUndefined();
+  });
+
+  test("says WHEN to open it, not just that it exists", () => {
+    const tool = openAppTool([
+      { id: "youtube", name: "YouTube", description: "video" },
+    ]);
+    expect(tool.description).toMatch(/word the user cannot reach/i);
+    // And it still lists the ordinary apps alongside.
+    expect(tool.description).toContain("youtube");
   });
 });

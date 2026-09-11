@@ -204,7 +204,19 @@ describe("quest-host wiring (⑦/⑧ call sites)", () => {
   );
 
   it("M1 — the spoken-eat path passes the eaten glyph's satiation into the ingest effect", () => {
-    expect(src).toMatch(/applyIngestEffect\(session, cid, meterKey\.slice\(cid\.length \+ 1\), satiationDaysOf\(glyph\)\)/);
+    // ⚖️ RE-FIXTURED 2026-09-10 (piles-not-boxes-round.md §11b), SAME ASSERTION.
+    // The claim this pin makes — the spoken-eat path ingests the EATEN GLYPH's
+    // own satiation, not a flat clear — is unchanged and still the thing
+    // measured below. What moved is where the `cid|` prefix is stripped: the
+    // key lookup now searches BOTH need stores (`needMeters` for a resident,
+    // `session.bodyNeeds` for a settler — a settler's rows live in the second by
+    // the body-needs round's storage split, so this path fed nobody without a
+    // household), and each arm yields a BARE tplKey, so the `.slice` happens at
+    // the lookup instead of at the call.
+    expect(src).toMatch(/applyIngestEffect\(session, cid, meterKey, satiationDaysOf\(glyph\)\)/);
+    // …and the lookup really does consult both stores — the half that was
+    // missing, pinned here so a revert to `needMeters`-only is red.
+    expect(src).toMatch(/session\.bodyNeeds\.get\(cid\)\?\.keys\(\)/);
   });
 
   it("M2 — the consume branch draws the meal through mealDrawPlan and ingests ONCE with the drawn total", () => {

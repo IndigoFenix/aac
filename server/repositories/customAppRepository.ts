@@ -177,14 +177,25 @@ export class CustomAppRepository {
       .orderBy(desc(customApps.loadedAt));
   }
 
-  /** App ids currently assigned to the student. Pass `ctx` to filter assignments by cross-institute visibility. */
-  async getAssignedAppIds(studentId: string, ctx?: AccessCtx): Promise<string[]> {
-    const where = ctx
-      ? and(
-          eq(customAppAssignments.studentId, studentId),
-          withInstituteVisibility(customAppAssignments, ctx, "custom_app_assignment"),
-        )
-      : eq(customAppAssignments.studentId, studentId);
+  /**
+   * App ids currently assigned to the student, filtered by cross-institute
+   * visibility.
+   *
+   * 🚨 `ctx` is REQUIRED and has been since 2026-09-10. It used to be optional,
+   * and an absent ctx dropped `withInstituteVisibility` entirely — the "no
+   * filter" reading of `buildClinicianCtx`'s `undefined`, which that helper also
+   * returned when the caller named an institute they were not a member of (the
+   * fail-open sentinel; see `services/sharing/clinicianCtx.ts`). Every caller
+   * now names its principal: a clinician passes the resolved institute (or, with
+   * no institute selected, a `student` principal once their direct access to the
+   * student is proven), and the AAC session passes the student it is running as.
+   * Do not make this optional again — the optionality WAS the bug.
+   */
+  async getAssignedAppIds(studentId: string, ctx: AccessCtx): Promise<string[]> {
+    const where = and(
+      eq(customAppAssignments.studentId, studentId),
+      withInstituteVisibility(customAppAssignments, ctx, "custom_app_assignment"),
+    );
     const rows = await db.select({
       id: customAppAssignments.id,
       appId: customAppAssignments.appId,
@@ -193,15 +204,16 @@ export class CustomAppRepository {
     })
       .from(customAppAssignments)
       .where(where);
-    if (ctx) recordShareDerivedView(ctx, "custom_app_assignment", rows);
+    recordShareDerivedView(ctx, "custom_app_assignment", rows);
     return rows.map((r) => r.appId);
   }
 
   /**
    * Apps currently assigned to the student, with full metadata.
    * Used by the AAC live session to show the AI what games it can launch.
+   * `ctx` is required for the reason given on {@link getAssignedAppIds}.
    */
-  async getAssignedAppsForStudent(studentId: string, ctx?: AccessCtx): Promise<CustomAppMetadata[]> {
+  async getAssignedAppsForStudent(studentId: string, ctx: AccessCtx): Promise<CustomAppMetadata[]> {
     const ids = await this.getAssignedAppIds(studentId, ctx);
     if (ids.length === 0) return [];
     return await db.select({

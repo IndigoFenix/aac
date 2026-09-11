@@ -165,12 +165,21 @@ describe("③ 'make cart' produces a cart", () => {
     expect(craftRecipeOf("cart.color_red")?.produces).toBe("cart.color_red");
   });
 
-  it("🧺 the BASKET still has no recipe — it is woven, not carpentered", () => {
-    // The user's complaint is answered by the cart, not by inventing a weaver.
-    // `frontier-conservation.test.ts` reads the same fact from the other side.
-    expect(makeableGlyph("basket")).toBeNull();
-    expect(craftRecipeOf("basket")).toBeNull();
-    expect(portableCraftOf("basket")).toBeNull();
+  it("🧺 …and the BASKET now has one too — MOVED 2026-09-09, not relaxed", () => {
+    // ⚖️ THE PIN MOVED BECAUSE THE USER MOVED IT. This assertion used to read
+    // `makeableGlyph("basket") === null`, on the 2026-09-05 reasoning that *"the
+    // user's complaint is answered by the cart, not by inventing a weaver"*. The
+    // 2026-09-09 ruling is the opposite and is explicit — *"making baskets
+    // makeable would be a better solution"* — taken over shipping a bigger
+    // founding kit, because the ⚖️ rider law forbids editing `premise_stock`.
+    // So the basket IS carpentered-adjacent now: 2 wood, woven, at the same
+    // bench, DERIVED by the same rule one scale down (see `basket-demand.test.ts`
+    // ①, which owns that derivation). The SATCHEL is what keeps this branch
+    // honest — a portable row with no recipe, and `craftRecipeOf` still falls
+    // straight through it.
+    expect(craftRecipeOf("basket")?.consumes).toEqual({ wood: 2 });
+    expect(makeableGlyph("basket")).toBe("basket");
+    expect(portableCraftOf("satchel")).toBeNull();
     expect(makeableGlyph("satchel")).toBeNull();
   });
 
