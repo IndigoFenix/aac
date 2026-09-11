@@ -1461,6 +1461,12 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     licensePerms,
     input.timezone,
     accessCtx,
+    // The AAC settings trio is a clinician-session field set that lives
+    // outside the manager's own builder; handing it in here is what lets
+    // populateMemory re-hydrate `/Context_AACSettings` on later turns instead
+    // of logging "Unknown top-level field" every time (seen 2026-09-11 once
+    // the setup guide told the model to view that record).
+    !isAACFeature && context.student ? getAACSettingsMemoryFields() : [],
   );
 
   // Presence ledger §6.1: the durable-write validator on the AI's memory ops
@@ -1509,13 +1515,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     contextMemoryFields.push(...getAACSettingsMemoryFields({ includePrompts: false }));
     console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields + AAC settings fields (no prompt fields)');
   } else {
-    // Non-AAC modes use chatContextManager fields (includes institute, library, progress, reports)
+    // Non-AAC modes use chatContextManager fields (includes institute, library,
+    // progress, reports — and, when a student is selected, the AAC settings
+    // fields handed to the manager above so the clinician can modify settings
+    // via chat).
     contextMemoryFields.push(...chatContextManager.getMemoryFields());
-
-    // Add AAC settings fields when a student is selected (so clinician can modify settings via chat)
-    if (hasStudent) {
-      contextMemoryFields.push(...getAACSettingsMemoryFields());
-    }
 
     // Add progress system prompt
     const additionalPrompt = buildProgressSystemPrompt(
@@ -2253,11 +2257,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       ...getAACSettingsMemoryFields({ includePrompts: false }),
     ];
   } else {
-    // Non-AAC modes: use chatContextManager fields (includes institute, library, progress, reports)
+    // Non-AAC modes: use chatContextManager fields (institute, library,
+    // progress, reports, and the AAC settings fields when a student is selected).
     fieldsForProcessor = chatContextManager.getMemoryFields();
-    if (hasStudent) {
-      fieldsForProcessor = [...fieldsForProcessor, ...getAACSettingsMemoryFields()];
-    }
 
     // Add BOARD_MEMORY_FIELD for boards mode
     if (feature === 'boards') {

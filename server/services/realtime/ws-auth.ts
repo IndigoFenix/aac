@@ -69,7 +69,7 @@ export async function authenticateUpgrade(req: IncomingMessage): Promise<User | 
   // bypasses Express, so this is the ONLY place the CSRF-equivalent check for
   // WebSockets can live. A browser page from a foreign origin carrying a
   // clinician's SameSite=None cookie is refused here, whatever it presents.
-  if (!isAllowedUpgradeOrigin(req.headers.origin)) {
+  if (!isAllowedUpgradeOrigin(req.headers.origin, req.headers.host)) {
     console.warn(`[ws-auth] upgrade refused: origin not allowed (${String(req.headers.origin).slice(0, 120)})`);
     return null;
   }

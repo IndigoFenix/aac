@@ -251,6 +251,80 @@ export class StudentController {
   }
 
   /**
+   * GET /api/students/archived?instituteId=
+   * Archived students for an institute — the same visibility as the roster,
+   * over the inactive rows. Empty without an instituteId, like the roster.
+   */
+  async getArchivedStudents(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const instituteId = req.query.instituteId as string | undefined;
+      if (!instituteId) {
+        res.json({ success: true, students: [] });
+        return;
+      }
+      const rows = await studentService.getArchivedStudentsForUserInInstitute(currentUser.id, instituteId);
+      const students = rows.map(({ student, link }) => ({
+        ...student,
+        age: studentService.calculateAge(student.birthDate),
+        role: link?.role ?? null,
+        linkId: link?.id ?? null,
+      }));
+      res.json({ success: true, students });
+    } catch (error: any) {
+      console.error("Error fetching archived students:", error);
+      res.status(500).json({ success: false, message: error.message || "Failed to fetch archived students" });
+    }
+  }
+
+  /**
+   * POST /api/students/:id/archive  |  POST /api/students/:id/restore
+   * `isActive` only, nothing deleted. The Students panel's Archive menu item
+   * was wired to nothing until 2026-09-11; the only existing endpoint (DELETE)
+   * also wipes the external store, which is not an archive.
+   */
+  async archiveStudent(req: Request, res: Response): Promise<void> {
+    await this.setArchived(req, res, true);
+  }
+
+  async restoreStudent(req: Request, res: Response): Promise<void> {
+    await this.setArchived(req, res, false);
+  }
+
+  private async setArchived(req: Request, res: Response, archived: boolean): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const studentId = req.params.id;
+
+      const allowed = await studentService.canArchiveStudent(studentId, currentUser.id);
+      if (!allowed) {
+        res.status(403).json({ success: false, message: "Only an owner or an institute admin can archive a student" });
+        return;
+      }
+
+      const ok = archived
+        ? await studentService.archiveStudent(studentId)
+        : await studentService.restoreStudent(studentId);
+      if (!ok) {
+        res.status(404).json({ success: false, message: "student not found" });
+        return;
+      }
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "student",
+        subjectId1: studentId,
+        details: { action: archived ? "archive" : "restore" },
+      });
+      res.json({ success: true, archived });
+    } catch (error: any) {
+      console.error(`Error ${archived ? "archiving" : "restoring"} student:`, error);
+      res.status(500).json({ success: false, message: error.message || "Failed to update student" });
+    }
+  }
+
+  /**
    * DELETE /api/students/:id
    * Delete an student (soft delete)
    */

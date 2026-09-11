@@ -159,12 +159,17 @@ export class ChatContextManager {
   constructor(
     private context: ChatContext,
     masterMemoryFields: AgentMemoryFieldWithDB[] = [],
-    existingLoadState?: MemoryLoadState
+    existingLoadState?: MemoryLoadState,
+    extraFields: AgentMemoryFieldWithDB[] = []
   ) {
     const permissions = context.reportPermissions ?? DEFAULT_REPORT_PERMISSIONS;
-    
-    // Build memory fields based on permissions
-    this.memoryFields = this.buildMemoryFields(masterMemoryFields, permissions);
+
+    // Build memory fields based on permissions. `extraFields` are session
+    // fields that live outside this module (the AAC settings trio) but must
+    // be KNOWN here: populateMemory re-hydrates every path the load state
+    // remembers, and a path it cannot resolve logs "Unknown top-level field"
+    // on every turn once the model has viewed that record.
+    this.memoryFields = [...this.buildMemoryFields(masterMemoryFields, permissions), ...extraFields];
     
     this.state = {
       student: null,
@@ -732,11 +737,13 @@ export async function createChatContextManager(
   licensePermissions?: LicensePermissions,
   timezone?: string,
   accessCtx?: AccessCtx,
+  extraFields: AgentMemoryFieldWithDB[] = [],
 ): Promise<ChatContextManager> {
   const manager = new ChatContextManager(
     { studentId, userId, programId, instituteId, reportPermissions, licensePermissions, timezone, accessCtx },
     masterMemoryFields,
-    existingLoadState
+    existingLoadState,
+    extraFields
   );
   await manager.initializeStudentFields();
   return manager;

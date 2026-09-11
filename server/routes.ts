@@ -1058,8 +1058,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/students", requireAuth, (req, res) =>
     studentController.getStudents(req, res)
   );
+  // Before `/api/students/:id`, or "archived" is read as a student id.
+  app.get("/api/students/archived", requireAuth, (req, res) =>
+    studentController.getArchivedStudents(req, res)
+  );
   app.get("/api/students/:id", requireAuth, (req, res) =>
     studentController.getStudentById(req, res)
+  );
+  app.post("/api/students/:id/archive", requireAuth, (req, res) =>
+    studentController.archiveStudent(req, res)
+  );
+  app.post("/api/students/:id/restore", requireAuth, (req, res) =>
+    studentController.restoreStudent(req, res)
   );
   app.post("/api/students", requireAuth, (req, res) =>
     studentController.createStudent(req, res)

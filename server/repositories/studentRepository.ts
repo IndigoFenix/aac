@@ -307,6 +307,22 @@ export class StudentRepository {
   /**
    * Soft delete an AAC user (sets isActive to false)
    */
+  /**
+   * Archive / restore. ONLY the `isActive` flag moves: every roster and
+   * session query already filters on it, so an archived student vanishes from
+   * lists without a row, a report or an externally stored field being touched.
+   * `deleteStudent` below is the destructive sibling — it also wipes the
+   * external store — and is deliberately not what the Archive button calls.
+   */
+  async setStudentActive(id: string, isActive: boolean): Promise<boolean> {
+    const [updated] = await db
+      .update(students)
+      .set({ isActive, updatedAt: new Date() })
+      .where(eq(students.id, id))
+      .returning({ id: students.id });
+    return !!updated;
+  }
+
   async deleteStudent(id: string): Promise<boolean> {
     const [updated] = await db
       .update(students)
@@ -434,8 +450,13 @@ export class StudentRepository {
    */
   async getStudentsForUserInInstitute(
     userId: string,
-    instituteId: string
+    instituteId: string,
+    opts: { archived?: boolean } = {}
   ): Promise<{ student: Student; link: UserStudent | null }[]> {
+    // The roster shows ACTIVE students; the archived list is the same query
+    // over the inactive ones, with the same visibility rules, so restore is
+    // offered to exactly the people who could see the student before.
+    const wantActive = !opts.archived;
     // Check admin status upfront (accounts for customer support via AsyncLocalStorage)
     const isAdmin = await instituteRepository.isUserAdminOfInstitute(instituteId, userId);
 
@@ -460,7 +481,7 @@ export class StudentRepository {
           and(
             eq(instituteStudents.instituteId, instituteId),
             eq(instituteStudents.isActive, true),
-            eq(students.isActive, true)
+            eq(students.isActive, wantActive)
           )
         )
         .orderBy(students.id, desc(students.createdAt));
@@ -504,7 +525,7 @@ export class StudentRepository {
         and(
           eq(instituteStudents.instituteId, instituteId),
           eq(instituteStudents.isActive, true),
-          eq(students.isActive, true),
+          eq(students.isActive, wantActive),
           or(
             isNotNull(userStudents.id),        // directly assigned
             isNotNull(classroomUsers.id),       // shares a classroom

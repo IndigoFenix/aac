@@ -108,14 +108,35 @@ export function resolveAllowedOrigins(): string[] {
  *
  * Rule: a browser ALWAYS sends `Origin` on a WebSocket handshake, so a present
  * Origin must be on the CORS allowlist (which includes the packaged clients'
- * `app://` / `capacitor://` origins). An ABSENT Origin means a non-browser
- * client (Node, curl, tests); it cannot carry a victim's ambient cookies
- * cross-site, so it is allowed through to the cookie/ticket check.
+ * `app://` / `capacitor://` origins) OR be the request's own site. An ABSENT
+ * Origin means a non-browser client (Node, curl, tests); it cannot carry a
+ * victim's ambient cookies cross-site, so it is allowed through to the
+ * cookie/ticket check.
+ *
+ * The same-site rule mirrors `validateCSRF` (auth.ts), which has always
+ * accepted an Origin equal to the request's Host. Until 2026-09-11 this gate
+ * lacked it, so a deployment whose `APP_URL` was not its serving host and
+ * that had no `ALLOWED_ORIGINS` refused EVERY socket from its own page while
+ * every HTTP call from that page succeeded (Render staging, seen live:
+ * "[ws-auth] upgrade refused: origin not allowed (https://…onrender.com)").
+ * A page served from our own host is the site itself, not a cross-site
+ * attacker, whatever scheme it was loaded over — so the comparison is on the
+ * host, the one thing a foreign origin cannot share.
  */
-export function isAllowedUpgradeOrigin(origin: string | string[] | undefined): boolean {
+export function isAllowedUpgradeOrigin(
+  origin: string | string[] | undefined,
+  hostHeader?: string | string[] | undefined,
+): boolean {
   const value = (Array.isArray(origin) ? origin[0] : origin)?.trim();
   if (!value) return true;
-  return resolveAllowedOrigins().includes(value);
+  if (resolveAllowedOrigins().includes(value)) return true;
+  const host = (Array.isArray(hostHeader) ? hostHeader[0] : hostHeader)?.trim().toLowerCase();
+  if (!host) return false;
+  try {
+    return new URL(value).host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
 }
 
 /**

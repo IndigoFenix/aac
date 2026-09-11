@@ -511,6 +511,53 @@ export class StudentService {
   }
 
   /**
+   * Archive: hide the student from every roster and session by clearing
+   * `isActive`, and nothing else — reversible with `restoreStudent`.
+   */
+  async archiveStudent(studentId: string): Promise<boolean> {
+    return studentRepository.setStudentActive(studentId, false);
+  }
+
+  async restoreStudent(studentId: string): Promise<boolean> {
+    return studentRepository.setStudentActive(studentId, true);
+  }
+
+  /** The archived students this user could see if they were active. */
+  async getArchivedStudentsForUserInInstitute(
+    userId: string,
+    instituteId: string
+  ): Promise<{ student: Student; link: UserStudent | null }[]> {
+    return studentRepository.getStudentsForUserInInstitute(userId, instituteId, { archived: true });
+  }
+
+  /**
+   * Who may archive or restore a student: the OWNER of a direct link, any
+   * member of a FAMILY institute the student is enrolled in, or an ADMIN of a
+   * school / clinic they are enrolled in. A caregiver or therapist link on its
+   * own is not enough — that is the same line `deleteStudent`'s controller
+   * draws, minus its blind spot for institution admins who hold no link at all
+   * (every chat-created patient is such a case).
+   *
+   * Checked against the student row regardless of `isActive`, so the same rule
+   * answers for restore.
+   */
+  async canArchiveStudent(studentId: string, userId: string): Promise<boolean> {
+    const link = await studentRepository.getUserStudentLink(userId, studentId);
+    if (link?.isActive && link.role === "owner") return true;
+
+    const enrollments = await instituteRepository.getInstitutesByStudentId(studentId);
+    for (const { institute } of enrollments) {
+      if (!institute) continue;
+      if (institute.type === "family") {
+        if (await instituteRepository.isUserMemberOfInstitute(institute.id, userId)) return true;
+      } else if (institute.type === "school" || institute.type === "clinic") {
+        if (await instituteRepository.isUserAdminOfInstitute(institute.id, userId)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Verify that a user has access to an AAC user
    */
   async verifyStudentAccess(

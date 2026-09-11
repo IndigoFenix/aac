@@ -9,7 +9,9 @@ import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { apiUrl } from '@/lib/queryClient';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { openUI } from '@/lib/uiEvents';
 import { useGuidedSetup } from '@/features/guided-setup/useGuidedSetup';
@@ -29,6 +31,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Search,
   Filter,
   Plus,
@@ -39,6 +51,8 @@ import {
   GraduationCap,
   Building2,
   Loader2,
+  Archive,
+  RotateCcw,
   Users as UsersIcon,
 } from 'lucide-react';
 
@@ -95,6 +109,74 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+
+  // ── Archive / restore ─────────────────────────────────────────────────────
+  // The Archive menu item was wired to nothing until 2026-09-11 (its click
+  // bubbled to the card and merely opened the student). Archiving flips the
+  // student's `isActive` on the server and nothing else; every roster and
+  // session query filters on that flag, so the student drops out of the list
+  // and out of AAC sessions, and comes back with Restore.
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [archiveTarget, setArchiveTarget] = useState<StudentWithProgress | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  type ArchivedStudent = { id: string; name: string; age?: number | null };
+  const archivedQuery = useQuery<ArchivedStudent[]>({
+    queryKey: ['/api/students/archived', instituteId],
+    queryFn: async () => {
+      const res = await apiRequest(
+        'GET',
+        `/api/students/archived?instituteId=${encodeURIComponent(instituteId as string)}`,
+      );
+      const data = await res.json();
+      return (data?.students ?? []) as ArchivedStudent[];
+    },
+    enabled: !!instituteId && showArchived,
+  });
+
+  // StudentProvider keeps the roster in useState behind a manual fetch, so a
+  // query invalidation alone refreshes nothing it renders from — the event is
+  // what it listens for (the same one the AI's own writes fire).
+  const afterArchiveChange = () => {
+    window.dispatchEvent(new CustomEvent('cliniaacian:students-updated'));
+    queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/students/archived', instituteId] });
+  };
+
+  const archiveMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      const res = await apiRequest('POST', `/api/students/${studentId}/archive`);
+      return res.json();
+    },
+    onSuccess: async (_data, studentId) => {
+      toast({ title: ts('students.archived') });
+      // An archived student must not stay selected: every panel would go on
+      // showing somebody the roster no longer lists.
+      if (sharedState.selectedStudentId === studentId) {
+        setSharedState({ selectedStudentId: undefined });
+        await selectStudent(null);
+      }
+      afterArchiveChange();
+    },
+    onError: (err: Error) => {
+      toast({ title: ts('students.archiveFailed'), description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      const res = await apiRequest('POST', `/api/students/${studentId}/restore`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: ts('students.restored') });
+      afterArchiveChange();
+    },
+    onError: (err: Error) => {
+      toast({ title: ts('students.restoreFailed'), description: err.message, variant: 'destructive' });
+    },
+  });
 
   // `useStudent()` already scopes `students` to the selected institute (and
   // clears it when none is selected), so it is the only source of truth here.
@@ -262,6 +344,21 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             {(t('students.foundCount') || '{count} students found')
               .replace('{count}', filteredStudents.length.toString())}
           </span>
+
+          <div className="flex-1" />
+
+          {instituteId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground"
+              onClick={() => setShowArchived((v) => !v)}
+              aria-pressed={showArchived}
+            >
+              <Archive className="w-4 h-4" />
+              {showArchived ? t('students.hideArchived') : t('students.showArchived')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -464,8 +561,15 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                         {t('students.manageContacts') || 'Manage Contacts'}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive">
-                        {t('students.archive') || 'Archive'}
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setArchiveTarget(student);
+                        }}
+                      >
+                        <Archive className="w-4 h-4 me-2" />
+                        {t('students.archive')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -474,8 +578,78 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             </Card>
           ))
           )}
+
+          {/* Archived students — only on request, with the one move they
+              need. Restore is offered to exactly the people who could see
+              the student while active (same visibility query, inactive rows). */}
+          {showArchived && instituteId && (
+            <div className="pt-4 space-y-2" aria-busy={archivedQuery.isFetching}>
+              <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+                <Archive className="w-4 h-4" aria-hidden="true" />
+                {ts('students.archivedSection')}
+                {archivedQuery.isFetching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              </h2>
+              {archivedQuery.isLoading ? null : (archivedQuery.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">{ts('students.noArchived')}</p>
+              ) : (
+                (archivedQuery.data ?? []).map((s) => (
+                  <Card key={s.id} dir={isRTL ? 'rtl' : 'ltr'} className="opacity-80">
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{s.name}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={restoreMutation.isPending}
+                        onClick={() => restoreMutation.mutate(s.id)}
+                      >
+                        {restoreMutation.isPending && restoreMutation.variables === s.id ? (
+                          <Loader2 className="w-3.5 h-3.5 me-1.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-3.5 h-3.5 me-1.5" />
+                        )}
+                        {t('students.restore')}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </ScrollArea>
+
+      {/* Archive confirmation. A destructive-styled action for something that
+          is reversible reads wrong, so the button is the default style and the
+          body says what actually happens: hidden, not deleted, restorable. */}
+      <AlertDialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <AlertDialogContent dir={isRTL ? 'rtl' : 'ltr'}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('students.archiveConfirmTitle', { name: archiveTarget?.name ?? '' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{ts('students.archiveConfirmBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={archiveMutation.isPending}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={archiveMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!archiveTarget) return;
+                archiveMutation.mutate(archiveTarget.id, { onSettled: () => setArchiveTarget(null) });
+              }}
+            >
+              {archiveMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('students.archive')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
