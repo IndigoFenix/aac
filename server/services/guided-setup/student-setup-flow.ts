@@ -553,12 +553,23 @@ function medicalBlock(ctx: StudentSetupCtx): string {
 
 function programBlock(ctx: StudentSetupCtx): string {
   if (consentGate(ctx).ok === false) return awaitingConsentBlock(ctx);
+  // Every path and value below is the progress memory schema's own
+  // (progress-memory-schema.ts): a program is created by a `set` on
+  // /Context_Program, a goal needs `goalStatement` and takes
+  // `interventionLevel` only as one of three words, an objective needs
+  // `objectiveStatement`. Observed live (2026-09-11): the model sent
+  // `interventionLevel: 3` and then a goal with `description` but no
+  // `goalStatement`, and needed three tries — the block had named neither.
   return [
     `STEP 3 — ${GS.STEP_PROGRAM}`,
     `- Confirm the framework with the user: ${GS.TALA}, ${GS.US_IEP} or ${GS.PERSONAL} (no statutory paperwork).`,
     `- Suggest ${suggestedFramework(ctx)}.`,
+    `- Create it: set /Context_Program { framework: tala | us_iep | personal, title }. It starts as a draft.`,
     `- Then propose 2-4 ${GS.GOALS} with objectives, drawn from steps 1-2. Ask before saving.`,
-    `- Save: Context_Program (framework, title), then the goals and their objectives.`,
+    `- Save each goal: add to /Context_Program/goals { goalStatement (required, one sentence), status: "draft" }.`,
+    `  ${GS.TALA} only: interventionLevel is the word activity, function or participation — never a number.`,
+    `- Save each objective: add to /Context_Program/goals/<key>/objectives { objectiveStatement (required) },`,
+    `  using the key the goal's add result returned.`,
     `- Once the user agrees to the ${GS.GOALS}, call guidedSetup(activateProgram), then guidedSetup(advance).`,
   ].join("\n");
 }
@@ -629,19 +640,30 @@ export const AI_NAME_SUGGESTION_LINE = AI_NAME_SUGGESTIONS.join(", ");
  */
 function aacBlock(ctx: StudentSetupCtx): string {
   if (consentGate(ctx).ok === false) return awaitingConsentBlock(ctx);
+  // ONE door, named in full. The settings are properties of the selected
+  // student's /Context_AACSettings (the same row the settings panel shows);
+  // the rules are entries of /Context_AACPrompt. Every value list below is
+  // the schema's own enum. Observed live (2026-09-11): given "Save
+  // Context_AACSettings { aiName }" as shorthand, the model narrated
+  // "recorded" for the name, the voice and the sentence length and wrote
+  // none of them; in an earlier session it wrote them as prompt rules.
   return [
     `STEP 4 — ${GS.STEP_AAC}`,
     `- Ask ONE numbered question per turn, in this order. Do not run ahead.`,
+    `- The settings are properties of /Context_AACSettings. View it once, then set ONE property per answer.`,
+    `- Name, voice and sentence length are SETTINGS there — never rules in /Context_AACPrompt.`,
     `1. Will the ${ctx.term} use the ${GS.AAC_APP}? Then guidedSetup(setAacUser, value). If no, advance.`,
-    `2. Touch or eyegaze? If eyegaze: which provider, and how much rest space at the screen edge.`,
-    `   Save Context_AACSettings { selectionMethod, eyegazeEnabled, eyegazeProvider, restSpace }.`,
+    `2. Touch or eyegaze? Set /Student_CommunicationStyle/AccessMethod to touch or eyegaze.`,
+    `   Eyegaze only: which provider, and how much rest space at the screen edge. Then set eyegazeEnabled true,`,
+    `   eyegazeProvider (auto | camera | tobii | eyetech | lctech | webhid | mouse), restSpace (large | small | none).`,
     `3. What is the assistant FOR: everyday needs (the default), teaching, or company and talk?`,
-    `   Ask for any specific behaviours they want. Save each as one rule in Context_AACPrompt.`,
+    `   Ask for any specific behaviours they want. Save each as one rule: add to /Context_AACPrompt.`,
     `   Say in the same reply that they can change this any time by asking you here.`,
     `4. A name for the assistant. Offer three of these, or take their own:`,
-    `   ${AI_NAME_SUGGESTION_LINE}. Save Context_AACSettings { aiName }.`,
+    `   ${AI_NAME_SUGGESTION_LINE}. Set aiName.`,
     `5. How long the assistant's sentences should be, then its voice and the ${ctx.term}'s voice.`,
-    `   Save Context_AACSettings { languageLevel, voiceType, studentVoiceType }.`,
+    `   Set languageLevel (1 single words, 2 short phrases, 3 simple sentences, 4 full sentences, 5 complex),`,
+    `   voiceType (auto | man | woman | boy | girl) and studentVoiceType (man | woman | boy | girl).`,
     `- Never put a ${GS.DIAGNOSIS} name or a ${GS.MEDICATIONS} name in those rules.`,
     `- Device: install the ${GS.AAC_APP}, sign in with this account, pick the ${ctx.term}. It registers itself.`,
     `- When all five are covered, call guidedSetup(advance).`,

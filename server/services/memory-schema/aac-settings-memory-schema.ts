@@ -144,7 +144,46 @@ async function readAACSettings(ctx: DBOperationContext): Promise<Record<string, 
   return settings ? (settings as Record<string, any>) : null;
 }
 
-async function writeAACSettings(ctx: DBOperationContext, updates: Record<string, any>): Promise<any> {
+/**
+ * Settings the AAC-mode principal (the student's own device session) may
+ * neither see nor write. Everything else in the table is shared by both
+ * audiences.
+ */
+export const AAC_SETTINGS_CLINICIAN_ONLY: ReadonlySet<string> = new Set([
+  "enabled", "demoMode", "demoScenario", "modelOverride", "customVoiceId", "customStudentVoiceId",
+]);
+
+/**
+ * Bring a value the model sent into the column's type. The property table
+ * declares real types now (boolean / integer / enum), so a well-behaved model
+ * sends `true` and `3`; the strings the old all-string schema taught ("true",
+ * "3") still land correctly rather than tripping a typed column.
+ */
+function coerceSettingValue(key: string, value: unknown): unknown {
+  const prop = AAC_SETTINGS_PROPERTIES[key] as { type?: string } | undefined;
+  if (!prop || value === null || value === undefined) return value;
+  if (prop.type === "boolean" && typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    if (v === "true") return true;
+    if (v === "false") return false;
+    return value;
+  }
+  if ((prop.type === "integer" || prop.type === "number") && typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : value;
+  }
+  return value;
+}
+
+/**
+ * THE ONE WRITE into `aac_settings` from the AI. Both memory-schema doors
+ * land here: the selected student's `Context_AACSettings` and the per-student
+ * `Context_Students/<id>/aacSettings` sub-object (institute-memory-schema).
+ * Until 2026-09-11 the sub-object had its own upsert that skipped the prompt
+ * sanitising and date-stamping below, so rules written through it reached
+ * the live prompt unstamped and undefanged.
+ */
+export async function writeAACSettings(ctx: DBOperationContext, updates: Record<string, any>): Promise<any> {
   const studentId = ctx.all.studentId;
   if (!studentId) return updates;
 
@@ -194,6 +233,7 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 
   // Filter to only known columns — prevent writing id/studentId/timestamps
   const WRITABLE_COLUMNS = new Set([
+    ...AAC_SETTINGS_CLINICIAN_ONLY,
     "aiName", "startupMode",
     "voiceType", "studentVoiceType", "geminiAiVoice", "geminiStudentVoice",
     "aiVoicePitch", "studentVoicePitch", "useLocalTts",
@@ -209,7 +249,11 @@ async function writeAACSettings(ctx: DBOperationContext, updates: Record<string,
 
   const filtered: Record<string, any> = {};
   for (const [k, v] of Object.entries(updates)) {
-    if (WRITABLE_COLUMNS.has(k)) filtered[k] = v;
+    if (!WRITABLE_COLUMNS.has(k)) continue;
+    // The student's own AAC session never gets to switch itself off, into
+    // demo mode or onto another model — those knobs are the clinician's.
+    if (accessCtx?.kind === "student" && AAC_SETTINGS_CLINICIAN_ONLY.has(k)) continue;
+    filtered[k] = coerceSettingValue(k, v);
   }
 
   // Sanitize both prompt fields on write. Each is now a LIST of rule strings
@@ -838,52 +882,149 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
     },
   },
   db: {
-    read: async (ctx) => {
-      const settings = await readAACSettings(ctx);
-      if (!settings) return null;
-      // Extract only the fields we expose (exclude id, studentId, timestamps, sensitive keys)
-      const {
-        id: _id, studentId: _sid, createdAt: _ca, updatedAt: _ua,
-        chatAgentPrompt: _prompt, // handled by Context_AACPrompt
-        autoAacPrompt: _autoPrompt, // handled by Context_AACAutoPrompt
-        enabled: _en, demoMode: _dm, demoScenario: _ds, modelOverride: _mo,
-        elevenlabsApiKey: _eak, // sensitive — not exposed
-        customVoiceId: _cv, customStudentVoiceId: _csv, // FK refs
-        localStorageEnabled: _lse, remoteStorageEnabled: _rse, localStorageEncryptionKey: _lsek,
-        knownPeople: _kp, // managed by biometric system
-        ...exposed
-      } = settings;
-      // Surface the Social Trainer config as a clean structured branch, and
-      // strip its raw copy out of the exposed appConfig so there's a single
-      // source of truth (the assistant edits it via `socialTrainer`, not the
-      // appConfig blob). Other app config (youtube/spotify/…) stays visible.
-      if (exposed.appConfig && typeof exposed.appConfig === "object") {
-        const { social_trainer: _stRaw, ...restAppConfig } = exposed.appConfig as Record<string, any>;
-        exposed.appConfig = restAppConfig;
-      }
-      exposed.socialTrainer = readSocialTrainerConfig(settings);
-      // Replace the raw seizureDetection column ({config, baseline}) with just the
-      // clinician-editable config — the machine baseline is never shown/edited.
-      exposed.seizureDetection = readSeizureConfigForAgent(settings);
-      return exposed;
-    },
-    write: async (ctx, value) => {
-      if (value && typeof value === 'object') {
-        // Persist the column-backed fields first (incl. any appConfig the AI
-        // sent — which won't contain social_trainer, since read strips it)…
-        await writeAACSettings(ctx, value);
-        // …then merge the structured socialTrainer back into appConfig so it
-        // survives and sibling app config isn't clobbered. (The normal edit
-        // path goes through socialTrainer's own db.write; this covers a
-        // whole-object set of Context_AACSettings.)
-        if ((value as any).socialTrainer && typeof (value as any).socialTrainer === "object") {
-          await writeSocialTrainerConfig(ctx, (value as any).socialTrainer);
-        }
-      }
-      return value;
-    },
+    read: async (ctx) => readAACSettingsForAgent(ctx, { audience: "clinician", includePrompts: false }),
+    write: async (ctx, value) => writeAACSettingsForAgent(ctx, value),
   },
 };
+
+// ---------------------------------------------------------------------------
+// ONE PROPERTY TABLE, ONE READ, ONE WRITE — shared by both doors.
+//
+// `Context_AACSettings` (this file; the selected student) and
+// `Context_Students/<id>/aacSettings` (institute-memory-schema; any student the
+// clinician can reach) used to be two hand-kept definitions of the same row.
+// They drifted for seven months: the sub-object never learned `aiName`,
+// `languageLevel`, `selectionMethod` or `restSpace`, this field never showed
+// `enabled`, and this one declared every boolean and number as a string. A
+// model that opened the door it could see got "aiName not allowed" and put
+// the name into the prompt rules instead. Now the sub-object spreads
+// AAC_SETTINGS_PROPERTIES and calls the two functions below.
+// ---------------------------------------------------------------------------
+
+/**
+ * Real types for the flat scalar properties. Applied over the definitions
+ * above so the descriptions stay put; the type is what the memory system
+ * validates against and what the model reads off the schema line.
+ */
+const SCALAR_TYPES: Record<string, Partial<AgentMemoryFieldWithDB> & Record<string, unknown>> = {
+  voiceType: { enum: ["auto", "man", "woman", "boy", "girl"] },
+  studentVoiceType: { enum: ["man", "woman", "boy", "girl"] },
+  aiVoicePitch: { type: "integer", minimum: -6, maximum: 6 },
+  studentVoicePitch: { type: "integer", minimum: -6, maximum: 6 },
+  useLocalTts: { type: "boolean" },
+  elevenlabsEnabled: { type: "boolean" },
+  iconTextRatio: { type: "integer", minimum: 1, maximum: 5 },
+  languageLevel: { type: "integer", minimum: 1, maximum: 5 },
+  usePcsSymbols: { type: "boolean" },
+  singleGlyphButtons: { type: "boolean" },
+  dynamicBoardsEnabled: { type: "boolean" },
+  eyegazeEnabled: { type: "boolean" },
+  eyegazeTimeout: { type: "integer", minimum: 1000, maximum: 10000 },
+  eyegazeProvider: { enum: ["auto", "camera", "tobii", "eyetech", "lctech", "webhid", "mouse"] },
+  selectionMethod: { enum: ["whole_button", "selection_area", "intent"] },
+  restSpace: { enum: ["large", "small", "none"] },
+  pressResponseDelay: { type: "integer", minimum: 0, maximum: 15000 },
+  interruptOnNewPress: { type: "boolean" },
+  multiCameraMode: { type: "boolean" },
+  startupMode: { type: "integer", minimum: 0, maximum: 1 },
+  allowReadProgress: { type: "boolean" },
+  allowReadReports: { type: "boolean" },
+  allowNotes: { type: "boolean" },
+  autoAddContacts: { type: "boolean" },
+};
+for (const [key, over] of Object.entries(SCALAR_TYPES)) {
+  const prop = (AAC_SETTINGS_FIELD.properties as Record<string, any>)[key];
+  if (prop) Object.assign(prop, over);
+}
+
+/** Clinician-only knobs (see AAC_SETTINGS_CLINICIAN_ONLY). `enabled` leads: it is the first thing the panel shows. */
+const CLINICIAN_ONLY_PROPERTIES: Record<string, AgentMemoryFieldWithDB> = {
+  enabled: { id: "enabled", type: "boolean", title: "AAC Enabled", description: "Whether AAC mode is enabled for this student" },
+  demoMode: { id: "demoMode", type: "boolean", title: "Demo Mode", description: "Demo scenario enabled" },
+  demoScenario: { id: "demoScenario", type: "string", title: "Demo Scenario", description: "Which demo scenario to use" },
+  modelOverride: { id: "modelOverride", type: "string", title: "Model Override", description: "AI model override" },
+  customVoiceId: { id: "customVoiceId", type: "string", title: "Custom AI Voice ID", description: "Custom AI voice ID (ElevenLabs)" },
+  customStudentVoiceId: { id: "customStudentVoiceId", type: "string", title: "Custom Student Voice ID", description: "Custom student voice ID (ElevenLabs)" },
+};
+AAC_SETTINGS_FIELD.properties = {
+  enabled: CLINICIAN_ONLY_PROPERTIES.enabled,
+  ...AAC_SETTINGS_FIELD.properties,
+  demoMode: CLINICIAN_ONLY_PROPERTIES.demoMode,
+  demoScenario: CLINICIAN_ONLY_PROPERTIES.demoScenario,
+  modelOverride: CLINICIAN_ONLY_PROPERTIES.modelOverride,
+  customVoiceId: CLINICIAN_ONLY_PROPERTIES.customVoiceId,
+  customStudentVoiceId: CLINICIAN_ONLY_PROPERTIES.customStudentVoiceId,
+};
+
+/** The one property table. Spread it, never copy it. */
+export const AAC_SETTINGS_PROPERTIES: Record<string, AgentMemoryFieldWithDB> = AAC_SETTINGS_FIELD.properties as Record<string, AgentMemoryFieldWithDB>;
+
+/** The same table without the clinician-only knobs — the AAC-mode principal's view. */
+export function aacSettingsPropertiesFor(audience: "clinician" | "student"): Record<string, AgentMemoryFieldWithDB> {
+  if (audience === "clinician") return AAC_SETTINGS_PROPERTIES;
+  const out: Record<string, AgentMemoryFieldWithDB> = {};
+  for (const [k, v] of Object.entries(AAC_SETTINGS_PROPERTIES)) {
+    if (!AAC_SETTINGS_CLINICIAN_ONLY.has(k)) out[k] = v;
+  }
+  return out;
+}
+
+/** Columns never shown to any AI: secrets, storage keys, biometric data, row plumbing. */
+const NEVER_EXPOSED = new Set([
+  "id", "studentId", "createdAt", "updatedAt",
+  "elevenlabsApiKey", "localStorageEnabled", "remoteStorageEnabled", "localStorageEncryptionKey",
+  "knownPeople",
+]);
+
+/**
+ * THE ONE READ. `includePrompts` is for the per-student sub-object, which
+ * carries the two prompt lists as properties; the selected student's copy
+ * leaves them to Context_AACPrompt / Context_AACAutoPrompt.
+ */
+export async function readAACSettingsForAgent(
+  ctx: DBOperationContext,
+  opts: { audience: "clinician" | "student"; includePrompts: boolean },
+): Promise<Record<string, any> | null> {
+  const settings = await readAACSettings(ctx);
+  if (!settings) return null;
+  const exposed: Record<string, any> = {};
+  for (const [k, v] of Object.entries(settings)) {
+    if (NEVER_EXPOSED.has(k)) continue;
+    if (!opts.includePrompts && (k === "chatAgentPrompt" || k === "autoAacPrompt")) continue;
+    if (opts.audience === "student" && AAC_SETTINGS_CLINICIAN_ONLY.has(k)) continue;
+    exposed[k] = v;
+  }
+  // Surface the Social Trainer config as a clean structured branch, and
+  // strip its raw copy out of the exposed appConfig so there's a single
+  // source of truth (the assistant edits it via `socialTrainer`, not the
+  // appConfig blob). Other app config (youtube/spotify/…) stays visible.
+  if (exposed.appConfig && typeof exposed.appConfig === "object") {
+    const { social_trainer: _stRaw, ...restAppConfig } = exposed.appConfig as Record<string, any>;
+    exposed.appConfig = restAppConfig;
+  }
+  exposed.socialTrainer = readSocialTrainerConfig(settings);
+  // Replace the raw seizureDetection column ({config, baseline}) with just the
+  // clinician-editable config — the machine baseline is never shown/edited.
+  exposed.seizureDetection = readSeizureConfigForAgent(settings);
+  return exposed;
+}
+
+/** THE ONE WRITE for a whole-object set, socialTrainer included. */
+export async function writeAACSettingsForAgent(ctx: DBOperationContext, value: unknown): Promise<unknown> {
+  if (value && typeof value === "object") {
+    // Persist the column-backed fields first (incl. any appConfig the AI
+    // sent — which won't contain social_trainer, since read strips it)…
+    await writeAACSettings(ctx, value as Record<string, any>);
+    // …then merge the structured socialTrainer back into appConfig so it
+    // survives and sibling app config isn't clobbered. (The normal edit
+    // path goes through socialTrainer's own db.write; this covers a
+    // whole-object set.)
+    if ((value as any).socialTrainer && typeof (value as any).socialTrainer === "object") {
+      await writeSocialTrainerConfig(ctx, (value as any).socialTrainer);
+    }
+  }
+  return value;
+}
 
 // ============================================================================
 // EXPORTS
@@ -964,7 +1105,18 @@ export function getAACSettingsMemoryFields(
 ): AgentMemoryFieldWithDB[] {
   const includePrompts = options?.includePrompts ?? true;
   if (!includePrompts) {
-    return [AAC_SETTINGS_FIELD];
+    // The student-facing path: same field, minus the clinician-only knobs,
+    // reading as the student audience. The write already refuses those keys
+    // for a student principal, so this is the display half of one rule.
+    const studentView: AgentMemoryFieldObjectWithDB = {
+      ...AAC_SETTINGS_FIELD,
+      properties: aacSettingsPropertiesFor("student"),
+      db: {
+        read: async (ctx) => readAACSettingsForAgent(ctx, { audience: "student", includePrompts: false }),
+        write: async (ctx, value) => writeAACSettingsForAgent(ctx, value),
+      },
+    };
+    return [studentView];
   }
   return [AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD, AAC_SETTINGS_FIELD];
 }

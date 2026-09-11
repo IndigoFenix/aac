@@ -281,6 +281,17 @@ export const STUDENT_COMMUNICATION_STYLE_FIELD: AgentMemoryFieldObjectWithDB = {
       title: "Preferred Modality",
       description: "If AAC, which type (symbols, text, combined)",
     },
+    // How the student physically selects buttons. This is where Guided Setup's
+    // "touch or eyegaze?" answer lands: touch has no aac_settings column of
+    // its own (every eyegaze column defaults to off), so without this a touch
+    // user's input method could never read as decided.
+    AccessMethod: {
+      id: "AccessMethod",
+      type: "string",
+      title: "Access Method",
+      enum: ["touch", "eyegaze", "switch", "other"],
+      description: "How the student selects buttons on the AAC: touch, eyegaze, switch, or other",
+    },
   },
   db: {
     read: async (ctx) => getStudentMemoryField(ctx, "Student_CommunicationStyle"),

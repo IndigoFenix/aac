@@ -1852,9 +1852,28 @@ describe("student_setup STEP 4 block — the question order", () => {
     expect(input).toBeGreaterThan(user);
     // The minimum needed for the app to be usable is named in full.
     expect(text).toContain("which provider, and how much rest space at the screen edge");
+    // Touch has no aac_settings column, so the answer lands on the student's
+    // communication style; the eyegaze columns are named with their enums.
+    expect(text).toContain("2. Touch or eyegaze? Set /Student_CommunicationStyle/AccessMethod to touch or eyegaze.");
+    expect(text).toContain("eyegazeProvider (auto | camera | tobii | eyetech | lctech | webhid | mouse)");
+    expect(text).toContain("restSpace (large | small | none)");
+  });
+
+  /**
+   * ONE door, named in full (user, 2026-09-11: "the guide should give it a
+   * specific one — the less space for confusion, the better"). The model had
+   * been handed "Save Context_AACSettings { aiName }" as shorthand and, never
+   * having viewed the record, narrated "recorded" without writing; in an
+   * earlier session it opened the student-record door instead and wrote the
+   * name, the voice and the sentence length as prompt rules.
+   */
+  it("names /Context_AACSettings as THE door and forbids settings-as-rules", () => {
+    const text = block();
     expect(text).toContain(
-      "   Save Context_AACSettings { selectionMethod, eyegazeEnabled, eyegazeProvider, restSpace }.",
+      "- The settings are properties of /Context_AACSettings. View it once, then set ONE property per answer.",
     );
+    expect(text).toContain("- Name, voice and sentence length are SETTINGS there — never rules in /Context_AACPrompt.");
+    expect(text).not.toContain("Context_Students");
   });
 
   it("asks what the assistant is FOR right after the input method, before anything else", () => {
@@ -1878,12 +1897,13 @@ describe("student_setup STEP 4 block — the question order", () => {
    * free-text rules because the block described the SUBJECT and never the
    * FIELD. Items 2 and 4 already named theirs; item 5 did not.
    */
-  it("names languageLevel and the voice fields as Context_AACSettings writes", () => {
+  it("names languageLevel and the voice fields with the schema's own values", () => {
     const text = block();
     expect(text).toContain(
-      "   Save Context_AACSettings { languageLevel, voiceType, studentVoiceType }.",
+      "   Set languageLevel (1 single words, 2 short phrases, 3 simple sentences, 4 full sentences, 5 complex),",
     );
-    expect(text).toContain("Save Context_AACSettings { aiName }.");
+    expect(text).toContain("voiceType (auto | man | woman | boy | girl) and studentVoiceType (man | woman | boy | girl)");
+    expect(text).toContain("Set aiName.");
     // There is no `language` column in aac_settings — the language itself is
     // step 1's HOME LANGUAGE on the student row, so item 5 must not ask for it
     // and teach a write that would be silently dropped.
@@ -1899,7 +1919,7 @@ describe("student_setup STEP 4 block — the question order", () => {
 
   it("records the answer as Context_AACPrompt rules and says it can be changed later", () => {
     const text = block();
-    expect(text).toContain("Save each as one rule in Context_AACPrompt.");
+    expect(text).toContain("Save each as one rule: add to /Context_AACPrompt.");
     expect(text).toContain(
       "   Say in the same reply that they can change this any time by asking you here.",
     );
@@ -1909,7 +1929,7 @@ describe("student_setup STEP 4 block — the question order", () => {
     const text = block();
     expect(text).toContain("4. A name for the assistant. Offer three of these, or take their own:");
     expect(text).toContain(AI_NAME_SUGGESTION_LINE);
-    expect(text).toContain("Save Context_AACSettings { aiName }.");
+    expect(text).toContain("Set aiName.");
     expect(AI_NAME_SUGGESTIONS.length).toBe(10);
     // No duplicates, and every name is short enough for a child and a TTS voice.
     expect(new Set(AI_NAME_SUGGESTIONS).size).toBe(AI_NAME_SUGGESTIONS.length);
@@ -1930,11 +1950,13 @@ describe("student_setup STEP 4 block — the question order", () => {
 
   it("names only AAC settings the memory schema can write", () => {
     const text = block();
-    for (const field of ["aiName", "languageLevel", "eyegazeEnabled", "eyegazeProvider", "selectionMethod", "restSpace"]) {
-      // languageLevel is described in words rather than named; the rest are literal.
-      if (field === "languageLevel") continue;
+    for (const field of ["aiName", "languageLevel", "voiceType", "studentVoiceType", "eyegazeEnabled", "eyegazeProvider", "restSpace"]) {
       expect(text).toContain(field);
     }
+    // selectionMethod is a GAZE concept (whole_button / selection_area /
+    // intent) and its default is right for a first setup — naming it for a
+    // touch user is what the old block did, and it could never be satisfied.
+    expect(text).not.toContain("selectionMethod");
     // Not writable through manageMemory — naming them teaches a dropped write.
     for (const field of ["enabled:", "knownPeople", "appConfig", "gestures"]) {
       expect(text).not.toContain(field);
@@ -1951,13 +1973,78 @@ describe("student_setup STEP 4 block — the question order", () => {
     const text = block();
     const device = text.indexOf(`- Device: install the ${GS.AAC_APP}`);
     const advance = text.indexOf("- When all five are covered, call guidedSetup(advance).");
-    expect(device).toBeGreaterThan(text.indexOf("5. Language and language level"));
+    expect(device).toBeGreaterThan(text.indexOf("5. How long the assistant's sentences should be"));
     expect(advance).toBeGreaterThan(device);
   });
 
   it("mirrors the question order in the rail's checklist", () => {
     const items = studentSetupFlow.steps.find((s) => s.id === "aac")!.checklist(aacCtx());
     expect(items.map((i) => i.key)).toEqual(["aacUser", "input", "rules", "voice"]);
+  });
+
+  /**
+   * STEP 3 lines up with what the progress memory schema can actually do
+   * (user, 2026-09-11: "we need to make sure that what the prompt tells it
+   * to ask lines up with what it can actually do"). Observed live: the model
+   * sent `interventionLevel: 3` (the enum is three words), then a goal with
+   * `description` but no `goalStatement` (the one required field), and
+   * needed three tries. Each pinned line below names one of those.
+   */
+  describe("student_setup STEP 3 block — matches the program schema", () => {
+    const programCtx = () =>
+      makeCtx({
+        studentId: "s1",
+        basics: COMPLETE_BASICS,
+        reports: { ...EMPTY_REPORTS, hasAnyReport: true },
+      });
+
+    it("sits on the program step for this fixture", () => {
+      const ctx = programCtx();
+      expect(resolveFlowView(studentSetupFlow, ctx, ctx.record).step).toBe("program");
+    });
+
+    it("creates the program with the framework enum and names the required goal field", () => {
+      const text = sectionFor(programCtx());
+      expect(text).toContain(
+        "- Create it: set /Context_Program { framework: tala | us_iep | personal, title }. It starts as a draft.",
+      );
+      expect(text).toContain(
+        '- Save each goal: add to /Context_Program/goals { goalStatement (required, one sentence), status: "draft" }.',
+      );
+    });
+
+    it("spells interventionLevel as the three words and forbids a number", () => {
+      const text = sectionFor(programCtx());
+      expect(text).toContain(
+        `  ${GS.TALA} only: interventionLevel is the word activity, function or participation — never a number.`,
+      );
+    });
+
+    it("names the objectives path under the goal's returned key", () => {
+      const text = sectionFor(programCtx());
+      expect(text).toContain(
+        "- Save each objective: add to /Context_Program/goals/<key>/objectives { objectiveStatement (required) },",
+      );
+      expect(text).toContain("  using the key the goal's add result returned.");
+    });
+
+    it("still ends on activateProgram then advance", () => {
+      const text = sectionFor(programCtx());
+      const activate = text.indexOf("guidedSetup(activateProgram)");
+      const advance = text.indexOf("guidedSetup(advance)", activate);
+      expect(activate).toBeGreaterThan(-1);
+      expect(advance).toBeGreaterThan(activate);
+    });
+
+    it("keeps every line of the step-3 block inside the 130-character budget", () => {
+      const offenders: string[] = [];
+      for (const account of ["family", "school", "clinic"] as GuidedSetupAccount[]) {
+        for (const line of sectionFor({ ...programCtx(), account, term: termForAccount(account) }).split("\n")) {
+          if (line.length > MAX_LINE) offenders.push(`${account}: ${line}`);
+        }
+      }
+      expect(offenders).toEqual([]);
+    });
   });
 
   it("keeps every line of the step-4 block inside the 130-character budget", () => {

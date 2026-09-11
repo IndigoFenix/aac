@@ -602,8 +602,19 @@ export async function loadAacFacts(studentId: string): Promise<StudentAacFacts> 
     .from(aacSettings)
     .where(eq(aacSettings.studentId, studentId));
 
+  // The "touch or eyegaze?" answer lives on the student's chat memory
+  // (Student_CommunicationStyle.AccessMethod, keyed by field id), not in
+  // aac_settings — touch has no column there.
+  const [memRow] = await db
+    .select({ chatMemory: students.chatMemory })
+    .from(students)
+    .where(eq(students.id, studentId));
+  const accessMethod = (memRow?.chatMemory as Record<string, any> | undefined)?.Student_CommunicationStyle
+    ?.AccessMethod;
+  const accessMethodSet = typeof accessMethod === "string" && accessMethod.trim() !== "";
+
   if (!row) {
-    return { enabled: false, voiceSet: false, inputDecided: false, rulesSet: false };
+    return { enabled: false, voiceSet: false, inputDecided: accessMethodSet, rulesSet: false };
   }
 
   const prompts = row.chatAgentPrompt;
@@ -619,6 +630,7 @@ export async function loadAacFacts(studentId: string): Promise<StudentAacFacts> 
     // otherwise read as decided. Eyegaze on, an explicit provider, or a
     // non-default selection method all mean someone chose.
     inputDecided:
+      accessMethodSet ||
       row.eyegazeEnabled === true ||
       !!row.eyegazeProvider ||
       (!!row.selectionMethod && row.selectionMethod !== "whole_button"),

@@ -45,8 +45,13 @@ import {
   import { classroomService } from "../classroomService";
   import { studentService } from "../studentService";
   import { activityLogService } from "../activityLogService";
-  import { summarizeChanges, changeDetails, type ChangeMap } from "../activityChanges";
+  import { changeDetails, type ChangeMap } from "../activityChanges";
   import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
+  import {
+    AAC_SETTINGS_PROPERTIES,
+    readAACSettingsForAgent,
+    writeAACSettingsForAgent,
+  } from "./aac-settings-memory-schema";
   import { instituteRepository } from "../../repositories/instituteRepository";
   import { licenseRepository } from "../../repositories/licenseRepository";
   import { calendarRepository } from "../../repositories/calendarRepository";
@@ -55,7 +60,6 @@ import {
   import { INSTITUTE_PACKAGES_FIELD } from "./institute-packages-schema";
   import { resolveInstituteRefs, resolveInstituteRefOrThrow, instituteRefError } from "./institute-ref";
   import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
-  import { requireConsentForMemoryWrite } from "../consent/consentGate";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
   import { PROGRAM_FRAMEWORKS } from "@shared/program-framework";
@@ -1929,140 +1933,47 @@ import {
   // AAC SETTINGS SCHEMA & DB OPS
   // ============================================================================
 
+  // The SAME row as the selected student's `Context_AACSettings`, reachable
+  // for ANY student the clinician can see — this is how the assistant changes
+  // a student's settings without that student being open in the panel.
+  //
+  // One definition at two addresses: the property table is
+  // AAC_SETTINGS_PROPERTIES (aac-settings-memory-schema) verbatim, plus the two
+  // prompt lists that the selected-student door serves as its own fields; the
+  // read and the write are that module's readAACSettingsForAgent /
+  // writeAACSettings, so the consent gate, the access check, the audit row,
+  // the prompt sanitising and the date stamp all happen here too. Until
+  // 2026-09-11 this was a second hand-kept copy that had never learned
+  // `aiName`, `languageLevel`, `selectionMethod` or `restSpace`, and its own
+  // upsert skipped the prompt sanitising — the model that opened THIS door got
+  // "aiName not allowed" and wrote "Your name is Lumi." as a prompt rule.
   const aacSettingsSchema: AgentMemoryFieldObjectWithDB = {
     id: "aacSettings",
     type: "object",
-    description: "AAC system settings for this student. View to see current settings.",
+    description:
+      "AAC system settings for this student — the same record as Context_AACSettings. View to see current settings.",
     properties: {
-      enabled: { id: "enabled", type: "boolean", description: "Whether AAC mode is enabled" },
-      demoMode: { id: "demoMode", type: "boolean", description: "Demo scenario enabled" },
-      demoScenario: { id: "demoScenario", type: "string", description: "Which demo scenario to use" },
+      ...AAC_SETTINGS_PROPERTIES,
       chatAgentPrompt: { id: "chatAgentPrompt", type: "array", items: { id: "rule", type: "string" }, description: "CUSTOM AAC prompt — a LIST of specific behaviors caretakers explicitly requested, one per entry (rigid; takes priority over the auto prompt except on safety)" },
       autoAacPrompt: { id: "autoAacPrompt", type: "array", items: { id: "note", type: "string" }, description: "AUTO AAC prompt — a LIST of AI-generated notes on what the AAC needs to know about this student, one per entry, kept current as new info is learned" },
-      modelOverride: { id: "modelOverride", type: "string", description: "AI model override" },
-      startupMode: {
-        id: "startupMode",
-        type: "integer",
-        description: "Session startup mode: 0 = quick (default; reuses cached session-plan sections when the student's data/schedule haven't changed — fastest startup), 1 = thorough (regenerates the full session plan fresh every session).",
-        minimum: 0,
-        maximum: 1,
+    },
+    db: {
+      read: async (ctx) => {
+        if (!ctx.all.studentId) throw new Error("studentId required");
+        return (await readAACSettingsForAgent(ctx, { audience: "clinician", includePrompts: true })) ?? undefined;
       },
-      voiceType: { id: "voiceType", type: "string", enum: ["auto", "man", "woman", "boy", "girl"], description: "AI voice type" },
-      studentVoiceType: { id: "studentVoiceType", type: "string", enum: ["man", "woman", "boy", "girl"], description: "Student's voice type" },
-      customVoiceId: { id: "customVoiceId", type: "string", description: "Custom AI voice ID (ElevenLabs)" },
-      customStudentVoiceId: { id: "customStudentVoiceId", type: "string", description: "Custom student voice ID (ElevenLabs)" },
-      iconTextRatio: {
-        id: "iconTextRatio",
-        type: "integer",
-        description: "Icon-to-text size ratio (1=mostly icon, 5=mostly text)",
-        minimum: 1,
-        maximum: 5,
+      write: async (ctx, value) => {
+        if (!ctx.all.studentId) throw new Error("studentId required");
+        await writeAACSettingsForAgent(ctx, value);
+        return (await readAACSettingsForAgent(ctx, { audience: "clinician", includePrompts: true })) ?? undefined;
       },
-      usePcsSymbols: { id: "usePcsSymbols", type: "boolean", description: "Use PCS symbols instead of emoji" },
-      signLanguage: { id: "signLanguage", type: "string", description: "Sign language code to recognize ('asl', 'isr'); null/empty disables" },
-      multiCameraMode: { id: "multiCameraMode", type: "boolean", description: "Multi-camera support" },
-      eyegazeEnabled: { id: "eyegazeEnabled", type: "boolean", description: "Dwell-based symbol selection enabled" },
-      eyegazeTimeout: {
-        id: "eyegazeTimeout",
-        type: "integer",
-        description: "Dwell time in ms",
-        minimum: 1000,
-        maximum: 10000,
-      },
-      eyegazeProvider: {
-        id: "eyegazeProvider",
-        type: "string",
-        enum: ["auto", "camera", "tobii", "eyetech", "lctech", "webhid", "mouse"],
-        description: "Eyegaze tracking provider",
+      update: async (ctx, _key, value) => {
+        if (!ctx.all.studentId) throw new Error("studentId required");
+        await writeAACSettingsForAgent(ctx, value);
+        return (await readAACSettingsForAgent(ctx, { audience: "clinician", includePrompts: true })) ?? undefined;
       },
     },
   };
-
-  const aacSettingsExclude = [
-    "id", "studentId", "createdAt", "updatedAt", "knownPeople",
-    // Secrets must never enter the assistant's context — and excluding them
-    // from the read also keeps round-trip whole-object writes from carrying
-    // them back.
-    "elevenlabsApiKey", "localStorageEncryptionKey",
-  ];
-
-  /**
-   * The assistant may write ONLY the fields this schema declares. The raw
-   * upsert accepts any aac_settings column, so an unfiltered whole-object
-   * write could set fields the schema never offered — secrets like
-   * elevenlabsApiKey, or the admin-only budget fields that the clinician
-   * PATCH path deliberately strips.
-   */
-  const pickDeclaredAacFields = (value: Record<string, any>): Record<string, any> => {
-    const out: Record<string, any> = {};
-    for (const k of Object.keys(value ?? {})) {
-      if (k in aacSettingsSchema.properties) out[k] = value[k];
-    }
-    return out;
-  };
-
-  const aacSettingsOps: MemoryDBOperations<any> = {
-    read: async (ctx) => {
-      const studentId = ctx.all.studentId;
-      if (!studentId) throw new Error("studentId required");
-      const settings = await aacSettingsRepository.getByStudentId(studentId);
-      return settings ? toMemoryValue(settings, aacSettingsExclude) : undefined;
-    },
-
-    // Both ops below are AI writes to a student's AAC settings, so both leave an
-    // audit row. Before this they wrote silently: a settings change made by the
-    // assistant left no trace in the activity log at all.
-    // Both ops also carry the CONSENT gate. This is the second door into
-    // `aac_settings` from the AI (the first is aac-settings-memory-schema's
-    // `writeAACSettings`), and a gate on one of two doors is not a gate —
-    // see docs/student-consent-implementation.md §7.2.
-    write: async (ctx, value) => {
-      const studentId = ctx.all.studentId;
-      if (!studentId) throw new Error("studentId required");
-      await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
-      const safe = pickDeclaredAacFields(value);
-      const before = await aacSettingsRepository.getByStudentId(studentId);
-      const updated = await aacSettingsRepository.upsert(studentId, safe);
-      logAacSettingsWrite(ctx, studentId, before, safe);
-      return toMemoryValue(updated, aacSettingsExclude);
-    },
-
-    update: async (ctx, _key, value) => {
-      const studentId = ctx.all.studentId;
-      if (!studentId) throw new Error("studentId required");
-      await requireConsentForMemoryWrite(ctx as { all: Record<string, unknown> });
-      const safe = pickDeclaredAacFields(value);
-      const before = await aacSettingsRepository.getByStudentId(studentId);
-      const updated = await aacSettingsRepository.upsert(studentId, safe);
-      logAacSettingsWrite(ctx, studentId, before, safe);
-      return toMemoryValue(updated, aacSettingsExclude);
-    },
-  };
-
-  function logAacSettingsWrite(
-    ctx: any,
-    studentId: string,
-    before: Record<string, any> | null | undefined,
-    value: Record<string, any>,
-  ): void {
-    const details = changeDetails(
-      summarizeChanges("aac_settings", before ?? null, value),
-      { via: "aac_settings" },
-    );
-    if (!details) return;
-    activityLogService.log({
-      instituteId: ctx.all.instituteId,
-      userId: getUserId(ctx),
-      eventType: "update",
-      subjectType1: "student",
-      subjectId1: studentId,
-      isAiInitiated: true,
-      details,
-    });
-  }
-
-  // Attach DB ops to the schema
-  (aacSettingsSchema as any).db = aacSettingsOps;
 
   // ============================================================================
   // STUDENT SCHEMA
