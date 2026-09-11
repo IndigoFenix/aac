@@ -5079,6 +5079,12 @@ export const zh = {
       skipStep: "跳过此步骤",
       useForm: "改用表单填写",
     },
+    busy: {
+      launching: "正在打开引导式设置…",
+      refreshing: "正在刷新…",
+      saving: "正在保存…",
+      working: "正在根据对话更新…",
+    },
     checklist: {
       aacUser: "已确认使用 AAC",
       activated: "计划已启用",

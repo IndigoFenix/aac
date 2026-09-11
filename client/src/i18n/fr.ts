@@ -5079,6 +5079,12 @@ export const fr = {
       skipStep: "Ignorer cette étape",
       useForm: "Utiliser un formulaire à la place",
     },
+    busy: {
+      launching: "Ouverture de la configuration guidée…",
+      refreshing: "Actualisation…",
+      saving: "Enregistrement…",
+      working: "Mise à jour à partir de la conversation…",
+    },
     checklist: {
       aacUser: "Utilisation de la CAA confirmée",
       activated: "Programme activé",

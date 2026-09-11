@@ -2,11 +2,9 @@
 //
 /// <reference types="jest" />
 //
-// NOTE: no jest config currently covers `client/src/**` (jest.config.client.js
-// only roots client-aac/ and client-shared/, and the server configs root
-// server/). This test cannot be run via any existing npm script today — kept
-// here anyway per the pure-function split, ready to run once a client/ jest
-// project exists.
+// Run with:  npm run test:client-app -- auto-launch
+// (jest.config.client-app.js roots client/src; jest.config.client.js maps `@/`
+// to client-aac/src and cannot cover this client.)
 
 import { shouldAutoLaunchGuidedSetup, type ShouldAutoLaunchGuidedSetupInput } from './auto-launch';
 

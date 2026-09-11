@@ -5079,6 +5079,12 @@ export const ar = {
       skipStep: "تخطّي هذه الخطوة",
       useForm: "استخدام نموذج بدلاً من ذلك",
     },
+    busy: {
+      launching: "جارٍ فتح الإعداد الموجّه…",
+      refreshing: "جارٍ التحديث…",
+      saving: "جارٍ الحفظ…",
+      working: "جارٍ التحديث من المحادثة…",
+    },
     checklist: {
       aacUser: "تأكيد استخدام AAC",
       activated: "تم تفعيل البرنامج",

@@ -5079,6 +5079,12 @@ export const en = {
       skipStep: "Skip this step",
       useForm: "Use a form instead",
     },
+    busy: {
+      launching: "Opening guided setup…",
+      refreshing: "Refreshing…",
+      saving: "Saving…",
+      working: "Updating from the conversation…",
+    },
     checklist: {
       aacUser: "AAC use confirmed",
       activated: "Program activated",

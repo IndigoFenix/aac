@@ -5079,6 +5079,12 @@ export const yue = {
       skipStep: "略過呢一步",
       useForm: "改用表格",
     },
+    busy: {
+      launching: "正在打開逐步設定…",
+      refreshing: "正在重新整理…",
+      saving: "正在儲存…",
+      working: "正在根據對話更新…",
+    },
     checklist: {
       aacUser: "已確認使用 AAC",
       activated: "計劃已啟用",

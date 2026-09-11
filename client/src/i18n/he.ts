@@ -5079,6 +5079,12 @@ export const he = {
       skipStep: "דלג על השלב הזה",
       useForm: "למלא טופס במקום",
     },
+    busy: {
+      launching: "פותח את ההגדרה המודרכת…",
+      refreshing: "מרענן…",
+      saving: "שומר…",
+      working: "מעדכן מתוך השיחה…",
+    },
     checklist: {
       aacUser: "השימוש בתת\"ח אושר",
       activated: "התוכנית הופעלה",

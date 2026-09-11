@@ -5079,6 +5079,12 @@ export const ko = {
       skipStep: "이 단계 건너뛰기",
       useForm: "대신 양식 사용",
     },
+    busy: {
+      launching: "단계별 설정을 여는 중…",
+      refreshing: "새로 고치는 중…",
+      saving: "저장하는 중…",
+      working: "대화 내용으로 업데이트하는 중…",
+    },
     checklist: {
       aacUser: "AAC 사용 여부 확인",
       activated: "프로그램 활성화",

@@ -62,8 +62,12 @@ export function MainLayout() {
 
   // The rail sits above the panel whenever the provider has a view to render
   // (a live flow, or a selected student with an unfinished record).
-  const { view: guidedSetupView } = useGuidedSetup();
-  const hasGuidedSetup = Boolean(guidedSetupView);
+  // …or while one is OPENING: from "New student" (or the zero-student
+  // auto-launch) until the start request returns there is no view yet, and
+  // the rail draws its own placeholder in that window so the flow does not
+  // appear out of nowhere a few seconds after the click.
+  const { view: guidedSetupView, isLaunching: guidedSetupLaunching } = useGuidedSetup();
+  const hasGuidedSetup = Boolean(guidedSetupView) || guidedSetupLaunching;
 
   const { isRTL, t } = useLanguage();
   const isMobile = useIsMobile();

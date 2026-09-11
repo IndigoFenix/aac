@@ -51,7 +51,11 @@ export function StudentContactsPanel({ isOpen }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
-  const { refresh: refreshGuidedSetup, live: guidedLive } = useGuidedSetup();
+  const {
+    refresh: refreshGuidedSetup,
+    invalidate: invalidateGuidedSetup,
+    live: guidedLive,
+  } = useGuidedSetup();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingContact, setEditingContact] = useState<StudentContact | null>(null);
@@ -89,12 +93,16 @@ export function StudentContactsPanel({ isOpen }: Props) {
   // guided-setup view, whose consent gate flips from `none` to `sign_required`
   // the moment a contactable guardian exists. staleTime is Infinity app-wide,
   // so none of them notice on their own.
-  // The guided view's own refresh — never while a flow is LIVE, since a GET
-  // stores a non-live view and would clobber the running flow's state (the
-  // provider's own resume-detection effect skips for the same reason).
+  // The guided view's own refresh. `refresh` retires a live flow to put the
+  // selected student's view on screen, so while a flow is LIVE the plain
+  // invalidate is used instead — the flow is about this very student (the
+  // signal selects them), and the gate has to flip NOW, not on the next chat
+  // turn, or "add a guardian contact" looks like it did nothing.
   const refreshGuidedView = useCallback(() => {
-    if (studentId && !guidedLive) void refreshGuidedSetup(studentId);
-  }, [studentId, guidedLive, refreshGuidedSetup]);
+    if (!studentId) return;
+    if (guidedLive) invalidateGuidedSetup(studentId);
+    else void refreshGuidedSetup(studentId);
+  }, [studentId, guidedLive, refreshGuidedSetup, invalidateGuidedSetup]);
 
   const afterContactChange = useCallback(() => {
     invalidateAfterContactChange(queryClient, studentId);

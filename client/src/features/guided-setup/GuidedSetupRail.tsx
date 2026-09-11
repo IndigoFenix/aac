@@ -43,6 +43,7 @@ import {
   GATE_NEEDS_REQUEST,
   type ConsentStageState,
 } from './consent-branch';
+import { railStatus, type RailStatus } from './rail-status';
 import { RosterReviewTable } from './RosterReviewTable';
 import { useGuidedSetup } from './useGuidedSetup';
 
@@ -309,6 +310,32 @@ function ConsentCard({
 }
 
 // ============================================================================
+// STATUS LINE
+// ============================================================================
+
+/**
+ * The one place the rail says "something is happening". Which sentence is
+ * `railStatus`'s call (rail-status.ts) — the priority order and the reason
+ * each state exists live there.
+ *
+ * `role="status"` so a screen reader hears the transition; `aria-live` is
+ * implied by that role.
+ */
+function StatusLine({ status, className }: { status: RailStatus | null; className?: string }) {
+  const { t } = useLanguage();
+  if (!status) return null;
+  return (
+    <p
+      role="status"
+      className={cn('text-xs text-muted-foreground flex items-center gap-1.5', className)}
+    >
+      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden="true" />
+      {t(`guidedSetup.busy.${status}`)}
+    </p>
+  );
+}
+
+// ============================================================================
 // REFUSAL BANNER
 // ============================================================================
 
@@ -342,6 +369,7 @@ function ParkedList({
   parked,
   gateOn,
   isBusy,
+  openingId,
   onSelect,
   onSendRequests,
   sentSummary,
@@ -349,6 +377,8 @@ function ParkedList({
   parked: GuidedSetupParkedStudent[];
   gateOn: boolean;
   isBusy: boolean;
+  /** The chip whose student is being selected and fetched right now, if any. */
+  openingId: string | null;
   onSelect: (studentId: string) => void;
   onSendRequests: (items: GuidedSetupConsentBatchItem[]) => void;
   sentSummary: string | null;
@@ -397,9 +427,14 @@ function ParkedList({
             <li key={p.studentId}>
               <button
                 type="button"
+                disabled={openingId !== null}
+                aria-busy={openingId === p.studentId}
                 onClick={() => onSelect(p.studentId)}
-                className="flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs hover:bg-accent"
+                className="flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs hover:bg-accent disabled:opacity-60"
               >
+                {openingId === p.studentId && (
+                  <Loader2 className="w-3 h-3 animate-spin shrink-0" aria-hidden="true" />
+                )}
                 <span className="max-w-[9rem] truncate">{p.name}</span>
                 <span className="text-muted-foreground">
                   {p.step === 'done'
@@ -433,7 +468,9 @@ export function GuidedSetupRail() {
     view,
     live,
     isBusy,
+    isLaunching,
     isChatBusy,
+    isRefreshing,
     skip,
     dismiss,
     notNow,
@@ -446,13 +483,48 @@ export function GuidedSetupRail() {
 
   const [sentSummary, setSentSummary] = useState<string | null>(null);
 
+  // Which of the rail's own controls was pressed. `isBusy` disables them all
+  // while a request is out, but only the pressed one should spin — a "Skip"
+  // that spins because "Finish later" was clicked reads as the wrong action.
+  const [pending, setPending] = useState<'skip' | 'dismiss' | null>(null);
+  // The parked chip being opened (select + fetch), so it can spin on its own.
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  const status = railStatus({ isLaunching, isBusy, live, isChatBusy, isRefreshing });
+
   const openParked = useCallback(
     async (studentId: string) => {
-      await selectStudent(studentId);
-      await refresh(studentId);
+      setOpeningId(studentId);
+      try {
+        await selectStudent(studentId);
+        await refresh(studentId);
+      } finally {
+        setOpeningId(null);
+      }
     },
     [selectStudent, refresh],
   );
+
+  const runSkip = useCallback(
+    async (step: GuidedSetupSkippableStep) => {
+      setPending('skip');
+      try {
+        await skip(step);
+      } finally {
+        setPending(null);
+      }
+    },
+    [skip],
+  );
+
+  const runDismiss = useCallback(async () => {
+    setPending('dismiss');
+    try {
+      await dismiss();
+    } finally {
+      setPending(null);
+    }
+  }, [dismiss]);
 
   const sendRequests = useCallback(
     async (items: GuidedSetupConsentBatchItem[]) => {
@@ -479,7 +551,23 @@ export function GuidedSetupRail() {
     [requestConsentBatch],
   );
 
-  if (!view) return null;
+  // ── Opening ───────────────────────────────────────────────────────────────
+  // No view yet, but a flow is on its way: "New student" was pressed, or the
+  // zero-student auto-launch fired, and the start request has not returned.
+  // Same footprint as the compact banner, so the real rail replaces it in
+  // place rather than pushing the panel down a second time.
+  if (!view) {
+    if (!isLaunching) return null;
+    return (
+      <div
+        aria-busy="true"
+        className="shrink-0 border-b border-border bg-muted/40 px-4 py-2 flex items-center gap-3 flex-wrap"
+      >
+        <span className="text-sm font-medium">{t('guidedSetup.title')}</span>
+        <StatusLine status="launching" />
+      </div>
+    );
+  }
 
   const record = view.record ?? null;
   const resumable =
@@ -514,12 +602,18 @@ export function GuidedSetupRail() {
     if (!resumable) return null;
 
     return (
-      <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-2 flex items-center gap-3 flex-wrap">
+      <div
+        aria-busy={status !== null}
+        className="shrink-0 border-b border-border bg-muted/40 px-4 py-2 flex items-center gap-3 flex-wrap"
+      >
         <span className="text-sm font-medium">{t('guidedSetup.title')}</span>
         {/* `done` was filtered out above, so this is always a real step. */}
         <span className="text-xs text-muted-foreground">
           {t(`guidedSetup.step.${view.step}`)}
         </span>
+        {/* A refetch after a contact or consent write lands here too: the
+            banner's step can change under it, and it should say so first. */}
+        <StatusLine status={status} />
         <div className="flex-1" />
         {/* Same rule as "New student": spin on OUR turn, refuse the click while
             any chat turn is in flight so a second press cannot stack a second
@@ -557,17 +651,24 @@ export function GuidedSetupRail() {
   const boundParked = view.parked?.find((p) => p.studentId === view.studentId) ?? null;
 
   return (
-    <div className="shrink-0 border-b border-border bg-card px-4 py-3 space-y-3">
+    <div
+      aria-busy={status !== null}
+      className="shrink-0 border-b border-border bg-card px-4 py-3 space-y-3"
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            {t('guidedSetup.title')}
-            {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {ts(view.account === 'family' ? 'guidedSetup.subtitle' : 'guidedSetup.subtitleRoster')}
-          </p>
+          <h2 className="text-sm font-semibold text-foreground">{t('guidedSetup.title')}</h2>
+          {/* The subtitle gives way to the status line while anything is in
+              flight: the same slot, so the header never grows, and the wait is
+              named rather than hinted at by a spinner beside the title. */}
+          {status ? (
+            <StatusLine status={status} />
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {ts(view.account === 'family' ? 'guidedSetup.subtitle' : 'guidedSetup.subtitleRoster')}
+            </p>
+          )}
         </div>
 
         {/* Status only. The "Sign consent" button used to live here as well, and
@@ -664,6 +765,7 @@ export function GuidedSetupRail() {
           parked={importedParked}
           gateOn={view.gate !== 'off'}
           isBusy={isBusy}
+          openingId={openingId}
           onSelect={(id) => void openParked(id)}
           onSendRequests={(items) => void sendRequests(items)}
           sentSummary={sentSummary}
@@ -705,8 +807,9 @@ export function GuidedSetupRail() {
             size="sm"
             variant="outline"
             disabled={isBusy}
-            onClick={() => void skip(view.step as GuidedSetupSkippableStep)}
+            onClick={() => void runSkip(view.step as GuidedSetupSkippableStep)}
           >
+            {pending === 'skip' && <Loader2 className="w-3.5 h-3.5 me-1.5 animate-spin" />}
             {t('guidedSetup.actions.skipStep')}
           </Button>
         )}
@@ -733,7 +836,8 @@ export function GuidedSetupRail() {
         )}
 
         {!!view.studentId && (
-          <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => void dismiss()}>
+          <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => void runDismiss()}>
+            {pending === 'dismiss' && <Loader2 className="w-3.5 h-3.5 me-1.5 animate-spin" />}
             {t('guidedSetup.actions.finishLater')}
           </Button>
         )}

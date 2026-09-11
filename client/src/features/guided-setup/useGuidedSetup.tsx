@@ -123,6 +123,25 @@ interface GuidedSetupContextValue {
    */
   isViewPending: boolean;
   /**
+   * The view on screen is being RE-DERIVED: a background refetch is in flight
+   * for a key that already has data. This is every "it updated a few seconds
+   * later" moment the flow has — the end of a chat turn (useChat invalidates),
+   * a guardian contact written from the Contacts panel, a consent signed in the
+   * wizard — and the rail shows a status line on it so the checklist does not
+   * appear to change on its own.
+   *
+   * Distinct from `isViewPending` (no data yet → placeholder) and `isBusy` (one
+   * of OUR requests is out).
+   */
+  isRefreshing: boolean;
+  /**
+   * Re-fetch a student's view WITHOUT touching the live flag. The counterpart
+   * of `refresh` for the student a live flow is already about: a guardian
+   * contact added mid-flow must flip the gate now, not on the next chat turn,
+   * and `refresh` would retire the running flow to do it.
+   */
+  invalidate: (studentId: string) => void;
+  /**
    * Institution step 1: create the reviewed roster rows. The rows are sent back
    * WITH the user's edits — the server re-validates every cell, so this is a
    * submission, not an instruction.
@@ -300,6 +319,11 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
   // no request pending for the selection, so a consumer must not hold a
   // placeholder for one — that is the case that used to pulse forever.
   const isViewPending = viewQuery.isLoading && viewStudentId === student?.id;
+
+  // A refetch over data already in hand. `isLoading` is excluded so the two
+  // flags never overlap: pending = nothing to show yet, refreshing = what is
+  // shown is about to change.
+  const isRefreshing = viewQuery.isFetching && !viewQuery.isLoading;
 
   // --------------------------------------------------------------------------
   // Transport — every call is best-effort. Phase A may be missing entirely.
@@ -506,6 +530,16 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       });
     },
     [instituteId, signal, setSharedState, queryClient],
+  );
+
+  const invalidate = useCallback(
+    (studentId: string) => {
+      if (!instituteId) return;
+      void queryClient.invalidateQueries({
+        queryKey: guidedSetupQueryKey(instituteId, studentId),
+      });
+    },
+    [instituteId, queryClient],
   );
 
   const confirmRoster = useCallback(
@@ -775,6 +809,8 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       ackAac,
       refresh,
       isViewPending,
+      isRefreshing,
+      invalidate,
       confirmRoster,
       rosterCreated,
       requestConsentBatch,
@@ -795,6 +831,8 @@ export function GuidedSetupProvider({ children }: { children: ReactNode }) {
       ackAac,
       refresh,
       isViewPending,
+      isRefreshing,
+      invalidate,
       confirmRoster,
       rosterCreated,
       requestConsentBatch,

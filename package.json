@@ -34,6 +34,7 @@
     "dr:drill": "npx tsx scripts/dr-restore-drill.ts",
     "test": "node --experimental-vm-modules --max-old-space-size=6144 node_modules/jest/bin/jest.js",
     "test:client": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.client.js",
+    "test:client-app": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.client-app.js",
     "test:popusim": "vitest run --root games/popusim",
     "test:grand-dream": "vitest run --root games/grand-dream",
     "test:world-lab": "vitest run --root games/world-lab",

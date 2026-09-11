@@ -5079,6 +5079,12 @@ export const de = {
       skipStep: "Diesen Schritt überspringen",
       useForm: "Stattdessen ein Formular ausfüllen",
     },
+    busy: {
+      launching: "Geführte Einrichtung wird geöffnet…",
+      refreshing: "Wird aktualisiert…",
+      saving: "Wird gespeichert…",
+      working: "Wird aus dem Gespräch aktualisiert…",
+    },
     checklist: {
       aacUser: "AAC-Nutzung bestätigt",
       activated: "Programm aktiviert",
