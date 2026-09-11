@@ -17,6 +17,8 @@ import {
   type NodeReading, type NodeTypingOpts,
 } from "../kernel/cells/index.js";
 import { hinterlandJobs, cityLicense, type CityLicense } from "../kernel/civ/jobs.js";
+import { climateSampleAt, ecoAbundanceAt } from "./ecology.js";
+import { landYieldsAt } from "./packing.js";
 import { TIER_POP_CAP, type SettlementTier } from "../scale.js";
 import { sphereWorld, type SettledWorld } from "./surface-metric.js";
 
@@ -124,9 +126,24 @@ export interface PlanetCity {
   charter: { farmland: number; ore_access: number; timberland: number };
   /** Founding population (descend's souls-per-grid-person clamp). */
   startPop: number;
+  /**
+   * ⚖️ WHAT ITS LAND YIELDS, PER GOOD — good → presence 0..1 over every good
+   * the catalogue can make (`planet/packing.ts landYieldsAt`: the catalogue
+   * packed into this cell's own light, water and nutrient, read through what
+   * each row makes). THE per-good reading every simulation seat consumes when
+   * this city is a partner nobody runs — its scarcity proxy and its region's
+   * skills (user law 2026-09-11: "all simulation should treat each good as
+   * its own thing individually"; the node taxon below is NAMING). Absent on a
+   * substrate with no climate (a flat test grid), and then the row reads as
+   * the pure-hash stub it always was.
+   */
+  yields?: Record<string, number>;
   /** THE NODE TYPE (resources-and-trade.md §②): what this geography makes
    *  the settlement — its job-description seed, with the printed sentence
-   *  and the water-first veto. Geography chooses, spec marks. */
+   *  and the water-first veto. Geography chooses, spec marks. 🏷️ For the
+   *  SIMULATION it is a name (a port, a mining village): no per-good seat
+   *  reads it (user law 2026-09-11). The civ layer's licensing (Gate C) and
+   *  its printed sentence still do. */
   node: NodeReading;
   /** THE DERIVED CEILING (§④, opt-in via `ceilings`): the min of the
    *  site's constraints, the §② water veto turned into a real waystation
@@ -292,6 +309,16 @@ export interface FoundCitiesOpts extends PlanetCityOpts {
   cellKey?(cell: number): number;
 }
 
+/** The per-good land reading at a site, or null on a substrate that carries
+ *  no climate (`climateSampleAt`'s own precondition — height, rain, tempC —
+ *  checked here so a flat test grid founds without a vector instead of
+ *  throwing). The canopy cover comes from the baked ecology where the world
+ *  has one; `{}` otherwise, exactly as the founding cell's own read does. */
+function landYieldsOf(grid: SubstrateGrid, cell: number): Record<string, number> | null {
+  if (!grid.fields.height || !grid.fields.rain || !grid.fields.tempC) return null;
+  return landYieldsAt(climateSampleAt(grid, cell), ecoAbundanceAt(grid, cell) ?? {});
+}
+
 /** The tier-agnostic founding: sites → named, chartered settlements. Used
  *  by tier 0 (planetCities — capitals) and tier 1 (region villages). */
 export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
@@ -335,6 +362,11 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
       startPop = Math.max(1, Math.min(startPop, limit));
     }
 
+    // ⚖️ WHAT THIS LAND YIELDS, per good — packed once at founding from the
+    // site's own climate and canopy, so the app's worker and the headless
+    // boot carry the same vector on the same row. A substrate with no climate
+    // (a flat test grid) founds without it, and the row stays the hash stub.
+    const yields = landYieldsOf(opts.grid, site.cell);
     cities.push({
       cell: key,
       name,
@@ -342,6 +374,7 @@ export function foundCitiesFromSites(opts: FoundCitiesOpts): PlanetCity[] {
       density: site.density,
       charter,
       startPop,
+      ...(yields ? { yields } : {}),
       node,
       ...(cap ? { cap } : {}),
       ...(license ? { license } : {}),

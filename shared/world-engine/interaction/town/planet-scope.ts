@@ -174,7 +174,15 @@ export function planetChecksum(grid: CellGrid): string {
  *  computed here; "geography chooses" simply reaches the scarcity proxy the
  *  barter clerk quotes from. */
 export function partnerGeographyOf(city: PlanetCity): PartnerGeography {
-  return { node: city.node?.type ?? null, farmland: city.charter?.farmland, ore: city.charter?.ore_access };
+  return {
+    // 🏷️ The taxon — NAMING ONLY (user law 2026-09-11); no sim seat reads it.
+    node: city.node?.type ?? null,
+    // ⚖️ WHAT ITS LAND YIELDS, PER GOOD — the one reading the scarcity proxy
+    // and the regional skill closed form consume (`PlanetCity.yields`, packed
+    // at founding from the city's own cell). Absent on a row founded without
+    // a climate (a flat test grid) ⇒ the hash proxy, as the stub shipped.
+    ...(city.yields ? { yields: city.yields } : {}),
+  };
 }
 
 /** The routes incident to each endpoint cell — built once per measurement so

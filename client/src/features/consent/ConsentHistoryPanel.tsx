@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { describeConsentError } from "./sign-error";
 import { useToast } from "@/hooks/use-toast";
 import {
   useRevokeConsent,
@@ -113,7 +114,7 @@ function ConsentRecordRow({ record, studentId }: { record: StudentConsentRecord;
     } catch (e: any) {
       toast({
         title: t("consent.history.withdrawalLinkFailed"),
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }
@@ -127,7 +128,7 @@ function ConsentRecordRow({ record, studentId }: { record: StudentConsentRecord;
     } catch (e: any) {
       toast({
         title: t("consent.history.toastRevokeFailed") || "Could not revoke",
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }

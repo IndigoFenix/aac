@@ -814,9 +814,9 @@ describe("trade v1.5 — a REAL partner, distance-priced rarity (trade.ts bindPa
     tr.bindPartner({
       key: "city:9",
       at: { x: stage.center.x + 400, y: stage.center.y },
-      geo: { node: "surplus", farmland: 260, ore: 4 },
+      geo: { node: "surplus", yields: { food: 0.9, wood: 0.1 } }, // — user law 2026-09-11: goods individually; the taxonomy is naming
     });
-    expect(tr.route.partnerGeo).toEqual({ node: "surplus", farmland: 260, ore: 4 });
+    expect(tr.route.partnerGeo).toEqual({ node: "surplus", yields: { food: 0.9, wood: 0.1 } });
   });
 
   // ── R&T ⑤ T2: the cargo lists stop being constants once both books are read.

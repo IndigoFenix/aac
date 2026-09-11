@@ -36,6 +36,8 @@ import { zoneAt, type TownGrowthSignals, type ZoneCharter } from "./zoning.js";
 // is inside kernel/town; `Relation` is the behavior layer's, and a type import of
 // it adds no runtime edge, so the layering note above still holds.
 import type { RegardPrior } from "./regard-prior.js";
+import type { SkillPrior } from "./skill-prior.js";
+import type { BodySkillRow } from "./skills.js";
 import type { Relation } from "../../interaction/behavior/relations.js";
 import type { CreatureId } from "../../interaction/behavior/creatures.js";
 import { stackTotal, stackUnits, type StockEndpoint } from "./transfer.js";
@@ -204,6 +206,27 @@ export interface CohortHouse {
    * population row: `Σpops + pinned = const` by construction.
    */
   pinned?: Record<CreatureId, Record<CreatureId, Relation>>;
+  /**
+   * ⚖️ SKILL FOLD (skill-learning-round.md, the REGIONAL slice) — what this
+   * household's practice became at the fold: per skill key a DISTRIBUTION
+   * (`share` of members with any practice, `meanS` seconds among them, `n`),
+   * never a scalar (`skill-prior.ts`, pure and shared by both doors — the
+   * `needs`/`regard` precedent a third time). The raw fact is practice
+   * seconds, and seconds are what the round trip conserves exactly.
+   *
+   * Before this field a pooled household's `session.bodySkills` rows LEAKED
+   * exactly as its meters and books once did: nothing cleared them at demote,
+   * and a reload lost them. OPTIONAL like the other two: a household of
+   * novices carries no payload, and the promote then writes no row.
+   */
+  skills?: Record<string, SkillPrior>;
+  /**
+   * ⚖️ THE MEMBERS THE SKILL PRIOR CANNOT REBUILD — cid → its VERBATIM rows
+   * (`SKILL_PIN_EPS` on the level scale; a master among apprentices). The
+   * next demote re-tests, so a pin is RELEASED once the household has caught
+   * up. A pinned soul is still one of `members`: `Σpops + pinned = const`.
+   */
+  skillPins?: Record<CreatureId, Record<string, BodySkillRow>>;
 }
 
 /** One district's cohort pool — a serializable row (TownDeltas pattern,
@@ -302,6 +325,21 @@ export function demoteHousehold(
       ? {
           pinned: Object.fromEntries(
             Object.entries(house.pinned).map(([cid, book]) => [cid, { ...book }]),
+          ),
+        }
+      : {}),
+    // …and the practice distribution the same way (skill-learning-round.md,
+    // the REGIONAL slice): one level for the priors, two for the pinned rows.
+    ...(house.skills
+      ? { skills: Object.fromEntries(Object.entries(house.skills).map(([k, p]) => [k, { ...p }])) }
+      : {}),
+    ...(house.skillPins
+      ? {
+          skillPins: Object.fromEntries(
+            Object.entries(house.skillPins).map(([cid, rows]) => [
+              cid,
+              Object.fromEntries(Object.entries(rows).map(([k, r]) => [k, { ...r }])),
+            ]),
           ),
         }
       : {}),

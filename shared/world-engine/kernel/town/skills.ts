@@ -43,6 +43,7 @@
 import type { WorldScale } from "../../scale.js";
 import { stackHead } from "./goods-kinds.js";
 import { naturalSources } from "../../products.js";
+import { freightOf, VALUE_TIER } from "../../freight.js";
 import { validateFields, specFail, type GroupSpec } from "../spec-schema.js";
 import type { ContributeLink } from "./pull-labor.js";
 
@@ -199,6 +200,59 @@ export function woodHeads(): ReadonlySet<string> {
 /** Is this stack head wood, or something wood is milled into? */
 export const isWoodHead = (head: string | undefined): boolean =>
   head !== undefined && woodHeads().has(stackHead(head));
+
+/** The heads the products catalogue MAKES directly (a take mints them) and the
+ *  ones they REFINE INTO, by use — read off the registry, memoised on its
+ *  length like `woodHeads`. */
+let productCache: {
+  n: number;
+  raw: ReadonlyMap<string, "food" | "drink" | "building" | "raw">;
+  refined: ReadonlySet<string>;
+} | null = null;
+function productHeads(): NonNullable<typeof productCache> {
+  const srcs = naturalSources();
+  if (productCache && productCache.n === srcs.length) return productCache;
+  const raw = new Map<string, "food" | "drink" | "building" | "raw">();
+  const refined = new Set<string>();
+  for (const s of srcs) {
+    for (const p of s.products) {
+      raw.set(stackHead(p.glyph), p.use);
+      if (p.refinesTo) refined.add(stackHead(p.refinesTo.into));
+    }
+  }
+  productCache = { n: srcs.length, raw, refined };
+  return productCache;
+}
+
+/**
+ * WHICH SKILL MAKES A TRADED GOOD — the regional slice's catalogue function
+ * (skill-prior.ts reads a region's competence at it), the `skillFor` idiom
+ * one rung out: the answer is derived from the products catalogue and the
+ * good's own freight row, never from a name list.
+ *
+ *   wood, and what wood mills into   → felling (raw) / carpentry (refined)
+ *   a natural food or drink           → foraging (the food-making row today)
+ *   a refined-tier good (cloth …)     → refining
+ *   raw bulk that is not wood (stone) → mining — when the catalogue has it
+ *
+ * `null` = no skill this world's catalogue names makes it (a staple-tier
+ * durable nobody declared, wool, a row a world removed), and every reader
+ * treats that as competence 1. A missing catalogue row is the same answer, so
+ * declaring `mining` is one line and no code.
+ */
+export function skillOfGood(good: string, catalogue: SkillCatalogue = DEFAULT_SKILL_CATALOGUE): string | null {
+  const head = stackHead(good);
+  const has = (k: string): string | null => (catalogue.get(k) ? k : null);
+  const products = productHeads();
+  if (isWoodHead(head)) return has(products.raw.has(head) ? "felling" : "carpentry");
+  const use = products.raw.get(head);
+  if (use === "food" || use === "drink") return has("foraging");
+  const f = freightOf(head);
+  if (f.transit === "selfConsuming") return has("foraging");
+  if (f.valueDensity >= VALUE_TIER.refined || products.refined.has(head)) return has("refining");
+  if (f.valueDensity < VALUE_TIER.staple) return has("mining");
+  return null;
+}
 
 /**
  * WHICH SKILL AN ACTION PRACTISES — a CATALOGUE FUNCTION, never a switch

@@ -6,6 +6,7 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { describeConsentError } from "./sign-error";
 import { useToast } from "@/hooks/use-toast";
 import {
   useRevokeConsentInvitation,
@@ -41,7 +42,7 @@ export function PendingInvitationsList({ studentId }: PendingInvitationsListProp
     } catch (e: any) {
       toast({
         title: t("consent.pending.toastRevokeFailed") || "Could not revoke",
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }

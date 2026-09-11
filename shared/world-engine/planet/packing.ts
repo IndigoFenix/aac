@@ -32,6 +32,7 @@
 import {
   crownAreaM2,
   forageYieldKcalPerM2Yr,
+  naturalSources,
   nicheSuitabilityOf,
   rootAreaM2,
   sourceRarityOf,
@@ -283,4 +284,110 @@ export function itemsPerBearing(src: NaturalSource, product: NaturalProduct): nu
   const days = satiationDaysOf(product.glyph);
   if (!(days > 0)) return 0;
   return rationsPerBearing(src, product) / days;
+}
+
+// ── WHAT A CELL'S LAND YIELDS, PER GOOD ──────────────────────────────────────
+//
+// ⚖️ LAW (user, 2026-09-11): *"all simulation should treat each good as its own
+// thing individually"* — a settlement's terrain enters the sim as a PER-GOOD
+// reading, never as a taxon ("mining village", "surplus country") and never as
+// the charter's three sums. The taxonomy is a naming layer. This is the one
+// per-good reading, and it is the SAME arithmetic the founding cell's own
+// larder is counted by: the catalogue's rows, packed into this cell's light,
+// water and nutrient, then read through what each row makes.
+//
+// THE SHAPE: good → presence, 0..1, over EVERY good the catalogue can make.
+//   · a PACKED source (a plant with crown geometry) is present as the share of
+//     the hectare's light budget its packed stand takes — `n × crown / L`, so
+//     ten oaks in a wood read ~1 and a shaded floor's herbs read small;
+//   · a source with NO geometry but a declared NICHE (sheep, cow) is present as
+//     its rarity × niche suitability — the same `fit` the packer weighs plants
+//     by, read as a presence because the pools do not apply to a flock;
+//   · a source with neither (rock, today) SAYS NOTHING about place: it is
+//     skipped, and its goods read 0 like a good nobody here makes — until the
+//     row declares an `ore` tolerance, at which point quarry country appears
+//     with no change here (products.ts: "the economic geography … falls OUT of
+//     the niche instead of being asserted next to it");
+//   · a REFINED good inherits its raw's presence over `inPerOut` (wool → cloth
+//     at 2:1) — what this land COULD make, which is the honest stand-in for a
+//     workshop nobody is running.
+//
+// A good outside the catalogue (a toy, a cookie) has NO entry — the land does
+// not speak about it, and a reader keeps its hash. A catalogue good the land
+// lacks reads 0 — the land spoke, and said none.
+//
+// Pure in `(climate, abundance, sources)`; keys sorted; no clock, no RNG.
+
+/** Every good the catalogue can make, raw or by refinement, in sorted order. */
+export function catalogueGoods(sources: readonly NaturalSource[] = naturalSources()): string[] {
+  const out = new Set<string>();
+  for (const s of sources) {
+    for (const p of s.products) {
+      out.add(p.glyph);
+      let into = p.refinesTo?.into;
+      for (let hop = 0; into && hop < 8; hop++) {
+        out.add(into);
+        into = sources.flatMap((q) => q.products).find((q) => q.glyph === into)?.refinesTo?.into;
+      }
+    }
+  }
+  return [...out].sort();
+}
+
+/**
+ * THE PER-GOOD LAND READING at one cell — see the section header. `abundance`
+ * is the baked per-species map (`ecoAbundanceAt`; `{}` when the world has
+ * none), read only for the canopy cover that shades the understorey, exactly
+ * as `packSupplyAt` reads it.
+ */
+export function landYieldsAt(
+  climate: ClimateSample,
+  abundance: Readonly<Record<string, number>>,
+  sources: readonly NaturalSource[] = naturalSources(),
+): Record<string, number> {
+  const supply = packSupplyAt(climate, abundance);
+  const packed: Array<{ src: NaturalSource; member: PackMember }> = [];
+  const presence = new Map<string, number>(); // species → 0..1
+  for (const src of sources) {
+    const member = packMemberOf(src, climate);
+    if (member) {
+      packed.push({ src, member });
+      continue;
+    }
+    // No geometry: a declared niche speaks (a flock's climate), an undeclared
+    // one is silent (a mineral with no ore tolerance yet).
+    if (src.niche && Object.keys(src.niche).length > 0) {
+      const fit = sourceRarityOf(src) * nicheSuitabilityOf(src, climate);
+      if (fit > 0) presence.set(src.species, Math.min(1, fit));
+    }
+  }
+  const stands = packStands(packed.map((p) => p.member), supply);
+  packed.forEach((p, i) => {
+    const n = stands[i]?.perHa ?? 0;
+    const share = (n * crownAreaM2(p.src)) / LIGHT_SUPPLY_M2_PER_HA;
+    if (share > 0) presence.set(p.src.species, Math.min(1, share));
+  });
+
+  const out: Record<string, number> = {};
+  for (const good of catalogueGoods(sources)) out[good] = 0;
+  const bySpecies = new Map(sources.map((s) => [s.species, s] as const));
+  for (const [species, p] of presence) {
+    const src = bySpecies.get(species);
+    if (!src) continue;
+    for (const product of src.products) {
+      out[product.glyph] = Math.min(1, (out[product.glyph] ?? 0) + p);
+      // The refine chain: each hop inherits over its ratio.
+      let hop = product.refinesTo;
+      let carried = p;
+      for (let depth = 0; hop && depth < 8; depth++) {
+        carried = carried / Math.max(1, hop.inPerOut);
+        out[hop.into] = Math.min(1, (out[hop.into] ?? 0) + carried);
+        const next = sources.flatMap((q) => q.products).find((q) => q.glyph === hop!.into);
+        hop = next?.refinesTo;
+      }
+    }
+  }
+  const sorted: Record<string, number> = {};
+  for (const key of Object.keys(out).sort()) sorted[key] = out[key]!;
+  return sorted;
 }

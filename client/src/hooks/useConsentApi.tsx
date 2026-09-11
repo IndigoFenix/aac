@@ -435,7 +435,12 @@ export function useSignConsent(studentId: string) {
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? `Sign failed (${res.status})`);
+        // Keep the server's code and zod issues on the error: the wizard
+        // turns them into a translated sentence (features/consent/sign-error).
+        const e = new Error(err.message ?? `Sign failed (${res.status})`);
+        (e as any).code = err.code;
+        (e as any).issues = err.issues;
+        throw e;
       }
       return res.json();
     },
@@ -504,7 +509,10 @@ export function useAttestConsentInPerson(studentId: string) {
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? `Attestation failed (${res.status})`);
+        const e = new Error(err.message ?? `Attestation failed (${res.status})`);
+        (e as any).code = err.code;
+        (e as any).issues = err.issues;
+        throw e;
       }
       return res.json();
     },
@@ -636,7 +644,9 @@ export function useRevokeConsentInvitation() {
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? `Revoke failed (${res.status})`);
+        const e = new Error(err.message ?? `Revoke failed (${res.status})`);
+        (e as any).code = err.code;
+        throw e;
       }
       return res.json();
     },
@@ -770,6 +780,7 @@ export function useSignWithToken() {
         const err = await res.json().catch(() => ({}));
         const e = new Error(err.message ?? `Sign failed (${res.status})`);
         (e as any).code = err.code;
+        (e as any).issues = err.issues;
         throw e;
       }
       return res.json();
@@ -960,7 +971,9 @@ export function useRevokeConsent() {
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? `Revoke failed (${res.status})`);
+        const e = new Error(err.message ?? `Revoke failed (${res.status})`);
+        (e as any).code = err.code;
+        throw e;
       }
       return res.json();
     },

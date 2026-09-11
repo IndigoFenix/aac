@@ -40,6 +40,7 @@ import {
   skillFor,
   skillLevel,
   skillMultiplier,
+  skillOfGood,
   withSkills,
   woodHeads,
   type BodySkillRow,
@@ -355,5 +356,58 @@ describe("⑦ 🚨 an unpractised world is byte-identical to the pre-skill tree"
     practiceSkill(s, "a", "felling", 0);
     practiceSkill(s, "", "felling", 10);
     expect(s.bodySkills!.size).toBe(0);
+  });
+});
+
+// ═══ ⑧ skillOfGood (the REGIONAL slice's catalogue function) ═══════════════
+
+describe("⑧ skillOfGood — which skill makes a traded good, derived never named", () => {
+  it("wood → felling (the raw take)", () => {
+    expect(skillOfGood("wood")).toBe("felling");
+  });
+
+  it("every woodHeads() member that is NOT a raw product glyph → carpentry (the milled form)", () => {
+    for (const head of woodHeads()) {
+      const expectRefined = skillOfGood(head) === "carpentry";
+      // `wood` itself is a raw take (felling); anything else `woodHeads()`
+      // carries (what wood mills INTO, e.g. `block`) is the refined form.
+      if (head === "wood") expect(skillOfGood(head)).toBe("felling");
+      else expect(expectRefined).toBe(true);
+    }
+  });
+
+  it("a natural food or drink, or a self-consuming take, → foraging", () => {
+    for (const good of ["food", "apple", "banana", "milk", "meat"]) {
+      expect(skillOfGood(good)).toBe("foraging");
+    }
+  });
+
+  it("a refined-tier good → refining", () => {
+    for (const good of ["cloth", "clothing", "cheese"]) {
+      expect(skillOfGood(good)).toBe("refining");
+    }
+  });
+
+  it("raw bulk that is not wood (stone) → null on the shipped catalogue, `mining` on one that declares it", () => {
+    expect(skillOfGood("stone")).toBeNull();
+    const withMining = withSkills({ key: "mining", parent: "labour", masteryHours: 400, gain: 2 });
+    expect(skillOfGood("stone", withMining)).toBe("mining");
+  });
+
+  it("an unknown good → null", () => {
+    expect(skillOfGood("this-good-does-not-exist")).toBeNull();
+  });
+
+  // 📝 CORRECTED FROM THE BRIEF: the brief's own list named `wool`/`block` as
+  // both reading null. Read off the kernel directly (never typed): `wool` has
+  // no natural-source row and no refined-tier freight reading, so it IS null
+  // — but `block` is what `woodHeads()` carries as wood's milled form
+  // (skills.test.ts's own ⑥ block, line ~328: `woodHeads()` = ["block",
+  // "wood"]), so `skillOfGood("block")` is `carpentry` by the function's own
+  // documented rule ("wood, and what wood mills into → felling / carpentry"),
+  // not null. Pinned as the module actually reads it.
+  it("wool → null; block (wood's milled form) → carpentry, not null", () => {
+    expect(skillOfGood("wool")).toBeNull();
+    expect(skillOfGood("block")).toBe("carpentry");
   });
 });

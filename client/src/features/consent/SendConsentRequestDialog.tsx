@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { describeConsentError } from "./sign-error";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateConsentInvitation } from "@/hooks/useConsentApi";
 import { useConsentDetail } from "@/features/consent/ConsentProvider";
@@ -157,7 +158,7 @@ export function SendConsentRequestDialog({
     } catch (e: any) {
       toast({
         title: t("consent.send.toastErrorTitle") || "Couldn't send consent request",
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }

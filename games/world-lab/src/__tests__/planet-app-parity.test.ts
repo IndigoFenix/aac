@@ -115,8 +115,12 @@ function legacyNearbyCityPartners(
         x: simCenter.x + toward.dot(east) * distM,
         y: simCenter.y + toward.dot(north) * distM,
       },
-      // `cityPartnerGeography`, pre-S3.
-      geo: { node: city.node?.type ?? null, farmland: city.charter?.farmland, ore: city.charter?.ore_access },
+      // `cityPartnerGeography`, pre-S3 — user law 2026-09-11: goods
+      // individually; the taxonomy is naming. The legacy arithmetic now
+      // defers to the engine's own `partnerGeographyOf` (node + per-good
+      // yields), rather than replaying a farmland/ore charter sum that no
+      // longer exists.
+      geo: partnerGeographyOf(city),
       distanceM: road?.route.lengthM ?? distM,
     });
   }
@@ -190,9 +194,14 @@ describe("(a) the partner rows — the app's pre-S3 arithmetic vs the engine's",
   });
 
   it("`partnerGeographyOf` IS `cityPartnerGeography`", () => {
+    // — user law 2026-09-11: goods individually; the taxonomy is naming.
+    // `node` is the taxon (naming only); `yields` — when the city carries
+    // one — is the packed per-good presence. A city founded without a
+    // climate (no `yields`) omits the field, exactly as `partnerGeographyOf`
+    // itself does.
     for (const c of [...planet.cities.slice(0, 50), beacon]) {
       expect(partnerGeographyOf(c)).toEqual({
-        node: c.node?.type ?? null, farmland: c.charter?.farmland, ore: c.charter?.ore_access,
+        node: c.node?.type ?? null, ...(c.yields ? { yields: c.yields } : {}),
       });
     }
   });

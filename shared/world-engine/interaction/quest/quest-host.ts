@@ -176,9 +176,21 @@ import {
   skillEffectiveLevel,
   skillFor,
   skillMultiplier,
+  skillOfGood,
   type BodySkillRow,
   type SkillCatalogue,
 } from "@shared/world-engine/kernel/town/skills.js";
+// ⚖️ SKILLS — THE REGIONAL SLICE (skill-learning-round.md): the fold and the
+// unfold of a household's practice, the region's average, and the closed form
+// a streamed city's skills are read off. Pure; the host owns only the doors.
+import {
+  foldHouseSkills,
+  geographySkillMultipliers,
+  projectHouseSkills,
+  regionalSkillMultiplier,
+  regionalSkillsAt,
+  type RegionalSkill,
+} from "@shared/world-engine/kernel/town/skill-prior.js";
 import {
   // 🪨 ONE DEFINITION OF "THIS IS A TRIP, NOT BOOKKEEPING" (piles-not-boxes): the
   // self-issued collect rows apply the SAME veto the gaze's bill applies.
@@ -36818,16 +36830,25 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    * which for a never-expanded town is `stubPartnerSignals(key, floor(day),
    * geo)` bit for bit.
    */
-  function condensedPartner(rec: TownRecord, day: number): TradePartner {
+  function condensedPartner(rec: TownRecord, day: number, catalogue: SkillCatalogue): TradePartner {
+    // ⚖️ ITS SKILLS, THE SAME WAY (the REGIONAL slice): a town that ran folded
+    // its average onto the record; a town nobody runs has the skills its land
+    // calls for — the charter's closed form (`geographySkillMultipliers`), the
+    // very evidence its scarcity is already read off. Read once per record.
+    const skills = rec.skills ?? geographySkillMultipliers(rec.geo, catalogue);
+    const withCompetence = (s: BarterSignals): BarterSignals => ({
+      shortage: (g) => s.shortage(g),
+      competence: (g) => regionalSkillMultiplier(skills, skillOfGood(g, catalogue)),
+    });
     return tradePartner({
       key: rec.key,
       at: rec.at,
       record: rec,
       books: null, // ⚖️ B6: nothing to credit — this town's ledger is not loaded
-      signals: townRecordSignals(rec, day),
+      signals: withCompetence(townRecordSignals(rec, day)),
       stack: rec.stack,
       distanceM: rec.distanceM,
-      signalsAtDay: (d) => townRecordSignals(rec, d),
+      signalsAtDay: (d) => withCompetence(townRecordSignals(rec, d)),
     });
   }
 
@@ -37483,6 +37504,7 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
           geo: opts.geo ?? null,
         }),
         day,
+        session.skills,
       ));
     };
     const t = session.town;
@@ -37542,12 +37564,46 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
    *  site reads its own crate (empty shelf = everything scarce — the honest
    *  frontier bargaining position). */
   function ourBarterSignals(session: QuestSession): BarterSignals {
-    if (session.town) return { shortage: (g) => townShortage(session, g) };
+    // ⚖️ …WITH OUR REGION'S AVERAGE SKILL at each good's making (the REGIONAL
+    // slice): read ONCE per signal set off the live ledger and the pooled
+    // households, so a lane ranking prices every good against one census.
+    const competence = ourCompetence(session);
+    if (session.town) return { shortage: (g) => townShortage(session, g), competence };
     const site = session.foundedSite;
     if (site) {
-      return { shortage: (g) => Math.max(0, Math.min(1, 1 - stackUnits(site.stock, g) / 6)) };
+      return {
+        shortage: (g) => Math.max(0, Math.min(1, 1 - stackUnits(site.stock, g) / 6)),
+        competence,
+      };
     }
-    return { shortage: () => 0 };
+    return { shortage: () => 0, competence };
+  }
+
+  /**
+   * ⚖️ THE REGION'S AVERAGE SKILLS — the owner's "regions have average skills"
+   * for OUR settlement: the population mean over every head, live bodies
+   * through their own rows, pooled households through the distribution they
+   * folded to, novices at exactly 1 (`skill-prior.ts regionalSkills`). Heads
+   * = every body the needs tick keeps alive plus every pooled soul; a world of
+   * novices reads `{}`, and every reader of `{}` multiplies by 1.
+   */
+  function regionalSkillsOf(session: QuestSession): Record<string, RegionalSkill> {
+    // Taken at most once per `REGIONAL_CENSUS_PERIOD_S` of the town clock and
+    // read from the table otherwise (skill-prior.ts) — a quote per frame must
+    // not be a census per frame.
+    return regionalSkillsAt(session, session.townClock ?? 0, () => ({
+      live: session.bodySkills ?? [],
+      liveHeads: Math.max(session.liveNeedBodies?.size ?? 0, session.bodySkills?.size ?? 0),
+      pooled: session.town?.deltas.cohorts?.flatMap((r) => r.houses) ?? [],
+      curve: session,
+    }));
+  }
+
+  /** Our competence at a GOOD: the regional multiplier of the skill that makes
+   *  it (`skillOfGood`), 1 for a good no catalogue row makes. One census. */
+  function ourCompetence(session: QuestSession): (good: string) => number {
+    const regional = regionalSkillsOf(session);
+    return (good) => regionalSkillMultiplier(regional, skillOfGood(good, session.skills));
   }
 
   /** The goods vocabulary a take-good defaults over: the street goods plus
@@ -39676,6 +39732,20 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (regardFold.keys.length > 0) {
       console.log(`[regard] fold h_${houseIndex} subjects=${regardSubjects} pinned=${regardPins}`);
     }
+    // ⑦ THE PRACTICE LEDGER (skill-learning-round.md, the REGIONAL slice). The
+    // third map with the same leak: `session.bodySkills` rows of five people
+    // who no longer exist. They fold to ONE DISTRIBUTION PER SKILL — share
+    // with any practice, mean seconds among them (`skill-prior.ts`, pure, both
+    // doors in one module) — a member the prior cannot rebuild (a master among
+    // apprentices) is PINNED verbatim, and the live rows are DELETED. Seconds
+    // are the raw fact and seconds are what the round trip conserves.
+    const skillFold = foldHouseSkills((cid) => session.bodySkills.get(cid), houseMembers, session);
+    for (const cid of houseMembers) session.bodySkills.delete(cid);
+    const skillKeys = Object.keys(skillFold.skills).length;
+    const skillPins = Object.keys(skillFold.pinned).length;
+    if (skillKeys > 0) {
+      console.log(`[skills] fold h_${houseIndex} keys=${skillKeys} pinned=${skillPins}`);
+    }
     const wellbeing = Math.max(0.2, Math.min(0.9, 0.75 - (stressSum / HOUSEHOLD) * 0.5));
     demoteHousehold(
       t.deltas.cohorts,
@@ -39691,6 +39761,10 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
         // carries no payload, and `promoteHouse` then writes no relation row.
         ...(regardSubjects > 0 ? { regard: regardFold.regard } : {}),
         ...(regardPins > 0 ? { pinned: regardFold.pinned } : {}),
+        // …and the practice, same discipline: a household of novices carries
+        // no payload, and `promoteHouse` then writes no skill row.
+        ...(skillKeys > 0 ? { skills: skillFold.skills } : {}),
+        ...(skillPins > 0 ? { skillPins: skillFold.pinned } : {}),
       },
       carried,
       wellbeing,
@@ -39782,6 +39856,24 @@ export function createQuestHost3D(deps: QuestHostDeps): QuestHost3D {
     if (regardRows.length > 0) {
       const pins = regardRows.reduce((s, row) => s + (row.pinned ? 1 : 0), 0);
       console.log(`[regard] unfold h_${houseIndex} rows=${regardRows.length} pinned=${pins}`);
+    }
+    // ⑦ THE PRACTICE COMES BACK (the REGIONAL slice's unfold door). A PINNED
+    // member gets its rows VERBATIM; per skill, `round(share × members)` of
+    // the rest receive the household mean, staggered symmetrically by the
+    // SAME seeded hash the meter and regard staggers use — so the household's
+    // seconds are conserved exactly and a frozen prior re-projects
+    // byte-identically on every replay. A household that folded no practice
+    // carries no payload and writes no row.
+    const skillRows = projectHouseSkills(
+      promoted.house,
+      Array.from({ length: HOUSEHOLD }, (_, m) => `resident_${houseIndex}_${m}`),
+      (_cid, key, m) =>
+        Math.max(0, Math.min(1, mealOffset(t.config.seed, houseIndex, m * 7 + key.length) / MEAL_PERIOD_SEC)),
+    );
+    for (const r of skillRows) session.bodySkills.set(r.cid, r.rows);
+    if (skillRows.length > 0) {
+      const pins = skillRows.reduce((s, r) => s + (r.pinned ? 1 : 0), 0);
+      console.log(`[skills] unfold h_${houseIndex} bodies=${skillRows.length} pinned=${pins}`);
     }
     const folded = promoted.house.needs;
     if (!folded) return;

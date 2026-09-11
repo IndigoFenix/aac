@@ -28,6 +28,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { describeConsentError, describeSignError } from "./sign-error";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeaturePanel } from "@/contexts/FeaturePanelContext";
@@ -259,7 +260,9 @@ export function ConsentWizard({ studentId, tokenCode, attestContactId, onClose, 
       ? undefined
       : {
           coGuardianAcknowledged: coGuardianAck,
-          governmentIdNumber: govIdNumber.trim(),
+          // Never an empty string: the server's schema is `min(1).optional()`,
+          // so "" is refused while undefined means "leave the contact's ID alone".
+          governmentIdNumber: govIdNumber.trim() || undefined,
           governmentIdType: govIdType,
           governmentIdCountry: govIdCountry.toUpperCase(),
         };
@@ -299,7 +302,7 @@ export function ConsentWizard({ studentId, tokenCode, attestContactId, onClose, 
           },
           guardianFields: {
             coGuardianAcknowledged: coGuardianAck,
-            governmentIdNumber: govIdNumber.trim(),
+            governmentIdNumber: govIdNumber.trim() || undefined,
             governmentIdCountry: govIdCountry.toUpperCase(),
           },
           purposeAcknowledged: purposeAck,
@@ -343,9 +346,13 @@ export function ConsentWizard({ studentId, tokenCode, attestContactId, onClose, 
       onSuccess?.();
       onClose();
     } catch (e: any) {
+      // The server's message is English and its zod issues are paths; both
+      // become one translated sentence here. The raw error still goes to the
+      // console for whoever is debugging.
+      console.warn("[ConsentWizard] sign failed:", e?.message, e?.code, e?.issues);
       toast({
         title: t("consent.wizard.toastErrorTitle"),
-        description: e?.message ?? "Unknown error",
+        description: describeSignError(e, t),
         variant: "destructive",
       });
     }
@@ -368,7 +375,30 @@ export function ConsentWizard({ studentId, tokenCode, attestContactId, onClose, 
     );
   }
 
-  if (!ctx?.guardianContact) {
+  // A self-consenting student has no guardian to attest FOR. The server refuses
+  // this with `signer_not_permitted` — but only after validating the body, and
+  // the body's guardian block was empty because the guardian step was never
+  // shown, so what reached the screen was "Invalid input" about a field the
+  // window did not contain (school account, 2026-09-11). Say the real thing
+  // before any step is rendered.
+  if (isAttestMode && isSelf) {
+    return (
+      <Dialog open onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("consent.wizard.selfConsentNoAttestTitle")}</DialogTitle>
+            <DialogDescription>{t("consent.wizard.selfConsentNoAttestBody")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={onClose}>{t("common.close")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Self-consent needs no guardian contact: the student signs as themselves.
+  if (!isSelf && !ctx?.guardianContact) {
     // Token-mode users aren't authenticated, so they can't self-add a contact —
     // hide the shortcut for them.
     const canAddSelf = !isTokenMode && !!user;
@@ -655,7 +685,7 @@ function PhoneOtpStep({ code, phoneMasked, verified, onVerified }: PhoneOtpStepP
     } catch (e: any) {
       toast({
         title: t("consent.wizard.phoneOtp.sendErrorTitle") || "Couldn't send code",
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }
@@ -671,7 +701,7 @@ function PhoneOtpStep({ code, phoneMasked, verified, onVerified }: PhoneOtpStepP
     } catch (e: any) {
       toast({
         title: t("consent.wizard.phoneOtp.verifyErrorTitle") || "Verification failed",
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }
@@ -787,7 +817,7 @@ function IdVerifyStep({ code, verified, onVerified }: IdVerifyStepProps) {
       if (typeof left === "number") setRemaining(left);
       toast({
         title: t("consent.wizard.idVerify.errorTitle"),
-        description: e?.message ?? "Unknown error",
+        description: describeConsentError(e, t),
         variant: "destructive",
       });
     }

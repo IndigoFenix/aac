@@ -308,7 +308,11 @@ export function standCountFor(
  * builder every other axis comes from. Rain/tempC/height stay the REQUIRED
  * trio: un-climated ground is still an error, never a silent zero sample.
  */
-export function climateSampleAt(grid: CellGrid, cell: number, seaHeight = 3): ClimateSample {
+// The grid parameter is the STRUCTURAL field source (`EcoFieldSource`, the
+// same shape `ecoAbundanceAt` takes): only `fields` is read, so a settlement
+// founder holding a `SubstrateGrid` samples the climate through the one door
+// every other axis comes from rather than re-deriving these units.
+export function climateSampleAt(grid: EcoFieldSource, cell: number, seaHeight = 3): ClimateSample {
   const height = grid.fields.height;
   const rain = grid.fields.rain;
   const tempC = grid.fields.tempC;

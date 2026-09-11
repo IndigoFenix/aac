@@ -353,3 +353,103 @@ describe("④ rankLanes — complementarity forms the lane, distance only orders
     expect(lane.exports).toEqual(pair.exports);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// ⑤ COMPETENCE (skill-learning-round.md, the REGIONAL slice) — BOTH sides
+// ─────────────────────────────────────────────────────────────────────────
+
+/** A books fixture that also answers `competence`, the regional slice's seat
+ *  on `BarterSignals`. */
+const sigC = (m: Record<string, number>, competence?: (good: string) => number): BarterSignals => ({
+  shortage: (g) => m[g] ?? 0,
+  ...(competence ? { competence } : {}),
+});
+
+describe("⑤ competence — the regional average skill divides a side's own unit cost", () => {
+  it("🔒 IDENTITY: `competence: () => 1` and no competence at all rank byte-equal, advantageS included", () => {
+    const GOODS = ["food", "wood", "cloth", "clothing"];
+    const usNone = sigC({ cloth: 0.9, clothing: 0.4, food: 0.02, wood: 0 });
+    const usOne = sigC({ cloth: 0.9, clothing: 0.4, food: 0.02, wood: 0 }, () => 1);
+    const themNone = sigC({ cloth: 0, clothing: 0.05, food: 0.8, wood: 0.3 });
+    const themOne = sigC({ cloth: 0, clothing: 0.05, food: 0.8, wood: 0.3 }, () => 1);
+    const a = complementaryRanking(usNone, themNone, GOODS, 300, SCALE);
+    const b = complementaryRanking(usOne, themOne, GOODS, 300, SCALE);
+    expect(a).toEqual(b);
+  });
+
+  it("🚨 a PRODUCER at competence 2 prices the lane HIGHER, and can put a good ON a lane that was OFF it at 1", () => {
+    // `cloth` at a leg close to its own carry reach: a modest producer shortage
+    // (below `BARTER_WANT_MIN`, so it still clears the want gate) prices the
+    // lane so thin that a leg near the reach knocks it off the list at
+    // competence 1 — and doubling the PRODUCER's competence (their own unit
+    // cost, halved) puts it back on, by exactly the freight-independent half.
+    const good = "cloth";
+    const reach = carryReachM(SCALE, freightOf(good));
+    const spareShortage = 0.05; // < BARTER_WANT_MIN: they can spare it
+    for (const frac of [0.7, 0.8, 0.9]) {
+      const legM = reach * frac;
+      const base = complementaryRanking(sigC({ [good]: 1 }), sigC({ [good]: spareShortage }), [good], legM, SCALE);
+      const boosted = complementaryRanking(
+        sigC({ [good]: 1 }),
+        sigC({ [good]: spareShortage }, () => 2),
+        [good],
+        legM,
+        SCALE,
+      );
+      expect(base.imports).toHaveLength(1);
+      expect(boosted.imports).toHaveLength(1);
+      expect(boosted.imports[0]!.advantageS).toBeGreaterThan(base.imports[0]!.advantageS);
+    }
+    const legOff = reach * 0.95; // off the list at competence 1
+    expect(complementaryRanking(sigC({ [good]: 1 }), sigC({ [good]: spareShortage }), [good], legOff, SCALE).imports)
+      .toEqual([]);
+    const on = complementaryRanking(
+      sigC({ [good]: 1 }),
+      sigC({ [good]: spareShortage }, () => 2),
+      [good],
+      legOff,
+      SCALE,
+    );
+    expect(on.imports.map((r) => r.good)).toEqual([good]);
+    expect(on.imports[0]!.advantageS).toBeGreaterThan(0);
+  });
+
+  it("🔒 PERSPECTIVE CONSISTENCY still holds with competence declared on BOTH sides", () => {
+    const GOODS = ["food", "wood", "cloth", "clothing"];
+    const us = sigC({ cloth: 0.9, clothing: 0.4, food: 0.02, wood: 0 }, (g) => (g === "cloth" ? 1.5 : 1));
+    const them = sigC({ cloth: 0, clothing: 0.05, food: 0.8, wood: 0.3 }, (g) => (g === "food" ? 2 : 1));
+    const a = complementaryRanking(us, them, GOODS, 300, SCALE);
+    const b = complementaryRanking(them, us, GOODS, 300, SCALE);
+    expect(a.imports).toEqual(b.exports);
+    expect(a.exports).toEqual(b.imports);
+  });
+
+  it("🚨 a competence BELOW the novice (< 1) is floored to 1 — byte-equal to no competence at all", () => {
+    const WOOD = freightOf("wood");
+    const legM = carryReachM(SCALE, WOOD) / 2;
+    const breakEven = freightUnitS(WOOD, legM, SCALE) / townFillS(SCALE);
+    const lowered = complementaryRanking(sigC({ wood: breakEven + 0.05 }, () => 0.3), sigC({}), ["wood"], legM, SCALE);
+    const none = complementaryRanking(sigC({ wood: breakEven + 0.05 }), sigC({}), ["wood"], legM, SCALE);
+    expect(lowered).toEqual(none);
+  });
+
+  it("🚨 OUR OWN competence lowers OUR `local` — a good we are practised at leaves the import list at the same shortage", () => {
+    // `landed-cost.test.ts`'s own break-even fixture (§②): one notch above it,
+    // wood is worth carrying at competence 1. Practised (competence 2) at our
+    // OWN making of it, what doing without costs us halves too, and the same
+    // shortage no longer clears the worthwhile gate.
+    const WOOD = freightOf("wood");
+    const legM = carryReachM(SCALE, WOOD) / 2;
+    const breakEven = freightUnitS(WOOD, legM, SCALE) / townFillS(SCALE);
+    const novice = complementaryRanking(sigC({ wood: breakEven + 0.01 }), sigC({}), ["wood"], legM, SCALE);
+    expect(novice.imports.map((r) => r.good)).toEqual(["wood"]);
+    const practised = complementaryRanking(
+      sigC({ wood: breakEven + 0.01 }, () => 2),
+      sigC({}),
+      ["wood"],
+      legM,
+      SCALE,
+    );
+    expect(practised.imports).toEqual([]);
+  });
+});

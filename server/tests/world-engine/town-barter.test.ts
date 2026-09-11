@@ -28,7 +28,6 @@ import {
   BARTER_RATIO_CAP,
   BARTER_RETRY_SEC,
   BARTER_WANT_MIN,
-  GEO_FARMLAND_REF,
   barterQuote,
   barterRatio,
   barterSpareFraction,
@@ -39,8 +38,7 @@ import {
   barterWillingness,
   barterWorth,
   defaultTakeGood,
-  geoGoodClass,
-  geographyShortageBase,
+  landShortageBase,
   importedFlowPerDay,
   localSupplyAtHead,
   localSupplyDisplaces,
@@ -385,7 +383,7 @@ describe("stubPartnerSignals — the closed-form partner proxy", () => {
 // the refusals), and — the one that matters most — that a partner whose
 // terrain is unknown reads EXACTLY as it did before.
 
-describe("stubPartnerSignals + geography — terrain biases what a stub can spare", () => {
+describe("stubPartnerSignals + the land, per good — user law 2026-09-11: goods individually; the taxonomy is naming", () => {
   const KEYS = ["city:14", "hamlet-1", "away:7"];
   const GOODS = ["food", "wood", "stone", "cloth", "clothing", "widget"];
 
@@ -401,60 +399,41 @@ describe("stubPartnerSignals + geography — terrain biases what a stub can spar
     }
   });
 
-  it("classes a good by its FREIGHT ROW, never by its name", () => {
-    expect(geoGoodClass("food")).toBe("staple"); // the hauler eats the cargo
-    expect(geoGoodClass("apple")).toBe("staple");
-    expect(geoGoodClass("wood")).toBe("rawBulk"); // barely repays its own haul
-    expect(geoGoodClass("stone")).toBe("rawBulk");
-    expect(geoGoodClass("cloth")).toBe("refined");
-    expect(geoGoodClass("clothing")).toBe("refined");
-    // An undeclared good sits at the staple anchor and durable — no class,
-    // therefore no geographic opinion (the honest "we don't know").
-    expect(geoGoodClass("widget")).toBeNull();
-    expect(geographyShortageBase("widget", { node: "surplus" })).toBeNull();
-  });
+  // 🚫 DELETED — user law 2026-09-11: "all simulation should treat each good
+  // as its own thing individually"; the node taxonomy (surplus/mouth/
+  // extraction/shadow) asserted a per-NODE freight-CLASS table that no longer
+  // exists — `geoGoodClass`/`geographyShortageBase` were deleted along with
+  // it, replaced by `landShortageBase(good, geo)` below.
 
-  it("SURPLUS/MOUTH country has food to sell; EXTRACTION country does not", () => {
+  it("a good the land cannot speak about keeps the hash", () => {
+    expect(landShortageBase("widget", { yields: { wood: 0.5 } })).toBeNull();
+    expect(landShortageBase("wood", { yields: { wood: 0, block: 0 } })).toBeNull(); // no presence at all
+    expect(landShortageBase("wood", { yields: {} })).toBeNull();
+    // stubPartnerSignals: a good the geo says nothing about falls straight
+    // through to the bare hash, same as no geography at all.
     for (const key of KEYS) {
-      for (const day of [0, 5, 9]) {
-        const surplus = stubPartnerSignals(key, day, { node: "surplus" }).shortage("food");
-        const mouth = stubPartnerSignals(key, day, { node: "mouth" }).shortage("food");
-        const mine = stubPartnerSignals(key, day, { node: "extraction" }).shortage("food");
-        expect(surplus).toBeLessThan(mine);
-        expect(mouth).toBeLessThan(mine);
+      for (const day of [0, 6, 19]) {
+        expect(stubPartnerSignals(key, day, { yields: { wood: 0.5 } }).shortage("widget")).toBe(
+          stubPartnerSignals(key, day).shortage("widget"),
+        );
       }
     }
   });
 
-  it("EXTRACTION country has ore/stone to sell; a SHADOW town is desperate for refined goods", () => {
-    for (const key of KEYS) {
-      const mine = stubPartnerSignals(key, 4, { node: "extraction" });
-      const port = stubPartnerSignals(key, 4, { node: "mouth" });
-      expect(mine.shortage("stone")).toBeLessThan(port.shortage("stone"));
-      expect(mine.shortage("wood")).toBeLessThan(port.shortage("wood"));
-      // Shadow: grows its own food, cannot get manufactures — the refining
-      // license, read from the other side of the road.
-      const shadow = stubPartnerSignals(key, 4, { node: "shadow" });
-      const rich = stubPartnerSignals(key, 4, { node: "surplus" });
-      expect(shadow.shortage("cloth")).toBeGreaterThan(rich.shortage("cloth"));
-      expect(shadow.shortage("food")).toBeLessThan(mine.shortage("food"));
-    }
-  });
-
-  it("the CONTINUOUS charter reading is monotone — more farmland, less hunger", () => {
+  it("the good the land is thickest in is what it spares", () => {
+    const geo: PartnerGeography = { yields: { wood: 0.5, food: 0.2, banana: 0 } };
+    expect(landShortageBase("wood", geo)).toBeLessThan(landShortageBase("banana", geo)!);
+    // monotone: more presence (relative to the same max) ⇒ less shortage.
     let prev = Infinity;
-    for (const farmland of [0, 45, 90, GEO_FARMLAND_REF, GEO_FARMLAND_REF * 3]) {
-      const s = stubPartnerSignals("city:14", 6, { farmland }).shortage("food");
+    for (const presence of [0, 0.1, 0.2, 0.35, 0.5]) {
+      const s = landShortageBase("wood", { yields: { wood: presence, block: 0.5 } })!;
       expect(s).toBeLessThanOrEqual(prev);
       prev = s;
     }
-    expect(stubPartnerSignals("city:14", 6, { farmland: 0 }).shortage("food")).toBeGreaterThan(
-      stubPartnerSignals("city:14", 6, { farmland: GEO_FARMLAND_REF * 3 }).shortage("food"),
-    );
   });
 
   it("stays a PURE function of (key, day, geography) — replays, drifts, bounded", () => {
-    const geo: PartnerGeography = { node: "extraction", farmland: 20, ore: 120 };
+    const geo: PartnerGeography = { node: "extraction", yields: { wood: 0.3, stone: 0.6 } };
     for (const g of GOODS) {
       expect(stubPartnerSignals("city:2", 7, geo).shortage(g)).toBe(
         stubPartnerSignals("city:2", 7, { ...geo }).shortage(g),
@@ -471,7 +450,7 @@ describe("stubPartnerSignals + geography — terrain biases what a stub can spar
   });
 
   it("the FORWARD SAMPLERS still read the same closed form a geo partner quotes from", () => {
-    const geo: PartnerGeography = { node: "extraction" };
+    const geo: PartnerGeography = { node: "extraction", yields: { wood: 0.3 } };
     const atDay = (d: number) => stubPartnerSignals("city:33", d, geo);
     const day = nextShortageBelow(atDay, "food", BARTER_FAMINE_MAX, 0);
     // Whatever it answers, the answer must be TRUE of the very signal the

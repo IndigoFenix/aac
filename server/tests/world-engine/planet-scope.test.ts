@@ -195,13 +195,36 @@ describe("the trade partners a founding boots with", () => {
   });
 
   it("forwards each partner's terrain verdict", () => {
-    expect(SCOPE.env.partners.map((p) => p.geo)).toEqual([
-      { node: "junction", farmland: 516, ore: 0 },
-      { node: "mouth", farmland: 451, ore: 0 },
-      { node: "anchorage", farmland: 517, ore: 0 },
+    // ⚖️ REGIONAL slice: `partnerGeographyOf` forwards `yields`, the land's
+    // per-good presence packed at founding (`planet/packing.ts landYieldsAt`)
+    // — not farmland/ore/timber — user law 2026-09-11: "all simulation
+    // should treat each good as its own thing individually"; the node is
+    // naming ONLY. Pin the taxon exactly and, for `yields`, the three
+    // heaviest goods per row (read off this same bake, not typed) plus the
+    // shape: every catalogue good has an entry.
+    const geos = SCOPE.env.partners.map((p) => p.geo);
+    expect(geos.map((g) => g!.node)).toEqual(["junction", "mouth", "anchorage"]);
+    for (const g of geos) expect(Object.keys(g!.yields!).length).toBe(15);
+
+    const top3 = (yields: Record<string, number>) =>
+      Object.entries(yields).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    expect(top3(geos[0]!.yields!)).toEqual([
+      ["wood", expect.closeTo(0.41261458259359474, 6)],
+      ["block", expect.closeTo(0.20630729129679737, 6)],
+      ["banana", expect.closeTo(0.10749127298928933, 6)],
     ]);
-    expect(partnerGeographyOf(SCOPE.cities.find((c) => c.cell === 12804)!))
-      .toEqual({ node: "junction", farmland: 516, ore: 0 });
+    expect(top3(geos[1]!.yields!)).toEqual([
+      ["wood", expect.closeTo(0.4774601464411625, 6)],
+      ["block", expect.closeTo(0.23873007322058126, 6)],
+      ["banana", expect.closeTo(0.18021106755462915, 6)],
+    ]);
+    expect(top3(geos[2]!.yields!)).toEqual([
+      ["wood", expect.closeTo(0.5084149010808463, 6)],
+      ["block", expect.closeTo(0.25420745054042315, 6)],
+      ["banana", expect.closeTo(0.1756184586542009, 6)],
+    ]);
+
+    expect(partnerGeographyOf(SCOPE.cities.find((c) => c.cell === 12804)!)).toEqual(geos[0]);
   });
 
   it("places each partner in the town's own sim frame", () => {

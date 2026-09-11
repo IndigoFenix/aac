@@ -71,7 +71,6 @@ import { dailyTravelM, transactionDayFrac, type WorldScale } from "../../scale.j
 // ⚖️ R&T ⑤ (T5): the freight registry classes a good by how it travels, so the
 // geography term never has to name one. Read-only from here, exactly as
 // trade.ts reads it — the town rung asks, it never re-derives.
-import { freightOf, VALUE_TIER } from "../../freight.js";
 // TYPE ONLY (erased at build): the node taxonomy is kernel/cells' vocabulary
 // and this module borrows the NOUN, never the module — no runtime edge.
 import type { NodeType } from "../cells/node-typing.js";
@@ -99,6 +98,17 @@ import { parseScopeId, scopeIdOf, TOWN_YARD_ID, type ScopeId } from "./scope.js"
  *  (townShortage) or the stub proxy below. */
 export interface BarterSignals {
   shortage(good: string): number;
+  /**
+   * ⚖️ THE REGION'S AVERAGE SKILL AT MAKING `good`, ≥ 1 (skill-learning-round.md,
+   * the REGIONAL slice; `skill-prior.ts`). The pricer divides a side's own
+   * unit cost by it — what parting with a unit costs a town that replaces it
+   * twice as fast is half, and what doing without costs a town that could make
+   * it itself is likewise less. Absent ⇒ 1, the novice region, byte for byte
+   * as every book priced before the slice. The SAME method on both sides of a
+   * lane, so perspective consistency holds by construction: ours is read off
+   * our live ledger, a streamed city's off its charter's closed form.
+   */
+  competence?(good: string): number;
 }
 
 /** Scarcity weight in a good's pair-worth (worth = 1 + W·(us + them)). */
@@ -332,93 +342,61 @@ export const STUB_SEASON_DAYS = 16;
  * Whatever the tier knows, it passes; whatever it doesn't, the hash covers.
  */
 export interface PartnerGeography {
-  /** The economic node its terrain makes it (kernel/cells node-typing). */
+  /**
+   * 🏷️ NAMING ONLY. The taxon its terrain makes it (kernel/cells node-typing:
+   * mouth, anchorage, extraction …) — kept so a toast or a label can call a
+   * town a port or a mining village. ⚖️ NO SIMULATION SEAT READS IT (user law,
+   * 2026-09-11: *"all simulation should treat each good as its own thing
+   * individually"*; the taxonomy "is a top-level layer"). Before that law the
+   * scarcity proxy priced a whole freight CLASS off this one word.
+   */
   node?: NodeType | null;
-  /** Charter-box FARMLAND sum, as `PlanetCity.charter.farmland` holds it. */
-  farmland?: number;
-  /** Charter-box ORE sum (`PlanetCity.charter.ore_access`). */
-  ore?: number;
+  /**
+   * ⚖️ WHAT ITS LAND YIELDS, PER GOOD — good → presence 0..1 over every good
+   * the catalogue can make (`planet/packing.ts landYieldsAt`: the catalogue's
+   * rows packed into the cell's light, water and nutrient, read through what
+   * each row makes; refined goods inherit their raw's presence over the
+   * ratio). THE ONE reading every per-good seat consumes — the scarcity proxy
+   * (`landShortageBase`) and the regional skill closed form
+   * (`skill-prior.ts`). A good with no entry is one the land cannot speak
+   * about (the reader keeps its hash); an entry of 0 is a good this land has
+   * none of. Absent ⇒ the pure-hash proxy, byte for byte as the stub shipped.
+   */
+  yields?: Readonly<Record<string, number>>;
 }
 
-/** The farmland sum at which a charter box is SURPLUS COUNTRY — node-typing's
- *  own `surplusFarmland` line, so the continuous reading and the taxon that
- *  was derived from it agree instead of drifting apart. */
-export const GEO_FARMLAND_REF = 180;
-/** The ore sum at which the ground is worth traveling for — node-typing's
- *  `extractionOre` line, same reason. */
-export const GEO_ORE_REF = 50;
-/** How loudly geography speaks over the hash where it has an opinion at all
+/** How loudly the LAND speaks over the hash where it has an opinion at all
  *  (the remainder stays the hash's per-good texture). */
 export const GEO_BASE_WEIGHT = 0.75;
 
 /**
- * The three FREIGHT classes geography has an opinion about — derived from the
- * good's own freight row, never from its name (freight.ts's law, honored one
- * rung up): the staple is the good the hauler eats, raw bulk is what barely
- * repays its own haul, refined is what a workshop's work concentrated. A good
- * in none of them (a plain durable at the staple anchor — an undeclared good)
- * gets no geographic opinion, which is the honest answer.
- */
-export type GeoGoodClass = "staple" | "rawBulk" | "refined";
-
-export function geoGoodClass(good: string): GeoGoodClass | null {
-  const f = freightOf(good);
-  if (f.transit === "selfConsuming") return "staple";
-  if (f.valueDensity >= VALUE_TIER.refined) return "refined";
-  if (f.valueDensity < VALUE_TIER.staple) return "rawBulk";
-  return null;
-}
-
-/**
- * PER-NODE SHORTAGE BASES — one row per taxon, read straight off the sentence
- * node-typing prints for it:
- *   • `surplus` "grows more here than its farmers can eat" ⇒ food to sell, and
- *     no workshop of its own ⇒ it wants refined goods.
- *   • `shadow` is surplus country that CANNOT ship its grain — food cheap,
- *     manufactures desperately wanted (that lack is the refining license).
- *   • `extraction` "yields what the lowlands lack" ⇒ raw bulk to sell; mine
- *     country does not farm, so its own food runs thin.
- *   • `mouth`/`anchorage`/`junction`/`chokepoint` are TRAFFIC nodes: everything
- *     passes over their quays, so nothing is desperate — mildest at the mouth,
- *     where both a river and a sea deliver.
- * A blank cell = no opinion for that class (the hash keeps it).
- */
-const NODE_SHORTAGE_BASES: Record<NodeType, Partial<Record<GeoGoodClass, number>>> = {
-  mouth: { staple: 0.25, rawBulk: 0.35, refined: 0.35 },
-  anchorage: { staple: 0.35, rawBulk: 0.4, refined: 0.4 },
-  chokepoint: { staple: 0.4, rawBulk: 0.45, refined: 0.45 },
-  junction: { staple: 0.35, rawBulk: 0.4, refined: 0.4 },
-  extraction: { staple: 0.7, rawBulk: 0.1, refined: 0.55 },
-  surplus: { staple: 0.15, refined: 0.6 },
-  shadow: { staple: 0.2, refined: 0.85 },
-};
-
-/**
- * ⚖️ THE GEOGRAPHY TERM — the standing shortage base a partner's TERRAIN
- * implies for one good, or null when its terrain says nothing about that good
- * (⇒ the caller keeps the hash). Pure, side-effect free, and independent of
- * the day: the season rides on top of whatever this returns.
+ * ⚖️ THE LAND TERM — the standing shortage base a partner's LAND implies for
+ * ONE GOOD, or null when the land says nothing about that good (⇒ the caller
+ * keeps the hash). Per good, never per class: the reading is `1 − presence /
+ * (the most present good)`, so the good this land is thickest in is what it
+ * can spare (base 0) and a catalogue good it has none of is what it lacks
+ * (base 1). A good outside the catalogue has no entry and no opinion; a land
+ * with no presence at all — a barren cell — has none either.
  *
- * Where both the taxon and a continuous charter reading speak, they are
- * AVERAGED — the taxon is a threshold verdict off the very sums the charter
- * carries, so the two are the same evidence at two resolutions, and averaging
- * lets a barely-surplus box read differently from a drowning-in-grain one.
+ * Pure, side-effect free, independent of the day: the season rides on top.
+ *
+ * 🚫 WHAT THIS REPLACED, so nobody re-derives it: a per-NODE table (surplus /
+ * extraction / mouth …) over three FREIGHT CLASSES, plus the charter's
+ * farmland and ore sums against node-typing's own thresholds. User law,
+ * 2026-09-11: the taxonomy is naming; "all simulation should treat each good
+ * as its own thing individually".
  */
-export function geographyShortageBase(good: string, geo: PartnerGeography): number | null {
-  const cls = geoGoodClass(good);
-  if (!cls) return null;
-  const reads: number[] = [];
-  const byNode = geo.node ? NODE_SHORTAGE_BASES[geo.node]?.[cls] : undefined;
-  if (byNode !== undefined) reads.push(byNode);
-  if (cls === "staple" && typeof geo.farmland === "number" && Number.isFinite(geo.farmland)) {
-    reads.push(clamp01(1 - Math.max(0, geo.farmland) / GEO_FARMLAND_REF));
-  }
-  if (cls === "rawBulk" && typeof geo.ore === "number" && Number.isFinite(geo.ore)) {
-    reads.push(clamp01(1 - Math.max(0, geo.ore) / GEO_ORE_REF));
-  }
-  if (!reads.length) return null;
-  return clamp01(reads.reduce((a, b) => a + b, 0) / reads.length);
+export function landShortageBase(good: string, geo: PartnerGeography): number | null {
+  const yields = geo.yields;
+  if (!yields) return null;
+  const v = yields[good];
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  let max = 0;
+  for (const x of Object.values(yields)) if (Number.isFinite(x) && x > max) max = x;
+  if (!(max > 0)) return null;
+  return clamp01(1 - Math.max(0, v) / max);
 }
+
 
 /**
  * Scarcity proxy for a partner that ISN'T fully simulated (the abstract
@@ -427,11 +405,11 @@ export function geographyShortageBase(good: string, geo: PartnerGeography): numb
  * f(partnerKey, good, day, geography), so replays and both ends of a call
  * agree, and the terms a player hears SHIFT over time even against a stub.
  *
- * The base is the partner's terrain where it has an opinion (T5 —
- * `geographyShortageBase`, blended with the hash for texture) and the bare
- * hash where it doesn't. `geo` ABSENT ⇒ the hash alone, bit for bit as it
- * shipped: a tier that knows nothing about its neighbour must not be made to
- * pretend it does.
+ * The base is the partner's LAND where it has an opinion about THIS GOOD
+ * (`landShortageBase` — per good, off the packed catalogue at its cell,
+ * blended with the hash for texture) and the bare hash where it doesn't.
+ * `geo` ABSENT ⇒ the hash alone, bit for bit as it shipped: a tier that knows
+ * nothing about its neighbour must not be made to pretend it does.
  */
 export function stubPartnerSignals(
   partnerKey: string,
@@ -442,7 +420,7 @@ export function stubPartnerSignals(
     shortage(good: string): number {
       const h = fnv(`${partnerKey}|${good}`);
       const hash = ((h >>> 8) % 1000) / 1000; // 0..1 — the partner's standing bias
-      const terrain = geo ? geographyShortageBase(good, geo) : null;
+      const terrain = geo ? landShortageBase(good, geo) : null;
       const base =
         terrain === null ? hash : clamp01(GEO_BASE_WEIGHT * terrain + (1 - GEO_BASE_WEIGHT) * hash);
       const phase = (h % STUB_SEASON_DAYS) / STUB_SEASON_DAYS;
@@ -1116,6 +1094,14 @@ export interface TownRecord {
    *  never-expanded town — F-⑤'s subject — whose shortage is the closed form
    *  and nothing else. */
   shortages: Record<string, number> | null;
+  /** ⚖️ ITS AVERAGE SKILLS AT THE FOLD (skill-learning-round.md, the REGIONAL
+   *  slice) — key → population-mean multiplier, the `shortages` idiom applied
+   *  to competence: present only for a town that HAS run, so folding a live
+   *  neighbour conserves what its people learned; absent for a never-expanded
+   *  town, whose skills are the closed form off its terrain
+   *  (`skill-prior.ts geographySkillMultipliers`). OPTIONAL and omitted when
+   *  null so a never-run record is byte-identical to the one that shipped. */
+  skills?: Record<string, number> | null;
 }
 
 /**
@@ -1172,6 +1158,11 @@ export interface CondenseTownInput {
    *  never-expanded town supplies neither. */
   shortageOf?(good: string): number;
   goods?: readonly string[];
+  /** ⚖️ ITS AVERAGE SKILLS, for a town that is EXPANDED as it folds
+   *  (`skill-prior.ts regionalSkills`, multipliers only) — the `shortageOf`
+   *  discipline for competence. Absent ⇒ what the record already said, else
+   *  nothing (the closed form answers). */
+  skills?: Record<string, number> | null;
 }
 
 /**
@@ -1192,6 +1183,9 @@ export function condenseTown(input: CondenseTownInput): TownRecord {
     shortages = {};
     for (const good of input.goods ?? []) shortages[good] = clamp01(read(good));
   }
+  // The skills ride like `shortages`, but the field is EMITTED only when a
+  // town that ran actually folded some — a never-run record stays byte-equal.
+  const skills = input.skills !== undefined ? input.skills : prev?.skills ?? null;
   return {
     key: input.key,
     stack,
@@ -1199,6 +1193,7 @@ export function condenseTown(input: CondenseTownInput): TownRecord {
     at: input.at !== undefined ? input.at : prev?.at ?? null,
     distanceM: input.distanceM !== undefined ? input.distanceM : prev?.distanceM ?? null,
     shortages,
+    ...(skills && Object.keys(skills).length ? { skills } : {}),
   };
 }
 

@@ -141,6 +141,14 @@ export const FREIGHT_SURVIVAL_MIN = 0.5;
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
+/** A side's average skill at making `good` — `BarterSignals.competence`,
+ *  floored at 1 (a multiplier below the novice is not a reading this pricer
+ *  accepts) and 1 when the books carry none. */
+const competenceOf = (s: BarterSignals, good: string): number => {
+  const m = s.competence?.(good);
+  return typeof m === "number" && Number.isFinite(m) && m > 1 ? m : 1;
+};
+
 /**
  * ⚖️ DOES THIS GOOD SURVIVE THIS ROAD? Both freight reads, each in its own
  * terms: the leg must sit inside the good's `carryReachM` (past it the haul
@@ -222,9 +230,11 @@ export interface ComplementaryRow {
    * R-1/R-2): `local − landed`, i.e. what doing without one unit costs the
    * needing side, minus what having one landed over `legM` costs it.
    *
-   *   local     = localUnitCostS(needing side's shortage)
-   *   producer  = localUnitCostS(sparing side's shortage) — their own books,
-   *               and the NAMED SEAT the regional skill slice adds to
+   *   local     = localUnitCostS(needing side's shortage) ÷ its competence
+   *   producer  = localUnitCostS(sparing side's shortage) ÷ its competence
+   *               — their own books, over their region's average skill at
+   *               the good's making (`BarterSignals.competence`, the REGIONAL
+   *               slice's seat; 1 when the books carry none)
    *   landed    = (producer + freight) / delivered
    *
    * Always > 0 on a row that is on a list: the sign IS the third membership
@@ -324,13 +334,21 @@ export function complementaryRanking(
       // minus what one unit costs landed — the producer's own books plus the
       // road, over what survives it. Non-positive ⇒ the trade destroys value
       // and the good is not on this lane, however badly it is wanted.
+      //
+      // ⚖️ …AND EACH SIDE'S COST IS ITS OWN REGION'S TO MAKE (skill-learning-
+      // round.md, the REGIONAL slice): a unit cost is DIVIDED by that side's
+      // average skill at the good's making (`BarterSignals.competence`, ≥ 1;
+      // absent = 1, the pre-slice arithmetic to the bit). The producer's
+      // books get cheaper where its people are practised, and ours get less
+      // dear to do without where we could make it ourselves — comparative
+      // advantage, from the same seat on both sides, never a term of its own.
       const advantageS = laneAdvantageS(
-        localUnitCostS(want, scale),
+        localUnitCostS(want, scale) / competenceOf(need, good),
         landedUnitCostS({
           legM,
           scale,
           freight: freightOf(good),
-          producerUnitCostS: localUnitCostS(theirs, scale),
+          producerUnitCostS: localUnitCostS(theirs, scale) / competenceOf(spare, good),
         }),
       );
       if (!(advantageS > 0)) return;

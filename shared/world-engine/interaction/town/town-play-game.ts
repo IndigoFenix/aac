@@ -214,12 +214,15 @@ function parsePartners(raw: unknown, path: string): NonNullable<TownPlayConfig["
     if ("geo" in e) {
       const g = e.geo;
       if (!g || typeof g !== "object" || Array.isArray(g)) {
-        fail(`${at}.geo`, "expected an object (allowed: node, farmland, ore)");
+        fail(`${at}.geo`, "expected an object (allowed: node, yields)");
       }
       const gr = g as Record<string, unknown>;
       for (const k of Object.keys(gr)) {
-        if (!["node", "farmland", "ore"].includes(k)) {
-          fail(`${at}.geo.${k}`, "unknown field (allowed: node, farmland, ore)");
+        // `node` is the taxon, NAMING ONLY; `yields` is the per-good land
+        // reading every sim seat consumes (user law 2026-09-11 — goods
+        // individually; `planet/packing.ts landYieldsAt`).
+        if (!["node", "yields"].includes(k)) {
+          fail(`${at}.geo.${k}`, "unknown field (allowed: node, yields)");
         }
       }
       if ("node" in gr) {
@@ -228,10 +231,20 @@ function parsePartners(raw: unknown, path: string): NonNullable<TownPlayConfig["
         }
         geo.node = gr.node as NonNullable<TownPlayConfig["partners"]>[number]["geo"]["node"];
       }
-      for (const k of ["farmland", "ore"] as const) {
-        if (!(k in gr)) continue;
-        if (typeof gr[k] !== "number" || !Number.isFinite(gr[k])) fail(`${at}.geo.${k}`, "must be a finite number");
-        geo[k] = gr[k] as number;
+      if ("yields" in gr) {
+        const y = gr.yields;
+        if (!y || typeof y !== "object" || Array.isArray(y)) {
+          fail(`${at}.geo.yields`, "expected an object (good → presence 0..1)");
+        }
+        const yields: Record<string, number> = {};
+        for (const [good, v] of Object.entries(y as Record<string, unknown>)) {
+          if (!good.length) fail(`${at}.geo.yields`, "a good key may not be empty");
+          if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
+            fail(`${at}.geo.yields.${good}`, "must be a number in 0..1");
+          }
+          yields[good] = v;
+        }
+        geo.yields = yields;
       }
     }
     // 🚨 A ROW WITHOUT A DISTANCE IS PRICED AT THE ABSTRACT `AWAY_DISTANCE_M`

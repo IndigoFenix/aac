@@ -140,11 +140,13 @@ export interface LandedCostInputs {
   /** The GOOD's transport row — never its name (this module is spec-blind). */
   freight: Freight;
   /**
-   * The producer's cost per unit at ITS OWN books — the NAMED SEAT the
-   * regional skill slice adds to (skill-learning-round.md §⑧ 9: production
-   * cost and quality enter as ONE additive term). At this rung the caller
-   * passes `localUnitCostS(theirShortage, scale)`: what parting with a unit
-   * costs the town that has it.
+   * The producer's cost per unit at ITS OWN books. At this rung the caller
+   * passes `localUnitCostS(theirShortage, scale) ÷ their competence`: what
+   * parting with a unit costs the town that has it, over that region's
+   * average skill at making it (skill-learning-round.md, the REGIONAL slice —
+   * `BarterSignals.competence`, read in complementary.ts; NOT an additive
+   * term, and NOT read here: this pricer stays body- and skill-blind, and a
+   * novice region divides by exactly 1).
    */
   producerUnitCostS: number;
   /** The hauler's load, in bulk units (default: the porter anchor). */

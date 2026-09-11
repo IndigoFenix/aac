@@ -41,6 +41,10 @@ import {
   skillMultiplier,
   type SkillCatalogue,
 } from "../../shared/world-engine/kernel/town/skills.ts";
+import {
+  regionalSkills,
+  type PooledSkillHouse,
+} from "../../shared/world-engine/kernel/town/skill-prior.ts";
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -202,6 +206,11 @@ interface SessionView {
   /** The catalogue + the dial the curve is read against (`skillEffectiveLevel`
    *  is pure over these three fields). */
   skills: SkillCatalogue;
+  /** ⚖️ THE REGIONAL slice's OTHER head count — bodies the need loop is
+   *  actually driving, read only so `regionalSkills`'s `liveHeads` matches
+   *  what the live session considers a live head (`skill-prior.ts` raises it
+   *  to at least the ledger size on its own). */
+  liveNeedBodies: Set<string>;
   /** 🪨 THE CONTAINER REGISTRY (piles-not-boxes-round.md) — read only, at each
    *  day edge, so `pileUnits` is the ENGINE's own ledger rather than a counter
    *  this harness asked the engine to keep. */
@@ -213,7 +222,10 @@ interface SessionView {
   /** ⚖️ THE INTERCITY LINE (trade-topology round) — `TownTrade` as the host
    *  holds it. Read only, at each caravan bucket edge: who the line is bound
    *  to, the road, the derived cargo and the per-visit split. */
-  town?: { stage: { trade: TradeView | null } } | null;
+  town?: {
+    stage: { trade: TradeView | null };
+    deltas: { cohorts: ReadonlyArray<{ houses: readonly PooledSkillHouse[] }> };
+  } | null;
 }
 interface TradeView {
   route: {
@@ -536,11 +548,35 @@ const skillsOf = () => {
     }
     multiplierTop[k] = Number(best.toFixed(3));
   }
+  // ⚖️ THE REGIONAL slice's OWN NUMBER (skill-learning-round.md, REGIONAL) —
+  // the population mean over every live body AND every pooled household,
+  // read through `regionalSkills` off the session exactly as the trade seat
+  // reads it (`ourBarterSignals`/`regionalSkillsOf` in quest-host.ts). Read
+  // only: never instrument the engine for this metric.
+  const pooled: PooledSkillHouse[] = [];
+  for (const row of session.town?.deltas.cohorts ?? []) for (const h of row.houses) pooled.push(h);
+  const regional = regionalSkills({
+    live: session.bodySkills,
+    liveHeads: Math.max(session.liveNeedBodies.size, session.bodySkills.size),
+    pooled,
+    curve: session,
+  });
+  const regionalRounded: Record<string, { share: number; level: number; multiplier: number }> = {};
+  for (const k of Object.keys(regional).sort()) {
+    const r = regional[k]!;
+    regionalRounded[k] = {
+      share: Number(r.share.toFixed(3)),
+      level: Number(r.level.toFixed(3)),
+      multiplier: Number(r.multiplier.toFixed(3)),
+    };
+  }
+
   return {
     bodies: perBody,
     totalPracticeS: Object.fromEntries([...total.keys()].sort().map((k) => [k, Number((total.get(k) ?? 0).toFixed(1))])),
     concentration,
     multiplierTop,
+    regional: regionalRounded,
   };
 };
 
@@ -652,6 +688,13 @@ out.push(
   `# skills top-multiplier ${
     Object.entries(metrics.skills.multiplierTop)
       .map(([k, v]) => `${k}=${v}×`)
+      .join(" ") || "(none)"
+  }`,
+);
+out.push(
+  `# skills regional ${
+    Object.entries(metrics.skills.regional)
+      .map(([k, v]) => `${k}=${v.share}/${v.level}/${v.multiplier}×`)
       .join(" ") || "(none)"
   }`,
 );

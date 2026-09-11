@@ -32,6 +32,14 @@ import { walkGoalTree } from "../../solver/walk.js";
 // seat: the observed crew banks its SKILL SUM rather than its head count, and
 // every body standing at the work practises the trade the row is.
 import { practiceSkill, skillFor, skillMultiplier } from "@shared/world-engine/kernel/town/skills.js";
+// ⚖️ THE REGIONAL slice (skill-learning-round.md §⑧ 2, closed): the clock arm
+// banks the town's ABSTRACT crew, which has no bodies to read a multiplier off
+// — so it reads the region's AVERAGE at the trade instead.
+import {
+  regionalSkillMultiplier,
+  regionalSkillsAt,
+  type RegionalSkill,
+} from "@shared/world-engine/kernel/town/skill-prior.js";
 import { projectGameLayout } from "../../solver/projector2d.js";
 import { generateHouse } from "../../place/house.js";
 import { embedPuzzle, type PuzzleEmbedding } from "../../place/embed.js";
@@ -8417,10 +8425,38 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
       }
       return ord === undefined ? 0 : (crewShares.get(ord) ?? 0);
     };
-    const clockArm = (row: { labor?: number; ord?: number }, cap: number = BUILDERS_CAP) => {
-      const crew = session.town
-        ? crewShareOf(row.ord)
-        : Math.min(cap, availableCrew(session, issuer));
+    /** ⚖️ THE REGION'S AVERAGE SKILL AT A TRADE, read once per sweep (the
+     *  REGIONAL slice; skill-learning-round.md §⑧ 2 closed). The abstract crew
+     *  is `crew` heads of the TOWN's people, so it banks at the town's mean
+     *  multiplier — exactly what the observed arm's `Σ m` is when every one of
+     *  those heads is an average townsperson. A town of novices reads 1. */
+    let regional: Record<string, RegionalSkill> | null = null;
+    const regionalM = (skill: string): number => {
+      if (!regional) {
+        // The census is taken at most once per `REGIONAL_CENSUS_PERIOD_S` of
+        // the town clock and read from the table otherwise (skill-prior.ts) —
+        // never once per frame. A fixture that carries no ledger reads novices.
+        regional = regionalSkillsAt(session, session.townClock ?? 0, () => ({
+          live: session.bodySkills ?? [],
+          liveHeads: Math.max(session.liveNeedBodies?.size ?? 0, session.bodySkills?.size ?? 0),
+          pooled: session.town?.deltas.cohorts?.flatMap((r) => r.houses) ?? [],
+          curve: session,
+        }));
+      }
+      return regionalSkillMultiplier(regional, skill);
+    };
+    const clockArm = (
+      row: { labor?: number; ord?: number },
+      cap: number = BUILDERS_CAP,
+      /** The trade this row's abstract crew practises — the caller names it
+       *  where it knows (`workSite`'s own skill); every other row is a build. */
+      skill: string = "building",
+    ) => {
+      // The crew share, at the region's mean competence — then the SAME clamp
+      // the observed arm's skill sum takes (`laborRatePerS`'s `min(cap, ·)`).
+      const crew =
+        (session.town ? crewShareOf(row.ord) : Math.min(cap, availableCrew(session, issuer))) *
+        regionalM(skill);
       // ⚖️ THE CLAMP IS THIS ROW'S OWN CAP (S3), not a global three. Under the
       // capability `cap` arrives as K from `crewCapOf`; off it, it is the same
       // `BUILDERS_CAP` / `REFINE_CREW_CAP` this call has always passed, so the
@@ -8613,7 +8649,7 @@ export function createConstructionDirector(ctx: ConstructionDirectorCtx) {
         }
       }
       if (unstaffed && present === 0) {
-        clockArm(row, cap); // schedule-banked: the abstract crew, same rate function
+        clockArm(row, cap, skill); // schedule-banked: the abstract crew, same rate function, this row's trade
         return;
       }
       // The clamp is `laborRatePerS`'s own (`Math.min(cap, crew)`), so a crowd
