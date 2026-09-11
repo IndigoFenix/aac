@@ -1976,6 +1976,14 @@ export interface MemoryState {
   staticPromptMode?: boolean;
   /** Cached rendered prompt — set on first render in static mode, cleared on compression */
   _cachedPrompt?: string;
+  /**
+   * The memory SCHEMA the cached prompt was rendered from (memorySchemaSignature
+   * in memory-system.ts). The frozen prompt is only reused while this matches:
+   * a session that opens with no student and binds one mid-way gains the
+   * Context_Reports / Context_Program fields, and a prompt frozen before that
+   * showed the model a schema with no medical record in it.
+   */
+  _cachedPromptKey?: string;
 }
 
 export interface ChatState {

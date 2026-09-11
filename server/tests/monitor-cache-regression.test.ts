@@ -64,9 +64,12 @@ describe("Monitor chat state (dual-agent-service save)", () => {
   });
 
   it("carries the frozen render (_cachedPrompt) across the per-save reset, and only that", () => {
-    const prior = { memoryState: { visible: ["/Student_Notes"], page: { x: 1 }, staticPromptMode: true, _cachedPrompt: "FROZEN" } };
+    const prior = { memoryState: { visible: ["/Student_Notes"], page: { x: 1 }, staticPromptMode: true, _cachedPrompt: "FROZEN", _cachedPromptKey: "KEY" } };
     const s = buildMonitorChatState(prior, live).memoryState as any;
     expect(s._cachedPrompt).toBe("FROZEN");
+    // The schema key rides with the render: without it prompt-kit treats the
+    // carried prompt as stale and re-renders (a cache write) every run.
+    expect(s._cachedPromptKey).toBe("KEY");
     expect(s.visible).toEqual([]);
     expect(s.page).toEqual({});
     expect(s.staticPromptMode).toBe(true);

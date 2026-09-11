@@ -27,13 +27,29 @@
  * the frozen render keeps the prefix byte-identical for the whole session
  * (the CRM/clinician chats keep it the same way, via the persisted state).
  */
-export function monitorMemoryState(prior?: unknown): { visible: string[]; page: Record<string, unknown>; staticPromptMode: true; _cachedPrompt?: string } {
-  const cached = (prior as { _cachedPrompt?: unknown } | null | undefined)?._cachedPrompt;
+export function monitorMemoryState(prior?: unknown): {
+  visible: string[];
+  page: Record<string, unknown>;
+  staticPromptMode: true;
+  _cachedPrompt?: string;
+  _cachedPromptKey?: string;
+} {
+  const p = prior as { _cachedPrompt?: unknown; _cachedPromptKey?: unknown } | null | undefined;
+  const cached = p?._cachedPrompt;
+  const key = p?._cachedPromptKey;
   return {
     visible: [],
     page: {},
     staticPromptMode: true,
-    ...(typeof cached === "string" && cached.length > 0 ? { _cachedPrompt: cached } : {}),
+    // The key travels WITH the render: prompt-kit reuses the frozen prompt only
+    // while the schema signature matches, so a carried prompt without its key
+    // would be re-rendered (and the cache re-written) on every Monitor run.
+    ...(typeof cached === "string" && cached.length > 0
+      ? {
+          _cachedPrompt: cached,
+          ...(typeof key === "string" && key.length > 0 ? { _cachedPromptKey: key } : {}),
+        }
+      : {}),
   };
 }
 

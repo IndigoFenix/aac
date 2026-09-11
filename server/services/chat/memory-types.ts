@@ -206,6 +206,8 @@ export interface MemoryState {
   staticPromptMode?: boolean;
   /** Cached rendered prompt — set on first render in static mode, cleared on compression */
   _cachedPrompt?: string;
+  /** Schema signature the cached prompt was rendered from — see @shared/schema MemoryState. */
+  _cachedPromptKey?: string;
   /** Optional: cached load state for session restoration */
   loadStateCache?: {
     loaded: string[];

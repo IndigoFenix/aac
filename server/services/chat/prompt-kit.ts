@@ -1,7 +1,7 @@
 import { MemoryState, AgentAPIEndpoint, Topic, ChatMessage } from "@shared/schema";
 import { GPTTool, JSONSchema } from "./gpt";
 import { getKeysFromSchema, InteractionSchemaProperties } from "./gpt-schema";
-import { buildMemoryTool, renderMemoryVisualization } from "./memory-system";
+import { buildMemoryTool, memorySchemaSignature, renderMemoryVisualization } from "./memory-system";
 import { memDebugSeparator, memDebug } from "./memory-debug-log";
 import { guidedSetupTool } from "../guided-setup/flow-tool.js";
 
@@ -103,13 +103,26 @@ export interface NlpSchema {
         const memoryTool = buildMemoryTool(!!ctx.memoryState?.staticPromptMode);
         tools.push(memoryTool);
 
+        // The frozen render is only good for the schema it was rendered from.
+        // A session that opens unbound (Guided Setup "New student") gains the
+        // student-scoped fields — Context_Reports, Context_Program — when the
+        // model creates the student mid-way; reusing the first-turn render
+        // past that point hid the medical record from the model for the rest
+        // of the session. A stale or missing key (rows frozen before the key
+        // existed) re-renders ONCE and re-freezes: one cache write, then reads.
+        const schemaKey = memorySchemaSignature(ctx.agent.memoryFields);
         let memoryPrompt: string;
-        if (ctx.memoryState?.staticPromptMode && ctx.memoryState._cachedPrompt) {
+        if (
+            ctx.memoryState?.staticPromptMode &&
+            ctx.memoryState._cachedPrompt &&
+            ctx.memoryState._cachedPromptKey === schemaKey
+        ) {
             // Static mode: reuse the frozen prompt from first render
             memoryPrompt = ctx.memoryState._cachedPrompt;
             console.log('[buildPromptAndTools] Using CACHED memory prompt (static mode)');
         } else {
-            // Render normally (dynamic mode, OR first render in static mode)
+            // Render normally (dynamic mode, OR first render in static mode,
+            // OR the schema changed under a frozen render)
             memoryPrompt = renderMemoryVisualization(
                 ctx.agent.memoryFields,
                 ctx.memoryValues,
@@ -118,8 +131,10 @@ export interface NlpSchema {
             );
             // In static mode, freeze this render for subsequent calls
             if (ctx.memoryState?.staticPromptMode) {
+                const reason = ctx.memoryState._cachedPrompt ? 'schema changed' : 'first render';
                 ctx.memoryState._cachedPrompt = memoryPrompt;
-                console.log('[buildPromptAndTools] FROZE memory prompt for static mode');
+                ctx.memoryState._cachedPromptKey = schemaKey;
+                console.log(`[buildPromptAndTools] FROZE memory prompt for static mode (${reason})`);
             }
         }
         startPrompt += memoryPrompt;

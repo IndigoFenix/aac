@@ -678,6 +678,43 @@ function getMemoryToolInstructions(staticMode = false): string {
  * buildMemoryTool(agent)
  * ------------------------------ */
 
+/**
+ * A deterministic fingerprint of the memory SCHEMA — every field id, type and
+ * title, recursively — and nothing about the data in it.
+ *
+ * Static prompt mode freezes the rendered memory section on first render so
+ * the system prompt stays byte-identical across turns (prompt-cache reads
+ * instead of writes). The frozen text is keyed by THIS, because the schema is
+ * not fixed for the life of a session: `buildMemoryFields` adds
+ * Context_Reports / Context_Program only once the session has a student, and
+ * the Guided Setup kickoff deliberately opens with none. A prompt frozen on
+ * that first turn showed the model a schema with no medical record in it for
+ * every later turn — it told the user to type the diagnosis into the panel
+ * because, as far as it could see, there was nowhere else to put it.
+ *
+ * Titles are included because that is where a permission lands
+ * ("Medical Record (read-only)"); descriptions are NOT, so wording that
+ * mentions data (counts, names) cannot bust the cache every turn.
+ */
+export function memorySchemaSignature(memoryFields: AgentMemoryField[] | undefined): string {
+  const parts: string[] = [];
+  const walk = (f: AgentMemoryField | undefined, prefix: string) => {
+    if (!f) return;
+    const anyF = f as any;
+    parts.push(`${prefix}${f.id}:${f.type}:${anyF.title ?? ''}`);
+    if (anyF.properties && typeof anyF.properties === 'object') {
+      for (const key of Object.keys(anyF.properties).sort()) {
+        walk(anyF.properties[key], `${prefix}${f.id}/`);
+      }
+    }
+    if (anyF.items && typeof anyF.items === 'object') {
+      walk(anyF.items, `${prefix}${f.id}[]/`);
+    }
+  };
+  for (const f of memoryFields ?? []) walk(f, '/');
+  return parts.join('|');
+}
+
 export function buildMemoryTool(staticMode = false): GPTFunctionTool {
 
   // In static mode, "hide" is not exposed — hiding happens only via pruneMessages closePaths.
