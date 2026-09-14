@@ -36,7 +36,6 @@ export interface ClassroomContext {
     name: string;
     age?: string;
     gender?: string;
-    diagnosis?: string;
     notes?: string;
     isActive?: boolean;
   }>;
@@ -48,7 +47,6 @@ export interface BaseStudentContext {
   language?: string;
   studentAge?: string;
   studentGender?: string;
-  studentDiagnosis?: string;
   aiName?: string;
   knownContacts?: KnownContact[];
   classroom?: ClassroomContext;
@@ -120,14 +118,13 @@ export function genderedAddressDirective(name: string, gender?: string, language
   return `<grammatical_gender>\n${lines.join("\n")}\n</grammatical_gender>`;
 }
 
-/** "a 12 year old girl with X" / "a user" — student descriptor. */
+/** "a 12 year old girl" / "a user" — student descriptor. No clinical label:
+ *  reports reach a session only as the report digest (report-digest.ts). */
 export function studentDescriptor(ctx: BaseStudentContext): string {
   const g = genderWord(ctx.studentGender, ctx.studentAge);
-  const ageStr = ctx.studentAge
+  return ctx.studentAge
     ? (g ? `a ${ctx.studentAge} year old ${g}` : `a ${ctx.studentAge} year old`)
     : (g ? `a ${g}` : "a user");
-  const diag = ctx.studentDiagnosis ? ` with ${ctx.studentDiagnosis}` : "";
-  return `${ageStr}${diag}`;
 }
 
 /** Wrap a single caretaker-authored value (contact name, relationship, free-text
@@ -171,10 +168,9 @@ The active user can change — a different face matches in [PEOPLE PRESENT], a d
 ${classroom.roster.map(r => {
   const g = genderWord(r.gender, r.age);
   const rAge = r.age ? (g ? `${r.age} year old ${g}` : `${r.age} year old`) : (g || "");
-  const rDiag = r.diagnosis ? ` with ${wrapUntrusted(r.diagnosis)}` : "";
   const rNotes = r.notes ? `. Notes: ${wrapUntrusted(r.notes)}` : "";
   const active = r.isActive ? "  ← currently active" : "";
-  return `- [${wrapUntrusted(r.name)}]${rAge ? `, ${rAge}` : ""}${rDiag}${rNotes}${active}`;
+  return `- [${wrapUntrusted(r.name)}]${rAge ? `, ${rAge}` : ""}${rNotes}${active}`;
 }).join("\n")}
 </classroom_roster>
 </classroom>`;

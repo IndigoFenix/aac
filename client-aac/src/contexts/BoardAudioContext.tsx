@@ -1,7 +1,7 @@
 // client-aac/src/contexts/BoardAudioContext.tsx
 //
 // Shared controller for the board's YELLOW highlight + spoken readout, used by
-// two features:
+// three features:
 //
 //   1. Hold-to-highlight (HoldHighlightOverlay): when a caretaker presses and
 //      holds a button (eyegaze mode), the button is highlighted instead of
@@ -10,6 +10,13 @@
 //   2. Audio scan (the ear button next to the FaceMirror): highlights every
 //      button on the board one at a time, reading each aloud. Pressing the ear
 //      again, or pressing any button, stops the readout.
+//
+//   3. A FACILITATED press from a clinician on a video call (`readout`, driven
+//      by CallVideoOverlay's two facilitator bridges): one momentary step of
+//      the scan, aimed at the single button the clinician pressed. A clinician
+//      offering the child a word is doing what a caretaker in the room does by
+//      holding it — NOT speaking as the child — so it lands here rather than in
+//      the press pipeline, and the AI never hears it as the student's turn.
 //
 // Both funnel through one `highlightEl` so a single overlay draws the highlight,
 // and one `speak` (browser speechSynthesis) so they never talk over each other.
@@ -52,6 +59,18 @@ interface BoardAudioContextValue {
   highlightEl: HTMLElement | null;
   /** Highlight a button; when speak=true, also voice its sentence via client TTS. */
   highlight: (el: HTMLElement | null, speak?: boolean) => void;
+  /**
+   * MOMENTARY readout of ONE button — the audio scan's single step, on demand.
+   * Stops any running scan, lights the button, reads it aloud through the same
+   * `lastSpoken` announcement (so the AI tags it [OWN_SPEECH] and does not
+   * answer it), and drops the highlight when the utterance ends — unless
+   * something else has claimed the highlight in the meantime.
+   *
+   * `text` is a FALLBACK, used only when the element carries no speech text of
+   * its own: the device's own `data-speech` is the authority on what a button
+   * says in the child's language.
+   */
+  readout: (el: HTMLElement, text?: string) => Promise<void>;
   /** True while the audio scan is stepping through the board. */
   scanning: boolean;
   /** Start the scan if idle, stop it if running (the ear button). */
@@ -69,6 +88,7 @@ const noop = () => {};
 const BoardAudioContext = createContext<BoardAudioContextValue>({
   highlightEl: null,
   highlight: noop,
+  readout: () => Promise.resolve(),
   scanning: false,
   toggleScan: noop,
   stopScan: noop,
@@ -172,9 +192,11 @@ export function BoardAudioProvider({
   const voiceRef = useRef({ language, voiceType });
   voiceRef.current = { language, voiceType };
 
-  const speakEl = useCallback(
-    (el: HTMLElement): Promise<void> => {
-      const text = speechTextOf(el);
+  /** Voice one sentence as a READOUT — the device's own voice, announced to the
+   *  AI before a syllable of it reaches the mic. Every readout path goes
+   *  through here; there is no second way to speak from this provider. */
+  const speakSentence = useCallback(
+    (text: string): Promise<void> => {
       if (!text) return Promise.resolve();
       const { language: lang, voiceType: vt } = voiceRef.current;
       // Announce the sentence as it starts so the AI can tag it [OWN_SPEECH] to
@@ -185,6 +207,11 @@ export function BoardAudioProvider({
       return speak(text, lang, vt as any);
     },
     [speak],
+  );
+
+  const speakEl = useCallback(
+    (el: HTMLElement): Promise<void> => speakSentence(speechTextOf(el)),
+    [speakSentence],
   );
 
   const highlight = useCallback(
@@ -217,6 +244,27 @@ export function BoardAudioProvider({
     setScanning(false);
     setHighlightEl(null);
   }, [cancel]);
+
+  /**
+   * ONE STEP OF THE SCAN, ON DEMAND — see the `readout` doc on the context.
+   *
+   * The scan is stopped first for the same reason a button press stops it: two
+   * voices reading the board at once is noise, and the scan would move the
+   * highlight off this button mid-sentence.
+   *
+   * The highlight is cleared only if it is STILL this element. A hold-commit or
+   * a scan that started while the utterance ran owns the highlight by then, and
+   * clearing it blindly would blank a box the child is being shown.
+   */
+  const readout = useCallback(
+    async (el: HTMLElement, text?: string): Promise<void> => {
+      stopScan();
+      setHighlightEl(el);
+      await speakSentence(speechTextOf(el) || (text ?? "").trim());
+      setHighlightEl((cur) => (cur === el ? null : cur));
+    },
+    [stopScan, speakSentence],
+  );
 
   const startScan = useCallback(async () => {
     const root = document.querySelector<HTMLElement>("[data-scan-root]");
@@ -322,11 +370,11 @@ export function BoardAudioProvider({
   );
 
   // Memoized so the busy/config props — which change on every agent turn — can
-  // never re-render the whole subtree under this provider. Only the six values
+  // never re-render the whole subtree under this provider. Only the seven values
   // consumers actually read move it.
   const value = useMemo(
-    () => ({ highlightEl, highlight, scanning, toggleScan, stopScan, lastSpoken }),
-    [highlightEl, highlight, scanning, toggleScan, stopScan, lastSpoken],
+    () => ({ highlightEl, highlight, readout, scanning, toggleScan, stopScan, lastSpoken }),
+    [highlightEl, highlight, readout, scanning, toggleScan, stopScan, lastSpoken],
   );
 
   return (

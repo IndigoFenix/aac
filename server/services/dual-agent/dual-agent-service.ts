@@ -32,6 +32,7 @@ import {
   buildInteractiveAgentPrompt,
   composeAacPersona,
 } from "../memory-schema/aac-memory-schema";
+import { digestEntries } from "../aac/report-digest";
 import { ttsFacade, isClientSideTtsVoice, sanitizeElevenLabsApiKey, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
@@ -48,7 +49,6 @@ import { buildBoardKeys } from "@shared/board-keys";
 import { HOME_BOARD_KEY } from "./default-home-board";
 import { flowCost } from "./agent-flow-logger";
 import { buildMonitorChatState } from "./monitor-chat-state";
-import { loadDiagnosisForPrompt, loadDiagnosesForPrompt } from "./diagnosis-for-prompt";
 import type { DisclosureContext } from "../processorDisclosure";
 
 /**
@@ -619,15 +619,6 @@ export class DualAgentService {
       } catch { return []; }
     })();
 
-    // Diagnosis for the system prompt. Goes through the gated loader: it
-    // honours `allowReadReports`, reads only FINAL records, and writes the
-    // `view` audit row. Never throws.
-    const diagnosisPromise = loadDiagnosisForPrompt({
-      studentId,
-      sessionId: newSessionId,
-      userId,
-    });
-
     // Classroom context when this session runs on a shared classroom device.
     // The roster (with short per-student entries) is injected into the system
     // prompt so the AI can reframe when the active student changes. Skipped
@@ -638,13 +629,6 @@ export class DualAgentService {
         const classroom = await classroomRepository.getClassroomById(classroomId);
         if (classroom && classroom.isActive) {
           const rosterRows = await classroomRepository.getStudentsInClassroom(classroomId);
-          // Batch-fetch primary diagnosis for the whole roster. Every child on
-          // a shared device is judged by their OWN allowReadReports setting,
-          // and each read that lands in the prompt is audited separately.
-          const rosterIds = rosterRows.map(r => r.student.id);
-          const diagByStudent = await loadDiagnosesForPrompt(
-            rosterIds.map(id => ({ studentId: id, sessionId: newSessionId, userId })),
-          );
           return {
             name: classroom.name,
             grade: classroom.grade || undefined,
@@ -654,7 +638,6 @@ export class DualAgentService {
               name: student.firstName || student.name?.split(' ')[0] || student.name || '?',
               age: computeAge(student.birthDate),
               gender: student.gender || undefined,
-              diagnosis: diagByStudent.get(student.id),
               notes: enrollment.notes || undefined,
               isActive: student.id === studentId,
             })),
@@ -714,7 +697,6 @@ export class DualAgentService {
     // Collect the prefetches (already in flight during the LLM call above).
     const cachedContacts = await contactsPromise;
     const cachedSymbols = await symbolsPromise;
-    const cachedDiagnosis = await diagnosisPromise;
     const classroomContext = await classroomPromise;
     const availableBoards = await boardsPromise;
     const photoLibrary = await photoLibraryPromise;
@@ -730,6 +712,7 @@ export class DualAgentService {
       const rawPersona = composeAacPersona({
         custom: student.aacSettings?.chatAgentPrompt,
         auto: student.aacSettings?.autoAacPrompt,
+        reports: digestEntries(student.aacSettings),
       });
       const sections = initResult.enhancedSections;
       const persona = sections?.persona || rawPersona;
@@ -751,7 +734,6 @@ export class DualAgentService {
         muteState,
         studentAge: computeAge(student.birthDate),
         studentGender: student.gender || undefined,
-        studentDiagnosis: cachedDiagnosis || undefined,
         aiName: student.aacSettings?.aiName || undefined,
         knownContacts: cachedContacts.length > 0 ? cachedContacts : undefined,
         availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
@@ -832,7 +814,6 @@ export class DualAgentService {
       cachedSymbols,
       photoLibrary,
       availableBoards,
-      cachedDiagnosis,
       memoryContext: initResult.initialContext,
       enhancedSections: initResult.enhancedSections,
       privacyOptions: monitorAgent.getPrivacyOptions(),
@@ -1040,6 +1021,7 @@ export class DualAgentService {
         const rawPersona = composeAacPersona({
           custom: student.aacSettings?.chatAgentPrompt,
           auto: student.aacSettings?.autoAacPrompt,
+          reports: digestEntries(student.aacSettings),
         });
         const sections = state.enhancedSections;
         const personaPrompt = sections?.persona || rawPersona;
@@ -1058,16 +1040,6 @@ export class DualAgentService {
           const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(state.studentId);
           state.cachedSymbols = symbols.map(s => ({ id: s.id, key: s.key, description: s.description }));
         } catch { state.cachedSymbols = []; }
-
-        // Fetch primary diagnosis through the gated loader (privacy switch +
-        // final-only + audit). The student row is already in hand, so its
-        // allowReadReports is passed rather than re-read.
-        state.cachedDiagnosis = await loadDiagnosisForPrompt({
-          studentId: state.studentId,
-          allowReadReports: student.aacSettings?.allowReadReports,
-          sessionId,
-          userId: state.userId,
-        });
 
         // Load auto-selectable boards (student-scoped — see createNewSession)
         try {
@@ -1092,7 +1064,6 @@ export class DualAgentService {
           muteState: state.muteState,
           studentAge: computeAge(student.birthDate),
           studentGender: student.gender || undefined,
-          studentDiagnosis: state.cachedDiagnosis || undefined,
           aiName: student.aacSettings?.aiName || undefined,
           knownContacts: state.cachedContacts,
           availableBoards: state.availableBoards,
@@ -1409,6 +1380,7 @@ export class DualAgentService {
   ): Promise<void> {
     // Mark the actual processing start time for throttle tracking
     state.lastMonitorActivity = Date.now();
+    const roundStartedAt = state.lastMonitorActivity;
 
     // Timeout guard: abort if monitor takes too long
     const timeoutController = new AbortController();
@@ -1604,6 +1576,17 @@ export class DualAgentService {
         // The injection is the Monitor's digest of the student's memory — size only.
         console.log(`[DualAgentService] Injecting context (${response.contextInjection.length} chars)`);
         state.onContextInjection?.(response.contextInjection);
+      }
+
+      // Let the coordinator reconcile memory the Monitor may have changed this
+      // round (VerbalAbility). Isolated: a failure here must not lose the
+      // round's log/board handling below.
+      if (state.onMonitorRoundComplete) {
+        try {
+          await state.onMonitorRoundComplete(roundStartedAt);
+        } catch (err) {
+          console.warn("[DualAgentService] onMonitorRoundComplete failed:", err instanceof Error ? err.message : err);
+        }
       }
 
       // Handle generated board from monitor

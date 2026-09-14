@@ -50,13 +50,32 @@ describe("Speaker <apps> catalogue — live native audio (the default)", () => {
     expect(prompt).toContain('open_app("spotify", "<what music to play>")');
   });
 
-  test("refuses rather than substituting when nothing fits", () => {
+  test("joins the activity rather than substituting when nothing fits", () => {
     // The other half of the report: asked for something impossible, it opened
     // whatever was nearest by name. The rule needs to name the cost to the
     // student, not just forbid the act.
     const prompt = buildSpeakerPrompt({ ...live, enabledApps: apps });
     expect(prompt).toContain("NOTHING FITS?");
     expect(prompt).toContain("Never open the nearest-sounding app instead");
+  });
+
+  test("never answers a non-app activity with 'I don't have an app for that'", () => {
+    // 2026-09-14: the rule used to read "Say you can't, then talk about the
+    // thing itself" — and the Speaker said exactly that, presenting itself
+    // as an app launcher first. Nobody asked for an app.
+    const prompt = buildSpeakerPrompt({ ...live, enabledApps: apps });
+    const block = prompt.slice(prompt.indexOf("<apps>"), prompt.indexOf("</apps>"));
+    expect(block).not.toContain("Say you can't");
+    expect(block).toContain("Never say you have no app for it");
+    expect(block).toContain("Apps are ONE way to do a FEW things");
+  });
+
+  test("'play' is an invitation to offer choices, not a pick", () => {
+    // 2026-09-14: "I want to play" opened whichever game came first.
+    const prompt = buildSpeakerPrompt({ ...live, enabledApps: apps });
+    const block = prompt.slice(prompt.indexOf("<apps>"), prompt.indexOf("</apps>"));
+    expect(block).toContain(`"PLAY", "A GAME", "SOMETHING FUN" IS NOT A CHOICE`);
+    expect(block).toContain("Never pick for them");
   });
 
   test("states the unprompted-open bans it kept breaking", () => {

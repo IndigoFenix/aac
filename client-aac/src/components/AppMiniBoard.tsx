@@ -73,7 +73,14 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
             button={button}
             onClick={() => handleClick(button)}
             borderClassName={highlightButtonId && button.id === highlightButtonId ? "ring-4 ring-sky-400 border-gray-200" : "border-gray-200"}
-            extraButtonProps={{ "data-mirror-id": button.id }}
+            // `data-speech` is what a READOUT says — hold-to-highlight, the
+            // audio scan, and a clinician's facilitated press from the call
+            // mirror all read it off the element, and the context sidebar is
+            // one of the surfaces that mirror lets them press.
+            extraButtonProps={{
+              "data-mirror-id": button.id,
+              "data-speech": button.spokenText || button.label,
+            }}
             getFaceImage={getFaceImage ?? undefined}
             iconFontSize={ICON_FONT}
             textFontSize={TEXT_FONT}

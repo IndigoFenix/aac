@@ -106,6 +106,7 @@ export const PLAN_CALLS: ReadonlyArray<PlanCallSpec> = [
       { tag: "safety_notes", key: "safetyNotes" },
       { tag: "observer_instructions", key: "observerInstructions" },
       { tag: "board_manager_guidance", key: "boardManagerGuidance" },
+      { tag: "verbal_ability", key: "verbalAbility" },
     ],
     maxTokens: 2048,
   },
@@ -149,7 +150,7 @@ export const PLAN_CALLS: ReadonlyArray<PlanCallSpec> = [
 export const GROUP_SECTION_KEYS: Record<PlanGroupKey, ReadonlyArray<keyof EnhancedPromptSections>> = {
   identity: [
     "persona", "gestureOverrides", "safetyNotes", "observerInstructions",
-    "boardManagerGuidance", "sentenceInterpretationExamples", "boardManagerExamples",
+    "boardManagerGuidance", "verbalAbility", "sentenceInterpretationExamples", "boardManagerExamples",
   ],
   situations: ["speakerInteractExamples", "speakerAssistExamples"],
   goals: ["sessionGoals", "conversationSeeds"],
@@ -160,7 +161,7 @@ export const GROUP_SECTION_KEYS: Record<PlanGroupKey, ReadonlyArray<keyof Enhanc
  * invalidate previously-cached sections (they were generated under the old
  * spec). Folded into every group hash.
  */
-export const PLAN_PROMPT_REVISION = 4;
+export const PLAN_PROMPT_REVISION = 7;
 
 // ---------------------------------------------------------------------------
 // Age / child determination
@@ -219,6 +220,13 @@ export interface PlanContext {
   isChild: boolean;
   customRules: string[];
   autoNotes: string[];
+  /**
+   * `aac_settings.report_digest.entries` - operational facts distilled from
+   * the student's clinical reports by report-digest.ts. The ONLY report-derived
+   * text on this path (no agent reads a report). Optional so older fixtures
+   * still type-check; absent = [].
+   */
+  reportNotes?: string[];
   interestList: string[];
   languageLevel: LanguageLevel;
   singleGlyphButtons: boolean;
@@ -324,6 +332,7 @@ export function identityHash(ctx: PlanContext): string {
     isChild: ctx.isChild,
     customRules: ctx.customRules,
     autoNotes: ctx.autoNotes,
+    reportNotes: ctx.reportNotes ?? [],
     language: ctx.language,
     languageLevel: ctx.languageLevel,
     singleGlyphButtons: ctx.singleGlyphButtons,
@@ -522,7 +531,8 @@ function userPromptBlock(
   includeDeferenceRung: boolean,
 ): string {
   const { customRules, autoNotes } = ctx;
-  const personaIsDefault = customRules.length === 0 && autoNotes.length === 0;
+  const reportNotes = ctx.reportNotes ?? [];
+  const personaIsDefault = customRules.length === 0 && autoNotes.length === 0 && reportNotes.length === 0;
   if (personaIsDefault) {
     return `## Clinician-Written Persona Prompt
 NO clinician-written prompt is on file for this user. Build the persona from student data alone, applying your own judgment for a warm, age-appropriate helper.`;
@@ -551,6 +561,15 @@ ${asBullets(autoNotes)}
 ${untrustedClose}`
     : "";
 
+  const reportBlock = reportNotes.length > 0
+    ? `### From the care team's reports (REPORT DIGEST - a list of operational facts)
+Each bullet was distilled by the system from the student's clinical reports into a standing rule. "Speak:" binds what the SPEAKER says and suggests; "Board:" binds which options the BOARD offers or withholds; "Both:" binds both. They carry NO diagnosis and must never be spoken aloud or echoed as facts about the student's health.
+
+${untrustedOpen}
+${asBullets(reportNotes)}
+${untrustedClose}`
+    : "";
+
   const priorityLadder = includeDeferenceRung
     ? `Priority ladder — when two of these conflict, the higher one wins:
   1. Caretaker-requested behaviors (CUSTOM prompt).
@@ -560,7 +579,7 @@ ${untrustedClose}`
     : `The custom (caretaker-requested) behaviors take priority over the auto (AI-generated) background where they conflict.`;
 
   return `## Clinician-Written Persona Prompt
-Below are this student's two prompt fields, each a LIST of entries. Your job is to take their intent, restructure it into the output sections, and weave in the student data.
+Below are this student's prompt fields, each a LIST of entries. Your job is to take their intent, restructure it into the output sections, and weave in the student data.
 
 ${priorityLadder}
 
@@ -584,7 +603,9 @@ Note removed categories under safety_notes WITHOUT quoting the removed text.
 
 ${customBlock}
 
-${autoBlock}`;
+${autoBlock}
+
+${reportBlock}`;
 }
 
 /** COARSE time block — deliberately no exact clock time, so cached output
@@ -744,6 +765,15 @@ A session_goals bullet is shaped: "[Likely situation] → [what the AI should do
 
 Skip a bullet if no signal supports it. Be specific. If NOTHING in the data suggests anything actionable, leave the section body empty.
 ${closeTag("session_goals")}`;
+
+    case "verbal_ability":
+      return `${openTag("verbal_ability")}
+[ONE token on one line, nothing else: none | vocalizations | single_words | fluent | unspecified]
+The speech the user can PRODUCE, read from the Student Data lines, the communication profile, the care-team report notes and the caretaker prompts:
+- none - no spoken words. vocalizations - sounds or laughter, no words. single_words - one or two words at most. fluent - sentences.
+- A "Verbal ability" line in Student Data is already decided - repeat it.
+- Do NOT infer it from age, diagnosis words, or how the user seems. If no source states it, write unspecified.
+${closeTag("verbal_ability")}`;
 
     case "gesture_overrides":
       return `${openTag("gesture_overrides")}

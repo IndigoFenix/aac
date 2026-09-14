@@ -158,7 +158,7 @@ Turn ordinary video into glyph-captioned video the student can follow.
 - Live video/audio calls between a clinician or family member and the student's AAC.
 - Multi-party call sessions with participants and fan-out; TURN credential issuing for NAT traversal.
 - **Mirrored board view** — the caller sees the student's live AAC board.
-- **Facilitator control** — with `allowFacilitatorControl` enabled per student, a clinician on the call may press buttons on the student's board for them (guided communication). Off by default; presses are ignored otherwise.
+- **Facilitator control** — with `allowFacilitatorControl` enabled per student, a clinician on the call may press a button on the mirrored board and it will **light up and read itself aloud** on the student's device (guided communication): an offer, the remote twin of a caretaker holding a button in the room. It is not a press — the student's own voice does not say it and the AI does not answer it as their turn. Off by default; presses are refused otherwise.
 - **Incoming call popup** and auto-answer handling on the AAC side.
 - **Clinician STT** on the call audio.
 - **Call-embedded games** — attach a shared game or quest surface to a live call so both sides play together.

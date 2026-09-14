@@ -31,7 +31,7 @@ import { createActiveSpeakerDetector } from "@shared/call/active-speaker";
 import { DEFAULT_SOCIAL_GAME } from "@shared/social-world/default-game";
 import { useAuth } from "@/hooks/useAuth";
 import { useInstitute } from "@/hooks/useInstitute";
-import { useLanguage } from "@/contexts/LanguageContext";
+import { useLanguage, type LanguageCode } from "@/contexts/LanguageContext";
 import { fetchIceServers, type CallParticipantInfo, type InviteSelection } from "./api";
 import { streamMicPcm } from "./micPcm";
 import CallAudioSinks from "@shared/call/CallAudioSinks";
@@ -94,6 +94,13 @@ interface CallContextValue {
   /** Live STT transcript of the clinician's OWN speech (server recognition) —
    *  a self-caption that also shows whether the recognizer is hearing them. */
   selfTranscript: string;
+  /** Language the clinician's OWN speech is being recognized in for this call.
+   *  Defaults to the UI language and resets to it at the start of each call;
+   *  the clinician can switch it mid-call (they may be speaking a different
+   *  language than their UI is set to). */
+  sttLanguage: LanguageCode;
+  /** Switch the spoken-language recognition mid-call. */
+  setSttLanguage: (code: LanguageCode) => void;
   /** The clinician's most recent FINAL utterance, for the in-game speech bubble
    *  over their avatar. `at` changes per utterance (re-passing it is a no-op). */
   lastSelfSpeech: { text: string; at: number } | null;
@@ -781,15 +788,36 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // echo is REMOVED from the signal before recognition rather than guessed at
   // afterwards, and no guard is needed.
   const { language } = useLanguage();
+  // Spoken-language choice for the clinician's OWN speech recognition, distinct
+  // from the UI language: a clinician whose UI is in English may be speaking
+  // Hebrew to the student, so recognizing in `language` would mistranscribe
+  // (or silently drop) everything they say. `sttLanguage` starts at the UI
+  // language (the common case: same language) and can be switched mid-call
+  // from the call controls (see CallView's language dropdown); it resets to
+  // the UI default each time a new call goes active, so a switch never leaks
+  // into the next call.
+  const [sttLanguage, setSttLanguage] = useState<LanguageCode>(language);
+  const wasActiveRef = useRef(false);
+  useEffect(() => {
+    const isActiveNow = callState === "active";
+    if (isActiveNow && !wasActiveRef.current) {
+      setSttLanguage(language);
+    }
+    wasActiveRef.current = isActiveNow;
+  }, [callState, language]);
+  // Read via a ref inside the chunk callback rather than as an effect dep, so
+  // switching the language mid-call does NOT tear down and restart
+  // streamMicPcm (which would drop audio mid-utterance for no reason — only
+  // the recognizer on the SERVER needs to know the language changed, and it
+  // finds out from the `lang` on the next chunk).
+  const sttLanguageRef = useRef(sttLanguage);
+  sttLanguageRef.current = sttLanguage;
   useEffect(() => {
     if (callState !== "active" || !audioEnabled || !localStream) return;
-    // NOTE: `language` is still the clinician's UI language, which is not
-    // necessarily the language they SPEAK. Replaced by an explicit
-    // per-participant spoken language in C1 — see the rework design §D6.
     return streamMicPcm(localStream, (chunk, sampleRate) => {
-      clientRef.current?.sendAudioChunk(chunk, sampleRate, language);
+      clientRef.current?.sendAudioChunk(chunk, sampleRate, sttLanguageRef.current);
     });
-  }, [callState, audioEnabled, localStream, language]);
+  }, [callState, audioEnabled, localStream]);
 
   const value: CallContextValue = useMemo(() => ({
     callState,
@@ -810,6 +838,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
     addressedBy,
     selfTranscript,
     lastSelfSpeech,
+    sttLanguage,
+    setSttLanguage,
     game,
     startGame,
     stopGame,
@@ -845,7 +875,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     toggleVideo,
   }), [
     callState, incoming, selfPersonId, localStream, remoteStreams, remoteMedia, outputMuted,
-    error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech,
+    error, activeContactName, audioEnabled, videoEnabled, participants, addressee, setAddressee, addressedBy, selfTranscript, lastSelfSpeech, sttLanguage,
     game, startGame, stopGame, sendWorld, sendNpc, publishPresence, getAudibleIds, peerGains, activeSpeakerId,
     mirroredBoard, mirroredDwell, mirroredSelection, sendData, sendBuilderPress, facilitatorAck, indicateButton, screenStreams, screenRequested, requestScreenShare,
     startCallWithContact, startCallToStudent, startCallWithPeople, invitePeopleIntoCall, accept, decline, cancel, hangUp, toggleAudio, toggleVideo,

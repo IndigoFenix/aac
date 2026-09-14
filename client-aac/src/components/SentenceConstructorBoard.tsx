@@ -13,7 +13,7 @@
 //
 // What stays here is orchestration, all of it AAC-only: engine surface
 // requests, the AI strips, Word Finder / guessing, the call mirror
-// (`onMirror` / `remoteRef` / `data-mirror-id`), the recency memory, and the
+// (`onMirror` / `data-mirror-id` / `data-speech`), the recency memory, and the
 // glyph state itself.
 //
 // Eyegaze constraints baked in:
@@ -22,7 +22,7 @@
 //   - Button-sized targets only (no chips smaller than a button)
 //   - "More" lives in fixed positions
 
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { GlyphCompositor } from "@shared/glyph-compositor.tsx";
 import { renderComposedSentence, studentGender } from "@shared/aac/builder-speech";
@@ -85,7 +85,6 @@ import {
   serializeBuilderMirror,
   type BuilderMirrorCell,
   type BuilderMirrorSnapshot,
-  type BuilderTarget,
 } from "@shared/call/builder-mirror";
 import type { BuilderRecency, BuilderSurface, BuilderWord } from "@shared/games-bridge";
 // THE SHARED BUILDER CHROME — one owner for the layout and the leaf buttons,
@@ -381,16 +380,6 @@ export interface SentenceConstructorBoardProps {
    * moment the student closes it.
    */
   onMirror?: (snapshot: BuilderMirrorSnapshot | null) => void;
-  /** Imperative handle so a clinician's facilitated press can drive this board
-   *  through the student's own handlers (consent-gated by the caller). */
-  remoteRef?: Ref<BuilderRemote>;
-}
-
-/** What a facilitated (clinician-driven) press can do to this board. */
-export interface BuilderRemote {
-  /** True when the press landed on a live target; false when it did not (the
-   *  surface moved on). The caller turns that into the clinician's ack. */
-  press: (target: BuilderTarget) => boolean;
 }
 
 export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
@@ -1339,9 +1328,14 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // The builder opens as a full-screen overlay OVER the communication board, so
   // a mirror that only knew about boards kept streaming the screen the student
   // had just left — the clinician watched a grid nobody was looking at, with
-  // nothing to say so. `onMirror` publishes what is actually visible here;
-  // `remoteRef` routes a facilitated press into the very handler the student's
-  // own finger takes, so there is no second composition path to drift.
+  // nothing to say so. `onMirror` publishes what is actually visible here.
+  //
+  // The clinician does NOT drive this board. A facilitated press makes the cell
+  // light up and read itself aloud on the child's device (the audio scan's one
+  // step — CallBuilderFacilitatorBridge) and stops there: the sentence being
+  // composed stays the child's, so there is no second composition path at all.
+  // `data-mirror-id` is what the readout resolves; `data-speech` is what it
+  // says.
   // ───────────────────────────────────────────────────────────────────────────
 
   /** The label printed under a registry button (the non-hook half of `useItemLabel`). */
@@ -1479,78 +1473,6 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
   // published snapshot on the way out — a stale sentence strip beside the
   // communication board is exactly the kind of lie this whole thing removes.
   useEffect(() => () => { onMirror?.(null); }, [onMirror]);
-
-  /** Drive this board from the clinician's mirror. Every branch lands on the
-   *  handler a local press would have called. */
-  useImperativeHandle(props.remoteRef, () => ({
-    /** Returns whether the press actually landed — a target whose surface is
-     *  not on screen (a word from a page that has since changed, a Word Finder
-     *  button after the child left guessing) must be reported as undelivered,
-     *  not silently swallowed. */
-    press(target: BuilderTarget): boolean {
-      switch (target.kind) {
-        case "word": {
-          if (target.key.startsWith("face:")) { handlePersonPress(target.key.slice(5)); return true; }
-          const item = getVocabularyItem(target.key);
-          if (!item) return false;
-          handleGridPress(item);
-          return true;
-        }
-        case "engineWord": {
-          const word =
-            engineGridWords.find((w) => w.key === target.key) ??
-            engineIndividualWords.find((w) => w.key === target.key) ??
-            engineSurface?.buttons.find((w) => w.key === target.key);
-          if (!word) return false;
-          handleEngineWordPress(word);
-          return true;
-        }
-        case "guess": {
-          // Same list, same dispatch, same effect as the child's own tap.
-          const button = guessGridButtons.find((b) => b.id === target.buttonId);
-          if (!button) return false;
-          pressGuessButton(button);
-          return true;
-        }
-        case "tab":
-          if (!(TABS as readonly string[]).includes(target.tab)) return false;
-          handleTabSelect(target.tab as GlyphCategory);
-          return true;
-        case "engineTab":
-          handleEngineTabSelect(target.tab === "all" ? null : target.tab);
-          return true;
-        case "chip":
-          handleModeChipSelect(target.chip);
-          return true;
-        case "engineChip":
-          // "all" is the PINNED chip, and clearing the filter is what it does —
-          // the same sentinel the engine tab above uses for the same reason.
-          handleEngineChipSelect(target.chip === "all" ? null : target.chip);
-          return true;
-        case "page":
-          setGridPage((page) => page + (target.dir === "more" ? 1 : -1));
-          return true;
-        case "slot":
-          handleSlotPress(target.index);
-          return true;
-        case "play":
-          handlePlay();
-          return true;
-        case "backspace":
-          handleBackspace();
-          return true;
-        case "clear":
-          handleClearSelected();
-          return true;
-      }
-    },
-  }), [
-    handlePersonPress, handleGridPress, handleEngineWordPress, handleTabSelect,
-    handleEngineTabSelect, handleModeChipSelect, handleEngineChipSelect,
-    handleSlotPress, handlePlay, handleBackspace, handleClearSelected,
-    engineGridWords, engineIndividualWords, engineSurface,
-    guessGridButtons, pressGuessButton,
-  ]);
 
   // ── The two sidebar columns, as DATA ─────────────────────────────────────
   // One entry list per column, whichever taxonomy is driving. The markup —
@@ -2198,13 +2120,20 @@ export function SentenceConstructorBoard(props: SentenceConstructorBoardProps) {
                     const sk = (b as any).suggestionKey as string | undefined;
                     const nd = (b as any).narrowDimension as string | undefined;
                     const nv = (b as any).narrowValue as string | undefined;
+                    const shown = localizeGuess(b);
                     return (
                       <SentenceButton
                         key={sk ?? (nd && nv ? `narrow-${nd}-${nv}` : `guess-${i}`)}
                         variant="board"
-                        button={localizeGuess(b)}
+                        button={shown}
                         getFaceImage={getFaceImage ?? undefined}
-                        extraButtonProps={{ "data-mirror-id": formatBuilderTarget({ kind: "guess", buttonId: b.id }) }}
+                        // `data-speech` is what a readout says (hold-to-highlight,
+                        // audio scan, a clinician's facilitated press) — the
+                        // localized label, not the emoji the tile draws.
+                        extraButtonProps={{
+                          "data-mirror-id": formatBuilderTarget({ kind: "guess", buttonId: b.id }),
+                          "data-speech": shown.spokenText || shown.label,
+                        }}
                         onClick={() => pressGuessButton(b)}
                       />
                     );

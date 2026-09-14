@@ -292,6 +292,28 @@ export const STUDENT_COMMUNICATION_STYLE_FIELD: AgentMemoryFieldObjectWithDB = {
       enum: ["touch", "eyegaze", "switch", "other"],
       description: "How the student selects buttons on the AAC: touch, eyegaze, switch, or other",
     },
+    // STRUCTURED speech-production capability. Machine-enforced: the AAC
+    // coordinator uses it to refuse speech transcripts attributed to the
+    // student beyond this ceiling (server/services/aac/verbal-ability-memory.ts).
+    // Replaces the hand-set students.verbal_ability column (2026-09-14).
+    VerbalAbility: {
+      id: "VerbalAbility",
+      type: "string",
+      title: "Verbal Ability",
+      enum: ["none", "vocalizations", "single_words", "fluent"],
+      description:
+        "Speech the student can PRODUCE: none (no spoken words), vocalizations (sounds, no words), single_words (one or two words at most), fluent (sentences). " +
+        "Set it ONLY from a clinician's or present adult's explicit statement, the communication profile, or the care-team report notes. " +
+        "NEVER set or raise it because of speech that was heard and attributed to the student - that attribution is what this value is used to check. " +
+        "Leave unset when no source states it.",
+    },
+    VerbalAbilitySource: {
+      id: "VerbalAbilitySource",
+      type: "string",
+      title: "Verbal Ability Source",
+      enum: ["clinician", "monitor", "setup", "seed", "plan"],
+      description: "Who last set VerbalAbility: clinician (stated in chat), monitor (AAC session), setup (guided setup), seed (copied from the legacy record), plan (derived at session start). Set it alongside VerbalAbility.",
+    },
   },
   db: {
     read: async (ctx) => getStudentMemoryField(ctx, "Student_CommunicationStyle"),

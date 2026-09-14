@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserX, Eye, EyeOff, Play, Copy } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
-import { SentenceConstructorBoard, type BuilderRemote } from "@/components/SentenceConstructorBoard";
-import type { BuilderMirrorSnapshot, BuilderTarget } from "@shared/call/builder-mirror";
+import { SentenceConstructorBoard } from "@/components/SentenceConstructorBoard";
+import type { BuilderMirrorSnapshot } from "@shared/call/builder-mirror";
 import type { MirrorSurface } from "@shared/call/call-data-messages";
 import AppsBoard from "@/components/AppsBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
@@ -874,17 +874,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
   // builder is a full-screen overlay over the board, so without this the mirror
   // streams the board underneath and the clinician watches the wrong screen.
   const [builderMirror, setBuilderMirror] = useState<BuilderMirrorSnapshot | null>(null);
-  // The builder's own press handlers, so a clinician's facilitated press lands
-  // on the same code the student's finger does.
-  const builderRemoteRef = useRef<BuilderRemote | null>(null);
-  // Stable identity so the bridge's effect doesn't re-fire on every render; the
-  // press only lands while the builder is actually mounted.
-  const facilitateBuilderPress = useCallback((target: BuilderTarget) => {
-    // No builder mounted = the child closed it mid-press. Report that rather
-    // than swallowing it, so the clinician is not left believing the sentence
-    // grew when it did not.
-    return builderRemoteRef.current?.press(target) ?? false;
-  }, []);
   // Backend-busy state lifted out of the provider (Home renders outside it) to
   // drive the subtle ambient processing indicators.
   const [serverProcessing, setServerProcessing] = useState<import("@/hooks/dual-agent-types").ProcessingState>({ speaker: false, board: false, interpret: false, app: false });
@@ -3180,7 +3169,6 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
                 awaitingInterpret={interpretAwaiting}
                 studentGender={userProfile?.gender}
                 onMirror={setBuilderMirror}
-                remoteRef={builderRemoteRef}
                 onClose={() => { setInterpretAwaiting(false); setShowConstructionBoard(false); }}
               />
             </div>
@@ -3895,16 +3883,18 @@ export default function Home({ studentId, classroomId, onLogout, onExitStudent }
               direction === "rtl",
             )}
           />
+          {/* A facilitated press LIGHTS UP the button and READS IT ALOUD here —
+              an offer, not the child's voice. It never reaches the press
+              pipeline, so the student's own voice does not say it and the AI
+              does not answer it as their turn. */}
           <CallFacilitatorBridge
             enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
-            onPress={handleBoardButtonClick}
           />
-          {/* The same consent flag, applied to the mirrored SENTENCE BUILDER —
-              a clinician can add a word to the sentence the student is
-              composing, and it lands through the builder's own handlers. */}
+          {/* The same consent flag and the same offer, on the mirrored SENTENCE
+              BUILDER — the cell lights up and reads itself; the sentence the
+              student is composing is left alone. */}
           <CallBuilderFacilitatorBridge
             enabled={!!userProfile?.aacSettings?.allowFacilitatorControl}
-            press={facilitateBuilderPress}
           />
           {/* A clinician POINTING at a button (press-and-hold on their mirror).
               Not consent-gated — their cursor already highlights buttons here,

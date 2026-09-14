@@ -90,7 +90,7 @@ export interface ObserverPromptConfig extends BaseStudentContext {
  *  fact (it's structured data, not a persona guess). `fluent` adds nothing.
  *  TV/radio/phone speech is the recurring source of misattributed "speech":
  *  the words are real, the speaker just isn't in the room. */
-function verbalAbilityLine(studentName: string, ability?: VerbalAbility): string {
+export function verbalAbilityLine(studentName: string, ability?: VerbalAbility): string {
   switch (ability) {
     case "none":
       return `\n[${studentName}] does NOT produce spoken words. A transcript can NEVER be [${studentName}] speaking — a fluent utterance heard near them is someone else, the TV/radio, or a phone. Attribute accordingly (UNKNOWN if unclear).`;

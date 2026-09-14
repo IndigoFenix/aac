@@ -194,6 +194,7 @@ import {
   composeAacPersona,
   getAACMemoryFields,
 } from "./memory-schema/aac-memory-schema";
+import { digestEntries } from "./aac/report-digest";
 import {
   LIBRARY_TOPICS_FIELD,
 } from "./memory-schema/topic-memory-schema";
@@ -368,7 +369,7 @@ async function buildAACPersonaSystemPrompt(
   // composeAacPersona falls back to the default when both are empty.
   let prompt = `=== Guidelines for interacting with ${student.name} ===\n`;
   const aac = (student as StudentWithAacSettings).aacSettings;
-  const persona = composeAacPersona({ custom: aac?.chatAgentPrompt, auto: aac?.autoAacPrompt });
+  const persona = composeAacPersona({ custom: aac?.chatAgentPrompt, auto: aac?.autoAacPrompt, reports: digestEntries(aac) });
   prompt += processPersonaPrompt(persona, framework);
   return prompt;
 }
@@ -1502,10 +1503,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
     // Note: BOARD_MEMORY_FIELD is NOT added for AAC - board uses formSchema/setValues instead
 
-    // Add AAC-specific read-only context fields (gated by privacy settings)
+    // Add AAC-specific read-only context fields (gated by privacy settings).
+    // NO report field here, whatever allowReadReports says: reports reach an
+    // AAC session only as the report digest (server/services/aac/report-digest.ts).
     const aacFields = getAACMemoryFields({
       allowReadProgress: aacPrivacy?.allowReadProgress ?? true,
-      allowReadReports: aacPrivacy?.allowReadReports ?? true,
     });
     contextMemoryFields.push(...aacFields);
 
@@ -2248,9 +2250,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       ...studentFieldsProc,
       LIBRARY_TOPICS_FIELD as AgentMemoryFieldWithDB,
       // BOARD_MEMORY_FIELD disabled - using formSchema/setValues for board updates
+      // No report field on the AAC path - see the note on the first field set.
       ...getAACMemoryFields({
         allowReadProgress: aacPrivacy2?.allowReadProgress ?? true,
-        allowReadReports: aacPrivacy2?.allowReadReports ?? true,
       }),
       // AAC (student) path: settings only, NEVER the prompt fields. AAC prompts
       // are edited solely during clinician interactions.

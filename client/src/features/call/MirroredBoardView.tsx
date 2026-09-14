@@ -15,12 +15,13 @@
 // builder's mode rail, and `hud` a game's ambient state.
 //
 // With `interactive` on (the "Interact" toggle in CallView), pressing a button
-// emits back to the AAC, which routes it through the student's own press
-// pipeline — facilitated communication, not remote pointer control. Which
-// message that is depends on the button: an ordinary board button is a whole
-// utterance (`facilitator-press`), while a builder cell is one move in
-// composing one (`facilitator-builder`), and the two ids tell them apart
-// (parseBuilderTarget).
+// emits back to the AAC, which makes that button LIGHT UP and READ ITSELF ALOUD
+// on the student's device — an offer, not remote control of their voice. The
+// press never reaches the student's press pipeline: their own voice does not say
+// it and the AI does not answer it as their turn. Which message carries it
+// depends on the button — an ordinary board button (`facilitator-press`) or a
+// sentence-builder cell (`facilitator-builder`) — and the two ids tell them
+// apart (parseBuilderTarget).
 //
 // Cursor sharing: `dwellId` is where the STUDENT is looking/hovering (amber
 // ring); `onHover` reports where the CLINICIAN is hovering back to the AAC so

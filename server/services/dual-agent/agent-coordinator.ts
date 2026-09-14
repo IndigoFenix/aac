@@ -91,6 +91,7 @@ import {
   type BoardManagerPromptConfig,
 } from "./agent-prompts";
 import { composeAacPersona, promptNoteToday } from "../memory-schema/aac-memory-schema";
+import { digestEntries } from "../aac/report-digest";
 import {
   buildEmptyResponseRetryFeedback,
   buildValidatorErrorFeedback,
@@ -238,6 +239,7 @@ import type { SocialPeerParams } from "@shared/social-bot/debug";
 import { generatePersona, describePersona, buildSlpConfig, type GeneratedPersona } from "../social-bot/persona-generator";
 import { COMPETENCIES, type Archetype, type Competency, type SlpConfig } from "../social-bot/personality-and-challenge";
 import type { AppStartupSpec, StartupParams } from "@shared/app-startup";
+import { DEFAULT_AI_OPEN_POLICY } from "@shared/app-startup";
 import { resolveAppStartupParams, decideAiOpen, type StartupResolveContext } from "./startup-resolver";
 import { pickVoice as pickSocialPeerVoice, geminiVoiceGender, peerVoicePitchSemitones, peerVoiceFormantSemitones } from "../social-bot/voice-pick";
 import {
@@ -323,6 +325,8 @@ import {
 } from "./presence-gate";
 import { userSpeechDrivesBoard, speakerReplyTriggers } from "./speech-board-trigger";
 import { assessStudentTranscript, isVerbalAbility, type VerbalAbility } from "@shared/aac/verbal-ability";
+import { readVerbalAbility, writeVerbalAbility, decideVerbalAbilitySync } from "../aac/verbal-ability-memory";
+import { verbalAbilityLine } from "./prompts/observer";
 import { isRepeatPress, formatRepeatNote } from "./press-repeat-guard";
 import { resolvePressRouting } from "./press-target";
 import {
@@ -1562,6 +1566,10 @@ export class AgentCoordinator {
    *  Cached alongside the names in buildPromptInputs; null = unspecified →
    *  the attribution trust gate is off (legacy behavior). */
   private currentVerbalAbility: VerbalAbility | null = null;
+  /** When applyAttributionTrustGate last demoted a student-attributed
+   *  transcript. A Monitor round that raises VerbalAbility after this is
+   *  refused (verbal-ability-memory.decideVerbalAbilitySync). */
+  private lastAttributionDemotionAt: number | null = null;
   /** Cached active-student FULL name. The Observer routinely tags
    *  transcripts with the full name even though prompts use the first
    *  name, so USER-target matching must accept both. */
@@ -3368,6 +3376,10 @@ export class AgentCoordinator {
     // Wire context-injection broadcast: when Monitor produces context,
     // route through our broadcast helper so all three agents see it.
     state.onContextInjection = (text) => this.broadcastMonitorContext(text);
+    // After every Monitor round: pick up a VerbalAbility the Monitor (or a
+    // clinician, between rounds) wrote to memory, under the no-raise-from-
+    // transcripts rule.
+    state.onMonitorRoundComplete = (startedAt) => this.syncVerbalAbilityFromMemory(startedAt);
 
     // Tear-down hook: dualAgentService uses this to terminate sessions
     // mid-flight (e.g. consent revoked).
@@ -4003,8 +4015,9 @@ export class AgentCoordinator {
     this.currentStudentFullName = student?.name || undefined;
     // Structured verbal ability — powers the attribution trust gate
     // (applyAttributionTrustGate) and the Observer prompt's hard capability line.
-    const rawAbility = (student as any)?.verbalAbility;
-    this.currentVerbalAbility = isVerbalAbility(rawAbility) ? rawAbility : null;
+    // Memory (Student_CommunicationStyle.VerbalAbility) wins; the legacy
+    // column is the fallback until it is dropped.
+    this.currentVerbalAbility = readVerbalAbility(student).value;
     this.aiName = aiName;
     // Cache the defined-gesture registry for report_gesture resolution.
     this.definedGestures = parseDefinedGestures(student?.aacSettings?.definedGestures);
@@ -4049,7 +4062,6 @@ export class AgentCoordinator {
       language,
       studentAge: undefined as string | undefined,
       studentGender: (student as any)?.gender,
-      studentDiagnosis: state.cachedDiagnosis || undefined,
       aiName,
       knownContacts: state.cachedContacts,
       classroom: undefined as any, // classroom plumbing wired in a follow-up
@@ -4082,7 +4094,7 @@ export class AgentCoordinator {
       },
       speaker: {
         ...base,
-        persona: sections?.persona || composeAacPersona({ custom: student?.aacSettings?.chatAgentPrompt, auto: student?.aacSettings?.autoAacPrompt }),
+        persona: sections?.persona || composeAacPersona({ custom: student?.aacSettings?.chatAgentPrompt, auto: student?.aacSettings?.autoAacPrompt, reports: digestEntries(student?.aacSettings) }),
         // The AI's own grammatical gender, from its voice (resolveVoices ran
         // in init step 2, before any prompt build).
         aiGender: this.aiVoiceGender(),
@@ -5867,6 +5879,7 @@ export class AgentCoordinator {
     if (!demotion) return;
     const claimed = `[${event.speaker} to ${event.target}]`;
     event.attributionDemotion = demotion;
+    this.lastAttributionDemotionAt = Date.now();
     if (demotion === "impossible_speech") {
       // The words may be real (TV, an adult nearby) — the attribution isn't.
       event.speaker = PARTY_UNKNOWN;
@@ -9156,6 +9169,39 @@ export class AgentCoordinator {
     return decideAiOpen({ ...rest, appId: app.id, appName: app.name, policy: app.aiOpenPolicy });
   }
 
+  /**
+   * The open gate for an AI-chosen open, in one place for built-in and
+   * custom apps alike. Returns true when the open may proceed. On a refusal
+   * it has already settled the request: the Speaker is told what the child
+   * actually asked for and not to try again this turn.
+   *
+   * An app without its own policy gets DEFAULT_AI_OPEN_POLICY, so a bare
+   * "play" no longer opens whichever game the model thought of first.
+   */
+  private async gateAiOpen(
+    app: { id: string; name: string; aiOpenPolicy?: import("@shared/app-startup").AiOpenPolicy },
+    data: string | undefined,
+    settle: (opened: boolean, note?: string, blockedReason?: string) => void,
+  ): Promise<boolean> {
+    const decision = await this.decideAiAppOpen(
+      { id: app.id, name: app.name, aiOpenPolicy: app.aiOpenPolicy ?? DEFAULT_AI_OPEN_POLICY },
+      data,
+    );
+    if (decision.open) return true;
+    flowNote(
+      "COORDINATOR",
+      `Open decision REFUSED open_app("${app.id}"${data ? `, "${data}"` : ""}) — ${decision.reason ?? "not what the user wants"}.`,
+    );
+    settle(
+      false,
+      `[APP OPEN DECLINED] ${app.name} is not what they are asking for.` +
+        (decision.reason ? ` ${decision.reason}` : "") +
+        ` Answer what they actually said instead — do not mention the app, and do not try to open it again this turn.`,
+      `it is not what the user is asking for${decision.reason ? ` (${decision.reason})` : ""}`,
+    );
+    return false;
+  }
+
   private async resolveStartupParams(
     spec: AppStartupSpec,
     source: "ai" | "student",
@@ -9475,25 +9521,10 @@ export class AgentCoordinator {
       // was tried and did not hold — see `AiOpenPolicy` for the two live
       // failures that produced it. It fails OPEN, so a resolver outage returns
       // today's behaviour rather than an AAC device that stops opening apps.
-      if (triggerSource === "ai" && builtIn.aiOpenPolicy) {
-        const decision = await this.decideAiAppOpen(
-          { id: builtIn.id, name: builtIn.name, aiOpenPolicy: builtIn.aiOpenPolicy },
-          event.data,
-        );
-        if (!decision.open) {
-          flowNote(
-            "COORDINATOR",
-            `Open decision REFUSED open_app("${appId}"${event.data ? `, "${event.data}"` : ""}) — ${decision.reason ?? "not what the user wants"}.`,
-          );
-          settle(
-            false,
-            `[APP OPEN DECLINED] ${builtIn.name} is not what they are asking for.` +
-              (decision.reason ? ` ${decision.reason}` : "") +
-              ` Answer what they actually said instead — do not mention the app, and do not try to open it again this turn.`,
-            `it is not what the user is asking for${decision.reason ? ` (${decision.reason})` : ""}`,
-          );
-          return;
-        }
+      // Every AI-chosen open is asked, not only apps with a policy of their
+      // own (2026-09-14: "play" opened a random game — the games had none).
+      if (triggerSource === "ai" && !(await this.gateAiOpen(builtIn, event.data, settle))) {
+        return;
       }
       if (appId === "youtube") {
         // Browse mode needs the permitted channels/videos/playlists in the
@@ -9730,6 +9761,12 @@ ${openDetail}` : ""),
       const app = await customAppRepository.getApp(appId);
       if (!app) {
         settle(false, `[APP OPEN FAILED] app ${appId} not found — tell the user it isn't available.`);
+        return;
+      }
+      // Custom games are the likeliest "random game" for a bare "play": the
+      // same gate as built-ins, with the default policy. A student press is
+      // never asked.
+      if (triggerSource === "ai" && !(await this.gateAiOpen({ id: app.id, name: app.name }, event.data, settle))) {
         return;
       }
       if (isGoalTreeApp(app)) {
@@ -12419,6 +12456,54 @@ Already tried this session (pick a seed that is not about these): ${tried.join("
       flowNote("MONITOR", `Monitor invocation failed: ${(err as Error).message}`);
       console.error("[AgentCoordinator] Monitor invocation failed:", err);
     }
+  }
+
+  /**
+   * Reconcile the gate's enum with what memory now says. Lowering always
+   * applies. A raise is refused - and reverted in memory - when a transcript
+   * was demoted during the round that produced it, because the Monitor may
+   * have taken that very transcript as proof the user can speak. Applied
+   * changes are told to the Observer as a hard capability line.
+   */
+  private async syncVerbalAbilityFromMemory(roundStartedAt: number): Promise<void> {
+    if (!this.sessionId) return;
+    const cache = dualAgentService.getSessionCache(this.sessionId);
+    const studentId = cache?.state?.studentId;
+    if (!studentId) return;
+    const fresh = await studentRepository.getStudentWithAacSettings(studentId);
+    if (!fresh) return;
+    const reading = readVerbalAbility(fresh);
+    // Only MEMORY can move the value mid-session; the column is init-only.
+    const next = reading.from === "memory" ? reading.value : (reading.from === null ? null : this.currentVerbalAbility);
+    const decision = decideVerbalAbilitySync({
+      current: this.currentVerbalAbility,
+      next,
+      lastDemotionAt: this.lastAttributionDemotionAt,
+      roundStartedAt,
+    });
+    if (decision === "noop") return;
+    if (decision === "refuse_raise") {
+      flowNote(
+        "COORDINATOR",
+        `VerbalAbility raise REFUSED (${this.currentVerbalAbility ?? "unset"} → ${next}): a student-attributed transcript was demoted this round; heard speech is not evidence.`,
+      );
+      // Revert memory so the next session does not inherit the refused value.
+      const reverted = await writeVerbalAbility(studentId, this.currentVerbalAbility, "monitor");
+      if (reverted) cache?.monitorAgent?.refreshStudent?.({ ...(fresh as any), chatMemory: reverted });
+      await dualAgentService.addPendingMessage(this.sessionId, {
+        role: "user",
+        content: `[VERBAL ABILITY] Your change of /Student_CommunicationStyle/VerbalAbility to "${next}" was refused and reverted: speech heard this round was attributed to the user and demoted, and heard speech is never evidence of what the user can say. Raise it only from a present adult's explicit statement or the care-team notes.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+    const prev = this.currentVerbalAbility;
+    this.currentVerbalAbility = next;
+    cache?.monitorAgent?.refreshStudent?.(fresh as any);
+    flowNote("COORDINATOR", `VerbalAbility ${prev ?? "unset"} → ${next ?? "unset"} (from memory, source=${reading.source ?? "?"}).`);
+    const name = this.currentStudentName || "the user";
+    const line = next ? verbalAbilityLine(name, next).trim() : `[${name}]'s speech ability is no longer specified - attribute speech on evidence only.`;
+    this.observer?.sendContextInjection(`[VERBAL ABILITY UPDATE] ${line}`);
   }
 
   private broadcastMonitorContext(text: string): void {

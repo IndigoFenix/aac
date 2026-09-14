@@ -533,9 +533,11 @@ export const students = pgTable("students", {
   // chatMemory jsonb) so the AAC monitor agent's session-time mutations to
   // chatMemory cannot overwrite it.
   communicationProfile: text("communication_profile"),
-  // Clinician-set speech-production capability (see verbalAbilityEnum above).
-  // Kept next to communicationProfile but structured so the coordinator can
-  // enforce it deterministically instead of parsing free text.
+  // DEPRECATED 2026-09-14 - read-only fallback. The structured capability now
+  // lives in chatMemory.Student_CommunicationStyle.VerbalAbility, maintained
+  // by the AI (server/services/aac/verbal-ability-memory.ts); this column is
+  // copied into memory once at the next session start and then ignored. The
+  // panel no longer edits it. Drop after one release.
   verbalAbility: verbalAbilityEnum("verbal_ability"),
 
   // Biometric data — references shared biometric_data table.
@@ -775,8 +777,23 @@ export const aacSettings = pgTable("aac_settings", {
 
   // Privacy — gate monitor agent access to sensitive student data
   allowReadProgress: boolean("allow_read_progress").default(true).notNull(),
+  // Whether the AI may read this student's medical / functional / educational
+  // reports AT ALL. Since 2026-09-14 no AAC-session agent reads a report
+  // directly: the reports are distilled into `reportDigest` (below) and only
+  // the digest reaches the session. This switch gates that distillation and
+  // the clinician-side deep analysis.
   allowReadReports: boolean("allow_read_reports").default(true).notNull(),
   allowNotes: boolean("allow_notes").default(true).notNull(),
+  // REPORT DIGEST — the ONLY form in which the student's clinical reports reach
+  // an AAC session. Machine-owned: regenerated wholesale by
+  // server/services/aac/report-digest.ts whenever the newest FINAL medical /
+  // functional / educational report changes (checked at session start,
+  // pre-warmed on finalize), cleared when allowReadReports is switched off.
+  // Shape: { entries: string[], sourceKey: string, generatedAt: ISO string }.
+  // `entries` are operational facts only (what the AAC must do or avoid) —
+  // never a diagnosis label, code or medication name. Not AI-writable and not
+  // in AAC_SETTINGS_FIELDS: the panel shows it read-only.
+  reportDigest: jsonb("report_digest"),
   // AI LEARNING — whether the Monitor may create studentContacts rows for people
   // it observes during a session (it reaches the table through the
   // Student_Contacts memory field). When false the field stays readable and
@@ -917,9 +934,14 @@ export const aacSettings = pgTable("aac_settings", {
   // detector.
   learnedBaselines: jsonb("learned_baselines"),
 
-  // When true, a clinician on a video call may facilitate button presses on the
-  // student's mirrored board (guided communication). Off by default — facilitator
-  // presses from the call are ignored unless this is enabled per student.
+  // When true, a clinician on a video call may facilitate on the student's
+  // mirrored board (guided communication): pressing a button there makes it
+  // LIGHT UP and READ ITSELF ALOUD on the student's device — an offer, the
+  // remote twin of a caretaker holding a button in the room. It is NOT a press:
+  // nothing reaches the student's press pipeline, so their own voice does not
+  // say it and the AI does not answer it as their turn. Off by default —
+  // facilitated presses from the call are refused unless this is enabled per
+  // student.
   allowFacilitatorControl: boolean("allow_facilitator_control").default(false).notNull(),
 
   // ── Press pacing ─────────────────────────────────────────────────────────

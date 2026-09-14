@@ -258,7 +258,7 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
             <Button
               variant="outline"
               onClick={onLogout}
-              className="w-full text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-500"
+              className="w-full text-gray-600 dark:text-gray-300 hover:text-white hover:border-green-600 dark:hover:border-green-500"
             >
               <LogOut className={`h-4 w-4 ${isRTL ? 'ms-2' : 'me-2'}`} />
               {t("common.logout")}

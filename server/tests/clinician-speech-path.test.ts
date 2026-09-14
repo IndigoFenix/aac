@@ -25,8 +25,11 @@
 //
 //   §3  REAL CODE. The recognition language now resolves server-side, so §3
 //       imports `toBcp47` from google-stt-service and tests the real mapping.
-//       What is still pinned to source is the VALUE fed into it — the
-//       clinician's UI language, which is the open defect.
+//       What is pinned to source is the VALUE fed into it — since 2026-09-14
+//       an explicit per-call `sttLanguage` (defaulting to the UI language,
+//       switchable mid-call from CallView's language control), no longer the
+//       UI language itself. See §3's header for what is fixed and what (the
+//       student's language, `RoomUtterance.lang`) is still open.
 //
 // Not covered: AgentCoordinator.onPeerUtterance → routeTranscribed. No test in
 // this repo constructs an AgentCoordinator (it wants a DB, live agent sessions
@@ -99,6 +102,7 @@ const utter = (over: Partial<RoomUtterance>): RoomUtterance => ({
 
 const readSource = (rel: string) => readFileSync(resolve(process.cwd(), rel), "utf8");
 const CALL_CONTEXT_TSX = "client/src/features/call/CallContext.tsx";
+const CALL_VIEW_TSX = "client/src/features/call/CallView.tsx";
 
 // ---------------------------------------------------------------------------
 
@@ -202,7 +206,9 @@ describe("clinician speech → student board", () => {
     it("PIN: in-region server STT is the only path, and is unconditional", () => {
       const src = readSource(CALL_CONTEXT_TSX);
       expect(src).toContain("streamMicPcm(localStream");
-      expect(src).toContain("clientRef.current?.sendAudioChunk(chunk, sampleRate, language)");
+      // The language sent alongside each chunk is now the explicit
+      // `sttLanguage` choice (see §3), not the UI language directly.
+      expect(src).toContain("clientRef.current?.sendAudioChunk(chunk, sampleRate, sttLanguageRef.current)");
       // It streams `localStream`, whose audio track carries echoCancellation —
       // so the echo is removed from the signal instead of being guessed at.
       expect(readSource("shared/call/call-client.ts")).toContain("echoCancellation: true");
@@ -246,17 +252,34 @@ describe("clinician speech → student board", () => {
   });
 
   // =========================================================================
-  // §3  LANGUAGE — clinician UI language drives the recogniser
+  // §3  LANGUAGE — an explicit per-call spoken-language choice drives the
+  //     recogniser (2026-09-14). Half of C1 is fixed: the clinician can now
+  //     declare (and mid-call switch) what they're SPEAKING, separately from
+  //     their UI language. The other half — the STUDENT's language, and
+  //     tagging the utterance with what was recognised — is still open.
   // =========================================================================
   describe("§3 recognition language (real toBcp47 + source pin)", () => {
-    it("PIN: the value fed to the recogniser is still the clinician's UI language", () => {
+    it("PIN: the value fed to the recogniser is an explicit sttLanguage, defaulting to the UI language", () => {
       const src = readSource(CALL_CONTEXT_TSX);
-      // `language` comes from useLanguage() — the app's UI chrome setting. It is
-      // not what the clinician said they SPEAK, and it never consults the
-      // student. A3 moved WHERE recognition happens; it did not fix WHICH
-      // language, which is C1.
+      // `language` (useLanguage()) still seeds the default — the common case is
+      // that the clinician's UI and speech match — but the chunk callback no
+      // longer sends it directly. It sends `sttLanguage`, a separate piece of
+      // state the clinician can override mid-call.
       expect(src).toContain("const { language } = useLanguage();");
-      expect(src).toContain("clientRef.current?.sendAudioChunk(chunk, sampleRate, language)");
+      expect(src).toContain("useState<LanguageCode>(language)");
+      expect(src).toContain("clientRef.current?.sendAudioChunk(chunk, sampleRate, sttLanguageRef.current)");
+      // Read via a ref inside the chunk callback, not an effect dependency —
+      // switching language must not tear down and restart streamMicPcm.
+      expect(src).not.toContain("clientRef.current?.sendAudioChunk(chunk, sampleRate, language)");
+
+      // Each new call resets to the UI default, so a switch from a PRIOR call
+      // never leaks into the next one.
+      expect(src).toContain("setSttLanguage(language)");
+
+      // The switch itself lives in the call control bar.
+      const viewSrc = readSource(CALL_VIEW_TSX);
+      expect(viewSrc).toContain('data-testid="call-stt-language"');
+      expect(viewSrc).toContain("setSttLanguage");
     });
 
     it("resolves our short codes to the BCP-47 Google STT expects", () => {
@@ -267,34 +290,46 @@ describe("clinician speech → student board", () => {
       expect(toBcp47("pt-PT")).toBe("pt-PT");
     });
 
-    it("DEFECT: a Hebrew-speaking clinician with an English UI is recognised as English", () => {
-      // Same person, same speech — the result is decided by a menu that is
-      // about UI chrome. Their Hebrew is transcribed as English.
+    it("RESOLVED: a Hebrew-speaking clinician with an English UI is no longer stuck on English", () => {
+      // Before this switch existed, the value fed to the recogniser WAS the UI
+      // language, so a Hebrew speaker with an English UI was recognised as
+      // English with no way to correct it. `toBcp47` itself hasn't changed —
+      // an English hint still maps to en-US — but the clinician is no longer
+      // forced to feed it their UI language: they can set `sttLanguage` to
+      // "he" (from the call-stt-language control) independently of the UI.
       const uiLanguageOfAHebrewSpeaker = "en";
+      const chosenSttLanguage = "he"; // what the control now lets them pick
       expect(toBcp47(uiLanguageOfAHebrewSpeaker)).toBe("en-US");
-      expect(toBcp47(uiLanguageOfAHebrewSpeaker)).not.toBe("he-IL");
-      // SHOULD BE (C1): an explicit spoken-language choice per participant.
+      expect(toBcp47(chosenSttLanguage)).toBe("he-IL");
     });
 
     it("DEFECT: an unknown or missing language silently becomes English", () => {
-      // No signal that recognition is now simply wrong.
+      // Unchanged by the switch — still no signal that recognition is wrong,
+      // whether the hint comes from the UI default or an explicit choice.
       expect(toBcp47("nl")).toBe("en-US");
       expect(toBcp47("")).toBe("en-US");
       expect(toBcp47(undefined)).toBe("en-US");
     });
 
-    it("DEFECT: the student's language never enters the decision", () => {
-      const clinicianUi = "en";
+    it("OPEN: the student's language never enters the decision, and the utterance still isn't tagged", () => {
+      // The clinician now controls WHICH language they're recognised in, but
+      // nothing on this path looks at who they're talking to, and nothing
+      // records what was chosen once the phrase is published.
+      const clinicianChoice = "en";
       for (const student of [
         { name: "Yael", primaryLanguage: "he" },
         { name: "Sofia", primaryLanguage: "es" },
       ]) {
-        expect(toBcp47(clinicianUi)).toBe("en-US");
-        expect(toBcp47(clinicianUi)).not.toBe(toBcp47(student.primaryLanguage));
+        expect(toBcp47(clinicianChoice)).toBe("en-US");
+        expect(toBcp47(clinicianChoice)).not.toBe(toBcp47(student.primaryLanguage));
       }
-      // SHOULD BE (C1): recognition language chosen from what the clinician
-      // speaks, and the text tagged with it (RoomUtterance.lang) so each
-      // student's side can localise before it reaches a caption or a board.
+      // STILL OPEN: RoomUtterance carries no `lang`/`locale` (see §1's
+      // "an utterance carries no language" DEFECT above), so even a correctly
+      // recognised phrase can't be localised for a student whose primary
+      // language differs from the language it was recognised in.
+      const received = utter({});
+      expect(Object.keys(received)).not.toContain("lang");
+      expect(Object.keys(received)).not.toContain("locale");
     });
   });
 });

@@ -9,8 +9,11 @@
 //                          video window.
 //   - CallBoardMirror:     streams the board the student is looking at to the
 //                          clinician (board-mirror over the data channel).
-//   - CallFacilitatorBridge: applies a clinician's facilitator press through the
-//                          student's own press handler (consent-gated).
+//   - CallFacilitatorBridge: a clinician's facilitated press — the button LIGHTS
+//                          UP and is READ ALOUD on the student's device
+//                          (consent-gated). It is an offer, not an utterance:
+//                          nothing reaches the press pipeline, the server, or
+//                          the AI's ears.
 //   - CallVideoLarge:      portals the shared VideoTileLayout into a home-provided
 //                          host (the "people I'm talking to" big window), with a
 //                          dwell-friendly layout switcher.
@@ -24,7 +27,7 @@ import type {
   MirrorStripItem,
   MirrorSurface,
 } from "@shared/call/call-data-messages";
-import type { BuilderTarget } from "@shared/call/builder-mirror";
+import { formatBuilderTarget } from "@shared/call/builder-mirror";
 import VideoTileLayout, { type VideoTileData } from "@shared/social-world/VideoTileLayout";
 import { pickSpotlightId, type VideoLayoutMode } from "@shared/call/video-layout";
 import { useCall } from "@/contexts/CallContext";
@@ -118,13 +121,30 @@ export function CallCursorReporter() {
   return null;
 }
 
-/** Applies a clinician facilitator press through the student's own press handler.
- *  `enabled` is the per-student consent flag; when off, presses are REFUSED —
- *  and the refusal is sent back. `allowFacilitatorControl` defaults to false, so
- *  a clinician arming Interact for the first time gets a board that appears to
- *  do nothing; a silent drop is indistinguishable from a broken call. */
-export function CallFacilitatorBridge({ enabled, onPress }: { enabled: boolean; onPress: (button: BoardButton, spokenText: string) => void }) {
+/**
+ * A CLINICIAN'S FACILITATED PRESS ON THE MIRRORED BOARD — an OFFER, not the
+ * child's voice.
+ *
+ * The button lights up and reads itself aloud on the student's device, and that
+ * is all: the very thing the audio scan does for one button, and the very thing
+ * a caretaker in the room does by HOLDING a button. It deliberately does NOT go
+ * through `handleBoardButtonClick` — a facilitated press used to be re-emitted
+ * as a real press, so the student's own voice said it and the AI answered it as
+ * the student's utterance. Nobody wanted words put in the child's mouth.
+ *
+ * "The AI does not hear it" is not a mute: `readout` announces the sentence
+ * through BoardAudioContext's `lastSpoken`, which DualAgentContext forwards to
+ * the Observer as [OWN_SPEECH], so the reading is discarded as the device's own
+ * voice rather than transcribed as a fresh turn.
+ *
+ * `enabled` is the per-student consent flag; when off, presses are REFUSED —
+ * and the refusal is sent back. `allowFacilitatorControl` defaults to false, so
+ * a clinician arming Interact for the first time gets a board that appears to
+ * do nothing; a silent drop is indistinguishable from a broken call.
+ */
+export function CallFacilitatorBridge({ enabled }: { enabled: boolean }) {
   const { facilitatorPress, sendData } = useCall();
+  const { readout } = useBoardAudio();
   const lastAtRef = useRef(0);
   useEffect(() => {
     if (!facilitatorPress) return;
@@ -135,9 +155,23 @@ export function CallFacilitatorBridge({ enabled, onPress }: { enabled: boolean; 
       sendData({ k: "facilitator-ack", ok: false, reason: "consent", at: Date.now() });
       return;
     }
-    onPress(facilitatorPress.button, facilitatorPress.spokenText || facilitatorPress.button.label);
+    // Same address the pointing gesture resolves: a button the clinician can
+    // see on the mirror is a button this device can find by `data-mirror-id`.
+    const el = document.querySelector<HTMLElement>(
+      `[data-mirror-id="${CSS.escape(facilitatorPress.button.id)}"]`,
+    );
+    if (!el) {
+      // The board moved on under the clinician (a rebuild, a page turn, the
+      // child left the surface). Say so — there is nothing on screen to light.
+      console.warn("[CallFacilitatorBridge] no board element for", facilitatorPress.button.id);
+      sendData({ k: "facilitator-ack", ok: false, reason: "unavailable", at: Date.now() });
+      return;
+    }
+    // The clinician's own resolution of the sentence is only a FALLBACK: the
+    // device's `data-speech` is what this button says in the child's language.
+    void readout(el, facilitatorPress.spokenText || facilitatorPress.button.label);
     sendData({ k: "facilitator-ack", ok: true, at: Date.now() });
-  }, [facilitatorPress, enabled, onPress, sendData]);
+  }, [facilitatorPress, enabled, readout, sendData]);
   return null;
 }
 
@@ -181,15 +215,25 @@ export function CallIndicateBridge({ allowSpeech }: { allowSpeech: boolean }) {
   return null;
 }
 
-/** Applies a clinician's facilitated press on the mirrored SENTENCE BUILDER.
- *  `press` is the builder's own imperative handle, so a remote press takes the
- *  SAME path as the student's — there is no second composition pipeline that
- *  could drift from what the child's own finger does. `enabled` is the same
- *  per-student consent flag that gates board presses. */
-export function CallBuilderFacilitatorBridge({ enabled, press }: {
-  enabled: boolean; press: (target: BuilderTarget) => boolean;
-}) {
+/**
+ * The same offer, on the mirrored SENTENCE BUILDER.
+ *
+ * A builder cell lights up and reads itself aloud exactly as a board button
+ * does; the composition is NOT touched. A clinician showing a child the word
+ * "juice" in the palette is pointing at it, and the sentence the child is
+ * building stays the child's — the builder's own handlers are reached only by
+ * the child's own press.
+ *
+ * `enabled` is the same per-student consent flag that gates board presses, and
+ * a cell that is no longer on screen (the child left the builder, or paged the
+ * grid) comes back as `unavailable` rather than a silent nothing.
+ *
+ * Some controls have genuinely nothing to say (a pure icon with no label). They
+ * still light up, and still ack ok — the pointing landed.
+ */
+export function CallBuilderFacilitatorBridge({ enabled }: { enabled: boolean }) {
   const { facilitatorBuilder, sendData } = useCall();
+  const { readout } = useBoardAudio();
   const lastAtRef = useRef(0);
   useEffect(() => {
     if (!facilitatorBuilder) return;
@@ -200,17 +244,19 @@ export function CallBuilderFacilitatorBridge({ enabled, press }: {
       sendData({ k: "facilitator-ack", ok: false, reason: "consent", at: Date.now() });
       return;
     }
-    // `press` reports whether the builder was actually mounted to take it — a
-    // child who closed the builder mid-press must not leave the clinician
-    // believing the sentence grew.
-    const delivered = press(facilitatorBuilder.target);
-    sendData({
-      k: "facilitator-ack",
-      ok: delivered,
-      reason: delivered ? undefined : "unavailable",
-      at: Date.now(),
-    });
-  }, [facilitatorBuilder, enabled, press, sendData]);
+    // The builder tags its cells with the very id the mirror addresses them by
+    // (`bx:` targets — builder-mirror.ts), so one lookup covers words, tabs,
+    // chips, the paging controls and the sentence controls alike.
+    const mirrorId = formatBuilderTarget(facilitatorBuilder.target);
+    const el = document.querySelector<HTMLElement>(`[data-mirror-id="${CSS.escape(mirrorId)}"]`);
+    if (!el) {
+      console.warn("[CallBuilderFacilitatorBridge] no builder element for", mirrorId);
+      sendData({ k: "facilitator-ack", ok: false, reason: "unavailable", at: Date.now() });
+      return;
+    }
+    void readout(el);
+    sendData({ k: "facilitator-ack", ok: true, at: Date.now() });
+  }, [facilitatorBuilder, enabled, readout, sendData]);
   return null;
 }
 

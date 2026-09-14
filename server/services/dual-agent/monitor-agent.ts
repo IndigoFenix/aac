@@ -27,6 +27,8 @@ import {
   normalizeAacPromptList,
 } from "../memory-schema/aac-memory-schema";
 import { presenceContextForSession } from "../memory-schema/presence-context";
+import { ensureReportDigest, digestEntries } from "../aac/report-digest";
+import { readVerbalAbility, writeVerbalAbility, parsePlannedVerbalAbility } from "../aac/verbal-ability-memory";
 import { GPT, type GPTInputItem } from "../chat/gpt";
 import { startOfDayInTimezone, formatLocalDateTime } from "../../lib/timezone";
 import { getLanguageName } from "@shared/language-names";
@@ -403,6 +405,38 @@ export class MonitorAgent {
     return this.student;
   }
 
+  /** Replace the cached student row (the coordinator re-reads it after a
+   *  Monitor round changes memory the prompts depend on). */
+  refreshStudent(student: StudentWithAacSettings): void {
+    this.student = student;
+  }
+
+  /**
+   * One-time seed of the structured verbal ability in chat memory. Only runs
+   * when memory has no value: the legacy `students.verbal_ability` column is
+   * copied verbatim (no LLM); failing that, the identity plan call's
+   * `verbal_ability` verdict is used ("unspecified" seeds nothing). Never throws.
+   */
+  private async seedVerbalAbility(student: any, sections?: EnhancedPromptSections): Promise<void> {
+    try {
+      const reading = readVerbalAbility(student);
+      if (reading.from === "memory") return;
+      if (reading.from === "column" && reading.value) {
+        const memory = await writeVerbalAbility(this.studentId, reading.value, "seed");
+        if (memory) this.student = { ...(this.student as any), chatMemory: memory };
+        console.log(`[MonitorAgent] Verbal ability seeded from legacy column: ${reading.value}`);
+        return;
+      }
+      const planned = parsePlannedVerbalAbility(sections?.verbalAbility);
+      if (!planned) return;
+      const memory = await writeVerbalAbility(this.studentId, planned, "plan");
+      if (memory) this.student = { ...(this.student as any), chatMemory: memory };
+      console.log(`[MonitorAgent] Verbal ability seeded from identity plan: ${planned}`);
+    } catch (err) {
+      console.warn("[MonitorAgent] Verbal ability seed failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
+  }
+
   /**
    * Get privacy options for the current session
    */
@@ -434,10 +468,26 @@ export class MonitorAgent {
     console.log("[MonitorAgent] Initializing session for student:", this.studentId);
 
     // Load student data with AAC settings
-    const student = await studentRepository.getStudentWithAacSettings(this.studentId);
+    let student = await studentRepository.getStudentWithAacSettings(this.studentId);
     if (!student) {
       throw new Error(`Student not found: ${this.studentId}`);
     }
+
+    // REPORT DIGEST - the only way the student's clinical reports reach this
+    // session. Regenerates when the newest final report changed (or clears
+    // when allowReadReports is off), then re-reads the row so the plan
+    // context below hashes the current entries. Never throws.
+    const digest = await ensureReportDigest({
+      studentId: this.studentId,
+      allowReadReports: student.aacSettings?.allowReadReports,
+      sessionId: this.sessionId ?? null,
+      userId: this.userId ?? null,
+    });
+    if (digest.outcome === "regenerated" || digest.outcome === "cleared") {
+      const fresh = await studentRepository.getStudentWithAacSettings(this.studentId);
+      if (fresh) student = fresh;
+    }
+    console.log(`[MonitorAgent] Report digest: ${digest.outcome} (${digest.entries.length} entries)`);
 
     // Store for later use in processPendingMessages / respondInThinkingMode
     this.student = student;
@@ -463,6 +513,11 @@ export class MonitorAgent {
 
     // Store the session ID if we created one
     this.sessionId = contextResult.sessionId;
+
+    // Seed Student_CommunicationStyle.VerbalAbility when nothing has set it:
+    // the legacy column wins (verbatim copy), else the identity plan call's
+    // verdict. See verbal-ability-memory.ts for the rules.
+    await this.seedVerbalAbility(student, contextResult.enhancedSections);
 
     console.log("[MonitorAgent] Session initialized:", this.sessionId);
 
@@ -581,6 +636,10 @@ export class MonitorAgent {
     // commands. normalizeAacPromptList tolerates legacy single-string values.
     const customRules = normalizeAacPromptList(aac?.chatAgentPrompt);
     const autoNotes = normalizeAacPromptList(aac?.autoAacPrompt);
+    // The report digest - refreshed by initializeSession before this runs, so
+    // the row in hand is current. A hash input (identityHash), so a changed
+    // report regenerates the identity sections.
+    const reportNotes = digestEntries(aac);
 
     // The enhancer needs to know the EXACT listed interests as a typed list
     // (not a stringified blob) so each example section's instructions can
@@ -613,6 +672,10 @@ export class MonitorAgent {
     studentDataParts.push(ageYears !== undefined ? `Age: ${ageYears}` : `Age: not on file`);
     if (student.gender) studentDataParts.push(`Gender: ${student.gender}`);
     studentDataParts.push(`Primary language: ${languageName} (${language})`);
+    // Structured speech capability - decided (memory, or the legacy column);
+    // the identity call repeats it rather than deriving one.
+    const verbal = readVerbalAbility(student);
+    if (verbal.value) studentDataParts.push(`Verbal ability (structured, decided): ${verbal.value}`);
 
     if (memory.Student_Notes?.length > 0 && this.privacyOptions.allowNotes) {
       studentDataParts.push(`Notes: ${JSON.stringify(memory.Student_Notes)}`);
@@ -694,6 +757,7 @@ export class MonitorAgent {
       isChild: isChildAge(ageYears),
       customRules,
       autoNotes,
+      reportNotes,
       interestList,
       languageLevel: languageLevelFromInt(aac?.languageLevel),
       singleGlyphButtons: !!aac?.singleGlyphButtons,

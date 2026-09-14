@@ -333,6 +333,10 @@ describe("parseCallDataMessage", () => {
 /**
  * POINTING ONLY WORKS IF BOTH SIDES AGREE ON THE ID.
  *
+ * This covers the FACILITATED PRESS too, which is now the same act: it lights
+ * the cell up and reads it aloud rather than driving the builder, and resolves
+ * the element by the very same tag (CallBuilderFacilitatorBridge).
+ *
  * A clinician's press-and-hold sends a `bx:` target; the AAC resolves it with
  * `document.querySelector('[data-mirror-id=…]')`. That lookup fails SILENTLY —
  * the button just never lights — so a pointable surface added to the mirror
@@ -365,8 +369,11 @@ describe("builder pointing targets are tagged on both sides", () => {
   it("routes those ids through data-mirror-id, the attribute the AAC looks up", () => {
     expect(builder).toContain("data-mirror-id");
     // The Word Finder's buttons come from a shared renderer, so their tag rides
-    // the same passthrough AppMiniBoard uses.
-    expect(builder).toContain('extraButtonProps={{ "data-mirror-id"');
+    // the same `extraButtonProps` passthrough AppMiniBoard uses — alongside the
+    // `data-speech` the readout reads off the element.
+    expect(builder).toContain("extraButtonProps={{");
+    expect(builder).toContain('"data-mirror-id": formatBuilderTarget({ kind: "guess"');
+    expect(builder).toContain('"data-speech": shown.spokenText || shown.label');
   });
 });
 

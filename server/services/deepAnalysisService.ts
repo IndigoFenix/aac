@@ -19,7 +19,7 @@
 import path from "path";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { deepAnalyses, students } from "@shared/schema";
+import { deepAnalyses, students, aacSettings } from "@shared/schema";
 import {
   withInstituteVisibility,
   type AccessCtx,
@@ -40,7 +40,7 @@ import { buildMemoryTool, processMemoryToolResponse } from "./chat/memory-system
 import { processMemoryToolWithDB, createDBContext, createMemoryLoadState } from "./chat/memory-db-bridge";
 import type { MemoryState, MemoryLoadState } from "./chat/memory-types";
 import { MASTER_MEMORY_FIELDS } from "./sessionService";
-import { getAACMemoryFields } from "./memory-schema/aac-memory-schema";
+import { getAACMemoryFields, getAACReportMemoryFields } from "./memory-schema/aac-memory-schema";
 import { SESSION_MEMORY_FIELDS } from "./memory-schema/session-memory-schema";
 import { ANALYSIS_MEMORY_FIELDS } from "./memory-schema/analysis-memory-schema";
 import { AAC_PROMPT_FIELD, AAC_AUTO_PROMPT_FIELD } from "./memory-schema/aac-settings-memory-schema";
@@ -84,7 +84,7 @@ const SYSTEM_PROMPT = `You are a clinical deep-analysis agent reviewing a studen
 Your task, in order:
 1. INVESTIGATE. Read the student's context, past AAC sessions (Context_StudentSessions), past clinician/user sessions (Context_UserSessions), and prior deep analyses (Context_DeepAnalyses). Sessions are sorted by importance (3 = milestone, 0 = nothing happened) and then by recency, so skim the top of each list first. Use the date and search filters to drill in — you do NOT need to read every session.
 2. REFINE SESSION METADATA. As you review individual sessions, you may (and should) update their title, summary, and importance fields when your broader view reveals a better read than the per-session summarizer had. For example: a session initially rated 1 might deserve a 3 in hindsight (it was the first time a behavior appeared), or a session summary may need clarifying context from surrounding sessions. Only title, summary, and importance are writable on session records — everything else is read-only.
-3. UPDATE STUDENT-LEVEL FINDINGS. Based on what you learn, revise the writable memory fields (Student_People, Student_Interests, Student_CommunicationStyle, Student_Preferences, Student_Notes, Context_AACAutoPrompt) to reflect the current truth. Do not invent information — only update fields where the session record clearly supports a change. Context_AACAutoPrompt is the AUTO AAC prompt: a concise digest of what the AAC needs to know about this student (communication level, interests, relevant medical/behavioral facts, triggers, current goals). The live AAC can't read the student's full reports mid-session, so keep this digest current and useful. The CUSTOM prompt (Context_AACPrompt) is read-only here — it holds behaviors caretakers explicitly requested; respect it but never overwrite it, and don't duplicate its instructions into the auto prompt. If a caretaker-requested behavior in the custom prompt contradicts a fact you'd add to the auto prompt, defer to the custom prompt.
+3. UPDATE STUDENT-LEVEL FINDINGS. Based on what you learn, revise the writable memory fields (Student_People, Student_Interests, Student_CommunicationStyle, Student_Preferences, Student_Notes, Context_AACAutoPrompt) to reflect the current truth. Do not invent information — only update fields where the session record clearly supports a change. Context_AACAutoPrompt is the AUTO AAC prompt: a concise digest of what the AAC needs to know about this student (communication level, interests, behavioral facts, triggers, current goals). The live AAC never reads the student's reports; what it needs from them is distilled by the system into a separate REPORT DIGEST, so do NOT copy report content (diagnoses, medications, allergies, assessment findings) into the auto prompt - keep it to what the SESSIONS show. The CUSTOM prompt (Context_AACPrompt) is read-only here — it holds behaviors caretakers explicitly requested; respect it but never overwrite it, and don't duplicate its instructions into the auto prompt. If a caretaker-requested behavior in the custom prompt contradicts a fact you'd add to the auto prompt, defer to the custom prompt.
 4. GENERATE THE REPORT. Call the submit_report tool exactly once with:
    - title: a short descriptive title (≤ 80 characters).
    - summary: a 2–4 sentence summary of progress and key findings.
@@ -110,18 +110,22 @@ function isWritableForDeepAnalysis(fieldId: string): boolean {
  * Build the memory field list for the deep-analysis agent.
  * Writable fields: Student_* and Context_AACAutoPrompt. Everything else
  * (including the caretaker-owned Context_AACPrompt): readOnly.
+ *
+ * `allowReadReports` is the student's own aac_settings switch. Deep analysis
+ * is the ONLY AI reader of the report fields left (the AAC session never sees
+ * them); when the switch is off the fields are simply absent.
  */
-function buildMemoryFields(): AgentMemoryFieldWithDB[] {
+function buildMemoryFields(allowReadReports: boolean): AgentMemoryFieldWithDB[] {
   const master = MASTER_MEMORY_FIELDS.map(f =>
     isWritableForDeepAnalysis(f.id)
       ? f
       : ({ ...f, readOnly: true } as AgentMemoryFieldWithDB)
   );
 
-  const aacContext = getAACMemoryFields({
-    allowReadProgress: true,
-    allowReadReports: true,
-  }).map(f => ({ ...f, readOnly: true } as AgentMemoryFieldWithDB));
+  const aacContext = [
+    ...getAACMemoryFields({ allowReadProgress: true }),
+    ...getAACReportMemoryFields({ allowReadReports }),
+  ].map(f => ({ ...f, readOnly: true } as AgentMemoryFieldWithDB));
 
   return [
     ...master,
@@ -360,8 +364,14 @@ export async function runDeepAnalysis(analysisId: string): Promise<void> {
   const client = getAnthropicClient();
   const modelId = resolveModelId("claude", row.model);
 
-  // Build memory context
-  const fields = buildMemoryFields();
+  // Build memory context. The report fields follow the student's own
+  // allowReadReports switch (absent row -> column default, true).
+  const [privacy] = await db
+    .select({ allowReadReports: aacSettings.allowReadReports })
+    .from(aacSettings)
+    .where(eq(aacSettings.studentId, row.studentId))
+    .limit(1);
+  const fields = buildMemoryFields(privacy?.allowReadReports !== false);
   const scratch: Scratch = (row.scratch as Scratch) ?? {};
   const memoryValues = (scratch.memoryValues ?? {}) as Record<string, unknown>;
   const memoryState: MemoryState = scratch.memoryState ?? { visible: [], page: {} };

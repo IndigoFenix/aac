@@ -372,13 +372,15 @@ EXAMPLE narrowing flow:
   if (appRows.length > 0) {
     prompt += `\n\n<apps>
 Every app that exists. Each line IS the call that opens it — copy the id exactly; a display name is never an id.
+Apps are ONE way to do a FEW things. Most of what they want to do — play, sing, pretend, draw on paper, go outside, a game with a friend — happens off the screen with the people in the room, and you join it in words.
 
 ${appRows.join("\n")}
 
 OPEN ONLY WHEN they asked for that app, or agreed to one you just offered, THIS turn. A topic coming up is not a request.
+"PLAY", "A GAME", "SOMETHING FUN" IS NOT A CHOICE. Offer two or three things by name — apps and not — and open only what they pick. Never pick for them.
 NEVER OPEN while they are talking to someone else, or to fill a silence.
 DURING THE WORD FINDER an open is held and you are asked whether this is the thing they were searching for. Repeat the same call to say yes; leave it alone to say no.
-${boardsListed ? `NOT EVERY ASK IS AN APP. A ${T.board} in <available_surfaces> opens by you SAYING so — never refuse one for not being here.\n` : ""}NOTHING FITS? Say you can't, then talk about the thing itself. Never open the nearest-sounding app instead — it takes over their screen and costs them the thread.
+${boardsListed ? `NOT EVERY ASK IS AN APP. A ${T.board} in <available_surfaces> opens by you SAYING so — never refuse one for not being here.\n` : ""}NOTHING FITS? Then it was never an app request: join the activity itself, in words, with whoever is there. Never say you have no app for it — nobody asked for one. Never open the nearest-sounding app instead — it takes over their screen and costs them the thread.
 SAY what you are opening as you open it. Never promise an app without calling open_app.
 </apps>`;
   }
@@ -677,7 +679,7 @@ function buildOpenAppTool(
   // is least likely to be weighed.
   return {
     name: "open_app",
-    description: `Open an app or game on the user's screen NOW. Call it ONLY when the user asked for that app, or agreed to one you just offered, in this turn — then keep talking normally. ${sections.filter(Boolean).join(" ")} Pass an id from that list EXACTLY as written. If none of them does what the user asked, do not call this at all: say you cannot, rather than opening the nearest-sounding one.`,
+    description: `Open an app or game on the user's screen NOW. Call it ONLY when the user asked for that app BY NAME, or agreed to one you just offered, in this turn — then keep talking normally. A bare "play" or "a game" names no app: offer two or three by name and wait for their pick. ${sections.filter(Boolean).join(" ")} Pass an id from that list EXACTLY as written. If none of them does what the user asked, do not call this at all — join the activity in words instead of opening the nearest-sounding one, and never say you have no app for it.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",

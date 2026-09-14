@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useStudentLabel } from '@/hooks/useStudentLabel';
 import { useChat } from '@/hooks/useChat';
 import { useInstitute } from '@/hooks/useInstitute';
 import { IcdCodePicker } from '@/components/insurance/IcdCodePicker';
@@ -42,6 +43,7 @@ import {
   Trash2,
   Edit,
   Loader2,
+  RefreshCw,
   Heart,
   GraduationCap,
   Archive,
@@ -305,11 +307,12 @@ function openPrintableReport(
 
 export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const { user } = useAuth();
-  const { student } = useStudent();
+  const { student, refetchStudent } = useStudent();
   const { currentInstitute } = useInstitute();
   const { aiRefreshing } = useChat();
   const isAiRefreshing = aiRefreshing.has('reports');
   const { t, isRTL } = useLanguage();
+  const { ts } = useStudentLabel();
   const { toast } = useToast();
 
   // State
@@ -363,9 +366,27 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
 
   // Queries
   const { data: currentReports, isLoading, error } = useCurrentReports(student?.id, currentInstitute?.id);
-  const { data: archivedMedical } = useArchivedMedicalRecords(student?.id, undefined, showArchivedMedical);
-  const { data: archivedFunctional } = useArchivedFunctionalReports(student?.id, showArchivedFunctional);
-  const { data: archivedEducational } = useArchivedEducationalReports(student?.id, showArchivedEducational);
+  // The archived lists are ALWAYS fetched, not only while their collapsible
+  // is open: `renderArchivedReports` renders nothing until it has rows, so a
+  // fetch gated on the toggle could never be triggered and every finalized
+  // report vanished from the screen (the server's "current" report is the
+  // working draft/pending_review only — a final row lives in the archive).
+  const { data: archivedMedical } = useArchivedMedicalRecords(student?.id, undefined);
+  const { data: archivedFunctional } = useArchivedFunctionalReports(student?.id);
+  const { data: archivedEducational } = useArchivedEducationalReports(student?.id);
+
+  // What the card shows: the working draft when there is one, otherwise the
+  // newest FINAL report (the card already carries the final-state affordances —
+  // status badge, View, Create revision). The archive list then omits that row
+  // so it is not shown twice. Client-side only: the server's "current" keeps
+  // meaning "the editable draft", which the AI's report tools rely on.
+  const newestFinal = <R extends { status: ReportStatus }>(rows: R[] | undefined): R | undefined =>
+    rows?.find((r) => r.status === 'final');
+  const withoutCard = <R extends { id: string }>(rows: R[] | undefined, card: { id: string } | null | undefined): R[] | undefined =>
+    card ? rows?.filter((r) => r.id !== card.id) : rows;
+  const medicalOnCard = currentReports?.medicalRecord ?? newestFinal(archivedMedical?.records);
+  const functionalOnCard = currentReports?.functionalReport ?? newestFinal(archivedFunctional?.reports);
+  const educationalOnCard = currentReports?.educationalReport ?? newestFinal(archivedEducational?.reports);
 
   // Incidents — lightweight per-student events not tied to any report.
   const queryClient = useQueryClient();
@@ -384,6 +405,41 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const [showIncidentDialog, setShowIncidentDialog] = useState(false);
   const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
   const [incidentForm, setIncidentForm] = useState<IncidentFormState>(DEFAULT_INCIDENT_FORM);
+
+  // Rerun the AAC report digest (server/services/aac/report-digest.ts) even
+  // when nothing changed — for pushing prompt edits through and for debugging
+  // what the AAC actually receives. The AAC settings panel shows the result
+  // off the student row, hence the refetch.
+  const reportDigest = (student as any)?.aacSettings?.reportDigest as
+    | { entries: string[]; generatedAt?: string }
+    | null
+    | undefined;
+
+  const rerunDigest = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', `/api/students/${student!.id}/reports/digest/refresh`);
+      return res.json() as Promise<{ success: boolean; outcome: string; entries: string[] }>;
+    },
+    onSuccess: async (data) => {
+      switch (data.outcome) {
+        case 'regenerated':
+          toast({ title: t('reports.digest.regenerated'), description: t('reports.digest.regeneratedDesc', { count: data.entries.length }) });
+          break;
+        case 'cleared':
+          toast({ title: t('reports.digest.cleared'), description: t('reports.digest.clearedDesc') });
+          break;
+        case 'stale':
+          toast({ variant: 'destructive', title: t('reports.digest.stale'), description: t('reports.digest.staleDesc') });
+          break;
+        default:
+          toast({ variant: 'destructive', title: t('reports.digest.failed') });
+      }
+      await refetchStudent();
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: t('reports.digest.failed') });
+    },
+  });
 
   const createIncident = useMutation({
     mutationFn: async (data: any) => {
@@ -925,14 +981,14 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
             {hasMedicalAccess && (
               <TabsContent value="medical" className="mt-0">
                 {renderReportCard(
-                  currentReports?.medicalRecord,
+                  medicalOnCard,
                   'medical',
                   t('reports.medical.title'),
                   <Stethoscope className="w-5 h-5 text-red-500" />,
                   t('reports.medical.description')
                 )}
                 {renderArchivedReports(
-                  archivedMedical?.records,
+                  withoutCard(archivedMedical?.records, medicalOnCard),
                   'medical',
                   showArchivedMedical,
                   setShowArchivedMedical
@@ -944,18 +1000,46 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
             {hasEducationalAccess && (
               <TabsContent value="functional" className="mt-0">
                 {renderReportCard(
-                  currentReports?.functionalReport,
+                  functionalOnCard,
                   'functional',
                   t('reports.functional.title'),
                   <ClipboardList className="w-5 h-5 text-orange-500" />,
                   t('reports.functional.description')
                 )}
                 {renderArchivedReports(
-                  archivedFunctional?.reports,
+                  withoutCard(archivedFunctional?.reports, functionalOnCard),
                   'functional',
                   showArchivedFunctional,
                   setShowArchivedFunctional
                 )}
+
+                {/* AAC report digest — rerun on demand */}
+                <div className="mt-4 rounded-lg border border-dashed border-border p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{t('reports.digest.title')}</p>
+                    <p className="text-xs text-muted-foreground">{ts('reports.digest.desc')}</p>
+                    <p className="text-xs text-muted-foreground mt-1" data-testid="reports-digest-state">
+                      {reportDigest?.generatedAt
+                        ? `${t('aacSettings.reportDigestGenerated', { date: new Date(reportDigest.generatedAt).toLocaleString() })} · ${reportDigest.entries.length}`
+                        : t('aacSettings.reportDigestEmpty')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => rerunDigest.mutate()}
+                    disabled={rerunDigest.isPending || !student}
+                    data-testid="reports-digest-rerun"
+                  >
+                    {rerunDigest.isPending ? (
+                      <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 me-2" />
+                    )}
+                    {t('reports.digest.rerun')}
+                  </Button>
+                </div>
               </TabsContent>
             )}
 
@@ -963,14 +1047,14 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
             {hasEducationalAccess && (
               <TabsContent value="educational" className="mt-0">
                 {renderReportCard(
-                  currentReports?.educationalReport,
+                  educationalOnCard,
                   'educational',
                   t('reports.educational.title'),
                   <BookOpen className="w-5 h-5 text-blue-500" />,
                   t('reports.educational.description')
                 )}
                 {renderArchivedReports(
-                  archivedEducational?.reports,
+                  withoutCard(archivedEducational?.reports, educationalOnCard),
                   'educational',
                   showArchivedEducational,
                   setShowArchivedEducational

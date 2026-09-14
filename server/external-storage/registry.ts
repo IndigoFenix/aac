@@ -31,7 +31,9 @@ export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
   },
   aac_settings: {
     core: ["aiName"],
-    log: ["elevenlabsApiKey", "chatAgentPrompt", "autoAacPrompt", "knownPeople"],
+    // reportDigest is machine-distilled FROM the clinical reports below, so it
+    // carries their sensitivity and follows the same tier as the AAC prompts.
+    log: ["elevenlabsApiKey", "chatAgentPrompt", "autoAacPrompt", "reportDigest", "knownPeople"],
   },
   // Cached session-plan sections — derived from chatMemory + the AAC prompts
   // (both log-tier above), so the cache follows the same tier.

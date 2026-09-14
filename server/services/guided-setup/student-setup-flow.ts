@@ -654,6 +654,8 @@ function aacBlock(ctx: StudentSetupCtx): string {
     `- Name, voice and sentence length are SETTINGS there — never rules in /Context_AACPrompt.`,
     `1. Will the ${ctx.term} use the ${GS.AAC_APP}? Then guidedSetup(setAacUser, value). If no, advance.`,
     `2. Touch or eyegaze? Set /Student_CommunicationStyle/AccessMethod to touch or eyegaze.`,
+    `   Then: can the ${ctx.term} speak? Set /Student_CommunicationStyle/VerbalAbility to none | vocalizations | single_words | fluent`,
+    `   and VerbalAbilitySource to setup. Skip both if they are unsure.`,
     `   Eyegaze only: which provider, and how much rest space at the screen edge. Then set eyegazeEnabled true,`,
     `   eyegazeProvider (auto | camera | tobii | eyetech | lctech | webhid | mouse), restSpace (large | small | none).`,
     `3. What is the assistant FOR: everyday needs (the default), teaching, or company and talk?`,

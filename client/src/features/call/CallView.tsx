@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, Hand, MonitorUp } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Loader2, Gamepad2, Volume2, VolumeX, UserPlus, Braces, Hand, MonitorUp, Languages } from "lucide-react";
 import { InvitePeoplePopup } from "./InvitePeoplePopup";
 import { GameJsonEditor } from "./GameJsonEditor";
 import { MirroredBoardView } from "./MirroredBoardView";
 import { StudentSplitView } from "./StudentSplitView";
 import { Button } from "@/components/ui/button";
-import { useLanguage } from "@/contexts/LanguageContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useLanguage, SUPPORTED_LANGUAGES, type LanguageCode } from "@/contexts/LanguageContext";
 import { useInstitute } from "@/hooks/useInstitute";
 import { cn } from "@/lib/utils";
 import CallGameSurface from "@shared/social-world/CallGameSurface";
@@ -85,6 +94,8 @@ export function CallView() {
     addressedBy,
     selfTranscript,
     lastSelfSpeech,
+    sttLanguage,
+    setSttLanguage,
     game,
     startGame,
     stopGame,
@@ -752,8 +763,49 @@ export function CallView() {
           </Button>
         )}
 
-        {/* Arm facilitator presses on the mirrored board (guided communication).
-            Only while viewing the board. */}
+        {/* Spoken-language switch for the clinician's OWN speech recognition
+            (server STT) — defaults to the UI language, but the clinician may be
+            SPEAKING a different one to the student. Switching mid-call rolls the
+            recognizer over to the new language on the server; it does not touch
+            the mic capture. */}
+        {isActive && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                aria-label={t("call.sttLanguage")}
+                data-testid="call-stt-language"
+                title={t("call.sttLanguageHint")}
+              >
+                <span className="relative flex flex-col items-center justify-center leading-none">
+                  <Languages className="w-5 h-5" />
+                  <span className="mt-0.5 text-[9px] font-semibold uppercase">{sttLanguage}</span>
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="center">
+              <DropdownMenuLabel>{t("call.sttLanguage")}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={sttLanguage}
+                onValueChange={(code) => setSttLanguage(code as LanguageCode)}
+              >
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <DropdownMenuRadioItem key={lang.code} value={lang.code}>
+                    {lang.nativeName}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* Arm facilitator presses on the mirrored board — the clinician
+            highlights a button on the student's own device and it is READ
+            ALOUD there in the student's voice (local TTS); the AI does not
+            hear it. Only while viewing the board. */}
         {isActive && !game && viewBoard && (
           <Button
             type="button"

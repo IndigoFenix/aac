@@ -16,11 +16,13 @@
 //     by default, so a refusal has to be visible on the clinician's screen or
 //     the feature reads as broken.
 //   - facilitator-press / facilitator-builder: the clinician presses a button
-//     on that mirrored surface; the AAC re-emits it through its own press
-//     pipeline (student-voice TTS + sentence builder), gated by a per-student
-//     consent flag. Two messages because the board and the sentence builder
-//     have genuinely different press vocabularies — a board button is a whole
-//     utterance, a builder press is one move in composing one.
+//     on that mirrored surface; the AAC makes it LIGHT UP and READ ITSELF ALOUD
+//     on the student's device, gated by a per-student consent flag. An OFFER,
+//     not the child's voice — it never reaches the press pipeline, so the
+//     student's own voice does not say it and the AI does not answer it as
+//     their turn. Two messages because the board and the sentence builder
+//     address their cells differently (a board button id vs. a `bx:` builder
+//     target), not because the AAC does two different things with them.
 //   - screen-share: a notice that a getDisplayMedia track was added/removed, so
 //     the receiver can tell the screen track apart from the camera track
 //     (ontrack only exposes streams[0]).
@@ -132,20 +134,26 @@ export interface BoardSelectionMessage {
   at: number;
 }
 
-/** The clinician pressed a button on the mirrored board. The AAC routes it
- *  through the student's own press pipeline (facilitator mode). */
+/** The clinician pressed a button on the mirrored board. The AAC highlights
+ *  that button on the student's screen and reads it aloud with its own TTS
+ *  (facilitator mode) — it does NOT press it. */
 export interface FacilitatorPressMessage {
   k: "facilitator-press";
   button: BoardButton;
-  /** The text to voice (spokenText/sentence/label, resolved on the clinician). */
+  /**
+   * The text to voice (spokenText/sentence/label, resolved on the clinician).
+   * A FALLBACK on arrival: the student's device reads the button's own
+   * `data-speech` when it has one, because that device is the one that knows
+   * which language the board is in.
+   */
   spokenText: string;
   at: number;
 }
 
-/** The clinician pressed something on the mirrored SENTENCE BUILDER. The AAC
- *  routes it through the very handler the student's own press would take, so
- *  there is no second composition pipeline to keep in step. Gated by the same
- *  per-student consent flag as `facilitator-press`. */
+/** The clinician pressed something on the mirrored SENTENCE BUILDER. Same
+ *  answer as a board press: the cell lights up and reads itself aloud on the
+ *  student's device, and the sentence they are composing is left alone. Gated
+ *  by the same per-student consent flag as `facilitator-press`. */
 export interface FacilitatorBuilderMessage {
   k: "facilitator-builder";
   target: BuilderTarget;
@@ -162,8 +170,9 @@ export interface FacilitatorBuilderMessage {
  * indistinguishable from a broken link.
  *
  * `reason` is a code the clinician localizes — `consent` (the per-student flag
- * is off) or `unavailable` (the surface that would have taken the press is not
- * mounted, e.g. the child left the builder mid-press).
+ * is off) or `unavailable` (the button is no longer on the child's screen: the
+ * board rebuilt, the grid paged, or they left the builder mid-press, so there
+ * is nothing to light up).
  */
 export interface FacilitatorAckMessage {
   k: "facilitator-ack";
@@ -187,6 +196,10 @@ export interface FacilitatorAckMessage {
  *
  * `speak` asks the device to read the button aloud as well. It is the
  * consent-gated half — pointing is not speaking.
+ *
+ * Distinct from `facilitator-press` too, though both now light a button up:
+ * this one is STICKY and lasts as long as the clinician's hold, while a
+ * facilitated press is MOMENTARY — it lights, reads itself once, and lets go.
  */
 export interface BoardIndicateMessage {
   k: "board-indicate";

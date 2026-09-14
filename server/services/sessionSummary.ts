@@ -341,7 +341,10 @@ function summarizerMemoryFields(privacy: {
     ...MASTER_MEMORY_FIELDS.map(ro),
     ro(AAC_AUTO_PROMPT_FIELD),
     ro(AAC_PROMPT_FIELD),
-    ...getAACMemoryFields(privacy).map(ro),
+    // Reports are NOT on this path either (allowReadReports is accepted for
+    // signature stability but gates nothing here): the summarizer sees the
+    // session, not the clinical record.
+    ...getAACMemoryFields({ allowReadProgress: privacy.allowReadProgress }).map(ro),
     ...SESSION_MEMORY_FIELDS.map(ro),
   ];
 }

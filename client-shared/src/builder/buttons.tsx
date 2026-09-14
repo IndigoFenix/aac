@@ -10,6 +10,13 @@
 // wiring are the AAC's, byte for byte, because the call mirror addresses these
 // by attribute and a child's dwell targets are measured against them.
 //
+// `data-speech` is what a READOUT says: the AAC's BoardAudioContext reads it off
+// the element for hold-to-highlight, the audio scan, and a clinician's
+// facilitated press on the call mirror. It carries the button's LABEL, because
+// the alternative the reader falls back to is `textContent` — which on these
+// tiles is the emoji glued to the label ("🍎apple"). Buttons that already carry
+// an `aria-label` need none: the reader tries that next.
+//
 // Client-specific behavior comes from `useBuilderDeps()` (t / rtl / Glyph /
 // resolveIconPath) — this file never imports a `@/` module.
 //
@@ -112,6 +119,7 @@ export function ActionButton(props: ActionButtonProps) {
     <motion.button
       data-dwell
       data-mirror-id={props.mirrorId}
+      data-speech={props.label}
       data-testid={props.testId}
       data-active={props.active ? "true" : undefined}
       data-ready={props.ready ? "true" : undefined}
@@ -270,6 +278,7 @@ export function GridButton(props: GridButtonProps) {
     <motion.button
       data-dwell
       data-mirror-id={props.mirrorId}
+      data-speech={label}
       onClick={props.onPress}
       whileTap={{ scale: 0.95 }}
       className="rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex flex-col items-center justify-center min-h-0 overflow-hidden"
@@ -737,6 +746,7 @@ export function PageBackButton(props: PagingButtonProps) {
     <motion.button
       data-dwell
       data-mirror-id={props.mirrorId}
+      data-speech={t("common.back")}
       data-testid={props.testId}
       onClick={props.onPress}
       disabled={props.disabled}
@@ -760,6 +770,7 @@ export function MoreButton(props: PagingButtonProps) {
     <motion.button
       data-dwell
       data-mirror-id={props.mirrorId}
+      data-speech={t("common.more")}
       data-testid={props.testId}
       onClick={props.onPress}
       disabled={props.disabled}

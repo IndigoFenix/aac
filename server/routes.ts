@@ -1293,6 +1293,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     (req, res) => reportController.deleteFunctionalReport(req, res)
   );
 
+  // Rerun the AAC report digest for a student (forces regeneration)
+  app.post(
+    "/api/students/:studentId/reports/digest/refresh",
+    requireAuth,
+    (req, res) => reportController.refreshReportDigest(req, res)
+  );
+
   // ==========================================================================
   // EDUCATIONAL REPORT ENDPOINTS
   // ==========================================================================
@@ -2969,6 +2976,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               );
               (socket as any).__stt = stt;
             }
+            // The clinician can switch their spoken-language mid-call; every
+            // chunk carries the current choice, so keep the session in sync
+            // (a cheap no-op once the hint stops changing).
+            stt.setLanguage(cmd.lang);
             stt.feed(cmd.chunk, typeof cmd.t === "number" ? cmd.t : undefined);
             break;
           }

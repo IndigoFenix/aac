@@ -47,13 +47,28 @@ export class ClinicianStt {
   private windowStartClientAt = 0;
 
   constructor(
-    private readonly languageHint: string | undefined,
+    private languageHint: string | undefined,
     private readonly onFinal: (text: string) => void,
     private readonly sampleRate: number,
     // Live interim+final transcripts for displaying on the caller's own screen
     // (debug: shows whether the recognizer is hearing the speech).
     private readonly onTranscript?: (text: string, isFinal: boolean) => void,
   ) {}
+
+  /** Change the spoken-language hint mid-call (the clinician can switch it from
+   *  the call UI). A no-op when the hint hasn't actually changed. Otherwise
+   *  stores the new hint and, if a streaming session is currently open, rolls
+   *  it over so the NEXT chunk opens Google STT with the new language — a
+   *  session already open cannot be told to switch language, only replaced. */
+  setLanguage(lang: string | undefined): void {
+    if (lang === this.languageHint) return;
+    const prev = this.languageHint;
+    this.languageHint = lang;
+    logLiveSession("CLINICIAN_STT", `spoken language switched: ${prev ?? "?"} → ${lang ?? "?"}`);
+    if (this.session) {
+      this.rollover();
+    }
+  }
 
   /** Feed a base64 LINEAR16 chunk; lazily opens / rolls over the session.
    *  `clientAt` is the sender's own timestamp for this chunk (its clock), used

@@ -92,9 +92,6 @@ interface ProfileForm {
   country: string;
   grade: string;
   primaryLanguage: string;
-  // 'unspecified' sentinel ↔ null in the DB (no enforcement). Other values
-  // feed the AAC's transcript-attribution trust gate (shared/aac/verbal-ability.ts).
-  verbalAbility: string;
 }
 
 /**
@@ -213,7 +210,6 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
     country: 'IL',
     grade: '',
     primaryLanguage: language,
-    verbalAbility: 'unspecified',
   });
 
   // Institute assignment state
@@ -248,7 +244,6 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
         country: (student as any).country || 'IL',
         grade: (student as any).grade || '',
         primaryLanguage: (student as any).primaryLanguage || language,
-        verbalAbility: (student as any).verbalAbility || 'unspecified',
       });
       setSelectedInstituteId('');
       setSelectedClassroomId('');
@@ -364,7 +359,6 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
       framework: form.framework,
       country: form.country,
       primaryLanguage: form.primaryLanguage,
-      verbalAbility: form.verbalAbility === 'unspecified' ? null : form.verbalAbility,
     } as any);
   };
 
@@ -744,28 +738,6 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
                       <SelectItem value="Other">{t('student.countryOther') || 'Other'}</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>{t('student.verbalAbility') || 'Verbal Ability'}</Label>
-                  <Select
-                    value={form.verbalAbility}
-                    onValueChange={(v) => setForm(prev => ({ ...prev, verbalAbility: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unspecified">{t('student.verbalAbilityUnspecified') || 'Unspecified'}</SelectItem>
-                      <SelectItem value="none">{t('student.verbalAbilityNone') || 'No spoken words'}</SelectItem>
-                      <SelectItem value="vocalizations">{t('student.verbalAbilityVocalizations') || 'Vocalizations only (no words)'}</SelectItem>
-                      <SelectItem value="single_words">{t('student.verbalAbilitySingleWords') || 'Single words'}</SelectItem>
-                      <SelectItem value="fluent">{t('student.verbalAbilityFluent') || 'Fluent speech'}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {t('student.verbalAbilityHint') || 'Helps the AAC companion tell overheard speech (TV, other people) apart from speech that could really be theirs.'}
-                  </p>
                 </div>
 
                 <div className="space-y-2">

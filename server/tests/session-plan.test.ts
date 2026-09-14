@@ -98,6 +98,13 @@ describe("session-plan — group/call layout", () => {
     const allKeys = PLAN_CALLS.flatMap((c) => c.tags.map((t) => t.key));
     expect(new Set(allKeys).size).toBe(allKeys.length);
   });
+
+  it("identity_core carries the verbal_ability tag, and verbalAbility is in the identity group", () => {
+    const identityCore = PLAN_CALLS.find((c) => c.call === "identity_core")!;
+    expect(identityCore.tags.map((t) => t.tag)).toContain("verbal_ability");
+    expect(identityCore.tags.map((t) => t.key)).toContain("verbalAbility");
+    expect(GROUP_SECTION_KEYS.identity).toContain("verbalAbility");
+  });
 });
 
 describe("session-plan — prompt assembly", () => {
@@ -228,6 +235,25 @@ describe("session-plan — authority-figure deference default", () => {
   });
 });
 
+describe("session-plan — report digest in the persona spec", () => {
+  const identityCore = PLAN_CALLS.find((c) => c.call === "identity_core")!;
+
+  it("includes a REPORT DIGEST block with the entries when reportNotes is non-empty", () => {
+    const built = buildPlanCall(
+      identityCore,
+      makeCtx({ reportNotes: ["Never offer peanuts"] }),
+      NONCES,
+    );
+    expect(built.systemPrompt).toContain("REPORT DIGEST");
+    expect(built.systemPrompt).toContain("Never offer peanuts");
+  });
+
+  it("omits the REPORT DIGEST block when reportNotes is empty", () => {
+    const built = buildPlanCall(identityCore, makeCtx({ reportNotes: [] }), NONCES);
+    expect(built.systemPrompt).not.toContain("REPORT DIGEST");
+  });
+});
+
 describe("session-plan — response parsing", () => {
   const ctx = makeCtx();
   const spec = PLAN_CALLS.find((c) => c.call === "identity_core")!;
@@ -249,6 +275,32 @@ describe("session-plan — response parsing", () => {
     expect(sections.persona).toContain("(/persona)");
     // Empty body → section omitted (falls back to static downstream).
     expect(sections.safetyNotes).toBeUndefined();
+  });
+});
+
+describe("session-plan — verbal_ability section", () => {
+  const identityCore = PLAN_CALLS.find((c) => c.call === "identity_core")!;
+  const ctx = makeCtx();
+
+  it("the identity_core system prompt spells out the token list and 'unspecified'", () => {
+    const built = buildPlanCall(identityCore, ctx, NONCES);
+    expect(built.systemPrompt).toContain("verbal_ability");
+    expect(built.systemPrompt).toContain("unspecified");
+  });
+
+  it("parses a nonced verbal_ability response into sections.verbalAbility", () => {
+    const built = buildPlanCall(identityCore, ctx, NONCES);
+    const response = `[verbal_ability-${NONCES.outputNonce}]\nsingle_words\n[/verbal_ability-${NONCES.outputNonce}]`;
+    const sections = parsePlanCallResponse(response, built);
+    expect(sections.verbalAbility).toBe("single_words");
+  });
+
+  it("carries a decided 'Verbal ability' student-data line through to the system prompt", () => {
+    const withLine = makeCtx({
+      studentDataParts: ["Name: Daniel", "Age: 9", "Verbal ability (structured, decided): none"],
+    });
+    const built = buildPlanCall(identityCore, withLine, NONCES);
+    expect(built.systemPrompt).toContain("Verbal ability (structured, decided): none");
   });
 });
 
@@ -275,6 +327,15 @@ describe("session-plan — hashing", () => {
     // A user aging past the child threshold must regenerate their identity
     // sections — otherwise the cached persona keeps the deference default.
     expect(identityHash(makeCtx({ isChild: false }))).not.toBe(identityHash(base));
+  });
+
+  it("identityHash changes when reportNotes changes, and treats omitted/[] the same", () => {
+    const base = makeCtx();
+    expect(identityHash(makeCtx({ reportNotes: ["Never offer peanuts"] })))
+      .not.toBe(identityHash(base));
+    // Omitting reportNotes entirely (older fixtures) and passing [] explicitly
+    // must hash identically — both mean "no report digest entries".
+    expect(identityHash(makeCtx({ reportNotes: [] }))).toBe(identityHash(base));
   });
 
   it("situationsHash re-hits across weeks for a weekly-repeating schedule", () => {

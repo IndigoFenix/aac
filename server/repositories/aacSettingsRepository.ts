@@ -96,6 +96,13 @@ export class AacSettingsRepository {
    */
   async upsert(studentId: string, updates: UpdateAacSettings): Promise<AacSettings> {
     updates = this.sanitizeUpdates(updates);
+    // Turning the report switch OFF must take the digest with it: the digest is
+    // report-derived text that would otherwise keep reaching sessions after
+    // consent to read reports was withdrawn. Both write doors (writeAACSettings
+    // and studentService.updateAacSettings) come through here.
+    if ((updates as Record<string, unknown>).allowReadReports === false) {
+      updates = { ...updates, reportDigest: null } as UpdateAacSettings;
+    }
     const existing = await this.getByStudentId(studentId);
     if (existing) {
       const ref = this.ref(studentId);

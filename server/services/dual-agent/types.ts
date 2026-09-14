@@ -139,6 +139,11 @@ export interface PendingMessage {
  */
 export interface EnhancedPromptSections {
   persona?: string;
+  /** Identity plan call's verdict on the user's speech production - one of
+   *  the VerbalAbility tokens or "unspecified". NOT rendered into any prompt:
+   *  the Monitor seeds Student_CommunicationStyle.VerbalAbility from it when
+   *  nothing else has set the value (verbal-ability-memory.ts). */
+  verbalAbility?: string;
   sessionGoals?: string;
   gestureOverrides?: string;
   /** LEGACY single-agent example dialogues. The session-plan enhancer no
@@ -331,9 +336,6 @@ export interface DualAgentSessionState {
   // and so the prompt enhancer / tool builder can reference them.
   availableCustomApps?: Array<{ id: string; name: string; imageUrl?: string | null; description?: string | null }>;
 
-  // Cached diagnosis from medicalRecords table (loaded once per session)
-  cachedDiagnosis?: string | null;
-
   // Memory context from fast startup (chatMemory fields)
   memoryContext?: string;
 
@@ -361,6 +363,11 @@ export interface DualAgentSessionState {
 
   // Live API hook: called when monitor injects context, so relay can forward to Gemini session
   onContextInjection?: (text: string) => void;
+
+  // Called once after every Monitor round (successful processing), with the
+  // time the round began. The coordinator re-reads memory the Monitor may have
+  // changed (VerbalAbility) and applies the no-raise-from-transcripts rule.
+  onMonitorRoundComplete?: (roundStartedAt: number) => Promise<void> | void;
 
   // Live API hook: called when monitor generates a new board, so relay can notify the client
   onBoardGenerated?: (board: { boardId: string; name: string; hint?: string }) => void;

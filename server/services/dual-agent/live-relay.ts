@@ -62,6 +62,7 @@ import { activityLogService } from "../activityLogService";
 import { recordUtterance } from "../insurance/utteranceLogger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { buildInteractiveAgentPrompt, buildRestingAgentPrompt, composeAacPersona, normalizeAacPromptList } from "../memory-schema/aac-memory-schema";
+import { digestEntries } from "../aac/report-digest";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
@@ -2054,7 +2055,7 @@ export class LiveRelay {
           const state = this.sessionCache?.state;
           const student = this.sessionCache?.monitorAgent?.getStudent?.();
           if (state && student) {
-            const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt });
+            const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt, reports: digestEntries(student.aacSettings) });
             const sections = state.enhancedSections;
             const persona = sections?.persona || rawPersona;
             const computeAge = (bd: string | null | undefined) => {
@@ -2070,7 +2071,6 @@ export class LiveRelay {
               muteState: this.muteState,
               studentAge: computeAge(student.birthDate),
               studentGender: student.gender || undefined,
-              studentDiagnosis: state.cachedDiagnosis || undefined,
               aiName: student.aacSettings?.aiName || undefined,
               knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
               availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
@@ -2676,7 +2676,7 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       if (this.useDirectAudio && cached.monitorAgent.getStudent) {
         const student = cached.monitorAgent.getStudent();
         if (student) {
-          const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt });
+          const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt, reports: digestEntries(student.aacSettings) });
           const sections = state.enhancedSections;
           const persona = sections?.persona || rawPersona;
           const computeAge = (bd: string | null | undefined) => {
@@ -2692,7 +2692,6 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
             muteState: this.muteState,
             studentAge: computeAge(student.birthDate),
             studentGender: student.gender || undefined,
-            studentDiagnosis: state.cachedDiagnosis || undefined,
             aiName: student.aacSettings?.aiName || undefined,
             knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
             availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
@@ -2837,7 +2836,9 @@ The user composed this SENTENCE in the ${T.builder} and pressed Play. It is YOUR
       // 9. Store greeting for onReady to send
       const isMuted = this.muteState === "muted";
       const student = cached.monitorAgent.getStudent?.();
-      const personaHint = (student && (normalizeAacPromptList(student.aacSettings?.chatAgentPrompt).length > 0 || normalizeAacPromptList(student.aacSettings?.autoAacPrompt).length > 0))
+      // The report digest counts as profile material too — a student with no
+      // caretaker/auto notes may still have care-team guidance in the persona.
+      const personaHint = (student && (normalizeAacPromptList(student.aacSettings?.chatAgentPrompt).length > 0 || normalizeAacPromptList(student.aacSettings?.autoAacPrompt).length > 0 || digestEntries(student.aacSettings).length > 0))
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
       const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the ${T.button}s contextually relevant." : "";
@@ -5935,7 +5936,7 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
       const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       return age > 0 ? String(age) : undefined;
     };
-    const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt });
+    const rawPersona = composeAacPersona({ custom: student.aacSettings?.chatAgentPrompt, auto: student.aacSettings?.autoAacPrompt, reports: digestEntries(student.aacSettings) });
     const sections = state.enhancedSections;
     const persona = sections?.persona || rawPersona;
 
@@ -5952,7 +5953,6 @@ The user pressed "More" — they can't find the ${T.button} they need on the cur
         memoryContext: state.memoryContext,
         studentAge: computeAge(student.birthDate),
         studentGender: student.gender || undefined,
-        studentDiagnosis: state.cachedDiagnosis || undefined,
         aiName: student.aacSettings?.aiName || undefined,
         knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
         useDirectAudio: this.useDirectAudio,

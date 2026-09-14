@@ -44,7 +44,7 @@ A central **Coordinator** owns the WebSocket to the client, the session state, a
 
 ### 3d. Monitor Agent (long-term memory and supervision)
 - Implemented on a reasoning-oriented model (Claude).
-- Has **read access to the clinical database** (reports, goals, plans, contacts, calendar).
+- Reads the **non-report** side of the clinical database (goals, plans, contacts, calendar). It does **not** read medical, functional or educational reports, and no longer receives a diagnosis: report content reaches a session only as the report digest (§6).
 - Does **not** have write access to clinical records — only a constrained "session notes" and "incident reports" channel.
 - Runs on a slower cadence: every ~2 minutes during active sessions, plus a forced final pass at session close that consolidates notes and writes the rolling session summary.
 - Performs **Deep Analysis**: periodic high-level review of accumulated session data to detect behavioral patterns, regression, or progress, surfaced back to the Clinician Platform.
@@ -79,24 +79,20 @@ This three-tier structure — generated boards, AI-assisted construction, AI-gui
 Because the Student Platform is always-on and multimodally observant, the system enforces a strict information-flow boundary:
 
 - The Clinician AI may read and write the full clinical record.
-- The Monitor Agent may **read** the clinical record but writes only to a non-clinical journal (session notes, incident reports).
+- The Monitor Agent may **read** the non-report clinical record (goals, plans, contacts, calendar) but writes only to a non-clinical journal (session notes, incident reports).
 - The Observer / Speaker / Board Manager agents work from an AI-curated prompt prepared by the Monitor Agent and reviewable by clinicians, rather than from the clinical record directly.
 - Sensitive identifiers (e.g. government ID numbers) are treated as write-only on the AI/memory-schema path: the value is replaced with a `[REDACTED]` placeholder on read, and that placeholder is ignored on write, so no ID number reaches a prompt. This is an API-response mask, not database-level encryption, and it is applied on the AI path — the clinician-facing REST endpoints still return the raw value to an authorized user.
 - Cross-institute sharing of student records is gated through an explicit consent and invitation flow. Cross-institute and system-admin reads are audit-logged as such; owned reads are logged too, by a per-request read audit over the student-scoped GET surface.
 
 This division is what lets the AAC agents behave with full situational awareness while working from a curated view rather than the clinical record.
 
-> **Known gap (2026-08, tracked).** One field currently breaks the rule above:
-> `medical_records.primary_diagnosis` is fetched ungated — no `allowReadReports`
-> toggle, no `status='final'` filter, no institute-visibility join, no audit — and
-> rendered into the shared descriptor block of the Observer, Speaker **and** Board
-> Manager system prompts ("a 12 year old girl with \<diagnosis\>"). The Speaker is
-> a native-audio agent that talks out loud in a room that may contain bystanders,
-> and its only disclosure control there is a soft prompt instruction. The
-> diagnosis has no evident function for the Board Manager (a button-layout
-> generator) or the Observer (perception). Until this is gated, do not read this
-> section as a guarantee that no diagnostic detail can reach the live agents. See
-> `docs/SECURITY_ARCHITECTURE.md` §12.1 item 17.
+**Reports: one door.** Since 2026-09-14 no AAC-session agent reads a clinical report or a
+diagnosis. When `allowReadReports` is on, the system distils the newest FINAL medical,
+functional and educational reports into a **report digest** — a short list of operational
+facts (what the AAC must do, avoid or expect), with no diagnosis label — stored
+machine-owned in `aac_settings.report_digest` (`server/services/aac/report-digest.ts`).
+The digest is the only report-derived text a session ever sees: it is regenerated when the
+source reports change, cleared when the switch goes off, and each generation is audited.
 
 ## 7. Multimodal Context Pipeline
 

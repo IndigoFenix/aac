@@ -16,6 +16,7 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
+import { useStudentLabel } from '@/hooks/useStudentLabel';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat } from '@/hooks/useChat';
 import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
@@ -118,6 +119,7 @@ import {
   MapPin,
   Lock,
   Power,
+  FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ratioLevel, labelFontSize, labelLines } from '@shared/button-sizing';
@@ -189,9 +191,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // must never enter the per-student PATCH payload / AAC_SETTINGS_FIELDS.
   const { user, refetchUser } = useAuth();
   const { t, isRTL } = useLanguage();
+  const { ts } = useStudentLabel();
   const { theme } = useTheme();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  // REPORT DIGEST — machine-owned, never editable here: read straight off the
+  // loaded student rather than mirrored into state, so it can never end up in
+  // a save payload or a dirty-check. See shared/schema-private.ts.
+  const reportDigest = (student as any)?.aacSettings?.reportDigest as
+    | { entries: string[]; sourceKey: string; generatedAt: string }
+    | null
+    | undefined;
   const isDark = theme === 'dark';
 
   // Session recording is an operator-granted entitlement carried on the
@@ -1406,6 +1416,44 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       <Trash2 className="w-3 h-3 me-1" />
                       {t('aacSettings.clearAutoPrompt')}
                     </Button>
+                  )}
+                </div>
+
+                {/* Report digest — machine-generated from the student's final
+                    reports (server/services/aac/report-digest.ts). Read-only:
+                    never sent back on save, no edit/delete controls. */}
+                <div className="space-y-2 border-t pt-4">
+                  <Label className="text-base font-medium flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    {t('aacSettings.reportDigestTitle')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {ts('aacSettings.reportDigestDesc')}
+                  </p>
+                  {!reportDigest || reportDigest.entries.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic py-2">
+                      {t('aacSettings.reportDigestEmpty')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <ul className="space-y-2 list-disc ps-5">
+                        {reportDigest.entries.map((entry, i) => (
+                          <li
+                            key={i}
+                            className="text-sm rounded-md border bg-muted/50 p-2 whitespace-pre-wrap break-words"
+                          >
+                            {entry}
+                          </li>
+                        ))}
+                      </ul>
+                      {reportDigest.generatedAt && (
+                        <p className="text-xs text-muted-foreground">
+                          {t('aacSettings.reportDigestGenerated', {
+                            date: new Date(reportDigest.generatedAt).toLocaleDateString(),
+                          })}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

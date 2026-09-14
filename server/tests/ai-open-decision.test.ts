@@ -19,6 +19,7 @@
  */
 
 import { describe, test, expect, jest, beforeAll, beforeEach, afterAll } from "@jest/globals";
+import { DEFAULT_AI_OPEN_POLICY } from "@shared/app-startup";
 
 const getStructuredResponse = jest.fn(async (..._a: any[]) => ({
   content: JSON.stringify({ open: true }),
@@ -203,6 +204,17 @@ describe("what the decision model is given", () => {
     const instructions = getStructuredResponse.mock.calls[0][9] as string;
     expect(instructions).toContain("Wanting food is not wanting a restaurant.");
     expect(instructions).toContain("Restaurant");
+  });
+
+  test("the DEFAULT policy (apps with none of their own) refuses a bare 'play' and asks for a choice", async () => {
+    // 2026-09-14: the games declared no policy, so an AI open of one was never
+    // asked, and "I want to play" opened whichever came first.
+    await decideAiOpen(ctx({ appId: "bubbles_game", appName: "Bubbles", policy: DEFAULT_AI_OPEN_POLICY }));
+    const instructions = getStructuredResponse.mock.calls[0][9] as string;
+    expect(instructions).toContain("Bubbles");
+    expect(instructions).toContain("want to play, a game, or something fun");
+    expect(instructions).toContain("offer two or three things");
+    expect(instructions).toContain("agreed to it after the assistant offered it BY NAME");
   });
 
   test("told to allow when it is a close call", async () => {

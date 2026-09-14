@@ -179,6 +179,8 @@ export async function resetSimStudent(studentId: string): Promise<void> {
 
   await db
     .update(aacSettings)
-    .set({ autoAacPrompt: [] })
+    // reportDigest too: a stale report distillation would otherwise survive
+    // the reset and colour the next sim run's persona.
+    .set({ autoAacPrompt: [], reportDigest: null })
     .where(eq(aacSettings.studentId, studentId));
 }

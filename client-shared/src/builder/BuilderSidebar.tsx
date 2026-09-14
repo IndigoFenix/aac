@@ -187,6 +187,10 @@ function TabButton(props: { entry: BuilderSidebarEntry; density: SidebarDensity 
       data-dwell
       data-testid={entry.testId}
       data-mirror-id={entry.mirrorId}
+      // What a READOUT says (hold-to-highlight / audio scan / a clinician's
+      // facilitated press). Without it the reader falls back to textContent,
+      // which here is the icon emoji glued to the label.
+      data-speech={entry.label}
       role="tab"
       aria-selected={entry.active}
       tabIndex={0}
@@ -231,6 +235,7 @@ function ChipButton(props: { entry: BuilderSidebarEntry; density: SidebarDensity
     <motion.button
       data-dwell
       data-mirror-id={entry.mirrorId}
+      data-speech={entry.label}
       data-testid={entry.testId}
       onClick={entry.onPress}
       whileTap={{ scale: 0.95 }}

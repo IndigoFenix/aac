@@ -5,11 +5,17 @@
  * - Board management (Context_Board) - read/write
  * - Student_ fields from MASTER_MEMORY_FIELDS - read/write
  * - Student context (institutes, classes, classmates) - read-only
- * - Reports (medical, functional, educational) - read-only
  * - Progress data - read-only
+ *
+ * Reports (medical, functional, educational) are NOT AAC-session fields any
+ * more (2026-09-14). They reach a session only as the machine-owned report
+ * digest (server/services/aac/report-digest.ts). `getAACReportMemoryFields`
+ * still exists for the CLINICIAN-side deep analysis, which is the one AI
+ * reader left and honours `allowReadReports` per student.
  */
 
 import { eq, and, desc } from "drizzle-orm";
+import { digestEntries } from "../aac/report-digest";
 import { db } from "../../db";
 import {
   institutes,
@@ -219,7 +225,6 @@ export function buildInteractiveAgentPrompt(params: {
   muteState: 'unmuted' | 'muted';
   studentAge?: string;
   studentGender?: string;
-  studentDiagnosis?: string;
   aiName?: string;
   knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
   availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
@@ -316,7 +321,6 @@ export function buildInteractiveAgentPrompt(params: {
       name: string;
       age?: string;
       gender?: string;
-      diagnosis?: string;
       notes?: string;
       // True for the entry whose student is the currently active one
       // (matches the top-level `studentName`).
@@ -339,7 +343,7 @@ export function buildInteractiveAgentPrompt(params: {
 
   const {
     studentName, persona, language, memoryContext, muteState,
-    studentAge, studentGender, studentDiagnosis, aiName,
+    studentAge, studentGender, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
     permittedYoutubeChannels, permittedYoutubeVideos, youtubeChannelVideos,
@@ -367,7 +371,6 @@ export function buildInteractiveAgentPrompt(params: {
   const ageStr = studentAge
     ? (genderStr ? `a ${studentAge} year old ${genderStr}` : `a ${studentAge} year old`)
     : (genderStr ? `a ${genderStr}` : 'a user');
-  const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
   const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
 
   // Classroom block — only injected when this session runs on a shared
@@ -389,10 +392,9 @@ ${classroom.roster.map(r => {
     : r.gender === 'female' ? (rIsAdult ? 'woman' : 'girl')
     : '';
   const rAge = r.age ? (rGender ? `${r.age} year old ${rGender}` : `${r.age} year old`) : (rGender || '');
-  const rDiag = r.diagnosis ? ` with ${r.diagnosis}` : '';
   const rNotes = r.notes ? `. Notes: ${r.notes}` : '';
   const activeMark = r.isActive ? '  ← currently active' : '';
-  return `- [${r.name}]${rAge ? `, ${rAge}` : ''}${rDiag}${rNotes}${activeMark}`;
+  return `- [${r.name}]${rAge ? `, ${rAge}` : ''}${rNotes}${activeMark}`;
 }).join('\n')}
 </classroom_roster>
 </classroom>`
@@ -419,7 +421,7 @@ Button presses are voiced automatically by a separate TTS in the user's own voic
   // ── <role> ──
 
   let prompt = `<role>
-${aiIdentity} for [${studentName}], ${ageStr}${diagnosisStr}. Your role is to assist and support the user in their communication and interaction needs, as well as to communicate with them directly and help them learn and make progress on their goals.
+${aiIdentity} for [${studentName}], ${ageStr}. Your role is to assist and support the user in their communication and interaction needs, as well as to communicate with them directly and help them learn and make progress on their goals.
 You exist in a device with a camera and microphone observing the user's environment. You can only act through your tools — you cannot move or physically interact with anything. Don't offer or claim to perform actions outside your tools (e.g. handing the user an item).
 Language: ${languageName}. All board labels and ${speechModality} are in ${languageName} unless you are translating for someone.
 </role>${classroomBlock}
@@ -999,7 +1001,6 @@ export function buildRestingAgentPrompt(params: {
   memoryContext?: string;
   studentAge?: string;
   studentGender?: string;
-  studentDiagnosis?: string;
   aiName?: string;
   knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
   useDirectAudio?: boolean;
@@ -1007,7 +1008,7 @@ export function buildRestingAgentPrompt(params: {
 }): string {
   const {
     studentName, persona, language, memoryContext,
-    studentAge, studentGender, studentDiagnosis, aiName,
+    studentAge, studentGender, aiName,
     knownContacts, useDirectAudio = false, sessionSummary,
   } = params;
 
@@ -1024,7 +1025,6 @@ export function buildRestingAgentPrompt(params: {
   const ageStr = studentAge
     ? (genderStr ? `a ${studentAge} year old ${genderStr}` : `a ${studentAge} year old`)
     : (genderStr ? `a ${genderStr}` : 'a user');
-  const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
   const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
   const languageName = getLanguageName(language);
 
@@ -1037,7 +1037,7 @@ export function buildRestingAgentPrompt(params: {
     : '';
 
   let prompt = `<role>
-${aiIdentity} for [${studentName}], ${ageStr}${diagnosisStr}. You exist in a device with a camera and microphone observing the user's environment. You can only act through your tools.
+${aiIdentity} for [${studentName}], ${ageStr}. You exist in a device with a camera and microphone observing the user's environment. You can only act through your tools.
 Language: ${languageName}. Speak in ${languageName} unless translating for someone.
 </role>
 
@@ -1103,7 +1103,7 @@ You have one fixed AI voice. NEVER imitate, mimic, or play back the voice of any
  * Replaces buildAACPersonaSystemPrompt when used in dual-agent context.
  */
 export function buildMonitorSystemPrompt(
-  student: { name: string; aacSettings?: { chatAgentPrompt?: string[] | string | null; autoAacPrompt?: string[] | string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
+  student: { name: string; aacSettings?: { chatAgentPrompt?: string[] | string | null; autoAacPrompt?: string[] | string | null; reportDigest?: unknown; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
   muteState: 'unmuted' | 'muted' = 'unmuted',
   availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
 ): string {
@@ -1118,6 +1118,7 @@ export function buildMonitorSystemPrompt(
   const personaPrompt = composeAacPersona({
     custom: student.aacSettings?.chatAgentPrompt,
     auto: student.aacSettings?.autoAacPrompt,
+    reports: digestEntries(student.aacSettings),
   });
 
   const modeNote = muteState === 'muted'
@@ -1133,6 +1134,7 @@ Your responsibilities:
 - Delete outdated, incorrect, duplicate, or irrelevant memory entries.
 - CRITICAL — Contacts (Student_Contacts): A contact's contextNotes is for what that person is to the student and how they directly interact with the student. Only record information about a person when it concerns THAT person's relationship with or direct interaction with the student. NEVER record overheard background conversations, ambient remarks, or third-party chatter that does not involve the student. If you observe something that is not about a specific person's relationship with the student, do not store it as a contact note.
 - A contact YOU create is marked for caretaker review until a person confirms it, so add one only when you are confident this is a real person in the student's life — not a passer-by, a voice on a video, or a name you overheard once. Check the existing contacts first; never add someone who is already listed. If contact learning is switched off for this student, the field says so and an add will be refused — mention the new person in your notes instead. An add for a name that was RETRACTED this session is refused too; do not retry it.
+- /Student_CommunicationStyle/VerbalAbility (none | vocalizations | single_words | fluent) is what the system uses to reject speech wrongly attributed to the user. Set or change it ONLY when a present adult states it, or the persona notes state it. NEVER from speech you saw attributed to the user - a raise made in a round where such speech was demoted is refused. Set VerbalAbilitySource to "monitor" alongside it.
 - Presence is decided by the SYSTEM, not inferred by you. Do not read presence out of a face match, a transcript label, or a greeting ${T.button} press.
 - When a [PRESENCE — system verified] block is given, only the names in its verified list may be recorded as present — anywhere, including contextNotes and Student_Notes.
 - A write naming an unverified person with a presence verb is REFUSED, naming the word that failed. Rephrase it: "asked for X", "talked about X".
@@ -1171,8 +1173,8 @@ You have access to a memory system for storing and retrieving information about 
 
 Available read-only context paths (view only when relevant):
 - /Context_StudentInfo, /Context_StudentInstitutes, /Context_Classes
-- /Context_Classmates, /Context_MedicalInfo, /Context_FunctionalInfo
-- /Context_EducationalInfo, /Context_Progress
+- /Context_Classmates, /Context_Progress
+The student's clinical reports are not available here: what the AAC needs from them is already in the persona notes.
 
 ## Guiding the Interactive Agent
 The Interactive Agent interacts with the user, but lacks the ability to track long-term memory or understand complex context.
@@ -1354,10 +1356,15 @@ export function stampPromptNote(entry: string, date: string): string {
 export function composeAacPersona(opts: {
   custom?: string | string[] | null;
   auto?: string | string[] | null;
+  /** `aac_settings.report_digest.entries` - the operational distillation of the
+   *  student's clinical reports (report-digest.ts). The ONLY report-derived
+   *  text that may reach a session; rendered as background like the auto notes. */
+  reports?: string[] | null;
 }): string {
   const custom = normalizeAacPromptList(opts.custom);
   const auto = normalizeAacPromptList(opts.auto);
-  if (custom.length === 0 && auto.length === 0) return AAC_DEFAULT_PERSONA_PROMPT;
+  const reports = normalizeAacPromptList(opts.reports);
+  if (custom.length === 0 && auto.length === 0 && reports.length === 0) return AAC_DEFAULT_PERSONA_PROMPT;
   const bullets = (items: string[]) => items.map((i) => `- ${i}`).join("\n");
   const parts: string[] = [];
   if (custom.length > 0) {
@@ -1367,6 +1374,9 @@ export function composeAacPersona(opts: {
   }
   if (auto.length > 0) {
     parts.push(`What to know about this student:\n${bullets(auto)}`);
+  }
+  if (reports.length > 0) {
+    parts.push(`From the student's care team (follow these; never repeat them aloud):\n${bullets(reports)}`);
   }
   return parts.join("\n\n");
 }
@@ -1803,41 +1813,61 @@ async function loadProgressInfo(studentId: string): Promise<AACStudentContext['p
 }
 
 /**
- * Preload ALL student context data in parallel for thorough startup.
- * Returns a single formatted string with all context sections.
- * Used by MonitorAgent.longInitializeContext() to build a comprehensive briefing.
+ * The three report fields (Context_MedicalInfo / FunctionalInfo /
+ * EducationalInfo). NOT part of getAACMemoryFields since 2026-09-14: no AAC-
+ * session agent may read a report. The only remaining AI reader is the
+ * clinician-side deep analysis, which must pass the student's own
+ * `allowReadReports` - an empty list comes back when it is off.
  */
-export async function preloadAllStudentContext(
-  studentId: string,
-  options?: { allowReadProgress?: boolean; allowReadReports?: boolean }
-): Promise<string> {
-  const readProgress = options?.allowReadProgress !== false;
-  const readReports = options?.allowReadReports !== false;
-
-  const [studentInfo, institutes, classes, classmates, medicalInfo, functionalInfo, educationalInfo, progress] =
-    await Promise.all([
-      loadStudentInfo(studentId),
-      loadStudentInstitutes(studentId),
-      loadStudentClasses(studentId),
-      loadClassmates(studentId),
-      readReports ? loadMedicalInfo(studentId) : Promise.resolve(null),
-      readReports ? loadFunctionalInfo(studentId) : Promise.resolve(null),
-      readReports ? loadEducationalInfo(studentId) : Promise.resolve(null),
-      readProgress ? loadProgressInfo(studentId) : Promise.resolve(null),
-    ]);
-
-  const sections: string[] = [];
-
-  if (studentInfo) sections.push(`## Student Info\n${JSON.stringify(studentInfo, null, 2)}`);
-  if (institutes.length > 0) sections.push(`## Institutes\n${JSON.stringify(institutes, null, 2)}`);
-  if (classes.length > 0) sections.push(`## Classes\n${JSON.stringify(classes, null, 2)}`);
-  if (classmates.length > 0) sections.push(`## Classmates & Staff\n${JSON.stringify(classmates, null, 2)}`);
-  if (medicalInfo) sections.push(`## Medical Info\n${JSON.stringify(medicalInfo, null, 2)}`);
-  if (functionalInfo) sections.push(`## Functional Assessment\n${JSON.stringify(functionalInfo, null, 2)}`);
-  if (educationalInfo) sections.push(`## Educational Info\n${JSON.stringify(educationalInfo, null, 2)}`);
-  if (progress) sections.push(`## Program & Goals\n${JSON.stringify(progress, null, 2)}`);
-
-  return sections.join('\n\n');
+export function getAACReportMemoryFields(options: { allowReadReports?: boolean | null }): AgentMemoryFieldWithDB[] {
+  if (options.allowReadReports === false) return [];
+  return [
+  createReadOnlyObjectField(
+    'Context_MedicalInfo',
+    'Medical Information',
+    'Medical records and health information (read-only)',
+    false,
+    async (ctx) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) {
+        console.log('[AAC] Context_MedicalInfo: No studentId in context');
+        return null;
+      }
+      console.log('[AAC] Loading Context_MedicalInfo for student:', studentId);
+      return loadMedicalInfo(studentId);
+    }
+  ),
+  createReadOnlyObjectField(
+    'Context_FunctionalInfo',
+    'Functional Assessment',
+    'Functional assessment reports (read-only)',
+    false,
+    async (ctx) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) {
+        console.log('[AAC] Context_FunctionalInfo: No studentId in context');
+        return null;
+      }
+      console.log('[AAC] Loading Context_FunctionalInfo for student:', studentId);
+      return loadFunctionalInfo(studentId);
+    }
+  ),
+  createReadOnlyObjectField(
+    'Context_EducationalInfo',
+    'Educational Information',
+    'Educational reports and accommodations (read-only)',
+    false,
+    async (ctx) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) {
+        console.log('[AAC] Context_EducationalInfo: No studentId in context');
+        return null;
+      }
+      console.log('[AAC] Loading Context_EducationalInfo for student:', studentId);
+      return loadEducationalInfo(studentId);
+    }
+  ),
+  ];
 }
 
 /**
@@ -1846,10 +1876,8 @@ export async function preloadAllStudentContext(
  */
 export function getAACMemoryFields(options?: {
   allowReadProgress?: boolean;
-  allowReadReports?: boolean;
 }): AgentMemoryFieldWithDB[] {
   const readProgress = options?.allowReadProgress !== false;
-  const readReports = options?.allowReadReports !== false;
 
   const fields: AgentMemoryFieldWithDB[] = [
     createReadOnlyObjectField(
@@ -1913,56 +1941,6 @@ export function getAACMemoryFields(options?: {
       }
     ),
   ];
-
-  if (readReports) {
-    fields.push(
-      createReadOnlyObjectField(
-        'Context_MedicalInfo',
-        'Medical Information',
-        'Medical records and health information (read-only)',
-        false,
-        async (ctx) => {
-          const studentId = ctx.all.studentId;
-          if (!studentId) {
-            console.log('[AAC] Context_MedicalInfo: No studentId in context');
-            return null;
-          }
-          console.log('[AAC] Loading Context_MedicalInfo for student:', studentId);
-          return loadMedicalInfo(studentId);
-        }
-      ),
-      createReadOnlyObjectField(
-        'Context_FunctionalInfo',
-        'Functional Assessment',
-        'Functional assessment reports (read-only)',
-        false,
-        async (ctx) => {
-          const studentId = ctx.all.studentId;
-          if (!studentId) {
-            console.log('[AAC] Context_FunctionalInfo: No studentId in context');
-            return null;
-          }
-          console.log('[AAC] Loading Context_FunctionalInfo for student:', studentId);
-          return loadFunctionalInfo(studentId);
-        }
-      ),
-      createReadOnlyObjectField(
-        'Context_EducationalInfo',
-        'Educational Information',
-        'Educational reports and accommodations (read-only)',
-        false,
-        async (ctx) => {
-          const studentId = ctx.all.studentId;
-          if (!studentId) {
-            console.log('[AAC] Context_EducationalInfo: No studentId in context');
-            return null;
-          }
-          console.log('[AAC] Loading Context_EducationalInfo for student:', studentId);
-          return loadEducationalInfo(studentId);
-        }
-      ),
-    );
-  }
 
   if (readProgress) {
     fields.push(

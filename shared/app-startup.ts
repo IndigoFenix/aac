@@ -91,6 +91,23 @@ export interface AiOpenPolicy {
   guidance: string;
 }
 
+/**
+ * The policy an app gets when it declares none — so EVERY AI-chosen open is
+ * put to the decision, not only the three apps that had a policy of their
+ * own. Written for the failure it exists to catch (2026-09-14): a child says
+ * "play" and the assistant opens whichever game it thought of first, instead
+ * of offering a choice. An app with its own `aiOpenPolicy` still uses that.
+ */
+export const DEFAULT_AI_OPEN_POLICY: AiOpenPolicy = {
+  guidance: [
+    "OPEN when they named this app or game, or agreed to it after the assistant offered it BY NAME.",
+    "NOT when all they said is that they want to play, a game, or something fun. That is an",
+    "invitation to choose together, not a choice: the right answer is to offer two or three things",
+    "by name — apps and things that are not apps — and open only what they pick.",
+    "NOT when a word matching this app's subject came up while they were talking about something else.",
+  ].join(" "),
+};
+
 /** The decision model's answer. */
 export interface AiOpenDecision {
   open: boolean;

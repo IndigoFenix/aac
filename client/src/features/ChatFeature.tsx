@@ -38,6 +38,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat, type AttachedFile } from '@/hooks/useChat';
+import { useChatFileIntake } from '@/hooks/useChatFileIntake';
+import { CHAT_FILE_ACCEPT } from '@/lib/chatFileIntake';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
@@ -407,6 +409,10 @@ export function ChatFeature() {
     fileInputRef.current?.click();
   };
 
+  // Drag-and-drop + paste feed the same uploadFile as the paperclip picker.
+  const fileIntake = useChatFileIntake({ uploadFile, disabled: isUploadingFile });
+  const { onPaste: handlePaste } = fileIntake;
+
   // Helper to get file icon based on mime type
   const getFileIcon = (mimeType: string) => {
     if (mimeType.startsWith('image/')) {
@@ -746,7 +752,7 @@ export function ChatFeature() {
         multiple
         className="hidden"
         onChange={handleFileSelect}
-        accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+        accept={CHAT_FILE_ACCEPT}
       />
 
       {/* Speech recognition error display */}
@@ -806,6 +812,7 @@ export function ChatFeature() {
           dir={isRTL ? 'rtl' : 'ltr'}
           data-testid="input-prompt"
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={isListening}
         />
 
@@ -846,12 +853,24 @@ export function ChatFeature() {
         </div>
       )}
     </div>
-  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, stopGeneration, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError, attachInput]);
+  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, stopGeneration, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, handlePaste, VoiceControls, isListening, interimTranscript, sttError, attachInput]);
 
   return (
     <div className="flex h-full relative">
-      {/* Main area: the chat, or — in swap mode — the history list in its place */}
-      <div className="flex flex-col h-full flex-1 min-w-0 relative">
+      {/* Main area: the chat, or — in swap mode — the history list in its place.
+          Also the drop zone: files dragged anywhere over the chat attach like the paperclip. */}
+      <div className="flex flex-col h-full flex-1 min-w-0 relative" {...fileIntake.dropZoneProps}>
+      {fileIntake.isDragOver && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 pointer-events-none"
+          data-testid="chat-drop-overlay"
+        >
+          <div className="flex items-center gap-2 rounded-full bg-card px-4 py-2 text-sm font-medium shadow">
+            <Paperclip className="w-4 h-4" />
+            <span>{t('chat.dropFilesHere')}</span>
+          </div>
+        </div>
+      )}
       {!pinnedHistory && historyVisible ? (
         <ChatHistorySidebar
           studentId={student?.id}

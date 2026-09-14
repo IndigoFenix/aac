@@ -12,6 +12,7 @@ import { summarizeChanges, changeDetails } from "../services/activityChanges";
 import { visibilityCtx } from "../services/sharing/clinicianCtx";
 import { canWriteObject, type AccessCtx } from "../services/sharing/visibility";
 import { requireConsentForResponse } from "../services/consent/consentGate";
+import { refreshReportDigestInBackground, ensureReportDigest } from "../services/aac/report-digest";
 import { type ShareableObjectType } from "@shared/schema";
 
 /** `new{Record,Report}Id` in a revision's activity-log details — see ReportKind.responseKey. */
@@ -691,6 +692,14 @@ export class ReportController {
         subjectType1: kind.objectType,
         subjectId1: id,
       });
+      // Pre-warm the AAC report digest: a finalize is exactly what invalidates
+      // it, so regenerate now rather than making the next session start pay the
+      // extraction latency. Fire-and-forget — never affects this response.
+      refreshReportDigestInBackground({
+        studentId: (finalized as any).studentId ?? (row as any).studentId,
+        userId: currentUser.id,
+        instituteId: (finalized as any).instituteId ?? null,
+      });
     } catch (error: any) {
       console.error(`Error finalizing ${kind.label}:`, error);
       res.status(500).json({
@@ -702,6 +711,47 @@ export class ReportController {
 
   async finalizeMedicalRecord(req: Request, res: Response): Promise<void> {
     return this.finalizeReport(req, res, REPORT_KINDS.medical);
+  }
+
+  /**
+   * POST /api/students/:studentId/reports/digest/refresh
+   *
+   * Rerun the AAC report digest for a student, even when its sources have not
+   * changed (the "rerun digest" button in the Reports panel). Same door as the
+   * session-start and finalize paths — `ensureReportDigest` — so the
+   * `allowReadReports` gate, the audit rows and the entry cap all still apply;
+   * `force` only skips the sourceKey short-circuit. Synchronous so the caller
+   * can see the outcome and the fresh entries.
+   */
+  async refreshReportDigest(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
+
+      const access = await reportService.verifyReportAccess(
+        studentId,
+        currentUser.id,
+        "functional",
+        instituteId,
+      );
+      if (!access.hasAccess) {
+        res.status(403).json({ success: false, message: "Access denied to functional reports" });
+        return;
+      }
+
+      const result = await ensureReportDigest({
+        studentId,
+        userId: currentUser.id,
+        instituteId: instituteId ?? null,
+        force: true,
+      });
+      console.log(`[report-digest] manual refresh for ${studentId} by ${currentUser.id}: ${result.outcome} (${result.entries.length} entries)`);
+      res.json({ success: true, outcome: result.outcome, entries: result.entries });
+    } catch (error: any) {
+      console.error("Error refreshing report digest:", error);
+      res.status(500).json({ success: false, message: "Failed to refresh report digest" });
+    }
   }
 
   /**

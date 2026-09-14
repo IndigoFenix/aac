@@ -521,12 +521,12 @@ export const ChatProvider = ({
       return attachedFile;
     } catch (err: any) {
       console.error('File upload failed:', err);
-      toast({ variant: "destructive", title: "Upload failed", description: err.message || "Failed to upload file" });
+      toast({ variant: "destructive", title: t("chat.uploadFailed"), description: err.message || t("chat.uploadFailedDesc") });
       return null;
     } finally {
       setIsUploadingFile(false);
     }
-  }, []);
+  }, [t]);
 
   const removeFile = useCallback((fileId: string) => {
     setPendingFiles(prev => prev.filter(f => f.fileId !== fileId));

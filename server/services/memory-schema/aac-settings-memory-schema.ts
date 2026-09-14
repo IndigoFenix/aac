@@ -762,7 +762,7 @@ export const AAC_SETTINGS_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "allowReadReports",
       type: "string",
       title: "Allow Read Reports",
-      description: "AI can access medical/educational/functional reports (true/false)",
+      description: "AI may read medical/educational/functional reports (true/false). The AAC session never reads them directly: when on, the system distils them into a report digest the session receives; when off, no report is read and the digest is cleared.",
     },
     allowNotes: {
       id: "allowNotes",

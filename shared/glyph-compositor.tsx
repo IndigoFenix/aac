@@ -1210,9 +1210,23 @@ function BadgeStack(props: BadgeStackProps): React.ReactElement | null {
   const { slot, layout, rtl, resolveImage, onImageError } = props;
   if (!slot) return null;
   const entries: BadgeEntry[] = [];
+  // The six WH-words (what/who/where/when/why/how) and the bare `question`
+  // key are all `tone: "question"`, all `modifier.transform: "badge"`, and
+  // all anchor the same `corner: "top-right"` — every one of them draws the
+  // identical ❓ mark. The AI reaches for more than one of them on a single
+  // slot ("what.question", "how.question" — the registry comment on
+  // `question` notes this habit), and unlike other badge kinds that's not
+  // a combination of two distinct facts (e.g. `color` + `dimension`); it's
+  // the SAME fact stated twice, so it must collapse to one badge rather than
+  // stack two adjacent ❓s in the corner.
+  let sawQuestionBadge = false;
   for (const modKey of slot.modifiers) {
     const item = getVocabularyItem(modKey);
     if (item?.modifier && BADGE_TRANSFORMS.includes(item.modifier.transform)) {
+      if (item.tone === "question") {
+        if (sawQuestionBadge) continue;
+        sawQuestionBadge = true;
+      }
       entries.push({
         kind: "canonical",
         key: modKey,

@@ -1268,6 +1268,13 @@
       "when": 1788988820554,
       "tag": "0180_unknown_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1789362897072,
+      "tag": "0181_giant_reavers",
+      "breakpoints": true
     }
   ]
 }

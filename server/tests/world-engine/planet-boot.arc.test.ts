@@ -175,8 +175,17 @@ describe("🌍 the planet arm — one engine definition, booted headless", () =>
     // (The browser splits the same way — the road arm is live only for CITY
     // towns, which pass their own `FlightCity`.)
     for (const r of rows) expect(r.distanceM).toBeGreaterThan(200_000);
-    // …and what the distant ground SAYS IT CAN SELL rides along.
-    expect(rows[0]!.geo).toEqual({ node: "junction", farmland: 516, ore: 0 });
+    // …and what the distant ground SAYS IT CAN SELL rides along — PER GOOD.
+    // `{ node: "junction", farmland: 516, ore: 0 }` → `{ node, yields }` — user
+    // law 2026-09-11: goods individually; the taxonomy is naming. The node
+    // stays as the town's name; the sim reads the packed catalogue at the
+    // city's own cell (`landYieldsAt`): fifteen goods, wood the heaviest
+    // (0.4126 — the same vector the declared document carries).
+    expect(rows[0]!.geo.node).toBe("junction");
+    expect(Object.keys(rows[0]!.geo.yields ?? {})).toHaveLength(15);
+    expect(rows[0]!.geo.yields!.wood).toBeCloseTo(0.41261458259359474, 6);
+    expect(rows[0]!.geo.yields!.banana).toBeCloseTo(0.10749127298928933, 6);
+    expect(rows[0]!.geo).not.toHaveProperty("farmland");
 
     // AND THE SESSION BINDS ONE. Read off the stage's own trade view — never
     // instrumented, never a new export.
