@@ -699,6 +699,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
         <Tooltip>
           <TooltipTrigger asChild>
             <span
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- disabled buttons can't take focus, so the wrapper must, or keyboard users never reach the consent warning tooltip
               tabIndex={0}
               className="inline-flex items-center gap-1 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-400"
               data-testid="reports-consent-warning"
